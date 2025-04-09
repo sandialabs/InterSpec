@@ -59,12 +59,14 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayChainChart.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -135,32 +137,6 @@ namespace
     return answer;
   }//decay_particle_info(...)
 
-
-  std::string file_contents( const string &filename )
-  {
-    //Copied from SpecUtils::load_file_data( const char * const filename, std::vector<char> &data );
-#ifdef _WIN32
-    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-    basic_ifstream<char> stream(wfilename.c_str(), ios::binary);
-#else
-    basic_ifstream<char> stream(filename.c_str(), ios::binary);
-#endif
-  
-    if (!stream)
-      throw runtime_error(string("cannot open file ") + filename);
-    stream.unsetf(ios::skipws);
-  
-    // Determine stream size
-    stream.seekg(0, ios::end);
-    size_t size = static_cast<size_t>( stream.tellg() );
-    stream.seekg(0);
-  
-    string data;
-    data.resize( size );
-    stream.read(&data.front(), static_cast<streamsize>(size));
-    
-    return data;
-  }//std::string file_contents( const std::string &filename, std::vector<char> &data )
 
 
 class DecayChainHtmlResource : public Wt::WResource
@@ -238,17 +214,17 @@ private:
       
       const string docroot = SpecUtils::append_path( m_app->docRoot(), "InterSpec_resources" );
       
-      string htmls = file_contents( SpecUtils::append_path( docroot, "DecayChartStandalone.tmplt.html") );
+      string htmls = AppUtils::file_contents( SpecUtils::append_path( docroot, "DecayChartStandalone.tmplt.html") );
       
       //#if( SpecUtils_D3_SUPPORT_FILE_STATIC )
       //      const string d3_js = (const char *)D3SpectrumExport::d3_js();
       //#else
-      //      const string d3_js = file_contents( D3SpectrumExport::d3_js_filename() );
+      //      const string d3_js = AppUtils::file_contents( D3SpectrumExport::d3_js_filename() );
       //#endif
       
-      const string d3_js = file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
-      const string dcc_js = file_contents( SpecUtils::append_path( docroot, "DecayChainChart.js") );
-      const string dcc_css = file_contents( SpecUtils::append_path( docroot, "DecayChainChart.css") );
+      const string d3_js = AppUtils::file_contents( SpecUtils::append_path( docroot, "d3.v3.min.js") );
+      const string dcc_js = AppUtils::file_contents( SpecUtils::append_path( docroot, "DecayChainChart.js") );
+      const string dcc_css = AppUtils::file_contents( SpecUtils::append_path( docroot, "DecayChainChart.css") );
       
       js
       << "/* ------ Begin d3.v3.js ------ */\n"
@@ -380,7 +356,7 @@ pair<AuxWindow *, DecayChainChart *>
 
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", viewer );
+  const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", viewer );
 
   viewer->colorThemeChanged();
   viewer->colorThemeChanged().connect( chart, &DecayChainChart::colorThemeChanged );
@@ -493,7 +469,9 @@ void DecayChainChart::jsonInfoForNuclide( const SandiaDecay::Nuclide * const nuc
     
   vector<string> info = getTextInfoForNuclide( nuc, m_nuclide, m_useCurie );
     
-  const string hl = (IsInf(nuc->halfLife) ? std::string("stable") : PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife, 2));
+  
+  const string hl = IsInf(nuc->halfLife) ? WString::tr("stable").toUTF8()
+                                          : PhysicalUnitsLocalized::printToBestTimeUnits(nuc->halfLife, 2);
     
   js << "{ \"nuclide\": \"" << nuc->symbol << "\","
     << " \"massNumber\": " << static_cast<int>(nuc->massNumber) << ","
@@ -621,7 +599,7 @@ std::vector<std::string> DecayChainChart::getTextInfoForNuclide( const SandiaDec
   }else
   {
     const string hl = PhysicalUnitsLocalized::printToBestTimeUnits( nuc->halfLife );
-    information.push_back( WString::tr("dcc-nuc-info-hl-stable").arg(hl).toUTF8() );
+    information.push_back( WString::tr("dcc-nuc-info-hl").arg(hl).toUTF8() );
   }
   
   if( parentNuclide && (nuc != parentNuclide) )

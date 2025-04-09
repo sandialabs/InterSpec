@@ -502,6 +502,12 @@ public:
     DataDefined
   };//enum PeakType
   
+  /** Returns "GaussianDefined" or "DataDefined". */
+  static const char *to_str( const DefintionType type );
+  
+  /** Returns the `DefintionType`; if does not contain with "GaussianDefined" or "DataDefined", throws exception. */
+  static DefintionType peak_type_from_str( const char * const str );
+  
   enum CoefficientType
   {
     Mean,
@@ -585,9 +591,9 @@ public:
   //  self defined background/continuum.
   PeakDef( double m, double s, double a );
 
-  //The following constructor make a peak were m_PeakDef==false and
+  //The following constructor make a peak were m_type==PeakDef::DefintionType::DataDefined and
   //  instead the peak will be drawn as the difference between data and
-  //  background.  If a background histogram is not proivided than a
+  //  background.  If a background histogram is not provided than a
   //  strait line spanning lowerx and upperx will be used.
   //This usage of PeakDef has not been well tested
   PeakDef( double lowerx, double upperx, double mean,
@@ -899,8 +905,11 @@ public:
   //                   'energy' the candidate can be.  If a value <= 0.0 is
   //                   passed in, then an infinite range is assumed, and the
   //                   the actual closest in energy of photopeak is found.
-  //  xraysOnly: If true, reulting photopeak will only be able to have a x-ray
+  //  xraysOnly: If true, resulting photopeak will only be able to have a x-ray
   //             as a source.  If false, can be xray, gamma, annih, S.E., D.E..
+  //  nuclideAge: The nuclide age you would like to use.  If you specify a negative
+  //             value, then the value returned by `PeakDef::defaultDecayTime(...)`
+  //             will be used.
   //  sourceGammaType: in the case of gammas produced by positron
   //                   annihilation, this will be set to AnnihilationGamma.
   //                   If so, then transition and transition_index will be set
@@ -913,6 +922,7 @@ public:
                                    const double energy,
                                    const double windowHalfWidth,
                                    const bool xraysOnly,
+                                   const double nuclideAge,
                                    const SandiaDecay::Transition *&transition,
                                    size_t &transition_index,
                                    SourceGammaType &sourceGammaType );

@@ -31,6 +31,8 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional.hpp>
+
 #include "InterSpec/BatchPeak.h"
 
 // Forward declarations
@@ -55,34 +57,44 @@ namespace BatchActivity
    Throws exception if DRF file is invalid, or specified detector could not be loaded.
    If both input strings are empty, returns nullptr.
    */
-  std::shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf_name );
+  InterSpec_API std::shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::string drf_name );
   
-  struct BatchActivityFitOptions
+  struct InterSpec_API BatchActivityFitOptions
     : public BatchPeak::BatchPeakFitOptions
   {
+    bool use_bq = false;
     std::shared_ptr<DetectorPeakResponse> drf_override;
+    boost::optional<double> distance_override;
+    bool hard_background_sub;
   };//struct BatchActivityFitOptions
   
   
-  void fit_activities_in_files( const std::string &exemplar_filename,
+  InterSpec_API void fit_activities_in_files( const std::string &exemplar_filename,
                           const std::set<int> &exemplar_sample_nums,
                           const std::vector<std::string> &files,
                           const BatchActivityFitOptions &options );
   
-  struct BatchActivityFitResult
+  struct InterSpec_API BatchActivityFitResult
   {
-    enum class ResultCode
+    enum class InterSpec_API ResultCode
     {
       CouldntInitializeStaticResources,
       NoExemplar,
       CouldntOpenExemplar,
+      ErrorPickingSpectrumFromExemplar,
       CouldntOpenInputFile,
       CouldntOpenBackgroundFile,
       NoInputSrcShieldModel,
       ForegroundSampleNumberUnderSpecified,
       BackgroundSampleNumberUnderSpecified,
+      InvalidLiveTimeForHardBackSub,
+      SpecifiedDistanceWithFixedGeomDet,
+      ErrorWithHardBackgroundSubtract,
+      ErrorApplyingExemplarEneCalToFore,
       
       ForegroundPeakFitFailed,
+      BackgroundPeakFitFailed,
+      NoExistingBackgroundPeaks,
       NoFitForegroundPeaks,
       NoDetEffFnct,
       InvalidDistance,
@@ -98,9 +110,13 @@ namespace BatchActivity
       FitNotSuccessful,
       DidNotFitAllSources,
       
+      FitThrewException,
+      
       UnknownStatus,
       Success
     };//enum class ResultCode
+    
+    static const char *to_str( const ResultCode code );
     
     ResultCode m_result_code;
     std::string m_error_msg;
@@ -121,7 +137,6 @@ namespace BatchActivity
     
     BatchActivityFitOptions m_options;
     
-    // Blah blah blah
     std::shared_ptr<const BatchPeak::BatchPeakFitResult> m_peak_fit_results;
     std::shared_ptr<const BatchPeak::BatchPeakFitResult> m_background_peak_fit_results;
     
@@ -130,7 +145,7 @@ namespace BatchActivity
   
   
   
-  /** Fits the peaks, activities, and shieldins
+  /** Fits the peaks, activities, and shieldings
    
    exemplar peaks for a given file.
    
@@ -144,7 +159,7 @@ namespace BatchActivity
    @param options The options to use for fitting peaks; note, not all options are used, as some of them are only applicable to
           #fit_peaks_in_files
    */
-  BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filename,
+  InterSpec_API BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filename,
                           std::set<int> exemplar_sample_nums,
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,

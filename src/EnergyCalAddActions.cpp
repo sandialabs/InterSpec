@@ -206,11 +206,13 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
       break;
       
     case MoreActionsIndex::ConvertToFrf:
+      setWidth( WLength(425.0, WLength::Unit::Pixel) );
       AuxWindow::setWindowTitle( "Convert to Full Range Fraction Calibration" );
       new ConvertCalTypeTool( SpecUtils::EnergyCalType::FullRangeFraction, m_measToChange, m_calibrator, this );
       break;
       
     case MoreActionsIndex::ConvertToPoly:
+      setWidth( WLength(425.0, WLength::Unit::Pixel) );
       AuxWindow::setWindowTitle( "Convert to Polynomial Calibration" );
       new ConvertCalTypeTool( SpecUtils::EnergyCalType::Polynomial, m_measToChange, m_calibrator, this );
       break;
@@ -342,7 +344,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
       const size_t maxorder = *coeforder.rbegin();
       const char *msgtxt = "";
       if( maxorder > 4 )
-        msgtxt = "Terms past the fourth term will be lost since there is no analougous terms.";
+        msgtxt = "Terms past the fourth term will be lost since there is no analogous terms.";
       else
         msgtxt = "No information will be lost if you continue.";
       WText *msg = new WText( msgtxt, this );
@@ -368,7 +370,7 @@ ConvertCalTypeTool::ConvertCalTypeTool( const SpecUtils::EnergyCalType targetTyp
       m_group->addButton( btn, 0 );
       
       btn = new WRadioButton( "Linearize, leaving counts in channels the same", box );
-      btn->setToolTip( "The channel energies will be reasigned so that each channel will have"
+      btn->setToolTip( "The channel energies will be reassigned so that each channel will have"
                       " same width, without taking into account the channels original width;"
                       " i.e., the counts in each channel will remain the same, but spectral shape"
                       " (counts per keV) will be changed." );

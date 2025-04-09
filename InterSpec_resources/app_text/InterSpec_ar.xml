@@ -1,0 +1,513 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="Cancel">إلغاء</message>
+  <message id="Yes">نعم</message>
+  <message id="No">لا</message>
+  <message id="Close">إغلاق</message>
+  <message id="Save">حفظ</message>
+  <message id="Name">الاسم</message>
+  <message id="Desc.">الوصف</message>
+  <message id="Back">رجوع</message>
+  <message id="Create">إنشاء</message>
+  <message id="Energy">الطاقة</message>
+  <message id="Counts">العدد</message>
+  <message id="Foreground">المقدمة</message>
+  <message id="Background">الخلفية</message>
+  <message id="Secondary">الثانوي</message>
+  <message id="second-foreground">المقدمة الثانية</message>
+  <message id="foreground" comment="For use in middle of sentence">المقدمة</message>
+  <message id="background" comment="For use in middle of sentence">الخلفية</message>
+  <message id="secondary" comment="For use in middle of sentence">الثانوي</message>
+  <message id="Exit">خروج</message>
+  <message id="show-lines">عرض الخطوط</message>
+  <message id="Default">افتراضي</message>
+  <message id="Error">خطأ</message>
+  <message id="Description">الوصف</message>
+  <message id="Detector">الكاشف</message>
+  <message id="Distance">المسافة</message>
+  <message id="Activity">النشاط</message>
+  <message id="Remark">ملاحظة</message>
+
+
+  <message id="Continuum">المتصل</message>
+  <message id="cont-type">نوع المتصل</message>
+  <message id="Title">العنوان</message>
+  <message id="Fit">ملائمة</message>
+  <message id="Use">استخدام</message>
+  <message id="Energy">الطاقة</message>
+  <message id="Mean">المتوسط</message>
+  <message id="FWHM">FWHM</message>
+  <message id="Amp.">السعة</message>
+  <message id="Area">المساحة</message>
+  <message id="Age">العمر</message>
+  <message id="Add">إضافة</message>
+  <message id="Peak">ذروة</message>
+  <message id="Delete">حذف</message>
+  <message id="Photopeak">ذروة ضوئية</message>
+  <message id="Nuclide">النويدة</message>
+  <message id="Nuc.">النويدة</message>
+  <message id="Skew">الانحراف</message>
+  <message id="CPS">CPS</message>
+  <message id="CSV">CSV</message>
+  <message id="True">صحيح</message>
+  <message id="False">خطأ</message>
+  <message id="Remove">إزالة</message>
+  <message id="RemoveAll">إزالة الكل</message>
+  <message id="Clear">مسح</message>
+  <message id="ClearAll">مسح الكل</message>
+  <message id="T1/2">T½</message>
+  <message id="Gamma">غاما</message>
+  <message id="X-rays">الأشعة السينية</message>
+  <message id="x-ray">الأشعة السينية</message>
+  <message id="Live Time">الوقت الحي</message>
+  <message id="Real Time">الوقت الحقيقي</message>
+  <message id="Geometry">الهندسة</message>
+  <message id="Load">تحميل</message>
+  <message id="Mass">الكتلة</message>
+  <message id="NA">NA</message>
+  <message id="n/a">n/a</message>
+  <message id="N/A">N/A</message>
+  <message id="Min.">الأدنى</message>
+  <message id="Max.">الأعلى</message>
+  <message id="QR Code">رمز QR</message>
+  <message id="Accept">قبول</message>
+  <message id="Dose">الجرعة</message>
+  <message id="Shielding">التدريع</message>
+  <message id="app-qr-err">خطأ في إنشاء رمز الاستجابة السريعة: {1}</message>
+  <message id="intrinsic-activity">النشاط الجوهري</message>
+  <message id="Calibration">المعايرة</message>
+  <message id="Unknown">غير معروف</message>
+  <message id="Energy (keV)">الطاقة (keV)</message>
+  <message id="Efficiency">الكفاءة</message>
+
+  <message id="units-labels-second">seconds|second|sec|s|SECONDS|SECOND|SEC|S</message>
+  <message id="units-labels-minute">minute|minutes|min|m</message>
+  <message id="units-labels-hours">hours|hour|hrs|h</message>
+  <message id="units-labels-days">days|day|d</message>
+  <message id="units-labels-year">years|year|yr|y</message>
+  <message id="units-labels-half-lives">hl|halflife|halflives|half-life|half-lives|half lives|half life</message>
+  <message id="units-label-seconds-short">s</message>
+  <message id="units-label-minutes-short">m</message>
+  <message id="units-label-hours-short">h</message>
+  <message id="units-label-days-short">d</message>
+  <message id="units-label-years-short">y</message>
+
+
+  <message id="clear-session">مسح الجلسة؟</message>
+  <message id="clear-session-msg">هل أنت متأكد أنك تريد بدء جلسة جديدة؟</message>
+
+  <message id="window-title-spec-file-query">أداة استعلام ملف الطيف</message>
+  <message id="window-title-notification-log">سجل الإشعارات</message>
+  <message id="notification-log-clear">مسح الإشعارات</message>
+  <message id="window-title-peak-manager">مدير الذروة</message>
+  <message id="window-title-store-state-as">حفظ الحالة باسم</message>
+  <message id="window-title-tag-state">وسم الحالة الحالية</message>
+  <message id="window-title-create-snapshot">إنشاء لقطة</message>
+  <message id="window-title-energy-cal">معايرة الطاقة</message>
+  <message id="window-title-hard-back-sub">تنفيذ طرح الخلفية الصلب؟</message>
+  <message id="window-title-3d">عرض البيانات ثلاثي الأبعاد</message>
+  <message id="window-title-peak-rel-eff">النسبية من ذروات ملائمة المستخدم</message>
+  <message id="window-title-compact-file">حدد الأطياف المفتوحة لعرضها</message>
+  <message id="window-title-feature-markers">علامات الميزات</message>
+  <message id="window-title-act-shield-fit">ملائمة النشاط/التدريع</message>
+  <message id="window-title-xs-calc">حساب XS غاما</message>
+  <message id="window-title-dose-calc">حساب الجرعة</message>
+  <message id="window-title-1/r2-calc">1/r<sup>2</sup> حاسبة</message>
+  <message id="window-title-units-convert">محول الوحدات</message>
+  <message id="window-title-flux-tool">أداة التدفق</message>
+  <message id="window-title-nuc-decay">معلومات تحلل النويدات</message>
+  <message id="window-title-select-det-eff-fcn">تحديد دالة استجابة الكاشف</message>
+  <message id="window-title-add-fwhm">إضافة FWHM إلى دالة استجابة الكاشف</message>
+  <message id="window-title-create-drf">إنشاء دالة استجابة الكاشف</message>
+  <message id="window-title-file-parameters">معلمات الملف</message>
+  <message id="window-title-energy-range-sum">مجموع مدى الطاقة</message>
+  <message id="window-title-external-rid">RID خارجي</message>
+  <message id="window-title-license-credit">إخلاء المسؤولية والتراخيص والائتمان والاتصال</message>
+  <message id="window-title-help">مساعدة InterSpec</message>
+  <message id="window-title-simple-mda">حساب بسيط للحد الأدنى من النشاط القابل للكشف</message>
+
+
+  <message id="app-tab-peak-manager">مدير الذروة</message>
+  <message id="app-tab-ref-photopeak">الذروات الضوئية المرجعية</message>
+  <message id="app-tab-energy-cal">معايرة الطاقة</message>
+  <message id="app-tab-nuc-search">بحث النويدات</message>
+  <message id="app-tab-spec-files">ملفات الطيف</message>
+  <message id="app-tab-terminal">طرفية</message>
+  <message id="app-tab-isotopics">النظائر</message>
+
+  <message id="app-tab-tt-ref-photopeak">يسمح للمستخدم بعرض خطوط الذروة الضوئية المرجعية من الأشعة السينية،
+     أشعة غاما، أو التفاعلات النووية.
+    <br />
+    يمكن تعديل أعمار النويدات، والتدريع المطبق، وكفاءة الكاشف المستخدمة.
+    <br />
+    في قائمة المعلومات الموسعة، يمكنك أيضًا إظهار مجاميع التحلل المتتالي، أو طاقات ألفا، أو نقاط نهاية بيتا.
+    <br />
+    يمكنك أيضًا تصدير ملف CSV بمعلومات النويدة.
+  </message>
+  <message id="app-tab-tt-peak-manager">يعرض معلومات الذروات الملائمة في جدول قابل للتحرير والفرز،
+    يسمح بتصدير ملف CSV لمعلومات الذروة، بالإضافة إلى أدوات مساعدة للبحث الآلي عن الذروات، وإضافة وحذف الذروات.
+  </message>
+  <message id="app-tab-tt-energy-cal">يسمح للمستخدم بتعديل أو ملائمة مصطلحات معايرة الطاقة وأزواج الانحراف غير الخطي.
+    <br />
+    هناك أيضًا خيارات لخطّية الطيف، وتغيير نوع معايرة الطاقة، واقتطاع مدى الطاقة، أو دمج القنوات.
+    <br />
+   يمكن أيضًا إجراء معايرة الطاقة بيانياً عن طريق سحب الطيف بالنقر بزر الماوس الأيمن من الطاقة الأصلية إلى الطاقة المعدلة
+    (على سبيل المثال، اسحب ذروة البيانات إلى خط المرجع المناسب).
+  </message>
+  <message id="app-tab-tt-nuc-search">ابحث عن النويدات مع قيود على الطاقة ونسبة التفريع وعمر النصف.</message>
+  <message id="app-tab-tt-auto-search">البحث التلقائي عن الذروة</message>
+  <message id="app-tab-tt-terminal">طرفية تفاعل الطيف الرقمية والجبرية والنصية.</message>
+  <message id="app-tab-tt-rel-eff">تحليل الكفاءة النسبية، من الذروات التي قمت بملاءمتها.</message>
+
+
+  <message id="app-menu-file">ملف</message>
+  <message id="app-menu-spectra">الأطياف</message>
+  <message id="app-menu-edit">تعديل</message>
+  <message id="app-menu-view">عرض</message>
+  <message id="app-menu-help">مساعدة</message>
+  <message id="app-menu-tools">أدوات</message>
+
+
+  <message id="app-mi-file-about">حول InterSpec</message>
+  <message id="app-mi-file-open">فتح ملف...</message>
+  <message id="app-mi-file-loaded-spec">الأطياف المحملة...</message>
+  <message id="app-mi-file-manager">مدير...</message>
+  <message id="app-mi-tt-file-manager">إدارة الأطياف المحملة. جمع الأطياف، دمج الأطياف في ملفات مختلفة، العرض، ...</message>
+  <message id="app-mi-file-store">حفظ</message>
+  <message id="app-mi-tt-file-store">يحفظ حالة التطبيق الحالية في قاعدة بيانات InterSpec</message>
+  <message id="app-mi-file-store-as">حفظ باسم...</message>
+  <message id="app-mi-tt-file-store-as">يحفظ حالة التطبيق الحالية في قائمة جديدة في قاعدة بيانات InterSpec</message>
+  <message id="app-mi-file-tag">علامة...</message>
+  <message id="app-mi-tt-file-tag">يضع علامة على حالة Interspec الحالية حتى
+   يمكنك العودة إليها في وقت لاحق. عند تحميل حالة التطبيق،
+   يمكنك اختيار أحدث حفظ، أو تحديد الإصدارات الموسومة السابقة.
+  </message>
+  <message id="app-mi-file-prev">السابق...</message>
+  <message id="app-mi-tt-file-prev">يفتح الحالات أو الأطياف المحفوظة مسبقًا.</message>
+  <message id="app-mi-file-clear">مسح الجلسة...</message>
+  <message id="app-mi-tt-file-clear">يبدأ حالة تطبيق نظيفة بدون تحميل أي أطياف</message>
+  <message id="app-mi-samples">عينات</message>
+  <message id="app-mi-tt-file-open">ينشئ مربع حوار لتصفح ملف طيف على نظام الملفات الخاص بك.
+    اسحب الملف وأفلته مباشرة في نافذة التطبيق كبديل أسرع.
+  </message>
+  <message id="app-mi-export-file">تصدير الملف...</message>
+
+  <message id="app-mi-samples-ba133">Ba-133 (16k قناة)</message>
+  <message id="app-mi-samples-passthrough-mobile">Passthrough (16k قناة)</message>
+  <message id="app-mi-samples-passthrough">Passthrough (16k bin ICD1, 8 det., 133 عينة)</message>
+  <message id="app-mi-samples-background">الخلفية (16k bin N42)</message>
+  <message id="app-mi-samples-ba133-lowres">Ba-133 (دقة منخفضة، بدون معايرة)</message>
+  <message id="app-mi-samples-co60-lowres">Co-60 (دقة منخفضة، بدون معايرة)</message>
+  <message id="app-mi-samples-cs137-lowres">Cs-137 (دقة منخفضة، بدون معايرة)</message>
+  <message id="app-mi-samples-th232-lowres">Th-232 (دقة منخفضة، بدون معايرة)</message>
+
+  <message id="app-mi-edit-undo">تراجع</message>
+  <message id="app-mi-edit-redo">إعادة</message>
+  <message id="app-mi-edit-save-png">حفظ الطيف كـ PNG</message>
+  <message id="app-mi-edit-save-svg">حفظ الطيف كـ SVG</message>
+  <message id="app-mi-edit-enter-url">أدخل عنوان URL</message>
+
+  <message id="app-mi-view-show-tabs">إظهار علامات تبويب الأدوات</message>
+  <message id="app-mi-view-hide-tabs">إخفاء علامات تبويب الأدوات</message>
+  <message id="app-mi-view-chart-opts">خيارات الرسم البياني</message>
+  <message id="app-mi-view-logy">مقياس Y لوغاريتمي</message>
+  <message id="app-mi-view-liny">مقياس Y خطي</message>
+  <message id="app-mi-view-show-vert">إظهار الخطوط الرأسية</message>
+  <message id="app-mi-view-hide-vert">إخفاء الخطوط الرأسية</message>
+  <message id="app-mi-view-show-horz">إظهار الخطوط الأفقية</message>
+  <message id="app-mi-view-hide-horz">إخفاء الخطوط الأفقية</message>
+  <message id="app-mi-view-compact-x">محور X مضغوط</message>
+  <message id="app-mi-view-normal-x">محور X عادي</message>
+  <message id="app-mi-view-show-leg">إظهار وسيلة إيضاح الطيف</message>
+  <message id="app-mi-view-show-slider">إظهار شريط تمرير الطاقة</message>
+  <message id="app-mi-view-hide-slider">إخفاء شريط تمرير الطاقة</message>
+  <message id="app-mi-view-show-scaler">إظهار مُقاييس المحور Y</message>
+  <message id="app-mi-view-hide-scaler">إخفاء مُقاييس المحور Y</message>
+  <message id="app-mi-view-back-sub">طرح الخلفية</message>
+  <message id="app-mi-view-back-unsub">إلغاء طرح الخلفية</message>
+  <message id="app-mi-view-hard-sub">طرح الخلفية الصلب...</message>
+  <message id="app-mi-view-map">خريطة</message>
+  <message id="app-mi-tt-view-map">إظهار موقع (مواقع) القياس على الخريطة. يتم تمكينه فقط عند توفر إحداثيات GPS.</message>
+  <message id="app-mi-view-3d">إظهار العرض ثلاثي الأبعاد</message>
+  <message id="app-mi-tt-view-3d">يعرض عرض الوقت مقابل الطاقة مقابل العدّ لوضع البحث أو بيانات RPM.</message>
+  <message id="app-mi-view-rid">إظهار نتائج المعرف</message>
+  <message id="app-mi-tt-view-rid">يعرض نتائج تحليل معرف الكاشف المضمنة في ملف الطيف.</message>
+  <message id="app-mi-view-img">إظهار الصور</message>
+  <message id="app-mi-tt-view-img">يعرض الصور المضمنة في ملف الطيف.</message>
+  <message id="app-mi-view-feature-markers">علامات الميزات...</message>
+  <message id="app-mi-view-hide-feature-markers">إخفاء علامات الميزات</message>
+  <message id="app-mi-tt-view-feature-markers">أداة لإظهار ذروات الهروب الفردية/المزدوجة، وذروة كومبتون، وحافة كومبتون، وذروات الجمع.</message>
+  <message id="app-mi-view-new-win">نافذة تطبيق جديدة</message>
+  <message id="app-mi-view-webbrowser">استخدام في متصفح خارجي</message>
+  <message id="app-mi-view-full">تبديل ملء الشاشة</message>
+  <message id="app-mi-view-act-size">الحجم الفعلي</message>
+  <message id="app-mi-view-zin">تكبير</message>
+  <message id="app-mi-view-zout">تصغير</message>
+  <message id="app-mi-view-dev-tool">تبديل أدوات التطوير</message>
+  <message id="app-mi-view-dets">الكواشف</message>
+  <message id="app-mi-view-peak-labels">تسميات الذروة</message>
+  <message id="app-mi-view-lbl-usr">إظهار تسميات المستخدم</message>
+  <message id="app-mi-view-lbl-peak-en">إظهار طاقات الذروة</message>
+  <message id="app-mi-view-lbl-nuc-nm">إظهار أسماء النويدات</message>
+  <message id="app-mi-view-lbl-nuc-en">إظهار طاقات النويدات</message>
+
+  <message id="app-mi-det-no-name">الكاشف. {1} ({2})</message>
+  <message id="app-mi-det-with-name">الكاشف. {1}</message>
+
+
+  <message id="app-mi-tools-act-fit">ملائمة النشاط/التدريع</message>
+  <message id="app-mi-tt-tools-act-fit">أداة لملائمة نشاط وتدريع النويدات في الطيف.
+    <br />
+    يحتوي أيضًا على إمكانيات لتحديد أعمار النويدات، أو تركيزات التلوث، أو التخصيب.
+  </message>
+  <message id="app-mi-tools-iso-by-nuc">النظائر حسب النويدات</message>
+  <message id="app-mi-tt-tools-iso-by-nuc">قيد التطوير.
+    <br />
+    يقوم تلقائيًا بملائمة ذروات النويدات للسماح بتحديد
+    الأنشطة النسبية للنويدات. لا يتطلب معرفة استجابة الكاشف
+    أو معلومات التدريع.
+  </message>
+  <message id="app-mi-tools-iso-by-peak">النظائر من الذروات</message>
+  <message id="app-mi-tt-tools-iso-by-peak">يستخدم الذروات التي قمت بملاءمتها لتحديد الأنشطة النسبية للنويدات. لا يتطلب معرفة استجابة الكاشف أو معلومات التدريع.</message>
+  <message id="app-mi-tools-xs-calc">حساب XS غاما</message>
+  <message id="app-mi-tt-tools-xs-calc">يسمح للمستخدم بتحديد المقطع العرضي لأشعة غاما
+    ذات طاقة عشوائية من خلال أي مادة في مكتبة <code>InterSpec</code>. تقديرات الكفاءة
+    لكشف أشعة غاما داخل ذروة الطاقة الكاملة وجزء أشعة غاما التي
+    ستمر عبر المادة دون التفاعل معها يمكن توفيرها بإدخال
+    معلومات إضافية.
+  </message>
+  <message id="app-mi-tools-dose-calc">حساب الجرعة</message>
+  <message id="app-mi-tt-tools-dose-calc">يسمح لك بحساب الجرعة، أو النشاط، أو التدريع،
+    أو المسافة، بمعلومية الأجزاء الأخرى من المعلومات.
+  </message>
+  <message id="app-mi-tools-1r2">1/r<sup>2</sup> حاسبة</message>
+  <message id="app-mi-tt-tools-1r2">يسمح للمستخدم باستخدام قياسين للجرعة تم أخذهما على مسافات مختلفة من مصدر لتحديد المسافة المطلقة إلى المصدر من القياس الأقرب.</message>
+  <message id="app-mi-tools-unit">محول الوحدات</message>
+  <message id="app-mi-tt-tools-unit">تحويل الوحدات المتعلقة بالإشعاع.</message>
+  <message id="app-mi-tools-flux">أداة التدفق</message>
+  <message id="app-mi-tt-tools-flux">يحول عدد الذروات المكتشفة إلى أشعة غاما المنبعثة من المصدر.</message>
+  <message id="app-mi-tools-nuc-decay">معلومات تحلل النويدات</message>
+  <message id="app-mi-tt-tools-nuc-decay">يسمح للمستخدم بالحصول على معلومات متقدمة حول الأنشطة، ومعدلات إنتاج أشعة غاما/ألفا/بيتا، وسلسلة التحلل، والنويدات الوليدة.</message>
+  <message id="app-mi-tools-mda">أداة ثقة الكشف</message>
+  <message id="app-mi-tt-tools-mda">يوفر تقديرًا للنشاط الأعلى للنويدات</message>
+  <message id="app-mi-tools-select-drf">تحديد استجابة الكاشف</message>
+  <message id="app-mi-tt-tools-select-drf">يسمح للمستخدم بتغيير دالة استجابة الكاشف.</message>
+  <message id="app-mi-tools-make-drf">إنشاء استجابة الكاشف</message>
+  <message id="app-mi-tt-tools-make-drf">إنشاء دالة استجابة الكاشف من بيانات التوصيف.</message>
+  <message id="app-mi-tools-file-par">معلمات الملف</message>
+  <message id="app-mi-tt-tools-file-par">يسمح للمستخدم بعرض/تحرير معلمات الملف. إذا كان التطبيق غير قادر في أي وقت على عرض حساب النشاط، فاستخدم هذه الأداة لتوفير المعلمات التي لم يوفرها الملف الأصلي؛ يحتاج <code>InterSpec</code> إلى جميع المعلمات لحساب النشاط.</message>
+  <message id="app-mi-tools-en-sum">مجموع مدى الطاقة</message>
+  <message id="app-mi-tt-tools-en-sum">يجمع عدد أشعة غاما في منطقة الاهتمام (ROI). يمكن الوصول إليه أيضًا عن طريق سحب النقر الأيسر فوق منطقة الاهتمام مع الضغط باستمرار على مفتاحي <kbd><b>ALT</b></kbd> و <kbd><b>SHIFT</b></kbd>.</message>
+  <message id="app-mi-tools-query">أداة استعلام الملف</message>
+  <message id="app-mi-tt-tools-query">يبحث في دليل (بشكل متكرر) عن ملفات الطيف التي تطابق الشروط المحددة.</message>
+  <message id="app-mi-tools-math">طرفية الأوامر/الرياضيات</message>
+  <message id="app-mi-tt-tools-math">ينشئ طرفية توفر حسابات رقمية وجبرية، بالإضافة إلى السماح ببعض التفاعلات النصية مع الأطياف.</message>
+ <message id="app-mi-tools-ext-rid">RID خارجي</message>
+ <message id="app-mi-tt-tools-ext-rid">يستخدم عنوان URL بعيد {1} لإجراء تحديد النويدات على الطيف الخاص بك.</message>
+  <message id="app-mi-tt-tools-ext-rid-exe"> برنامج خارجي أو</message>
+
+  <message id="app-mi-help-welcome">مرحبًا...</message>
+  <message id="app-mi-help-contents">محتويات المساعدة...</message>
+  <message id="app-mi-help-notif-log">سجل الإشعارات</message>
+  <message id="app-mi-help-opts">خيارات</message>
+  <message id="app-mi-help-pref-auto-store"> حفظ عملك تلقائيًا</message>
+  <message id="app-mi-help-pref-check-prev"> التحقق من العمل السابق</message>
+  <message id="app-mi-help-pref-show-tt"> إظهار تلميحات الأدوات</message>
+  <message id="app-mi-help-pref-prop-peak"> السؤال عن نشر الذروات</message>
+  <message id="app-mi-help-pref-disp-bq"> العرض بالبيكريل</message>
+  <message id="app-mi-help-pref-def-drfs"> استخدام DRFs الافتراضية</message>
+  <message id="app-mi-help-pref-desktop"> واجهة سطح المكتب</message>
+  <message id="app-mi-help-pref-auto-dark"> تطبيق سمة "داكنة" تلقائيًا</message>
+  <message id="app-mi-help-pref-theme">سمات الألوان...</message>
+  <message id="app-mi-help-pref-prompt-prev">المطالبة بتحميل الحالة السابقة</message>
+  <message id="app-mi-help-pref-load-prev">تحميل الحالة السابقة عند البدء</message>
+  <message id="app-mi-help-language">اللغة</message>
+  <message id="app-mi-help-about">حول InterSpec...</message>
+
+  <message id="app-mi-tt-help-pref-auto-store">يحفظ حالة التطبيق تلقائيًا إذا كنت تعمل في
+    حالة محفوظة، أو إذا لم تكن كذلك، فسيقوم بتخزين أطيافك
+    وعملك (على سبيل المثال، ملائمة الذروات، تغييرات معايرة الطاقة، إلخ) في
+    قاعدة بيانات InterSpec الداخلية ويسألك عما إذا كنت تريد الاستئناف
+    من حيث توقفت في المرة القادمة التي تقوم فيها بتحميل نفس الطيف.
+  </message>
+  <message id="app-mi-tt-help-pref-check-prev"> عند تحميل ملف طيف، تحقق مما إذا كان العمل (ملائمة الذروات،
+    ملائمة النشاط، إلخ) قد تم إجراؤه مسبقًا على نفس الملف.
+  </message>
+  <message id="app-mi-tt-help-pref-show-tt">إظهار تلميحات الأدوات بعد التمرير فوق عنصر لمدة نصف ثانية.</message>
+  <message id="app-mi-tt-help-pref-prop-peak">عند تحميل أطياف من نفس الكاشف،
+    اسأل عما إذا كان يجب إعادة ملائمة نفس الذروات للطيف الجديد. ينطبق فقط إذا لم يكن للطيف الجديد أي ذروات، ولكن
+    المقدمة السابقة كانت كذلك.
+  </message>
+  <message id="app-mi-tt-help-pref-disp-bq">عرض النشاط بوحدات البيكريل، بدلاً من الكوري.</message>
+  <message id="app-mi-tt-help-def-drfs">عند تحميل طيف، ولم تكن قد قمت مسبقًا
+    بربط دالة استجابة الكاشف بنموذج
+    الكاشف الذي أتى منه الطيف، ما إذا كان يجب محاولة DRF افتراضية
+    للعثور عليها وتحميلها تلقائيًا.
+  </message>
+  <message id="app-mi-tt-help-desktop">يحدد استخدام واجهة تطبيق بنمط
+    جوال أو سطح مكتب. الفرق الأساسي هو استخدام
+    قائمة بنمط "هامبرغر" أو شريط قوائم.
+
+    لن يسري تغيير هذا التفضيل حتى يتم
+    إعادة تشغيل التطبيق، أو اختيار خيار "مسح الجلسة...".
+  </message>
+  <message id="app-mi-tt-help-auto-dark">يطبق سمة اللون "الداكنة" تلقائيًا وفقًا
+    للقيمة الحالية لنظام التشغيل، أو عند انتقاله.
+  </message>
+  <message id="app-mi-tt-help-pref-prompt-prev">عند بدء تشغيل التطبيق، اسأل عن تحميل الحالة السابقة.</message>
+  <message id="app-mi-tt-help-pref-load-prev">عند بدء تشغيل التطبيق، قم بتحميل الحالة السابقة تلقائيًا، إذا لم يتم تعيين المطالبة.</message>
+  <message id="warn-desktop-disp-switch">لن تسري التغييرات حتى يتم إعادة تشغيل التطبيق أو تحديثه.</message>
+  <message id="warn-desktop-disp-switch-refresh">تحديث الجلسة</message>
+
+
+
+  <message id="rclick-mi-peak-editor">محرر الذروة...</message>
+  <message id="rclick-mi-refit-peak">إعادة ملائمة الذروة</message>
+  <message id="rclick-mi-use-drf-fwhm">استخدام FWHM لـ DRF</message>
+  <message id="rclick-mi-tt-use-drf-fwhm">يقوم بإصلاح FWHM للذروات بما تتوقعه دالة استجابة الكاشف، ثم يعيد ملائمة الذروة.</message>
+  <message id="rclick-mi-fix-mean">تعيين المتوسط إلى الذروة الضوئية</message>
+  <message id="rclick-mi-tt-fix-mean">يقوم بإصلاح مركز الذروة إلى طاقة غاما المعينة، أو إذا لم يتم تعيين مصدر، إلى خط الذروة الضوئية المرجعي المحتمل. بعد تعيين المركز، ستتم إعادة ملائمة معلمات الذروة الأخرى</message>
+  <message id="rclick-mi-refit-roi">إعادة ملائمة ROI</message>
+  <message id="rclick-mi-delete-peak">حذف الذروة</message>
+  <message id="rclick-mi-change-nuc">تغيير النويدة</message>
+  <message id="rclick-mi-change-cont">تغيير المتصل</message>
+  <message id="rclick-mi-skew-type">تغيير نوع الانحراف</message>
+  <message id="rclick-mi-add-peak">إضافة ذروة</message>
+  <message id="rclick-mi-combine-cont-left">دمج Cont. يسار</message>
+  <message id="rclick-mi-combine-cont-right">دمج Cont. يمين</message>
+  <message id="rclick-mi-own-cont">المتصل الخاص</message>
+  <message id="rclick-mi-calc-status">...جارٍ الحساب...</message>
+  <message id="rclick-mi-fix-energy">تثبيت عند {1} keV</message>
+  <message id="rclick-mi-no-nuc-suggestions">لا توجد اقتراحات</message>
+  <message id="rclick-mi-fit-new-peak">ملائمة الذروة بالقرب من {1} keV</message>
+  <message id="rclick-mi-add-new-peak">إضافة ذروة...</message>
+  <message id="rclick-mi-search-energy">البحث بالقرب من {1} keV</message>
+  <message id="rclick-simple-mda">MDA سريع {1}...</message>
+
+
+  <message id="err-save-sate-to-db">أنا آسف، حدث خطأ فني أثناء حفظ حالة المستخدم الخاصة بك في قاعدة البيانات.</message>
+  <message id="err-save-to-large-for-db">الملف أكبر من المسموح بحفظه في قاعدة البيانات (هو {1} كيلو بايت، المسموح به {2} كيلو بايت).</message>
+  <message id="err-no-roi-to-add-peak">لم يكن هناك ROI لإضافة الذروة إليه.</message>
+  <message id="err-no-add-peak-to-data-roi">عذرًا، لا يمكن إضافة ذروات إلى ROI مع ذروة محددة بالبيانات.</message>
+  <message id="err-add-peak-no-improve">لم تؤد إضافة ذروة إلى تحسين ملائمة ROI الإجمالية - عدم إضافة واحدة.</message>
+  <message id="err-no-peak-to-del">لم تكن هناك ذروة لحذفها.</message>
+  <message id="err-no-foreground">يجب عليك تحميل طيف المقدمة قبل عرض طيف الخلفية أو طيف المقدمة الثاني.</message>
+  <message id="err-invalid-language">اللغة المحددة، {1}، غير متوفرة بطريقة ما.</message>
+
+
+  <message id="db-new-tag">تم إنشاء علامة جديدة '{1}' تحت اللقطة '{2}'.</message>
+  <message id="db-new-snapshot">تم إنشاء لقطة جديدة '{1}'.</message>
+  <message id="db-error-no-name">يجب عليك تحديد اسم</message>
+  <message id="db-name-empty-txt">(اسم للحفظ تحته)</message>
+  <message id="db-dec-empty-txt">(وصف اختياري)</message>
+  <message id="db-dec-export-msg">
+    سيؤدي هذا إلى حفظ حالة التطبيق الحالية في قاعدة البيانات - للتصدير
+    <br />
+    كملف منفصل، استخدم خيار القائمة "تصدير الملف"
+  </message>
+  <message id="db-Tag">علامة</message>
+  <message id="db-saved-state-msg">الحالة المحفوظة '{1}'</message>
+
+
+
+  <message id="pct-none">لا شيء</message>
+  <message id="pct-constant">ثابت</message>
+  <message id="pct-linear">خطي</message>
+  <message id="pct-quadratic">تربيعي</message>
+  <message id="pct-cubic">تكعيبي</message>
+  <message id="pct-flat-step">خطوة مسطحة</message>
+  <message id="pct-linear-step">خطوة خطية</message>
+  <message id="pct-bilinear-step">خطوة ثنائية الخط</message>
+  <message id="pct-global">المتصل الشامل</message>
+
+  <message id="psd-no-source">لا يوجد مصدر</message>
+
+
+  <message id="window-content-hard-back-sub">
+    <div style="text-align: left;">
+      <p>
+        يؤثر خيار طرح الخلفية العادي فقط على عرض البيانات، مع عمليات
+        مثل ملائمة الذروة أو تصدير البيانات تتم على طيف المقدمة الأصلي الكامل الإحصائيات.
+      </p>
+      <p>
+        يقوم "طرح الخلفية الصلب" بإنشاء مقدمة معدلة عن طريق إجراء
+        طرح الخلفية من المقدمة على أساس كل قناة على حدة.
+      </p>
+
+      تشمل الآثار الجانبية لإجراء طرح الخلفية الصلب ما يلي:
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>لن تكون الفروق، أي عدم اليقين الإحصائي لكل قناة، صحيحة بعد الآن.</li>
+        <li>قد تؤدي الاختلافات الصغيرة في معايرة الطاقة بين الأطياف إلى إنشاء ميزات اصطناعية في البيانات.</li>
+        <li>
+          إذا تداخلت ذروة في المقدمة مع ذروة في الخلفية، فلن يكون عدم اليقين الإحصائي لذروات المقدمة الملائمة صحيحًا بعد الآن
+        </li>
+      </ul>
+
+      الأسباب الرئيسية لاختيار طرح الخلفية الصلب على طرح الخلفية العادي للعرض هي:
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>تجنب التحف على متصلات الذروة الملائمة.</li>
+        <li>لتبسيط طرح ذروة الخلفية في أداة <b>ملائمة النشاط/التدريع</b>.</li>
+        <li>أنت لا تهتم بالدقائق التي يسببها هذا (والتي تكون في الواقع ضئيلة).</li>
+      </ul>
+    </div>
+    <br />
+    <div style="text-align: center;"><b><em>هل ترغب في المتابعة؟</em></b></div>
+  </message>
+  <message id="window-hard-back-sub-truncate">اقتطاع القنوات السالبة عند الصفر</message>
+  <message id="window-hard-back-sub-round">تقريب عدد القنوات إلى أقرب عدد صحيح</message>
+
+  <message id="info-user-default-drf">باستخدام دالة استجابة الكاشف التي حددتها للاستخدام كإعداد افتراضي لهذا الكاشف.</message>
+  <message id="info-app-default-drf">تم تحميل دالة استجابة الكاشف الافتراضية لنظام الكشف هذا.</message>
+  <message id="info-recal-tab-selected">يمكنك أيضًا إعادة المعايرة بيانيًا عن طريق النقر بزر الماوس الأيمن وسحب الطيف إلى المكان الذي تريده.</message>
+
+
+  <message id="info-has-gps-txt">يحتوي الملف على إحداثيات GPS.</message>
+  <message id="info-has-gps-btn">إظهار على الخريطة</message>
+
+  <message id="info-has-rid-txt">احتوى الملف على نتائج RID على اللوحة</message>
+  <message id="info-has-rid-btn">إظهار نتائج المعرف الكاملة</message>
+
+  <message id="info-has-img-txt">احتوى ملف الطيف على صور مضمنة</message>
+  <message id="info-has-img-btn">إظهار الصور</message>
+
+
+  <message id="warn-no-energy-cal">تحذير، لا توجد معايرة طاقة للعينات المحددة</message>
+
+  <message id="prompt-how-open">يبدو أن هذا الملف من نفس الكاشف مثل المقدمة الحالية.
+    <p>كيف ترغب في فتح ملف الطيف هذا؟</p>
+  </message>
+
+
+  <message id="err-no-fore-sn">
+    <p>لم يحتوِ ملف الطيف على أي أطياف بأرقام العينات الحالية.</p>
+    <p>يرجى تحديد أرقام عينات مختلفة/أكثر.</p>
+  </message>
+  <message id="err-no-fore-det-sn">
+    <p>لم يحتوِ ملف الطيف على أي أطياف بأرقام العينات وأسماء الكواشف الحالية. </p>
+    <p>يرجى تحديد المزيد من الكواشف أو أرقام العينات.</p>
+  </message>
+  <message id="err-no-fore-all-neut">
+    <p>تحتوي أرقام العينات وأسماء الكواشف الحالية على بيانات نيوترونية فقط.</p>
+    <p>يرجى تحديد العينات التي تتضمن بيانات طيفية.</p>
+  </message>
+  <message id="err-no-fore-no-spec">
+    <p>لا تتضمن أرقام العينات وأسماء الكواشف الحالية أي قياسات طيفية.</p>
+    <p>يرجى تحديد العينات التي تتضمن بيانات طيفية.</p>
+  </message>
+  <message id="err-no-fore-no-ecal-1spec">
+    <p>تعذر عليّ تحديد التقسيم لعرض الطيف.</p>
+  </message>
+  <message id="err-no-fore-no-ecal-g1spec">
+    <p>تعذر عليّ تحديد التقسيم لعرض الطيف.</p>
+    <p>
+      قد تحاول تحديد طيف واحد فقط لعرضه في
+      <b>مدير الملفات</b>، أو عينة ذات عدد غاما.
+    </p>
+  </message>
+
+  <message id="app-tt-det-disp">الكاشف المحدد حاليًا. انقر لتحديد كاشف مختلف، أو تعديل هذا الكاشف.</message>
+  <message id="app-det-select-txt">انقر للتحديد</message>
+  <message id="app-det-select-txt-mobile">انقر للتحديد</message>
+  <message id="app-default-manual-det-name">كاشف معرف من قبل المستخدم</message>
+
+</messages>

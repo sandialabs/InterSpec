@@ -30,6 +30,10 @@
 
 #include <Wt/WApplication>
 
+namespace Wt
+{
+  class WServer;
+}
 
 namespace InterSpecServer
 {
@@ -41,7 +45,7 @@ namespace InterSpecServer
    
    #TODO: Check if we can have the iOS target just use #startWebServer and set the environment variables itself (or using a dedicated function here)
    */
-  void startServer( int argc, char *argv[],
+  InterSpec_API void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication );
   
   /** Starts the web-server, with specified options; primarily called from #start_server.
@@ -52,7 +56,7 @@ namespace InterSpecServer
    Also starts initializing DecayDataBaseServer as soon as the thread pool is available, so main
    GUI thread wont block waiting for it to initialize (hopefully).
    */
-  void startWebServer( std::string proccessname,
+  InterSpec_API void startWebServer( std::string proccessname,
                              std::string basedir,
                              const std::string configpath,
                              unsigned short int server_port_num = 0
@@ -85,7 +89,7 @@ namespace InterSpecServer
 
    This function is currently used to start the server for all versions of the app besides iOS.
    */
-  int start_server( const char *process_name, const char *userdatadir,
+  InterSpec_API int start_server( const char *process_name, const char *userdatadir,
                     const char *basedir, const char *xml_config_path,
                     unsigned short int server_port_num = 0
 #if( BUILD_FOR_WEB_DEPLOYMENT )
@@ -94,26 +98,34 @@ namespace InterSpecServer
                    );
   
 
-  void killServer();
+  InterSpec_API void killServer();
   
   /** Blocks current thread until the Wt server is stopped by some other means. */
-  int wait_for_shutdown();
+  InterSpec_API int wait_for_shutdown();
   
   //portBeingServedOn(): will only be valid if this instance of the app is
   //  serving the webpages.  Will be -1 if not serving.
-  int portBeingServedOn();
+  InterSpec_API int portBeingServedOn();
   
   //urlBeingServedOn(): will only be valid if this instance of the app is
   //  serving the webpages.  Will be empty if not serving.
   //  Example value returned: "http://127.0.0.1:7234"
-  std::string urlBeingServedOn();
+  InterSpec_API std::string urlBeingServedOn();
   
+  /** Returns the Wt::WServer created by `startServer(...)`. 
+   
+   If we are linking against LibInterSpec dynamically, and using the static
+   runtime on Windows (default build option), we cant call 
+   `Wt::WServer::instance()`, since its in a different runtime, and we'll 
+   get nullptr back, so instead we need to call this function 
+   */
+  InterSpec_API Wt::WServer *get_wt_server();
   
-  bool changeToBaseDir( int argc, char *argv[] );
+  InterSpec_API bool changeToBaseDir( int argc, char *argv[] );
   
-  std::string getWtConfigXml( int argc, char *argv[] );
+  InterSpec_API std::string getWtConfigXml( int argc, char *argv[] );
   
-  enum class SessionType
+  enum class InterSpec_API SessionType
   {
     PrimaryAppInstance, ExternalBrowserInstance
   };
@@ -139,20 +151,20 @@ namespace InterSpecServer
    
    if session had been seen before (e.g., non-zero return value), no changes will be made to that sessions allowed state.
    */
-  int add_allowed_session_token( const char *session_id, const SessionType type );
+  InterSpec_API int add_allowed_session_token( const char *session_id, const SessionType type );
 
   /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if was loaded.  */
-  int remove_allowed_session_token( const char *session_token );
+  InterSpec_API int remove_allowed_session_token( const char *session_token );
 
   /** Returns if we should allow sessions without, or without valid, tokens.
    Defaults to true unless you call #set_require_tokened_sessions.
    */
-  bool allow_untokened_sessions();
+  InterSpec_API bool allow_untokened_sessions();
 
   /** Set wether sessions without tokens, or without valid tokens are allowed.
       Default is all sessions allowed.
    */
-  void set_require_tokened_sessions( const bool require );
+  InterSpec_API void set_require_tokened_sessions( const bool require );
 
   /** Returns the status for the specified session.
     Returns:
@@ -162,21 +174,33 @@ namespace InterSpecServer
       - 3 If session is no longer authorized (e.g., #remove_allowed_session_token called for it)
       - 4 if session is dead
    */
-  int session_status( const char *session_token );
+  InterSpec_API int session_status( const char *session_token );
   
   /** Function that should be called when a session is initially loaded.
    
    Returns 0 if had been authorized, 1 if had been seen, and 2 if dead or no longer authorized
    */
-  int set_session_loaded( const char *session_token );
+  InterSpec_API int set_session_loaded( const char *session_token );
 
   /** Returns if the session was found, and if so the type set when #add_allowed_session_token
    was called.
    */
-  std::pair<bool,SessionType> session_type( const char *session_token );
+  InterSpec_API std::pair<bool,SessionType> session_type( const char *session_token );
 
   /** Sets the session as dead. */
-  void set_session_destructing( const char *session_token );
+  InterSpec_API void set_session_destructing( const char *session_token );
+  
+  /** Sets marks the session as being allowed to be loaded again.
+   
+   This is used when session JS crashes.
+   
+   If session token does not already exist, it will not be added.
+   
+   Returns true if successful (found session token, and reset state).
+   
+   Currently commented out because it is unused.
+   */
+  //InterSpec_API bool set_session_reload_allow( const char *session_token );
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Open one or more files from the filesystem.  For macOS this would be
@@ -203,12 +227,12 @@ namespace InterSpecServer
          open it asynchonously (in all open sessions), meaning you cant delete the file yet... 
          Not a very nice interface, should brobably remove this latter behaviour
    */
-  int open_file_in_session( const char *session_token, const char *files_json );
+  InterSpec_API int open_file_in_session( const char *session_token, const char *files_json );
 
   /** Passes the specified url to InterSpecApp::handleAppUrl(url), and returns
   if the URL was used.
   */
-  bool pass_app_url_to_session( const char *session_token, const std::string &url );
+  InterSpec_API bool pass_app_url_to_session( const char *session_token, const std::string &url );
 
   /** Sets a file to open upon session load.
    
@@ -223,22 +247,22 @@ namespace InterSpecServer
    
    Throws exception if an invalid session token, or the session has already been loaded.
    */
-  void set_file_to_open_on_load( const char *session_token, const std::string file_path );
+  InterSpec_API void set_file_to_open_on_load( const char *session_token, const std::string file_path );
 
   /** Returns the file path, or app url, of any files to be opened during creating of a new session.
    
    Returns empty string if none.
    */
-  std::string file_to_open_on_load( const std::string &session_token );
+  InterSpec_API std::string file_to_open_on_load( const std::string &session_token );
   
   /** Once you have loaded the file/url from #file_to_open_on_load, call this function to avoid
    loading the file/url again later
    */
-  void clear_file_to_open_on_load( const std::string &session_token );
+  InterSpec_API void clear_file_to_open_on_load( const std::string &session_token );
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
-  struct DesktopAppConfig
+  struct InterSpec_API DesktopAppConfig
   {
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
     /**

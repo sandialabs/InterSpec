@@ -23,10 +23,13 @@
 
 #include "InterSpec_config.h"
 
+
+#include <mutex>
 #include <memory>
 #include <string>
 #include <vector>
 #include <fstream>
+#include <assert.h>
 #include <iostream>
 
 #include <boost/iostreams/stream.hpp>
@@ -37,6 +40,7 @@
 
 
 #include <Wt/Dbo/Dbo>
+#include <Wt/WString>
 #include <Wt/WSpinBox>
 #include <Wt/WCheckBox>
 #include <Wt/WApplication>
@@ -60,9 +64,6 @@
 #endif
 
 #include "3rdparty/date/include/date/date.h"
-
-#include "rapidxml/rapidxml.hpp"
-#include "rapidxml/rapidxml_utils.hpp"
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -144,66 +145,6 @@ const std::string InterSpecUser::sm_defaultPreferenceFile = "default_preferences
 
 namespace
 {
-  UserOption *parseUserOption( const rapidxml::xml_node<char> *pref )
-  {
-    using rapidxml::internal::compare;
-    typedef rapidxml::xml_attribute<char> XmlAttribute;
-    
-    UserOption *option = new UserOption;
-    try
-    {
-      const XmlAttribute *name_att = pref->first_attribute( "name", 4 );
-      const XmlAttribute *type_att = pref->first_attribute( "type", 4 );
-      if( !name_att || !name_att->value() || !type_att || !type_att->value()  )
-        throw runtime_error( "Ill formatted default preferences file" );
-      
-      const char *typestr = type_att->value();
-      std::size_t typestrlen = type_att->value_size();
-      
-      option->m_name = name_att->value();
-      
-      const char *valuestr = pref->value();
-      
-      // We'll let "String" type values be empty, but no other types.
-      if( !valuestr )
-      {
-        if( !compare(typestr, typestrlen, "String", 6, true) )
-          throw runtime_error( "Missing value for \"" + option->m_name + "\" in default preferences file" );
-        
-        valuestr = "";
-      }//if( value is empty in XML )
-      
-      option->m_value = valuestr;
-      
-      if( option->m_name.length() > UserOption::sm_max_name_str_len )
-        throw runtime_error( "Pref \"" + option->m_name + "\" name to long" );
-      if( option->m_value.length() > UserOption::sm_max_value_str_len )
-        throw runtime_error( "Pref \"" + option->m_name + "\" value to long" );
-      
-      if( compare( typestr, typestrlen, "String", 6, true) )
-        option->m_type = UserOption::String;
-      else if( compare( typestr, typestrlen, "Decimal", 7, true) )
-        option->m_type = UserOption::Decimal;
-      else if( compare( typestr, typestrlen, "Integer", 7, true) )
-        option->m_type = UserOption::Integer;
-      else if( compare( typestr, typestrlen, "Boolean", 7, true) )
-      {
-        option->m_type = UserOption::Boolean;
-        if( option->m_value == "true" )
-          option->m_value = "1";
-        else if( option->m_value == "false" )
-          option->m_value = "0";
-      }else
-        throw runtime_error( "Invalid \"type\" (\"" + string(typestr) + "\") "
-                            " for pref " + string(typestr) );
-    }catch( std::exception &e )
-    {
-      delete option;
-      throw runtime_error( e.what() );
-    }
-    return option;
-  }//UserOption *parseUserOption( rapidxml::xml_node<char> *node )
-  
   
   /** Compares two boost::any objects to check if their underlying type is
    the same, and if so, if their values are equal.
@@ -356,6 +297,23 @@ void mapDbClasses( Wt::Dbo::Session *session )
 }//void mapDbClasses( Wt::Dbo::Session *session )
 
 
+FileToLargeForDbException::FileToLargeForDbException( const size_t saveSize, const size_t limit )
+  : std::exception(),
+    m_msg{},
+    m_saveSize( saveSize ), 
+    m_limit( limit )
+{
+  m_msg = message().toUTF8();
+}
+
+Wt::WString FileToLargeForDbException::message() const
+{
+  return WString::tr( "err-save-to-large-for-db" )
+    .arg( static_cast<int>(m_saveSize/1024) )
+    .arg( static_cast<int>(m_limit/1024) );
+}
+
+
 UserState::UserState()
   : stateType( kUndefinedStateType ),
     creationTime( Wt::WDateTime::currentDateTime() ),
@@ -366,249 +324,101 @@ UserState::UserState()
     countsAxisMinimum( -1.0 ), countsAxisMaximum( -1.0 ), displayBinFactor( 1 ),
     shownDisplayFeatures( 0 ), backgroundSubMode( kNoSpectrumSubtract ),
     currentTab( kNoTabs ), showingMarkers( 0 ), disabledNotifications( 0 ),
-    showingPeakLabels( 0 ), showingWindows( 0 ),
-    writeprotected( false )
+    showingPeakLabels( 0 ), showingWindows( 0 )
 {
 }
 
-void InterSpecUser::setBoolPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                       const std::string &name,
-                                       const bool &value,
-                                       InterSpec *viewer )
+
+void UserState::removeFromDatabase( Wt::Dbo::ptr<UserState> state,
+                                          DataBaseUtils::DbSession &session )
 {
-  setPreferenceValue( user, name, value, viewer );
-}
-
-
-void InterSpecUser::setPreferenceValue( Wt::Dbo::ptr<InterSpecUser> user,
-                                   const std::string &name,
-                                   const bool &value,
-                                   InterSpec *viewer )
-{
-  setPreferenceValueWorker( user, name, value, viewer );
+  if( !state || (state.id() < 0) || !state->user )
+    throw runtime_error( "UserFileInDbData::removeFromDatabase: invalid input." );
   
-  const auto callback_pos = user->m_onBoolChangeSignals.find(name);
-  if( (callback_pos != end(user->m_onBoolChangeSignals)) && callback_pos->second )
-    (*callback_pos->second)(value);
-}//setPreferenceValue(...)
-
-
-boost::any InterSpecUser::preferenceValueAny( const std::string &name, InterSpec *viewer )
-{
-  using namespace Wt;
+  DataBaseUtils::DbTransaction transaction( session );
   
-  if( !viewer )
+  state.reread();  // probably not necessary?
+  
+  vector<Dbo::ptr<UserState>> children;
+  for( auto iter = state->snapshotTags.begin(); iter != state->snapshotTags.end(); ++iter )
+    children.push_back( *iter );
+    
+  // Delete all the tags of this state
+  for( const auto &kid : children )
   {
-    UserOption *option = getDefaultUserPreference( name, DeviceType::Desktop );
-    boost::any value = option->value();
-    delete option;
-    return value;
-  }
-
-  //This next line is the only reason InterSpec.h needs to be included
-  //  above
-  Dbo::ptr<InterSpecUser> &user = userFromViewer(viewer);
-  std::shared_ptr<DataBaseUtils::DbSession> sql = sqlFromViewer(viewer);
+    assert( kid != state );
+    if( kid == state )
+      continue;
+    
+    try
+    {
+      UserState::removeFromDatabase( kid, session );
+    }catch( std::exception & )
+    {
+      transaction.rollback();
+      throw;
+    }
+  }//for( const auto &kid : children )
   
-  if( !user || !sql )
-    throw std::runtime_error( "preferenceValueAny(...): invalid usr or sql ptr" );
-  
-  PreferenceMap::const_iterator pos;
-  const PreferenceMap &prefs = user->m_preferences;
-  
-  if( user->m_deviceType & PhoneDevice )
-  {
-    pos = prefs.find( name + "_phone" );
-    if( pos != prefs.end() )
-      return pos->second;
-  }//if( user->m_deviceType & PhoneDevice )
-  
-  if( user->m_deviceType & TabletDevice )
-  {
-    pos = prefs.find( name + "_tablet" );
-    if( pos != prefs.end() )
-      return pos->second;
-  }//if( user->m_deviceType & TabletDevice )
-  
-  pos = prefs.find( name );
-  if( pos != prefs.end() )
-    return pos->second;
-  
-  UserOption *option_raw = getDefaultUserPreference( name, user->m_deviceType );
-  Wt::Dbo::ptr<UserOption> option( option_raw );
-  option.modify()->m_user = user;
-  
-  DataBaseUtils::DbTransaction transaction( *sql );
-  boost::any value;
   try
   {
-    sql->session()->add( option );
-    value = option->value();
-    user->m_preferences[name] = value;
+    std::set<long long int> file_indices;
+    if( state->foregroundId >= 0 )
+      file_indices.insert( state->foregroundId );
+    if( state->backgroundId >= 0 )
+      file_indices.insert( state->backgroundId );
+    if( state->secondForegroundId >= 0 )
+      file_indices.insert( state->secondForegroundId );
+    
+    for( const long long int dbid : file_indices )
+    {
+      assert( dbid >= 0 );
+      
+      // In principal, each referenced UserFileInDb should belong to exactly one
+      //  UserState (the one we are deleting) - however, due to historical bugs,
+      //  this may not be exactly the case, so we'll check for this, and only
+      //  delete the UserFileInDb, if it uniquely belongs to us.
+      Dbo::collection<Dbo::ptr<UserState>> states_with_file
+      = session.session()->find<UserState>()
+        .where( "ForegroundId = ? OR BackgroundId = ? OR SecondForegroundId = ?" )
+        .bind(dbid).bind(dbid).bind(dbid);
+      
+      const size_t nstates_with_file = states_with_file.size();
+      
+      Dbo::ptr<UserFileInDb> dbfile = session.session()->find<UserFileInDb>()
+        .where( "id = ?" )
+        .bind( dbid );
+      
+      assert( dbfile );
+      if( !dbfile )
+        continue;
+      
+#if( PERFORM_DEVELOPER_CHECKS )
+      if( nstates_with_file != 1 )
+      {
+        const string errmsg = "File '" + dbfile->filename + "', part of state "
+                + std::to_string(state.id()) + ", is shared by "
+                + std::to_string(nstates_with_file) + " states.";
+        log_developer_error( __func__, errmsg.c_str() );
+      }
+#endif
+      
+      if( nstates_with_file == 1 )
+      {
+        assert( (*states_with_file.begin()) == state );
+        if( dbfile )
+          dbfile.remove();
+      }//if( nstates_with_file == 1 )
+    }//for( const long long int dbid : file_indices )
+    
+    state.remove();
   }catch( std::exception &e )
   {
-    //
+    cerr << "removeFromDatabase(...) caught error: " << e.what() << endl;
     transaction.rollback();
-    throw e;
+    throw;
   }//try / catch
-  
-  transaction.commit();
-  
-  return value;
-}//boost::any preferenceValue( const std::string &name, InterSpec *viewer );
-
-
-boost::any InterSpecUser::preferenceValueAny( const std::string &name ) const
-{
-  PreferenceMap::const_iterator pos;
-  
-  if( m_deviceType & PhoneDevice )
-  {
-    pos = m_preferences.find( name  + "_phone" );
-    if( pos != m_preferences.end() )
-      return pos->second;
-  }//if( user->m_deviceType & PhoneDevice )
-  
-  if( m_deviceType & TabletDevice )
-  {
-    pos = m_preferences.find( name  + "_tablet" );
-    if( pos != m_preferences.end() )
-      return pos->second;
-  }//if( user->m_deviceType & TabletDevice )
-  
-  pos = m_preferences.find( name );
-  if( pos == m_preferences.end() )
-    throw std::runtime_error( "No preference value for " + name + ", try"
-                             " calling other InterSpecUser::preferenceValue(...) function" );
-  return pos->second;
-}//boost::any preferenceValueAny( const std::string &name ) const;
-
-
-void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                                     const std::string &name,
-                                     Wt::WCheckBox *cb,
-                                     InterSpec *viewer )
-{
-  const bool value = preferenceValue<bool>( name, viewer );
-  cb->setChecked( value );
-  
-  InterSpecUser::addCallbackWhenChanged( user, name, cb, &WCheckBox::setChecked );
-
-  cb->checked().connect( boost::bind( &InterSpecUser::setBoolPreferenceValue, user, name, true, viewer ) );
-  cb->unChecked().connect( boost::bind( &InterSpecUser::setBoolPreferenceValue, user, name, false, viewer ) );
-  
-  /*
-   //We need to emit the checked() and unChecked() signals so that any side-effect
-   //  can happen from the change.  For actually changing the state of the widget
-   //  we can safely do this (incase 'cb' gets deleted at some point) using
-   //  WApplication::bind, but to call the emit functions I couldnt think of a
-   //  safe way to do this, other than searching the widget tree and making sure
-   //  that we can find the widget (hence, know it hasnt been deleted) before
-   //  de-referening the 'cb' passed into this function; this is a bit of a hack
-   //  but it works for now.
-   const string cbid = cb->id();
-   
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const bool value = boost::any_cast<bool>(valueAny);
-    const bool setCbChecked = reverseValue ? !value : value;
-    
-    // The below doesnt seem to find widgets in AuxWindows (and maybe pop-ups)
-    auto w = wApp->domRoot()->findById(cbid);
-    if( !w && wApp->domRoot2() )
-      w = wApp->domRoot2()->findById(cbid);
-    if( !w && wApp->root() )
-      w = wApp->root()->findById(cbid);
-    
-    if( w )
-    {
-      cb->changed().emit();
-      if( value )
-        cb->checked().emit();
-      else
-        cb->unChecked().emit();
-    }else
-    {
-      cerr << "Couldnt find widget with cbid='" << cbid << "', so wont call any side-effect functions for pref '"
-           << name << "'" << endl;
-    }
-  };//fcn
-  
-  InterSpecUser::associateFunction( user, name, fcn, viewer );
-   */
-}//void associateWidget( )
-
-
-/*
-void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                                          const std::string &name,
-                                          Wt::WDoubleSpinBox *sb,
-                                         InterSpec *viewer )
-{
-  const double value = preferenceValue<double>( name, viewer );
-  
-  sb->setValue( value );
-  sb->valueChanged().connect(
-                      boost::bind( &InterSpecUser::setPreferenceValue<double>,
-                                   user, name, boost::placeholders::_1, viewer ) );
-  
-  const string sbid = sb->id();
-  
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const double value = boost::any_cast<double>(valueAny);
-  
-    auto w = wApp->domRoot()->findById(sbid);
-    if( !w && wApp->domRoot2() )
-      w = wApp->domRoot2()->findById(sbid);
-    
-    if( w )
-    {
-      sb->setValue( value );
-      sb->valueChanged().emit( value );
-    }else
-    {
-      cerr << "Couldnt find WDoubleSpinBox with id='" << sbid << "', so wont call any side-effect functions" << endl;
-    }
-  };//fcn
-  
-  InterSpecUser::associateFunction( user, name, fcn, viewer );
-}//void associateWidget(...)
-
-
-void InterSpecUser::associateWidget( Wt::Dbo::ptr<InterSpecUser> user,
-                                     const std::string &name,
-                                     Wt::WSpinBox *sb,
-                                    InterSpec *viewer )
-{
-  const int value = preferenceValue<int>( name, viewer );
-  
-  sb->setValue( value );
-  
-  sb->valueChanged().connect(
-                             boost::bind( &InterSpecUser::setPreferenceValue<int>,
-                                         user, name, boost::placeholders::_1, viewer ) );
-  
-  const string sbid = sb->id();
-  
-  std::function<void(boost::any)> fcn = [=]( boost::any valueAny ){
-    const int value = boost::any_cast<int>(valueAny);
-    
-    auto w = wApp->domRoot()->findById(sbid);
-    if( !w && wApp->domRoot2() )
-      w = wApp->domRoot2()->findById(sbid);
-    
-    if( w )
-    {
-      sb->setValue( value );
-      sb->valueChanged().emit( value );
-    }else
-    {
-      cerr << "Couldnt find WSpinBox with id='" << sbid << "', so wont call any side-effect functions" << endl;
-    }
-  };//fcn
-  
-  InterSpecUser::associateFunction( user, name, fcn, viewer );
-}//void InterSpecUser::associateWidget(...)
-*/
+}//removeFromDatabase( Dbo::ptr<UserState> state );
 
 
 void UserFileInDbData::setFileData( const std::string &path,
@@ -680,34 +490,11 @@ void UserFileInDbData::setFileData( const std::string &path,
 
 UserFileInDb::UserFileInDb()
 {
-  writeprotected = false;
   isPartOfSaveState = false;
 }
 
 
-bool UserFileInDb::isWriteProtected() const
-{
-  return writeprotected;
-}
-
-
-void UserFileInDb::makeWriteProtected( Wt::Dbo::ptr<UserFileInDb> ptr )
-{
-  if( !ptr || ptr->writeprotected )
-    return;
-  ptr.modify()->writeprotected = true;
-}//void UserFileInDb::makeWriteProtected( Wt::Dbo::ptr<UserFileInDb> ptr )
-
-
-void UserFileInDb::removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr )
-{
-  if( !ptr || !ptr->writeprotected )
-    return;
-  ptr.modify()->writeprotected = false;
-}//void removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr )
-
-
-Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
+Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepCopyOfFileInDatabase(
                                                   Dbo::ptr<UserFileInDb> orig,
                                                   DataBaseUtils::DbSession &sqldb,
                                                   bool isSaveState )
@@ -717,7 +504,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
   
   auto session = sqldb.session();
   if( !session )
-    throw runtime_error( "UserFileInDb::makeDeepWriteProtectedCopyInDatabase():"
+    throw runtime_error( "UserFileInDb::makeDeepCopyOfFileInDatabase():"
                           " invalid input.");
   
   UserFileInDb *newfile = new UserFileInDb();
@@ -740,7 +527,6 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
   newfile->hasNeutronDetector = orig->hasNeutronDetector;
   newfile->measurementsStartTime = orig->measurementsStartTime;
   
-  newfile->writeprotected = true;
   newfile->isPartOfSaveState = isSaveState;
 
   newfile->snapshotParent = orig->snapshotParent;
@@ -751,32 +537,31 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
   {
     Dbo::ptr<UserFileInDb> answer = session->add( newfile );
   
-    
-    for( Dbo::collection< Dbo::ptr<UserFileInDbData> >::const_iterator iter = orig->filedata.begin();
-        iter != orig->filedata.end(); ++iter )
+    // The passed in `UserFileInDb` may not actually be in the database, so we have to check
+    //  for this.
+    if( !orig.isTransient() )
     {
-      UserFileInDbData *newdata = new UserFileInDbData( **iter );
-      newdata->fileInfo = answer;
-      session->add( newdata );
-    }
-      
-    for( Dbo::collection< Dbo::ptr<ShieldingSourceModel> >::const_iterator iter
-                                                = orig->modelsUsedWith.begin();
-        iter != orig->modelsUsedWith.end();
-        ++iter )
-    {
-      if( (*iter)->isWriteProtected() )
+      for( Dbo::collection< Dbo::ptr<UserFileInDbData> >::const_iterator iter = orig->filedata.begin();
+          iter != orig->filedata.end(); ++iter )
       {
-        answer.modify()->modelsUsedWith.insert( *iter );
-      }else
+        UserFileInDbData *newdata = new UserFileInDbData( **iter );
+        newdata->fileInfo = answer;
+        session->add( newdata );
+      }
+      
+      /*
+      for( Dbo::collection< Dbo::ptr<ShieldingSourceModel> >::const_iterator iter
+          = orig->modelsUsedWith.begin();
+          iter != orig->modelsUsedWith.end();
+          ++iter )
       {
         ShieldingSourceModel *newmodel = new ShieldingSourceModel();
         newmodel->shallowEquals( **iter );
         Dbo::ptr<ShieldingSourceModel> modelptr = session->add( newmodel );
         modelptr.modify()->filesUsedWith.insert( answer );
-        ShieldingSourceModel::makeWriteProtected( modelptr );
-      }//if( (*iter)->isWriteProtected() ) / else
-    }//for( loop over ShieldingSourceModel )
+      }//for( loop over ShieldingSourceModel )
+       */
+    }//if( orig.id() >= 0 )
     
     transaction.commit();
     return answer;
@@ -787,13 +572,7 @@ Dbo::ptr<UserFileInDb> UserFileInDb::makeDeepWriteProtectedCopyInDatabase(
   }//try catch
   
   return Dbo::ptr<UserFileInDb>();
-}//makeDeepWriteProtectedCopyInDatabase(...)
-
-
-bool UserState::isWriteProtected() const
-{
-  return writeprotected;
-}//bool isWriteProtected() const
+}//makeDeepCopyOfFileInDatabase(...)
 
 
 void ShieldingSourceModel::shallowEquals( const ShieldingSourceModel &rhs )
@@ -805,91 +584,8 @@ void ShieldingSourceModel::shallowEquals( const ShieldingSourceModel &rhs )
   serializeTime = rhs.serializeTime;
   //filesUsedWith = rhs.filesUsedWith;
   xmlData = rhs.xmlData;
-  writeprotected = rhs.writeprotected;
 }
 
-
-void UserState::setWriteProtection( Wt::Dbo::ptr<UserState> ptr,
-                                    Wt::Dbo::Session *session,
-                                    bool protect )
-{
-  if( !ptr || (ptr->writeprotected==protect) )
-    return;
-  
-  ptr.modify()->writeprotected = protect;
-  
-  Dbo::ptr<ShieldingSourceModel> fitmodel;
-  Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
-  
-  if( ptr->foregroundId >= 0 )
-    dbforeground = session->find<UserFileInDb>().where( "id = ?" )
-    .bind( ptr->foregroundId );
-  if( ptr->backgroundId >= 0 )
-    dbbackground = session->find<UserFileInDb>().where( "id = ?" )
-    .bind( ptr->backgroundId );
-  if( ptr->secondForegroundId >= 0 )
-    dbsecond = session->find<UserFileInDb>().where( "id = ?" )
-    .bind( ptr->secondForegroundId );
-  if( ptr->shieldSourceModelId >= 0 )
-    fitmodel = session->find<ShieldingSourceModel>()
-    .where( "id = ?" ).bind( ptr->shieldSourceModelId );
-  
-  if( dbforeground && protect )
-    UserFileInDb::makeWriteProtected( dbforeground );
-  else if( dbforeground )
-    UserFileInDb::removeWriteProtection( dbforeground );
-  
-  if( dbsecond && protect )
-    UserFileInDb::makeWriteProtected( dbsecond );
-  else if( dbsecond )
-    UserFileInDb::removeWriteProtection( dbsecond );
-  
-  if( dbbackground && protect )
-    UserFileInDb::makeWriteProtected( dbbackground );
-  else if( dbbackground )
-    UserFileInDb::removeWriteProtection( dbbackground );
-  
-  if( fitmodel && protect )
-    ShieldingSourceModel::makeWriteProtected( fitmodel );
-  else if( fitmodel )
-    ShieldingSourceModel::removeWriteProtection( fitmodel );
-}//void setWriteProtection(...)
-
-
-void UserState::makeWriteProtected( Wt::Dbo::ptr<UserState> ptr,
-                                    Wt::Dbo::Session *session )
-{
-  setWriteProtection( ptr, session, true );
-}//void makeWriteProtected( Wt::Dbo::ptr<UserFileInDb> ptr )
-
-
-void UserState::removeWriteProtection( Wt::Dbo::ptr<UserState> ptr,
-                                       Wt::Dbo::Session *session )
-{
-  setWriteProtection( ptr, session, false );
-}//void removeWriteProtection( Wt::Dbo::ptr<UserFileInDb> ptr )
-
-
-bool ShieldingSourceModel::isWriteProtected() const
-{
-  return writeprotected;
-}
-
-void ShieldingSourceModel::makeWriteProtected(
-                                        Wt::Dbo::ptr<ShieldingSourceModel> ptr )
-{
-  if( !ptr || ptr->writeprotected )
-    return;
-  ptr.modify()->writeprotected = true;  
-}
-
-
-void ShieldingSourceModel::removeWriteProtection( Wt::Dbo::ptr<ShieldingSourceModel> ptr )
-{
-  if( !ptr || !ptr->writeprotected )
-    return;
-  ptr.modify()->writeprotected = false;
-}
 
 void UserFileInDbData::setFileData( std::shared_ptr<const SpecMeas> spectrumFile,
                           const UserFileInDbData::SerializedFileFormat format )
@@ -1049,12 +745,36 @@ boost::any UserOption::value() const
   {
     case String:
       return m_value;
+      
     case Decimal:
-      return std::stod( m_value );
+    {
+      double val = 0.0;
+      const bool parsed = SpecUtils::parse_double( m_value.c_str(), m_value.size(), val );
+      assert( parsed );
+      //if( !parsed )
+      //  throw std::logic_error( "Invalid Decimal str: '" + m_value + "'" );
+      
+      return val;
+      //return std::stod( m_value );
+    }//case Decimal:
+    
     case Integer:
-      return std::stoi( m_value );
+    {
+      int val = 0;
+      const bool parsed = SpecUtils::parse_int( m_value.c_str(), m_value.size(), val );
+      assert( parsed );
+      //if( !parsed )
+      //  throw std::logic_error( "Invalid Integer str: '" + m_value + "'" );
+      
+      return val;
+      //return std::stoi( m_value );
+    }//case Integer:
+    
     case Boolean:
+    {
+      assert( (m_value == "0") || (m_value == "1") );
       return (m_value=="true" || m_value=="1");
+    }
   }//switch( m_type )
   
   throw runtime_error( "UserOption::value(): invalid m_type" );
@@ -1078,241 +798,14 @@ InterSpecUser::InterSpecUser( const std::string &username,
 }//InterSpecUser::InterSpecUser(...)
 
 
-void InterSpecUser::initFromDefaultValues( Wt::Dbo::ptr<InterSpecUser> user,
-                          std::shared_ptr<DataBaseUtils::DbSession> session )
-{
-  using rapidxml::internal::compare;
-  typedef rapidxml::xml_node<char>      XmlNode;
-  typedef rapidxml::xml_attribute<char> XmlAttribute;
-
-  if( !session )
-    throw runtime_error( "InterSpecUser::initFromDefaultValues(...):"
-                         " no valid session associated with user ptr" );
-  if( !user->m_preferences.empty() )
-    throw runtime_error( "InterSpecUser::initFromDefaultValues(...):"
-                         " you cant call this function if preferences have"
-                         " already been initialized" );
-  try
-  {
-    user.modify();
-  }catch(...)
-  {
-    throw runtime_error( "InterSpecUser::initFromDefaultValues(...):"
-                         " there is no active transaction." );
-  }
-  
-  const string filename = SpecUtils::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
-  
-  std::vector<char> data;
-  SpecUtils::load_file_data( filename.c_str(), data );
-    
-  rapidxml::xml_document<char> doc;
-  const int flags = rapidxml::parse_normalize_whitespace
-                    | rapidxml::parse_trim_whitespace;
-    
-  doc.parse<flags>( &data.front() );
-  XmlNode *node = doc.first_node();
-  if( !node || !node->name()
-      || !compare( node->name(), node->name_size(), "preferences", 11, true) )
-    throw runtime_error( "InterSpecUser: invlaid first node" );
-
-  DataBaseUtils::DbTransaction transaction( *session );
-  
-  //we actually need to go through here and eliminate options where a "phone"
-  //  or "tablet" option is available, and also rename ish...
-  try
-  {
-    for( const XmlNode *pref = node->first_node( "pref", 4 );
-         pref;
-         pref = pref->next_sibling( "pref", 4 ) )
-    {
-      UserOption *option = parseUserOption( pref );
-      try
-      {
-        user.modify()->m_preferences[option->m_name] = option->value();
-        option->m_user = user;
-        session->session()->add( option );
-      }catch( std::exception &e )
-      {
-        const string value = pref->value() ? pref->value() : "";
-        const string msg = "Value \"" + value + "\" is not convertible to the"
-                           " intended type in " + filename
-                           + " for pref "
-                           + option->m_name + "\n" + string(e.what());
-        delete option;
-        throw runtime_error( msg );
-      }//try / catch
-    }//for( loop over preferences )
-
-    transaction.commit();
-  }catch( std::exception &e )
-  {
-    cerr << "\n\nInterSpecUser::initFromDefaultValues(...)\t" << e.what() << endl;
-    user.modify()->m_preferences.clear();
-    transaction.rollback();
-    throw e;
-  }//try / catch
-  
-}//void initFromDefaultValues()
-
-
-void InterSpecUser::initFromDbValues( Wt::Dbo::ptr<InterSpecUser> user,
-                          std::shared_ptr<DataBaseUtils::DbSession> session )
-{
-  
-  if( !session )
-    throw runtime_error( "InterSpecUser::initFromDbValues(...):"
-                        " no valid session associated with user ptr" );
-  if( !user->m_preferences.empty() )
-    throw runtime_error( "InterSpecUser::initFromDbValues(...):"
-                        " you cant call this function if prefernces have"
-                        " already been initialized" );
-
-  DataBaseUtils::DbTransaction transaction( *session );  
-  const Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> > &prefs = user->m_dbPreferences;
-  
-  vector< Dbo::ptr<UserOption> > options;
-  std::copy( prefs.begin(), prefs.end(), std::back_inserter(options) );
-  
-  InterSpecUser *usr = user.modify();
-  
-  for( vector< Dbo::ptr<UserOption> >::const_iterator iter = options.begin();
-      iter != options.end(); ++iter )
-  {
-    Dbo::ptr<UserOption> option = *iter;
-    switch( option->m_type )
-    {
-      case UserOption::String:
-        usr->m_preferences[option->m_name] = boost::any( option->m_value );
-      break;
-        
-      case UserOption::Decimal:
-      {
-        double val;
-        if( !(stringstream(option->m_value) >> val) )
-          throw runtime_error( "InterSpecUser::initFromDbValues(): invalid"
-                               " double value '" + option->m_value
-                               + "' for user '" + user->m_userName + "'" );
-        usr->m_preferences[option->m_name] = val;
-        break;
-      }//case UserOption::Decimal:
-      
-      case UserOption::Integer:
-      {
-        int val;
-        if( !(stringstream(option->m_value) >> val) )
-          throw runtime_error( "InterSpecUser::initFromDbValues(): invalid"
-                              " int value '" + option->m_value
-                              + "' for user '" + user->m_userName + "'" );
-        usr->m_preferences[option->m_name] = val;
-        break;
-      }//case UserOption::Integer:
-        
-      case UserOption::Boolean:
-      {
-        bool val;
-        if( !(stringstream(option->m_value) >> val) )
-          throw runtime_error( "InterSpecUser::initFromDbValues(): invalid"
-                              " int value '" + option->m_value
-                              + "' for user '" + user->m_userName + "'" );
-        usr->m_preferences[option->m_name] = val;
-        break;
-      }//case UserOption::Boolean:
-    }//switch( option->m_type )
-  }//for( loop over DB entries )
-  
-  //The call to usr->modify() was just to get access to to the UserOption ptr,
-  // no changes have been made, so theres no reason to write to the database.
-  transaction.rollback();
-}//void initFromDbValues( Wt::Dbo::ptr<InterSpecUser> user )
-
-
-
-UserOption *InterSpecUser::getDefaultUserPreference( const std::string &name,
-                                                     const int type )
-{
-  using rapidxml::internal::compare;
-  typedef rapidxml::xml_attribute<char> XmlAttribute;
-  
-  const bool isphone = ((type & InterSpecUser::PhoneDevice) != 0);
-  const bool istablet = ((type & InterSpecUser::TabletDevice) != 0);
-  const char *nameptr = name.c_str();
-  const size_t namelen = name.length();
-  
-  const string filename = SpecUtils::append_path( InterSpec::staticDataDirectory(), sm_defaultPreferenceFile );
-  
-  std::vector<char> data;
-  SpecUtils::load_file_data( filename.c_str(), data );
-  
-  rapidxml::xml_document<char> doc;
-  const int flags = rapidxml::parse_normalize_whitespace
-                    | rapidxml::parse_trim_whitespace;
-  
-  doc.parse<flags>( &data.front() );
-  rapidxml::xml_node<char> *node = doc.first_node();
-  if( !node || !node->name()
-     || !compare( node->name(), node->name_size(), "preferences", 11, true) )
-    throw runtime_error( "InterSpecUser: invalid first node" );
-  
-  const rapidxml::xml_node<char> *defnode = 0, *tabnode = 0, *phonenode = 0;
-  
-  for( const rapidxml::xml_node<char> *pref = node->first_node( "pref", 4 );
-      pref;
-      pref = pref->next_sibling( "pref", 4 ) )
-  {
-    const XmlAttribute *name_att = pref->first_attribute( "name", 4 );
-    const char *prefname = name_att ? name_att->value() : "";
-    const size_t prefnamelen = name_att ? name_att->value_size() : 0;
-    const size_t substrlen = std::min(prefnamelen,name.size());
-    
-    //Check if the substring up to the '_' in "PreferenceName_phone" matches
-    if( !compare(prefname, substrlen, nameptr, namelen, true) )
-      continue;
-  
-    if( prefnamelen == namelen )
-    {
-      //If the preference name length matches the wanted name length, we have
-      //  default value
-      defnode = pref;
-      
-      //break out of the loop if this is all we need
-      if( type == InterSpecUser::Desktop )
-        break;
-    }else if( isphone && compare(prefname+substrlen, prefnamelen-substrlen, "_phone", 6, true) )
-    {
-      //The preference name ends in "_phone", and the device is a phone, we
-      //  dont need to keep looping.
-      phonenode = pref;
-      break;
-    }else if( istablet && compare(prefname+substrlen, prefnamelen-substrlen, "_tablet", 7, true) )
-    {
-      //The preference name ends in "_tablet", and the device is a tablet, we
-      //  can break as long as the device isnt also a phone.
-      tabnode = pref;
-      if( !isphone )
-        break;
-    }
-  }//for( loop over preferneces )
-    
-  if( phonenode )
-    return parseUserOption( phonenode );
-  if( tabnode )
-    return parseUserOption( tabnode );
-  if( defnode )
-    return parseUserOption( defnode );
-  
-  //Note: the string "couldn't find preference by name" is currently used in
-  //      restoreUserPrefsFromXml(...) to check if a preference with this name is no longer used.
-  //      So dont change next string without also changing there - or really, a more robust
-  //      indication should be used.
-  throw runtime_error( "InterSpecUser::getDefaultUserPreference(...):"
-                       " couldn't find preference by name " + name );
-}//UserOption *getDefaultUserPreference( const std::string &name )
-
-
 const std::string &InterSpecUser::userName() const
 {
   return m_userName;
+}
+
+int InterSpecUser::deviceType() const
+{
+  return m_deviceType;
 }
 
 
@@ -1345,21 +838,6 @@ std::chrono::system_clock::time_point InterSpecUser::firstAccessUTC() const
 }
 
 
-Wt::Dbo::ptr<InterSpecUser> &InterSpecUser::userFromViewer( InterSpec *viewer )
-{
-  static Dbo::ptr<InterSpecUser> dummy;
-  if( !viewer )
-    return dummy;
-  return viewer->m_user;
-}
-
-std::shared_ptr<DataBaseUtils::DbSession> InterSpecUser::sqlFromViewer( InterSpec *viewer )
-{
-  if( !viewer )
-    return std::shared_ptr<DataBaseUtils::DbSession>();
-  return viewer->sql();
-}
-
 void InterSpecUser::startingNewSession()
 {
   incrementAccessCount();
@@ -1380,146 +858,14 @@ void InterSpecUser::incrementSpectraFileOpened()
 }//void incrementSpectraFileOpened()
 
 
-void InterSpecUser::restoreUserPrefsFromXml(
-                                Wt::Dbo::ptr<InterSpecUser> user,
-                                const ::rapidxml::xml_node<char> *prefs_node,
-                                InterSpec *viewer )
-{
-  using namespace rapidxml;
-  using rapidxml::internal::compare;
-  
-  if( !user || !prefs_node
-      || !compare( prefs_node->name(), prefs_node->name_size(), "preferences", 11, true) )
-    throw runtime_error( "restoreUserPrefsFromXml: invalid input" );
-  
- 
-  for( const xml_node<char> *pref = prefs_node->first_node( "pref", 4 ); pref;
-       pref = pref->next_sibling( "pref", 4 ) )
-  {
-    std::unique_ptr<UserOption> option;
-    try
-    {
-      option.reset( parseUserOption(pref) );
-      
-      switch( option->m_type )
-      {
-        case UserOption::String:
-        {
-          const string value = boost::any_cast<string>( option->value() );
-          setPreferenceValue( user, option->m_name, value, viewer );
-          break;
-        }//case String
-          
-        case UserOption::Decimal:
-        {
-          const double value = boost::any_cast<double>( option->value() );
-          setPreferenceValue( user, option->m_name, value, viewer );
-          break;
-        }//case Decimal
-          
-        case UserOption::Integer:
-        {
-          const int value = boost::any_cast<int>( option->value() );
-          setPreferenceValue( user, option->m_name, value, viewer );
-          break;
-        }//case Integer
-          
-        case UserOption::Boolean:
-        {
-          const bool value = boost::any_cast<bool>( option->value() );
-          setPreferenceValue( user, option->m_name, value, viewer );
-          break;
-        }//case Boolean
-      }//switch( datatype )
-    }catch( std::exception &e )
-    {
-      const string errmsg = e.what();
-      if( SpecUtils::icontains( errmsg, "couldn't find preference by name" ) )
-      {
-        cerr << "Warning: couldnt find a preference named '"
-             << (option ? option->m_name : string("N/A")) << "' that is in the"
-             << " file being loaded, but apears to no longer be used." << endl;
-      }else
-      {
-        throw runtime_error( "Failed to deserialize user prefernces from XML: " + errmsg );
-      }
-    }//try / catch
-  }//for( loop over prefs )
-}//void restoreUserPrefsFromXml(...)
-
-
-::rapidxml::xml_node<char> *InterSpecUser::userOptionsToXml(
-                                    ::rapidxml::xml_node<char> *parent_node,
-                                              InterSpec *viewer ) const
-{
-  using namespace ::rapidxml;
-  
-  if( !parent_node )
-    throw runtime_error( "userOptionsToXml: invalid input" );
-  
-  xml_document<char> *doc = parent_node->document();
-  
-  xml_node<char> *prefs_node = doc->allocate_node( node_element, "preferences" );
-  parent_node->append_node( prefs_node );
-  
-  vector< Dbo::ptr<UserOption> > options;
-  
-  {//begin codeblock to retrieve prefernces from database
-    std::shared_ptr<DataBaseUtils::DbSession> sql = viewer->sql();
-    DataBaseUtils::DbTransaction transaction( *sql );
-
-    std::copy( m_dbPreferences.begin(), m_dbPreferences.end(),
-               std::back_inserter(options) );
-    transaction.commit();
-  }//end codeblock to retrieve prefernces from database
-  
-  for( vector< Dbo::ptr<UserOption> >::const_iterator iter = options.begin();
-      iter != options.end(); ++iter )
-  {
-    Dbo::ptr<UserOption> option = *iter;
-    
-    const string &name  = option->m_name;
-    const string &value = option->m_value;
-    const char *namestr = doc->allocate_string( name.c_str(), name.size()+1 );
-    
-    const char *valstr  = 0;
-    switch( option->m_type )
-    {
-      case UserOption::String: case UserOption::Decimal: case UserOption::Integer:
-        valstr = doc->allocate_string( value.c_str(), value.size()+1 );
-      break;
-        
-      case UserOption::Boolean:
-        valstr = (boost::any_cast<bool>(option->value()) ? "true" : "false");
-      break;
-    }//switch( m_type )
-    
-    const char *typestr = 0;
-    switch( option->m_type )
-    {
-      case UserOption::String:  typestr = "String";  break;
-      case UserOption::Decimal: typestr = "Decimal"; break;
-      case UserOption::Integer: typestr = "Integer"; break;
-      case UserOption::Boolean: typestr = "Boolean"; break;
-    }//switch( m_type )
-    
-    xml_node<char> *node = doc->allocate_node( node_element, "pref", valstr );
-    xml_attribute<char> *name_att = doc->allocate_attribute( "name", namestr );
-    xml_attribute<char> *type_att = doc->allocate_attribute( "type", typestr );
-    node->append_attribute( name_att );
-    node->append_attribute( type_att );
-    prefs_node->append_node( node );
-  }//for( loop over DB entries )
-  
-  return prefs_node;
-}//xml_node<char> *userOptionsToXml( xml_node<char> * ) const
-
-
-
-
 const Wt::Dbo::collection< Wt::Dbo::ptr<UserFileInDb> > &InterSpecUser::userFiles() const
 {
   return m_userFiles;
+}
+
+const Wt::Dbo::collection< Wt::Dbo::ptr<UserOption> > &InterSpecUser::preferences() const
+{
+  return m_dbPreferences;
 }
 
 const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &InterSpecUser::shieldSrcModels() const
@@ -1527,10 +873,10 @@ const Wt::Dbo::collection< Wt::Dbo::ptr<ShieldingSourceModel> > &InterSpecUser::
   return m_shieldSrcModels;
 }
 
-const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &InterSpecUser::userStates() const
-{
-  return m_userStates;
-}
+//const Wt::Dbo::collection< Wt::Dbo::ptr<UserState> > &InterSpecUser::userStates() const
+//{
+//  return m_userStates;
+//}
 
 const Wt::Dbo::collection< Wt::Dbo::ptr<ColorThemeInfo> > &InterSpecUser::colorThemes() const
 {

@@ -139,6 +139,13 @@ namespace InterSpecServer
     std::lock_guard<std::mutex> lock( sm_servedOnMutex );
     return sm_urlServedOn;
   }
+
+  
+  Wt::WServer *get_wt_server()
+  {
+    std::lock_guard<std::mutex> serverlock( ns_servermutex );
+    return ns_server;
+  }
   
   
   std::string getWtConfigXml( int argc, char *argv[] )
@@ -572,19 +579,26 @@ int start_server( const char *process_name,
   return InterSpecServer::portBeingServedOn();
 }//int start_server( ... )
   
-  void killServer()
-  {
-    std::lock_guard<std::mutex> serverlock( ns_servermutex );
+void killServer()
+{
+  std::lock_guard<std::mutex> serverlock( ns_servermutex );
     
-    if( ns_server )
+  if( ns_server )
+  {
+    try
     {
-      std::cerr << "About to stop server" << std::endl;
+      const auto stop_starting_time = std::chrono::system_clock::now();
       ns_server->stop();
+      const auto stop_stop_time = std::chrono::system_clock::now();
       delete ns_server;
       ns_server = nullptr;
-      std::cerr << "Stopped and killed server" << std::endl;
+      std::cout << "Stopped and killed server" << std::endl;
+    }catch( std::exception &e )
+    {
+      std::cerr << "Got exception stopping server: " << e.what() << std::endl;
     }
-  }//void killServer()
+  }//if( ns_server )
+}//void killServer()
   
 
   int wait_for_shutdown()
@@ -748,7 +762,22 @@ int start_server( const char *process_name,
     }
   }//void set_session_destructing( const char *session_token )
 
-
+/*
+  bool set_session_reload_allow( const char *session_token )
+  {
+    lock_guard<mutex> lock( ns_sessions_mutex );
+    auto pos = ns_sessions.find( session_token );
+    if( pos == end(ns_sessions) )
+      return false;
+    
+    SessionState &session = pos->second;
+    session.auth_time = std::chrono::system_clock::now();
+    session.current_state = SessionState::State::AuthorizedNotLoaded;
+      
+    return true;
+  }//bool set_session_reload_allow( const char *session_token )
+*/
+  
   int session_status( const char *session_token )
   {
     lock_guard<mutex> lock( ns_sessions_mutex );
@@ -920,7 +949,7 @@ std::string file_to_open_on_load( const std::string &session_token )
   auto pos = ns_sessions.find( session_token );
   if( pos == end(ns_sessions) )
   {
-    assert( 0 );
+    //assert( 0 );
     return "";
   }
   

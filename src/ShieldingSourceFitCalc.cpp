@@ -77,8 +77,10 @@ namespace ShieldingSourceFitCalc
 
   /** Change log:
    - 20230705: no version changed, but converted from being member of ShieldingSelect to ShieldingInfo
+   - 20241209: Depreciated <FitMassFraction> element, and made this a per-nuclide quantity by adding a <Fit> element under
+     the <Nuclide> node.  Also added a "FitOtherFraction" attribute
    */
-  const int ShieldingInfo::sm_xmlSerializationMinorVersion = 1;
+  const int ShieldingInfo::sm_xmlSerializationMinorVersion = 2;
 
   
   /** Change log:
@@ -661,8 +663,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     m_truthDimensions{},
     m_truthDimensionsTolerances{},
 #endif
-    m_fitMassFrac( false ),
-    m_nuclideFractions{},
+    m_nuclideFractions_{},
     m_traceSources{}
   {
   }
@@ -837,25 +838,45 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       }//switch( m_geometry )
       
       
-      if( m_forFitting && m_fitMassFrac && !m_nuclideFractions.empty() )
+      if( m_forFitting && !m_nuclideFractions_.empty() )
       {
-        name = "FitMassFraction";
-        value = m_fitMassFrac ? "1" : "0";
-        mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
-        material_node->append_node( mass_frac_node );
+        // For backward compatibility with version 0.1, we'
+        bool vestigial_FitMassFraction = false;
+        for( const auto &el_nucs : m_nuclideFractions_ )
+        {
+          for( const std::tuple<const SandiaDecay::Nuclide *,double,bool> &nuc : el_nucs.second )
+            vestigial_FitMassFraction |= std::get<2>(nuc);
+        }
+        
+        if( vestigial_FitMassFraction )
+        {
+          name = "FitMassFraction";
+          value = "1";
+          mass_frac_node = doc->allocate_node( rapidxml::node_element, name, value );
+          material_node->append_node( mass_frac_node );
+          
+          auto attr = doc->allocate_attribute( "remark", "compatibility with v1.0.12 and before." );
+          mass_frac_node->append_attribute( attr );
+        }
       }//if( m_forFitting )
       
-      for( const auto &nuc_to_frac : m_nuclideFractions )
+      for( const auto &el_nucs : m_nuclideFractions_ )
       {
-        const SandiaDecay::Nuclide * const nuc = nuc_to_frac.first;
-        const float frac = nuc_to_frac.second;
+        const SandiaDecay::Element *el = el_nucs.first;
+        assert( el );
         
-        if( nuc )
+        for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_to_frac : el_nucs.second )
         {
+          const SandiaDecay::Nuclide * const nuc = std::get<0>(nuc_to_frac);
+          const float frac = std::get<1>(nuc_to_frac);
+          const bool fit = std::get<2>(nuc_to_frac);
+          
           iso_node = doc->allocate_node( rapidxml::node_element, "Nuclide" );
           material_node->append_node( iso_node );
           
-          value = doc->allocate_string( nuc->symbol.c_str() );
+          // If the "other" non-source fraction, we will rely on recognizing its a element, and not
+          //  nuclide when we decode it.
+          value = doc->allocate_string( nuc ? nuc->symbol.c_str() : el->symbol.c_str() );
           node = doc->allocate_node( rapidxml::node_element, "Name", value );
           iso_node->append_node( node );
           
@@ -863,7 +884,11 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
           value = doc->allocate_string( fracstr.c_str(), fracstr.size() + 1 );
           node = doc->allocate_node( rapidxml::node_element, "MassFrac", value );
           iso_node->append_node( node );
-        }//if( nuc )
+          
+          value = fit ? "1" : "0";
+          node = doc->allocate_node( rapidxml::node_element, "Fit", value );
+          iso_node->append_node( node );
+        }//for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_to_frac : el_nucs.second )
       }//for( const auto &nuc_to_frac : nuc_to_fractions )
       
       for( const TraceSourceInfo &trace : m_traceSources )
@@ -900,30 +925,39 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         
         for( const auto &nuc_val_tol : m_truthFitMassFractions )
         {
-          assert( nuc_val_tol.first );
-          if( !nuc_val_tol.first )
+          const SandiaDecay::Element * const el = nuc_val_tol.first;
+          const map<const SandiaDecay::Nuclide *,pair<double,double>> &nucs_vals = nuc_val_tol.second;
+          
+          assert( el );
+          if( !el )
             continue;
           
-          name = "SelfAttenSrc";
-          rapidxml::xml_node<char> *src_node = doc->allocate_node( rapidxml::node_element, name );
-          mass_frac_node->append_node( src_node );
-          
-          name = "Nuclide";
-          value = doc->allocate_string( nuc_val_tol.first->symbol.c_str() );
-          node = doc->allocate_node( rapidxml::node_element, name, value );
-          src_node->append_node( node );
-          
-          name = "Value";
-          snprintf( buffer, sizeof(buffer), "%.9g", nuc_val_tol.second.first );
-          value = doc->allocate_string( buffer );
-          node = doc->allocate_node( rapidxml::node_element, name, value );
-          src_node->append_node( node );
-          
-          name = "Tolerance";
-          snprintf( buffer, sizeof(buffer), "%.9g", nuc_val_tol.second.second );
-          value = doc->allocate_string( buffer );
-          node = doc->allocate_node( rapidxml::node_element, name, value );
-          src_node->append_node( node );
+          for( const auto &nuc_val : nucs_vals )
+          {
+            const SandiaDecay::Nuclide * const nuc = nuc_val.first;
+            const pair<double,double> &value_tolerance = nuc_val.second;
+            
+            name = "SelfAttenSrc";
+            rapidxml::xml_node<char> *src_node = doc->allocate_node( rapidxml::node_element, name );
+            mass_frac_node->append_node( src_node );
+            
+            name = "Nuclide";
+            value = doc->allocate_string( nuc ? nuc->symbol.c_str() : el->symbol.c_str() );
+            node = doc->allocate_node( rapidxml::node_element, name, value );
+            src_node->append_node( node );
+            
+            name = "Value";
+            snprintf( buffer, sizeof(buffer), "%.9g", value_tolerance.first );
+            value = doc->allocate_string( buffer );
+            node = doc->allocate_node( rapidxml::node_element, name, value );
+            src_node->append_node( node );
+            
+            name = "Tolerance";
+            snprintf( buffer, sizeof(buffer), "%.9g", value_tolerance.second );
+            value = doc->allocate_string( buffer );
+            node = doc->allocate_node( rapidxml::node_element, name, value );
+            src_node->append_node( node );
+          }//for( const auto &nuc_val : nucs_vals )
         }//for( const auto &nuc_val_tol : m_truthFitMassFractions )
       }//if( !m_truthFitMassFractions.empty() )
   #endif
@@ -970,8 +1004,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     {
       m_isGenericMaterial = true;
       m_geometry = GeometryType::NumGeometryType;
-      m_fitMassFrac = false;
-      m_nuclideFractions.clear();
+      m_nuclideFractions_.clear();
       m_traceSources.clear();
       
       const rapidxml::xml_node<char> *ad_node, *an_node;
@@ -1035,8 +1068,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         throw runtime_error( "De-serializing shielding requires valid Material DB" );
         
       m_isGenericMaterial = false;
-      m_fitMassFrac = false;
-      m_nuclideFractions.clear();
+      m_nuclideFractions_.clear();
       m_traceSources.clear();
       
       //To be very compatible (pre non-spherical days), if no <Geometry> node, then we
@@ -1072,7 +1104,27 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       m_material.reset();
       if( !material_name.empty() )
       {
-        const Material *mat = materialDb->material( material_name );
+        const Material *mat = nullptr;
+        
+        try
+        {
+          mat = materialDb->material( material_name );
+        }catch( std::exception & )
+        {
+        }
+        
+        if( !mat )
+        {
+          // Maybe the user specified a chemical formula, like "U0.99Np0.01"
+          try
+          {
+            const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+            mat = materialDb->parseChemicalFormula( material_name, db );
+          }catch( std::exception & )
+          {
+          }
+        }//if( !mat )
+        
         if( !mat )
           throw runtime_error( "Invalid shielding material: '" + material_name + "'" );
         m_material = make_shared<Material>( *mat );
@@ -1177,9 +1229,16 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         if( nuc_str.empty() || val_str.empty() || tol_str.empty() )
           continue;
         
-        const SandiaDecay::Nuclide * const nuc =  db->nuclide( nuc_str );
-        assert( nuc );
-        if( !nuc )
+        const SandiaDecay::Nuclide * const nuc = db->nuclide( nuc_str );
+        const SandiaDecay::Element * el = nullptr;
+        
+        if( nuc )
+          el = db->element( nuc->atomicNumber );
+        else
+          el = db->element( nuc_str );
+        
+        assert( el );
+        if( !el )
           continue;
         
         double value, tolerance;
@@ -1190,17 +1249,18 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
           continue;
         }
         
-        m_truthFitMassFractions[nuc] = make_pair( value, tolerance );
+        m_truthFitMassFractions[el][nuc] = make_pair( value, tolerance );
       }//XML_FOREACH_CHILD( src_node, mass_frac_node, "SelfAttenSrc" )
 #endif //INCLUDE_ANALYSIS_TEST_SUITE
       
+      bool vestigual_FitMassFraction = false;
       if( m_forFitting )
       {
         const rapidxml::xml_node<> *fitmassfrac_node = XML_FIRST_NODE(material_node, "FitMassFraction");
         if( fitmassfrac_node && fitmassfrac_node->value() )
         {
           const string valstr = SpecUtils::xml_value_str( fitmassfrac_node );
-          if( !(stringstream(valstr) >> m_fitMassFrac) )
+          if( !(stringstream(valstr) >> vestigual_FitMassFraction) )
             throw runtime_error( "Invalid FitMassFraction value '" + valstr + "'" );
         }//if( m_forFitting )
       }//if( m_forFitting )
@@ -1213,23 +1273,35 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       {
         name_node = XML_FIRST_NODE( iso_node, "Name");
         const rapidxml::xml_node<> * const frac_node = XML_FIRST_NODE( iso_node, "MassFrac" );
+        const rapidxml::xml_node<> * const fit_node = XML_FIRST_NODE( iso_node, "Fit" );
         
         const string namestr = SpecUtils::xml_value_str( name_node );
         const string fractionstr = SpecUtils::xml_value_str( frac_node );
         if( namestr.empty() || fractionstr.empty() )
           throw runtime_error( "Missing invalid name/mass frac node form iso" );
         
-        const SandiaDecay::Nuclide *nuc = db->nuclide( namestr );
-        const SandiaDecay::Element *el = nuc ? db->element( nuc->atomicNumber ) : nullptr;
-        if( !nuc || !el )
-          throw runtime_error( namestr + " is not a valid isotope" );
+        const SandiaDecay::Nuclide * const nuc = db->nuclide( namestr );
+        const SandiaDecay::Element * const el = nuc ? db->element(nuc->atomicNumber) : db->element(namestr);
+        if( !el )
+          throw runtime_error( namestr + " is not a valid isotope or element" );
         
         double fraction;
         if( !(stringstream(fractionstr) >> fraction) )
           throw runtime_error( "Invalid mass fraction: '" + fractionstr + "'" );
         
-        if( m_nuclideFractions.count(nuc) )
-          throw runtime_error( "Nuclide '" + namestr + "' specified multiple times." );
+        for( const auto &v : m_nuclideFractions_[el] )
+        {
+          if( std::get<0>(v) == nuc )
+            throw runtime_error( "Nuclide '" + namestr + "' specified multiple times." );
+        }
+        
+        bool fitFraction = vestigual_FitMassFraction;
+        if( fit_node )
+        {
+          const string valstr = SpecUtils::xml_value_str( fit_node );
+          if( !(stringstream(valstr) >> fitFraction) )
+            throw runtime_error( "Invalid FitMassFraction value '" + valstr + "' for " + namestr );
+        }//if( fit_node )
         
         if( !m_material )
           throw runtime_error( "Mass-fraction specified, without a valid shielding material" );
@@ -1238,7 +1310,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         for( size_t i = 0; !valid_element && (i < m_material->elements.size()); ++i )
           valid_element = (m_material->elements[i].first == el);
         
-        // I dont recal if m_material->nuclides are a subset of elements that are in
+        // I dont recall if m_material->nuclides are a subset of elements that are in
         //  m_material->elements so we'll check, just to be sure, for the moment
         for( size_t i = 0; !valid_element && (i < m_material->nuclides.size()); ++i )
           valid_element = (m_material->nuclides[i].first == nuc);
@@ -1248,7 +1320,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
                               + "' was specified, but material '" + m_material->name
                               + "' doesnt have that element." );
         
-        m_nuclideFractions[nuc] = fraction;
+        m_nuclideFractions_[el].emplace_back( nuc, fraction, fitFraction );
       }//for( loop over isotope nodes )
      
         
@@ -1530,7 +1602,6 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       
       
       // Self-atten source stuff
-      //bool m_fitMassFrac;
       //std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractions;
       
       // Trace-source stuff
@@ -1631,30 +1702,76 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     
     
     // Self-atten source stuff
-    if( lhs.m_fitMassFrac != rhs.m_fitMassFrac )
-      throw runtime_error( "ShieldingInfo LHS FitMassFraction != RHS FitMassFraction" );
+    if( lhs.m_nuclideFractions_.size() != rhs.m_nuclideFractions_.size() )
+      throw runtime_error( "ShieldingInfo LHS NumSourceElements (" + std::to_string(lhs.m_nuclideFractions_.size()) + ") != RHS NumSourceElements (" + std::to_string(rhs.m_nuclideFractions_.size()) + ")" );
     
-    if( lhs.m_nuclideFractions.size() != rhs.m_nuclideFractions.size() )
-      throw runtime_error( "ShieldingInfo LHS NumSourceElements != RHS NumSourceElements" );
-    
-    for( const auto &nucFrac : lhs.m_nuclideFractions )
+    for( const auto &elToNucFrac : lhs.m_nuclideFractions_ )
     {
-      const auto rfracpos = rhs.m_nuclideFractions.find(nucFrac.first);
-      if( rfracpos == end(rhs.m_nuclideFractions) )
-        throw runtime_error( "ShieldingInfo LHS has nuclide "
-                            + (nucFrac.first ? nucFrac.first->symbol : string(""))
+      const SandiaDecay::Element * const el = elToNucFrac.first;
+      assert( el );
+      if( !rhs.m_nuclideFractions_.count(el) )
+        throw runtime_error( "ShieldingInfo LHS has element "
+                            + (el ? el->symbol : string("nullptr"))
                             + " as source, but RHS doesnt" );
+      if( !el )
+        throw logic_error( "Got nullptr SandiaDecay::Element in ShieldingInfo::equalEnough" );
       
-      const float lval = nucFrac.second;
-      const float rval = rfracpos->second;
-      const float mval = std::max( fabs(lval), fabs(rval) );
-      const float dval = fabs(lval - rval);
+      const auto lhs_el_pos = lhs.m_nuclideFractions_.find(el);
+      const auto rhs_el_pos = rhs.m_nuclideFractions_.find(el);
       
-      if( (mval > 1.0E-9) && (fabs(dval) > 1.0E-6*mval) )
-        throw runtime_error( "ShieldingInfo LHS MassFraction for "
-                            + (nucFrac.first ? nucFrac.first->symbol : string(""))
-                            + " != RHS MassFraction ("
-                            + std::to_string(lval) + " vs " + std::to_string(rval) + ")" );
+      if( lhs_el_pos == end(lhs.m_nuclideFractions_) )
+        throw logic_error( "Failed to find SandiaDecay::Element in lhs" );
+      
+      if( rhs_el_pos == end(rhs.m_nuclideFractions_) )
+        throw logic_error( "RHS m_nuclideFractions_ does not have " + (el ? el->symbol : "nullptr") + " element." );
+      
+      const vector<tuple<const SandiaDecay::Nuclide *,double,bool>> &lhs_nucs = lhs_el_pos->second;
+      const vector<tuple<const SandiaDecay::Nuclide *,double,bool>> &rhs_nucs = rhs_el_pos->second;
+      
+      if( lhs_nucs.size() != rhs_nucs.size() )
+        throw runtime_error( "ShieldingInfo LHS number of nucs (" + std::to_string(lhs_nucs.size()) 
+                            + ") != RHS number of nucs (" + std::to_string(rhs_nucs.size()) 
+                            + ") for " + el->symbol );
+      
+      for( const tuple<const SandiaDecay::Nuclide *,double,bool> &lhs_nuc : lhs_nucs )
+      {
+        const SandiaDecay::Nuclide * const nuc = std::get<0>( lhs_nuc );
+        const double lval = std::get<1>( lhs_nuc );
+        const double lfit = std::get<2>( lhs_nuc );
+        
+        const tuple<const SandiaDecay::Nuclide *,double,bool> *rhs_nuc = nullptr;
+        for( const tuple<const SandiaDecay::Nuclide *,double,bool> &rhs_nuc_try : rhs_nucs )
+        {
+          if( nuc == std::get<0>(rhs_nuc_try) )
+          {
+            rhs_nuc = &rhs_nuc_try;
+            break;
+          }
+        }
+        
+        if( !rhs_nuc )
+          throw runtime_error( "ShieldingInfo LHS has nuclide "
+                              + (nuc ? nuc->symbol : string("nullptr"))
+                              + " as source, but RHS doesnt" );
+        
+        const double rval = std::get<1>( *rhs_nuc );
+        const double rfit = std::get<2>( *rhs_nuc );
+        
+        const float mval = std::max( fabs(lval), fabs(rval) );
+        const float dval = fabs(lval - rval);
+        
+        if( (mval > 1.0E-9) && (fabs(dval) > 1.0E-6*mval) )
+          throw runtime_error( "ShieldingInfo LHS MassFraction for "
+                              + (nuc ? nuc->symbol : string("other"))
+                              + " != RHS MassFraction ("
+                              + std::to_string(lval) + " vs " + std::to_string(rval) + ")" );
+        
+        if( lfit != rfit )
+          throw runtime_error( "ShieldingInfo LHS Fit MassFraction for "
+                              + (nuc ? nuc->symbol : string("nullptr"))
+                              + " != RHS Fit MassFraction ("
+                              + std::to_string(lfit) + " vs " + std::to_string(rfit) + ")" );
+      }//for( const tuple<const SandiaDecay::Nuclide *,double,bool> &rhs_nuc : lhs_nucs )
     }//for( const auto &nucFrac : lmfrac )
     
     // Trace-source stuff
@@ -1951,8 +2068,12 @@ void fit_model( const std::string wtsession,
       for( const auto &parname : fit_generic_an )
       {
         std::mutex best_an_mutex;
-        int best_an = static_cast<int>( std::round(minimum.UserParameters().Value(parname)) );
-        double best_chi2 = minimum.Fval();
+        const double orig_fit_an = minimum.UserParameters().Value(parname);
+        const double orig_an_error = minimum.UserParameters().Error(parname);
+        const double orig_chi2 = minimum.Fval();
+        
+        int best_an = static_cast<int>( std::round(orig_fit_an) );
+        double best_chi2 = orig_chi2;
         ROOT::Minuit2::FunctionMinimum best_min = minimum;
         
         vector<double> an_chi2s( MassAttenuation::sm_max_xs_atomic_number + 1, std::numeric_limits<double>::max() );
@@ -2016,10 +2137,17 @@ void fit_model( const std::string wtsession,
         
         SpecUtilsAsync::ThreadPool pool;
         
-        const int initial_sn_skip = 5;
+        // Note 20250106: prior to this, there was a likely bug where the attenuation coefficient,
+        //                mu, was being truncated to an integer, and possibly causing some of
+        //                the issue with fitting the correct atomic number, and possibly
+        //                contributing to the horribleness below.  However, a few quick checks after
+        //                fixing this bug shows finding the correct AN is still difficult because
+        //                there are local-minima in the AN-AD plane, and in fact a the scans of AN
+        //                should include a few different starting AD's, to avoid false-minima still.
+        const int initial_an_skip = 5;
         for( int an = MassAttenuation::sm_min_xs_atomic_number;
             an < MassAttenuation::sm_max_xs_atomic_number;
-            an += initial_sn_skip )
+            an += initial_an_skip )
         {
           pool.post( [&calc_for_an,an](){ calc_for_an(an); } );
         }//for( loop over AN )
@@ -2033,10 +2161,10 @@ void fit_model( const std::string wtsession,
           const auto min_coarse_chi2_iter = std::min_element( begin(an_chi2s), end(an_chi2s) );
           best_coarse_an = static_cast<int>( min_coarse_chi2_iter - begin(an_chi2s) );
           
-          //Now scan best_coarse_an +- (initial_sn_skip - 1),
+          //Now scan best_coarse_an +- (initial_an_skip - 1),
           // (clamp to MassAttenuation::sm_min_xs_atomic_number, MassAttenuation::sm_max_xs_atomic_number)
-          detail_scan_start = static_cast<int>( best_coarse_an - (initial_sn_skip - 1) );
-          detail_scan_end = static_cast<int>( best_coarse_an + initial_sn_skip );
+          detail_scan_start = static_cast<int>( best_coarse_an - (initial_an_skip - 1) );
+          detail_scan_end = static_cast<int>( best_coarse_an + initial_an_skip );
           detail_scan_start = std::max( detail_scan_start, MassAttenuation::sm_min_xs_atomic_number );
           detail_scan_end = std::min( detail_scan_end, MassAttenuation::sm_max_xs_atomic_number );
           
@@ -2105,6 +2233,10 @@ void fit_model( const std::string wtsession,
           error = std::max( 1.0f, error );
           
           fitParams.SetError( parname, error );
+          
+          //cout << "Originally fit AN for " << parname
+          //<< " was " << orig_fit_an << " +- " << orig_an_error << " with chi2=" << orig_chi2
+          //<< ", but final AN is " << best_an << " +- " << error << " with chi2=" << best_chi2 << endl;
         }// end lock on best_an_mutex
         
         chi2Fcn->setSelfAttMultiThread( origMultithread ); //shouldnt affect anything, but JIC
@@ -2134,11 +2266,16 @@ void fit_model( const std::string wtsession,
       results->errormsgs.push_back( msg );
     }//if( !minimum.IsValid() )
     
+    const vector<double> params = fitParams.Params();
+    const vector<double> errors = fitParams.Errors();
+    const unsigned int ndof = inputPrams->VariableParameters();
+    
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
-    results->paramValues = fitParams.Params();
-    results->paramErrors = fitParams.Errors();
+    results->paramValues = params;
+    results->paramErrors = errors;
     results->edm = minimum.Edm();
     results->num_fcn_calls = minimum.NFcn();
+    results->numDOF = ndof;
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
     results->distance = chi2Fcn->distance();
     results->geometry = chi2Fcn->geometry();
@@ -2146,10 +2283,6 @@ void fit_model( const std::string wtsession,
     results->background_peaks = chi2Fcn->backgroundPeaks();
     results->options = chi2Fcn->options();
     results->initial_shieldings = chi2Fcn->initialShieldings();
-    
-    
-    const vector<double> &params = results->paramValues;
-    const vector<double> &errors = results->paramErrors;
     
     
     {// Begin set fit source info
@@ -2208,10 +2341,9 @@ void fit_model( const std::string wtsession,
 #endif
         
         row.activityUncertainty = -1.0;
-        if( row.fitActivity )
+        if( row.fitActivity || chi2Fcn->isTraceSource(nuc) || chi2Fcn->isSelfAttenSource(nuc) )
         {
           const double activityUncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
-          
           if( activityUncert >= FLT_EPSILON )
             row.activityUncertainty = activityUncert;
         }
@@ -2272,7 +2404,6 @@ void fit_model( const std::string wtsession,
       }
 #endif
       
-      shield.m_fitMassFrac = false;
       for( size_t i = 0; i < 3; ++i )
       {
         shield.m_dimensions[i] = 0.0;
@@ -2303,19 +2434,59 @@ void fit_model( const std::string wtsession,
         //assert( shield.m_fitDimensions[1] != fitParams.Parameter(shield_start_par + 1).IsFixed() );
       }else
       {
-        const vector<const SandiaDecay::Nuclide *> &nucsFittingFracs = chi2Fcn->nuclideFittingMassFracFor( shielding_index );
-        const vector<const SandiaDecay::Nuclide *> self_atten_nucs = chi2Fcn->selfAttenuatingNuclides( shielding_index );
+        const map<const SandiaDecay::Element *,vector<tuple<const SandiaDecay::Nuclide *,double,double,bool>>>
+        selfAttenSrcInfo = chi2Fcn->selfAttenSrcInfo( shielding_index, params, errors );
+        
         const vector<const SandiaDecay::Nuclide *> trace_nucs = chi2Fcn->traceNuclidesForMaterial( shielding_index );
-        
-        shield.m_fitMassFrac = !nucsFittingFracs.empty();
-        
-        double post_fit_frac = 0.0;
-        for( const SandiaDecay::Nuclide * const nuc : self_atten_nucs )
+      
+      
+        for( const auto &el_nucs : selfAttenSrcInfo )
         {
-          const double mass_frac = chi2Fcn->massFraction( shielding_index, nuc, params );
-          shield.m_nuclideFractions[nuc] = mass_frac;
-          post_fit_frac += mass_frac;
-        }
+          const SandiaDecay::Element * const el = el_nucs.first;
+          assert( el );
+          
+          double post_fit_frac = 0.0;
+          for( const tuple<const SandiaDecay::Nuclide *,double,double,bool> &nuc_info : el_nucs.second )
+          {
+            const SandiaDecay::Nuclide * const nuc = get<0>(nuc_info);
+            const double &mass_frac = get<1>(nuc_info);
+            const double &mass_frac_uncert = get<2>(nuc_info);
+            const bool fit_frac = get<3>(nuc_info);
+            
+            assert( fit_frac || (mass_frac_uncert <= 0.0) );
+            
+            shield.m_nuclideFractions_[el].emplace_back( nuc, mass_frac, fit_frac );
+            
+            if( fit_frac && (mass_frac_uncert > 0.0) )
+              shield.m_nuclideFractionUncerts[el][nuc] = mass_frac_uncert;
+            
+            if( fit_frac )
+              post_fit_frac += mass_frac;
+          }//for( loop over nuclides )
+          
+          double pre_fit_frac = 0.0;
+          assert( initial_shield.m_nuclideFractions_.count(el) );
+          
+          for( const auto &el_infos : initial_shield.m_nuclideFractions_ )
+          {
+            if( el_infos.first != el )
+              continue;
+            
+            for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_info : el_infos.second )
+            {
+              if( get<2>(nuc_info) )
+                pre_fit_frac += get<1>(nuc_info);
+            }
+          }//for( loop over initial shielding self-atten elements )
+          
+          const double frac_diff = fabs(pre_fit_frac - post_fit_frac);
+          assert( (frac_diff < 1.0E-12) || (frac_diff < 1.0E-5*std::max(pre_fit_frac,post_fit_frac)) );
+          
+          if( (frac_diff > 1.0E-12) && ((frac_diff/std::max(pre_fit_frac,post_fit_frac)) > 1.0E-5) ) //limits chosen arbitrarily
+            throw logic_error( "Mass fraction for self-atten src element " + el->symbol
+                              + " should be " + to_string(pre_fit_frac) + " but calculation yielded "
+                              + to_string(post_fit_frac) );
+        }//for( const auto &el_nucs : selfAttenSrcInfo )
         
         for( const SandiaDecay::Nuclide * const nuc : trace_nucs )
         {
@@ -2403,35 +2574,88 @@ void fit_model( const std::string wtsession,
             assert( 0 );
             break;
         }//switch( shield.m_geometry )
-        
-        
-        double pre_fit_frac = 0.0;
-        for( const auto &i : initial_shield.m_nuclideFractions )
-          pre_fit_frac += i.second;
-        
-        const double frac_diff = fabs(pre_fit_frac - post_fit_frac);
-        assert( (frac_diff < 1.0E-12) || (frac_diff < 1.0E-5*std::max(pre_fit_frac,post_fit_frac)) );
-        
-        if( (frac_diff > 1.0E-12) && ((frac_diff/std::max(pre_fit_frac,post_fit_frac)) > 1.0E-5) ) //limits chosen arbitrarily
-          throw logic_error( "Mass fraction for of self-atten src elements should be "
-                            + to_string(pre_fit_frac) + " but calculation yielded "
-                            + to_string(post_fit_frac) );
-        
-        if( shield.m_fitMassFrac )
-        {
-          for( const SandiaDecay::Nuclide * const nuc : self_atten_nucs )
-          {
-            if( std::find(begin(nucsFittingFracs), end(nucsFittingFracs),nuc) == end(nucsFittingFracs) )
-              continue;
-            shield.m_nuclideFractionUncerts[nuc] = chi2Fcn->massFractionUncert( shielding_index, nuc, params, errors );
-          }//for( const SandiaDecay::Nuclide * const nuc : self_atten_nucs )
-          
-        }//if( shield.m_fitMassFrac )
       }//if( shield.m_isGenericMaterial ) / else
       
       results->final_shieldings.push_back( shield );
     }//for( int i = 0; i < nshieldings; ++i )
     
+    
+    
+    {// Begin logging detailed info, we'll later use to template reports
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
+      const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
+                                                                      &(results->peak_calc_log),
+                                                                      peak_calc_details.get() );
+      
+      results->peak_calc_details = std::move(peak_calc_details);
+      results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
+      
+      
+      if( !results->peak_calc_log.empty() )
+      {
+        char buffer[64];
+        snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
+                 (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
+        results->peak_calc_log.push_back( "&nbsp;" );
+        results->peak_calc_log.push_back( buffer );
+      }//if( !m_calcLog.empty() )
+      
+      try
+      {
+        auto shielding_details = make_unique<vector<GammaInteractionCalc::ShieldingDetails>>();
+        chi2Fcn->log_shield_info( params, errors, results->fit_src_info, *shielding_details );
+        
+        // Now fill in a little info we need the results for
+        assert( results->initial_shieldings.size() == shielding_details->size() );
+        for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        {
+          const ShieldingSourceFitCalc::ShieldingInfo &initial_shield = results->initial_shieldings[i];
+          if( i >= shielding_details->size() )
+            continue; //wont happen, but jic
+          if( i >= results->final_shieldings.size() )
+            continue; //wont happen, but jic
+          
+          const ShieldingSourceFitCalc::FitShieldingInfo &final_shield = results->final_shieldings[i];
+          
+          GammaInteractionCalc::ShieldingDetails &calc_detail = shielding_details->at( i );
+          for( size_t j = 0; j < 3; ++j )
+          {
+            calc_detail.m_fit_dimension[j] = initial_shield.m_fitDimensions[j];
+            if( calc_detail.m_fit_dimension[j] )
+              calc_detail.m_dimension_uncert[j] = final_shield.m_dimensionUncerts[j];
+          }//
+        }//for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        
+        
+        results->shield_calc_details = std::move(shielding_details);
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( e.what() );
+      }
+      
+      try
+      {
+        auto shielding_details = make_unique<vector<GammaInteractionCalc::SourceDetails>>();
+        chi2Fcn->log_source_info( params, errors, results->fit_src_info, *shielding_details );
+        results->source_calc_details = std::move(shielding_details);
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( e.what() );
+      }
+      
+      // Check if background subtraction is enabled, but no peaks actually background subtracted
+      assert( results->peak_calc_details );
+      if( results->peak_calc_details && chi2Fcn->options().background_peak_subtract )
+      {
+        size_t num_back_sub_peaks = 0;
+        for( const GammaInteractionCalc::PeakDetail &p : *results->peak_calc_details )
+          num_back_sub_peaks += (p.backgroundCounts > 0.0f);
+        if( num_back_sub_peaks == 0 )
+          results->errormsgs.push_back( "Background peak subtraction requested, but no background"
+                                       " peak overlapped a foreground peak.");
+      }//if( background peak subtraction selected )
+    }// end logging detailed info, we'll later use to template reports
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     const size_t nFunctionCallsSoFar = gui_progress_info->numFunctionCallsSoFar();
@@ -2479,7 +2703,7 @@ void fit_model( const std::string wtsession,
   }// try / catch
   
   chi2Fcn->fittingIsFinished();
-  
+ 
   if( finished_fcn && update_gui )
   {
     Wt::WApplication *app = Wt::WApplication::instance();

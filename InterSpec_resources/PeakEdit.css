@@ -40,6 +40,13 @@ overflow-y: auto;
   font-size: xx-small;
 }
 
+.PeakEdit .PeakEditEstLinCont
+{
+  float: right;
+  height: 18px;
+  font-size: x-small;
+}
+
 .PeakEditPreviousPeak, .PeakEditNextPeak
 {
   position:absolute;

@@ -13,6 +13,10 @@
   </message>
 
   <message id='cfm-norm-btn'>Normalize</message>
+  <message id='cfm-more-info-btn'>further info</message>
+  <message id='cfm-show-rid-result-btn'>RID results</message>
+  <message id='cfm-show-image-btn'>embedded image</message>
+
   <message id='cfm-db-spec'>Prev. Saved Spectra</message>
 
   <message id='cfm-err-invalid-sample-num'>Sample number requested doesn't exist.</message>
@@ -27,4 +31,16 @@
   <message id='cfm-no-fore'>No foreground</message>
   <message id='cfm-no-back'>No background</message>
   <message id='cfm-no-second'>No second foreground</message>
+
+  <message id='cfm-date'>Date</message>
+  <message id='cfm-start-time'>Start Time</message>
+  <message id='cfm-gamma-cps'>Gamma CPS</message>
+  <message id='cfm-neut-live-time'>Neutron L.T.</message>
+  <message id='cfm-neut-counts'>Neut. Counts</message>
+  <message id='cfm-neut-cps'>Neut. CPS</message>
+  <message id='cfm-gps'>lat/lon</message>
+  <message id='cfm-manufacturer'>Manufacturer</message>
+  <message id='cfm-model'>Model</message>
+  <message id='cfm-meas-type'>Rec. Type</message>
+  <message id='cfm-tt-meas-type'>The records recorded type within the spectrum file.</message>
 </messages>

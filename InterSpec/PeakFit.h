@@ -144,6 +144,7 @@ void smoothSpectrum( const std::vector<float> &spectrum, const int side_bins,
 //  HPGe detectors.
 void expected_peak_width_limits( const float energy,
                                  const bool highres,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &meas,
                                  float &min_sigma_width_kev,
                                  float &max_sigma_width_kev );
 

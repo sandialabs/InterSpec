@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="psw-title-confirm-nuc-ass">Confirmer l'attribution des nucléides</message>
+  <message id="psw-title-check-search">Vérifier les résultats de la recherche de pics</message>
+  <message id="psw-title-prev-spec">Pics à conserver du spectre précédent</message>
+  <message id="psw-title-csv-import">Pics à importer depuis CSV</message>
+  <message id="psw-search-instruct-adjust">Ajustez les attributions de nucléides ou les pics à conserver.</message>
+  <message id="psw-search-instruct-unselect">Désélectionnez les pics que vous ne souhaitez pas conserver.</message>
+  <message id="psw-search-instruct-assign">Vérifiez et corrigez les attributions de nucléides.</message>
+  <message id="psw-search-instruct-keep">Sélectionnez les pics que vous souhaitez conserver.</message>
+  <message id="psw-show-all-peaks">Afficher tous les pics</message>
+  <message id="psw-show-prev-peaks">Afficher également les pics précédents</message>
+  <message id="psw-show-missing-peaks">Afficher les pics absents</message>
+  <message id="psw-keep-only-assigned-peaks">Conserver uniquement les nouveaux pics attribués à {1}</message>
+  <message id="psw-orig-nuc">Nucléide d'origine</message>
+  <message id="psw-assigned-nuc">Nucléide attribué</message>
+  <message id="psw-peak-preview">Aperçu du pic</message>
+  <message id="psw-not-found">Introuvable</message>
+  <message id="psw-keep-peak">Conserver le pic</message>
+  <message id="psw-keep-peak-q">Conserver le pic ?    </message>
+  <message id="psw-dont-change">Ne pas changer</message>
+  <message id="psw-no-nuc-changed">Aucun nucléide modifié</message>
+  <message id="psw-rel-eff-plot-title">Graphique d'efficacité relative</message>
+  <message id="psw-rel-eff-plot-y-axis-title">Aire du pic rel. / RB</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">Pics non mis à jour, le spectre a changé.</message>
+  <message id="psgu-peaks-updated-msg">Pics mis à jour.</message>
+
+  <message id="psgu-search-wait-title">Quelques instants</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>Recherche de pics en cours - cela peut prendre un certain temps.</div>
+      <div>Vous pouvez fermer cette boîte de dialogue et lorsque la recherche sera terminée,</div>
+      vous serez averti
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">Les informations FWHM sont nécessaires</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>La réponse actuelle du détecteur ne contient pas d'informations FWHM.</div>
+    <div>Souhaitez-vous ajuster les informations FWHM à partir des spectres actuels ?</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>Aucune réponse de détecteur n'est sélectionnée.</div>
+    <div>Souhaitez-vous ajuster les informations FWHM à partir des spectres actuels ?</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">Échec du réajustement du pic (devenu insignifiant), de {1} à {2} pics</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">Il n'y avait pas de pic à définir sur l'énergie du gamma</message>
+  <message id="psgu-no-ref-line-near-peak-msg">Il n'y avait pas d'énergie gamma de référence pour définir la moyenne des pics.</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    Échec du réajustement du pic après avoir fixé la moyenne au photopic de référence.
+    Un pic est devenu insignifiant ; de {1} à {2} pics.
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  Le changement du type de continuum à {1} a rendu {2} pic insignifiant.<br />
+  Veuillez utiliser l'<b>Éditeur de pics</b> pour effectuer ce changement.
+  </message>
+  <message id="psgu-failed-change-cont-singular">le</message>  <message id="psgu-failed-change-cont-plural">au moins un</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  Changer naïvement le type de continuum à {1} a rendu le pic insignifiant.<br />
+  Veuillez utiliser l'<b>Éditeur de pics</b> pour effectuer ce changement.
+  </message>
+  <message id="psgu-change-skew-not-gaus">Le pic dans la ROI à {1} keV n'est pas défini comme gaussien - veuillez modifier cela dans l'<b>Éditeur de pics</b> avant de définir un type d'asymétrie.</message>
+  <message id="psgu-change-skew-make-insig">
+    Le changement du type d'asymétrie à {1} a rendu {2} pic insignifiant.<br />
+    Veuillez utiliser l'<b>Éditeur de pics</b> pour effectuer ce changement.
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  Changer naïvement le type d'asymétrie à {1} a rendu le pic insignifiant.<br />
+  Veuillez utiliser l'<b>Éditeur de pics</b> pour effectuer ce changement.
+  </message>
+  
+</messages>

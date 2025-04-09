@@ -81,6 +81,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -1530,7 +1531,7 @@ MakeDrf::MakeDrf( InterSpec *viewer, MaterialDB *materialDB,
   
   addStyleClass( "MakeDrf" );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", m_interspec );
   
   WGridLayout *upperLayout = new WGridLayout();
   upperLayout->setContentsMargins( 0, 0, 0, 0 );
@@ -2042,7 +2043,7 @@ void MakeDrf::startSaveAs()
       DataBaseUtils::DbTransaction transaction( *sql );
       //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
       DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
-      tempDetector->m_user = m_interspec->m_user.id();
+      tempDetector->m_user = m_interspec->user().id();
       auto newDbDet = sql->session()->add( tempDetector );
       
       transaction.commit();
@@ -2055,7 +2056,7 @@ void MakeDrf::startSaveAs()
     m_interspec->detectorChanged().emit( drf );
     
     std::shared_ptr<DataBaseUtils::DbSession> sql = m_interspec->sql();
-    Wt::Dbo::ptr<InterSpecUser> user = m_interspec->m_user;
+    const Wt::Dbo::ptr<InterSpecUser> &user = m_interspec->user();
     
     if( def_for_serial_cb && def_for_serial_cb->isChecked() && representative_meas )
     {
@@ -2316,7 +2317,7 @@ void MakeDrf::handleSourcesUpdates()
             }//if( mat )
           }//if( shield->isGenericMaterial() ) / else
           
-          const double mu = MassAttenuation::massAttenuationCoeficient( an, energy );
+          const double mu = MassAttenuation::massAttenuationCoefficientFracAN( an, energy );
           return airTransFrac * exp( -mu * ad );
         };//trans_frac lambda
         
@@ -3506,7 +3507,8 @@ void MakeDrf::writeCsvSummary( std::ostream &out,
   {
     SpecUtils::ireplace_all( d.source_information, ",", " ");
     
-    const double deteff = d.peak_area / d.source_count_rate;
+    const double peakCps = d.peak_area / d.livetime;
+    const double deteff = peakCps / d.source_count_rate;
     const double deteffUncert = deteff * sqrt( pow(d.peak_area_uncertainty/d.peak_area,2)
                                                + pow(d.source_count_rate_uncertainty/d.source_count_rate,2) );
     const double geomFactor = (d.distance < 0.0) ? 1.0 : DetectorPeakResponse::fractionalSolidAngle(diam, d.distance);

@@ -330,7 +330,7 @@ struct DistributedSrcCalc
 
   GeometryType m_geometry;
   
-  size_t m_sourceIndex;
+  size_t m_materialIndex;
   double m_detectorRadius;
   double m_observationDist;
   
@@ -371,7 +371,7 @@ struct DistributedSrcCalc
    */
   std::vector<std::tuple<std::array<double,3>,double,ShellType> > m_dimensionsTransLenAndType;
 
-  /** The activity per volume of the shielding.
+  /** The photons (i.e., sum of activities times br) per volume of the shielding.
    Is not used during integration; used to multiple integral by to get number of expected peak counts.
    */
   double m_srcVolumetricActivity;
@@ -394,6 +394,261 @@ struct DistributedSrcCalc
 };//struct DistributedSrcCalc
   
 
+/** A struct to hold enough information for each point on the pulls chart that shows comparison of
+ detected vs model, for each peak
+ */
+struct PeakResultPlotInfo
+{
+  /** Energy of the gamma associated with the peak. */
+  double energy;
+  
+  /** `(observed_counts - expected_counts) / observed_uncertainty` */
+  double numSigmaOff;
+  
+  /** `observed_counts / expected_counts` */
+  double observedOverExpected;
+  double observedOverExpectedUncert;
+  
+  /** `peak.lineColor()` */
+  Wt::WColor peakColor;
+};//struct PeakResultPlotInfo
+  
+  
+  /**
+   A struct to capture the details of each source that contributed to a peak peak.
+   
+   This is primarily to later turn to JSON, and allow customizing log files, through inja templating.
+   */
+struct PeakDetailSrc
+{
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  
+  /** Energy of the nuclides gamma, in keV */
+  double energy = 0.0;
+  /** The number of this energy gamma, per second, for each Bq of parent nuclide. */
+  double br = 0.0;
+  double cpsAtSource = 0.0;
+  double age = 0.0;
+  
+  /** For point sources, the activity of the point source.
+   For self-atten sources, the activity per volume.
+   For trace sources, the activity used for calculations - activity per volume, except for exponential distributions, then its activity per m2.
+   */
+  double calcActivity = 0.0; //Not used - can be removed
+  
+  /** If decay during measurement is being accounted for, then this is the rate of this gamma
+   after decay correction, divided by the rate before decay correction.
+   */
+  double decayCorrection = 0.0;
+  
+  bool isTraceSource = false;//Not used - can be removed
+  TraceActivityType traceSourceType = TraceActivityType::NumTraceActivityType;//Not used
+  
+  bool isSelfAttenSource = false;//Not used - can be removed
+  
+  double countsAtSource = 0.0;
+  double ageUncert = 0.0;//Not used - can be removed
+  //bool ageIsFit = false;
+  //bool canFitAge = false;
+  
+  double activity = 0.0;//Not used - can be removed
+  double activityUncert = 0.0;//Not used - can be removed
+  double displayActivity = 0.0;//Not used - can be removed
+  double displayActivityUncert = 0.0;//Not used - can be removed
+  
+  double massFraction = 0.0;//Not used - can be removed
+  double massFractionUncert = 0.0;//Not used - can be removed
+  bool isFittingMassFraction = false;//Not used - can be removed
+  
+  /** The expected number of counts contributed by this source, to the peak. */
+  double modelContribToPeak = 0.0;
+};//struct PeakDetailSrc
+  
+  
+/** A struct to capture the details of each peak detected vs what parts of the model contributed.
+ 
+ This is primarily to later turn to JSON, and allow customizing log files, through inja templating.
+ */
+struct PeakDetail
+{
+  double energy, decayParticleEnergy, fwhm;
+  /** counts=peak.peakArea(); countsUncert=peak.peakAreaUncert();  cps=peak.peakArea()/LiveTime*/
+  double counts, countsUncert, cps, cpsUncert;
+  double expectedCounts, observedCounts, observedUncert, numSigmaOff;
+  double observedOverExpected, observedOverExpectedUncert;
+  //float modelInto4Pi, modelInto4PiCps;
+  double detSolidAngle, detIntrinsicEff, detEff;
+  
+  float backgroundCounts, backgroundCountsUncert;
+  
+  std::string assignedNuclide;
+  
+  /** Further information about the sources that contribute to this peak.
+   Please note that the `PeakDetailSrc` are not entirely filled out at creation, so do not rely on the member variables
+   being accurate until the end of the calculations.
+   */
+  std::vector<PeakDetailSrc> m_sources;
+  
+  /** The fractional attenuation by this material (e.g., no attenuation is 1.0. Not valid for volumetric sources.
+   The index of this vector is the same index as shielding in the model
+   */
+  std::vector<double> m_attenuations;
+  
+  /** The total attenuation factor (i.e., fraction no-interactions; 1.0 is no attenuation, 0.0 is total attentuation), that
+   all the shieldings cause.
+   Only valid for point sources.
+   */
+  double m_totalShieldAttenFactor;
+  /** The attenuation, due to air, between the last shielding and the detector.
+   For volumetric sources, this is only approximate
+   */
+  double m_airAttenFactor;
+  
+  /** The total attenuation of the source from all shielding and air.  For volumetric sources, this will only be approximate.
+   */
+  double m_totalAttenFactor;
+  
+  // TODO: for self-attenuating sources, could repeat the computation, put with only the source shell, then shell+1-other, then shell+different-1-other, and so on, to get the effect of each shell.
+  
+  struct VolumeSrc
+  {
+    bool trace; // Trace or intrinsic
+    
+    /** The integral of the efficiency to make it to the detector, over the source area.
+     i.e., the shielding area times average efficiency to make it to the detector face.
+     Does not include detector intrinsic efficiency.
+     */
+    double integral;
+    
+    /** The volume of the shielding. */
+    double volume;
+    
+    /** `integral / volume` */
+    double averageEfficiencyPerSourceGamma;
+    
+    /** The gammas per second, per unit-volume, for this source energy.
+     This value times `VolumeSrc::integral` gives the expected number of gammas, at this energy, to strike the detector face.
+     */
+    double srcVolumetricActivity;
+    
+    bool inSituExponential;        //Not used - can be removed
+    double inSituRelaxationLength; //Not used - can be removed
+    
+    double detIntrinsicEff;
+    
+    std::string sourceName;
+  };//struct VolumeSrc
+  
+  std::vector<VolumeSrc> m_volumetric_srcs;
+  
+  PeakDetail()
+  : energy( 0.0 ), decayParticleEnergy( 0.0 ), fwhm( 0.0 ), counts( 0.0 ),
+  countsUncert( 0.0 ), cps( 0.0 ), cpsUncert( 0.0 ),
+  expectedCounts( 0.0 ), observedCounts( 0.0 ), observedUncert( 0.0 ),
+  numSigmaOff( 0.0 ), observedOverExpected( 0.0 ),
+  //modelInto4Pi( 0.0f ), modelInto4PiCps( 0.0f ),
+  detSolidAngle( 0.0 ), detIntrinsicEff( 0.0 ), detEff( 0.0 ),
+  backgroundCounts( 0.0f ), backgroundCountsUncert( 0.0f ),
+  assignedNuclide{}, m_sources{}, m_attenuations{},
+  m_totalShieldAttenFactor( 1.0 ), m_airAttenFactor( 1.0 ),
+  m_totalAttenFactor( 1.0 )
+  {
+  }
+};//struct PeakDetail
+  
+  
+/** A struct to capture the details of each shielding.
+   
+   This is primarily to later turn to JSON, and allow customizing log files, through inja templating.
+*/
+struct ShieldingDetails
+{
+  struct SelfAttenComponent
+  {
+    const SandiaDecay::Nuclide *m_nuclide;
+    bool m_is_fit = false;
+    double m_mass_frac = 0.0, m_mass_frac_uncert = 0.0;
+  };
+  
+  struct TraceSrcDetail
+  {
+    const SandiaDecay::Nuclide *m_nuclide;
+    GammaInteractionCalc::TraceActivityType m_trace_type = GammaInteractionCalc::TraceActivityType::NumTraceActivityType;
+    bool m_is_exp_dist = false;
+    double m_relaxation_length = -1.0;
+  };//struct TraceSrcDetail
+  
+  /*
+  struct PeakAttenuation
+  {
+    double energy;
+    double attenuation;
+    double incomingModelCps;
+    double outgoingModelCps;
+  };//struct PeakAttenuation
+  */
+  
+  std::string m_name;
+  std::string m_chemical_formula;
+  
+  bool m_is_generic = false;
+  double m_an = 0.0, m_ad = 0.0;
+  double m_density = 0.0;
+  
+  unsigned int m_num_dimensions = 0;
+  GammaInteractionCalc::GeometryType m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  double m_thickness = 0.0;
+  double m_volume = 0.0;
+  double m_volume_uncert = 0.0;
+  double m_inner_rad = 0.0;
+  double m_inner_dimensions[3] = {0.0, 0.0, 0.0};
+  double m_outer_dimensions[3] = {0.0, 0.0, 0.0};
+  bool m_fit_dimension[3] = { false, false, false };
+  double m_dimension_uncert[3] = { 0.0, 0.0, 0.0 };
+  
+  std::vector<SelfAttenComponent> m_mass_fractions;
+  std::vector<TraceSrcDetail> m_trace_sources;
+  //std::vector<PeakAttenuation> m_peak_attens;
+};//struct ShieldingDetails
+  
+  
+struct SourceDetails
+{
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  double activity = 0.0;
+  double activityUncertainty = 0.0;
+  /** If the activity is fit for.
+   
+   Note: if source type is `ShieldingSourceFitCalc::ModelSourceType::Intrinsic`, then this value will be false,
+   even if a shielding dimension is being fit for.
+   */
+  bool activityIsFit = false;
+  double nuclideMass = 0.0;
+  double age = 0.0;
+  double ageUncertainty = 0.0;
+  bool ageIsFittable = false;
+  bool ageIsFit = false;
+  const SandiaDecay::Nuclide *ageDefiningNuc = nullptr;
+  
+  bool isTraceSource;
+  TraceActivityType traceActivityType = TraceActivityType::NumTraceActivityType;
+  double traceSrcDisplayAct;
+  double traceSrcDisplayActUncertainty;
+  double traceRelaxationLength;
+  
+  bool isSelfAttenSource;
+  size_t selfAttenShieldIndex;
+  std::string selfAttenShieldName;
+  bool isSelfAttenVariableMassFrac;
+  /** This is the fraction of the element in the shielding, that this nuclide is for. */
+  double selfAttenMassFrac;
+  double selfAttenMassFracUncertainty;
+  
+  // We wont put peaks into this struct, but instead when we make the JSON, we'll
+  //  insert peaks from `PeakDetail` as `PeakDetailSrc::nuclide` match this nuclide.
+};//struct SourceDetails
+  
+  
 class ShieldingSourceChi2Fcn
     : public ROOT::Minuit2::FCNBase
 {
@@ -404,7 +659,7 @@ class ShieldingSourceChi2Fcn
 //  atomic number and areal density which is indicated by a NULL pointer.
 //
 //parameters:
-//-Activity (in MBq) nuclide 0, (nuclides are sorted alphebaetically by name)
+//-Activity (in MBq) nuclide 0, (nuclides are sorted alphabetically by name)
 //-Age of nuclide 0
 //-Activity (in MBq) nuclide 1
 //-Age of nuclide 1 (if negative, must be negative value of one plus index of
@@ -421,7 +676,7 @@ class ShieldingSourceChi2Fcn
 //                     e.g. to print out to user divide by g/cm2)
 //    - ignored
 //if material 1 normal material (if Material* is non-NULL pointer)
-  //    -Material { spherical thickness | cylindrical radius thickness | rectangular width thickness }
+//    -Material { spherical thickness | cylindrical radius thickness | rectangular width thickness }
 // ...
 //
 //could add another member variable that holds pointer to source isotopes to
@@ -449,7 +704,7 @@ public:
          (but since we only always do all or nothing, we arent actually losing much) - so we could upgrade ShieldingInfo to return mass-fractions
          to fit, and just always have it return all self-atten sources, if fitting for them is selected.
    */
-  struct ShieldLayerInfo
+  struct ShieldLayerInfo_remove_mea
   {
     /** The material this struct holds info for.
      If nullptr it represents generic shielding (e.g., AN/AD), and neither #self_atten_sources or #trace_sources may have entries.
@@ -593,45 +848,71 @@ public:
   
   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &initialSourceDefinitions() const;
   
-/*
-   Need to add method to extract mass fraction for isotopes fitting for the mass
-   fraction
-   still need to modify:
-     --energy_chi_contributions(...)
-     --Anywhere that references m_materials
-*/
-  void massFraction( double &massFrac, double &uncert,
+  /* Returns the mass-fraction of the specified nuclide, in the specified shielding.
+ 
+   `errors` must either be empty (in which case uncert will be set to zero), or the
+   same size as `pars`.
+ 
+   Note: the returned mass fraction is mass fraction for the nuclides element - and not of the
+   entire shielding.
+   
+   Nuclide may, or may not, have its mass-fraction being fitted for.
+   
+   The element is required when nuc is nullptr, which indicates the mass fraction of the "other"
+   non-source nuclides.
+   */
+  void massFractionOfElement( double &massFrac, double &uncert,
                      const size_t material_index,
                      const SandiaDecay::Nuclide *nuc,
+                     const SandiaDecay::Element *el,
                      const std::vector<double> &pars,
                      const std::vector<double> &errors ) const;
   
-  double massFraction( const size_t material_index,
+  double massFractionOfElement( const size_t material_index,
                           const SandiaDecay::Nuclide *nuc,
                           const std::vector<double> &pars ) const;
-  double massFractionUncert( const size_t material_index,
+  double massFractionOfElementUncertainty( const size_t material_index,
                              const SandiaDecay::Nuclide *nuc,
                              const std::vector<double> &pars,
                              const std::vector<double> &error ) const;
   
+  /** Return if the passed in nuclide is having its mass-fraction fitted.
+   */
   bool isVariableMassFraction( const size_t material_index,
                                const SandiaDecay::Nuclide *nuc ) const;
+  /** Returns if the elements "other nuclide" fraction is being fit. */
+  bool isVariableOtherMassFraction( const size_t material_index,
+                               const SandiaDecay::Element *el ) const;
+  
   bool hasVariableMassFraction( const size_t material_index ) const;
   
-  /** Returns a Material, with the elemental composition set to account for the mass-varied amounts,
-   so that the attenuation cross-sections will be as expected.
-   */
-  std::shared_ptr<Material> variedMassFracMaterial( const size_t material_index,
-                                          const std::vector<double> &x ) const;
-  
-  void setNuclidesToFitMassFractionFor( const size_t material_index,
-                   const std::vector<const SandiaDecay::Nuclide *> &nuclides );
   std::vector<const Material *> materialsFittingMassFracsFor() const;
-  std::vector<const SandiaDecay::Nuclide *> selfAttenuatingNuclides( const size_t material_index ) const;
-  const std::vector<const SandiaDecay::Nuclide *> &nuclideFittingMassFracFor(
-                                                                const size_t material_index ) const;
   
+  /** Returns nuclides that are self-attenuating, wether fitting the mass-fraction for them or not. */
+  std::vector<const SandiaDecay::Nuclide *> selfAttenuatingNuclides( const size_t material_index ) const;
+  
+  /** Returns the nuclides fitting mass fraction for, grouped by element.
+   
+   nullptr nuclides represent the "other" non-source nuclides, if that component is being fit.
+   
+   The mass-fraction parameter order is dictated by this result (which is also the same as `m_initial_shieldings`), of looping
+   over the Element, and then all the nuclides for that element ordered as in the vector..
+   */
+  std::map<const SandiaDecay::Element *,std::vector<const SandiaDecay::Nuclide *>> nuclideFittingMassFracFor(
+                                                                const size_t material_index ) const;
+  /** */
+  std::vector<const SandiaDecay::Element *> elementsFittingOtherFracFor( const size_t material_index ) const;
 
+  /** Returns information about all self-attenuating sources, grouped by element, wether mass-fraction for them are being fit or not.
+   
+   A nullptr nuclide indicates "other" non-source component, and may or may not be present if not fit for (if fit for, it will be present).
+   
+   Information returned about each nuclide is mass-fraction, uncertainty (valid if >0), and if it was fit for.
+   */
+  std::map<const SandiaDecay::Element *,std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double,bool>>> selfAttenSrcInfo(
+                                                            const size_t material_index,
+                                                            const std::vector<double> &pars,
+                                                            const std::vector<double> &error ) const;
   
   //setBackgroundPeaks(...): if you wish to correct for background counts, you
   //  can set that here.  The peaks you pass in should be the original
@@ -673,22 +954,33 @@ public:
   virtual double operator()( const std::vector<double> &x ) const;
   
   
-  //energy_chi_contributions(...): gives the chi2 contributions for each energy
-  //  of peak, for the parameter values of x.
-  //Does not take into account self attenuation.
-  //'mixturecache' is to speed up multiple computations, and may be empty at
-  //  first.
+  /** Gives the chi2 contributions for each peak
+   
+   @param params The parameters currently defining the model.
+   @param error_params The errors on the parameters - only used if `log_info` is non-null
+   @param mixturecache Used to speed up multiple calls to this function, and may be empty at first.
+   @param info If non-null, will be filled with computation notes.
+   @param log_info If non-null, filled out with details about the computation.
+   */
   typedef std::map< const SandiaDecay::Nuclide *, SandiaDecay::NuclideMixture> NucMixtureCache;
-  
-  //If 'info' is non-null then it will be filled with information about how much
-  //  each nuclide/peak was attributed to each detected peak (currently not
-  //  implemented)
-  //Each retured enry is {energy,chi,scale,PeakColor,scale_uncert}.  Scale is obs/expected
-  std::vector< std::tuple<double,double,double,Wt::WColor,double> > energy_chi_contributions(
-                                  const std::vector<double> &x,
+  std::vector<PeakResultPlotInfo> energy_chi_contributions(
+                                  const std::vector<double> &params,
+                                  const std::vector<double> &error_params,
                                   NucMixtureCache &mixturecache,
-                                  std::vector<std::string> *info = 0 ) const;
+                                  std::vector<std::string> *info = nullptr,
+                                  std::vector<PeakDetail> *log_info = nullptr ) const;
 
+  void log_shield_info( const std::vector<double> &params,
+                        const std::vector<double> &error_params,
+                        const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        std::vector<ShieldingDetails> &info ) const;
+  
+  void log_source_info( const std::vector<double> &params,
+                        const std::vector<double> &error_params,
+                        const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        std::vector<SourceDetails> &info ) const;
+  
+  
   ShieldingSourceChi2Fcn&	operator=( const ShieldingSourceChi2Fcn & );
   virtual double Up() const;
 
@@ -802,6 +1094,8 @@ public:
 
   double distance() const;
   
+  const std::shared_ptr<const DetectorPeakResponse> &detector() const;
+  
   const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options() const;
   
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &initialShieldings() const;
@@ -846,18 +1140,20 @@ public:
                   const double energyToCluster,
                   const bool accountForDecayDuringMeas,
                   const double measDuration,
-                  std::vector<std::string> *info
+                  std::vector<std::string> *info,
+                  std::vector<GammaInteractionCalc::PeakDetail> *log_info
               );
 
 
   //returns the chi computed from the expected verses observed counts; one
   //  chi2 for each peak energy.  Each returned entry is {energy,chi,scale,PeakColor,ScaleUncert},
   //  where scale is observed/expected
-  static std::vector< std::tuple<double,double,double,Wt::WColor,double> > expected_observed_chis(
+  static std::vector<PeakResultPlotInfo> expected_observed_chis(
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,
-                              std::vector<std::string> *info = 0 );
+                              std::vector<std::string> *info = 0,
+                              std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr );
 protected:
   
   void zombieCallback( const boost::system::error_code &ec );
@@ -883,8 +1179,6 @@ protected:
   std::vector<PeakDef> m_backgroundPeaks;
   std::shared_ptr<const DetectorPeakResponse> m_detector;
   
-  // TODO: we could probably eliminate m_materials, and just use m_initial_shieldings
-  std::vector<ShieldLayerInfo> m_materials;
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_initial_shieldings;
   
   std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphabetically and unique

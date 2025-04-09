@@ -27,6 +27,8 @@
 
 #include <string>
 
+// This header / src could be eliminated now- but will leave in till we're sure we dont need something like this
+
 namespace InterSpecWxUtils
 {
   void handle_javascript_error( const std::string &error_msg, const std::string app_token );

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">Confirm Nuclide Assignment</message>
+  <message id="psw-title-check-search">Check Peak Search Results</message>
+  <message id="psw-title-prev-spec">Peaks to Keep from Previous Spectrum</message>
+  <message id="psw-title-csv-import">Peaks to import from CSV</message>
+  <message id="psw-search-instruct-adjust">Adjust nuclide assignments, or which peaks to keep.</message>
+  <message id="psw-search-instruct-unselect">Unselect any peaks you would not like to keep.</message>
+  <message id="psw-search-instruct-assign">Check and fix nuclide assignments.</message>
+  <message id="psw-search-instruct-keep">Select peaks peaks you would like to keep.</message>
+  <message id="psw-show-all-peaks">Show all peaks</message>
+  <message id="psw-show-prev-peaks">Show previous peaks too</message>
+  <message id="psw-show-missing-peaks">Show absent peaks</message>
+  <message id="psw-keep-only-assigned-peaks">Keep only new peaks assigned to {1}</message>
+  <message id="psw-orig-nuc">Original Nuclide</message>
+  <message id="psw-assigned-nuc">Assigned Nuclide</message>
+  <message id="psw-peak-preview">Peak Preview</message>
+  <message id="psw-not-found">Not Found</message>
+  <message id="psw-keep-peak">Keep Peak</message>
+  <message id="psw-keep-peak-q">Keep Peak?    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">Don't change</message>
+  <message id="psw-no-nuc-changed">No nuclides changed</message>
+  <message id="psw-rel-eff-plot-title">Relative Efficiency Plot</message>
+  <message id="psw-rel-eff-plot-y-axis-title">Rel. Peak Area / BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">Peaks not updated, spectrum has changed.</message>
+  <message id="psgu-peaks-updated-msg">Peaks updated.</message>
+
+  <message id="psgu-search-wait-title">Just a few moments</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>Searching for peaks - this may take a bit.</div>
+      <div>You can close this dialog and when the search is done,</div>
+      you will be notified
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">FWHM information is needed</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>Current detector response does not contain FWHM info.</div>
+    <div>Would you like to fit FWHM info from current spectra?</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>No detector response is selected.</div>
+    <div>Would you like to fit FWHM info from current spectra?</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">Failed to refit peak (became insignificant), from {1} to {2} peaks</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">There was no peak to to set to gamma's energy</message>
+  <message id="psgu-no-ref-line-near-peak-msg">There was no reference gamma energy to set the peaks mean to.</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    Failed to refit peak after fixing mean to reference photopeak.
+    A peak became insignificant; from {1} to {2} peaks.
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  Changing the continuum type to {1} caused {2} peak to become insignificant.<br />
+  Please use the <b>Peak Editor</b> to make this change.
+  </message>
+  <message id="psgu-failed-change-cont-singular">the</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">at least one</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  Naively changing the continuum type to {1} caused the peak to become insignificant.<br />
+  Please use the <b>Peak Editor</b> to make this change.
+  </message>
+  <message id="psgu-change-skew-not-gaus">Peak in ROI at {1} keV is not Gaussian defined - please change this in the <b>Peak Editor</b> before setting a skew type.</message>
+  <message id="psgu-change-skew-make-insig">
+    Changing the skew type to {1} caused {2} peak to become insignificant.<br />
+    Please use the <b>Peak Editor</b> to make this change.
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  Naively changing the skew type to {1} caused the peak to become insignificant.<br />
+  Please use the <b>Peak Editor</b> to make this change.
+  </message>
+  
+</messages>

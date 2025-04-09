@@ -7,7 +7,8 @@ set( TRY_TO_STATIC_LINK ON CACHE BOOL "Lets statically link everything" )
 set( BUILD_AS_LOCAL_SERVER OFF CACHE BOOL "N/A" )
 set( USE_OSX_NATIVE_MENU OFF CACHE BOOL "N/A" )
 set( USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "Enable Spectrum File Query Widget" )
-
+set( USE_BATCH_TOOLS ON CACHE BOOL "Enables (command line for now) batch processing." )
+#option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
 
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
@@ -98,6 +99,22 @@ list(APPEND sources
 
 add_executable(${PROJECT_NAME} ${EXE_TYPE} ${sources})
 
+
+if( USE_BATCH_TOOLS )
+  add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../batch InterSpec_batch )
+  add_dependencies( ${PROJECT_NAME} InterSpec_batch )
+
+  # Post-build command to copy the DLL to the executable directory
+  # (we build LibInterSpec as a static library if NOT using batch
+  #  tools, but a shared library if including batch tools)
+  if(WIN32)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      $<TARGET_FILE:InterSpecLib>
+      $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+  endif(WIN32)
+endif( USE_BATCH_TOOLS )
+
 if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries(${PROJECT_NAME} PUBLIC wx::core wx::base wx::webview wx::stc ${wxWidgets_LIBRARIES} )
 else( InterSpec_FETCH_DEPENDENCIES )
@@ -122,6 +139,9 @@ target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )
 set_target_properties(${PROJECT_NAME} PROPERTIES CXX_STANDARD 14 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO )
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "InterSpec")
 
+# Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
+# warnings (these come from Wt I think, not our code)
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
 
 set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 
@@ -158,6 +178,13 @@ else( APPLE )
 
   # We get an error if the destination is empty, or just ".", but the following seems to work
   install( TARGETS ${PROJECT_NAME} RUNTIME DESTINATION "bin/.." )
+
+  if( USE_BATCH_TOOLS AND WIN32 )
+    # The CMakeLists.txt for InterSpec_batch will take care of installing that exe,
+    #  but we still need to copy over the InterSpec shared lib, since no install target 
+    #  is defined for it.
+    install( TARGETS InterSpecLib RUNTIME DESTINATION "bin/.." )
+  endif( USE_BATCH_TOOLS AND WIN32 )
 endif( APPLE )
 
 

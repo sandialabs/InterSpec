@@ -12,6 +12,8 @@
   <message id="Create">Create</message>
   <message id="Energy">Energy</message>
   <message id="Counts">Counts</message>
+  <message id="Apply">Apply</message>
+  <message id="Accept">Accept</message>
   <message id="Foreground">Foreground</message>
   <message id="Background">Background</message>
   <message id="Secondary">Secondary</message>
@@ -28,6 +30,10 @@
   <message id="Distance">Distance</message>
   <message id="Activity">Activity</message>
   <message id="Remark">Remark</message>
+  <message id="Tap">Tap</message>
+  <message id="Click">Click</message>
+  <message id="tap">tap</message>
+  <message id="click">click</message>
 
 
   <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
@@ -47,6 +53,7 @@
   <message id="Delete">Delete</message>
   <message id="Photopeak">Photopeak</message>
   <message id="Nuclide">Nuclide</message>
+  <message id="Nuc.">Nuc.</message>
   <message id="Skew">Skew</message>
   <message id="CPS">CPS</message>
   <message id="CSV">CSV</message>
@@ -80,6 +87,7 @@
   <message id="Unknown">Unknown</message>
   <message id="Energy (keV)">Energy (keV)</message>
   <message id="Efficiency">Efficiency</message>
+  <message id="stable">stable</message>
 
   <!-- Units the user may use to write time duration.
     Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
@@ -131,6 +139,7 @@
   <message id="window-title-units-convert">Units Converter</message>
   <message id="window-title-flux-tool">Flux Tool</message>
   <message id="window-title-nuc-decay">Nuclide Decay Information</message>
+  <message id="window-title-select-det-eff-fcn">Detector Response Function Select</message>
   <message id="window-title-add-fwhm">Add FWHM to Detector Response Function</message>
   <message id="window-title-create-drf">Create Detector Response Function</message>
   <message id="window-title-file-parameters">File Parameters</message>
@@ -139,7 +148,8 @@
   <message id="window-title-license-credit">Disclaimers, Licenses, Credit, and Contact</message>
   <message id="window-title-help">InterSpec Help</message>
   <message id="window-title-simple-mda">Simple Minimum Detectable Activity Calculation</message>
-
+  <message id="window-title-peak-editor">Peak Editor</message>
+  
 
   <!-- The names of the tool-tabs at the bottom of the app -->
   <message id="app-tab-peak-manager">Peak Manager</message>
@@ -413,7 +423,11 @@
 
 
   <!-- Error messages, the user probably wont see -->
-  <message id="err-save-sate-to-db">I'm sorry there was a technical error saving your  user state to the database.</message>
+  <message id="err-save-sate-to-db">
+    I'm sorry there was a technical error saving your user state to the database.
+    <p style="font-size: x-small;">{1}</p>
+  </message>
+  <message id="err-save-to-large-for-db">File is larger than allowed to be saved to database (is {1} kb, allowed {2} kb).</message>
   <message id="err-no-roi-to-add-peak">There was no ROI to add peak to.</message>
   <message id="err-no-add-peak-to-data-roi">Sorry, cant add peaks to a ROI with a data defined peak.</message>
   <message id="err-add-peak-no-improve">Adding a peak did not improve overall ROI fit - not adding one.</message>
@@ -448,6 +462,9 @@
   <message id="pct-linear-step">Linear Step</message>
   <message id="pct-bilinear-step">Bi-linear Step</message>
   <message id="pct-global">Global Cont.</message>
+
+  <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
+  <message id="psd-no-source">No Source</message>
 
 
   <message id="window-content-hard-back-sub">
@@ -563,6 +580,7 @@
   <message id="lang-ko">한국어</message>
   <message id="lang-vi">Tiếng Việt</message>
   <message id="lang-tr">Türkçe</message>
+  <message id="lang-ar">العربية</message>
 
 
   <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of

@@ -590,7 +590,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
   const double det_sf = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(mean)
                                                                  : response->efficiency( mean, distance ))
                                   : 1.0);
-  const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, mean );
+  const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, mean );
   const double shielding_sf = exp( -shielding_ad * xs );
   const double sf = test_peak->peakArea() / shielding_sf / det_sf /expectedAbund;
   
@@ -614,7 +614,7 @@ double fractionDetectedWeight( const std::vector<SandiaDecay::EnergyRatePair> &s
     const double det_eff = (response ? (response->isFixedGeometry() ? response->intrinsicEfficiency(energy)
                                                                     : response->efficiency(energy, distance))
                                      : 1.0);
-    const double xs = MassAttenuation::massAttenuationCoeficient( shielding_an, energy );
+    const double xs = MassAttenuation::massAttenuationCoefficientFracAN( shielding_an, energy );
     const double transmition = exp( -shielding_ad * xs );
     
     typedef deque< std::shared_ptr<const PeakDef> >::const_iterator Iter_t;
@@ -970,7 +970,7 @@ void findCandidates( vector<string> &suggestednucs,
       const SandiaDecay::Transition *transition = NULL;
       const double sigma = peak->gausPeak() ? peak->sigma() : 0.125*peak->roiWidth();
       PeakDef::findNearestPhotopeak( p.nuclide, suggestedNucs.energy,
-                                     4.0*sigma, false, transition,
+                                     4.0*sigma, false, -1.0, transition,
                                      radparticleIndex, sourceGammaType );
       
       if( p.nuclide && (transition || (sourceGammaType==PeakDef::AnnihilationGamma)) )
@@ -1156,7 +1156,7 @@ void findCharacteristics( vector<string> &characteristicnucs,
           size_t index = 0;
           const SandiaDecay::Transition *trans = NULL;
           PeakDef::SourceGammaType type;
-          PeakDef::findNearestPhotopeak( nuc, energy, -1.0, false, trans, index, type );
+          PeakDef::findNearestPhotopeak( nuc, energy, -1.0, false, -1.0, trans, index, type );
           if( trans )
           {
             energy = trans->products[index].energy;
@@ -1239,7 +1239,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
       size_t index = 0;
       const SandiaDecay::Transition *trans = NULL;
       PeakDef::SourceGammaType type;
-      PeakDef::findNearestPhotopeak( nuc, mean, sigma, false, trans, index, type );
+      PeakDef::findNearestPhotopeak( nuc, mean, sigma, false, -1.0, trans, index, type );
      
       if( trans )
       {
@@ -1276,7 +1276,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
           && (p->sourceGammaType() == PeakDef::NormalGamma
                || p->sourceGammaType() == PeakDef::SingleEscapeGamma) )
       {
-        PeakDef::findNearestPhotopeak( nuc, mean+510.99, sigma, false, trans, index, type );
+        PeakDef::findNearestPhotopeak( nuc, mean+510.99, sigma, false, -1.0, trans, index, type );
         if( trans )
         {
           const float candidateE = trans->products[index].energy;
@@ -1303,7 +1303,7 @@ void isotopesFromOtherPeaks( vector<string> &otherpeaknucs,
       
       if( p->sourceGammaType() == PeakDef::NormalGamma )
       {
-        PeakDef::findNearestPhotopeak( nuc, mean+2.0*510.99, sigma, false, trans, index, type );
+        PeakDef::findNearestPhotopeak( nuc, mean+2.0*510.99, sigma, false, -1.0, trans, index, type );
         if( trans )
         {
           const float candidateE = trans->products[index].energy;
@@ -1364,6 +1364,7 @@ void peakCandidateSourceFromRefLines( std::shared_ptr<const PeakDef> peak, const
       case ReferenceLineInfo::SourceType::Reaction:
       case ReferenceLineInfo::SourceType::Background:
       case ReferenceLineInfo::SourceType::NuclideMixture:
+      case ReferenceLineInfo::SourceType::FissionRefLines:
         break;
         
       case ReferenceLineInfo::SourceType::CustomEnergy:

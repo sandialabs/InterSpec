@@ -23,66 +23,41 @@
 
 package gov.sandia.InterSpec;
 
-import android.Manifest;
 import android.app.Activity;
-import android.app.DownloadManager;
-import android.content.pm.PackageManager;
-import android.content.DialogInterface;
 import android.content.res.AssetManager;
+import android.content.res.Configuration;
 import android.os.Bundle;
-import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
 
-import android.provider.DocumentsContract;
-import android.provider.MediaStore;
+import androidx.appcompat.app.AppCompatActivity;
+
 import android.webkit.*;
 import android.net.*;
 import android.content.*;
 import android.util.*;
-import android.os.Handler;
-import android.os.Message;
 import android.view.View;
-import android.os.Build;
-import android.view.GestureDetector;
-import android.view.MotionEvent;
+import android.graphics.Rect;
+import android.view.ViewTreeObserver;
 import android.os.ParcelFileDescriptor;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedReader;
-import java.io.FileDescriptor;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.List;
+import java.util.ArrayList;
 import java.util.Scanner;
 import java.io.FileInputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.FileOutputStream;
-import android.os.Environment;
+
 import android.database.Cursor;
 import android.provider.OpenableColumns;
 import android.widget.Toast;
 
 import java.io.InputStream;
 import java.util.Random;
-import java.util.concurrent.ExecutorService;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import java.util.concurrent.Executors;
 
-//import gov.sandia.InterSpecMainActivity.InterSpecMainActivity;
-//import gov.sandia.InterSpecMainActivity.InterSpecMainActivity.R;
-//import android.R;
-
-import gov.sandia.InterSpec.R;
 
 interface CallbackFromNativeInterface {
   public void callback();
@@ -111,6 +86,10 @@ public class InterSpec extends AppCompatActivity
   //   copy over to where the user selects.
   private String mTempFileToSave;
   private String mTempFileDisplayName;
+
+  private boolean mOrientationJustChanged = false;
+  private ViewTreeObserver.OnGlobalLayoutListener mLayoutListener;
+  private WebView webview;
 
   /** Define a class whose member functions we can call from JavaScript. */
   class CallbackFromJavaScriptInterface {
@@ -508,6 +487,13 @@ public class InterSpec extends AppCompatActivity
   }//protected void onActivityResult(...)
 
   @Override
+  public void onConfigurationChanged(Configuration newConfig) {
+    super.onConfigurationChanged(newConfig);
+
+    mOrientationJustChanged = true; // Set a flag
+  }
+
+  @Override
   public void onCreate( Bundle savedInstanceState )
   {
     Log.d("onCreate", "Starting");
@@ -579,34 +565,35 @@ public class InterSpec extends AppCompatActivity
       Log.i("onCreate", "Starting server");
       super.onCreate(savedInstanceState);
     
-      this.requestWindowFeature( android.view.Window.FEATURE_NO_TITLE );
+      this.requestWindowFeature( android.view.Window.FEATURE_NO_TITLE ); //Android API <33
+      this.supportRequestWindowFeature( android.view.Window.FEATURE_NO_TITLE ); //API >= 33
+
       httpPort = startWt(this);
     
       setContentView(R.layout.main);
         
-      WebView webview = (WebView)findViewById(R.id.webview);
+      webview = (WebView)findViewById(R.id.webview);
       WebSettings settings = webview.getSettings();
       settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
       settings.setSupportMultipleWindows(false);
       settings.setJavaScriptEnabled(true);
-      settings.setLoadWithOverviewMode(true);
-      settings.setUseWideViewPort(true);
-      settings.setSupportZoom(true);
-      settings.setGeolocationEnabled(false);
-      settings.setBuiltInZoomControls(false);
-      settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.SINGLE_COLUMN);
+      //settings.setLoadWithOverviewMode(true);
+      //settings.setUseWideViewPort(true);
+      //settings.setSupportZoom(true);
+      //settings.setGeolocationEnabled(false);
+      //settings.setBuiltInZoomControls(false);
+      //settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.SINGLE_COLUMN);
+      //settings.setAllowFileAccess(true);  // TODO: explore being able to save files directly from the WebView - maybe this is only accesing existing files?
       settings.setDomStorageEnabled(true);
       webview.setScrollBarStyle(WebView.SCROLLBARS_OUTSIDE_OVERLAY);
       webview.setScrollbarFadingEnabled(true);
       webview.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+      webview.setVerticalScrollBarEnabled(false);
+      webview.setHorizontalScrollBarEnabled(false);
+      webview.setScrollContainer(false);
 
       CallbackFromJavaScriptInterface jsInterface = new CallbackFromJavaScriptInterface(this);
       webview.addJavascriptInterface(jsInterface, "interspecJava");
-
-      /*
-      webview.getSettings().setUseWideViewPort(true);
-      webview.getSettings().setAllowFileAccess(true);
-      */
 
       webview.setWebChromeClient( new WtWebChromeClient() );
 /*
@@ -621,7 +608,9 @@ public class InterSpec extends AppCompatActivity
 
       webview.setDownloadListener( ourDownloadListner );
 */
-
+      webview.setFocusable(true);
+      webview.setFocusableInTouchMode(true);
+      webview.requestFocus(View.FOCUS_DOWN);
 
       // TODO: I think see https://stackoverflow.com/questions/3926629/downloadlistener-not-working to get download listner working
       WebViewClient ourWebClient = new WebViewClient(){
@@ -741,56 +730,129 @@ public class InterSpec extends AppCompatActivity
     Log.d("onCreate", "done starting server ish");
 
     mDecorView = getWindow().getDecorView();
-    mDecorView.setOnSystemUiVisibilityChangeListener( new View.OnSystemUiVisibilityChangeListener()
-    {
-        @Override
-        public void onSystemUiVisibilityChange(int flags)
-        {
-        boolean visible = (flags & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0;
-//			WebView webview = (WebView)findViewById(R.id.webview);
-        if( visible )
-        {
-          //make it so we are no longer in emmersive mode, so this way
-          //  Android will resize the WebView so that the active form
-          //  (assuming keyboard is visible) will be visible.  There
-          //  is an issue that when you hide the keyboard, the system
-          //  navigation UI will still be visible until you tap somewhere
-          //  else (whach calls hideSystemUI()).
-          //  Non-optimal, but I cant figure out how to detect if the
-          //  keyboard is visible.
-          mDecorView.setSystemUiVisibility(0);
-        }
-      }//public void onSystemUiVisibilityChange(int flags)
-    });
-	 
-    final View contentView = findViewById( R.id.webview );
-    contentView.setClickable( true );
-    final GestureDetector clickDetector = new GestureDetector( this,
-            new GestureDetector.SimpleOnGestureListener()
-    {
-          @Override
-          public boolean onSingleTapUp(MotionEvent e) 
-          {
-            boolean visible = (mDecorView.getSystemUiVisibility()
-	                          & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) == 0;
-            if (visible) 
+
+    final View mActivityRootView = findViewById(android.R.id.content);
+
+    mLayoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
+
+      /// When the soft-keyboard shows, we'll query the position of the input element
+      /// asynchronously using JavaScript, so when we get a result, we will store it
+      /// in this next variable, then request a layout, and then move things when
+      /// that translate the WebView when that happens (it looks like we can only translate
+      /// the WebView after a layout cycle completes).
+      private double mInputYFromJS = 0.0;
+
+      // We'll track the keyboard showing, but we dont actually use this right now
+      private boolean mShowingKeyboard = false;
+      /// I cant get Android to move the WebView so that the input is visible, and we dont want to
+      /// resize the WebView when the soft keyboard shows, so we will watch for layout changes, and
+      /// detect the keyboard there.
+      /// For Android 11 (API level 30), and newer, there is a WindowInsets API that would be better
+      /// to use, but this would leave out too many users right now.
+      @Override
+      public void onGlobalLayout() {
+        Rect r = new Rect();
+        mActivityRootView.getWindowVisibleDisplayFrame(r);
+
+        int activityH = mActivityRootView.getHeight(); // This is app area, minus top and bottom OS bars.  Not affected if keyboard is shown.
+        int visibleH = (r.bottom - r.top); // This is app area, accounting for keyboard being shown (so height doesnt include keyboard height, just the visible part of the app)
+        int heightDiff = activityH - visibleH;
+
+        int screenHeight = mActivityRootView.getRootView().getHeight(); // Includes the OS top and bottom bars
+        Context context = getApplicationContext();
+        //Toast.makeText(context, String.format("screenHeight: %d, activityHeight: %d, visibleHeight: %d, heightDiff: %d", screenHeight, activityH, visibleH, heightDiff), Toast.LENGTH_SHORT ).show();
+
+        // heightDiff is zero, if the keyboard is not showing, but at least a few hundred px if it is showing
+        if (heightDiff > 100) {
+          mShowingKeyboard = true;
+
+          // We may be here either when the keyboard is first showing, OR as a result of us
+          // requesting a layout below when we get the input element position from the WebView via JS
+          if( mInputYFromJS > 0.0 ) {
+            // If mInputYFromJS is greater than zero, then we are here as a result of getting the
+            // element position from the JS, and we can now slide the WebView up the right amount
+
+            // We'll assume element is 20px high, and add another 20px padding
+            double posToMakeVisibleDbl = r.top + mInputYFromJS + 20.0 + 20.0;
+            int posToMakeVisible = (int) Math.round(posToMakeVisibleDbl);
+
+            //On phone when keyboard shows: screenHeight: 1280, activityH: 1136, visibleH: 634, posToMakeVisible: 743
+            //Toast.makeText(context, String.format("screenHeight: %d, activityH: %d, visibleH: %d, posToMakeVisible: %d", screenHeight, activityH, visibleH, posToMakeVisible), Toast.LENGTH_SHORT ).show();
+
+            if( posToMakeVisible > visibleH )
             {
-              hideSystemUI();
-            } 
-            return false;
-          }
-    });
-	   
-    contentView.setOnTouchListener(
-        new View.OnTouchListener() 
-        {
-          @Override
-          public boolean onTouch(View view, MotionEvent motionEvent) 
-          {
-            return clickDetector.onTouchEvent(motionEvent);
-          }
-    });
+              int delta = visibleH - posToMakeVisible;
+              webview.setTranslationY( delta );
+            }else
+            {
+              //Toast.makeText(context, String.format("Setting translation to zero, posToMakeVisible=%d, visibleH=%d", posToMakeVisible, visibleH), Toast.LENGTH_SHORT).show();
+              webview.setTranslationY( 0 );
+            }
+          } else {
+            // If mInputYFromJS is zero, then the keyboard just appeared, and we dont have the input
+            // element position, and we need to get it.
+
+            webview.evaluateJavascript(
+                    "(function() { " +
+                            "  const el = document.activeElement; " +
+                            "  if( !el || (el.tagName != 'INPUT') ) return '-1';" +
+                            "  const rect = el.getBoundingClientRect(); " +
+                            "  return '' + rect.top;" +
+                            "})()",
+                    value -> {
+                      //Toast.makeText(context, "WebView returned: " + value, Toast.LENGTH_SHORT).show();
+                      try {
+                        double top = Double.parseDouble(value.replaceAll("[\"']", "")); //value is something like "\"519.667\"", so we need to get rid of leading/trailing quote
+
+                        if( top < 0.0 ) {
+                          mInputYFromJS = (float)top; // There was an error.
+                        }else{
+                          // The JavaScript returns density-independent pixels, but we need to deal
+                          // in actual displayed pixels, so we need to convert.
+                          float pxValue = TypedValue.applyDimension(
+                                  TypedValue.COMPLEX_UNIT_DIP,
+                                  (float) top,
+                                  getResources().getDisplayMetrics()
+                          );
+
+                          mInputYFromJS = pxValue;
+                        }
+
+                        // We cant access the WebView from here, and even if we evaluate on the GUI
+                        //  thread, thats not good enough to alter the layout, instead we have to
+                        //  request the layout to be computed, which will call the onGlobalLayout()
+                        //  where we can then set the Y translation
+                        webview.requestLayout();
+                      } catch (NumberFormatException e) {
+                        Log.e("WebView", "Error parsing position", e);
+                        Toast.makeText(context, "Error parsing result from webview, returned: '" + value + "', errmsg=" + e.toString(), Toast.LENGTH_SHORT).show();
+                      }
+                    }); //webview.evaluateJavascript(...)
+            webview.setTranslationY( 0 ); // JIC
+            mInputYFromJS = 0.0; //JIC
+          }//if( mInputYFromJS > 0.0 ) / else
+        } else {
+          // Reset translation back to zero when keyboard is hidden
+          webview.setTranslationY( 0 );
+          mInputYFromJS = 0.0;
+          mShowingKeyboard = false;
+        }
+      }
+    };
+
   }//public void onCreate(Bundle savedInstanceState)
+
+  @Override
+  protected void onStart() {
+    super.onStart();
+    mDecorView.getViewTreeObserver().addOnGlobalLayoutListener(mLayoutListener);
+  }
+
+  @Override
+  protected void onStop() {
+    super.onStop();
+    mDecorView.getViewTreeObserver().removeOnGlobalLayoutListener(mLayoutListener);
+  }
 
   @Override
   protected void onPause()
@@ -831,9 +893,18 @@ public class InterSpec extends AppCompatActivity
       Uri fileUri = (Uri) intent.getData();
 
       openFileInInterSpec( fileUri );
-    } else if( Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null )
+    }else if( Intent.ACTION_SEND.equals(action) )
     {
-        // Need to handle multiple files here
+      Uri fileUri = (Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM);
+      if( fileUri != null )
+        openFileInInterSpec( fileUri );
+    }else if( Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null )
+    {
+      ArrayList<Uri> fileUris = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+      if( fileUris != null )
+      {
+        // TODO: Need to handle multiple files here
+      }
     } else
     //Intent.ACTION_QUICK_VIEW.equals(action)
     //Intent.ACTION_QUICK_VIEW.equals(action)
@@ -849,7 +920,7 @@ public class InterSpec extends AppCompatActivity
     super.onDestroy();
   }
   
-  
+  /*
   @Override
   public void onWindowFocusChanged( boolean hasFocus )
   {
@@ -861,8 +932,9 @@ public class InterSpec extends AppCompatActivity
       mHideHandler.sendEmptyMessageDelayed(0, 300);
     }
   }//public void onWindowFocusChanged(boolean hasFocus) 
-  
-  
+  */
+
+  /*
   private void hideSystemUI() 
   {
     mDecorView.setSystemUiVisibility(
@@ -872,10 +944,13 @@ public class InterSpec extends AppCompatActivity
                   | View.SYSTEM_UI_FLAG_FULLSCREEN
                   | View.SYSTEM_UI_FLAG_LOW_PROFILE
                   | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+
 	//View.SYSTEM_UI_FLAG_IMMERSIVE View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
   }//private void hideSystemUI() 
-  
-  private final Handler mHideHandler = new Handler() 
+*/
+
+  /*
+  private final Handler mHideHandler = new Handler()
   {
     @Override
     public void handleMessage(Message msg) 
@@ -883,7 +958,7 @@ public class InterSpec extends AppCompatActivity
       hideSystemUI();
     }
   };
-  
+  */
 
 	  
   

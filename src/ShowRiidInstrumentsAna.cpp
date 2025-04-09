@@ -40,6 +40,7 @@
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
 
 using namespace std;
@@ -292,10 +293,10 @@ public:
                   + "</td></tr>";
       if( res.distance_ > 0.0 )
         result += "<tr><th>" + WString::tr("Distance").toUTF8()
-                     + "</th><td>" + PhysicalUnits::printToBestLengthUnits(0.1*res.distance_) + "</td></tr>";
+                     + "</th><td>" + PhysicalUnits::printToBestLengthUnits(res.distance_ * PhysicalUnits::mm,4) + "</td></tr>";
       if( res.activity_ > 0.0 )
       {
-        const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+        const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
         result += "<tr><th>" + WString::tr("Activity").toUTF8() + "</th><td>"
                     + PhysicalUnits::printToBestActivityUnits( res.activity_, 2, !useBq, 1.0 ) + "</td></tr>";
       }
@@ -376,7 +377,17 @@ std::string riidAnaSummary( const std::shared_ptr<const SpecMeas> &spec )
     summary = summary.substr(0,61) + "...";
   
   if( summary.empty() && ana->results_.empty() )
-    summary = WString::tr("srria-no-nucs").toUTF8();
+  {
+    InterSpec *viewer = InterSpec::instance();
+    if( viewer )
+    {
+      viewer->useMessageResourceBundle( "ShowRiidInstrumentsAna" );
+      summary = WString::tr("srria-no-nucs").toUTF8();
+    }else
+    {
+      summary = "No nuclides identified.";
+    }
+  }
   
   return Wt::Utils::htmlEncode( WString::fromUTF8(summary),0).toUTF8();
 }//riidAnaSummary(...)

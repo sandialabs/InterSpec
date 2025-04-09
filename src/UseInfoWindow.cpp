@@ -47,6 +47,8 @@
 #include <Wt/WGridLayout>
 #include <Wt/Json/Parser>
 #include <Wt/Json/Object>
+#include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WMediaPlayer>
 #include <Wt/WRadioButton>
 #include <Wt/WStandardItem>
@@ -68,6 +70,7 @@
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DbFileBrowser.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RowStretchTreeView.h"
 
 
@@ -148,7 +151,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                               InterSpec* viewer )
 : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                          | AuxWindowProperties::EnableResize
-                         | AuxWindowProperties::DisableCollapse) ),
+                         | AuxWindowProperties::DisableCollapse
+                         | AuxWindowProperties::SetCloseable) ),
   m_session(),
 #if( USE_DB_TO_STORE_SPECTRA )
   m_snapshotModel( nullptr ),
@@ -237,7 +241,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   try
   {
 #if( USE_DB_TO_STORE_SPECTRA )
-    Dbo::ptr<InterSpecUser> user = m_viewer->m_user;
+    const Dbo::ptr<InterSpecUser> &user = m_viewer->user();
     SpecMeasManager *manager = m_viewer->fileManager();
     
     m_snapshotModel = new SnapshotBrowser( manager, m_viewer, nullptr );
@@ -322,7 +326,11 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     m_tableSample->setRowHeight( WLength(30,WLength::Pixel) );
     m_tableSample->setColumnAlignment(0, Wt::AlignLeft);
     //m_tableSample->setHeaderAlignment(0, Wt::AlignCenter);
-    m_tableSample->setColumnWidth(0,340);
+    if( m_viewer->isPhone() )
+      m_tableSample->setColumnWidth(0,240);
+    else
+      m_tableSample->setColumnWidth(0,340);
+    
     m_tableSample->hideColumn(1);
     m_tableSample->hideColumn(2);
     
@@ -594,7 +602,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
 
   
   const string tips_file = "InterSpec_resources/static_text/faqs/faqs";
-  item = makeTextItem( "FAQs", tips_file );
+  SideMenuItem *faqsItem = makeTextItem( "FAQs", tips_file );
   
   // ---- Cheat sheet PDF
 /*
@@ -676,9 +684,10 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
      "icon for detailed information about <code>InterSpec</code>s tools and features."
      "</p>";
   
+  WGridLayout *rightLayout = nullptr;
   if( m_viewer->isPhone() )
   {
-    WGridLayout *rightLayout = new WGridLayout();
+    rightLayout = new WGridLayout();
     rightLayout->setContentsMargins( 0, 0, 0, 0 );
     rightLayout->setVerticalSpacing( 0 );
     rightLayout->setHorizontalSpacing( 0 );
@@ -699,13 +708,15 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     //welcomeContainer->addWidget( text );
     rightLayout->addWidget( text, 2, 0 );
     
+    faqsItem->addStyleClass( "PhoneSideMenuTextItem" );
+    
     /*
      //"Spectra attached to emails can be copied into <code>InterSpec</code> from within your mail app.<br />"
      //"Once you have analyzed a spectrum, you can save a snapshot of your work, and it will show up in the <em>Saved States</em> tab."
      */
   }else
   {
-    WGridLayout* rightLayout = new WGridLayout();
+    rightLayout = new WGridLayout();
     welcomeContainer->setLayout(rightLayout);
     
     rightLayout->addWidget( text, 0, 0 );
@@ -745,7 +756,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
     auto showLicenceAndTerms = [](){
       // We'll keep from capturing closing the window and opening the new window as two
-      //  seperate undo/redo events.
+      //  separate undo/redo events.
       {
         UndoRedoManager::BlockUndoRedoInserts blocker;
         InterSpec *viewer = InterSpec::instance();
@@ -815,30 +826,56 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     
   if( showAgainCallback )
   {
-    WCheckBox *cb = new WCheckBox( "show at start when no spectra", bottom );
-    cb->setFloatSide( Left );
+    //WGridLayout *rightLayout = nullptr;
+    bool isVertical = false;
+    if( m_viewer->isPhone() )
+    {
+      int w = m_viewer->renderedWidth();
+      int h = m_viewer->renderedHeight();
+      if( w < 100 )
+      {
+        w = wApp->environment().screenWidth();
+        h = wApp->environment().screenHeight();
+      }
+      isVertical = ((w > 100) && (w < h));
+    }//if( isPhone )
+    
+    
+    WCheckBox *showAgainCb = nullptr;
+    assert( rightLayout );
+    if( isVertical && rightLayout )
+    {
+      showAgainCb = new WCheckBox( "show at start when no spectra" );
+      showAgainCb->addStyleClass( "CbNoLineBreak" );
+      rightLayout->addWidget( showAgainCb, rightLayout->rowCount(), 0 );
+    }else
+    {
+      // Put CB into header
+      showAgainCb = new WCheckBox( "show at start when no spectra", bottom );
+    }
+    showAgainCb->setFloatSide( Left );
     
     try
     {
-      const bool showAtStartup = viewer->m_user->preferenceValue<bool>( "ShowSplashScreen" );
-      cb->setChecked( showAtStartup );
+      const bool showAtStartup = UserPreferences::preferenceValue<bool>( "ShowSplashScreen", viewer );
+      showAgainCb->setChecked( showAtStartup );
     }catch(...)
     {
       // probably wont ever get here, but JIC
     }
     
 
-    cb->checked().connect( boost::bind( showAgainCallback, true ) );
-    cb->unChecked().connect( boost::bind( showAgainCallback, false ) );
+    showAgainCb->checked().connect( boost::bind( showAgainCallback, true ) );
+    showAgainCb->unChecked().connect( boost::bind( showAgainCallback, false ) );
     if( m_viewer->isMobile() )
     {
-      cb->setFloatSide(Right);
-      cb->setMargin(10,Right);
-      cb->setMargin(3,Top);
+      showAgainCb->setFloatSide(Right);
+      showAgainCb->setMargin(10,Right);
+      showAgainCb->setMargin(3,Top);
     }//isPhone
   }//if( !force )
   
-  WPushButton *ok = addCloseButtonToFooter( "Close" );
+  WPushButton *ok = addCloseButtonToFooter( WString::tr("Close") );
   ok->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
   
   if( viewer

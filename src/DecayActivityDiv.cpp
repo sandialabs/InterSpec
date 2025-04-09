@@ -78,6 +78,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayChainChart.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -809,7 +810,7 @@ class DateLengthCalculator : public WContainerWidget
       
       double entered_activity = nucinfo.activity;
       const bool useCurie = nucinfo.useCurie;
-      //const bool useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      //const bool useCurie = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       
       if( timeSpan < 0.0 )
       {
@@ -1554,30 +1555,35 @@ public:
     WCheckBox *cb = new WCheckBox( "act.", el );
     cb->setMargin( 5, Wt::Left );
     cb->setChecked( true );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveActivities, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveActivities, m_csvResouce, false ) );
     
     el = table->elementAt(0,2);
     cb = new WCheckBox( "xrays", el );
     cb->setMargin( 5, Wt::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveXrays, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveXrays, m_csvResouce, false ) );
     
     el = table->elementAt(0,3);
     cb = new WCheckBox( "gammas", el );
     cb->setMargin( 5, Wt::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveGammas, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveGammas, m_csvResouce, false ) );
     
     el = table->elementAt(0,4);
     cb = new WCheckBox( "alphas", el );
     cb->setMargin( 5, Wt::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveAlphas, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveAlphas, m_csvResouce, false ) );
     
     el = table->elementAt(0,5);
     cb = new WCheckBox( "betas", el );
     cb->setMargin( 5, Wt::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveBetas, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveBetas, m_csvResouce, false ) );
     
@@ -1753,7 +1759,7 @@ void DecayActivityDiv::init()
   m_decayChart                     = new DecayActivityChart();
   m_decayModel                     = new DecayActivityModel( this );
 
-  //Sete elements names so we can style with css
+  //Set elements names so we can style with css
   m_parentNuclidesDiv->addStyleClass( "m_parentNuclidesDiv" );
   m_nuclidesAddedDiv->addStyleClass( "m_nuclidesAddedDiv" );
 
@@ -1877,7 +1883,7 @@ void DecayActivityDiv::handleAppUrl( std::string path, std::string query_str )
   };
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
   clearAllNuclides();
 
@@ -2144,7 +2150,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
 
   m_displayActivityUnitsCombo->addItem( WString::tr("dad-arbitrary") );
 
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_displayActivityUnitsCombo->setCurrentIndex( (useBq ? 2 : 7) ); //MBq : mCi
 
 
@@ -2160,11 +2166,11 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   m_displayTimeLength->enterPressed().connect( boost::bind( &DecayActivityDiv::refreshDecayDisplay, this, true ) );
   
   
-  const bool showToolTips = m_viewer ? InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
+  const bool showToolTips = m_viewer ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer ) : false;
   if( m_viewer )
     HelpSystem::attachToolTipOn( m_displayTimeLength, WString::tr("dad-tt-age"), showToolTips );
   
-  WLabel *yaxisTypeLabel = new WLabel( isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label", displOptUpper );
+  WLabel *yaxisTypeLabel = new WLabel( WString::tr(isPhone ? "dad-yaxis-label-phone" : "dad-yaxis-label"), displOptUpper );
   yaxisTypeLabel->addStyleClass( "DecayChartYaxisTypeLabel" );
   
   displOptUpper->addWidget( m_yAxisType );
@@ -2881,7 +2887,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
           return nuc.useCurie;
       }
       
-      return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      return !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     };
     
       infostrm << "<div>Starting from:</div><div style=\"margin-left: 20px; max-width: 60ex;\">";

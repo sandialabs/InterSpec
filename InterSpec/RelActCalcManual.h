@@ -115,8 +115,17 @@ struct GenericPeakInfo
   /** Energy of peak, in keV
    
    All source gammas in \c m_source_gammas are assumed at this energy.
+   
+   This value will be set to the energy of the assigned gamma, and is the energy used for clustering
+   and calculations.
    */
   double m_energy;
+  
+  /** This is the fit peak mean.
+   
+   Only used for plotting.
+   */
+  double m_mean;
   
   /** The FWHM of the peak; not use for relative activity or efficiency calculations, but useful
    for assigning source gamma terms.
@@ -315,9 +324,15 @@ struct RelEffSolution
   /** The relative activities for each of the input nuclides. */
   std::vector<IsotopeRelativeActivity> m_rel_activities;
 
-  /** Covariance matrix of relative activities; same index ordering as \p m_rel_activities. */
+  /** Covariance matrix of relative activities; same index ordering as \p m_rel_activities. 
+   
+   But also see `m_activity_norms`, as you need to multiple the relative activities by these
+   scale factors before using with this covariance matrix.
+   */
   std::vector<std::vector<double>> m_rel_act_covariance;
 
+  // TODO: we should probably save the full covariance matrix
+  
   /** The Chi2 summed over all peaks between their actual and fit relative efficiencies.
    
    Note that this always uses the peaks statistical uncertainties, and does not include
@@ -435,6 +450,16 @@ struct RelEffSolution
    Will throw exception if invalid nuclide name (e.g., a reaction), or negative mass fraction.
    */
   double mass_fraction( const std::string &iso ) const;
+  
+  /** Returns the mass fraction of the specified nuclide, with it varied the specified number of sigma away.
+   
+   @param num_sigma The number of sigma away from nominal, to vary the nuclide in questions activity.
+   
+   Should be properly taking into account the covariance matrix for relative activities (but not rel-eff curve).
+   
+   Will throw exception if invalid nuclide name (e.g., a reaction), or negative mass fraction.
+   */
+  double mass_fraction( const std::string &iso, const double num_sigma ) const;
   
   /** Prints out a summary of the results to the provided stream; for development/debug. */
   std::ostream &print_summary( std::ostream &strm ) const;

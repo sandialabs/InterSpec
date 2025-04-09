@@ -593,7 +593,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
     
     for( size_t i = 0; i < num_fit_pars; ++i )
       cost_function->AddParameterBlock( 1 );
-    cost_function->SetNumResiduals( static_cast<int>( cost_functor->number_residuals() ) );
+    cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
     
     vector<double> parameters( num_fit_pars, 0.0 );
     double *pars = &parameters[0];
@@ -661,7 +661,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
       }else
       {
         float lowersigma, uppersigma;
-        expected_peak_width_limits( mean, isHPGe, lowersigma, uppersigma );
+        expected_peak_width_limits( mean, highres, dataH, lowersigma, uppersigma );
         if( !i )
           minsigma = lowersigma;
         if( i == (coFitPeaks.size()-1) )

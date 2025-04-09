@@ -49,11 +49,13 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UseInfoWindow.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
@@ -64,19 +66,18 @@
 using namespace Wt;
 using namespace std;
 
-//Or could just use: __DATE__
-
-
-LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int screen_height )
+LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
 : AuxWindow( WString::tr("window-title-license-credit"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-               | AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) ),
+             | AuxWindowProperties::DisableCollapse
+             | AuxWindowProperties::EnableResize
+             | AuxWindowProperties::SetCloseable) ),
   m_menu( nullptr )
 {
   setClosable( true );
   rejectWhenEscapePressed();
   
-  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
   if( interspec )
     interspec->useMessageResourceBundle( "LicenseAndDisclaimersWindow" );
   
@@ -87,13 +88,26 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   const string docroot = wApp->docRoot();
   m_resourceBundle.use( SpecUtils::append_path(docroot,"InterSpec_resources/static_text/copyright_and_about") ,false);
   
-  double width = 0.5*screen_width, height = 0.8*screen_height;
+  int screen_width = interspec ? interspec->renderedWidth() : 0;
+  int screen_height = interspec ? interspec->renderedHeight() : 0;
+  if( (screen_width < 100) && interspec && interspec->isMobile() )
+  {
+    screen_width = wApp->environment().screenWidth();
+    screen_height = wApp->environment().screenHeight();
+  }
+  
+  const bool narrow_layout = ((screen_width > 100) 
+                              && (screen_width < 500)
+                              && (screen_width < screen_height));
+  
+  double width = 0.5*screen_width;
+  double height = 0.8*screen_height;
 
   if( height < 512.0 )
     height = 1.0*std::min( screen_height, 512 );
   height = std::min( height, 1024.0 );  //1024 not actually tested, could maybye bee 800
 
-  if( width < 715.0 || height < 512.0 )
+  if( !narrow_layout && ((width < 715.0) || (height < 512.0)) )
   {
     setMinimumSize(715,512);
     resize( WLength(50, WLength::FontEm), WLength(80,WLength::Percentage));
@@ -110,13 +124,17 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   stack->setTransitionAnimation( animation, true );
   
   m_menu = new WMenu( stack, Wt::Vertical );
-  m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu SideMenu" );
+  if( narrow_layout )
+    m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu HorizontalMenu" );
+  else
+    m_menu->addStyleClass( "VerticalNavMenu HeavyNavMenu SideMenu" );
+  
+  //HorizontalMenu
   
   WDialog::contents()->setOverflow( WContainerWidget::OverflowHidden );
   
   //If on phone, need to make text much smaller!
-  auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
-  const bool phone = (app && app->isPhone());
+  const bool phone = (interspec && interspec->isPhone());
   //const bool tablet = (app && app->isTablet());
   if( phone )
     WDialog::contents()->addStyleClass( "PhoneCopywriteContent" );
@@ -126,16 +144,27 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   WBorder border(WBorder::Solid, WBorder::Explicit, Wt::gray);
   border.setWidth( WBorder::Explicit, WLength(1) );
   
-  topDiv->decorationStyle().setBorder( border,  Wt::Bottom );
-  stack->decorationStyle().setBorder( border,  Wt::Right | Wt::Left );
-  m_menu->decorationStyle().setBorder( border,  Wt::Left );
-  
   WGridLayout *layout = stretcher();
   
-  layout->addWidget( topDiv,    0, 0, 1, 2 );
-  layout->addWidget( m_menu,    1, 0 );
-  layout->addWidget( stack,     1, 1, 1, 1 );
-  layout->setRowStretch( 1, 1 );
+  if( narrow_layout )
+  {
+    m_menu->setMargin( 5, Wt::Side::Bottom );
+    
+    layout->addWidget( topDiv,    0, 0 );
+    layout->addWidget( m_menu,    1, 0 );
+    layout->addWidget( stack,     2, 0 );
+    layout->setRowStretch( 2, 1 );
+  }else
+  {
+    topDiv->decorationStyle().setBorder( border,  Wt::Bottom );
+    stack->decorationStyle().setBorder( border,  Wt::Right | Wt::Left );
+    m_menu->decorationStyle().setBorder( border,  Wt::Left );
+    
+    layout->addWidget( topDiv,    0, 0, 1, 2 );
+    layout->addWidget( m_menu,    1, 0 );
+    layout->addWidget( stack,     1, 1, 1, 1 );
+    layout->setRowStretch( 1, 1 );
+  }
   layout->setVerticalSpacing( 0 );
   layout->setHorizontalSpacing( 0 );
   
@@ -149,7 +178,7 @@ LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( int screen_width, int 
   WTemplate *title = new WTemplate( topDiv );
   title->setTemplateText( apptitle );
   title->bindString("build-version", InterSpec_VERSION);
-  title->bindString("build-date", std::to_string(InterSpecApp::compileDateAsInt()) );
+  title->bindString("build-date", std::to_string(AppUtils::compile_date_as_int()) );
   title->bindString("copyright", copyright );
   
   //Add items to the left menu; the contents wont be loaded until shown.
@@ -334,9 +363,21 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
   
   if( viewer )
   {
-    string datadir;
-    try{ datadir = Wt::Utils::htmlEncode( viewer->writableDataDirectory() ); }catch(...){}
-    string staticdir = Wt::Utils::htmlEncode( viewer->staticDataDirectory() );
+    if( !parent->hasStyleClass("DataContent") )
+      parent->addStyleClass( "DataContent" );
+      
+    string datadir, userDataDir;
+    try
+    {
+      userDataDir = viewer->writableDataDirectory();
+      datadir = Wt::Utils::htmlEncode( userDataDir );
+    }catch(...)
+    {
+      
+    }
+    
+    const string staticDataDir = viewer->staticDataDirectory();
+    string staticdir = Wt::Utils::htmlEncode( staticDataDir );
     
     //SpecUtils::is_absolute_path( staticdir )
     try
@@ -361,7 +402,7 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     string totalUserTime, totalFilesOpened, totalSessions, firstAccess;
     
     InterSpec *viewer = InterSpec::instance();
-    Dbo::ptr<InterSpecUser> user = ((app && viewer) ? viewer->m_user : Dbo::ptr<InterSpecUser>());
+    Dbo::ptr<InterSpecUser> user = ((app && viewer) ? viewer->user() : Dbo::ptr<InterSpecUser>());
     if( user )
     {
       try
@@ -369,11 +410,10 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
         totalSessions = std::to_string( user->accessCount() );
         totalFilesOpened = std::to_string( user->numSpectraFilesOpened() );
         chrono::steady_clock::time_point::duration totaltime = user->totalTimeInApp();
-        // Note that if user has multiple sessions going, this next line wont be exactly correct, but close enough.
-        totaltime += app->activeTimeInCurrentSession();
+        totaltime += app->timeSinceTotalUseTimeUpdated();
         const chrono::seconds numsecs = chrono::duration_cast<chrono::seconds>(totaltime);
         
-        totalUserTime = PhysicalUnitsLocalized::printToBestTimeUnits( numsecs.count() );
+        totalUserTime = PhysicalUnitsLocalized::printToBestTimeUnits( numsecs.count(), 2, 1.0 );
         
         
         const WDateTime utcStartTime = WDateTime::fromPosixTime( to_ptime(user->firstAccessUTC()) );
@@ -397,9 +437,47 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
     
     WText *text = new WText( WString::tr("ladw-data-location-user").arg(datadir), parent );
     text->addStyleClass( "DataLocationSection" );
+
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+    if( !userDataDir.empty() )
+    {
+      WPushButton *showBtn = new WPushButton( parent );
+#ifdef _WIN32
+      const char *txt_key = "ladw-show-data-location-win";
+#elif __APPLE__
+      const char *txt_key = "ladw-show-data-location-macOS";
+#else
+      const char *txt_key = "ladw-show-data-location";
+#endif
+      showBtn->setText( WString::tr(txt_key) );
+      showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
+      showBtn->clicked().connect( std::bind([userDataDir](){
+        AppUtils::showFileInOsFileBrowser(userDataDir);
+      }) );
+    }
+#endif
     
     text = new WText( WString::tr("ladw-data-location-static").arg(staticdir), parent );
     text->addStyleClass( "DataLocationSection" );
+    
+#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
+    if( !userDataDir.empty() )
+    {
+      WPushButton *showBtn = new WPushButton( parent );
+#ifdef _WIN32
+      const char *txt_key = "ladw-show-data-location-win";
+#elif __APPLE__
+      const char *txt_key = "ladw-show-data-location-macOS";
+#else
+      const char *txt_key = "ladw-show-data-location";
+#endif
+      showBtn->setText( WString::tr(txt_key) );
+      showBtn->setStyleClass( "LinkBtn ShowDataLocationBtn" );
+      showBtn->clicked().connect( std::bind([staticDataDir](){
+        AppUtils::showFileInOsFileBrowser(staticDataDir);
+      }) );
+    }
+#endif
     
     text = new WText( WString::tr("ladw-data-location-network").arg(httpPort), parent );
     text->addStyleClass( "DataLocationSection" );
@@ -450,8 +528,8 @@ void LicenseAndDisclaimersWindow::dataStorageCreator( Wt::WContainerWidget *pare
 #endif
     
 #if( USE_REMOTE_RID )
-    const string urls = InterSpecUser::preferenceValue<string>( "ExternalRidUrl", viewer );
-    const string exes = InterSpecUser::preferenceValue<string>( "ExternalRidExe", viewer );
+    const string urls = UserPreferences::preferenceValue<string>( "ExternalRidUrl", viewer );
+    const string exes = UserPreferences::preferenceValue<string>( "ExternalRidExe", viewer );
     if( urls.empty() && exes.empty() )
       content.arg( WString::tr("ladw-remote-rid-none") );
     

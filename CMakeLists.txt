@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.0.12)
+project(InterSpec VERSION 1.0.13)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -46,12 +46,12 @@ option(
 option(
     PERFORM_DEVELOPER_CHECKS
     "Performs additional computationally expensive tests during execution"
-    off
+    OFF
 )
 option(
     USE_OSX_NATIVE_MENU
     "Mirrors WMenus with OSX native NSMenu (not fully implemented)"
-    off
+    OFF
 )
 
 
@@ -110,10 +110,10 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
-if( IOS OR ANDROID OR BUILD_AS_OSX_APP )
+if( IOS OR ANDROID )
   set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
 else()
-  option(USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+  option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
 endif()
 
 if(MSVC)
@@ -135,19 +135,15 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
     "Amount of memory to allow spectra to take up before trying to offload them onto disk when not in use"
 )
 
-set( INTERSPEC_LIB_TYPE "STATIC" )
-#set( INTERSPEC_LIB_TYPE "SHARED" )
-
-
-if(WIN32)
-  #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS /bigobj /MP )
-
-#    set(EXECUTABLE_OUTPUT_PATH . CACHE PATH "Path to executables" FORCE)
-#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj /MP /wd4996 /wd4267" )
-else(WIN32)
-#    set(EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE)
-endif(WIN32)
+# If we are creating the normal InterSpec executable, and the InterSpec_batch executable,
+#  we will compile LibInterSpec as a shared library, so both exes can use it; otherwise
+#  we will create a static library, and statically link it into our final executable.
+#  (Electron doesnt need a separate exe for batch)
+if( (USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP )
+  set( INTERSPEC_LIB_TYPE SHARED )
+else()
+  set( INTERSPEC_LIB_TYPE STATIC )
+endif()
 
 
 SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod")
@@ -333,6 +329,7 @@ set(sources
     src/EnterAppUrlWindow.cpp
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
+    src/UserPreferences.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -436,12 +433,13 @@ set(headers
     InterSpec/EnterAppUrlWindow.h
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
+    InterSpec/UserPreferences.h
 )
 
 
 if(USE_DB_TO_STORE_SPECTRA)
-    list(APPEND sources src/DbStateBrowser.cpp src/DbFileBrowser.cpp)
-    list(APPEND headers InterSpec/DbStateBrowser.h InterSpec/DbFileBrowser.h)
+    list(APPEND sources src/DbFileBrowser.cpp)
+    list(APPEND headers InterSpec/DbFileBrowser.h)
 endif(USE_DB_TO_STORE_SPECTRA)
 
 
@@ -542,14 +540,21 @@ if( USE_BATCH_TOOLS )
         src/BatchCommandLine.cpp
         src/BatchPeak.cpp
         src/BatchActivity.cpp
+        src/BatchInfoLog.cpp
   )
   
   list( APPEND headers
         InterSpec/BatchCommandLine.h
         InterSpec/BatchPeak.h
         InterSpec/BatchActivity.h
+        InterSpec/BatchInfoLog.h
   )
 endif( USE_BATCH_TOOLS )
+
+if( BUILD_AS_OSX_APP )
+  list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
+  list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
+endif( BUILD_AS_OSX_APP )
 
 
 #Copy D3 resources into InterSpec_resources directory at compile time
@@ -591,9 +596,9 @@ set(SpecUtils_NO_BOOST_LIB OFF
 
 if( APPLE OR ANDROID )
   set(SpecUtils_USE_WT_THREADPOOL OFF CACHE BOOL "")
-else( APPLE or ANDROID  )
+else( APPLE OR ANDROID  )
   set(SpecUtils_USE_WT_THREADPOOL ON CACHE BOOL "")
-endif( APPLE or ANDROID  )
+endif( APPLE OR ANDROID  )
 set(SpecUtils_EXTERNALLY_DEFINED_LOG_MESSAGE ON CACHE BOOL "")
 set(SpecUtils_BUILD_UNIT_TESTS OFF CACHE BOOL "")
 set(SpecUtils_BUILD_REGRESSION_TEST OFF CACHE BOOL "")
@@ -603,6 +608,7 @@ set(SpecUtils_ENABLE_D3_CHART ON CACHE BOOL "")
 set(SpecUtils_D3_SUPPORT_FILE_STATIC OFF CACHE BOOL "")
 set(SpecUtils_D3_SCRIPTS_RUNTIME_DIR "InterSpec_resources" CACHE STRING "")
 set(SpecUtils_ENABLE_URI_SPECTRA ${USE_QR_CODES} CACHE BOOL "")
+set(SpecUtils_FLT_PARSE_METHOD "boost" CACHE STRING "")
 
 #add in all the subdirectories the project will always use
 add_subdirectory(external_libs/Minuit2)
@@ -624,6 +630,32 @@ endif()
 
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
+
+# Turn off some compiler warnings
+target_compile_options(InterSpecLib PRIVATE
+     $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
+          -Wno-inconsistent-missing-override>  # Turn off a bunch of warnings like: WTreeView:399:20: warning: 'headerWidget' overrides a member function but is not marked 'override' [-Winconsistent-missing-override]
+     $<$<CXX_COMPILER_ID:MSVC>:
+          >)
+
+# Turn off "note: The practice of declaring the Bind placeholders (_1, _2, ...) in the global namespace is deprecated...."
+# warnings (these come from Wt I think, not our code)
+SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
+          
+if(WIN32)
+  #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
+  target_compile_definitions( InterSpecLib PUBLIC /bigobj -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
+  target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
+  add_definitions( /bigobj )
+        
+  if( USE_BATCH_TOOLS )
+    # We get error compiling multi-processor debug build of shared LibInterSpec, presumably due to some 
+    #  file locking issues, so only enable parallel builds for release, if we are building shared LibInterSpec
+    target_compile_options( InterSpecLib PUBLIC $<$<CONFIG:Release>:/MP> )
+  else( USE_BATCH_TOOLS )
+    add_definitions( /MP )
+  endif( USE_BATCH_TOOLS )
+endif(WIN32)
 
 target_link_libraries(
     InterSpecLib
@@ -715,6 +747,44 @@ if( USE_REL_ACT_TOOL )
 endif( USE_REL_ACT_TOOL )
 
 
+if( BUILD_AS_OSX_APP )
+  FIND_LIBRARY(COCOA_LIBRARY Cocoa)
+  FIND_LIBRARY(COREDATA_LIBRARY CoreData)
+  FIND_LIBRARY(APPKIT_LIBRARY AppKit)
+  FIND_LIBRARY(FOUNDATION_LIBRARY Foundation)
+
+  MARK_AS_ADVANCED( COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
+
+  target_link_libraries( InterSpecLib PUBLIC
+    ${COCOA_LIBRARY}
+    ${APPKIT_LIBRARY}
+    ${COREDATA_LIBRARY}
+    ${FOUNDATION_LIBRARY}
+  )
+  
+  if( USE_BATCH_TOOLS )
+    set_target_properties( InterSpecLib PROPERTIES
+      FRAMEWORK TRUE
+      FRAMEWORK_VERSION A
+      MACOSX_FRAMEWORK_IDENTIFIER gov.sandia.InterSpecFramework
+      MACOSX_FRAMEWORK_SHORT_VERSION_STRING 1.0
+      MACOSX_FRAMEWORK_BUNDLE_VERSION 1.0.0
+      MACOSX_FRAMEWORK_COPYRIGHT "© 2024 Sandia National Laboratories"
+      # XCODE_ATTRIBUTE_INSTALL_PATH @executable_path/../Frameworks/
+      XCODE_ATTRIBUTE_SKIP_INSTALL "Yes"
+    )
+    
+    set_target_properties( InterSpecLib PROPERTIES
+      XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER gov.sandia.InterSpecFramework
+    )
+    
+    set_target_properties( InterSpecLib PROPERTIES
+      PUBLIC_HEADER "InterSpec_config.h"
+    )
+  endif( USE_BATCH_TOOLS )
+endif( BUILD_AS_OSX_APP )
+
+
 if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
     # Setting Xcode working directory requires cmake 3.17
     if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
@@ -771,10 +841,10 @@ if(TRY_TO_STATIC_LINK)
         target_link_libraries(InterSpecLib PUBLIC ${FCGI_LIBRARIES})
     endif(Wt_FCGI_LIBRARY)
 
-    include(cmake/WtFindSsl.txt)
-    if(SSL_FOUND)
-        target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
-    endif(SSL_FOUND)
+    #include(cmake/WtFindSsl.txt)
+    #if(SSL_FOUND)
+    #    target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
+    #endif(SSL_FOUND)
 
     if(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
         find_library( RT_LIB rt REQUIRES )
@@ -822,7 +892,7 @@ configure_file(
 
 if( WIN32 )
   # The following are only needed for Wt 3.7.1, not 3.3.4
-  target_link_libraries( InterSpecLib PRIVATE opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
+  target_link_libraries( InterSpecLib PUBLIC opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
 endif( WIN32 )
 
 #if( ${PERFORM_DEVELOPER_CHECKS} EQUAL ${SpecUtils_ENABLE_EQUALITY_CHECKS} )

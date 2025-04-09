@@ -34,6 +34,7 @@
 #include <Wt/WContainerWidget>
 
 class MaterialDB;
+class PopupDivMenu;
 class ShieldingSelect;
 
 namespace Wt
@@ -358,6 +359,9 @@ protected:
   
   /** Button that lets you select sources that might be in Source.lib files */
   Wt::WPushButton *m_lib_src_btn;
+  
+  /** Menu that pops up when `m_lib_src_btn` is clicked. */
+  PopupDivMenu *m_lib_src_menu;
   
   Wt::Signal<> m_updated;
 };//MakeDrfSrcDef

@@ -231,7 +231,7 @@ void batch_test()
     if( age > 10*SandiaDecay::year )
       age = 10*SandiaDecay::year;
     
-    const bool parent_act = 1.0E-3*SandiaDecay::curie; //Will get divided out, doesnt matter, as long as not too small.
+    const double parent_act = 1.0E-3*SandiaDecay::curie; //Will get divided out, doesnt matter, as long as not too small.
     
     SandiaDecay::NuclideMixture mix;
     mix.addAgedNuclideByActivity( nuc, parent_act, age );
@@ -754,8 +754,8 @@ pair<size_t,size_t> round_roi_to_channels( shared_ptr<const SpecUtils::Measureme
   if( !cal || !cal->valid() )
     throw runtime_error( "mda_counts_calc: invalid energy calibration" );
   
-  const float peak_region_lower_ch = cal->channel_for_energy( roi_lower_energy );
-  const float peak_region_upper_ch = cal->channel_for_energy( roi_upper_energy );
+  const double peak_region_lower_ch = std::max(0.0, cal->channel_for_energy( roi_lower_energy ) );
+  const double peak_region_upper_ch = std::max(0.0, cal->channel_for_energy( roi_upper_energy ) );
   
   //if( (peak_region_lower_ch - num_lower_side_channels) < 0.0 )
   //  throw runtime_error( "mda_counts_calc: lower energy goes off spectrum" );
@@ -1523,7 +1523,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
     
     //\TODO: if best activity is at min_search_quantity, it takes 50 iterations inside brent_find_minima
     //      to confirm; we could save this time by using just a little bit of intelligence...
-    const int bits = 12; //Float has 24 bits of mantisa; should get us accurate to three significant figures
+    const int bits = 12; //Float has 24 bits of mantissa; should get us accurate to three significant figures
     
     return boost::math::tools::brent_find_minima( chi2ForQuantity, min_range, max_range, bits, max_iter );
   };//search_range lambda
@@ -1584,7 +1584,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   //  that the chi2 will increase at least by cl_chi2_delta
   pool.post( [&lowerLimit,&quantityRangeMin,&foundLowerCl,&lowerLimitChi2,&foundLowerDisplay,&num_iterations, //quantities we will modify
                min_search_quantity,overallBestQuantity,overallBestChi2,yrange, //values we can capture by value
-               &tolerance,&chi2ForCL,&chi2ForQuantity,&print_quantity,&chi2ForRangeLimit //lamdas we will use
+               &tolerance,&chi2ForCL,&chi2ForQuantity,&print_quantity,&chi2ForRangeLimit //lambdas we will use
              ](){
     const double min_search_chi2 = chi2ForCL(min_search_quantity);
     if( (fabs(min_search_quantity - overallBestQuantity) > 0.001)
@@ -1882,7 +1882,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
       double lowerQuantityChi2 = -999.9;
       result.lowerLimitResults = localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, numDOF );
       
-      assert( lowerQuantityChi2 == result.lowerLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
+      assert( lowerQuantityChi2 == lowerLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
       
       limit_str = print_quantity( lowerLimit, 3 );
       const string print_limit_str = print_quantity( lowerLimit, 2 );
@@ -1892,7 +1892,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
       //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
       //         0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), lowerQuantityChi2 );
       
-      snprintf( buffer, sizeof(buffer), "Can detect at %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
+      snprintf( buffer, sizeof(buffer), "Distance ≥%s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
                print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), lowerQuantityChi2 );
     }else
     {
@@ -1926,7 +1926,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
       const string print_limit_str = print_quantity( upperLimit, 2 );
       //snprintf( buffer, sizeof(buffer), "%.1f%% coverage at %s with &chi;<sup>2</sup>=%.1f",
       //         0.1*std::round(1000.0*wantedCl), print_limit_str.c_str(), upperQuantityChi2 );
-      snprintf( buffer, sizeof(buffer), "Can detect %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
+      snprintf( buffer, sizeof(buffer), "Less than %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
                print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), upperQuantityChi2 );
     }//if( is_dist_limit ) / else
   }

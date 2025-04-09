@@ -120,7 +120,7 @@ public:
   static void fileTooLarge( const ::int64_t size_tried );
 
   //The dataUploaded(..) with two arguments is to help keep from having to
-  //  parse file twice to display when SpectraHeader is not cahcing the
+  //  parse file twice to display when SpectraHeader is not caching the
   //  SpecMeas obj.
   //XXX - The dataUploaded() with one argument is called whe a user uploads from
   //      the 'File Manager' screen - when they will probably want to load the
@@ -196,7 +196,16 @@ public:
   bool handleMultipleDrfCsv( std::istream &input,
                              const std::string &displayName,
                              const std::string &fileLocation );
-  
+ 
+  /** Reads in GammaQuant CSV of detector efficiencies.
+   
+   The first cell must be "Detector ID", then rows through "Coefficient h".
+   Each column is a different detector, with the first column being the labels ("Detector ID", "Calibration Geometry",
+   "Comments", ..., "Coefficient h").
+   */
+  bool handleGammaQuantDrfCsv( std::istream &input,
+                             const std::string &displayName,
+                             const std::string &fileLocation );
   
   /** Reads a CALp file from input stream and then either applies the CALp to current spectra, or prompts the user how to apply it.
    Function may return asynchronously to the CALp being applied, as the application may prompt user for options/input.
@@ -369,20 +378,7 @@ public:
   //  must be called from a thread where WApplication::instance() is available
   //  to ensure thread safety.
   void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const;
-  
-  void storeSpectraInDb();
-  void finishStoreAsSpectrumInDb( Wt::WLineEdit *name,
-                                  Wt::WTextArea *description,
-                                  std::shared_ptr<SpecMeas> meas,
-                                  AuxWindow *window );
-  void storeSpectraSnapshotInDb( const std::string name = "" );
-  void finishSaveSnapshotInDb(
-                      const std::vector< std::shared_ptr<SpecMeas> > specs,
-                      const std::vector< Wt::Dbo::ptr<UserFileInDb> > dbs,
-                      const std::vector< Wt::WLineEdit * > edits,
-                      const std::vector< Wt::WCheckBox * > cbs,
-                               AuxWindow *window );
-  void startStoreSpectraAsInDb();
+
   
   void browsePrevSpectraAndStatesDb();
 #endif
@@ -491,7 +487,7 @@ private:
   Wt::WContainerWidget *createButtonBar();
   void deleteSpectrumManager();
   Wt::WContainerWidget *createTreeViewDiv();
-
+  void closeNonSpecFileDialog();
   
 protected:
   AuxWindow *m_spectrumManagerWindow;
@@ -548,6 +544,10 @@ protected:
    */
   std::unique_ptr<boost::asio::deadline_timer> m_processingUploadTimer;
 
+  /** Dialog created when a non-spectrum file is dropped on the app. */
+  SimpleDialog *m_nonSpecFileDialog;
+  
+  
 #if( !defined(MAX_SPECTRUM_MEMMORY_SIZE_MB) ||  MAX_SPECTRUM_MEMMORY_SIZE_MB < 0 )
   static const size_t sm_maxTempCacheSize = 0;
 #else

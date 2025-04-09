@@ -155,6 +155,16 @@ public:
    */
   virtual void doJavaScript( const std::string &js );
   
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+  /** Causes `defineJavaScript()` to be called next time the `render(flags)` function is called.
+   
+   This is fixes an issuer where if, while time-chart is showing, we hide tool tabs, and then show
+   them again, then the time chart wont show.  I *think* it has something to do with the timechart
+   div getting taken out of the DOM, and then reinserted, causing whatever references to be lost.
+   Maybe, not really sure.
+   */
+  void refreshJs();
+#endif
 protected:
   
   void defineJavaScript();
@@ -233,6 +243,7 @@ protected:
     
     //ResetXDomain = 0x10
     
+    RefreshJs = 0x04
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   

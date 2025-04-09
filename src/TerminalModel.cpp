@@ -34,6 +34,7 @@
 #include "InterSpec_config.h"
 
 #include <regex>
+#include <tuple>
 #include <vector>
 #include <memory>
 #include <stdio.h>
@@ -631,6 +632,7 @@ TerminalModel::TerminalModel( InterSpec* viewer )
     addDropDownListHeader( "Spectrum Viewer Commands" );
     addCommand( "setRange"  , SetEnergyRangeCommand );
     addCommand( "setYRange"  , SetYaxisRangeCommand );
+    addCommand( "setLogYAxisMin"  , SetLogYAxisMinCommand );
     addDropDownListSeparator();
     
     addDropDownListHeader( "Nuclide Commands" );
@@ -1718,7 +1720,12 @@ void TerminalModel::addCommand(const std::string& command, CommandType type)
                            "Sets the displayed y-axis range of the current spectrum."
                            " Outputs if action was a success or not." );
     break;
-        
+      
+    case SetLogYAxisMinCommand:
+      addDropDownListItem( "setLogYAxisMin( lower_y_counts )",
+                          "y axis zooming counts range yrange axis zoom",
+                           "Sets the minimum displayed y-axis value when there is zero counts." );
+    break;
         
     default: break;
   }//switch( m_commandMap.at(command) )
@@ -1735,17 +1742,18 @@ std::string TerminalModel::doCommand(const std::string& input)
     const std::string& arguments = match[2];
     
     switch ( m_commandMap.at(command) ) {
-        case VarmapCommand:         return variableMapStr( arguments );
-        case SetEnergyRangeCommand: return setEnergyRange( arguments );
-        case SetYaxisRangeCommand:  return setYRange( arguments );
-        case SearchPeakCommand:     return searchforPeak ( arguments );
-        case DeletePeakCommand:     return deletePeak    ( arguments );
-        case RefitPeakCommand:      return refitPeak     ( arguments );
-        case DarkenCommand:         return darken        ( arguments );
-        case LightenCommand:        return lighten       ( arguments );
-        case SetNuclideCommand:     return setNuclide    ( arguments );
-        case SaveCommand:           return saveFile      ( arguments );
-        case ClearVarCommand:       return clearVar      ( arguments );
+        case VarmapCommand:          return variableMapStr( arguments );
+        case SetEnergyRangeCommand:  return setEnergyRange( arguments );
+        case SetYaxisRangeCommand:   return setYRange( arguments );
+        case SetLogYAxisMinCommand:  return setLogYAxisMin( arguments );
+        case SearchPeakCommand:      return searchforPeak ( arguments );
+        case DeletePeakCommand:      return deletePeak    ( arguments );
+        case RefitPeakCommand:       return refitPeak     ( arguments );
+        case DarkenCommand:          return darken        ( arguments );
+        case LightenCommand:         return lighten       ( arguments );
+        case SetNuclideCommand:      return setNuclide    ( arguments );
+        case SaveCommand:            return saveFile      ( arguments );
+        case ClearVarCommand:        return clearVar      ( arguments );
         default: break;
     }
     return "Error: unsupported command";
@@ -1902,16 +1910,19 @@ std::string TerminalModel::setYRange( const std::string& arguments )
     if (lower > upper)
       std::swap(lower, upper);
     
-    if( std::abs(upper - lower) <= 0.01 )
-      throw mup::ParserError( "Invalid arguments for function (setYRange). Lower and upper bound"
-                              " must not have difference less than or equal to 0.01." );
+    //const float diff = upper - lower;
+    //if( diff <= 0.0 )
+    //  throw mup::ParserError( "Invalid arguments for function (setYRange). Lower and upper bound"
+    //                           " must not have difference less than or equal to 0.01." );
     
-    const bool success = m_viewer->setYAxisRange(lower, upper);
+    const std::tuple<double,double,Wt::WString> result = m_viewer->setYAxisRange(lower, upper);
     
-    if( success )
-      os << "Now setting count range to [" << lower << ", " << upper << "] counts.";
+    if( std::get<2>(result).empty() )
+      os << "Setting y-range to [" << lower << ", " << upper << "].";
     else
-      os << "Setting to count range [" << lower << ", " << upper << "] not fully be fulfilled.";
+      os << "Setting y-range to [" << lower << ", " << upper << "] not fully be fulfilled; set to ["
+         << std::get<0>(result) << ", " << std::get<1>(result) << "]: "
+         << std::get<2>(result).toUTF8();
   } catch ( const mup::ParserError& e ) {
     os << "Error code " << e.GetCode() << ": " << e.GetMsg();
     
@@ -1920,6 +1931,30 @@ std::string TerminalModel::setYRange( const std::string& arguments )
   }
   return os.str();
   
+}//string TerminalModel::setYRange(string)
+
+
+std::string TerminalModel::setLogYAxisMin( const std::string& arguments )
+{
+  try 
+  {
+    m_parser->SetExpr( arguments );
+    const double counts = m_parser->Eval().GetFloat();
+    
+    if( counts <= 0 )
+      throw std::runtime_error( "value must be larger than zero" );
+    
+    if( !m_viewer->setLogYAxisMin(counts) )
+      return "Failed to set lower value.";
+  }catch( const mup::ParserError &e )
+  {
+    return errorMessage(e);
+  }catch( const std::exception &e )
+  {
+    return "Error: " + std::string(e.what());
+  }
+  
+  return "";
 }//string TerminalModel::setYRange(string)
 
 

@@ -20,5 +20,15 @@
   <message id="pid-tt-add-peak-btn">Manually add a new peak.</message>
   <message id="pid-tt-del-peaks">Deletes peak currently being edited.</message>
   <message id="pid-better-editor-hint">Right click on peaks for better editor</message>
+  <message id="pid-better-editor-hint-mobile">Tap and hold on peaks for better editor</message>
   <message id="pid-tt-csv-export">Export information about the identified peaks to a comma separated format.</message>
+  <message id="pid-tt-csv-copy">Copy peak CSV information to your pasteboard.
+    <p>The peak data will be copied onto your pasteboard in both formatted, and plain-text variants,
+      so the format of the data will depend on the application you are pasting to.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">Copy full peak CSV</message>
+  <message id="pid-csv-copy-no-hdr">Copy without headers</message>
+  <message id="pid-csv-copy-compact">Copy fit peak info</message>
 </messages>

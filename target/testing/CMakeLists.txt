@@ -45,6 +45,10 @@ set(PERFORM_DEVELOPER_CHECKS ON CACHE BOOL "")
 set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE BOOL "")
 set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "")
 
+# We dont currently export all functions tested when making a DLL for LibInterSpec, 
+#  so we'll disable batch analysis, so a static library will be made.
+set(USE_BATCH_TOOLS OFF CACHE INTERNAL "")
+
 set(TEST_SUITE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test_data"
     CACHE STRING
     "Path to directory that contains the \"analysis_tests\" directory for saving N42 test states."
@@ -126,6 +130,14 @@ add_test( NAME test_DetectionLimit
   COMMAND $<TARGET_FILE:test_DetectionLimit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+add_executable( test_MakeDrfSrcDef test_MakeDrfSrcDef.cpp )
+target_link_libraries( test_MakeDrfSrcDef PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfSrcDef
+  COMMAND $<TARGET_FILE:test_MakeDrfSrcDef> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 

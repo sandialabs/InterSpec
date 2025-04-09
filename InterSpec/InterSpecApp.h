@@ -33,6 +33,9 @@
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
 
+#if(  BUILD_AS_WX_WIDGETS_APP )
+#include <functional>
+#endif
 
 class InterSpec;
 namespace Wt
@@ -59,7 +62,7 @@ class SpectrumViewerTester;
 #define PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE 0
 #endif
 
-class InterSpecApp : public Wt::WApplication
+class InterSpec_API InterSpecApp : public Wt::WApplication
 {
 public:
   InterSpecApp( const Wt::WEnvironment& env );
@@ -77,13 +80,6 @@ public:
   //isAndroid(): Searches for Android in the user agent string
   bool isAndroid() const;
   
-#if( WT_VERSION>=0x3030400 )
-  //ToDo: define a custom handler for javascript errors
-//  virtual void handleJavaScriptError(const std::string& errorText)
-//  {
-//    std::cerr << "JS error: " << errorText << std::endl;
-//  }
-#endif
   
   /* svlog send the message to the InterSpec for display to the user. */
   void svlog( const Wt::WString& message, int priority = 1 );
@@ -97,6 +93,9 @@ public:
   InterSpec *viewer();
 
   std::chrono::steady_clock::time_point::duration activeTimeInCurrentSession() const;
+  
+  /** Returns the amount of use-time since `InterSpecUser::totalTimInApp()` has been updated. */
+  std::chrono::steady_clock::time_point::duration timeSinceTotalUseTimeUpdated() const;
   
   
   //userNameFromOS(): Caution, will return 'apache' if being served, from
@@ -124,11 +123,9 @@ public:
   //  other not-super-fast actions.
   static std::string tempDirectory();
 
-  
-  /** Returns a int, representing compile date.
-   For example, will return value 20120122 if you compile on Jan 22nd, 2012.
-   */
-  static uint32_t compileDateAsInt();
+#if(  BUILD_AS_WX_WIDGETS_APP )
+  static void setJavascriptErrorHandler( std::function<void(std::string, std::string)> fctn );
+#endif
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Returns the token passed as part of url using parameter 'externalid' or 'apptoken'.
@@ -259,10 +256,13 @@ protected:
   //  state if their preferences ask for it
   virtual void prepareForEndOfSession();
   
-#if(  BUILD_AS_WX_WIDGETS_APP )
+  /** Adds `m_activeTimeSinceDbUpdate` to the database, saving the updated result. */
+  void updateUsageTimeToDb();
+  
+#if( WT_VERSION>=0x3030400 )
   virtual void handleJavaScriptError( const std::string &errorText );
 #endif
-
+  
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Checks for URL argument "externalid", or equivalently "apptoken", and if found sets m_externalToken to it.
    
@@ -292,6 +292,10 @@ protected:
   
   std::chrono::steady_clock::time_point m_lastAccessTime;
   std::chrono::steady_clock::time_point::duration m_activeTimeInSession;
+  /** We will occasionally update the use duration in the database - this field tracks how long of
+   active use since the database was last updated.
+   */
+  std::chrono::steady_clock::time_point::duration m_activeTimeSinceDbUpdate;
   
 #define OPTIMISTICALLY_SAVE_USER_STATE 0
   //If OPTIMISTICALLY_SAVE_USER_STATE is enabled, then the users state will

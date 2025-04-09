@@ -1,3 +1,8 @@
+
+.DrfSelectNarrow {
+  font-size: x-small;
+}
+
 .DetectorLabel
 {
   font-size: 12px;
@@ -50,6 +55,18 @@ table.FormulaDrfTbl label
   height: 1.5em;
   padding-top: 3px;
   padding-bottom: 3px;
+}
+
+.DetEditMenuHorizontal {
+  
+}
+
+.DetEditNarrowSecondFooter {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .DetectorDiamDiv

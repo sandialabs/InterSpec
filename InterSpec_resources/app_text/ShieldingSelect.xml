@@ -13,6 +13,11 @@
     To enter materials with isotopic components, you should single or double
     quote the nuclide, ex: 'U238'0.2'U235'0.8
   </message>
+  <message id="ss-tt-material-name-fit">
+  Note: if used as a self-attenuating source, the material, as defined, will be used for
+  attenuation purposes, but the specified mass fraction of source nuclides may not mach this
+  attenuation...
+  </message>
   <message id="ss-tt-areal-density">Areal Density of the shielding in g/cm2</message>
   <message id="ss-areal-density-empty-txt">Areal Density</message>
   <message id="ss-tt-atomic-number">Atomic Number of the shielding</message>
@@ -37,9 +42,18 @@
   <message id="ss-depth-thickness">Depth Thickness</message>
   <message id="ss-tt-fit-mass-frac">If mass fractions are fit for, their fractional sum will remain constant in the fit.</message>
   <message id="ss-fixed-non-src-frac">Assuming {1}{2}% other {3} isos</message>
-  <message id="ss-fixed">fixed</message>
+  <message id="ss-fixed">fixed </message> <!-- Note: trailing space is Nbsp character -->
   <message id="ss-generic">Generic</message>
   <message id="ss-consists-of-mass-frac">consist of (mass fraction, element)</message>
   <message id="ss-err-invalid-material">{1} is not a valid material</message>
   <message id="ss-invalid-mat">invalid mat.</message>
+  <message id="ss-src-mass-frac-label">mass frac of {1}:</message>
+  <message id="ss-non-src-frac">Non Source Frac</message>
+  <message id="ss-add-shield-before">Add shielding before</message>
+  <message id="ss-add-shield-after">Add Shielding after</message>
+  <message id="ss-add-trace-src">Add Trace Source</message>
+  <message id="ss-non-src-frac-el">other {1}:</message>
+  <message id="ss-tt-with-uncert">{1}</message>
+  <message id="ss-tt-without"></message>
+  <message id="ss-warning-only-one-src-frac">To fit mass fractions, please select at least two components of {1} to fit.</message>
 </messages>

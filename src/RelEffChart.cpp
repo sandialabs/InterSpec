@@ -136,11 +136,12 @@ void RelEffChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 void RelEffChart::setData( const double live_time,
                           const vector<PeakDef> &fit_peaks,
                           const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts,
-                          const std::string &relEffEqn )
+                          const std::string &relEffEqn,
+                          const Wt::WString &chi2_title_str )
 {
   std::vector<RelActCalcManual::GenericPeakInfo> peaks;
-  map<string,pair<double,string>> relActsColors;
-  
+  map<string,pair<double,string>> nuc_to_act_and_color;
+
   for( const PeakDef &p : fit_peaks )
   {
     const SandiaDecay::Nuclide *nuc = p.parentNuclide();
@@ -151,6 +152,7 @@ void RelEffChart::setData( const double live_time,
     
     RelActCalcManual::GenericPeakInfo peak;
     peak.m_energy = p.mean();
+    peak.m_mean = peak.m_energy;
     peak.m_fwhm = p.fwhm();
     peak.m_counts = p.amplitude();
     
@@ -178,23 +180,24 @@ void RelEffChart::setData( const double live_time,
     
     peak.m_source_gammas.push_back( line );
     
-    const auto pos = relActsColors.find(nuc->symbol);
-    if( pos == std::end(relActsColors) )
+    const auto pos = nuc_to_act_and_color.find(nuc->symbol);
+    if( pos == std::end(nuc_to_act_and_color) )
     {
       const string css_color = p.lineColor().isDefault() ? string() : p.lineColor().cssText();
-      relActsColors[nuc->symbol] = std::make_pair(nuc_info->rel_activity, css_color);
+      nuc_to_act_and_color[nuc->symbol] = std::make_pair(nuc_info->rel_activity, css_color);
     }
       
     peaks.push_back( peak );
   }//for( const PeakDef &p : fit_peaks )
   
-  setData( peaks, relActsColors, relEffEqn );
+  setData( peaks, nuc_to_act_and_color, relEffEqn, chi2_title_str );
 }//void setData( std::vector<PeakDef> m_fit_peaks, std::string relEffEqn )
 
 
 void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
-                          const map<string,pair<double,string>> &relActsColors,
-                          string relEffEqn )
+                          const map<string,pair<double,string>> &nuc_to_act_and_color,
+                          string relEffEqn,
+                          const Wt::WString &chi2_title_str )
 {
   char buffer[512] = { '\0' };
   
@@ -202,7 +205,7 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
   WCssStyleSheet &style = wApp->styleSheet();
   
   set<string> nucs_with_colors;
-  for( const auto nuc_act_color : relActsColors )
+  for( const auto nuc_act_color : nuc_to_act_and_color )
   {
     const string &nuc = nuc_act_color.first;
     const string &color = nuc_act_color.second.second;
@@ -216,8 +219,8 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
     
     m_cssRules[rulename] = style.addRule( rulename, "fill: " + color + ";" );
     nucs_with_colors.insert( nuc );
-  }//for( const auto nuc_act_color : relActsColors )
-  
+  }//for( const auto nuc_act_color : nuc_to_act_and_color )
+
   //Write out the data JSON
   stringstream rel_eff_plot_values, add_rel_eff_plot_css;
   size_t njson_entries = 0;
@@ -230,8 +233,8 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
     double src_counts = 0.0;
     for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
     {
-      const auto pos = relActsColors.find( line.m_isotope );
-      if( pos == end(relActsColors) )
+      const auto pos = nuc_to_act_and_color.find( line.m_isotope );
+      if( pos == end(nuc_to_act_and_color) )
       {
         //const double meas_rel_eff = info.m_counts / (info.m_source_gammas[i].m_yield * rel_act);
         
@@ -268,9 +271,9 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
     }
     
     snprintf( buffer, sizeof(buffer),
-             "%s{\"energy\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
+             "%s{\"energy\": %.2f, \"mean\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
              " \"eff\": %1.6g, \"eff_uncert\": %1.6g, \"nuc_info\": ",
-             (njson_entries ? ", " : ""), peak.m_energy, peak.m_counts, peak.m_counts_uncert,
+             (njson_entries ? ", " : ""), peak.m_energy, peak.m_mean, peak.m_counts, peak.m_counts_uncert,
              eff, eff_uncert );
     
     rel_eff_plot_values << buffer;
@@ -287,7 +290,10 @@ void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> 
   if( njson_entries < 1 )
     rel_eff_plot_values.str("null");
   
-  const string js = m_jsgraph + ".setRelEffData(" + rel_eff_plot_values.str() + "," + relEffEqn + ");";
+  const string js = m_jsgraph + ".setRelEffData(" + rel_eff_plot_values.str() + ","
+                     + relEffEqn + "," 
+                      + (chi2_title_str.empty() ? string("null") : chi2_title_str.jsStringLiteral())
+  + ");";
   if( isRendered() )
     doJavaScript( js );
   else

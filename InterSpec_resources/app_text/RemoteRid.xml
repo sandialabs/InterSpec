@@ -18,7 +18,7 @@
   <message id="rr-gadras-rid-error">GADRAS RID Error: {1}</message>
   <message id="rr-gadras-rid-error-code">GADRAS RID Error code {1}</message>
   <message id="rr-gadras-rid-no-id">GADRAS RID: nothing identified</message>
-  <message id="rr-gadras-result">GADRAS RID: {}</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
   <message id="rr-gadras-fail-parse">Failed to parse GADRAS RID results.</message>
   <message id="rr-rid-results-window-title">External RID Results</message>
   <message id="rr-rid-tool-btn">RID Tool</message>

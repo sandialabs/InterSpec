@@ -23,13 +23,13 @@ npm install --save-dev node-addon-api --arch=x64
 cmake-js
 
 # Or to have a little more control over things
-cmake-js --generator "Visual Studio 16 2019" \
+cmake-js --generator "Visual Studio 17 2022" \
          --architecture x64 --arch=x64 \
-         --CDCMAKE_PREFIX_PATH=/path/to/boost/and/wt/and/zlib \
+         --CDCMAKE_PREFIX_PATH=C://Path/To/Wt_3.7.1_prefix \
          --CDBoost_USE_STATIC_RUNTIME=ON \
          --CDCMAKE_BUILD_TYPE="Release" \
-         --CDGOOGLE_MAPS_KEY="..." \
-         --out="build_dir" \
+         --CDLEAFLET_MAPS_KEY="..." \
+         --out="build_win" \
          --target install
 
 # If you make changes and want to recompile
@@ -75,7 +75,7 @@ npm run package-linux
 cp ../../NOTICE.html ./release-builds/InterSpec-PLATFORM-x64/
 ```
 
-The resulting Electron package seems to run fine on a number of Linux distributions, but to run on the (now out of date) Ubuntu 12.04, you may need to install a couple packages from the package manager on the end-user system:
+The resulting Electron package seems to run fine on a number of Linux distributions, but to run on some systems you may need to install a couple packages from the package manager on the end-user system:
 
 ```bash
 apt-get install libnss3
@@ -135,7 +135,20 @@ cd release-builds/InterSpec-linux-x64/
 ## Using Docker to build Electron-based InterSpec package
 These are the instructions for building the Electron-based InterSpec package for Linux, using the Python Many Linux docker image, and the `FetchContent` option of the CMake build system to compile boost and Wt.
 
-### Building using a manylinux container
+### Building using script with manylinux container
+```bash
+cd /tmp
+mdkir build_interspec
+cd build_interspec
+
+git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_linux_electron_build
+mkdir build_electron
+mkdir build_working_dir
+docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/build_electron/:/build_app -v `pwd`/build_working_dir:/build_working_dir quay.io/pypa/manylinux2014_x86_64:latest /interspec/target/electron/Docker/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
+#Then results will then be in build_working_dir/InterSpec-linux-x64
+```
+
+### Building manually using a manylinux container
 ```bash
 # From your host OS terminal, run the following commands
 git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_linux_electron_build
@@ -161,6 +174,7 @@ npm install uglify-js -g
 npm install uglifycss -g
 npm install cmake-js -g
 npm install --save-dev node-addon-api --arch=x64
+npm install node-api-headers
 npm install electron --arch=x64
 npm install electron-packager
 
@@ -186,5 +200,4 @@ The `InterSpec` module is really a shared library that node.js loads, therefore 
 
 
 ## Future Work
-- In the future the build process may be improved to do the final packaging through CMake.  
-- launch_options.json is intended to allow users to customize behaviors (like allow multiple windows, or not), but is not actually implemented.
+- In the future the build process may be improved to do the final packaging through CMake.

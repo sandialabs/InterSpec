@@ -25,6 +25,8 @@
 
 #include <regex>
 
+#include <boost/algorithm/string/regex.hpp>
+
 #include <Wt/WDate>
 #include <Wt/WTable>
 #include <Wt/WLabel>
@@ -51,12 +53,14 @@
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MakeDrfSrcDef.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -141,7 +145,13 @@ vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( std::istream &file )
     SpecUtils::trim( line );
     
     vector<string> fields;
-    SpecUtils::split( fields, line, " \t" );
+    // We will allow for a space, a tab, or the U+2002 (Unicode En Space) character to separate
+    //  fields.  In order to do this properly, we need to use `split_regex`, and then manually
+    //  remove empty fields
+    boost::algorithm::split_regex( fields, line, boost::regex( "\\s|\xe2\x80\x82" ) );
+    fields.erase( std::remove_if(begin(fields), end(fields), 
+                    [](const string &v){return v.empty();}), end(fields) );
+    
     if( fields.size() < 3 )
       continue;
     
@@ -199,12 +209,13 @@ vector<SrcLibLineInfo> SrcLibLineInfo::sources_in_lib( std::istream &file )
     }//if( std::regex_match( remark, dist_mtch, dist_expr ) )
     
     std::smatch act_uncert_mtch;
-    std::regex act_uncert_expr( string(".+([ActivityUncertainty|ActivityUncert]\\s*\\=\\s*(") 
-                               + PhysicalUnits::sm_positiveDecimalRegex
-                               + ")).*?", std::regex::icase );
+    const string act_uncert_expr_str = string(".*((Act|Activity)(Uncert|Uncertainty)\\s*[\\=:]\\s*(")
+                                        + PhysicalUnits::sm_positiveDecimalRegex + ")).*?";
+    
+    std::regex act_uncert_expr( act_uncert_expr_str, std::regex::icase );
     if( std::regex_match( src_info.m_comments, act_uncert_mtch, act_uncert_expr ) )
     {
-      string strval = act_uncert_mtch[2].str();
+      string strval = act_uncert_mtch[4].str();
       if( !SpecUtils::parse_double( strval.c_str(), strval.size(), src_info.m_activity_uncert ) )
         src_info.m_activity_uncert = -1.0;
     }//if( std::regex_match( remark, dist_mtch, dist_expr ) )
@@ -339,6 +350,7 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
   m_useShielding( nullptr ),
   m_shieldingSelect( nullptr ),
   m_lib_src_btn( nullptr ),
+  m_lib_src_menu( nullptr ),
   m_lib_srcs_for_nuc{},
   m_lib_srcs_from_file{},
   m_lib_srcs_added{},
@@ -362,6 +374,11 @@ MakeDrfSrcDef::MakeDrfSrcDef( const SandiaDecay::Nuclide *nuc,
 
 MakeDrfSrcDef::~MakeDrfSrcDef()
 {
+#if( WT_VERSION >= 0x3070000 )
+  if( m_lib_src_menu )
+    delete m_lib_src_menu;
+  m_lib_src_menu = nullptr;
+#endif
 }
 
 
@@ -409,7 +426,7 @@ void MakeDrfSrcDef::updateSourceLibNuclides()
   if( m_lib_src_btn )
     m_lib_src_btn->setHidden( m_lib_srcs_for_nuc.empty() );
   
-  WPopupMenu *menu = m_lib_src_btn ? m_lib_src_btn->menu() : nullptr;
+  WPopupMenu *menu = m_lib_src_menu;
   if( menu )
   {
     const vector<WMenuItem *> old_items = menu->items();
@@ -463,7 +480,7 @@ void MakeDrfSrcDef::setNuclide( const SandiaDecay::Nuclide *nuc )
     m_useAgeInfo->setUnChecked();
     m_distanceEdit->setValueText( "25 cm" );
     
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     m_activityEdit->setValueText( useCi ? "1 uCi" : "37 kBq" );
     m_useAgeInfo->hide();
   }
@@ -550,7 +567,7 @@ void MakeDrfSrcDef::create()
   WRegExpValidator *val = new WRegExpValidator( PhysicalUnits::sm_activityRegex, this );
   val->setFlags( Wt::MatchCaseInsensitive );
   m_activityEdit->setValidator( val );
-  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_activityEdit->setText( useCi ? "100 uCi" : "3.7 MBq" );
   m_activityEdit->changed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
   m_activityEdit->enterPressed().connect( this, &MakeDrfSrcDef::handleUserChangedActivity );
@@ -632,11 +649,27 @@ void MakeDrfSrcDef::create()
   m_lib_src_btn->setIcon( "InterSpec_resources/images/db_small.png" );
   m_lib_src_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
   m_lib_src_btn->setFloatSide( Wt::Left );
-  WPopupMenu *menu = new WPopupMenu();
-  menu->setAutoHide( true );
-  m_lib_src_btn->setMenu( menu );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+#if( WT_VERSION < 0x3070000 )
+  m_lib_src_menu = new PopupDivMenu( m_lib_src_btn, PopupDivMenu::TransientMenu );
+  m_lib_src_menu->setJavaScriptMember("wtNoReparent", "true");
+#else
+  // If we have the button own the popup menu, the menu will be placed in our current div holding
+  //  all src info, that may have a significant amount of scroll in it, so we will then have to
+  //  scroll this div, to see all the menu items, which is annoying.
+  //  So instead we'll make the menu a global widget, and just pop it up at the clicked location.
+  //  This is a little less than optimal, and make auto-hide of menu not quite as good, but maybe
+  //  better than the alternative.
+  m_lib_src_menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
+  m_lib_src_menu->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
+  m_lib_src_btn->clicked().connect( boost::bind( 
+          static_cast<void (WPopupMenu::*)(const WMouseEvent &)>(&WPopupMenu::popup),
+          m_lib_src_menu, boost::placeholders::_1 ) );
+#endif
+  
+  m_lib_src_menu->setAutoHide( true, 2500 );
+  
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = "Sources defined in Source.lib file in your users data directory.<br/>"
   "When clicked, this button will display a menu with all sources for this nuclide - and when"
   " on of the items is selected, its information will be populated.";
@@ -794,7 +827,7 @@ void MakeDrfSrcDef::handleUserChangedAgeAtAssay()
 
   if( agestr.empty() || (agestr.find_first_not_of("+-0.")==string::npos) )
   {
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     m_sourceAgeAtAssay->setText( useCi ? "0 uCi" : "0 bq" );
   }else
   {
@@ -1007,7 +1040,7 @@ void MakeDrfSrcDef::setDistance( const double dist )
 
 void MakeDrfSrcDef::setActivity( const double act )
 {
-  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   const int ndecimals = 4;
   m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(act, ndecimals, useCi) );
   updateAgedText();
@@ -1030,7 +1063,7 @@ void MakeDrfSrcDef::setAssayInfo( const double activity,
   if( activity > 0.0 )
   {
     const int ndecimals = 4;
-    const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+    const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     m_activityEdit->setText( PhysicalUnits::printToBestActivityUnits(activity, ndecimals, useCi) );
   }
   
@@ -1185,7 +1218,7 @@ std::string MakeDrfSrcDef::toGadrasLikeSourceString() const
     answer += ",";
   
   const double activity = activityAtSpectrumTime();
-  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   answer += PhysicalUnits::printToBestActivityUnits(activity,5,useCi);
   
   if( m_shieldingSelect && m_useShielding->isChecked() )

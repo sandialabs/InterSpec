@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <AddNucInfo>
-  <!-- UUR SAND2023-02430O
+  <!-- UUR SAND2024-16469O
 
 This file is adapted from:
   - 'GS_NuclidesToConsider_2022-09-30_PrgRvwApp_1641834' document by Michael Enghauser, 
@@ -129,6 +129,12 @@ TODO: Need to incorporate the following from FRMAC Spectroscopists guide:
       <date>20231121</date>
     </Ref>
     
+    <Ref key="EPA-IND">
+      <desc>Radioisotopes Commonly Used in Devices by Industry</desc>
+      <url>https://archive.epa.gov/radiation/source-reduction-management/web/html/radionuclides.html</url>
+      <date>20241205</date>
+    </Ref>
+    
 
   </References>
 
@@ -139,7 +145,6 @@ TODO: Need to incorporate the following from FRMAC Spectroscopists guide:
     <Nuc name="Ce-144"><Associated>Pr-144</Associated><Notes></Notes></Nuc>
     <Nuc name="Pr-144"><Associated>Ce-144</Associated><Notes></Notes></Nuc>
     <Nuc name="Nd-147"><Associated>Pm-147</Associated><Notes></Notes></Nuc>
-    <Nuc name="Pm-147"><Associated>Nd-147</Associated><Notes></Notes></Nuc>
 
     <!-- Nuclides with relevant notes on production mechanism, impurities, uses, etc. -->
     <Nuc name="Ac-225">
@@ -309,6 +314,8 @@ May be produces though activated potassium bromide (KBr), which may also have K-
       <Associated>k-42;Na-24;Np-239</Associated>
       <Notes>
 May be produces though activated potassium bromide (KBr), which may also have K-42 (12.4 h) and Br-82 (35.3 h).
+
+"Used to locate leaks in industrial pipelines, and in oil well studies."-[EPA-IND]
       </Notes>
     </Nuc>
 
@@ -325,6 +332,7 @@ Study of the functions of calcium within the body [https://www.sciencedirect.com
 Uses: &lt;ul&gt;
   &lt;li&gt;Cancer detection, pediatric imaging [MRARII].&lt;/li&gt;
   &lt;li&gt;Cd-109 is most commonly used as a source for x-ray fluorescence imaging and in environmental research. National Isotope Development Center [NIDC].  Can be used to determine sulfur content of coal, presence of lead in paint, and for qualitative analysis of metal alloys.&lt;/li&gt;
+  &lt;li&gt;Used to analyze metal alloys for checking stock and scrap sorting [EPA-IND].&lt;/li&gt;
 &lt;/ul&gt;
       </Notes>
     </Nuc>
@@ -458,6 +466,10 @@ Used for low-intensity sterilization of blood and in brachytherapy.  Reactor rad
 "Used for radiotracer technique for identification of sources of soil erosion and deposition, as well as in density and fill height level switches. Also for low-intensity gamma sterilization."-[RII]
 
 Background from world-wide fallout deposition.
+
+Used for low-intensity sterilization of blood and in brachytherapy.
+
+Reactor radioisotope
       </Notes>
     </Nuc>
 
@@ -509,7 +521,9 @@ Pure positron emitter, Consider likelihood based on half-life
 
 It decays with positron emission. Used as tracer with PET imaging.  
 
-Kr-85 has a gamma at 514 keV that low-resolution nuclide ID algorirms may incorrectly attribute to F-18.
+Kr-85 has a gamma at 514 keV that low-resolution nuclide ID algorithms may incorrectly attribute to F-18.
+
+Positron emitters used in PET for studying brain physiology and pathology, in particular for localizing epileptic focus, and in dementia, psychiatry, and neuropharmacology studies. They also have a significant role in cardiology. F-18 in FDG (fluorodeoxyglucose) has become very important in detection of cancers and the monitoring of progress in their treatment, using PET.
 
 Cyclotron radioisotope.
       </Notes>
@@ -589,6 +603,8 @@ Prostate cancer seeds, Can be found with I-126 (12.93 d).
 
 "Used in cancer brachytherapy (prostate and brain), also diagnostically to evaluate the filtration rate of kidneys and to diagnose deep vein thrombosis in the leg. It is also widely used in radioimmuno-assays to show the presence of hormones in tiny quantities."-[GNRIM]
 
+Cs-131, Pd-103, and Ra-223 are also used for brachytherapy, all being Auger (soft) X-ray emitters, and having half-lives of 9.7 days, 17 days, and 11.4 days, respectively, much less than the 60 days of I-125 which they replace.
+
 Reactor radioisotope.
       </Notes>
     </Nuc>
@@ -603,6 +619,8 @@ Treatment may involve significant radioactivity (e.g. 4.4 GBq is quoted as an av
 Has spectral similarities with Ba-133 and Pd-103 dependent on shielding.
 
 Gaseous or volatile fission product(s) detected: Check for krypton, xenon, and iodine isotopes such as Kr85,Xe133,I131,I132,Te132 [FRMAC].
+
+"Iodine-131 (half-life of 8 days) is a reactor-produced radioisotope used for the treatment of cancer (in particular thyroid cancer) and other thyroid diseases. Individual doses range from 0.5 millicurie (adrenal gland tumors) to 4–10 millicuries (hyperthyroidism) to 100–200 millicuries (thyroid cancer therapy). The isotope is transported in vials or capsules with activities of 1–100 millicuries each. In addition to injection, an encapsulated liquid formulation may also be administered to patients.  Bulk quantities of iodine-131 are transported and stored within protective lead containers and can impart high radiation doses if removed. Its gamma-ray energies will trigger surveillance radiation alarms."  Worldwide Illicit Trafficking of Nuclear and Radiological Materials, May 2024, LLNL-MI-866270.
 
 Reactor radioisotope.
       </Notes>
@@ -672,6 +690,8 @@ Aerosol neutralizers [TSI-KR].
 "It is used to detect leaks in sealed containers, to excite phosphors in light sources with no external source of energy, and in medicine to detect abnormal heart openings."-[LENNTECH-KR]
 
 Gaseous or volatile fission product(s) detected: Check for krypton, xenon, and iodine isotopes such as Kr85, Xe133, I131, I132, Te132 [FRMAC].
+
+"Used in indicator lights in appliances such as clothes washers and dryers, stereos, and coffee makers; used to gauge the thickness of thin plastics and sheet metal, rubber, textiles and paper, and to measure dust and pollutant levels."-[EPA-IND]
       </Notes>
     </Nuc>
     
@@ -810,7 +830,7 @@ Np-237/Pa-233 (27.4 d)
     </Nuc>
 
     <Nuc name="Pb-212">
-      <Associated>Ra-224</Associated>
+      <Associated>Ra-224;Th-228;U-232</Associated>
       <Notes>
         "Pb-212 is used in TAT for cancers or alpha radioimmunotherapy, with decay products Bi-212 (1 h) and Po-212 (0.3 µs) delivering the alpha particles. Used especially for melanoma, breast cancer and ovarian cancer. Demand is increasing. Used in peptide receptor radionuclide therapy (PRRT)."-[GNRIM]
         
@@ -849,7 +869,7 @@ Np-237/Pa-233 (27.4 d)
 
 
     <Nuc name="Pd-103">
-      <Associated></Associated>
+      <Associated>Re-183;Re-184;Zn-65;Co-56;Rh-102</Associated>
       <Notes>
 Prostate cancer seeds
 
@@ -894,6 +914,8 @@ Pu-239:Be = Average neutron energy = 3.2 MeV.  Yield = 1.7E+06 n/s per Ci.  Gamm
 Ac-227 (21.8 y)-Th-227 (18.7 d)/Ra-223 generator
 
 "Used for TAT brachytherapy, lodges in bone, emits soft X-rays."-[GNRIM]
+
+Ra-223-dichloride is used for the treatment of patients with castration-resistant prostate cancer (CRPC) with symptomatic osseous metastases and no known visceral metastatic disease, administered by intravenous injection at 1.49 uCi/kg, marketed as Xofigo and is usually given at 4-week intervals for 6 total injections, as tolerated.  Reference: SNMMI Procedure Standard/EANM Practice Guideline for Palliative Nuclear Medicine Therapies of Bone Metastases, Journal of Nuclear Medicine Technology June 2023.
 
 Reactor radioisotope.
       </Notes>
@@ -1002,9 +1024,13 @@ Reactor radioisotope.
       <Notes>
 Can be found with Eu-152 (13.5 y), Eu-154 (8.6 y), Eu-156 (15.2 d), Eu-152m (9.3 h), Eu-155 (4.8 y) and possibly Na-24 (15.0 h)
 
-Sm-153 is very effective in relieving the pain of secondary cancers lodged in the bone, sold as Quadramet. Also very effective for prostate and breast cancer. Beta emitter.  Reactor radioisotope
+Sm-153 is very effective in relieving the pain of secondary cancers lodged in the bone, sold as Quadramet. Also very effective for prostate and breast cancer. Beta emitter.
+
+Sm-153-lexidronam (Sm-153-EDTMP) is used for for pain relief in patients with osteoblastic metastases, administered by intravenous injection at 1.0 mCi/kg, marketed as Quadramet and is not commonly used today, and has largely been replaced by Ra-223-dichloride.  Reference: SNMMI Procedure Standard/EANM Practice Guideline for Palliative Nuclear Medicine Therapies of Bone Metastases, Journal of Nuclear Medicine Technology June 2023.
 
 Sr-89 and (increasingly) Sm-153 are used for the relief of cancer-induced bone pain. Re-186 is a newer product for this.
+
+Reactor radioisotope
       </Notes>
     </Nuc>
 
@@ -1049,13 +1075,28 @@ Reactor radioisotope.
     </Nuc>
 
     <Nuc name="Th-228">
-      <Associated>U-232;Th-228;Th-232</Associated>
+      <Associated>U-232;Th-232;Pb-212</Associated>
       <Notes>
 U-232 (68.9 y)/Th-228 (1.91 y)
 
 Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
 
 Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+
+Pb-212, a medical isotope, can also have many of the same peaks.
+      </Notes>
+    </Nuc>
+
+    <Nuc name="U-232">
+      <Associated>Th-228;Th-232;Pb-212</Associated>
+      <Notes>
+U-232 (68.9 y)/Th-228 (1.91 y)
+
+Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
+
+Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+
+Pb-212, a medical isotope, can also have many of the same peaks.
       </Notes>
     </Nuc>
 
@@ -1128,6 +1169,8 @@ Beta sources (calibration and check),  Contamination (dust, pollen) gauges for f
 Can be found with U-232 (68.9 y), Th-229 (7.34 ky).
 
 U-233 is difficult to detect via gamma spectroscopy. However, when U-233 is aged and U-232 is present at lower levels, U-233 may be identified via primary Th-229 decay product emissions at 440.5 and 1567.1 keV.
+
+"Helps fluorescent lights last longer."-[EPA-IND]
       </Notes>
 
     </Nuc>
@@ -1232,6 +1275,8 @@ When detected as suspected long-lived activation product, also check for Co-60, 
       <Associated></Associated>
       <Notes>
 Decays by positron emission (23%) and electron capture (77%), Attractive characteristics for immunoPET applications
+
+Has gamma spectral similarities with Sr-89 (50.53 d) when the signature is weak.
       </Notes>
     </Nuc>
 
@@ -1243,6 +1288,198 @@ Zr-95/Nb-95 (34.99 d), Can be found with Hf-181 (42.4 d).
 Zr-95 → Nb-95 activity ratio at transient equilibrium equals 1/2.205.
       </Notes>
     </Nuc>
+    
+    
+    <!-- Medical nuclides added 20241205, from https://www.radiochemistry.org/nuclearmedicine/frames/medical_radioisotopes/index.html -->
+    <Nuc name="Ac-227">
+      <Notes>"Parent of Ra-223 (Monoclonal antibody attachment used for cancer treatment (RIT)."-[MRARII]"-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="As-74">
+      <Notes>"Positron-emitting isotope with biomedical applications."-[MRARII]</Notes>
+    </Nuc>
+    
+    <Nuc name="B-11">
+      <Notes>"Melanoma and brain tumor treatment."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Bi-212">
+      <Notes>"Monoclonal antibody attachment (alpha emitter) used for cancer treatment (RIT), cellular dosimetry studies."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Br-75">
+      <Notes>"Planar imaging, SPECT or PET (Herac 89)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Br-77">
+      <Notes>"Label radiosentizers for Te quantization of hypoxia in tumors, and monoclonal antibody labeling."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="C-11">
+      <Notes>"Radiotracer in PET scans to study normal/abnormal brain functions."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="C-14">
+      <Notes>"Radiolabeling for detection of tumors (breast, et al.)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ce-139">
+      <Notes>"Calibrates high-purity germanium gamma detectors."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ce-141">
+      <Notes>"Gastrointestinal tract diagnosis, measuring regional myocardial blood flow."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Cu-61">
+      <Notes>"Planar imaging, SPECT or PET (Holmes 91)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Cu-62">
+      <Notes>"Positron emitting radionuclide (Holmes 91), cerebral and myocardial blood flow used As-a tracer in conjunction with Cu 64 (Holmes 91)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Dy-165">
+      <Notes>"Radiation synovectomy, rheumatoid arthritis treatment."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Eu-155">
+      <Notes>"Osteoporosis detection."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ga-64">
+      <Notes>"Treatment of pulmonary diseases ending in fibrosis of lungs."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ge-68">
+      <Notes>"PET imaging."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="H-3">
+      <Notes>
+        "Labeling, PET imaging."-[MRARII]
+      
+      "Used in self-luminous aircraft and commercial exit signs, for luminous dials, gauges and wrist watches, to produce luminous paint, and for geological prospecting and hydrology."-[EPA-IND]
+      </Notes>
+    </Nuc>
+    <Nuc name="I-122">
+      <Notes>"Brain blood flow studies."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="In-115m">
+      <Notes>"Label blood elements for evaluating inflammatory bowel disease."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ir-191m">
+      <Notes>"Cardiovascular angiography."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Kr-81m">
+      <Notes>"Lung imaging."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Mn-51">
+      <Notes>"Myocardial localizing agent."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Mn-52">
+      <Notes>"PET scanning."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="N-13">
+      <Notes>"PET imaging, myocardial perfusion."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Nb-95">
+      <Notes>"Study effects of radioactivity on pregnant women and fetus, myocardial tracer, PET imaging."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="O-15">
+      <Notes>"Water used for tomographic measuring of cerebral blood flow (Herac 89), PET imaging (Herac 89), SPECT imaging."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Os-191">
+      <Notes>"Parent for Ir-191m generator used for cardiovascular angiography."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Os-194">
+      <Notes>"Monoclonal antibody attachment used for cancer treatment (RIT)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="P-33">
+      <Notes>"Labeling."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Pb-203">
+      <Notes>"Planar imaging, SPECT or PET (used with Bi-212) (Holmes 91), monoclonal antibody immunotherapy (Holmes 91), cellular dosimetry."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Pd-109">
+      <Notes>"Potential radiotherapeutic agent."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Rh-105">
+      <Notes>"Potential therapeutic applications: target neoplastic cells (e.g., small cell lung cancer) (June 1996 SNM Abstracts), labeling of molecules and monoclonal antibodies (June 1996 SNM Abstracts)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ru-97">
+      <Notes>"Monoclonal antibodies label (Herac 89), planar imaging (Herac 89), SPECT or PET techniques (Herac 89), gamma-camera imaging."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ru-103">
+      <Notes>"Myocardial blood flow, radiolabeling mircospheres, PET imaging."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="S-35">
+      <Notes>
+        "Nucleic acid labeling, P-32 replacement, cellular dosimetry."-[MRARII]
+        
+        "Used in survey meters by schools, the military and emergency management authorities. Also used in cigarette manufacturing sensors and medical treatment."-[EPA-IND]
+      </Notes>
+    </Nuc>
+    <Nuc name="Sc-47">
+      <Notes>"Cancer treatment/diagnostics, monoclonal antibodies, radioimmunotherapy (Society of Nuclear Medicine)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Si-28">
+      <Notes>"Radiation therapy of cancer."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Sm-145">
+      <Notes>"Brain cancer treatment using I-127 (Fairchild 87)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Sr-85">
+      <Notes>"Detection of focal bone lesions, brain scans."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ta-178">
+      <Notes>"Radionuclide injected into patients to allow viewing of heart and blood vessels."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Ta-179">
+      <Notes>"X-ray fluorescence source and in thickness gauging (might be a good substitute for Am-241)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Tb-149">
+      <Notes>"Monoclonal antibody attachment used for cancer treatment (RIT)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Tc-96">
+      <Notes>"Animal studies with Tc-99m."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Tm-170">
+      <Notes>"Portable blood irradiations for leukemia, lymphoma treatment, power source."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Tm-171">
+      <Notes>"Medical."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="W-188">
+      <Notes>"Cancer treatment, monoclonal antibodies, parent for Re-188 generator."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Xe-127">
+      <Notes>"Neuroimaging for brain disorders, research for variety of neuropsychiatric disorders, especially schizophrenia and dementia, higher resolution SPECT studies with lower patient dose, lung imaging (some experts believe it is superior to Xe-133 in inhalation lung studies)."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Y-91">
+      <Notes>"Cancer treatment (RIT), cellular dosimetry."-[MRARII]</Notes>
+    </Nuc>
+    <Nuc name="Zn-62">
+      <Notes>"Parent of Cu-62, a positron-emitter, used for the study of cerebral and myocardial blood flow."-[MRARII]</Notes>
+    </Nuc>
 
+    <!-- Industrial nuclides added 20241205 from https://archive.epa.gov/radiation/source-reduction-management/web/html/radionuclides.html -->
+    <Nuc name="Cm-244">
+      <Notes>
+        "Used in mining to analyze material excavated from pits and slurries from drilling operations."-[EPA-IND]
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Ni-63">
+      <Notes>
+        "Used to detect explosives, and in voltage regulators and current surge protectors in electronic devices, and in electron capture detectors for gas chromatographs."-[EPA-IND]
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Th-230">
+      <Notes>
+        "Provides coloring and fluorescence in colored glazes and glassware.-[EPA-IND]
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Fe-55">
+      <Notes>
+        "Heat source."-[MRARII]
+        "Used to analyze electroplating solutions and to detect the presence of sulphur in the air. Used in metabolism research."-[EPA-IND]
+      </Notes>
+    </Nuc>
+    
+    <Nuc name="Pm-147">
+      <Associated>Nd-147</Associated>
+      <Notes>
+        "Used in electric blanket thermostats, and to gauge thickness of thin plastics, thin sheet metal, rubber, textile and paper."-[EPA-IND]
+      </Notes>
+    </Nuc>
+    
   </Nuclides>
 </AddNucInfo>

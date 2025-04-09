@@ -942,10 +942,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       vector<pair<double,double>> gammas_in_range;
       
       // Define a helper function to add a gamma at an energy into \c gammas_in_range
-      auto add_peak_to_range = [&gammas_in_range, this, isHPGe, &roi_range, num_sigma_half_roi]( const double energy ){
+      auto add_peak_to_range = [&gammas_in_range, this, &spectrum, highres, &roi_range, num_sigma_half_roi]( const double energy ){
         double energy_sigma;
         float min_sigma, max_sigma;
-        expected_peak_width_limits( energy, isHPGe, min_sigma, max_sigma );
+        expected_peak_width_limits( energy, highres, spectrum, min_sigma, max_sigma );
         
         if( m_drf && m_drf->hasResolutionInfo() )
         {
@@ -1723,6 +1723,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           RelActCalcManual::GenericPeakInfo peak;
           peak.m_energy = p->mean();
+          peak.m_mean = peak.m_energy;
           peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
           peak.m_counts = p->amplitude();
           peak.m_counts_uncert = p->amplitudeUncert();
@@ -2308,18 +2309,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }//if( we failed to get covariance ) / else
     }//if( solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success )
     
-    solution.m_num_function_eval_total = cost_functor->m_ncalls;
+    solution.m_num_function_eval_total = static_cast<int>( cost_functor->m_ncalls );
   
     solution.m_final_parameters = parameters;
     
     solution.m_energy_cal_adjustments[0] = parameters[0];
     solution.m_energy_cal_adjustments[1] = parameters[1];
     
-    shared_ptr<const SpecUtils::EnergyCalibration> new_cal = cost_functor->m_energy_cal;
+    shared_ptr<const SpecUtils::EnergyCalibration> new_cal = solution.m_foreground->energy_calibration();
     if( success && options.fit_energy_cal )
     {
-      auto new_cal = make_shared<SpecUtils::EnergyCalibration>( *cost_functor->m_energy_cal );
+      auto modified_new_cal = make_shared<SpecUtils::EnergyCalibration>( *new_cal );
       
+      const double offset = parameters[0];
+      const double gain_mult = parameters[1];
       const size_t num_channel = cost_functor->m_energy_cal->num_channels();
       const SpecUtils::EnergyCalType energy_cal_type = cost_functor->m_energy_cal->type();
       
@@ -2331,27 +2334,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           vector<float> coefs = cost_functor->m_energy_cal->coefficients();
           assert( coefs.size() >= 2 );
-          coefs[0] += parameters[0];
-          coefs[1] *= parameters[1];
+          coefs[0] -= offset;
+          coefs[1] /= gain_mult;
           
           const auto &dev_pairs = cost_functor->m_energy_cal->deviation_pairs();
           
           if( energy_cal_type == SpecUtils::EnergyCalType::FullRangeFraction )
-            new_cal->set_full_range_fraction( num_channel, coefs, dev_pairs );
+            modified_new_cal->set_full_range_fraction( num_channel, coefs, dev_pairs );
           else
-            new_cal->set_polynomial( num_channel, coefs, dev_pairs );
+            modified_new_cal->set_polynomial( num_channel, coefs, dev_pairs );
           
           break;
         }//case polynomial or FRF
           
-          
         case SpecUtils::EnergyCalType::LowerChannelEdge:
         {
-          vector<float> lower_energies = *cost_functor->m_energy_cal->channel_energies();
-          for( float &energy : lower_energies )
-            energy = parameters[0] + (parameters[1] * energy);
+          assert( new_cal->channel_energies() );
+          if( !new_cal->channel_energies() || new_cal->channel_energies()->empty() )
+            throw runtime_error( "Invalid lower channel energies???" );
           
-          new_cal->set_lower_channel_energy( num_channel, std::move(lower_energies) );
+          vector<float> lower_energies = *new_cal->channel_energies();
+          for( float &x : lower_energies )
+            x = (x - offset) / gain_mult;
+          
+          modified_new_cal->set_lower_channel_energy( num_channel, std::move(lower_energies) );
           
           break;
         }//case LowerChannelEdge
@@ -2360,8 +2366,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           break;
       }//switch( m_energy_cal->type() )
       
-      new_cal = new_cal;
-      solution.m_spectrum->set_energy_calibration( new_cal );
+      new_cal = modified_new_cal;
+      solution.m_spectrum->set_energy_calibration( modified_new_cal );
     }//if( options.fit_energy_cal )
     
   

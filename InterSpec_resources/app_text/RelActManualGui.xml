@@ -73,8 +73,8 @@
   <message id="ramg-nucs-label">Nuclides</message>
   <message id="ramg-peaks-to-use-label">Peaks to Use</message>
   <message id="ramg-results-label">Results</message>
-  <message id="ramg-mi-results">Results</message>
-  <message id="ramg-mi-chart">Chart</message>
+  <message id="ramg-mi-results">Table</message>
+  <message id="ramg-mi-chart">Graph</message>
   <message id="ramg-back-sub-neg">After background subtraction, peak at {1} keV had negative counts so was not used.</message>
   <message id="ramg-warn-reaction">Using reaction photopeaks is likely not valid, unless the gammas are emitted homogeneously from a single object.</message>
   <message id="ramg-warn-no-bkg-sub-used">Subtraction of background peaks was selected, but no background peaks matched to the selected foreground peaks.</message>
@@ -95,4 +95,7 @@
   <message id="ramg-consider-add-uncert-u">You may want to consider adding "Add. Uncert" for Uranium problems.</message>
   <message id="ramg-you-using-add-uncert-u">You are adding "Add. Uncert" - interpret computed uncertainties with care.</message>
   <message id="ramg-you-using-add-uncert-non-u">You are currently adding "Add. Uncert", which will cause computed uncertainties to not be correct.</message>
+  <message id="ramg-chart-info-title">χ²/dof = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pval={1})</message>
+  <message id="ramg-1-pval"> (1-pval={1})</message>
 </messages>

@@ -335,11 +335,27 @@ color: #E0F5FF;
   
 }
 
+@media (max-width: 350px) {
+  .CoefContent .CoefDisplay {
+    font-size: x-small;
+  }
+  
+  .DetCalMenu {
+    width: 5em;
+    font-size: small;
+  }
+  
+}
 
 .CoefContent .CoefDisplay
 {
   white-space: nowrap;
   padding: 3px 2px 2px 2px;
+  
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 
 

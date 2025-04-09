@@ -33,6 +33,7 @@
 #include "InterSpec/AuxWindow.h"
 
 //forward declarations
+class InterSpec;
 class SideMenuItem;  //defined in UseInfoWindow.h
 
 namespace Wt
@@ -54,7 +55,7 @@ public:
    \param screen_width width in pixels of the screen
    \param screen_height height in pixels of the screen
    */
-  LicenseAndDisclaimersWindow( int screen_width, int screen_height );
+  LicenseAndDisclaimersWindow( InterSpec *viewer );
   ~LicenseAndDisclaimersWindow();
   
   /** Handles the "path" component of an app URL.

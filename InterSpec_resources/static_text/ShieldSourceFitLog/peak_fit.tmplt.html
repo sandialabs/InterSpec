@@ -1,0 +1,390 @@
+
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>{{ Filename }} Results</title>
+
+    
+    <!-- <script src="https://d3js.org/d3.v3.min.js"></script> -->
+    <script>
+    {{ D3_JS }}
+    </script>
+    
+    <script>
+    {{ SpectrumChart_JS }}
+    </script>
+
+    <!-- Some styles for our page here -->
+    <style>
+      table.ResultTable {
+        border-collapse: collapse; /* Ensures that the borders are not doubled */
+      }
+
+      .ResultTable th, .ResultTable td {
+        border: 1px solid black; /* Adds a border to each cell */
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        text-align: left; /* Aligns text to the left */
+      }
+
+      .ResultTable th {
+        background-color: #f2f2f2; /* adds a background color to the header cells */
+      }
+
+      .ResultTable tbody tr:nth-child(even) {
+        background-color: #eaf4f7; /* a slight background for odd rows */
+      }
+
+      .ResultTable tbody tr:nth-child(odd) {
+        background-color: #ffffff; /* White background for even rows */
+      }
+
+      table.InfoTable {
+
+      }
+      .InfoTable th, .InfoTable td {
+        text-align: left; /* Aligns text to the left */
+      }
+
+      .InfoTable td {
+        padding-right: 10px;
+      }
+    </style>
+
+    <!-- D3-based spectrum chart styling -->
+    <style>
+    {{ SpectrumChart_CSS }}
+    </style>
+
+    <!-- Some CSS to override SpectrumChartD3 defaults -->
+    <style>
+      
+    </style>
+</head>
+
+<body>
+  <h1 class="title">
+  Results for {{ Filename }}
+  </h1>
+
+
+  {% if HasWarnings %}
+  <h2 style="color: orange;">Warnings</h2>
+  <div id="warnings" style="width: 90vw; margin-left: auto; margin-right: auto; margin-bottom: 20px; color: orange; border: solid 1px orange;">
+## for warning in Warnings
+    <div style="width: 90%; margin-left: auto; margin-right: auto; margin-bottom: 5px; margin-bottom: 5px; border: solid 1px grey; padding: 3px;">
+      {{ warning }}
+    </div>
+## endfor
+  </div>
+  {% endif %}
+
+  <div id="specchart" style="height: 30vw; width: 80vw; margin-left: auto; margin-right: auto;">
+  </div>
+
+  <script>
+    let spec_chart_specchart = new SpectrumChartD3( 'specchart',  {
+    'title': '', 'xlabel' : 'Energy (keV)', 'ylabel': 'Counts'
+     } );
+
+    let spec_observer = new ResizeObserver(entries => {
+        for (let entry of entries) {
+          if (entry.target && (entry.target.id === "specchart")) {
+            spec_chart_specchart.handleResize(false);
+          }
+        }
+      });
+      spec_observer.observe( document.getElementById("specchart") );
+
+      const spectrum_json = { "spectra": [{{ foreground.spectrum }} {% if exists("background") %}, {{ background.spectrum }} {% endif %}] };
+
+      spec_chart_specchart.setData( spectrum_json );
+      spec_chart_specchart.setLogY( true );
+  </script>
+
+  <div id="results" style="margin-top: 15px">
+
+
+    <div id="GeneralInfo">
+    <ul style="list-style-type: none; padding: 0; margin: 0;">
+    <li>
+        {% if exists("background") %} Foreground: {% endif %}
+        <table class="InfoTable">
+            <tr>
+                <th>Live Time:</th>
+                <td>
+                    {{ printFixed(foreground.LiveTime_s,3) }} seconds ({{ foreground.LiveTime }})
+                </td>
+                <th>Real Time:</th>
+                <td>
+                    {{ printFixed(foreground.RealTime_s,3) }} seconds ({{ foreground.RealTime }})
+                </td>
+                <th>Dead Time:</th>
+                <td>
+                    {{ printFixed(foreground.DeadTime_percent,2) }}%
+                </td>
+            </tr>
+
+            <tr>
+                <th>Meas. Time:</th>
+                <td>
+                    {% if foreground.StartTimeIsValid %}
+                      {{ foreground.StartTime }}
+                    {% else %}
+                      Not Available
+                    {% endif %}
+                </td>
+                <th>Gamma Sum:</th>
+                <td> {{ printCompact(foreground.GammaSum,6) }} counts</td>
+                <th>Gamma CPS:</th>
+                <td> {{ printCompact(foreground.GammaCps,5) }}</td>
+            </tr>
+            
+
+            {% if foreground.HasNeutrons %}
+            <tr>
+                <th>Neutron Count:</th>
+                <td>{{ foreground.NeutronCounts }}</td>
+
+                <th>Neut. Live Time:</th>
+                <td>{{ printCompact(foreground.NeutronLiveTime,6) }} s</td>
+
+                <th>Neutron CPS:</th>
+                <td> {{ printFixed(foreground.NeutronCps,4) }} </td>
+            </tr>
+            {% endif %}
+
+            {% if existsIn(foreground,"SpectrumTitle") %}
+            <tr>
+                <th>Title:</th>
+                <td colspan="3"> {{ foreground.SpectrumTitle }} </td>
+            </tr>
+            {% endif %}
+
+            <tr>
+                <th>Manufacturer:</th>
+                <td> {% if existsIn(foreground,"Manufacturer") %} {{ foreground.Manufacturer }} {% else %} -- {% endif %} </td>
+
+                <th>Det. Type:</th>
+                <td> {% if existsIn(foreground,"DetectorType") %} {{ foreground.DetectorType }} {% else %} -- {% endif %} </td>
+
+                <th>Inst. Model:</th>
+                <td> {% if existsIn(foreground,"InstrumentModel") %} {{ foreground.InstrumentModel }} {% else %} -- {% endif %} </td>
+            </tr>
+            
+            <tr>
+                <th>Serial Number:</th>
+                <td> {% if existsIn(foreground,"SerialNumber") %} {{ foreground.SerialNumber }} {% else %} -- {% endif %} </td>
+                {% if foreground.HasGps %}
+                <th>lat/lon:</th>
+                <td colspan="2"> <a target="_blank" rel="noopener noreferrer" href="https://maps.google.com/?q={{ printFixed(foreground.Latitude,7) }},{{ printFixed(foreground.Longitude,7) }}">{{ printFixed(foreground.Latitude,7) }},{{ printFixed(foreground.Longitude,7) }}</a> </td>
+                {% endif %}
+            </tr>
+            {% if foreground.HasInstrumentRid %}
+            <tr> 
+                <th>Inst. RID:</th>
+                <td colspan="3"> {{ foreground.InstrumentRidSummary }} </td>
+            </tr>
+            {% endif %}
+        </table>
+    </li>
+    {% if exists("background") %} 
+    <li>
+        Background:
+        <table class="InfoTable">
+            <tr>
+                <th>Live Time:</th>
+                <td>
+                    {{ printFixed(background.LiveTime_s,3) }} seconds ({{ background.LiveTime }})
+                </td>
+                <th>Real Time:</th>
+                <td>
+                : {{ printFixed(background.RealTime_s,3) }} seconds ({{ background.RealTime }})
+                </td>
+                <th>Dead Time:</th>
+                <td>{{ printFixed(background.DeadTime_percent,2) }}%</td>
+            </tr>
+
+            <tr>
+                <th>Meas. Time:</th>
+                <td>
+                    {% if background.StartTimeIsValid %}
+                      {{ background.StartTime }}
+                    {% else %}
+                      Not Available
+                    {% endif %}
+                </td>
+                <th>Gamma Sum:</th>
+                <td> {{ printCompact(background.GammaSum,6) }} counts</td>
+                <th>Gamma CPS:</th>
+                <td> {{ printCompact(background.GammaCps,5) }}</td>
+            </tr>
+            
+
+            {% if background.HasNeutrons %}
+            <tr>
+                <th>Neutron Count:</th>
+                <td> background.NeutronSum </td>
+
+                <th>Neut. Live Time:</th>
+                <td> background.NeutronLiveTime </td>
+
+                <th>Neutron CPS:</th>
+                <td> {{ printFixed(background.NeutronCps,4) }} </td>
+            </tr>
+            {% endif %}
+
+            {% if existsIn(background,"SpectrumTitle") %}
+            <tr>
+                <th>Title:</th>
+                <td colspan="3"> {{ background.SpectrumTitle }} </td>
+            </tr>
+            {% endif %}
+
+            <tr>
+                <th colspan="2">Live Time Normalization Factor:</th>
+                <td colspan="3"> {{ background.Normalization }} </td>
+            </tr>
+        </table>
+    </li>
+    {% endif %}
+
+    </ul>
+    </div> <!-- <div id="GeneralInfo"> -->
+
+
+
+{% if exists("FitPeaks") %}
+      <h2>Fit Peaks:</h2>
+      <div id="sources" style="margin-top: 25px">
+        Fit Peaks:
+        <table class="ActivitySummary ResultTable">
+          <thead><tr>
+            <th>Peak Mean</th>
+            <th>Amplitude</th>
+            <th>FWHM</th>
+            <th>Lower Energy</th>
+            <th>Upper Energy</th>
+            <th>Lower Channel</th>
+            <th>Upper Channel</th>
+            <th>ROI Number</th>
+            <th>Continuum Type</th>
+            <th>Assigned Source</th>
+            <th>Source Type</th>
+            <th>Source Energy</th>
+            <th>Color</th>
+            <th>User Label</th>
+            <th>Mean Uncert.</th>
+            <th>Amp Uncert.</th>
+            <th>FWHM Uncert.</th>
+            <th>&chi;<sup>2</sup></th>
+          </tr></thead>
+          <tbody>
+## for peak in FitPeaks.Peaks
+            <tr>
+              <td>{{ printFixed(peak.PeakMean,2) }}</td>
+              <td>{{ printCompact(peak.PeakAmplitude,6) }}</td>
+              <td>{{ printFixed(peak.PeakFwhm,2) }}</td>
+              <td>{{ printFixed(peak.LowerEnergy,2) }}</td>
+              <td>{{ printFixed(peak.UpperEnergy,2) }}</td>
+              <td>{% if peak.HasChannelRange %}{{ peak.LowerChannelInt }}{% endif %}</td>
+              <td>{% if peak.HasChannelRange %}{{ peak.UpperChannelInt }}{% endif %}</td>
+              <td>{{ peak.ContinuumIndex }}</td>
+              <td> {{ at(FitPeaks.Continua,peak.ContinuumIndex).ContinuumType }} </td>
+              <td>{{ peak.SourceName }}</td>
+              <td>{{ peak.SourceType }}</td>
+              <td>{{ printFixed(peak.SourceEnergy,3) }}</td>
+              <td style="background: {{ peak.PeakColor }};"></td>
+              <td>{{ peak.PeakUserLabel }}</td>
+              <td>{{ printFixed(peak.PeakMeanUncert,3) }}</td>
+              <td>{{ printFixed(peak.PeakAmplitudeUncert,1) }}</td>
+              <td>{{ printFixed(peak.PeakFwhmUncert,3) }}</td>
+              <td>{% if peak.HasChi2Dof %}{{ printFixed(peak.Chi2Dof, 4) }}{% endif %} </td>
+            </tr>
+## endfor
+          </tbody>
+        </table>   
+      </div> <!-- <div id="sources" style="margin-top: 25px"> -->
+      {% endif %} <!-- if exists("FitPeaks") -->
+      
+{% if exists("NotFitPeaks") %}
+      <h2>Peaks Not Fit:</h2>
+      <div id="sources" style="margin-top: 25px">
+        Peaks Not Fit:
+        <table class="ActivitySummary ResultTable">
+          <thead><tr>
+            <th>Peak Mean</th>
+            <th>FWHM</th>
+            <th>Lower Energy</th>
+            <th>Upper Energy</th>
+            <th>Lower Channel</th>
+            <th>Upper Channel</th>
+          </tr></thead>
+          <tbody>
+## for peak in NotFitPeaks.Peaks
+            <tr>
+              <td>{{ printFixed(peak.PeakMean,2) }}</td>
+              <td>{{ printFixed(peak.PeakFwhm,2) }}</td>
+              <td>{{ printFixed(peak.LowerEnergy,2) }}</td>
+              <td>{{ printFixed(peak.UpperEnergy,2) }}</td>
+              <td>{% if peak.HasChannelRange %}{{ peak.LowerChannelInt }}{% endif %}</td>
+              <td>{% if peak.HasChannelRange %}{{ peak.UpperChannelInt }}{% endif %}</td>
+            </tr>
+## endfor
+          </tbody>
+        </table>   
+      </div> <!-- <div id="sources" style="margin-top: 25px"> -->
+{% endif %} <!-- if exists("FitPeaks") -->
+
+
+
+{% if ExemplarHasPeaks %}
+      <h2>Exemplar Peaks:</h2>
+      <div id="sources" style="margin-top: 25px">
+        Exemplar Peaks - e.g., peaks in the original exemplar file, that were tried to be fit:
+        <table class="ActivitySummary ResultTable">
+          <thead><tr>
+            <th>Peak Mean</th>
+            <th>FWHM</th>
+            <th>Lower Energy</th>
+            <th>Upper Energy</th>
+            <th>Lower Channel</th>
+            <th>Upper Channel</th>
+          </tr></thead>
+          <tbody>
+## for peak in ExemplarPeaks.Peaks
+            <tr>
+              <td>{{ printFixed(peak.PeakMean,2) }}</td>
+              <td>{{ printFixed(peak.PeakFwhm,2) }}</td>
+              <td>{{ printFixed(peak.LowerEnergy,2) }}</td>
+              <td>{{ printFixed(peak.UpperEnergy,2) }}</td>
+              <td>{% if peak.HasChannelRange %}{{ peak.LowerChannelInt }}{% endif %}</td>
+              <td>{% if peak.HasChannelRange %}{{ peak.UpperChannelInt }}{% endif %}</td>
+            </tr>
+## endfor
+          </tbody>
+        </table>   
+      </div> <!-- <div id="sources" style="margin-top: 25px"> -->
+{% endif %} <!-- if exists("FitPeaks") -->
+
+
+
+
+<div style="margin-top: 20px">
+<ul style="list-style-type: none; padding: 0; margin: 0;">
+  <li>Exemplar File: {{ ExemplarFile }}{% if exists("ExemplarSampleNumbers") %}, exemplar samples: {{ ExemplarSampleNumbers }}{% endif %}</li>
+  <li>Analysis Performed at: {{ AnalysisTime }}, 
+    from CWD=<code>{{CurrentWorkingDirectory}}</code>, 
+    with InterSpec compiled {{ InterSpecCompileDateIso }}{% if exists("InterSpecExecutablePath") %},
+    and executable at <code>{{ InterSpecExecutablePath }}</code> 
+    {% endif %}
+  </li>
+</ul>
+</div>
+
+</body>
+<html>
+

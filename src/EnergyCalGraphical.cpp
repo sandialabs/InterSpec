@@ -36,13 +36,15 @@
 #include <Wt/WRadioButton>
 #include <Wt/WPushButton>
 
-#include "InterSpec/SpecMeas.h"
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/EnergyCalibration.h"
+
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/EnergyCalTool.h"
-#include "SpecUtils/EnergyCalibration.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/EnergyCalGraphical.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 
@@ -133,7 +135,7 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
     m_preserveLastCal->setInline( false );
     m_preserveLastCal->setStyleClass( "PreserveLastCalCb" );
     
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", viewer );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
 
     HelpSystem::attachToolTipOn( m_preserveLastCal,"This is only possible if a offset or"
                                 " linear term adjustment was previously"

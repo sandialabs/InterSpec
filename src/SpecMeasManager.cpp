@@ -129,6 +129,7 @@
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
@@ -323,27 +324,31 @@ namespace
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
     : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                       | AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::DisableCollapse) ),
+                      | AuxWindowProperties::PhoneNotFullScreen
+                      | AuxWindowProperties::DisableCollapse
+                      | AuxWindowProperties::SetCloseable) ),
       m_fileUpload( 0 ),
       m_manager( manager ),
       m_type( SpectrumType::Foreground )
     {
-      setWindowTitle( "Select File To Open" );
+      // Loading the internationalization text not needed as SpecMeasManager is always created
+      //viewer->useMessageResourceBundle( "SpecMeasManager" );
+      
+      setWindowTitle( WString::tr("fud-dialog-title") );
       
       const bool noForeground = !viewer->measurment( SpectrumType::Foreground );
       
-      string instructions;
+      WString instructions;
       if( !viewer->isPhone() )
       {
         if( noForeground )
         {
-          instructions = string(viewer->isMobile() ?"Tap" : "Click")
-                         + " below to choose a foreground spectrum file to open.";
+          instructions = WString::tr("fud-open-foreground-only-msg")
+                                    .arg( WString::tr(viewer->isMobile() ? "Tap" : "Click") );
         }else
         {
-          instructions = "Select how you would like to open the spectrum file, and then ";
-          instructions += (viewer->isMobile() ? "tap" : "click");
-          instructions += " below to browse for the file.";
+          instructions = WString::tr("fud-open-any-type-msg")
+                                    .arg( WString::tr(viewer->isMobile() ? "tap" : "click") );
         }//if( noForeground )
       }//if( !viewer->isPhone() )
       
@@ -358,22 +363,22 @@ namespace
       
       if( !noForeground )
       {
-        WGroupBox *buttons = new WGroupBox( "Open file as:" );
+        WGroupBox *buttons = new WGroupBox( WString::tr("fud-btn-grp-title") );
       
         layout->addWidget( buttons, layout->rowCount(), 0 );
         
         WButtonGroup *group = new WButtonGroup( buttons );
         
-        WRadioButton *foreground = new WRadioButton( "Foreground", buttons );
+        WRadioButton *foreground = new WRadioButton( WString::tr("Foreground"), buttons );
         foreground->setInline( false );
         foreground->setChecked( true );
         group->addButton( foreground, toint(SpectrumType::Foreground) );
         
-        WRadioButton *background = new WRadioButton( "Background", buttons );
+        WRadioButton *background = new WRadioButton( WString::tr("Background"), buttons );
         background->setInline( false );
         group->addButton( background, toint(SpectrumType::Background) );
         
-        WRadioButton *secondary = new WRadioButton( "Secondary", buttons );
+        WRadioButton *secondary = new WRadioButton( WString::tr("Secondary"), buttons );
         secondary->setInline( false );
         group->addButton( secondary, toint(SpectrumType::SecondForeground) );
         
@@ -391,15 +396,13 @@ namespace
       layout->addWidget( m_fileUpload, layout->rowCount(), 0, AlignMiddle | AlignCenter );
       layout->setRowStretch( layout->rowCount()-1, 1 );
       
-      const char *msg = "";
+      WString msg = "";
       if( !viewer->isMobile() )
       {
-        msg = "You can also drag and drop the file directly into the <br />"
-              "application window as a quicker alternative.<br />"
-              "<br />For more advanced file opening and<br />"
-              "manipulation use the <b>File Manager</b>";
+        msg = WString::tr("fud-drg-n-drop-msg");
       }else
       {
+        msg = WString::tr("fud-drg-n-drop-msg-mbl");
         msg = "<span style=\"font-size: 10px;\">"
                 "You can also open spectrum files from email or file apps."
               "</span>";
@@ -411,7 +414,7 @@ namespace
       layout->addWidget( friendlyMsg, layout->rowCount(), 0, AlignMiddle | AlignBottom );
       
       
-      WPushButton *cancel = new WPushButton( "Cancel", footer() );
+      WPushButton *cancel = new WPushButton( WString::tr("Cancel"), footer() );
       
       cancel->clicked().connect( this, &FileUploadDialog::userCanceled );
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
@@ -432,6 +435,11 @@ namespace
         repositionWindow( 0, 0 );
       }else
       {
+        // If we dont explicitly set width, the dialog will creepy in width.
+        const int vw = viewer->renderedWidth();
+        const double w = (vw < 100) ? 375.0 : (((vw > 100) && (vw < 400)) ? (vw - 10.0) : 400.0);
+        
+        setWidth( WLength(w, WLength::Unit::Pixel) );
         resizeToFitOnScreen();
         centerWindow();
       }
@@ -443,14 +451,15 @@ namespace
       
       if( m_specChangedConection.connected() )
         m_specChangedConection.disconnect();
-      delete this;
+      AuxWindow::deleteAuxWindow( this );
     }
     
     void userCanceled()
     {
       if( m_specChangedConection.connected() )
         m_specChangedConection.disconnect();
-      delete this;
+      
+      AuxWindow::deleteAuxWindow( this );
     }
     
     void finishUpload()
@@ -459,7 +468,7 @@ namespace
         m_specChangedConection.disconnect();
       
       m_manager->finishQuickUpload( m_fileUpload, m_type );
-      delete this;
+      AuxWindow::deleteAuxWindow( this );
     }
     
     virtual ~FileUploadDialog()
@@ -836,6 +845,13 @@ protected:
   JSignal<int,std::string> m_qrDecodeSignal;
   boost::function<void()> m_close_parent_dialog;
   
+  /** We'll make some (lifetime safe) cleanup function to delete sub-dialogs
+    created from this widget, when this widget destructs.
+    The functions put in `m_cleanups` need to be made with `wApp->bind( boost::bind(WWidget...) )`
+    so we dont try to delete widgets that have already been deleted.
+   */
+  vector<boost::function<void()>> m_cleanups;
+  
   void close_parent_dialog()
   {
     m_close_parent_dialog();
@@ -916,7 +932,7 @@ protected:
             SpecMeasManager *fileManager = m_viewer->fileManager();
             SpectraFileModel *fileModel = fileManager->model();
             
-            auto header = make_shared<SpectraFileHeader>( m_viewer->m_user, true, m_viewer );
+            auto header = make_shared<SpectraFileHeader>( true, m_viewer );
             header->setFile( display_name, specmeas );
             fileManager->addToTempSpectrumInfoCache( specmeas );
             const int row = fileModel->addRow( header );
@@ -988,6 +1004,9 @@ protected:
       SimpleDialog *dialog = new SimpleDialog( title, content );
       dialog->addButton( WString::tr("Okay") );
       
+      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+      m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
+      
       return;
     }//if( num_qr <= 0 )
     
@@ -1034,6 +1053,9 @@ protected:
       SimpleDialog *dialog = new SimpleDialog( WString::tr("uid-invalid-uri"), content );
       dialog->addButton( WString::tr("Okay") );
       
+      // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+      m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
+      
       return;
     }//if( cleaned_up_uris.size() != initial_uris.size() )
     
@@ -1065,6 +1087,9 @@ protected:
     btn->clicked().connect( this, &UploadedImgDisplay::close_parent_dialog );
     
     btn = dialog->addButton( WString::tr("No") );
+    
+    // If we delete this UploadedImgDisplay, then dont leave QR-code dialogs dangling
+    m_cleanups.push_back( wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) ) );
   }//void qr_check_result( const int num_qr, const string b64_value )
   
   
@@ -1159,6 +1184,12 @@ public:
   m_qrDecodeSignal( this, "QrDecodedFromImg", false)
   {
     m_close_parent_dialog = wApp->bind( boost::bind( &SimpleDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
+    
+    // Incase we find a QR code in the image, lets avoid `dialog` being called to front of view
+    //  multiple times, which can cause some jank since there will be a dialog asking if the
+    //  user wants to use the URL in the QR code.  Even with this call, the dialog will be brought
+    //  forward a single time
+    dialog->doNotUseMultpleBringstoFront();
     
     WText *t = new WText( WString::tr("uid-image-not-spectrum"), this );
     t->addStyleClass( "NonSpecOtherFile" );
@@ -1256,6 +1287,13 @@ public:
       embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
     }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
   }//UploadedImgDisplay constructor
+  
+  
+  virtual ~UploadedImgDisplay()
+  {
+    for( const auto &fcn : m_cleanups )
+      fcn();
+  }//~UploadedImgDisplay()
   
 };//UploadedImgDisplay
   
@@ -1359,6 +1397,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_destructed( new bool(false) ),
     m_previousStatesDialog( nullptr ),
     m_processingUploadDialog( nullptr ),
+    m_nonSpecFileDialog( nullptr ),
     m_processingUploadTimer{}
 {
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
@@ -1374,6 +1413,7 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_treeView->setModel( m_fileModel );
   m_treeView->selectionChanged().connect( boost::bind( &SpecMeasManager::selectionChanged, this ) );
 
+  // TODO: (20241028) it doesn't appear necessary to show and then delete the spectrum manager window - but leaving until after v1.0.13 release
   startSpectrumManager(); //initializes
   deleteSpectrumManager(); //deletes instance
     
@@ -1406,9 +1446,9 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
-void  SpecMeasManager::startSpectrumManager()
+void SpecMeasManager::startSpectrumManager()
 {
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
   if( m_spectrumManagerWindow )
   {
@@ -1423,6 +1463,7 @@ void  SpecMeasManager::startSpectrumManager()
                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
                      | AuxWindowProperties::TabletNotFullScreen
                      | AuxWindowProperties::DisableCollapse
+                     | AuxWindowProperties::SetCloseable
                      ) );
     m_spectrumManagerWindow->addStyleClass( "SpecMeasManager" );
     
@@ -1520,6 +1561,9 @@ SpecMeasManager::~SpecMeasManager()
   std::lock_guard<std::mutex> lock( *m_destructMutex );
   
   (*m_destructed) = true;
+  
+  if( m_nonSpecFileDialog )
+    delete m_nonSpecFileDialog;
 } // SpecMeasManager::~SpecMeasManager()
 
 
@@ -1904,27 +1948,172 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return (pos != char_end);
   };//header_contains lambda
   
-  
+  // SpecMeasManager will keep track of this next dialog, so we can do undo/redo a little better
   SimpleDialog *dialog = new SimpleDialog();
+  
+  if( m_nonSpecFileDialog )
+  {
+    delete m_nonSpecFileDialog; //The `destroyed()` signal will set `m_nonSpecFileDialog` to nullptr
+    cerr << "m_nonSpecFileDialog was not nullptr" << endl;
+  }
+  assert( !m_nonSpecFileDialog );
+  
+  m_nonSpecFileDialog = dialog;
+  cout << "Assigning m_nonSpecFileDialog to " << dialog << endl;
+  
+  // The dialog may get deleted, and never accepted, so we will hook up to the
+  //  `destroyed()` signal to keep track of `m_nonSpecFileDialog`
+  m_nonSpecFileDialog->destroyed().connect( std::bind([dialog](){
+    InterSpec *interspec = InterSpec::instance();
+    SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+    assert( manager );
+    if( !manager )
+      return;
+    
+    cerr << "deleting m_nonSpecFileDialog of" << manager->m_nonSpecFileDialog << endl;
+    
+    assert( !manager->m_nonSpecFileDialog || (dialog == manager->m_nonSpecFileDialog) );
+    
+    manager->m_nonSpecFileDialog = nullptr;
+  }) );
+  
   dialog->addButton( WString::tr("Close") );
   WContainerWidget *contents = dialog->contents();
   contents->addStyleClass( "NonSpecDialogBody" );
   WText *title = new WText( WString::tr("smm-not-spec-file"), contents );
   title->addStyleClass( "title" );
   
-  auto add_undo_redo = [dialog](){
+  auto add_undo_redo = [dialog, displayName, filesize, &infile, type](){
     UndoRedoManager *undoRedo = UndoRedoManager::instance();
     if( !undoRedo )
       return;
     
-    const string dialog_id = dialog->id();
-    auto closer = wApp->bind( boost::bind( &WDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
-    auto undo = [dialog_id,closer](){
-      wApp->doJavaScript( "$('#" + dialog_id + "').hide(); $('.Wt-dialogcover').hide();" );
-      closer();
+    auto closeDialog = [](){
+      InterSpec *interspec = InterSpec::instance();
+      SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+      assert( manager );
+      if( manager )
+        manager->closeNonSpecFileDialog();
     };
     
-    undoRedo->addUndoRedoStep( std::move(undo), nullptr, "Open non-spectrum file dialog." );
+    std::function<void()> reOpenDialog;
+    
+    // If input size isnt too horrible large, we'll save it in memory and create a redo point
+    if( filesize <= 10*1024*1024 )
+    {
+      infile.clear();
+      infile.seekg(0, std::ios::beg);
+        
+      auto file_data = make_shared<vector<uint8_t>>( filesize, '\0' );
+      infile.read( (char *)(&((*file_data)[0])), static_cast<streamsize>(filesize) );
+      infile.clear();
+      infile.seekg(0, std::ios::beg);
+      
+      // If file is more than 64 kb (arbitrarily chosen), we will only keep the data in memory for
+      //  ~5 minutes
+      std::weak_ptr<vector<uint8_t>> wk_ptr = file_data;
+      if( filesize > 64*1024 )
+      {
+        shared_ptr<vector<uint8_t>> data_ptr = file_data;
+        file_data = nullptr;
+        
+        auto clear_mem = [data_ptr](){
+          cout << "Clearing memory of file: " << data_ptr.use_count() << endl;
+        };
+        
+        const int milliSeconds = 5*60*1000;
+        WServer::instance()->schedule( milliSeconds, wApp->sessionId(), clear_mem, clear_mem );
+      }//if( filesize > 64*1024 )
+      
+      const std::string dispname = displayName;
+      
+      reOpenDialog = [wk_ptr, file_data, dispname, type](){
+        
+        shared_ptr<vector<uint8_t>> data_ptr = wk_ptr.lock();
+        if( !data_ptr )
+        {
+          cout << "Was NOT able to get `file_data` - must have been cleared in memory" << endl;
+          return;
+        }else
+        {
+          // Not sure if we need to force the compiler to potentially keep `file_data` around
+          cout << "file_data.use_count=" << file_data.use_count() << endl;
+        }
+        
+        InterSpec *interspec = InterSpec::instance();
+        SpecMeasManager *manager = interspec ? interspec->fileManager() : nullptr;
+        assert( interspec && manager );
+        if( !manager )
+          return;
+        
+        const string tmpdir = SpecUtils::temp_dir();
+        const string tmpname = SpecUtils::temp_file_name( "non_spec_file", tmpdir );
+        assert( !SpecUtils::is_file(tmpname) );
+        
+        if( SpecUtils::is_file(tmpname) )
+        {
+          cerr << "Unexpectedly tmp filename is a file: '" << tmpname << "'." << endl;
+          return;
+        }
+        
+        bool wrote_tmp_file = false;
+          
+        {//begin write tmp file
+#ifdef _WIN32
+          const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(tmpname);
+          ofstream outfilestrm( wtmpfile.c_str(), ios::out | ios::binary );
+#else
+          ofstream outfilestrm( tmpname.c_str(), ios::out | ios::binary );
+#endif
+          wrote_tmp_file = (outfilestrm
+                              && outfilestrm.write( (char *)data_ptr->data(), data_ptr->size()) );
+        }//end write tmp file
+          
+        if( wrote_tmp_file )
+        {
+          try
+          {
+            manager->handleNonSpectrumFile( dispname, tmpname, type );
+          }catch( std::exception &e )
+          {
+            cerr << "Unexpected exception from `handleNonSpectrumFile(...)`" << endl;
+          }
+            
+          SpecUtils::remove_file( tmpname );
+        }else
+        {
+          cerr << "Failed to write '" << dispname << "' to temporary file." << endl;
+        }
+      };//redo lambda
+    }//if( filesize <= 256*1024 )
+    
+    if( undoRedo->canAddUndoRedoNow() )
+      undoRedo->addUndoRedoStep( closeDialog, reOpenDialog, "Open non-spectrum file dialog." );
+    
+    // Find close/cancel button
+    vector<WWidget *> btns;
+    if( dialog->footer() )
+      btns = dialog->footer()->children();
+    for( WWidget *w : btns )
+    {
+      WPushButton *btn = dynamic_cast<WPushButton *>( w );
+      if( !btn || ((btn->text().key() != "Close") && (btn->text().key() != "Cancel")) )
+      {
+        // TODO: We could add this undo/redo step for all buttons, so in the case the
+        //       user accepted the DRF, or peaks to fit, or whatever, that action should already
+        //       be hooked up to undo/redo, but right now if we hooked it up, they would have to do
+        //       undo again...  maybe when we aggregate multiple undo/redo steps into a single one
+        //       every WApplication event loop, then we can enable this.
+        continue;
+      }
+      
+      btn->clicked().connect( std::bind([=](){
+        // The `undo` call wont do anything, since it is currently bound to a now deleted dialog,
+        //  but leaving in in case we upgrade things a bit in the future to have the dialog tracked
+        //  by SpecMeasManager
+        undoRedo->addUndoRedoStep( reOpenDialog, closeDialog, "Close non-spectrum file dialog." );
+      }) );
+    }//for( WWidget *w : btns )
   };//add_undo_redo
   
   //Check if ICD2 file
@@ -2043,6 +2232,8 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     else if( isbmp ) mimetype = "image/bmp";
     else if( issvg ) mimetype = "image/svg+xml";
     else if( isheic ) mimetype = "image/heic";
+    
+    title->setText( WString::tr("smm-image-file") );
     
     new UploadedImgDisplay( m_viewer, displayName, mimetype, filesize, infile, dialog, type );
     
@@ -2177,6 +2368,13 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     return true;
   }
   
+  // Check if this is TSV/CSV file containing multiple DRFs
+  if( header_contains( "Detector ID" )
+     && handleGammaQuantDrfCsv(infile, displayName, fileLocation) )
+  {
+    delete dialog;
+    return true;
+  }
   
   // Check if this is a PeakEasy CALp file
   if( currdata
@@ -2236,6 +2434,20 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   
   return false;
 }//void handleNonSpectrumFile(...)
+
+
+void SpecMeasManager::closeNonSpecFileDialog()
+{
+  //assert( m_nonSpecFileDialog );
+  if( !m_nonSpecFileDialog )
+    return;
+
+  const string dialog_id = m_nonSpecFileDialog->id();
+  wApp->doJavaScript( "$('#" + dialog_id + "').hide(); $('.Wt-dialogcover').hide();" );
+  
+  m_nonSpecFileDialog->accept(); //This will delete the dialog, and cause `m_nonSpecFileDialog` to be set to nullptr
+  m_nonSpecFileDialog = nullptr;
+}//void closeNonSpecFileDialog()
 
 
 bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
@@ -2336,8 +2548,8 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
   string creditsHtml;
   if( credits.size() )
   {
-    for( string &s : credits )
-      creditsHtml += "<div>" + s + "</div>";
+    for( const string &s : credits )
+      creditsHtml += "<div>" + Wt::Utils::htmlEncode(s) + "</div>";
   }//if( credits.size() )
   
   
@@ -2345,6 +2557,61 @@ bool SpecMeasManager::handleMultipleDrfCsv( std::istream &input,
   
   return true;
 }//bool handleMultipleDrfCsv( std::istream &input, SimpleDialog *dialog )
+
+
+bool SpecMeasManager::handleGammaQuantDrfCsv( std::istream &input,
+                           const std::string &displayName,
+                           const std::string &fileLocation )
+{
+  vector<string> credits, warnings;
+  vector<shared_ptr<DetectorPeakResponse>> drfs;
+  
+  try
+  {
+    DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( input, drfs, credits, warnings );
+  }catch( std::exception &e )
+  {
+    return false;
+  }
+  
+  if( drfs.empty() )
+    return false;
+  
+  // Print out as URL - for version of InterSpec pre 20241010
+  //cout << "\n\n\n";
+  //for( const auto &drf : drfs )
+  //  cout << drf->name() << "    UrlEncoded  " << drf->toAppUrl() << endl;
+  //cout << "-------- done ---------" << endl;
+  
+  
+  std::function<void()> saveDrfFile;
+  WString dialogmsg = WString::tr( (drfs.size()==1) ? "smm-file-is-drf" : "smm-file-is-multi-drf");
+
+  string creditsHtml;
+  if( credits.size() )
+  {
+    for( const string &s : credits )
+    {
+      if( !s.empty() )
+        creditsHtml += "<div>" + Wt::Utils::htmlEncode(s) + "</div>";
+    }
+  }//if( credits.size() )
+  
+  if( !warnings.empty() )
+  {
+    if( !creditsHtml.empty() )
+      creditsHtml += "<br />";
+    for( const string &s : warnings )
+    {
+      if( !s.empty() )
+        creditsHtml += "<div style=\"color: red\"><b>Warning</b>: " + Wt::Utils::htmlEncode(s) + "</div>";
+    }
+  }//if( !warnings.empty() )
+  
+  DrfSelect::createChooseDrfDialog( drfs, dialogmsg, creditsHtml, saveDrfFile );
+  
+  return true;
+}//handleGammaQuantDrfCsv(...)
 
 
 bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog, bool autoApply )
@@ -2586,6 +2853,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   if( fore_samples.size() != foreground->sample_numbers().size() )
   {
     applyOnlyCurrentlyVisible = new WCheckBox( WString::tr("smm-CALp-cb-disp-samples-only") );
+    applyOnlyCurrentlyVisible->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyOnlyCurrentlyVisible, stretcher->rowCount(), 0, AlignLeft );
   }//if( not displaying all foreground samples )
   
@@ -2597,6 +2865,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applyForeground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-fore") );
     applyForeground->setChecked( true );
+    applyForeground->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyForeground, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -2604,6 +2873,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applyBackground = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-back") );
     applyBackground->setChecked( true );
+    applyBackground->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applyBackground, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -2611,6 +2881,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   {
     applySecondary = new WCheckBox( WString::tr("smm-CALp-cb-apply-to-second") );
     applySecondary->setChecked( true );
+    applySecondary->addStyleClass( "CbNoLineBreak" );
     stretcher->addWidget( applySecondary, stretcher->rowCount(), 0, AlignLeft );
   }
   
@@ -2913,6 +3184,9 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   far_field_opt->hide();
   
+  auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
+  
   // TODO: make option to make DRF default for detector model, or serial number
   
   dialog->addButton( WString::tr("Cancel") );
@@ -3021,10 +3295,30 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     if( !new_drf || !interspec )
       return;
       
-    auto sql = interspec->sql();
-    auto user = interspec->m_user;
+    shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
+    const Wt::Dbo::ptr<InterSpecUser> &user = interspec->user();
     DrfSelect::updateLastUsedTimeOrAddToDb( new_drf, user.id(), sql );
     interspec->detectorChanged().emit( new_drf ); //This loads it to the foreground spectrum file
+    
+    UndoRedoManager *undoManager = InterSpec::instance()->undoRedoManager();
+    if( undoManager && undoManager->canAddUndoRedoNow() )
+    {
+      auto undo = [prev](){
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+          viewer->detectorChanged().emit( prev );
+      };
+      
+      auto redo = [new_drf](){
+        InterSpec *viewer = InterSpec::instance();
+        if( viewer )
+          viewer->detectorChanged().emit( new_drf );
+      };
+       
+      // This next undo/redo wont bring up the dialog, but it will at least get us back
+      //  to the original detector.
+      undoManager->addUndoRedoStep( undo, redo, "Change to ECC DRF" );
+    }
   }) );
     
   return true;
@@ -3828,20 +4122,30 @@ void SpecMeasManager::startQuickUpload()
 void SpecMeasManager::finishQuickUpload( Wt::WFileUpload *upload,
                                          const SpecUtils::SpectrumType type )
 {
-  // TODO: The warning messages, and error conditions detected should be greatly improved
-
-  std::shared_ptr<SpecMeas> measement_ptr;
-  const int row = dataUploaded( upload, measement_ptr );
+  const string spool_path = upload->spoolFileName();
+  const string display_name = upload->clientFileName().toUTF8();
   
-  if( row < 0 )
+  try
   {
-    cerr << "SpecMeasManager::finishQuickUpload(...)\n\tError uploading file "
-         << upload->clientFileName() << endl;
-    return;
-  } // if( row < 0 )
+    std::shared_ptr<SpecMeas> measurement;
+    std::shared_ptr<SpectraFileHeader> header;
+    const int result = setFile( display_name, spool_path, header, measurement, SpecUtils::ParserType::Auto );
+    WModelIndexSet selected;
+    WModelIndex index = m_fileModel->index( result, 0 );
+    selected.insert( index );
+    m_treeView->setSelectedIndexes( WModelIndexSet() );
 
-  displayFile( row, measement_ptr, type, true, true, 
+    const bool checkIfPreviouslyOpened = true;
+    const bool doPreviousEnergyRangeCheck = true;
+    displayFile( result, measurement, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
               SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
+  }catch( const std::exception &e )
+  {
+    const bool known_type = handleNonSpectrumFile( display_name, spool_path, type );
+    
+    if( !known_type )
+      displayInvalidFileMsg( display_name, e.what() );
+  }// try/catch
 }//void finishQuickUpload(...)
 
 
@@ -4238,13 +4542,17 @@ void SpecMeasManager::displayFile( int row,
                                    const SpecMeasManager::VariantChecksToDo viewingChecks )
 {
   std::shared_ptr<SpecMeas> old_meas = m_viewer->measurment( type );
-  std::shared_ptr<SpecMeas>  old_back;
+  std::shared_ptr<SpecMeas> old_back;
+  std::shared_ptr<const SpecUtils::Measurement> old_back_spec;
   if( type == SpecUtils::SpectrumType::Foreground )
+  {
     old_back = m_viewer->measurment( SpecUtils::SpectrumType::Background );
-
+    old_back_spec = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+  }
+  
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
-      = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+      = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
 #endif
   
   
@@ -4258,11 +4566,6 @@ void SpecMeasManager::displayFile( int row,
 
     if( old_meas.use_count() == 1 )
       serializeToTempFile( old_meas );
-
-#if( USE_DB_TO_STORE_SPECTRA )
-    if( storeInDb )
-      saveToDatabase( old_meas );
-#endif
     
     return;
   }//if( we specifically wanted to unload the file )
@@ -4295,8 +4598,7 @@ void SpecMeasManager::displayFile( int row,
       if( oldheader != header
           && oldheader->m_uuid == header->m_uuid
           && oldheader->m_fileDbEntry
-          && !oldheader->m_fileDbEntry->userHasModified
-          && !oldheader->m_fileDbEntry->isWriteProtected() )
+          && !oldheader->m_fileDbEntry->userHasModified )
       {
         cerr << "We found a copy of this file in memmorry that hasnt been "
              << "modified, switching to that" << endl;
@@ -4330,10 +4632,15 @@ void SpecMeasManager::displayFile( int row,
 
   const size_t ncandiadate_samples = selected.size();
 
-  //backgroundIndexs will only get filled if the a forground or secondforground
-  // is desired
+  //`background_sample_numbers` will only get filled if the a foreground or second-foreground
+  // is desired.  Same with `back_start_time` - it is only used to check if this new background
+  //  is closer to the foreground measurement start time, than `old_back`.
   std::set<int> background_sample_numbers;
+  SpecUtils::time_point_t back_start_time{}, foreground_start_time{};
 
+  // Number back/fore/instrinsic only filled out if not passthrough/search
+  int numbackground = 0, numForeground = 0, numIntrinsic = 0;
+  
   WarningWidget::WarningMsgLevel warningmsgLevel = WarningWidget::WarningMsgInfo;
   stringstream warningmsg;
 
@@ -4346,7 +4653,6 @@ void SpecMeasManager::displayFile( int row,
       const bool passthrough = header->passthrough();
       if( !passthrough && (nsamples > 1) )
       {
-        int numbackground = 0, numForeground = 0, numIntrinsic = 0;
         int childrow = -1, backrow = -1, intrinsicrow = -1;
         for( size_t i = 0; i < header->m_samples.size(); ++i )
         {
@@ -4360,17 +4666,40 @@ void SpecMeasManager::displayFile( int row,
             break;
               
             case SpecUtils::SourceType::Foreground:
+            {
               ++numForeground;
               childrow = static_cast<int>( i );
+              const vector<shared_ptr<const SpecUtils::Measurement>> fores
+                                      = measement_ptr->sample_measurements(spechead.sample_number);
+              assert( !fores.empty() );
+              for( const shared_ptr<const SpecUtils::Measurement> &f : fores )
+                foreground_start_time = std::max( foreground_start_time, f->start_time() );
+              
               //i = header->m_samples.size();  //first foreground, terminate loop
-            break;
+              break;
+            }//case SpecUtils::SourceType::Foreground:
               
             case SpecUtils::SourceType::Background:
+            {
               ++numbackground;
               backrow = static_cast<int>( i );
+              
+              if( old_back )
+              {
+                back_start_time = SpecUtils::time_point_t{};
+                
+                const vector<shared_ptr<const SpecUtils::Measurement>> backs
+                                      = measement_ptr->sample_measurements(spechead.sample_number);
+                assert( !backs.empty() );
+                for( const shared_ptr<const SpecUtils::Measurement> &b : backs )
+                  back_start_time = std::max( back_start_time, b->start_time() );
+              }//if( numForeground )
+                
               if( numForeground )
                 i = header->m_samples.size();  //We have foreground and background, terminate loop
-            break;
+              
+              break;
+            }//case SpecUtils::SourceType::Background:
             
             case SpecUtils::SourceType::Calibration:
               //do nothing
@@ -4408,16 +4737,38 @@ void SpecMeasManager::displayFile( int row,
             warningmsg << WString::tr("smm-warn-upload-use-file-manager").toUTF8();
         }//if( decide how to customize the info message ) / else
 
-        //If we have an unambiguos background, and arent currently displaying a background
-        //  from this detector, lets load the unambiguos background
-        if( type==SpecUtils::SpectrumType::Foreground
-           && numbackground == 1 && childrow != backrow
-           && (childrow>=0) && (childrow<static_cast<int>(header->m_samples.size()))
-           && (backrow>=0) && (backrow<static_cast<int>(header->m_samples.size())) //These two conditions should always be true if first condition is true
-           && ( !old_back || !measement_ptr
-                || (measement_ptr->num_gamma_channels()!=old_back->num_gamma_channels()) || (measement_ptr->instrument_id()!=old_back->instrument_id()) )
+        assert( (numbackground != 1) || ((childrow >= 0) && (childrow < static_cast<int>(header->m_samples.size()))) );
+        
+        //If we have an unambiguous background, and arent currently displaying a background
+        //  from this detector, or the new background is closer to foreground measurement in time,
+        //  lets load the unambiguous background.
+        //The reason we dont want to be too aggressive about loading the included background is
+        //  that a number of detector models will include a background spectrum from the detectors
+        //  dedicated background acquisition (e.g., when detector was turned on, or a few days or
+        //  weeks ago...), but these may not be as relevant to the measured foreground (usually
+        //  people take a "foreground" measurement of the background, and just manually label this
+        //  second file as a background measurement for the analyst to use).
+        if( (type == SpecUtils::SpectrumType::Foreground)
+           && (numbackground == 1)
+           && (childrow != backrow)
+           && (childrow >= 0) && (childrow < static_cast<int>(header->m_samples.size()))
+           && (backrow >= 0) && (backrow < static_cast<int>(header->m_samples.size())) //These two conditions should always be true if first condition is true
+           && (old_meas != measement_ptr) //I dont think this is actually a necessary check
+           && ( !old_back
+               || !old_back_spec
+               || !measement_ptr
+               || (measement_ptr->num_gamma_channels() != old_back->num_gamma_channels())
+               || (measement_ptr->instrument_id() != old_back->instrument_id())
+               || (SpecUtils::is_special(old_back_spec->start_time()) && !SpecUtils::is_special(back_start_time))
+               || (!SpecUtils::is_special(back_start_time)
+                   && !SpecUtils::is_special(foreground_start_time)
+                   && (std::abs( (back_start_time - foreground_start_time).count() )
+                       <= std::abs( (old_back_spec->start_time() - foreground_start_time).count() ) ) )
+               )
            )
+        {
           background_sample_numbers.insert( header->m_samples[backrow].sample_number );
+        }
         
         selected.clear();
         selected.insert( index.child(childrow,0) );
@@ -4549,10 +4900,10 @@ void SpecMeasManager::displayFile( int row,
   if( old_meas.use_count() == 1 )
     serializeToTempFile( old_meas );
 
-#if( USE_DB_TO_STORE_SPECTRA )
-  if( storeInDb )
-    saveToDatabase( old_meas );
-#endif
+//#if( USE_DB_TO_STORE_SPECTRA )
+//  if( storeInDb )
+//    saveToDatabase( old_meas );
+//#endif
 
   if( background_sample_numbers.size() )
   {
@@ -4569,7 +4920,14 @@ void SpecMeasManager::displayFile( int row,
     
     m_viewer->setSpectrum( measement_ptr, background_sample_numbers,
                            SpecUtils::SpectrumType::Background, options );
-  }//if( backgroundIndexs.size() )
+    if( old_back && (old_meas != measement_ptr) )
+    {
+      passMessage( WString::tr("smm-changed-background"), WarningWidget::WarningMsgInfo );
+    }
+  }else if( old_back && numbackground && (old_meas != measement_ptr) )
+  {
+    passMessage( WString::tr("smm-didnt-changed-background"), WarningWidget::WarningMsgInfo );
+  }//if( backgroundIndexs.size() ) / else-if
   
 #if( USE_DB_TO_STORE_SPECTRA )
   WApplication *app = wApp;
@@ -5271,6 +5629,7 @@ WContainerWidget *SpecMeasManager::createTreeViewDiv()
   m_treeView->setColumn1Fixed( false );
   m_treeView->setColumnWidth( SpectraFileModel::kDisplayName,     WLength( 17, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kUploadTime,      WLength( 16, WLength::FontEx ) );
+  m_treeView->setColumnWidth( SpectraFileModel::kRiidResult,      WLength( 16, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kNumMeasurements, WLength( 10, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kLiveTime,        WLength( 14, WLength::FontEx ) );
   m_treeView->setColumnWidth( SpectraFileModel::kRealTime,        WLength( 14, WLength::FontEx ) );
@@ -5428,8 +5787,7 @@ void SpecMeasManager::displayIsBeingHidden()
 } // void SpecMeasManager::displayIsBeingHidden()
 
 #if( USE_DB_TO_STORE_SPECTRA )
-void SpecMeasManager::saveToDatabase(
-                                std::shared_ptr<const SpecMeas> input ) const
+void SpecMeasManager::saveToDatabase( std::shared_ptr<const SpecMeas> input ) const
 {
   //Make sure we are in the event loop - for thread safety.
   if( !wApp )
@@ -5445,10 +5803,15 @@ void SpecMeasManager::saveToDatabase(
     std::shared_ptr<SpecMeas> meas = header->parseFile();
     boost::function<void(void)> worker
                       = wApp->bind( boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header ) );
-    WServer::instance()->post( wApp->sessionId(), worker );
     
-//    boost::function<void(void)> worker = boost::bind( &SpectraFileHeader::saveToDatabaseWorker, meas, header );
-//    WServer::instance()->ioService().boost::asio::io_service::post( worker );
+    // Instead of posting immediately, we'll
+    //WServer::instance()->post( wApp->sessionId(), worker );
+    
+    boost::function<void ()> fallback = [](){
+      cerr << "Failed to save file to database." << endl;
+    };
+    
+    WServer::instance()->schedule( 50, wApp->sessionId(), worker, fallback );
   }//if( headermeas && (headermeas==meas) )
 }//void saveToDatabase( std::shared_ptr<const SpecMeas> meas ) const
 
@@ -5461,14 +5824,13 @@ int SpecMeasManager::setDbEntry( Wt::Dbo::ptr<UserFileInDb> dbfile,
   if( !dbfile )
     throw runtime_error( "SpecMeasManager::setDbEntry(...): invalid dbentry" );
   
-  if( enforceUser && (dbfile->user != m_viewer->m_user) )
+  if( enforceUser && (dbfile->user != m_viewer->user()) )
     throw runtime_error( "SpecMeasManager::setDbEntry(...): invalid user" );
   
   int row = -1;
   header.reset();
   measurement.reset();
-  header.reset( new SpectraFileHeader( m_viewer->m_user,
-                                       false, m_viewer ) );
+  header.reset( new SpectraFileHeader( false, m_viewer ) );
   measurement = header->resetFromDatabase( dbfile );
   addToTempSpectrumInfoCache( measurement );
   row = m_fileModel->addRow( header );
@@ -5515,12 +5877,14 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     try
     {
       Dbo::ptr<UserFileInDb> f = unModifiedFiles.front();
-      cerr << "Setting file with UUID=" << header->m_uuid << ", and filename "
-      << header->m_displayName << " to be connected to DB entry from "
+      
+      Wt::log("info") << "Setting file with UUID=" << header->m_uuid << ", and filename '"
+      << header->m_displayName << "' to be connected to DB entry from "
       << "upload at "
       << f->uploadTime.toString(DATE_TIME_FORMAT_STR).toUTF8()
       << " until user determines if they want to resume from a modified"
-      << " session" << endl;
+      << " session.";
+      
       header->setDbEntry( f );
     }catch( std::exception &e )
     {
@@ -5536,7 +5900,8 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   AuxWindow *window = new AuxWindow( WString::tr("smm-prev-states-window-title"),
                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
                                      | AuxWindowProperties::EnableResize
-                                     | AuxWindowProperties::TabletNotFullScreen) );
+                                     | AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::SetCloseable) );
   window->rejectWhenEscapePressed();
   window->addStyleClass( "ShowPrevSpecFileUses" );
   WPushButton *cancel = window->addCloseButtonToFooter();
@@ -5548,7 +5913,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   
   try
   {
-    //auto_save_states = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+    //auto_save_states = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
     
     if( userStatesWithFile.size() )
     {
@@ -5613,11 +5978,11 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
   }//if( snapshots && auto_saved ) / else
   
   WCheckBox *cb = new WCheckBox( WString::tr("smm-auto-check-prev-cb") );
-  cb->addStyleClass( "PrefCb" );
+  cb->addStyleClass( "PrefCb CbNoLineBreak" );
   layout->addWidget( cb, 1, 0 );
   layout->setRowStretch( 0, 1 );
   
-  InterSpecUser::associateWidget( m_viewer->m_user, "CheckForPrevOnSpecLoad", cb, m_viewer );
+  UserPreferences::associateWidget( "CheckForPrevOnSpecLoad", cb, m_viewer );
   
   
   const int width = std::min( 500, static_cast<int>(0.95*m_viewer->renderedWidth()) );
@@ -5634,7 +5999,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
 }//void showPreviousSpecFileUsesDialog(..)
 
 
-void postErrorMessage( const string msg, const WarningWidget::WarningMsgLevel level )
+void postErrorMessage( const WString msg, const WarningWidget::WarningMsgLevel level )
 {
   passMessage( msg, level );
   wApp->triggerUpdate();
@@ -5658,7 +6023,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
   try
   {
     const bool storeInDb
-      = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", m_viewer );
+      = UserPreferences::preferenceValue<bool>( "CheckForPrevOnSpecLoad", m_viewer );
 
     if( !storeInDb )
       return;
@@ -5666,7 +6031,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     if( !header )
       throw runtime_error( "Invalid SpectraFileHeader passed in" );
 
-    if( !m_viewer || !m_viewer->m_user )
+    if( !m_viewer || !m_viewer->user() )
       throw runtime_error( "Invalid InterSpec or user pointer" );
     
     vector<Dbo::ptr<UserState>> userStatesWithFile;
@@ -5674,6 +6039,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     
     {//begin interaction with database
       std::shared_ptr<DataBaseUtils::DbSession> sql = m_viewer->sql();
+      const Wt::Dbo::ptr<InterSpecUser> &user = m_viewer->user();
       DataBaseUtils::DbTransaction transaction( *sql );
       
       typedef Dbo::collection< Dbo::ptr<UserFileInDb> > UserFileInDbColl;
@@ -5683,7 +6049,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
 //                                                  "AND IsPartOfSaveState = 0" )
 //                                          .bind( header->m_uuid )
 //                                          .bind( header->m_displayName );
-      UserFileInDbColl files = m_viewer->m_user->userFiles().find()
+      UserFileInDbColl files = user->userFiles().find()
                                  .where( "UUID = ? AND IsPartOfSaveState = 0" )
                                  .bind( header->m_uuid );
 
@@ -5698,12 +6064,12 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
       
       // Now get user-saved states with this spectrum file in them
       Dbo::collection< Dbo::ptr<UserState> > states_query
-                    = SnapshotBrowser::get_user_states_collection( m_viewer->m_user, sql, header );
+                    = SnapshotBrowser::get_user_states_collection( user, sql, header );
       
       for( auto iter = states_query.begin(); iter != states_query.end(); ++iter )
         userStatesWithFile.push_back( *iter );
       
-      m_viewer->m_user.modify()->incrementSpectraFileOpened();
+      user.modify()->incrementSpectraFileOpened();
       
       transaction.commit();
     }//end interaction with database
@@ -5728,11 +6094,10 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         }//if( header->shouldSaveToDb() )
       }catch( FileToLargeForDbException &e )
       {
-        WString msg = WString::tr("smm-cant-save").arg(e.what());
-        cerr << msg.toUTF8() << endl;
+        WString msg = WString::tr("smm-cant-save").arg( e.message() );
         
         WServer::instance()->post( sessionID,
-                  boost::bind( &postErrorMessage, msg.toUTF8(), WarningWidget::WarningMsgHigh ) );
+                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgHigh ) );
       }
       return;
     }//if( this is a new-to-us file )
@@ -5764,7 +6129,7 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     cerr << "Error checking if this file had been opened previously: " << e.what() << endl;
     WServer::instance()->post( sessionID,
                               boost::bind( &postErrorMessage,
-              string("Error checking if this file had been opened previously"),
+              WString("Error checking if this file had been opened previously"),
               WarningWidget::WarningMsgHigh ) );
   }//try / catch
 }//void checkIfPreviouslyOpened(...)
@@ -5778,7 +6143,7 @@ std::shared_ptr<SpectraFileHeader> SpecMeasManager::addFile( const std::string &
     throw runtime_error( "SpecMeasManager::addFile(): invalid input" );
   
   std::shared_ptr<SpectraFileHeader> header
-   = std::make_shared<SpectraFileHeader>( m_viewer->m_user, false, m_viewer );
+        = std::make_shared<SpectraFileHeader>( false, m_viewer );
   header->setMeasurmentInfo( measurement );
   
   addToTempSpectrumInfoCache( measurement );
@@ -5802,7 +6167,7 @@ int SpecMeasManager::setFile( const std::string &displayName,
   measurement.reset();
   
   std::shared_ptr<SpectraFileHeader> new_header
-     = std::make_shared<SpectraFileHeader>( m_viewer->m_user, false, m_viewer );
+     = std::make_shared<SpectraFileHeader>( false, m_viewer );
   
   std::shared_ptr<SpecMeas> new_measurement
                    = new_header->setFile( displayName, filename, parser_type );
@@ -5918,20 +6283,10 @@ void SpecMeasManager::clearTempSpectrumInfoCache()
 {
   typedef std::deque< std::shared_ptr<const SpecMeas> > queue_type;
 
-#if( USE_DB_TO_STORE_SPECTRA )
-  const bool storeInDb
-  = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
-#endif
-
   for( queue_type::iterator iter = m_tempSpectrumInfoCache.begin();
       iter != m_tempSpectrumInfoCache.end(); ++iter )
   {
     serializeToTempFile( *iter );
-    
-#if( USE_DB_TO_STORE_SPECTRA )
-    if( storeInDb )
-      saveToDatabase( *iter );
-#endif
   }//for( loop over m_tempSpectrumInfoCache to save them to disk )
     
   m_tempSpectrumInfoCache.clear();
@@ -5947,24 +6302,6 @@ void SpecMeasManager::serializeToTempFile( std::shared_ptr<const SpecMeas> meas 
     if( headermeas && (headermeas==meas) )
     {
       header->saveToFileSystem( headermeas );
-      
-/*
-#if( USE_DB_TO_STORE_SPECTRA )
-    if( header->m_app && header->shouldSaveToDb() )
-    {
-//      boost::function<void(void)> worker
-//                        = header->m_app->bind( boost::bind(
-//                                      &SpectraFileHeader::saveToDatabaseWorker,
-//                                      headermeas, header ) );
-//      WServer::instance()->post( header->m_app->sessionId(), worker );
-      boost::function<void(void)> worker
-                      = boost::bind( &SpectraFileHeader::saveToDatabaseWorker,
-                                     headermeas, header );
-      WServer::instance()->ioService().boost::asio::io_service::post( worker );
-    }//if( header->m_app && header->shouldSaveToDb() )
-#endif
-*/
-      
       return;
     }//if( headermeas && (headermeas==meas) )
   }//for( int row = 0; row < m_fileModel->rowCount(); ++row )
@@ -5992,7 +6329,7 @@ void SpecMeasManager::removeFromSpectrumInfoCache( std::shared_ptr<const SpecMea
   
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
-     = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+     = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
   if( saveToDisk && storeInDb )
     saveToDatabase( meas );
 #endif
@@ -6026,7 +6363,7 @@ void SpecMeasManager::addToTempSpectrumInfoCache( std::shared_ptr<const SpecMeas
   
 #if( USE_DB_TO_STORE_SPECTRA )
   const bool storeInDb
-      = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
+      = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", m_viewer );
 #endif
 
   size_t curr_size = 0;
@@ -6143,351 +6480,6 @@ void SpecMeasManager::browsePrevSpectraAndStatesDb()
   }//if( add undo )
 }//void browsePrevSpectraAndStatesDb()
 
-
-
-
-void SpecMeasManager::finishStoreAsSpectrumInDb( Wt::WLineEdit *nameWidget,
-                                               Wt::WTextArea *descWidget,
-                                        std::shared_ptr<SpecMeas> meas,
-                                               AuxWindow *window )
-{
-  const WString name = nameWidget->text();
-  const WString desc = descWidget ? descWidget->text() : "";
-  
-  if( name.empty() )
-  {
-    passMessage( WString::tr("smm-must-specify-name"), WarningWidget::WarningMsgHigh );
-    return;
-  }//if( name.empty() )
-  
-  if( window )
-    delete window;
-  
-  std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( meas );
-  if( !header )
-  {
-    cerr << "SpecMeasManager::finishStoreAsSpectrumInDb(...)\n\tFailed to save file to DB." << endl;
-    passMessage( "Error saving to database", WarningWidget::WarningMsgHigh );
-    return;
-  }//if( !header )
-  
-  header->setDbEntry( Dbo::ptr<UserFileInDb>() );
-  
-  SpectraFileHeader::saveToDatabase( meas, header );
-  
-  Wt::Dbo::ptr<UserFileInDb> entry = header->dbEntry();
-  
-
-  if( !entry )
-  {
-    cerr << "SpecMeasManager::finishStoreAsSpectrumInDb(...)\n\tFailed to save file to DB, apparently" << endl;
-    passMessage( "Error saving to database", WarningWidget::WarningMsgHigh );
-    return;
-  }
-  
-  try
-  {
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    entry.modify()->filename = name.toUTF8();
-    entry.modify()->description = desc.toUTF8();
-    
-    transaction.commit();
-//    passMessage( "Stored " + entry->filename, WarningWidget::WarningMsgInfo );
-  }catch( std::exception &e )
-  {
-    cerr << "SpecMeasManager::finishStoreSpectrumInDb() caught: " << e.what()
-         << endl;
-    passMessage( "Filename or description you entered may not have been used"
-                 " when saving the spectrum", WarningWidget::WarningMsgHigh );
-  }//try / catc
-}//void finishStoreAsSpectrumInDb(...)
-
-//Menu: Spectrum->Save Spectrum
-void SpecMeasManager::storeSpectraInDb()
-{
-  for( int i = 0; i < 3; ++i )
-  {
-    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType( i );
-    std::shared_ptr<SpecMeas> m = m_viewer->measurment( type );
-
-    if( m )
-    {
-      saveToDatabase( m );  //happens in another thread
-      std::shared_ptr<SpectraFileHeader> header= m_fileModel->fileHeader( m );
-//      WString msg = "Stored '";
-//      msg += header ? header->displayName() : WString("");
-//      msg += "'";
-//      passMessage( msg, WarningWidget::WarningMsgInfo );
-    }//if( m )
-  }//for( int i = 0; i < 3; ++i )
-}//void storeSpectraInDb()
-
-//Menu: Spectrum->Save As
-void SpecMeasManager::startStoreSpectraAsInDb()
-{
-  for( int i = 2; i >= 0; i-- )
-  {
-    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
-    std::shared_ptr<SpecMeas> meas = m_viewer->measurment( type );
-    if( !meas )
-      continue;
-    
-    const string typestr = descriptionText(type);
-    WString title = WString::tr("smm-save-spectype-as-window-title").arg( WString::tr(typestr) );
-    
-    AuxWindow *window = new AuxWindow( title,
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                                      | AuxWindowProperties::TabletNotFullScreen
-                                      | AuxWindowProperties::SetCloseable) );
-    window->rejectWhenEscapePressed();
-    window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  
-    WGridLayout *layout = window->stretcher();
-    WLineEdit *edit = new WLineEdit();
-    edit->setEmptyText( WString::tr("smm-save-spectype-name-empty-txt") );
-    edit->setAttributeValue( "ondragstart", "return false" );
-    
-    std::shared_ptr<SpectraFileHeader> header
-                               = m_fileModel->fileHeader( meas );
-    const WString filename = header ? header->displayName() : WString();
-    if( !filename.empty() )
-      edit->setText( filename );
-    
-    WText *label = new WText( WString::tr("Name") );
-    layout->addWidget( label, 0, 0 );
-    layout->addWidget( edit,  0, 1 );
-  
-    WTextArea *summary = new WTextArea();
-    label = new WText( WString::tr("Desc.") );
-    summary->setEmptyText( WString::tr("smm-save-spectype-desc-empty-txt") );
-    layout->addWidget( label, 1, 0 );
-    layout->addWidget( summary, 1, 1 );
-    layout->setColumnStretch( 1, 1 );
-    layout->setRowStretch( 1, 1 );
-  
-    Dbo::ptr<UserFileInDb> dbentry = m_fileModel->dbEntry( meas );
-    if( dbentry )
-    {
-      edit->setText( dbentry->filename + " copy" );
-      summary->setText( dbentry->description );
-    }//if( dbentry )
-    
-  
-
-    WPushButton *save = new WPushButton( WString::tr("Save"), window->footer() );
-    save->setFloatSide(Right);
-    save->setIcon( "InterSpec_resources/images/disk2.png" );
-    
-    WPushButton *cancel = new WPushButton( WString::tr("Cancel"), window->footer());
-    cancel->setFloatSide(Right);
-    cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-
-    
-    save->clicked().connect(
-                        boost::bind( &SpecMeasManager::finishStoreAsSpectrumInDb,
-                            this, edit, summary, meas, window ) );
-
-    
-//    if( m_viewer->toolTabsVisible() )
-//    {
-//      window->resize( 450, 250 );
-//    }else
-//    {
-//      const int maxHeight = static_cast<int>(0.95*m_viewer->paintedHeight());
-//      const int maxWidth = static_cast<int>(0.95*m_viewer->paintedWidth());
-//      window->resize( std::min(450,maxWidth), std::min(250,maxHeight) );
-//    }//if( m_viewer->toolTabsVisible() )
-    
-    window->centerWindow();
-    window->show();
-  }//for( int i = 2; i <= 0; i-- )
-}//void startStoreSpectraAsInDb()
-
-
-void SpecMeasManager::finishSaveSnapshotInDb(
-                      const std::vector< std::shared_ptr<SpecMeas> > specs,
-                      const std::vector< Wt::Dbo::ptr<UserFileInDb> > dbs,
-                      const std::vector< Wt::WLineEdit * > edits,
-                      const std::vector< Wt::WCheckBox * > cbs,
-                      AuxWindow *window
-                      )
-{
-  assert( specs.size() == dbs.size() );
-  assert( specs.size() == edits.size() );
-  
-  vector<WString> descrips;
-  for( const Wt::WLineEdit *edit : edits )
-    descrips.push_back( edit->text() );
-  delete window;
-  
-  for( size_t i = 0; i < specs.size(); ++i )
-  {
-    if( i < cbs.size() && cbs[i] && !cbs[i]->isChecked() )
-      continue;
-    
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    try
-    {
-      UserFileInDb *info = new UserFileInDb();
-      *info = *dbs[i];
-      info->snapshotParent = dbs[i];
-      info->description = descrips[i].toUTF8();
-      info->serializeTime = WDateTime::currentDateTime();
-  
-      Dbo::ptr<UserFileInDb> dbptr = m_sql->session()->add( info );
-      UserFileInDbData *data = new UserFileInDbData();
-      data->fileInfo = dbptr;
-      try
-      {
-        data->setFileData( specs[i],
-                           UserFileInDbData::sm_defaultSerializationFormat );
-      }catch( std::exception & )
-      {
-        delete data;
-        transaction.rollback();
-      }//try / catch
-    
-      Dbo::ptr<UserFileInDbData> dataptr = m_sql->session()->add( data );
-      
-      UserFileInDb::makeWriteProtected( dbptr );
-      
-      transaction.commit();
-      passMessage( WString::tr("smm-save-state-toast").arg(dbptr->filename),
-                  WarningWidget::WarningMsgSave );
-    }catch( FileToLargeForDbException &e )
-    {
-      transaction.rollback();
-      passMessage( e.what(), WarningWidget::WarningMsgHigh );
-    }catch( std::exception &e )
-    {
-      transaction.rollback();
-      cerr << "Error saving snaphshot to database: " << e.what() << endl;
-      passMessage( "Error saving snaphshot to database, sorry :(",
-                   WarningWidget::WarningMsgHigh );
-    }//try / catch
-  }//for( size_t i = 0; i < specs.size(); ++i )
-}//void finishSaveSnapshotInDb(...)
-
-
-//If the name of the tag is given, then automatically apply,
-//otherwise, silently save as a new tag
-void SpecMeasManager::storeSpectraSnapshotInDb( const std::string tagname )
-{
-  vector<WText *> labels;
-  vector<Wt::WLineEdit *> edits;
-  std::vector< Wt::Dbo::ptr<UserFileInDb> > dbs;
-  std::vector< std::shared_ptr<SpecMeas> > specs;
-  
-  for( int i = 0; i < 3; ++i )
-  {
-    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType( i );
-    std::shared_ptr<SpecMeas> m = m_viewer->measurment( type );
-    std::shared_ptr<SpectraFileHeader> header= m_fileModel->fileHeader( m );
-    Dbo::ptr<UserFileInDb> dbentry = m_fileModel->dbEntry( m );
-    
-    if( !header )
-      continue;
-    
-    if( !dbentry )
-    {
-      SpectraFileHeader::saveToDatabase( m, header );
-      dbentry = header->dbEntry();
-//      WString msg = "Stored '";
-//      msg += (header ? header->displayName() : WString("")) + "'";
-//      passMessage( msg, WarningWidget::WarningMsgInfo );
-    }//if( !dbentry )
-      
-    if( !dbentry )
-    {
-      passMessage( "Couldnt save spectrum to database in order to make a"
-                    " snapshot", WarningWidget::WarningMsgInfo );
-      continue;
-    }//if( !dbentry )
-    
-    edits.push_back( new WLineEdit() );
-    labels.push_back( new WText( descriptionText( SpecUtils::SpectrumType(i) ) ) );
-    dbs.push_back( dbentry );
-    specs.push_back( m );
-  }//for( int i = 0; i < 3; ++i )
-  
-  if( specs.empty() )
-    return;
-  
-  vector<Wt::WCheckBox *> cbs;
-    
-  if( tagname.length() == 0 )
-  {
-    AuxWindow *window = new AuxWindow( WString::tr("smm-save-spec-version-window-title"),
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                       | AuxWindowProperties::IsModal) );
-    window->setWidth( 250 );
-    
-    WGridLayout *layout = window->stretcher();
-    WText *label = new WText( WString::tr("Spectrum") );
-    label->addStyleClass( "SaveSpecTagLabel" );
-    layout->addWidget( label, 0, 0 );
-    
-    label = new WText( WString::tr("Description") );
-    label->addStyleClass( "SaveSpecTagLabel" );
-    layout->addWidget( label, 0, 1 );
-    if( specs.size() > 2 )
-    {
-      label = new WText( WString::tr("smm-save-state") );
-      label->addStyleClass( "SaveSpecTagLabel" );
-      layout->addWidget( label, 0, 2 );
-    }
-    
-    for( int i = 0; i < static_cast<int>(specs.size()); ++i )
-    {
-      layout->addWidget( labels[i], i+1, 0, AlignLeft );
-      layout->addWidget( edits[i], i+1, 1 );
-      
-      if( specs.size() > 2 )
-      {
-        WCheckBox *cb = new WCheckBox();
-        cb->setChecked( true );
-        layout->addWidget( cb, i+1, 2, AlignLeft );
-        cbs.push_back( cb );
-      }//if( specs.size() > 2 )
-    }//for( int i = 0; i < specs.size(); ++i )
-    
-    layout->setColumnStretch( 1, 1 );
-    
-    WPushButton *store = new WPushButton( WString::tr("Save"), window->footer());
-    store->setIcon( "InterSpec_resources/images/disk2.png" );
-    store->setFloatSide(Right);
-    store->clicked().connect( boost::bind( &SpecMeasManager::finishSaveSnapshotInDb,
-                                          this, specs, dbs, edits, cbs, window ) );
-    
-    WPushButton *cancel = new WPushButton( WString::tr("Cancel"), window->footer());
-    cancel->setFloatSide(Right);
-    cancel->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    
-    if( edits.size() == 1 )
-      edits[0]->enterPressed().connect(
-                                       boost::bind( &SpecMeasManager::finishSaveSnapshotInDb,
-                                                   this, specs, dbs, edits, cbs, window ) );
-    
-    window->disableCollapse();
-    window->rejectWhenEscapePressed();
-    window->centerWindow();
-    window->show();
-  }else // tagname.length()==0
-  {
-    //Given name, save version
-    edits.clear();
-    for( int i = 0; i < static_cast<int>(specs.size()); ++i )
-    {
-      //just give it the name
-      edits.push_back(new WLineEdit(WString(tagname)));
-    }//for( int i = 0; i < specs.size(); ++i )
-    finishSaveSnapshotInDb(specs, dbs, edits, cbs, NULL);
-    
-    passMessage( WString::tr("smm-create-new-tag-toast").arg(tagname), 
-                WarningWidget::WarningMsgInfo );
-  } // name.length>1
-}//void storeSpectraSnapshotInDb()
 
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 

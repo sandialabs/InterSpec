@@ -67,6 +67,10 @@ int main( int argc, char **argv )
   int server_port_num;
   std::string docroot, wt_config, user_data_dir;
   
+#if( USE_BATCH_TOOLS )
+  bool batch_peak_fit = false, batch_act_fit = false;
+#endif
+  
 #if( BUILD_FOR_WEB_DEPLOYMENT )
   std::string http_address = "127.0.0.1";
   static_assert( !BUILD_AS_LOCAL_SERVER, "Web and local server should not both be enabled");
@@ -105,8 +109,14 @@ int main( int argc, char **argv )
    "nuclear-data, etc) to use.  If not specified, uses 'data' in the `docroot` directory."
    )
 #if( USE_BATCH_TOOLS )
-  ("batch-peak-fit", "Batch-fit peaks.")
-  ("batch-act-fit", "Batch shielding/source fit.")
+  ("batch-peak-fit", po::value<bool>(&batch_peak_fit)->implicit_value(true)->default_value(false),
+     "Batch-fit peaks.\n"
+     "\tUse '--batch-peak-fit --help' to see available options."
+  )
+  ("batch-act-fit", po::value<bool>(&batch_act_fit)->implicit_value(true)->default_value(false),
+     "Batch shielding/source fit.\n"
+     "\tUse '--batch-act-fit --help' to see available options."
+  )
 #endif
   ;
   
@@ -132,7 +142,7 @@ int main( int argc, char **argv )
   
   
 #if( USE_BATCH_TOOLS )
-  const bool is_batch = (cl_vm.count("batch-peak-fit") || cl_vm.count("batch-act-fit"));
+  const bool is_batch = (batch_peak_fit || batch_act_fit);
 #else
   const bool is_batch = false;
 #endif

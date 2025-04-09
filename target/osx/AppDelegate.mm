@@ -651,6 +651,18 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   }
 }//applicationDidFinishLaunching:(NSNotification *)aNotification
 
+// This method is called when the web view finishes loading a page
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    NSLog(@"WebView has finished loading (could be a refresh).");
+}
+
+- (void)applicationDidEnterBackground:(NSNotification *)notification {
+    NSLog(@"App entered background.");
+}
+
+- (void)applicationWillEnterForeground:(NSNotification *)notification {
+    NSLog(@"App will enter foreground.");
+}
 
 -(void)themeChanged:(NSNotification *) notification
 {

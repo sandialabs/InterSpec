@@ -301,6 +301,23 @@ public:
   
   MoreNuclideInfoWindow *moreInfoWindow();
   
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  /** Currently just hides or shows the table with gamma info. */
+  void setNarrowPhoneLayout( const bool narrow );
+#endif
+  
+  bool showingGammaLines() const;
+  void setShowGammaLines( const bool show );
+  
+  bool showingXrayLines() const;
+  void setShowXrayLines( const bool show );
+  
+  bool showingAlphaLines() const;
+  void setShowAlphaLines( const bool show );
+  
+  bool showingBetaLines() const;
+  void setShowBetaLines( const bool show );
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -390,8 +407,9 @@ protected:
   Wt::WCheckBox *m_showXrays;
   Wt::WCheckBox *m_showAlphas;
   Wt::WCheckBox *m_showBetas;
-  Wt::WCheckBox* m_showCascadeSums;
+  Wt::WCheckBox *m_showCascadeSums;
   Wt::WText* m_cascadeWarn;
+  Wt::WCheckBox *m_showEscapes;
   Wt::WCheckBox *m_showRiidNucs;
   Wt::WCheckBox *m_showPrevNucs;
   Wt::WCheckBox *m_showAssocNucs;

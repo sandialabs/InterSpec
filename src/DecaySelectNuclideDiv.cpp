@@ -53,6 +53,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DecaySelectNuclideDiv.h"
@@ -369,7 +370,7 @@ void DecaySelectNuclide::initActivityAgeSelects()
   m_nuclideActivityEdit->setValidator( actvalidator );
   m_nuclideActivityEdit->setTextSize( 10 );
   
-  const bool useCi = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   m_nuclideActivityEdit->setText( useCi ? "1 uCi" : "37 kBq" );
 
   m_nuclideAgeEdit->setText( "0.0 us" );
@@ -495,7 +496,7 @@ void DecaySelectNuclide::emitAccepted()
     const string::size_type unitpos = activityTxt.find_first_of( "CcBb" );
     
     if( unitpos == string::npos )
-      selected.useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      selected.useCurie = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     else if( activityTxt[unitpos]=='C' || activityTxt[unitpos]=='c' )
       selected.useCurie = true;
     else

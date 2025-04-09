@@ -1,71 +1,70 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- rpd- is short for ReferencePhotopeakDisplay -->
-  <message id="rpd-add-another-btn">Ajouter un Autre</message>
-<message id="rpd-tt-add-another-btn">Conserver les lignes actuellement affichées et ajouter un nouveau nucléide/source à afficher.</message>
-<message id="rpd-tt-nuc-edit">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (rayons X uniquement), <b>Uranium</b> (rayons X), <b>U-235m</b> (état méta stable), <b>Cs137</b>, <b>fond</b>, <b>H(n,g)</b>, etc.</message>
-<message id="rpd-tt-age">
+  <message id="rpd-add-another-btn">Ajouter un autre</message>
+  <message id="rpd-add-another-btn-narrow">Ajouter</message>
+  <message id="rpd-tt-add-another-btn">Conserver les lignes actuellement affichées et ajouter un nouveau nucléide/source à afficher.</message>
+  <message id="rpd-tt-nuc-edit">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (rayons X uniquement), <b>Uranium</b> (rayons X), <b>U-235m</b> (état méta stable), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, etc.</message>
+  <message id="rpd-tt-age">
     <div>
-      L'âge peut être spécifié en utilisant une combinaison d'unités de temps, semblable à '<b>5.3a 8j 22m</b>' ou en demi-vies comme 
+      L'âge peut être spécifié en utilisant une combinaison d'unités de temps, similaire à '<b>5.3a 8j 22m</b>' ou en demi-vies comme
       '<b>2.5 DV</b>'.
     </div>
     <div>
-      Unités de temps acceptables : <b>année</b>, <b>an</b>, <b>a</b>, <b>jour</b>, <b>j</b>, <b>heures</b>, <b>heure</b>, <b>h</b>, <b>minute</b>,
-      <b>min</b>, <b>m</b>, <b>seconde</b>, <b>s</b>, <b>ms</b>, <b>microsecondes</b>, <b>us</b>, <b>nanosecondes</b>, <b>ns</b>, ou
-      vous pouvez spécifier la période de temps par <b>hh:mm:ss</b>. Les unités de demi-vie peuvent être
-      spécifiées en utilisant <b>dv</b>, <b>demi-vie</b>, <b>demi-vies</b>, <b>demi-vie</b>, <b>demi-vies</b>,
-      <b>demi vies</b>, ou <b>demi vie</b>.
+      Unités de temps acceptables : <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microsecondes</b>, <b>us</b>, <b>nanosecondes</b>, <b>ns</b>, ou
+      vous pouvez spécifier la durée par <b>hh:mm:ss</b>.  Les unités de demi-vie peuvent être
+      spécifiées en utilisant <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, ou <b>half life</b>.
     </div>
     <div>
-      Les unités de demi-vie ou les périodes de temps ne peuvent pas être mélangées avec d'autres unités. Lorsque plusieurs périodes de temps sont
-      spécifiées, elles sont additionnées, par ex. '1a6mois 3m' est interprété comme 18 mois et 3 minutes.
+      Les unités de demi-vie ou les durées ne peuvent pas être mélangées avec d'autres unités.  Lorsque plusieurs durées sont
+      spécifiées, elles sont additionnées, par ex. '1a6mois 3m' est interprété comme 18 mois et 3 minutes.
     </div>
-</message>
-<message id="rpd-tt-clear">Efface toutes les lignes persistées, ainsi que les lignes actuelles non persistées.</message>
-<message id="rpd-more-info">plus d'info</message>
-<message id="rpd-shield-mat">matériau de blindage</message>
-<message id="rpd-options">Options</message>
-<message id="rpd-opt-prompt">Uniquement sur Invitation</message>
-<message id="rpd-opt-tt-prompt">
-    Gammas uniquement du nucléide original, et des descendants jusqu'à ce que l'un
-    d'entre eux ait une demi-vie plus longue que le nucléide original ; la
-    chaîne de désintégration est en équilibre jusqu'à ce point.
-</message>
-<message id="rpd-opt-gamma">Afficher les Gammas</message>
-<message id="rpd-opt-xray">Afficher les Rayons X</message>
-<message id="rpd-opt-alphas">Afficher les Alphas</message>
-<message id="rpd-opt-betas">Afficher les Bêtas</message>
-<message id="rpd-opt-cascade">Sommes en Cascade</message>
-<message id="rpd-prev-nucs">Nucl. Précédents</message>
-<message id="rpd-det-nucs">Nucl. RID Dét.</message>
-<message id="rpd-assoc-nucs">Nucl. Assoc.</message>
-<message id="rpd-suggestions">Suggestions</message>
-<message id="rpd-feature-markers">Marqueurs de Fonctionnalités</message>
-<message id="rpd-csv-export-msg">L'outil 'Info de Décroissance de Nucléide' offre des capacités supplémentaires pour exporter les nucléides, les produits de désintégration, et les informations de désintégration vers des fichiers CSV.</message>
-<message id="rpd-changed-age">Âge modifié pour une valeur plus raisonnable pour {1} de '{2}' à '{3}'</message>
-<message id="rpd-det-id">ID du Détecteur</message>
-<message id="rpd-ext-rid">RID Externe</message>
-<message id="rpd-prev">Précédent</message>
-<message id="rpd-warn-cascade-xrays">les rayons X ne sont pas inclus dans les cascades</message>
+  </message>
+  <message id="rpd-tt-clear">Efface toutes les lignes persistantes, ainsi que les lignes non persistantes actuelles.</message>
+  <message id="rpd-more-info">plus d'infos</message>
+  <message id="rpd-shield-mat">matériau de blindage</message>
+  <message id="rpd-options">Options</message>
+  <message id="rpd-opt-prompt">Invite seulement</message>
+  <message id="rpd-opt-tt-prompt">
+    Gammas du nucléide d'origine uniquement, et des descendants jusqu'à ce que l'un
+    d'eux ait une demi-vie plus longue que le nucléide d'origine ; la chaîne
+    de désintégration est en équilibre jusqu'à ce point.
+  </message>
+  <message id="rpd-opt-gamma">Afficher les gammas</message>
+  <message id="rpd-opt-xray">Afficher les rayons X</message>
+  <message id="rpd-opt-alphas">Afficher les alphas</message>
+  <message id="rpd-opt-betas">Afficher les bêtas</message>
+  <message id="rpd-opt-cascade">Sommes en cascade</message>
+  <message id="rpd-opt-escapes">Pics d'échappement</message>
+  <message id="rpd-prev-nucs">Nuc. précédents</message>
+  <message id="rpd-det-nucs">Nuc. ID dét.</message>
+  <message id="rpd-assoc-nucs">Nuc. associés</message>
+  <message id="rpd-suggestions">Suggestions</message>
+  <message id="rpd-feature-markers">Marqueurs de caractéristiques</message>
 
-<!-- Valeurs dans le tableau de cet outil -->
-<message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a état méta-stable du nucléide -->
-<message id="rpd-tbl-el-cap">c.e.</message> <!-- a.k.a capture électronique -->
-<message id="rpd-tbl-proton">proton</message>
-<message id="rpd-tbl-spont-fis">f.s.</message> <!-- Fission Spontanée-->
-<message id="rpd-tbl-xray">rayon X</message>
-<message id="rpd-tbl-reaction">Réaction</message>
-<message id="rpd-tbl-norm">NORM</message>
-<message id="rpd-tbl-cascade-sum">Somme en Cascade</message>
 
-<message id="rpd-tbl-hdr-energy">Énergie (keV)</message>
-<message id="rpd-tbl-hdr-br">T.R.</message> <!-- taux de ramification -->
-<message id="rpd-tbl-hdr-parent">Parent</message>
-<message id="rpd-tbl-hdr-mode">Mode</message>
-<message id="rpd-tbl-hdr-particle">Particule</message>
-<message id="rpd-tbl-hdr-tt-energy">Énergie de la particule produite</message>
-<message id="rpd-tbl-hdr-tt-br">Le nombre de la particule par seconde, par Bq du nucléide parent.</message>
-<message id="rpd-tbl-hdr-tt-trans">Nucléide réel qui s'est désintégré pour donner cette particule.</message>
-<message id="rpd-tbl-hdr-tt-trans-mode">Mode de désintégration du nucléide parent, qui a produit cette particule.</message>
-<message id="rpd-tbl-hdr-tt-type">Le type de particule produite</message>
+  <message id="rpd-csv-export-msg">L'outil 'Infos sur la désintégration des nucléides' offre des fonctionnalités supplémentaires pour exporter les nucléides, les produits de désintégration et les informations de désintégration vers des fichiers CSV.</message>
+  <message id="rpd-changed-age">L'âge a été modifié à une valeur plus raisonnable pour {1} de '{2}' à '{3}'</message>
+  <message id="rpd-det-id">ID du détecteur</message>
+  <message id="rpd-ext-rid">RID externe</message>
+  <message id="rpd-prev">Précédent</message>
+  <message id="rpd-warn-cascade-xrays">les rayons X ne sont pas inclus dans les cascades</message>
+
+  <message id="rpd-tbl-iso">Iso</message>  <message id="rpd-tbl-el-cap">c.e.</message> <message id="rpd-tbl-proton">proton</message>
+  <message id="rpd-tbl-spont-fis">f.s.</message> <message id="rpd-tbl-xray">rayon x</message>
+  <message id="rpd-tbl-reaction">Réaction</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">Somme en cascade</message>
+
+  <message id="rpd-tbl-hdr-energy">Énergie (keV)</message>
+  <message id="rpd-tbl-hdr-br">R.B.</message> <message id="rpd-tbl-hdr-parent">Parent</message>
+  <message id="rpd-tbl-hdr-mode">Mode</message>
+  <message id="rpd-tbl-hdr-particle">Particule</message>
+  <message id="rpd-tbl-hdr-tt-energy">Énergie de la particule produite</message>
+  <message id="rpd-tbl-hdr-tt-br">Le nombre de particules par seconde, par Bq du nucléide parent.</message>
+  <message id="rpd-tbl-hdr-tt-trans">Nucléide réel qui s'est désintégré pour donner cette particule.</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">Mode de désintégration du nucléide parent, qui a produit cette particule.</message>
+  <message id="rpd-tbl-hdr-tt-type">Le type de particule produite</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
 </messages>

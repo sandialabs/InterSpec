@@ -25,6 +25,8 @@
 
 #include "rapidxml/rapidxml.hpp"
 
+#include <boost/math/distributions/chi_squared.hpp>
+
 #include <Wt/WMenu>
 #include <Wt/WLabel>
 #include <Wt/WPanel>
@@ -72,6 +74,7 @@
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActManualGui.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -81,6 +84,11 @@
 
 using namespace Wt;
 using namespace std;
+
+#if( ANDROID )
+// Defined in target/android/android.cpp
+extern void android_download_workaround( Wt::WResource *resource, std::string description );
+#endif
 
 const int RelActManualGui::sm_xmlSerializationMajorVersion = 0;
 const int RelActManualGui::sm_xmlSerializationMinorVersion = 1;
@@ -183,7 +191,7 @@ public:
         bool use_peak = false;
         for( const auto &r : solution->m_input_peak )
         {
-          if( fabs(p->mean() - r.m_energy) < 1.0 )
+          if( fabs(p->mean() - r.m_mean) < 1.0 )
             use_peak = true;
         }
         
@@ -322,7 +330,7 @@ public:
       label = new WLabel( WString::tr("mrend-spec-act"), cell );
       
       cell = m_nucContentTable->elementAt(2, 1);
-      const bool useCurie = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+      const bool useCurie = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
       const double specificActivity = nuc->activityPerGram() / PhysicalUnits::gram;
       const string sa = PhysicalUnits::printToBestSpecificActivityUnits( specificActivity, 3, useCurie );
       txt = new WText( sa, cell );
@@ -381,10 +389,11 @@ public:
     WTableCell *cell = m_nucContentTable->elementAt(3, 0);
     cell->setColumnSpan( 2 );
     m_decay_during_meas = new WCheckBox( WString::tr("mrend-cb-decay-during-meas"), cell );
+    m_decay_during_meas->addStyleClass( "CbNoLineBreak" );
     m_decay_during_meas->checked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     m_decay_during_meas->unChecked().connect( this, &ManRelEffNucDisp::handleDecayDuringMeasurementChanged );
     
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
     
     HelpSystem::attachToolTipOn( m_decay_during_meas, WString::tr("mrend-tt-decay-during-meas"), 
                                 showToolTips );
@@ -529,7 +538,7 @@ void RelActManualGui::init()
     delete m_layout;
   
   m_layout = new WGridLayout( this );
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   m_layout->setVerticalSpacing( 0 );
@@ -702,7 +711,7 @@ void RelActManualGui::init()
   
   
   m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(5, 0) );
-  m_backgroundSubtract->addStyleClass( "BackSub" );
+  m_backgroundSubtract->addStyleClass( "BackSub CbNoLineBreak" );
   optionsList->elementAt(5, 0)->setColumnSpan( 2 );
   m_backgroundSubtractHolder = optionsList->rowAt(5);
   m_backgroundSubtract->checked().connect( this, &RelActManualGui::backgroundSubtractChanged );
@@ -733,7 +742,7 @@ void RelActManualGui::init()
 #if( ANDROID )
   // Using hacked saving to temporary file in Android, instead of via network download of file.
   m_downloadHtmlReport->clicked().connect( std::bind([this](){
-    android_download_workaround( m_calpResource, "rel_eff.html");
+    android_download_workaround( m_htmlResource, "rel_eff.html");
   }) );
 #endif //ANDROID
 #endif
@@ -1093,7 +1102,7 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 void RelActManualGui::calculateSolution()
 {
   m_currentSolution.reset();
-  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "" );
+  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
   m_results->clear();
   
   // TODO: should do the actual computation not on the GUI thread!
@@ -1190,7 +1199,7 @@ void RelActManualGui::calculateSolution()
       if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
       {
         GenericPeakInfo peak;
-        peak.m_energy = p->mean();
+        peak.m_mean = peak.m_energy = p->mean();
         peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
         peak.m_counts = p->amplitude();
         peak.m_counts_uncert = p->amplitudeUncert();
@@ -1228,7 +1237,7 @@ void RelActManualGui::calculateSolution()
           if( peak.m_counts <= 0.0 )
           {
             char buffer[32];
-            snprintf( buffer, sizeof(buffer), "%.2f", peak.m_energy );
+            snprintf( buffer, sizeof(buffer), "%.2f", peak.m_mean );
             
             prep_warnings.push_back( WString::tr("ramg-back-sub-neg").arg( buffer ).toUTF8() );
             continue;
@@ -1579,7 +1588,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
     case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
     {
-      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "" );
+      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
       break;
     }
       
@@ -1635,7 +1644,79 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     relActsColors[act.m_isotope] = make_pair( act.m_rel_activity, color );
   }//for( const auto &act : solution.m_rel_activities )
   
-  m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn );
+  WString pval_str;
+  try
+  {
+    boost::math::chi_squared chi_squared_dist( solution.m_dof );
+    const double prob = boost::math::cdf( chi_squared_dist, solution.m_chi2 );
+    if( prob > 0.99 )
+      pval_str = WString::tr("ramg-1-pval").arg( SpecUtils::printCompact(1.0 - prob, 3) );
+    else
+      pval_str = WString::tr("ramg-pval").arg( SpecUtils::printCompact(prob, 3) );
+  }catch( std::exception &e )
+  {
+    pval_str = "";
+  }
+  
+  WString chi2_title = WString::tr("ramg-chart-info-title");
+  chi2_title.arg( SpecUtils::printCompact(solution.m_chi2, 3) )
+            .arg( static_cast<int>(solution.m_dof) )
+            .arg( pval_str );
+  
+  // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
+  //  give their ratio.  If we have U and Pu, we wont give enrichment.
+  set<string> isotopes;
+  for( const auto &relact : solution.m_rel_activities )
+    isotopes.insert( relact.m_isotope );
+  if( (isotopes.count("U235") && isotopes.count("U238") && !isotopes.count("Pu239"))
+     || (isotopes.count("Pu239") && isotopes.count("Pu240") && !isotopes.count("U235")) )
+  {
+    string enrich;
+    const string iso = isotopes.count("U235") ? "U235" : "Pu239";
+    
+    try
+    {
+      const double nominal = solution.mass_fraction(iso);
+      const double plus = solution.mass_fraction( iso, 1.0 );
+      const double minus = solution.mass_fraction( iso, -1.0 );
+      const double error = 0.5*( fabs(plus - nominal) + fabs(nominal - minus) );
+      enrich = ", " + PhysicalUnits::printValueWithUncertainty(100.0*nominal, 100.0*error, 4)
+               + "% "+ iso;
+    }catch( std::exception & )
+    {
+      // We dont have the covariance matrix required to get mass fraction errors
+      //  We'll try leaving out the errors
+      try 
+      {
+        const double nominal = solution.mass_fraction(iso);
+        enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "% "+ iso;
+      }catch( std::exception & )
+      {
+        // I really dont think we should ever get here
+        assert( 0 );
+      }
+    }//try / catch
+    
+    chi2_title.arg( enrich );
+  }else if( isotopes.size() == 2 )
+  {
+    const vector<RelActCalcManual::IsotopeRelativeActivity> &rel_acts = solution.m_rel_activities;
+    const int num_index = (rel_acts[0].m_rel_activity > rel_acts[1].m_rel_activity) ? 1 : 0;
+    const int denom_index = (num_index ? 0 : 1);
+    const string num_nuc = rel_acts[num_index].m_isotope;
+    const string den_nuc = rel_acts[denom_index].m_isotope;
+    const double ratio = solution.activity_ratio(num_nuc, den_nuc);
+    const double uncert = solution.activity_ratio_uncert(num_nuc, den_nuc);
+    
+    string ratio_txt = ", act(" + num_nuc + "/" + den_nuc + ")="
+                   + PhysicalUnits::printValueWithUncertainty(ratio, uncert, 4);
+    chi2_title.arg( ratio_txt );
+  }else
+  {
+    chi2_title.arg( "" );
+  }
+  
+  m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn, chi2_title );
   
   
   // Now update the text
@@ -2179,6 +2260,11 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
   node = doc->allocate_node( ::rapidxml::node_element, "ResultTabShowing", value );
   base_node->append_node( node );
   
+  const bool background_sub = (!m_backgroundSubtractHolder->isHidden()
+                               && m_backgroundSubtract->isChecked());
+  value = background_sub ? "1" : "0";
+  node = doc->allocate_node( ::rapidxml::node_element, "BackgroundSubtract", value );
+  base_node->append_node( node );
   
   map<string,double> nuc_age_cache = m_nucAge;
   map<string,bool> nuc_decay_correct = m_nucDecayCorrect;
@@ -2249,6 +2335,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   const ::rapidxml::xml_node<char> *MatchTolerance_node = XML_FIRST_NODE(base_node, "MatchTolerance");
   const ::rapidxml::xml_node<char> *AddUncertainty_node = XML_FIRST_NODE(base_node, "AddUncertainty");
   const ::rapidxml::xml_node<char> *ResultTabShowing_node = XML_FIRST_NODE(base_node, "ResultTabShowing");
+  const ::rapidxml::xml_node<char> *BackgroundSubtract_node = XML_FIRST_NODE(base_node, "BackgroundSubtract");
   const ::rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
   
   
@@ -2343,6 +2430,14 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( (tab_showing != 0) && (tab_showing != 1) )
     tab_showing = 0;
   
+  bool backSub = false;
+  if( BackgroundSubtract_node )
+  {
+    const string back_sub_str = SpecUtils::xml_value_str(BackgroundSubtract_node);
+    backSub = ((back_sub_str == "1") || SpecUtils::iequals_ascii(back_sub_str, "true"));
+  }
+  
+  
   XML_FOREACH_CHILD( nuc_node, NuclideAges_node, "Nuclide" )
   {
     ::rapidxml::xml_node<char> *name_node = XML_FIRST_NODE(nuc_node, "Name");
@@ -2382,6 +2477,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   m_matchTolerance->setValue( match_tolerance );
   m_addUncertainty->setCurrentIndex( static_cast<int>(add_uncert) );
   m_resultMenu->select( tab_showing );
+  m_backgroundSubtract->setChecked( backSub );
   
   // Schedule calc/render
   m_renderFlags |= RenderActions::UpdateCalc;

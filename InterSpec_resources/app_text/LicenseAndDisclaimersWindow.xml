@@ -14,6 +14,9 @@
     The data that comes with InterSpec, such as nuclear decay info, cross-section, and similar is stored in
     <div class="DataLocation">{1}</div>
   </message>
+  <message id="ladw-show-data-location">Open in Explorer</message>
+  <message id="ladw-show-data-location-macOS">Open in Finder</message>
+  <message id="ladw-show-data-location-win">show</message>
   <message id="ladw-data-location-network">
     You can also use InterSpec from your browser at (port number will change when you restart InterSpec):
     <div class="DataLocation">http://127.0.0.1:{1}</div>

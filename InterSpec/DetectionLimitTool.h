@@ -398,7 +398,16 @@ protected:
   Wt::WLineEdit *m_displayActivity; //!< Used for peak plotting when activity limit is being determined
   Wt::WLineEdit *m_displayDistance; //!< Used for peak plotting when distance limit is being determined
   
-  enum ConfidenceLevel { OneSigma, TwoSigma, ThreeSigma, FourSigma, FiveSigma, NumConfidenceLevel };
+  enum ConfidenceLevel{
+    NinetyFivePercent,
+    NinetyNinePercent,
+    OneSigma,
+    TwoSigma,
+    ThreeSigma,
+    FourSigma,
+    FiveSigma,
+    NumConfidenceLevel
+  };
   Wt::WComboBox *m_confidenceLevel;
   
   /** Holds m_chi2Chart, m_bestChi2Act, and m_upperLimit. */

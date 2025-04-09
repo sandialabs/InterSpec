@@ -406,7 +406,7 @@ namespace PeakDists
    
    The area below the retuned limit should be quite accurate, while above may only be good to within 0.02 of requested area (i.e. `0.02*p`).
    
-   Throws error on invalid input.
+   Throws error on invalid input - or if limit cant be found (which can happen for really larger skews).
    */
   std::pair<double,double> double_sided_crystal_ball_coverage_limits( const double mean, const double sigma,
                                                                      const double left_skew,

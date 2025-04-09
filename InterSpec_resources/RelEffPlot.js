@@ -169,11 +169,15 @@ RelEffPlot.prototype.setYAxisTitle = function( title, dontCallResize ){
 }//RelEffPlot.prototype.setYAxisTitle
 
 
-RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
+RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
   const self = this;
 
   if( !Array.isArray(data_vals) || (data_vals.length === 0) )
     data_vals = null;
+  
+  this.chi2Txt = chi2_txt;
+  if( (typeof this.chi2Txt !== "string") || (this.chi2Txt.length === 0) )
+    this.chi2Txt = null;
     
   const parentWidth = this.chart.clientWidth;
   const parentHeight = this.chart.clientHeight;
@@ -184,6 +188,26 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
     
   const yaxistitleBB = this.yaxistitle ? this.yaxistitle.node().getBBox() : null;
   const ytitleh = yaxistitleBB ? yaxistitleBB.height + titlePad : 0;
+  
+  if( this.chi2Txt )
+  {
+    if( !this.chartInfoTitle ){
+      this.chartInfoTitle = this.svg.append("text")
+        .attr("class", "ChartInfoTitle")
+        .attr("y",0)                    // right at the top
+        .style("text-anchor", "end")     // Align text to the end (right)
+        .attr("dominant-baseline", "hanging") // Align text to the top of the text box
+        ;
+    }
+    
+    this.chartInfoTitle.attr("x", parentWidth - 10)
+      .text(this.chi2Txt);
+  }else if( this.chartInfoTitle )
+  {
+    this.chartInfoTitle.remove();
+    this.chartInfoTitle = null;
+  }
+  const chi2_txt_pad = this.chartInfoTitle ? 0.5*this.chartInfoTitle.node().getBBox().height : 0;
     
   // We will perform an initial estimate of the chart are - using the axis we have.
   //  Later on we will put current values into the axis, and then get the size, and
@@ -195,7 +219,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
   let ytickw = yticks.empty() ? 37 : Math.max( 37, d3.max(yticks[0], function(t){ return d3.select(t).node().getBBox().width; }) ); //If we have no labels, we'll get like 7 px, so will require at least 37 px, which is the nominal value we should get
     
   let chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw;
-  let chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh;
+  let chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad;
 
   this.data_vals = data_vals;
   this.fit_eqn = fit_eqn;
@@ -260,7 +284,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
   ytickw = yticks.empty() ? 7 : d3.max(yticks[0], function(t){ return d3.select(t).node().getBBox().width; });
           
   chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw;
-  chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh;
+  chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad;
     
   this.xScale.range([0, chartAreaWidth]);
   this.yScale.range([chartAreaHeight, 0]);
@@ -279,13 +303,13 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
   if( this.yaxistitle )
     this.yaxistitle
       .attr("y", this.options.margins.left )
-      .attr("x",this.options.margins.top - 0.5*chartAreaHeight );
+      .attr("x",this.options.margins.top + chi2_txt_pad - 0.5*chartAreaHeight );
          
   this.chartArea.selectAll('.xAxis')
     .attr("transform", "translate(0," + chartAreaHeight + ")");
   this.chartArea
     .attr("transform", "translate(" + (this.options.margins.left + ytickw + ytitleh)
-                       + "," + this.options.margins.top + ")");
+                       + "," + (this.options.margins.top + chi2_txt_pad) + ")");
     
   if( fit_eqn ){
     // Define the line
@@ -366,7 +390,12 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
         .attr('opacity', '.85')
         .attr("r", 6);
 
-      let txt = "<div>Energy: " + d.energy.toFixed(2) + " keV</div>"
+      let sum_contrib = 0;
+      for( const el of d.nuc_info ) {
+        sum_contrib += el.rel_act * el.br;
+      }
+
+      let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
         + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
         + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>"
         + (fit_eqn ? "<div>RelEff Curve: " + fit_eqn(d.energy).toPrecision(5) + "</div>" : "");
@@ -374,6 +403,8 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
         txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4);
         if( el.rel_act )
           txt += ", RelAct=" + el.rel_act.toPrecision(4);
+        if( el.rel_act && (d.nuc_info.length > 1) )
+          txt += ", " + (100*el.rel_act*el.br/sum_contrib).toFixed(1) + "% of counts";
         txt += "</div>";
       }
             
@@ -405,5 +436,5 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn) {
 
 
 RelEffPlot.prototype.handleResize = function () {
-  this.setRelEffData(this.data_vals, this.fit_eqn);
+  this.setRelEffData(this.data_vals, this.fit_eqn, this.chi2Txt );
 };//RelEffPlot.prototype.handleResize

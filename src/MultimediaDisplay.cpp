@@ -41,6 +41,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/InterSpecUser.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/MultimediaDisplay.h"
 
 using namespace std;
@@ -142,12 +143,13 @@ public:
     
     WCheckBox *cb = new WCheckBox( WString::tr("smmd-auto-show-images-cb"), footer );
     cb->setToolTip( WString::tr("smmd-tt-auto-show-images") );
+    cb->addStyleClass( "CbNoLineBreak" );
     m_next->setFocus();
     
     InterSpec *interspec = InterSpec::instance();
     assert( interspec );
     if( interspec )
-      InterSpecUser::associateWidget( interspec->m_user, "AutoShowSpecMultimedia", cb, interspec );
+      UserPreferences::associateWidget( "AutoShowSpecMultimedia", cb, interspec );
     
 #if( BUILD_AS_OSX_APP || IOS )
     m_download = new WAnchor( WLink(m_resource), footer );

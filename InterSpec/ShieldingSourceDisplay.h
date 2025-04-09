@@ -111,6 +111,7 @@ namespace GammaInteractionCalc
   enum class ModelSourceType : int;
   class ShieldingSourceChi2Fcn;
   struct SourceFitDef;
+  struct PeakDetail;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -179,7 +180,8 @@ public:
   double activityUncert( int nuc ) const;
   
   /** Returns m_nuclides[nuc].fitActivity for point and trace sources, and always false for self-atten sources; note that
-   this is different than data( {row,kFitActivity} ) which only returns a non-empty value for point sources.
+   this is different than data( {row,kFitActivity} ) which only returns a non-empty value for point sources..
+   For trace sources if activity/volume is fixed (e.g., fit checkbox not checked), but volume is being fit, will return false.
    */
   bool fitActivity( int nuc ) const;
   
@@ -371,10 +373,9 @@ public:
    
    @param before If nullptr, the shielding will be added after the last ShieldingSelect; if non-null, the new ShieldingSelect will be added
                 before the specified ShieldingSelect.
-   @param updateChiChartAndAddUndoRedo If true, the Chi2 chart will be updated after adding, AND a undo/redo point will be
-                added.
+   @param addUndoRedo If true, an undo/redo point will be added.
   */
-  ShieldingSelect *addShielding( ShieldingSelect *before, const bool updateChiChartAndAddUndoRedo );
+  ShieldingSelect *addShielding( ShieldingSelect *before, const bool addUndoRedo );
   
   //doAddShielding(), doAddShieldingBefore(), doAddShieldingAfter:
   //  convience functions that calls addShielding(...) appropriately.
@@ -445,8 +446,9 @@ public:
   
   //updateCalcLogWithFitResults(): adds in fit for values and their
   //  uncertainties in the calculation log.
-  void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
-                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results );
+  static void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
+                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
+                                    std::vector<std::string> &calcLog );
   
   //initialSizeHint(...) gives the initial hint about the size so which widgets
   //  should be shown can be decided on.  Furthermore, calling this function
@@ -466,9 +468,17 @@ public:
   //  std::exception on error, with a message approprtiate for output to user.
   void checkAndWarnZeroMassFraction();
   
-  //checkDistanceAndThicknessConsistent(): called when the m_distanceEdit is
-  //  changed; makes sure radius of outer shielding is less than this distnace,
-  //  and updates chi2 chart
+  /** Called when doing a model fit, the geometry changes, or when updating the Chi2 chart due to dimension or
+   shielding/material changes (this update happens during the `Wt::render(...)` call), to make sure radius of
+   outer shielding is less than the detector distance, and other characteristics of the shielding are consistent with the
+   model.
+   This function also updates the fit model activities of for volumetric sources.
+   
+   Note: this function should only be called when the whole GUI state is completely setup.
+   For example, if you first set shielding thicknesses, then call this function, then set detector distance, you
+   could have caused the shielding thicknesses to have been changed based on the old detector distances.
+   This also applies to other properties like which thicknesses are allowed to be fit.
+   */
   void checkDistanceAndThicknessConsistent();
 
   /** Checks to see if fitting for more than one atomic number of generic shielding.
@@ -617,7 +627,13 @@ protected:
   /** Undoes the changes from #setWidgetStateForFitStarting */
   void setWidgetStateForFitBeingDone();
   
-  void updateChi2ChartActual();
+  /** If results are passed in, and they are final, will use those to set the peak chart information and such, 
+   or else will call `shieldingFitnessFcn()`.
+   
+   Does not take a lock on `results->m_mutex`, so if there is a chance anywhere else is using the results,
+   take a lock on it before calling this function
+   */
+  void updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results );
   virtual void layoutSizeChanged( int width, int height ) override;
   
 protected:
@@ -691,6 +707,7 @@ protected:
   
   AuxWindow *m_logDiv;
   std::vector<std::string> m_calcLog;
+  std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
   
   AuxWindow *m_modelUploadWindow;
 #if( USE_DB_TO_STORE_SPECTRA )

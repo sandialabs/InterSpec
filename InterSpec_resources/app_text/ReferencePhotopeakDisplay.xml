@@ -2,6 +2,7 @@
 <messages>
   <!-- rpd- is short for ReferencePhotopeakDisplay -->
   <message id="rpd-add-another-btn">Add Another</message>
+  <message id="rpd-add-another-btn-narrow">Add</message>
   <message id="rpd-tt-add-another-btn">Keep the currently displayed lines and add a new nuclide/source to display.</message>
   <message id="rpd-tt-nuc-edit">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (x-rays only), <b>Uranium</b> (x-rays), <b>U-235m</b> (meta stable state), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, etc.</message>
   <message id="rpd-tt-age">
@@ -36,6 +37,7 @@
   <message id="rpd-opt-alphas">Show Alphas</message>
   <message id="rpd-opt-betas">Show Betas</message>
   <message id="rpd-opt-cascade">Cascade Sums</message>
+  <message id="rpd-opt-escapes">Escape Peaks</message>
   <message id="rpd-prev-nucs">Prev Nucs</message>
   <message id="rpd-det-nucs">Det RID Nucs</message>
   <message id="rpd-assoc-nucs">Assoc. Nucs</message>
@@ -45,6 +47,7 @@
 
   <message id="rpd-csv-export-msg">The 'Nuclide Decay Info' tool provides additional capabilities for exporting nuclide, decay products, and decay information to CSV files.</message>
   <message id="rpd-changed-age">Changed age to a more reasonable value for {1} from '{2}' to '{3}'</message>
+  <message id="rpd-changed-age-fission">Changed age to {1}, to be valid.</message>
   <message id="rpd-det-id">Detector ID</message>
   <message id="rpd-ext-rid">External RID</message>
   <message id="rpd-prev">Previous</message>

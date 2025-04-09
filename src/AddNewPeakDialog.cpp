@@ -224,21 +224,40 @@ m_chart( nullptr )
   
   m_chart = new WText( "", Wt::XHTMLUnsafeText );
   m_chart->setInline( false );
-  table->elementAt(0,2)->addWidget( m_chart );
-  table->elementAt(0,2)->setRowSpan( 7 );
-  if( m_isPhone )
+  
+  const bool narrowLayout = (m_isPhone && (m_viewer->renderedWidth() < m_viewer->renderedHeight()));
+  
+  if( narrowLayout )
   {
-    table->elementAt(0,2)->setVerticalAlignment( Wt::AlignmentFlag::AlignMiddle );
-    table->elementAt(0,2)->setContentAlignment( Wt::AlignmentFlag::AlignCenter );
-  }
+    // Narrow vertical phone layout
+    WTableCell *cell = table->elementAt(7,0);
+    cell->addWidget( m_chart );
+    cell->setRowSpan( 7 );
+    cell->setColumnSpan( table->columnCount() );
+    cell->setVerticalAlignment( Wt::AlignmentFlag::AlignMiddle );
+    cell->setContentAlignment( Wt::AlignmentFlag::AlignCenter );
+  }else
+  {
+    // Normal wide Layout
+    WTableCell *cell = table->elementAt(0,2);
+    cell->addWidget( m_chart );
+    cell->setRowSpan( 7 );
+    
+    if( m_isPhone )
+    {
+      cell->setVerticalAlignment( Wt::AlignmentFlag::AlignMiddle );
+      cell->setContentAlignment( Wt::AlignmentFlag::AlignCenter );
+    }
+  }//if( vertical phone ) / else
   
   
   WText *msg = new WText( WString::tr("anpd-tt-more-adv") );
   msg->decorationStyle().setFont( fitCbFont );
   if( m_isPhone )
   {
-    table->elementAt(7,0)->addWidget( msg );
-    table->elementAt(7,0)->setColumnSpan( 3 );
+    WTableCell *cell = table->elementAt(table->rowCount(),0);
+    cell->addWidget( msg );
+    cell->setColumnSpan( table->columnCount() );
   }else
   {
     footer()->addWidget( msg );
@@ -304,8 +323,9 @@ void AddNewPeakDialog::updateCandidatePeakPreview()
    */
   const int ww = m_viewer->renderedWidth();
   const int wh = m_viewer->renderedHeight();
+  const bool narrowLayout = (m_isPhone && (m_viewer->renderedWidth() < m_viewer->renderedHeight()));
   
-  if( ww < 350 )
+  if( (!narrowLayout && (ww < 350)) || (narrowLayout && ww < 310) )
   {
     m_chart->setText( WString::tr("anpd-screen-to-small") );
     return;
@@ -323,8 +343,8 @@ void AddNewPeakDialog::updateCandidatePeakPreview()
   peaks->push_back( m_candidatePeak );
   
   const bool compact = false;
-  const int width_px = m_isPhone ? (ww - 250) : std::min(550,ww-250);
-  const int height_px = std::min(350,wh-50);
+  const int width_px = m_isPhone ? (narrowLayout ? (ww - 20) : (ww - 250)) : std::min(550,ww-250);
+  const int height_px = narrowLayout ? std::min(350,wh-225) : std::min(350,wh-50);
   const double roiWidth = m_candidatePeak->upperX() - m_candidatePeak->lowerX();
   const double lower_energy = m_candidatePeak->lowerX() - roiWidth;
   const double upper_energy = m_candidatePeak->upperX() + roiWidth;

@@ -32,6 +32,8 @@
 #include <Wt/WLineEdit>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
+#include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WDoubleValidator>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
@@ -47,6 +49,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -102,7 +105,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_layout = new WGridLayout();
   setLayout( m_layout );
 
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
 
   m_specViewer->useMessageResourceBundle( "GammaXsGui" );
   
@@ -123,7 +126,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
   m_energyEdit->blurred().connect( this, &GammaXsGui::calculateCrossSections );
 
   int row = 0;
-  WLabel *label = new WLabel( WString::tr("{1}:").arg( WString::tr("Energy")) );
+  WLabel *label = new WLabel( WString("{1}:").arg( WString::tr("Energy")) );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_layout->addWidget( m_energyEdit, row, 1, 1, 1 );
   label = new WLabel( "keV" );
@@ -548,8 +551,12 @@ void GammaXsGui::handleAppUrl( std::string query_str )
         switch( type )
         {
           case 0: break;
-          case 1: std::stod(value); break;
-          case 2: PhysicalUnits::stringToDistance(value); break;
+          case 1:
+            std::stod(value); 
+            break;
+          case 2: 
+            PhysicalUnits::stringToDistance(value); 
+            break;
         }
       }catch( std::exception & )
       {
@@ -675,7 +682,7 @@ void GammaXsGui::calculateCrossSections()
     
     try
     {
-      comptonMu  += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::ComptonScatter ) ;
+      comptonMu  += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::ComptonScatter ) ;
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -684,7 +691,7 @@ void GammaXsGui::calculateCrossSections()
 #if( !USE_SNL_GAMMA_ATTENUATION_VALUES )
     try
     {
-      rayleighMu += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::RayleighScatter );
+      rayleighMu += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::RayleighScatter );
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -693,7 +700,7 @@ void GammaXsGui::calculateCrossSections()
 
     try
     {
-      photoMu    += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::PhotoElectric );
+      photoMu    += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::PhotoElectric );
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -701,7 +708,7 @@ void GammaXsGui::calculateCrossSections()
 
     try
     {
-      pairMu     += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy, MassAttenuation::GammaEmProcces::PairProduction );
+      pairMu     += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy, MassAttenuation::GammaEmProcces::PairProduction );
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -709,7 +716,7 @@ void GammaXsGui::calculateCrossSections()
     
     try
     {
-      totalMu += xsmult * MassAttenuation::massAttenuationCoeficient( AN, energy );
+      totalMu += xsmult * MassAttenuation::massAttenuationCoefficientElement( AN, energy );
     }catch(exception &e)
     {
       passMessage( WString("gxsg-warn-suspect").arg(e.what()) , 3 );
@@ -869,7 +876,15 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
   WPushButton *closeButton = addCloseButtonToFooter();
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
-  if( viewer->isPhone() )
+  int w = viewer->renderedWidth();
+  int h = viewer->renderedHeight();
+  if( viewer->isPhone() && (w < 100) )
+  {
+    w = wApp->environment().screenWidth();
+    h = wApp->environment().screenHeight();
+  }
+  
+  if( viewer->isPhone() && (w > h) && (w > 100) )
     titleBar()->hide();
   
   show();

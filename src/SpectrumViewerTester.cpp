@@ -652,7 +652,9 @@ const char *SpectrumViewerTester::tostr( TestType type )
 
 
 SpectrumViewerTesterWindow::SpectrumViewerTesterWindow( InterSpec *viewer )
-  : AuxWindow( "InterSpec Tester" ),
+  : AuxWindow( "InterSpec Tester", 
+              (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+              | AuxWindowProperties::DisableCollapse) ),
     m_tester( 0 )
 {
   addStyleClass( "SpectrumViewerTesterWindow" );
@@ -1991,7 +1993,7 @@ SpectrumViewerTester::Score SpectrumViewerTester::testShieldSourceFit()
     note.m_text = "";
     note.m_title = "Fit Chi2 Graphic";
     note.m_originalImage = make_shared<Wt::WSvgImage>(m_picWidth, m_picHeight);
-    disp->updateChi2ChartActual();
+    disp->updateChi2ChartActual( nullptr );
     disp->renderChi2Chart( *note.m_originalImage );
     
     // Set all the quantities being fit for to some default values, so we wont be starting off in

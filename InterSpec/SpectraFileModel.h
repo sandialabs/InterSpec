@@ -130,9 +130,7 @@ class SpectraFileHeader
   //      all caching mechanisms implicitly rely on SpecUtils::SpecFile not being
   //      changed out of this class
 public:
-  SpectraFileHeader( Wt::Dbo::ptr<InterSpecUser> user,
-                     bool keepInMemmory,
-                     InterSpec *viewer );
+  SpectraFileHeader( bool keepInMemmory, InterSpec *viewer );
 
   virtual ~SpectraFileHeader() noexcept(true);
 
@@ -191,6 +189,7 @@ public:
   float totalGammaCounts() const;
   float totalNeutronCounts() const;
   int numDetectors() const;
+  const std::string &riidSummary() const;
   bool hasNeutronDetector() const;
   const Wt::WDateTime &spectrumTime() const;
   bool passthrough() const;
@@ -265,11 +264,14 @@ public:
   
   //setDbEntry(...): deletes database entry represented by m_fileDbEntry (if it
   //  exists and doesnt equal entry) and then associate the spectrum represented
-  //  by this object to 'entry' via setting m_fileDbEntry ot 'entry'.  Does not
+  //  by this object to 'entry' via setting m_fileDbEntry to `entry`.  Does not
   //  check that 'entry' is a correct UserFileInDb object, and does not
   //  serialize the SpecMeas object, nor mark it as modified.  May throw
   //  exception if 'entry' is invalid, or there are errors righting to database.
   void setDbEntry( Wt::Dbo::ptr<UserFileInDb> entry );
+  
+  /** Disconnects the file from its database entry - without deleting the current `m_fileDbEntry` entry. */
+  void clearDbEntry();
   
   //dbEntry(): returns m_fileDbEntry, which may be empty
   Wt::Dbo::ptr<UserFileInDb> dbEntry();
@@ -287,8 +289,7 @@ public:
   //  preference says if it should be saved
   bool shouldSaveToDb() const;
   
-  std::shared_ptr<SpecMeas> resetFromDatabase(
-                                          Wt::Dbo::ptr<UserFileInDb> dbfile );
+  std::shared_ptr<SpecMeas> resetFromDatabase( Wt::Dbo::ptr<UserFileInDb> dbfile );
 #endif
   
   
@@ -313,6 +314,9 @@ public:
   Wt::WDateTime m_uploadTime;
   int m_numSamples;
   bool m_isPassthrough;
+  
+  /** TODO: as of 20250227, `m_riidSummary` doesnt get saved to the database (into the `UserFileInDb` class/table) - we should add this. */
+  std::string m_riidSummary;
 
   float m_totalLiveTime;
   float m_totalRealTime;
@@ -325,11 +329,11 @@ public:
   
   //m_modifiedSinceDecode: only updated when writing to file, or database, and
   //  exists to catch the edge case where the SpecMeas object has been written
-  //  to file and not in memorry, but it was requested to save the SpecMeas
+  //  to file and not in memory, but it was requested to save the SpecMeas
   //  object to the database (to fill out UserFileInDb::userHasModified).
   mutable bool m_modifiedSinceDecode;
   
-  //If caching is enable the SpecUtils::SpecFile object will be kept in memorry
+  //If caching is enable the SpecUtils::SpecFile object will be kept in memory
   //  even if no where else references the object
   bool m_keepCache;
   mutable std::shared_ptr<SpecMeas> m_cachedMeasurement;
@@ -341,7 +345,7 @@ public:
   //  user decides to use there previous version of the spectra cause maybe
   //  they had done some peak id or something.
   //  Also, just because this variable is true doesnt mean we will save the file
-  //  to the database (user prefernce may be to not)
+  //  to the database (user preference may be to not)
   bool m_candidateForSavingToDb;
   
   //This weak pointer tracks if the SpecUtils::SpecFile object cooresping to
@@ -407,6 +411,7 @@ public:
     kNeutronCounts,
     kSpectrumTime,
     kNumDetectors,
+    kRiidResult,
     kUploadTime,
     NumDisplayFields
   };//enum DisplayFields

@@ -69,6 +69,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RowStretchTreeView.h"
@@ -223,6 +224,10 @@ namespace
         case ReferenceLineInfo::SourceType::OneOffSrcLines:
           filename += "_one_off_src";
           break;
+        
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+          filename += "_fision_lines";
+          break;
           
         case ReferenceLineInfo::SourceType::None:
           filename = "empty";
@@ -290,6 +295,12 @@ namespace
           out << "AgeDecayedTo," << refinfo.m_input.m_age << eol_char;
           break;
         }//
+          
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+        {
+          out << "FissionProductLines," << refinfo.m_input.m_input_txt << eol_char;
+          out << "TimeAfterFission," << refinfo.m_input.m_age << eol_char;
+        }
           
         case ReferenceLineInfo::SourceType::None:
           assert( 0 );
@@ -387,6 +398,7 @@ namespace
         case ReferenceLineInfo::SourceType::CustomEnergy:
         case ReferenceLineInfo::SourceType::NuclideMixture:
         case ReferenceLineInfo::SourceType::OneOffSrcLines:
+        case ReferenceLineInfo::SourceType::FissionRefLines:
           out << eol_char << rel_amp_note << eol_char << eol_char;
           out << "Energy (keV),Rel. Yield";
           break;
@@ -522,32 +534,34 @@ namespace
   
 }//namespace
 
-bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs,
-                                    const DecayParticleModel::RowData &rhs,
+bool DecayParticleModel::less_than( const DecayParticleModel::RowData &lhs_input,
+                                    const DecayParticleModel::RowData &rhs_input,
                                     const DecayParticleModel::Column c,
                                     const SortOrder order )
 {
-
-  bool less = false;
-
+  const bool less = (order == Wt::AscendingOrder);
+  
+  const DecayParticleModel::RowData &lhs = less ? lhs_input : rhs_input;
+  const DecayParticleModel::RowData &rhs = less ? rhs_input : lhs_input;
+  
   switch( c )
   {
-    case kEnergy:         less = (lhs.energy < rhs.energy);           break;
-    case kBranchingRatio: less = (lhs.branchRatio < rhs.branchRatio); break;
+    case kEnergy:         return (lhs.energy < rhs.energy);
+    case kBranchingRatio: return (lhs.branchRatio < rhs.branchRatio);
     case kResponsibleNuc:
       if( !lhs.responsibleNuc || !rhs.responsibleNuc )
-        less = false;
+        return lhs.responsibleNuc < rhs.responsibleNuc;
       else
-        less = SandiaDecay::Nuclide::lessThan( lhs.responsibleNuc, rhs.responsibleNuc );
+        return SandiaDecay::Nuclide::lessThanForOrdering( lhs.responsibleNuc, rhs.responsibleNuc );
     break;
-    case kDecayMode:      less = (lhs.decayMode < rhs.decayMode);     break;
-    case kParticleType:   less = (lhs.particle < rhs.particle);       break;
+    case kDecayMode:      return (lhs.decayMode < rhs.decayMode);
+    case kParticleType:   return (lhs.particle < rhs.particle);
     case kNumColumn:      return false;
   }//switch( r )
 
-  if( order == Wt::AscendingOrder )
-    return less;
-  return !less;
+  assert( 0 );
+  
+  return false;
 }//less_than(...)
 
 
@@ -831,6 +845,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showAlphas( NULL ),
     m_showBetas( NULL ),
     m_showCascadeSums( NULL ),
+    m_showEscapes( NULL ),
     m_cascadeWarn( NULL ),
     m_showRiidNucs( NULL ),
     m_showPrevNucs( NULL ),
@@ -872,7 +887,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   if( !chart )
     throw runtime_error( "ReferencePhotopeakDisplay: a valid chart must be passed in" );
 
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", specViewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", specViewer );
   
   //The inputDiv/Layout is the left side of the widget that holds all the
   //  nuclide input,age, color picker, DRF, etc
@@ -886,10 +901,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   
   const bool isPhone = m_spectrumViewer->isPhone();
   if( isPhone )
-    addStyleClass( "ReferencePhotopeakDisplayMobile" );
+    addStyleClass( "RefDispMobile" );
   
   const WLength labelWidth(3.5,WLength::FontEm), fieldWidth(4,WLength::FontEm);
-  const WLength optionWidth(5.25,WLength::FontEm), buttonWidth(5.25,WLength::FontEm);
   
   WLabel *nucInputLabel = new WLabel( WString("{1}:").arg( WString::tr("Nuclide") ) );
   nucInputLabel->setMinimumSize( labelWidth, WLength::Auto );
@@ -1114,6 +1128,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   m_promptLinesOnly = new WCheckBox( WString::tr("rpd-opt-prompt"), m_optionsContent );  //ɣ
   HelpSystem::attachToolTipOn(m_promptLinesOnly, WString::tr("rpd-opt-tt-prompt"), showToolTips);
+  m_promptLinesOnly->addStyleClass( "CbNoLineBreak" );
   m_promptLinesOnly->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->hide();
@@ -1124,20 +1139,33 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showBetas = new WCheckBox( WString::tr("rpd-opt-betas"), m_optionsContent );
   m_showCascadeSums = new WCheckBox( WString::tr("rpd-opt-cascade"), m_optionsContent );
   m_showCascadeSums->hide();
-  
+  m_showEscapes = new WCheckBox( WString::tr("rpd-opt-escapes"), m_optionsContent );
+      
   m_showPrevNucs = new WCheckBox( WString::tr("rpd-prev-nucs"), m_optionsContent );
   m_showRiidNucs = new WCheckBox( WString::tr("rpd-det-nucs"), m_optionsContent );
   m_showAssocNucs = new WCheckBox( WString::tr("rpd-assoc-nucs"), m_optionsContent );
   m_showFeatureMarkers = new WCheckBox( WString::tr("rpd-feature-markers"), m_optionsContent );
       
   m_showGammas->setWordWrap( false );
+  m_showGammas->addStyleClass( "CbNoLineBreak" );
   m_showXrays->setWordWrap( false );
+  m_showXrays->addStyleClass( "CbNoLineBreak" );
   m_showAlphas->setWordWrap( false );
+  m_showAlphas->addStyleClass( "CbNoLineBreak" );
   m_showBetas->setWordWrap( false );
+  m_showBetas->addStyleClass( "CbNoLineBreak" );
   m_showCascadeSums->setWordWrap( false );
+  m_showCascadeSums->addStyleClass( "CbNoLineBreak" );
+  m_showEscapes->setWordWrap( false );
+  m_showEscapes->addStyleClass( "CbNoLineBreak" );
   m_showPrevNucs->setWordWrap( false );
+  m_showPrevNucs->addStyleClass( "CbNoLineBreak" );
   m_showRiidNucs->setWordWrap( false );
+  m_showRiidNucs->addStyleClass( "CbNoLineBreak" );
   m_showAssocNucs->setWordWrap( false );
+  m_showAssocNucs->addStyleClass( "CbNoLineBreak" );
+  m_showFeatureMarkers->setWordWrap( false );
+  m_showFeatureMarkers->addStyleClass( "CbNoLineBreak" );
 
   m_showPrevNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
   m_showPrevNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
@@ -1149,11 +1177,11 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers->unChecked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
       
 
-  //const bool showToolTips = InterSpecUser::preferenceValue<bool>("ShowTooltips", this);
+  //const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", this);
   //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowPrev", m_showPrevNucs, specViewer );
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowRiid", m_showRiidNucs, specViewer );
-  InterSpecUser::associateWidget( specViewer->m_user, "RefLineShowAssoc", m_showAssocNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowPrev", m_showPrevNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowRiid", m_showRiidNucs, specViewer );
+  UserPreferences::associateWidget( "RefLineShowAssoc", m_showAssocNucs, specViewer );
 
 
   //HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.",
@@ -1177,6 +1205,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showCascadeSums->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_showCascadeSums->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   
+  m_showEscapes->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+  m_showEscapes->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
+      
   m_otherNucsColumn = new WContainerWidget();
 
   m_otherNucsColumn->addStyleClass("OtherNucs ToolTabSection ToolTabTitledColumn");
@@ -1343,10 +1374,11 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const string isotopeLabel = m_nuclideEdit->text().toUTF8();
-  const SandiaDecay::Nuclide *nuc = db->nuclide( isotopeLabel );
+  const bool fission = SpecUtils::icontains(isotopeLabel, "Fission");
+  const SandiaDecay::Nuclide *nuc = fission ? nullptr : db->nuclide( isotopeLabel );
   const string agestr = m_ageEdit->text().toUTF8();
   const SandiaDecay::Element *el = NULL;
-
+  
   if( nuc )
   {
     bool prompt = (nuc->canObtainPromptEquilibrium()
@@ -1403,11 +1435,37 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       passMessage( WString::tr("rpd-changed-age").arg(nuc->symbol).arg(agestr).arg(defagestr),
                    WarningWidget::WarningMsgLow );
       m_ageEdit->setText( defagestr );
-    }else
+    }else if( !fission )
     {
       m_ageEdit->setText( "0y" );
     }//if( nuc ) / else
   }//try / catch
+  
+  if( fission )
+  {
+    m_ageEdit->enable();
+    
+    
+    if( !useCurrentAge )
+    {
+      const string defagestr = PhysicalUnitsLocalized::printToBestTimeUnits( 1*PhysicalUnits::day, 1 );
+      m_ageEdit->setText( defagestr );
+    }else
+    {
+      try
+      {
+        const double age = PhysicalUnitsLocalized::stringToTimeDuration( agestr );
+        if( age < 0.0 )
+          throw exception();
+      }catch( std::exception &e )
+      {
+        const string defagestr = PhysicalUnitsLocalized::printToBestTimeUnits( 1*PhysicalUnits::day, 1 );
+        passMessage( WString::tr("rpd-changed-age-fission").arg(defagestr),
+                    WarningWidget::WarningMsgLow );
+        m_ageEdit->setText( defagestr );
+      }//try / catch
+    }//if( !useCurrentAge ) / else
+  }//if( fission )
   
   updateDisplayChange();
   
@@ -1483,16 +1541,29 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
 
 void ReferencePhotopeakDisplay::toggleShowOptions()
 {
-  if (m_options->isHidden())
+  if( m_options->isHidden() )
   {
     m_options->show();
     //m_options->animateShow(WAnimation(WAnimation::AnimationEffect::Pop, WAnimation::TimingFunction::Linear, 250) );
     m_options_icon->addStyleClass("active");
+    
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( m_particleView->isHidden() ) //Narrow phone display
+    {
+      m_otherNucsColumn->setHidden( true );
+      m_featureMarkerColumn->setHidden( true );
+    }
+#endif
   }else
   {
     m_options->hide();
     //m_options->animateHide(WAnimation(WAnimation::AnimationEffect::Pop, WAnimation::TimingFunction::Linear, 250));
     m_options_icon->removeStyleClass("active");
+    
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( m_otherNucsColumn->isHidden() ) //Narrow phone display
+      m_otherNucsColumn->setHidden( m_featureMarkerColumn->isVisible() );
+#endif
   }
 }//void toggleShowOptions()
 
@@ -1642,6 +1713,94 @@ MoreNuclideInfoWindow *ReferencePhotopeakDisplay::moreInfoWindow()
   return m_nucInfoWindow;
 }
 
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+void ReferencePhotopeakDisplay::setNarrowPhoneLayout( const bool narrow )
+{
+  if( m_particleView->isHidden() == narrow )
+    return;
+  
+  m_particleView->setHidden( narrow );
+  
+  const char *add_key = narrow ? "rpd-add-another-btn-narrow" : "rpd-add-another-btn";
+  m_persistLines->setText( WString::tr(add_key) );
+  
+  WGridLayout *lay = dynamic_cast<WGridLayout *>( layout() );
+  assert( lay );
+  if( lay )
+  {
+    if( narrow )
+    {
+      lay->setColumnStretch( 4, 0 );
+      lay->setColumnStretch( 0, 1 );
+    }else
+    {
+      lay->setColumnStretch( 4, 1 );
+      lay->setColumnStretch( 0, 0 );
+    }
+  }//if( lay )
+}//void setNarrowPhoneLayout( const bool narrow )
+#endif //InterSpec_PHONE_ROTATE_FOR_TABS
+
+
+bool ReferencePhotopeakDisplay::showingGammaLines() const
+{
+  return (m_showGammas && m_showGammas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowGammaLines( const bool show )
+{
+  const bool showing = (m_showGammas && m_showGammas->isChecked()); // !m_showGammas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showGammas->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingXrayLines() const
+{
+  return (m_showXrays && m_showXrays->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowXrayLines( const bool show )
+{
+  const bool showing = (m_showXrays && m_showXrays->isChecked()); // !m_showXrays->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showXrays->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingAlphaLines() const
+{
+  return (m_showAlphas && m_showAlphas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowAlphaLines( const bool show )
+{
+  const bool showing = (m_showAlphas && m_showAlphas->isChecked()); // !m_showAlphas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showAlphas->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingBetaLines() const
+{
+  return (m_showBetas && m_showBetas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowBetaLines( const bool show )
+{
+  const bool showing = (m_showBetas && m_showBetas->isChecked()); // !m_showBetas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showBetas->setChecked( show );
+  updateDisplayChange();
+}
 
 FeatureMarkerWidget *ReferencePhotopeakDisplay::featureMarkerTool()
 {
@@ -1658,6 +1817,15 @@ FeatureMarkerWidget *ReferencePhotopeakDisplay::showFeatureMarkerTool()
   m_featureMarkerColumn->setHidden( false );
   m_featureMarkers = new FeatureMarkerWidget( m_spectrumViewer, m_featureMarkerColumn );
   
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  if( m_particleView->isHidden() ) //Narrow phone display
+  {
+    if( !m_options->isHidden() )
+      toggleShowOptions();
+    m_otherNucsColumn->setHidden( true );
+  }//
+#endif
+  
   return m_featureMarkers;
 }//FeatureMarkerWidget *showFeatureMarkerTool()
 
@@ -1671,6 +1839,11 @@ void ReferencePhotopeakDisplay::removeFeatureMarkerTool()
   m_featureMarkers = nullptr;
   m_featureMarkerColumn->hide();
   m_showFeatureMarkers->setChecked( false );
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  if( m_particleView->isHidden() ) //Narrow phone display
+    m_otherNucsColumn->setHidden( !m_options->isHidden() );
+#endif
 }//void removeFeatureMarkerTool()
 
 
@@ -1786,8 +1959,13 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
     return;
   }
 
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  if( m_particleView->isHidden() ) //Narrow phone display
+    m_otherNucsColumn->setHidden( m_options->isVisible() || m_featureMarkerColumn->isVisible() );
+#else
   m_otherNucsColumn->show();
-
+#endif
+  
   vector<RefLineInput> prev_nucs;
   const string &currentInput = m_currentlyShowingNuclide.m_input.m_input_txt;
 
@@ -1848,7 +2026,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   }//if( riid_ana )
 
 
-  // TODO: Need to implement option to show or not show suggestion catagories, and if show none, then hide the column
+  // TODO: Need to implement option to show or not show suggestion categories, and if show none, then hide the column
   if( (m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid)
      && !currentInput.empty()
      && showAssoc )
@@ -1966,7 +2144,8 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
   input.m_showAlphas = (m_showAlphas && m_showAlphas->isChecked());
   input.m_showBetas = (m_showBetas && m_showBetas->isChecked());
   input.m_showCascades = (m_showCascadeSums && m_showCascadeSums->isChecked());
-
+  input.m_showEscapes = (m_showEscapes && m_showEscapes->isChecked());
+  
   if( m_detectorDisplay->detector() )
   {
     input.m_det_intrinsic_eff = m_detectorDisplay->detector()->intrinsicEfficiencyFcn();
@@ -2299,9 +2478,12 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   
   if( ref_lines )
   {
-    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Nuclide) == (ref_lines->m_nuclide != nullptr) );
-    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::FluorescenceXray) == (ref_lines->m_element != nullptr) );
-    assert( (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Reaction) == (!ref_lines->m_reactions.empty()) );
+    assert( (ref_lines->m_validity != ReferenceLineInfo::InputValidity::Valid)  //If invalid age, we can still get ref_lines->m_nuclide be non-nullptr
+            || ((ref_lines->m_source_type == ReferenceLineInfo::SourceType::Nuclide) == (ref_lines->m_nuclide != nullptr)) );
+    assert( (ref_lines->m_validity != ReferenceLineInfo::InputValidity::Valid)
+           || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::FluorescenceXray) == (ref_lines->m_element != nullptr) );
+    assert( (ref_lines->m_validity != ReferenceLineInfo::InputValidity::Valid)
+           || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::Reaction) == (!ref_lines->m_reactions.empty()) );
     //ReferenceLineInfo::SourceType::Background
     //ReferenceLineInfo::SourceType::CustomEnergy
     //ReferenceLineInfo::SourceType::NuclideMixture:
@@ -2349,7 +2531,8 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   //  are candidates for aging - but for now we'll just assume we can age them.
   const bool enable_aging = ((nuclide && !ref_lines->m_input.m_promptLinesOnly
                               && !nuclide->decaysToStableChildren())
-                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture) ) ;
+                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture)
+                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::FissionRefLines) ) ;
   
   string agestr = (!enable_aging || !ref_lines) ? string() : ref_lines->m_input.m_age;
   
@@ -2396,17 +2579,17 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     m_clearLines->setText( clearLineTxt );
   
   
-  bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true;
+  bool showGammaCB = true, showXrayCb = true, showAplhaCb = true, showBetaCb = true, showEscapeCb = true;
   switch( src_type )
   {
     case ReferenceLineInfo::SourceType::Nuclide:
       // Show everything
-      showGammaCB = showXrayCb = showAplhaCb = showBetaCb = true;
+      showGammaCB = showXrayCb = showAplhaCb = showBetaCb = showEscapeCb = true;
       break;
       
     case ReferenceLineInfo::SourceType::FluorescenceXray:
       // Only show x-ray option - but really we shouldnt show any of them
-      showGammaCB = showAplhaCb = showBetaCb = false;
+      showGammaCB = showAplhaCb = showBetaCb = showEscapeCb = false;
       break;
       
     case ReferenceLineInfo::SourceType::Reaction:
@@ -2416,13 +2599,17 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
       
     case ReferenceLineInfo::SourceType::Background:
     case ReferenceLineInfo::SourceType::NuclideMixture:
-      showAplhaCb = showBetaCb = false;
+      showAplhaCb = showBetaCb = showEscapeCb = false;
       break;
       
     case ReferenceLineInfo::SourceType::CustomEnergy:
     case ReferenceLineInfo::SourceType::OneOffSrcLines:
       // We treat custom energy and one-off sources as a gammas, so only show it - but really we shouldnt show any of them
       showXrayCb = showAplhaCb = showBetaCb = false;
+      break;
+    
+    case ReferenceLineInfo::SourceType::FissionRefLines:
+      showAplhaCb = showBetaCb = false;
       break;
       
     case ReferenceLineInfo::SourceType::None:
@@ -2435,6 +2622,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   m_showAlphas->setHidden( !showAplhaCb );
   m_showBetas->setHidden( !showBetaCb );
   m_showCascadeSums->setHidden( !ref_lines || !ref_lines->m_has_coincidences );
+  m_showEscapes->setHidden( !showEscapeCb );
   
   if( ref_lines && (ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid) )
   {
@@ -2443,6 +2631,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     m_showAlphas->setChecked( ref_lines->m_input.m_showAlphas );
     m_showBetas->setChecked( ref_lines->m_input.m_showBetas );
     m_showCascadeSums->setChecked( ref_lines->m_input.m_showCascades );
+    m_showEscapes->setChecked( ref_lines->m_input.m_showEscapes );
   }
   
   
@@ -2555,6 +2744,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     switch( src_type )
     {
       case ReferenceLineInfo::SourceType::Nuclide:
+      case ReferenceLineInfo::SourceType::FissionRefLines:
         nonDefaultOpts |= ref_lines->m_input.m_promptLinesOnly;
         nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
         nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
@@ -2804,6 +2994,11 @@ void ReferencePhotopeakDisplay::serialize(
     value = (m_showCascadeSums->isChecked() ? "1" : "0");
     element = doc->allocate_node(rapidxml::node_element, name, value);
     node->append_node(element);
+    
+    name = "ShowEscapes";
+    value = (m_showEscapes->isChecked() ? "1" : "0");
+    element = doc->allocate_node(rapidxml::node_element, name, value);
+    node->append_node(element);
   }else
   {
     node = doc->allocate_node( rapidxml::node_element, "CurrentLines" );
@@ -2979,6 +3174,10 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
       node = gui_node->first_node("ShowCascades", 12);
       if (node && node->value() && strlen(node->value()))
         m_showCascadeSums->setChecked((node->value()[0] == '1'));
+      
+      node = gui_node->first_node("ShowEscapes", 11);
+      if (node && node->value() && strlen(node->value()))
+        m_showEscapes->setChecked((node->value()[0] == '1'));
     }//if( gui_node )
     
     if( showing_node )
@@ -3050,7 +3249,8 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
     {
       m_shieldingSelect->materialChanged().setBlocked( true );
       m_shieldingSelect->materialModified().setBlocked( true );
-      m_shieldingSelect->deSerialize( node );
+      const bool is_fixed_geom = false; //Shouldnt have an effect either way
+      m_shieldingSelect->deSerialize( node, is_fixed_geom );
       m_shieldingSelect->materialChanged().setBlocked( false );
       m_shieldingSelect->materialModified().setBlocked( false );
     }
@@ -3264,6 +3464,32 @@ void ReferencePhotopeakDisplay::fitPeaks()
 
 void ReferencePhotopeakDisplay::clearAllLines()
 {
+  const ReferenceLineInfo starting_showing = m_currentlyShowingNuclide;
+  const vector<ReferenceLineInfo> starting_persisted = m_persisted;
+  const deque<RefLineInput> starting_prev_nucs = m_prevNucs;
+  const bool starting_user_color = m_userHasPickedColor;
+  
+  // Add current nuclide to list of previous nuclides
+  if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
+  {
+    RefLineInput prev = m_currentlyShowingNuclide.m_input;
+    
+    // Remove any other previous nuclides that have same `prev.m_nuclide` as what
+    //  we are about to push on
+    m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
+                                    [&prev](const RefLineInput &val) -> bool {
+      return (val.m_input_txt == prev.m_input_txt);
+    }), end(m_prevNucs));
+    
+    // Push new value onto front of history
+    m_prevNucs.push_front( std::move(prev) );
+    
+    // Check history length, and truncate if needed
+    if( m_prevNucs.size() > m_max_prev_nucs )
+      m_prevNucs.resize( m_max_prev_nucs );
+  }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
+  
+  
   //m_fitPeaks->disable();
   m_persisted.clear();
   m_currentlyShowingNuclide.reset();
@@ -3291,6 +3517,12 @@ void ReferencePhotopeakDisplay::clearAllLines()
   updateOtherNucsDisplay();
 
   m_chart->clearAllReferncePhotoPeakLines();
+  
+  
+  const RefLineInput user_input = userInput();
+  
+  addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                   starting_user_color, user_input );
   
   m_nuclidesCleared.emit();
 }//void clearAllLines()

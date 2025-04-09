@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <limits>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -38,7 +39,9 @@
 #include <Wt/WComboBox>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WApplication>
 #include <Wt/WButtonGroup>
+#include <Wt/WEnvironment>
 #include <Wt/WRadioButton>
 #include <Wt/WStackedWidget>
 #include <Wt/WDoubleValidator>
@@ -80,6 +83,7 @@
 #include "InterSpec/GadrasSpecFunc.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/NuclideSourceEnter.h"
 #include "InterSpec/MassAttenuationTool.h"
@@ -142,11 +146,19 @@ namespace
     virtual double operator()( const std::vector<double> &params ) const
     {
       assert( params.size() == 1 );
-      const double ad = params[0] * PhysicalUnits::g / PhysicalUnits::cm2;
-      const double dose = DoseCalc::gamma_dose_with_shielding( m_energies, m_intensities, ad, m_atomic_number, m_distance, m_scatter );
+      try
+      {
+        const double ad = params[0] * PhysicalUnits::g / PhysicalUnits::cm2;
+        const double dose = DoseCalc::gamma_dose_with_shielding( m_energies, m_intensities, ad, m_atomic_number, m_distance, m_scatter );
+        
+        //return difference in micro-rem per hour from the target
+        return fabs(dose - m_user_entered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
+      }catch( std::exception & )
+      {
+        // Can happen if ad is outside of [0,240]
+      }
       
-      //return differnce in microrem per hour from the target
-      return fabs(dose - m_user_entered_dose) * 1000000.0 * PhysicalUnits::hour / PhysicalUnits::rem;
+      return std::numeric_limits<double>::max();
     }
   };//class FitShieldingAdChi2
 
@@ -197,6 +209,9 @@ namespace
     const vector<double> pars = params.Params();
     cerr << "Fit " << pars[0] << " g/cm2 with EDM " << minimum.Edm() << endl;
     
+    if( pars[0] > 235.0 )
+      throw runtime_error( "Over 235 g/cm2 shielding is required - can not compute." );
+    
     return pars[0] * PhysicalUnits::g / PhysicalUnits::cm2;
   }//double fit_ad()
 }//namespace
@@ -220,7 +235,7 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
   
   
 #if( USE_QR_CODES )
-  WPushButton *qr_btn = new WPushButton( footer() );
+  WPushButton *qr_btn = new WPushButton();
   qr_btn->setText( WString::tr("QR Code") );
   qr_btn->setIcon( "InterSpec_resources/images/qr-code.svg" );
   qr_btn->setStyleClass( "LinkBtn DownloadBtn DialogFooterQrBtn" );
@@ -236,16 +251,23 @@ DoseCalcWindow::DoseCalcWindow( MaterialDB *materialDB,
       passMessage( WString::tr("app-qr-err").arg(e.what()), WarningWidget::WarningMsgHigh );
     }
   }) );
+  if( !viewer->isPhone() )
+    footer()->addWidget( qr_btn );
 #endif //USE_QR_CODES
 
   
   WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
   closeButton->clicked().connect( this, &AuxWindow::hide );
   
+#if( USE_QR_CODES )
+  if( viewer->isPhone() )
+    footer()->addWidget( qr_btn );
+#endif
+  
   show();
   
   // If we are loading this widget, as we  are creating the InterSpec session,
-  //  the screen width and height wont be avaiable, so we'll just assume its
+  //  the screen width and height wont be available, so we'll just assume its
   //  big enough, which it should be.
   const int screenW = viewer->renderedWidth();
   const int screenH = viewer->renderedHeight();
@@ -341,16 +363,22 @@ void DoseCalcWidget::init()
   }//try / catch
   
   const bool isPhone = m_viewer->isPhone();
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
-  const bool useBq = InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+  int w = m_viewer->renderedWidth();
+  int h = m_viewer->renderedHeight();
+  if(  m_viewer->isMobile() && (w < 100) )
+  {
+    w = wApp->environment().screenWidth();
+    h = wApp->environment().screenHeight();
+  }
+  
+  const bool narrowLayout = ((w > 100) && (w < 450));
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
   
   WContainerWidget *enterDiv = new WContainerWidget();
   WContainerWidget *answerDiv = new WContainerWidget();
   WGridLayout *enterLayout = new WGridLayout( enterDiv );
   WGridLayout *answerLayout = new WGridLayout( answerDiv );
-  
-  answerLayout->setContentsMargins( 9, 1, 9, 5 );
-  enterLayout->setContentsMargins( 9, 1, 9, 5 );
   
   enterDiv->addStyleClass( "DoseEnterDiv" );
   answerDiv->addStyleClass( "DoseAnswerDiv" );
@@ -358,10 +386,28 @@ void DoseCalcWidget::init()
   WContainerWidget *workDiv = new WContainerWidget();
   WGridLayout *workLayout = new WGridLayout( workDiv );
 
-  workLayout->addWidget( enterDiv, 0, 0 );
-  workLayout->addWidget( answerDiv, 0, 1 );
-  workLayout->setColumnStretch( 0, 1 );
-  workLayout->setColumnStretch( 1, 1 );
+  if( narrowLayout )
+  {
+    addStyleClass( "NarrowDose" );
+    answerLayout->setContentsMargins( 5, 1, 5, 1 );
+    enterLayout->setContentsMargins( 5, 1, 5, 1 );
+    
+    workLayout->addWidget( enterDiv, 0, 0 );
+    workLayout->addWidget( answerDiv, 1, 0 );
+    workLayout->setColumnStretch( 0, 1 );
+    workLayout->setRowStretch( 0, 1 );
+    workLayout->setRowStretch( 1, 1 );
+  }else
+  {
+    answerLayout->setContentsMargins( 9, 1, 9, 5 );
+    enterLayout->setContentsMargins( 9, 1, 9, 5 );
+    
+    workLayout->addWidget( enterDiv, 0, 0 );
+    workLayout->addWidget( answerDiv, 0, 1 );
+    workLayout->setColumnStretch( 0, 1 );
+    workLayout->setColumnStretch( 1, 1 );
+  }
+  
   workLayout->setContentsMargins( 0, 0, 0, 0 );
   workLayout->setVerticalSpacing( 0 );
   workLayout->setHorizontalSpacing( 0 );
@@ -384,7 +430,8 @@ void DoseCalcWidget::init()
   WContainerWidget *introDiv = new WContainerWidget();
   introDiv->addStyleClass( "DoseIntroDiv" );
   WGridLayout *intoTxtLayout = new WGridLayout( introDiv );
-  WText *txt = new WText( WString::tr("dcw-intro-instructions") );
+  const char * const instr_key = narrowLayout ? "dcw-intro-instructions-vert-phone" : "dcw-intro-instructions";
+  WText *txt = new WText( WString::tr(instr_key) );
   txt->addStyleClass( "DoseIntroTxtMain" );
   
   intoTxtLayout->addWidget( txt, 0, 0, AlignMiddle | AlignCenter );
@@ -396,16 +443,30 @@ void DoseCalcWidget::init()
   intoTxtLayout->setRowStretch( 0, 10 );
   
   m_menu = new WMenu();
-  m_menu->addStyleClass( (isPhone ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone" : "VerticalNavMenu HeavyNavMenu SideMenu") );
   m_menu->addStyleClass( "DoseCalcSideMenu" );
-  
   m_stack = new WStackedWidget();
 //  m_stack->setTransitionAnimation( WAnimation(WAnimation::Fade, WAnimation::Linear, 500), false );
   m_stack->addWidget( introDiv );
   m_stack->addWidget( workDiv );
-  m_layout->addWidget( m_menu, 0, 0 );
-  m_layout->addWidget( m_stack, 0, 1 );
-  m_layout->setColumnStretch( 1, 1 );
+  
+  
+  if( narrowLayout )
+  {
+    m_menu->addStyleClass( "VerticalNavMenuPhone HeavyNavMenuPhone HorizontalMenu" );
+    
+    m_layout->addWidget( m_menu, 0, 0 );
+    m_layout->addWidget( m_stack, 1, 0 );
+    m_layout->setColumnStretch( 0, 1 );
+    m_layout->setRowStretch( 1, 1 );
+  }else
+  {
+    // Phone is horizontal
+    m_menu->addStyleClass( isPhone ? "VerticalNavMenuPhone HeavyNavMenuPhone SideMenuPhone" 
+                                    : "VerticalNavMenu HeavyNavMenu SideMenu" );
+    m_layout->addWidget( m_menu, 0, 0 );
+    m_layout->addWidget( m_stack, 0, 1 );
+    m_layout->setColumnStretch( 1, 1 );
+  }//if( narrow ) / else horizontal
   
   //First need to put source capability in
   {
@@ -653,6 +714,7 @@ void DoseCalcWidget::init()
         HelpSystem::attachToolTipOn( m_distanceEnter, WString::tr("dcw-tt-distance"), showToolTips );
         
         m_distanceEnter->changed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
+        m_distanceEnter->blurred().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
         m_distanceEnter->enterPressed().connect( boost::bind( &DoseCalcWidget::updateResult, this ) );
         
         m_enterWidgets[i]->addWidget( m_distanceEnter );
@@ -709,12 +771,15 @@ void DoseCalcWidget::init()
   m_issueTxt->addStyleClass( "DoseIssueTxt" );
   answerLayout->addWidget( m_issueTxt, answerLayout->rowCount(), 0, AlignBottom );
   
-  for( int i = 1; i < answerLayout->rowCount(); ++i )
-    answerLayout->setRowStretch( i, 1 );
-  answerLayout->setRowStretch( stayRow, 2 );
-  
-  for( int i = 1; i < enterLayout->rowCount(); ++i )
-    enterLayout->setRowStretch( i, 1 );
+  if( !narrowLayout )
+  {
+    for( int i = 1; i < answerLayout->rowCount(); ++i )
+      answerLayout->setRowStretch( i, 1 );
+    answerLayout->setRowStretch( stayRow, 2 );
+    
+    for( int i = 1; i < enterLayout->rowCount(); ++i )
+      enterLayout->setRowStretch( i, 1 );
+  }//if( !narrowLayout )
   
   try
   {

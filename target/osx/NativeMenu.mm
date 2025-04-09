@@ -251,7 +251,7 @@ void *insertOsxMenuItem( void *voidmenu, PopupDivMenuItem *item, int position )
     menu = (NSMenu *)voidmenu;
   }
   
-  NSString *name = [NSString stringWithFormat:@"%s", item->text().toUTF8().c_str()];
+  NSString *name = [[NSString alloc]initWithUTF8String: item->text().toUTF8().c_str()];
   
   NSMenuItem *itemnow = [[NSMenuItem alloc]
                          initWithTitle:name

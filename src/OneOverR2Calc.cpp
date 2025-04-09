@@ -34,6 +34,8 @@
 #include <Wt/WValidator>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WDoubleSpinBox>
 #include <Wt/WContainerWidget>
 
@@ -209,7 +211,16 @@ OneOverR2Calc::OneOverR2Calc()
   
   if( isPhone )
   {
-    titleBar()->hide();
+    int w = viewer->renderedWidth();
+    int h = viewer->renderedHeight();
+    if( viewer->isPhone() && (w < 100) )
+    {
+      w = wApp->environment().screenWidth();
+      h = wApp->environment().screenHeight();
+    }
+    
+    if( (w > 100) && (w > h) )
+      titleBar()->hide();
     
     if( viewer )
     {
@@ -224,8 +235,8 @@ OneOverR2Calc::OneOverR2Calc()
       //repositionWindow( -32768, static_cast<int>(std::max(3.0f,0.5f*safeAreas[0])) );
       
       // TODO: right now hardcoding width because otherwise width will go to like full-screen
-      const double width = 325;
-      const double height = viewer->renderedHeight() - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f);
+      const double width = std::min( 325, ((w > 100) ? (w - 10) : 325) );
+      const double height = h - std::max(0.5f*(safeAreas[0]+safeAreas[2]),6.0f);
       setMaximumSize( width, height );
       
       /* ToDo: get safe offsets in c++ land, and then also convert other AuxWindows that are modal on phone to resize correctly. */

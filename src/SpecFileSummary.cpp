@@ -167,8 +167,11 @@ namespace
 }//namespace
 
 
-SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
-  : AuxWindow( WString::tr("window-title-file-parameters"), AuxWindowProperties::IsModal ),
+SpecFileSummary::SpecFileSummary( const SpecUtils::SpectrumType type, InterSpec *specViewer )
+  : AuxWindow( WString::tr("window-title-file-parameters"),
+              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+              | AuxWindowProperties::SetCloseable
+              | AuxWindowProperties::DisableCollapse ),
     m_specViewer( specViewer ),
     m_allowEditGroup( NULL ),
     m_displaySampleDiv( NULL ),
@@ -215,6 +218,12 @@ SpecFileSummary::SpecFileSummary( InterSpec *specViewer )
     m_reloadSpectrum( NULL )
 {
   init();
+  
+  if( m_spectraGroup->selectedButtonIndex() != static_cast<int>(type) )
+  {
+    m_spectraGroup->setSelectedButtonIndex( static_cast<int>(type) );
+    handleSpectrumTypeChanged();
+  }
 }//SpecFileSummary constructor
 
 
@@ -263,10 +272,13 @@ void SpecFileSummary::init()
   spectrumGroupBox->addStyleClass( "SpecSummChoose" );
   m_spectraGroup = new WButtonGroup( this );
   button = new WRadioButton( WString::tr("Foreground"), spectrumGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
   button = new WRadioButton( WString::tr("Secondary"), spectrumGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
   button = new WRadioButton( WString::tr("Background"), spectrumGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
   m_spectraGroup->setCheckedButton( m_spectraGroup->button( static_cast<int>(SpecUtils::SpectrumType::Foreground) ) );
   m_spectraGroup->checkedChanged().connect( this, &SpecFileSummary::handleSpectrumTypeChanged );
@@ -276,8 +288,10 @@ void SpecFileSummary::init()
   editGroupBox->addStyleClass( "SpecSummAllowEdit" );
   m_allowEditGroup = new WButtonGroup( this );
   button = new WRadioButton( WString::tr("Yes"), editGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_allowEditGroup->addButton( button, kAllowModify );
   button = new WRadioButton( WString::tr("No"), editGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_allowEditGroup->addButton( button, kDontAllowModify );
   m_allowEditGroup->setCheckedButton( m_allowEditGroup->button(kDontAllowModify) );
   m_allowEditGroup->checkedChanged().connect( this, &SpecFileSummary::handleAllowModifyStatusChange );
@@ -293,7 +307,6 @@ void SpecFileSummary::init()
   m_reloadSpectrum = new WPushButton( WString::tr("sfs-update-display-btn"), editGroupBox );
   m_reloadSpectrum->setToolTip( WString::tr("sfs-tt-update-display") );
   m_reloadSpectrum->setIcon( WLink("InterSpec_resources/images/arrow_refresh.svg") );
-  m_reloadSpectrum->setFloatSide( Wt::Right );
   m_reloadSpectrum->clicked().connect( this, &SpecFileSummary::reloadCurrentSpectrum );
   m_reloadSpectrum->disable();
   
@@ -879,7 +892,25 @@ void SpecFileSummary::updateDisplayFromMemory()
   if( nspec )
   {
     m_displaySampleNumValidator->setRange( 1, static_cast<int>(nspec) );
-    m_displaySampleNumEdit->setText( "1" );
+    
+    // Lets set the displayed measurement to be the first one that is actually displayed in the
+    //  spectrum
+    size_t sample = 0;
+    const vector<shared_ptr<const SpecUtils::Measurement>> &measurements = meas->measurements();
+    const set<int> &samples = m_specViewer->displayedSamples(type);
+    if( samples.size() )
+    {
+      for( size_t i = 0; i < measurements.size(); ++i )
+      {
+        if( samples.count(measurements[i]->sample_number()) )
+        {
+          sample = i;
+          break;
+        }
+      }//for( loop over measurements )
+    }//if( samples.size() )
+    
+    m_displaySampleNumEdit->setText( std::to_string(sample + 1) );
   }else
   {
     m_displaySampleNumValidator->setRange( 0, 0 );
@@ -1281,7 +1312,7 @@ void SpecFileSummary::handleSpectrumTypeChanged()
   }else
   {
     const vector<std::shared_ptr<const SpecUtils::Measurement>> &measurements = meas->measurements();
-
+    
     if( measurements.size() )
     {
       m_displaySampleNumValidator->setRange( 1, static_cast<int>(measurements.size()) );

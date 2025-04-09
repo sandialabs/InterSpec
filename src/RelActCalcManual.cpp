@@ -53,6 +53,7 @@
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActCalcManual.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -160,7 +161,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       const RelActCalcManual::GenericPeakInfo &peak = peak_infos[peak_index];
       
       if( peak.m_source_gammas.empty() )
-        throw std::runtime_error( "ManualGenericRelActFunctor: Peak at " + std::to_string(peak.m_energy)
+        throw std::runtime_error( "ManualGenericRelActFunctor: Peak at " + std::to_string(peak.m_mean)
                                  + " keV has no source gammas defined." );
       
       if( peak.m_counts <= 0.0 )
@@ -461,6 +462,7 @@ GenericLineInfo::GenericLineInfo( const double yield, const std::string &isotope
 
 GenericPeakInfo::GenericPeakInfo()
  : m_energy( 0.0 ),
+   m_mean( 0.0 ),
    m_fwhm( 0.0 ),
    m_counts( 0.0 ),
    m_counts_uncert( 0.0 ),
@@ -798,7 +800,7 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
     
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                             energy_widths, mixture, activity, n.age, cluster_sigma, -1,
-                            decay_correct, real_time, nullptr );
+                            decay_correct, real_time, nullptr, nullptr );
     
     // Convert energy_gammas_map to a vector for convenience
     vector<pair<double,double>> energy_gammas;
@@ -910,7 +912,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                                             energy_widths, mixture, n.rel_activity, n.age,
                                             photopeakClusterSigma, energyToCluster,
-                                            accountForDecayDuringMeas, realTime, nullptr );
+                                            accountForDecayDuringMeas, realTime, nullptr, nullptr );
   }//for( const auto &n : nuclides )
   
   // Convert energy_gammas_map to a vector for convenience
@@ -941,6 +943,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
   for( size_t peak_index = 0; peak_index < energy_gammas.size(); ++peak_index )
   {
     GenericPeakInfo peak;
+    peak.m_mean = peak_infos[peak_index]->mean();
     peak.m_energy = energy_gammas[peak_index].first;
     peak.m_fwhm = 2.35482*energy_widths[peak_index].second;
     peak.m_counts = energy_obs_counts[peak_index].second;
@@ -1062,8 +1065,8 @@ void fit_act_to_rel_eff( const RelActCalc::RelEffEqnForm eqn_form,
     // We could blissfully ignore peaks with no source gammas (and assign them an activity of zero),
     //  but we'll be strict to maybe prevent some input mistakes, or something.
     if( info.m_source_gammas.empty() )
-      throw runtime_error( "fit_act_to_rel_eff: peaks at "
-                          + to_string(info.m_energy) + " keV has no source gammas." );
+      throw runtime_error( "fit_act_to_rel_eff: peak at "
+                          + to_string(info.m_mean) + " keV has no source gammas." );
     
     for( const GenericLineInfo &line : info.m_source_gammas )
     {
@@ -1221,6 +1224,14 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1, const size_t is
   assert( iso2 < m_rel_act_covariance.size() );
   assert( m_rel_act_covariance.size() == m_activity_norms.size() );
   
+  if( (iso1 == iso2)
+     || (iso1 >= m_rel_act_covariance.size())
+     || (iso2 >= m_rel_act_covariance.size()) )
+  {
+    //throw runtime_error( "RelEffSolution::activity_ratio_uncert: invalid iso number" );
+    return -1;
+  }
+  
   const double norm_1 = m_activity_norms[iso1];
   const double norm_2 = m_activity_norms[iso2];
   
@@ -1243,12 +1254,18 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1, const size_t is
          + (cov_2_2 / fit_act_2 / fit_act_2)
          - (2.0 * cov_1_2 / fit_act_1 / fit_act_2) );
   
-  cout
-  << "Ratio " << m_rel_activities[iso1].m_isotope << "/" << m_rel_activities[iso2].m_isotope
-  << " = " << ratio << " +- " << uncert << " (would be +- "
-  << fabs(ratio) * sqrt( m_rel_activities[iso1].m_rel_activity_uncert*m_rel_activities[iso1].m_rel_activity_uncert
-                        + m_rel_activities[iso2].m_rel_activity_uncert*m_rel_activities[iso2].m_rel_activity_uncert )
-  << " w/ No correlation)" << endl;
+#ifndef NDEBUG
+  {// Begin print out comparison between this result, and if we hadnt taken into account correlation
+    const double iso1_uncert_frac = m_rel_activities[iso1].m_rel_activity_uncert / m_rel_activities[iso1].m_rel_activity;
+    const double iso2_uncert_frac = m_rel_activities[iso2].m_rel_activity_uncert / m_rel_activities[iso2].m_rel_activity;
+    const double niave_uncert = ratio * sqrt( iso1_uncert_frac*iso1_uncert_frac + iso2_uncert_frac*iso2_uncert_frac );
+    
+    cout
+    << "Ratio " << m_rel_activities[iso1].m_isotope << "/" << m_rel_activities[iso2].m_isotope
+    << " = " << ratio << " +- " << uncert << " (would be +- "
+    << niave_uncert << " w/ no correlation)" << endl;
+  }// End print out comparison between this result, and if we hadnt taken into account correlation
+#endif
   
   return uncert;
 }
@@ -1291,6 +1308,83 @@ double RelEffSolution::mass_fraction( const std::string &nuclide ) const
   return nuc_rel_mas / sum_rel_mass;
 }//double mass_fraction( const std::string &nuclide ) const
 
+  
+double RelEffSolution::mass_fraction( const std::string &nuclide, const double num_sigma ) const
+{
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide *wanted_nuc = db->nuclide( nuclide );
+  assert( wanted_nuc );
+  if( !wanted_nuc )
+    throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): invalid nuclide" );
+  
+  //assert( !m_rel_act_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
+  if( m_rel_act_covariance.empty() )
+    throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): no valid covariance." );
+  
+  assert( m_rel_act_covariance.size() == m_rel_activities.size() );
+  
+  const size_t nuc_index = std::find_if( begin(m_rel_activities), end(m_rel_activities),
+                          [&nuclide]( const IsotopeRelativeActivity &val ) {
+    return val.m_isotope == nuclide;
+  }) - begin(m_rel_activities);
+  
+  assert( nuc_index < m_rel_act_covariance.size() );
+  assert( nuc_index < m_rel_activities.size() );
+  
+  if( nuc_index >= m_rel_act_covariance.size() )
+    throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', "
+                        + std::to_string(num_sigma) + "): nuclide not in solution set" );
+  
+  // The Covariance matrix is in terms of fit activities - however, we had divided out
+  //  a normalization to bring them all near-ish 1.0 (before actually fitting for things
+  //  though).
+  const double norm_for_nuc = m_activity_norms[nuc_index];
+  const double cov_nuc_nuc = m_rel_act_covariance[nuc_index][nuc_index];
+  const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
+  const double fit_act_for_nuc = m_rel_activities[nuc_index].m_rel_activity / norm_for_nuc;
+  
+  // Check that relative activity uncertainties have been computed compatible with what we are
+  //  assuming here (and no funny business has happened).
+  assert( (norm_for_nuc * sqrt_cov_nuc_nuc) == m_rel_activities[nuc_index].m_rel_activity_uncert );
+  
+  double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
+  for( size_t index = 0; index < m_rel_activities.size(); ++index )
+  {
+    assert( m_rel_act_covariance[index].size() == m_rel_activities.size() );
+    
+    const IsotopeRelativeActivity &act = m_rel_activities[index];
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( act.m_isotope );
+    assert( nuc );
+    if( !nuc )
+      continue;
+    
+    const double norm_for_index = m_activity_norms[index];
+    const double fit_act_for_index = m_rel_activities[index].m_rel_activity / norm_for_index;
+    
+    const double cov_nuc_index = m_rel_act_covariance[nuc_index][index];
+    const double varied_fit_act_for_index = fit_act_for_index
+                                  + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
+    
+    const double rel_act = varied_fit_act_for_index * norm_for_index;
+    const double rel_mass = rel_act / nuc->activityPerGram();
+    
+    sum_rel_mass += (std::max)( rel_mass, 0.0 );
+    
+    if( index == nuc_index )
+    {
+      assert( nuc == wanted_nuc );
+      
+      nuc_rel_mas = rel_mass;
+    }//if( index == nuc_index )
+  }//for( size_t index = 0; index < m_rel_activities.size(); ++index )
+  
+  if( nuc_rel_mas < 0.0 ) // This can happen when we go down a couple sigma
+    return 0.0;
+    
+  return nuc_rel_mas / sum_rel_mass;
+}//double mass_fraction( const std::string &iso, const double num_sigma ) const
+    
+  
 
 std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
 {
@@ -1429,16 +1523,28 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
                  " <th scope=\"col\">Nuclide</th>"
                  " <th scope=\"col\">Rel. Act.</th>"
                  " <th scope=\"col\">Mass Frac.</th>"
-                 " <th scope=\"col\">Uncert.</th>"
+                 //" <th scope=\"col\" title=\"This is percentage uncertainty - i.e., the percent error on the reported percent.\">Uncert.</th>"
+                 " <th scope=\"col\" >2&sigma; range</th>"
                  " </tr></thead>\n";
   results_html << "  <tbody>\n";
+  
+  // We will put the normalized relative activity (i.e., activity divided by largest activity) in
+  //  a tool-tip.
+  //  However - we should probably just do this for the actual display - I'm just nervous of messing something up somewhere
+  //  If we had more room, we could add a "Norm Act." column.
+  double largest_rel_act = 0.0;
+  for( const auto &act : m_rel_activities )
+    largest_rel_act = std::max( largest_rel_act, act.m_rel_activity );
+  
   for( size_t index = 0; index < m_rel_activities.size(); ++index )
   {
     const IsotopeRelativeActivity &act = m_rel_activities[index];
-    const double uncert_percent = 100.0 * act.m_rel_activity_uncert / act.m_rel_activity;
+    const double uncert_percent = 100.0 * act.m_rel_activity_uncert / act.m_rel_activity;  //"percentage uncertainty"
     
     results_html << "  <tr><td>" << act.m_isotope << "</td>"
-    << "<td>" << SpecUtils::printCompact( act.m_rel_activity, nsigfig ) << "</td>";
+    << "<td title=\"The normalized relative activity (i.e., divided by largest rel. act.) is "
+    << SpecUtils::printCompact( act.m_rel_activity / largest_rel_act, nsigfig + 1)
+    << "\">" << SpecUtils::printCompact( act.m_rel_activity, nsigfig ) << "</td>";
     
     try
     {
@@ -1449,7 +1555,54 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
       results_html << "<td>N.A.</td>";
     }
     
-    results_html << "<td>" << SpecUtils::printCompact(uncert_percent, nsigfig-1)       << "%</td>"
+    // We need to do a better job of calculating mass fraction uncertainties.
+    //  Maybe an okay way to go is increase activity by 1-sigma, then recalculate
+    //  mass fraction, then re-normalize by new total mass
+    
+    string error_tt;
+    try
+    {
+      const double frac_mass = mass_fraction(act.m_isotope);
+      
+      const double frac_mass_plus1 = mass_fraction(act.m_isotope, 1.0);
+      const double frac_mass_minus1 = mass_fraction(act.m_isotope, -1.0);
+       
+      const double delta_plus1 = frac_mass_plus1 - frac_mass;
+      const double delta_minus1 = frac_mass_minus1 - frac_mass;
+      const double max_delta = (std::max)( fabs(delta_plus1), fabs(delta_minus1) );
+      const double uncert_percent = 100.0 * max_delta / frac_mass;
+      
+      error_tt = "The 1-sigma mass fraction range is ["
+      + SpecUtils::printCompact(100.0*frac_mass_minus1, nsigfig+1)
+      + "% to "
+      + SpecUtils::printCompact(100.0*frac_mass_plus1, nsigfig+1)
+      + "%]. \nThe 1-sigma percentage uncertainty (i.e., the percent of the percent value) is "
+      + SpecUtils::printCompact(uncert_percent, nsigfig+1)
+      + "%";
+    }catch( std::exception & )
+    {
+      // If we dont have covariance matrix, we will end up here
+      error_tt = "No covariance available.";
+    }
+    
+    results_html << "<td title=\"" << error_tt << "\">" ;
+    //<< SpecUtils::printCompact(uncert_percent, nsigfig-1)
+    try
+    {
+      const double frac_mass_plus2 = mass_fraction(act.m_isotope, 2.0);
+      const double frac_mass_minus2 = mass_fraction(act.m_isotope, -2.0);
+      
+      const double frac_mass = mass_fraction(act.m_isotope);
+      results_html << SpecUtils::printCompact(100.0*frac_mass_minus2, nsigfig-1)
+      << "%, "
+      << SpecUtils::printCompact( 100.0*frac_mass_plus2, nsigfig-1)
+      << "%";
+    }catch( std::exception & )
+    {
+      
+    }
+    
+    results_html << "</td>"
     << "</tr>\n";
   }
   results_html << "  </tbody>\n"
@@ -1570,7 +1723,11 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   get_mass_ratio_table( results_html );
   
   const bool has_decay_corr = !m_input_peaks_before_decay_corr.empty();
-  
+
+  bool any_peak_has_multiple_srcs = false;
+  for( const GenericPeakInfo &info : m_input_peak )
+    any_peak_has_multiple_srcs |= (info.m_source_gammas.size() > 1);
+
   // Make table giving info on each of the _used_ peaks
   results_html << "<table class=\"peaktable resulttable\">\n";
   results_html << "  <caption>Peaks used for analysis.</caption>\n";
@@ -1585,6 +1742,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   "<th scope=\"col\">Add. Unc.</th>"
   "<th scope=\"col\">Meas. Rel Eff</th>"
   "<th scope=\"col\">Meas. Rel Eff Unct</th>"
+  << (any_peak_has_multiple_srcs ? "<th scope=\"col\">Peak Frac</th>" : "")
   << (has_decay_corr ? "<th scope=\"col\">Decay Corr.</th>" : "")
   << "</tr></thead>\n"
   "  <tbody>\n";
@@ -1592,7 +1750,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   
   for( const GenericPeakInfo &info : m_input_peak )
   {
-    snprintf(buffer, sizeof(buffer), "%.2f", info.m_energy );
+    snprintf(buffer, sizeof(buffer), "%.2f", info.m_mean );
     results_html << "  <tr><td>" << buffer << "</td>";
     for( size_t i = 0; i < info.m_source_gammas.size(); ++i )
     {
@@ -1616,7 +1774,20 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       << "</td><td>" << SpecUtils::printCompact( info.m_base_rel_eff_uncert, nsigfig )
       << "</td><td>" << SpecUtils::printCompact( meas_rel_eff, nsigfig )
       << "</td><td>" << SpecUtils::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
-      
+
+      if( any_peak_has_multiple_srcs )
+      {
+        results_html << "</td><td>";
+        if( info.m_source_gammas.size() >= 2 )
+        {
+          double sum_counts = 0.0;
+          for( const GenericLineInfo &sum_line : info.m_source_gammas )
+            sum_counts += relative_activity(sum_line.m_isotope) * sum_line.m_yield;
+          const double contrib_percent = 100.0*(rel_act*line.m_yield) / sum_counts;
+          results_html << SpecUtils::printCompact( contrib_percent, nsigfig ) << "%";
+        }
+      }//if( any_peak_has_multiple_srcs )
+
       if( has_decay_corr )
       {
         results_html << "</td><td>";
@@ -1715,8 +1886,8 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
              " \"counts_uncert\": %1.7g, \"eff\": %1.6g,"
              " \"eff_uncert\": %1.6g",
              (index ? ", " : ""), 
-             peak.m_energy, peak.m_counts, 
-             peak.m_counts_uncert, eff, 
+             peak.m_mean, peak.m_counts,
+             peak.m_counts_uncert, eff,
              eff_uncert );
     
     rel_eff_plot_values << buffer;
@@ -2861,7 +3032,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
     try
     {
       RelActCalcManual::GenericPeakInfo info;
-      info.m_energy = std::stod( fields[energy_index] );
+      info.m_mean = info.m_energy = std::stod( fields[energy_index] );
       info.m_fwhm = stod( fields[fwhm_kev_index] );
       info.m_counts = std::stod( fields[amplitude_index] );
       info.m_counts_uncert = std::stod( fields[amplitude_sigma_index] );
@@ -2885,6 +3056,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
           throw runtime_error( "Invalid Nuclide ID: " + fields[nuclide_index] );
         
         const double nuc_energy = stod( fields[nuclide_energy_index] );
+        info.m_energy = nuc_energy;
         
         const double age = PeakDef::defaultDecayTime( nuc, nullptr );
         
@@ -2893,7 +3065,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
         //size_t transition_index = 0;
         //const SandiaDecay::Transition *transition = nullptr;
         //PeakDef::SourceGammaType sourceGammaType;
-        //PeakDef::findNearestPhotopeak( nuc, nuc_energy, -1.0, false,
+        //PeakDef::findNearestPhotopeak( nuc, nuc_energy, -1.0, false, -1.0,
         //                               transition, transition_index, sourceGammaType );
         
         SandiaDecay::NuclideMixture mix;

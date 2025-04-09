@@ -42,7 +42,8 @@
 .LinearizeInputTbl > tbody > tr > td
 {
   padding-right: 8px;
-  padding-bottom: 8px;
+  padding-bottom: 6px;
+  padding-top: 4px;
 }
 
 .NChannelSpecTxt

@@ -66,6 +66,7 @@
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -94,7 +95,7 @@ namespace
     if( !interspec )
       return true;
     
-    return !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    return !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
   }//bool use_curie_units()
   
 }//namespace
@@ -244,7 +245,7 @@ void DetectionLimitSimple::init()
       
   addStyleClass( "DetectionLimitSimple" );
  
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
   
   WContainerWidget *resultsDiv = new WContainerWidget( this );
   resultsDiv->addStyleClass( "ResultsArea" );
@@ -824,6 +825,7 @@ void DetectionLimitSimple::setNuclide( const SandiaDecay::Nuclide *nuc,
     m_currentEnergy = energy;
   
   m_nucEnterController->setNuclideText( nuc ? nuc->symbol : string() );
+  assert( m_currentNuclide == nuc );
   m_currentNuclide = nuc;
   
   if( (age >= 0.0) && !m_nucEnterController->nuclideAgeStr().empty() )
@@ -956,7 +958,7 @@ void DetectionLimitSimple::handleNuclideChanged()
   if( !nuc )
     return;
   
-  const bool dummy_activity = 0.001*SandiaDecay::curie;
+  const double dummy_activity = 0.001*SandiaDecay::curie;
   SandiaDecay::NuclideMixture mixture;
   mixture.addAgedNuclideByActivity( nuc, dummy_activity, age );
   
@@ -998,10 +1000,12 @@ void DetectionLimitSimple::handleNuclideChanged()
                           ? det->peakResolutionSigma( static_cast<float>(energyToSelect) )
                           : -1.0;
   
+  const float fwhm = std::max( 0.1f, PeakSearchGuiUtils::estimate_FWHM_of_foreground(energyToSelect) );
+  
   size_t transition_index = 0;
   const SandiaDecay::Transition *transition = nullptr;
   PeakDef::SourceGammaType sourceGammaType = PeakDef::SourceGammaType::NormalGamma;
-  PeakDef::findNearestPhotopeak( nuc, energyToSelect, 4.0*drfSigma, false,
+  PeakDef::findNearestPhotopeak( nuc, energyToSelect, 4.0*drfSigma, false, -1.0,
                                 transition, transition_index, sourceGammaType );
   if( transition && (transition_index < transition->products.size()) )
   {
@@ -1015,7 +1019,7 @@ void DetectionLimitSimple::handleNuclideChanged()
   }
   
   
-  double minDE = DBL_MAX;
+  double min_scale_delta_e = DBL_MAX;
   int currentIndex = -1;
    
   for( size_t i = 0; i < photons.size(); ++i )
@@ -1023,28 +1027,30 @@ void DetectionLimitSimple::handleNuclideChanged()
     double energy = photons[i].energy;
     const double intensity = photons[i].numPerSecond / dummy_activity;
     
-    const double dE = fabs( energyToSelect - energy );
-    energy = floor(10000.0*energy + 0.5)/10000.0;
-    
-    if( dE < minDE )
-    {
-      minDE = dE;
-      currentIndex = static_cast<int>( i );
-    }
-    
-    char text[128] = { '\0' };
-    if( i < xrays.size() )
-    {
-      snprintf( text, sizeof(text), "%.4f keV xray I=%.1e", energy, intensity );
-    }else
-    {
-      snprintf( text, sizeof(text), "%.4f keV I=%.1e", energy, intensity );
-    }//if( i < xrays.size() )
-    
     if( intensity > std::numeric_limits<double>::epsilon() )
     {
+      const double delta_e = fabs( energyToSelect - energy );
+      const double scale_delta_e = (0.1*fwhm + delta_e) / intensity;
+      
+      energy = floor(10000.0*energy + 0.5)/10000.0;
+      
+      char text[128] = { '\0' };
+      if( i < xrays.size() )
+      {
+        snprintf( text, sizeof(text), "%.4f keV xray I=%.1e", energy, intensity );
+      }else
+      {
+        snprintf( text, sizeof(text), "%.4f keV I=%.1e", energy, intensity );
+      }//if( i < xrays.size() )
+      
       m_photoPeakEnergiesAndBr.push_back( make_pair(energy, intensity) );
       m_photoPeakEnergy->addItem( text );
+      
+      if( scale_delta_e < min_scale_delta_e )
+      {
+        min_scale_delta_e = scale_delta_e;
+        currentIndex = static_cast<int>( m_photoPeakEnergiesAndBr.size() - 1 );
+      }
     }//if( intensity > 0.0 )
   }//for each( const double energy, energies )
   
@@ -1068,7 +1074,7 @@ void DetectionLimitSimple::handleGammaChanged()
     const int gamma_index = m_photoPeakEnergy->currentIndex();
     assert( gamma_index < static_cast<int>(m_photoPeakEnergiesAndBr.size()) );
     
-    if(  (gamma_index >= 0) && (gamma_index < static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
+    if( (gamma_index >= 0) && (gamma_index < static_cast<int>(m_photoPeakEnergiesAndBr.size())) )
     {
       m_currentEnergy = m_photoPeakEnergiesAndBr[gamma_index].first;
     }else
@@ -1326,14 +1332,19 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       const bool use_curie = use_curie_units();
       const DetectorPeakResponse::EffGeometryType det_geom = drf ? drf->geometryType() : DetectorPeakResponse::EffGeometryType::FarField;
       
-      assert( (result->input.num_lower_side_channels != 0)
+      assert( !result
+             || (result->input.num_lower_side_channels != 0)
              || (result->input.num_upper_side_channels != 0)
              || (result->input.num_lower_side_channels == result->input.num_upper_side_channels) );
       
-      const bool assertedIsBackground = ((result->input.num_lower_side_channels == 0) 
+      const bool assertedIsBackground = (result
+                                         && (result->input.num_lower_side_channels == 0)
                                           && (result->input.num_upper_side_channels == 0));
       
-      if( result->source_counts > result->decision_threshold )
+      if( !result )
+      {
+        result_txt = WString::tr("dls-det-no-result");
+      }else if( result->source_counts > result->decision_threshold )
       {
         assert( !assertedIsBackground );
         
@@ -1396,7 +1407,10 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       
       WString full_result_txt;
       
-      if( assertedIsBackground )
+      if( !result )
+      {
+        full_result_txt = result_txt;
+      }else if( assertedIsBackground )
       {
         full_result_txt = WString( "{1}" );
       }else
@@ -1405,14 +1419,14 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         full_result_txt.arg(result_txt);
       }//if( assertedIsBackground ) / else
       
-      if( gammas_per_bq > 0.0 )
+      if( result && (gammas_per_bq > 0.0) )
       {
         const double detection_act = result->detection_limit / gammas_per_bq;
         const string act = PhysicalUnits::printToBestActivityUnits( detection_act, 2, use_curie )
                           + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
         
         full_result_txt.arg( WString::tr("dls-min-detectable-act").arg(act) );
-      }else
+      }else if( result )
       {
         const string counts = SpecUtils::printCompact(result->detection_limit, 4);
         full_result_txt.arg( WString::tr("dls-min-detectable-counts").arg( counts ) );

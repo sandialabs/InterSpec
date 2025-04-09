@@ -137,6 +137,8 @@ public:
   
   std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks() const;
   std::vector<PeakDef> peakVec() const;
+  
+  const std::deque<std::shared_ptr<const PeakDef>> &sortedPeaks() const;
 
   //definePeakXRangeAndChi2(...): Inorder to save cpu (and mostly memorry access
   //  time) later on, this function will define the lower and upper energy range
@@ -380,13 +382,33 @@ public:
   static std::vector<PeakDef> gadras_peak_csv_to_peaks( std::shared_ptr<const SpecUtils::Measurement> meas,
                                                          std::istream &csv );
   
+  enum class PeakCsvType
+  {
+    Full,
+    NoHeader,
+    Compact,
+    FullHtml,
+    NoHeaderHtml,
+    CompactHtml
+  };
+  
   /** Writes the peaks to a CSV file output - e.g., what the user gets when they click on the CSV download on the "Peak Manager" tab.
    */
   static void write_peak_csv( std::ostream &outstrm,
                              std::string specfilename,
+                             const PeakCsvType type,
                              const std::deque<std::shared_ptr<const PeakDef>> &peaks,
                              const std::shared_ptr<const SpecUtils::Measurement> &data );
   
+  
+  static void write_for_and_back_peak_csv( std::ostream &outstrm,
+                             std::string specfilename,
+                             const PeakCsvType type,
+                             const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+                             const std::shared_ptr<const SpecUtils::Measurement> &data,
+                             std::string background_specfilename,
+                             const std::deque<std::shared_ptr<const PeakDef>> *background_peaks,
+                             const std::shared_ptr<const SpecUtils::Measurement> &background );
   
 protected:
   

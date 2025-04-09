@@ -123,6 +123,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/AddNewPeakDialog.h"
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
@@ -148,10 +149,6 @@
 
 #include "InterSpec/D3TimeChart.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
-
-#if( USE_DB_TO_STORE_SPECTRA )
-#include "InterSpec/DbStateBrowser.h"
-#endif
 
 #if( IOS )
 #include "target/ios/InterSpec/FileHandling.h"
@@ -340,11 +337,46 @@ namespace
       ptr = nullptr;
     }
   }//void del_ptr_set_null( T * &ptr )
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    /** A simple wrapper for holding the tool-tabs.
+     When/if the user resizes the tool-tabs height, this function will call back and let the
+     InterSpec class know, so we can restore this same hight when/if the tool tabs are
+     toggled.
+     */
+    class ToolTabContentWrapper : public Wt::WContainerWidget
+    {
+      int m_height;
+      InterSpec *m_interspec;
+    
+    public:
+      ToolTabContentWrapper( InterSpec *interspec, WContainerWidget *parent = nullptr )
+      : WContainerWidget( parent ),
+      m_height( 0 ),
+      m_interspec( interspec )
+      {
+        assert( m_interspec );
+        setLayoutSizeAware( true );
+      }
+      
+      virtual void layoutSizeChanged( int width, int height )
+      {
+        //cout << "ToolTabContentWrapper: w x h=" << width << " x " << height << endl;
+        if( m_height == height )
+          return;
+        
+        m_height = height;
+        m_interspec->toolTabContentHeightChanged( height );
+      }
+    };//class ToolTabContentWrapper
+#endif // InterSpec_PHONE_ROTATE_FOR_TABS
 }//namespace
 
 
 InterSpec::InterSpec( WContainerWidget *parent )
   : WContainerWidget( parent ),
+    m_user{},
+    m_preferences( nullptr ),
     m_peakModel( 0 ),
     m_spectrum( 0 ),
     m_timeSeries( 0 ),
@@ -369,8 +401,11 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_peakInfoDisplay( 0 ),
     m_peakInfoWindow( 0 ),
     m_peakEditWindow( 0 ),
-    m_currentToolsTab( 0 ),
+    m_currentToolsTab( -1 ),
     m_toolsTabs( 0 ),
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    m_toolsTabsContentHeight( 0 ),
+#endif
     m_energyCalTool( 0 ),
     m_energyCalWindow( 0 ),
     m_gammaCountDialog( 0 ),
@@ -486,7 +521,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   addStyleClass( "InterSpec" );
   
   //Setting setLayoutSizeAware doesnt seem to add any appreciable network
-  //  overhead, at least according to the chrome inspectrion panel when running
+  //  overhead, at least according to the chrome inspection panel when running
   //  locally
   setLayoutSizeAware( true );
 
@@ -500,7 +535,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_notificationDiv->setStyleClass("qtipDiv");
   m_notificationDiv->setId("qtip-growl-container");
   
-#if( BUILD_AS_ELECTRON_APP )
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   m_notificationDiv->addStyleClass( "belowMenu" );
 #endif
   
@@ -551,7 +586,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
     if( m_user )
     {
-      InterSpecUser::initFromDbValues( m_user, m_sql );
+      
     }else
     {
       InterSpecUser::DeviceType type = InterSpecUser::Desktop;
@@ -562,10 +597,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
       InterSpecUser *newuser = new InterSpecUser( username, type );
       m_user = m_sql->session()->add( newuser );
-    
-      InterSpecUser::initFromDefaultValues( m_user, m_sql );
     }//if( m_user ) / else
   
+    m_preferences = new UserPreferences( this );
+    
     m_user.modify()->startingNewSession();
     
     transaction.commit();
@@ -573,7 +608,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   
   detectClientDeviceType();
 
-  const string langPref = InterSpecUser::preferenceValue<string>("Language", this);
+  const string langPref = UserPreferences::preferenceValue<string>("Language", this);
   if( !langPref.empty() )
     wApp->setLocale( WLocale(langPref) );
       
@@ -587,7 +622,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
   if( (UndoRedoManager::maxUndoRedoSteps() >= 0)
       /* && !app->isPhone()
-      && (!app->isTablet() || InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this)) */ )
+      && (!app->isTablet() || UserPreferences::preferenceValue<bool>("TabletUseDesktopMenus", this)) */ )
   {
     m_undo = new UndoRedoManager( this );
     undo_blocker = std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts>();
@@ -613,12 +648,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
     );
     
     doJavaScript( js );
-  }//if( isPhone() )
+  }//if( isMobile() )
   
   m_spectrum->setPeakModel( m_peakModel );
   m_spectrum->existingRoiEdgeDragUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork );
   m_spectrum->dragCreateRoiUpdate().connect( m_spectrum, &D3SpectrumDisplayDiv::performDragCreateRoiWork );
-      
+  
   m_nuclideSearch = new IsotopeSearchByEnergy( this, m_spectrum );
   m_nuclideSearch->setLoadLaterWhenInvisible(true);
 
@@ -628,7 +663,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_energyCalTool = new EnergyCalTool( this, m_peakModel );
   m_spectrum->rightMouseDragg().connect( m_energyCalTool, &EnergyCalTool::handleGraphicalRecalRequest );
   displayedSpectrumChanged().connect( m_energyCalTool, &EnergyCalTool::displayedSpecChangedCallback );
-
   m_fileManager = new SpecMeasManager( this );
   
   m_peakInfoDisplay = new PeakInfoDisplay( this, m_spectrum, m_peakModel );
@@ -1199,11 +1233,17 @@ InterSpec::InterSpec( WContainerWidget *parent )
     setToolTabsVisible( true );
   }else
   {
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    const WEnvironment &env = wApp->environment();
+    const bool isVertical = (env.screenWidth() < env.screenHeight());
+    setToolTabsVisible( !isVertical );
+#else
     //Disallow showing tool tabs when on a phone
     m_toolTabsVisibleItems[1]->setHidden(true);
     
     //Add Ref photopeaks, etc. to tool menu
     addToolsTabToMenuItems();
+#endif //#endif InterSpec_PHONE_ROTATE_FOR_TABS
   }//If( start with tool tabs showing ) / else
  
   initDragNDrop();
@@ -1338,7 +1378,10 @@ InterSpec::~InterSpec() noexcept(true)
     if( m_toolsTabs && m_toolsTabs->indexOf(m_peakInfoDisplay)>=0 )
         m_toolsTabs->removeTab( m_peakInfoDisplay );
     if( m_peakInfoWindow )
-      m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
+    {
+      const bool removed = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+      assert( removed );
+    }
     
     del_ptr_set_null( m_peakInfoDisplay );
   }//if( m_peakInfoDisplay )
@@ -1476,6 +1519,107 @@ void InterSpec::layoutSizeChanged( int w, int h )
   m_renderedWidth = w;
   m_renderedHeight = h;
   
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  if( isPhone() )
+  {
+    if( (w <= 20) || (h <= 20) )
+    {
+      w = wApp->environment().screenWidth();
+      h = wApp->environment().screenHeight();
+    }
+    
+    if( (w > 20) && (h > 20) )
+    {
+      const bool isVertical = (h > w);
+      
+      // If we are changing orientation - close all the open windows
+      //  TODO: close are restore all the windows, instead of just closing them
+#if( USE_CSS_FLEX_LAYOUT )
+      if( m_toolsTabs->isVisible() != isVertical )
+#else
+      if( static_cast<bool>(m_toolsTabs) != isVertical )
+#endif
+      {
+        //m_energyCalWindow and m_nuclideSearchWindow will get closed by `setToolTabsVisible(...)`
+        if( m_gammaCountDialog )
+          deleteGammaCountDialog();
+        
+        if( m_shieldingSourceFitWindow )
+          closeShieldingSourceFit();
+        
+#if( USE_REL_ACT_TOOL )
+        if( m_relActAutoWindow )
+          m_relActAutoWindow->hide(); //rejects if, calling `handleRelActAutoClose()`
+        if( m_relActManualWindow )
+          m_relActManualWindow->hide(); //rejects if, calling `handleRelActManualClose()`
+#endif
+        
+        if( m_multimedia )
+          programmaticallyCloseMultimediaWindow();
+        
+#if( USE_REMOTE_RID )
+        if( m_autoRemoteRidResultDialog )
+          programaticallyCloseAutoRemoteRidResultDialog();
+#endif
+        if( m_gammaXsToolWindow )
+          m_gammaXsToolWindow->hide(); //calls deleteGammaXsTool
+        if( m_doseCalcWindow )
+          deleteDoseCalcTool();
+        if( m_1overR2Calc )
+          deleteOneOverR2Calc();
+        if( m_unitsConverter )
+          deleteUnitsConverterTool();
+        if( m_fluxTool )
+          deleteFluxTool();
+        if( m_makeDrfTool )
+          handleCloseMakeDrfWindow( m_makeDrfTool );
+#if( USE_LEAFLET_MAP )
+        if( m_leafletWindow )
+          programmaticallyCloseLeafletMap();
+#endif
+        if( m_enterUri )
+          m_enterUri->accept();
+        assert( !m_enterUri );
+        if( m_terminalWindow )
+          m_terminalWindow->hide();
+#if( USE_REMOTE_RID )
+        if( m_remoteRidWindow )
+          deleteRemoteRidWindow();
+#endif
+#if( USE_DETECTION_LIMIT_TOOL )
+        if( m_simpleMdaWindow )
+          handleSimpleMdaWindowClose();
+        if( m_detectionLimitWindow )
+          handleDetectionLimitWindowClose();
+#endif
+        if( m_helpWindow )
+          closeHelpWindow();
+        if( m_licenseWindow )
+          deleteLicenseAndDisclaimersWindow();
+        if( m_useInfoWindow )
+          deleteWelcomeDialog( true );
+        if( m_decayInfoWindow )
+          deleteDecayInfoWindow();
+        if( m_addFwhmTool )
+          deleteFwhmFromForegroundWindow();
+        if( m_preserveCalibWindow )
+          deleteEnergyCalPreserveWindow();
+#if( USE_SEARCH_MODE_3D_CHART )
+        if( m_3dViewWindow )
+          handle3DSearchModeChartClose( m_3dViewWindow );
+#endif
+        if( m_riidDisplay )
+          programmaticallyCloseRiidResults();
+        if( m_drfSelectWindow )
+          closeDrfSelectWindow();
+      }//if( we are changing orientation )
+      
+      setToolTabsVisible( isVertical );
+    }//if( (w > 20) && (h > 20) )
+  }//if( isPhone() )
+#endif
+  
   const bool comactX = (h <= 420); //Apple iPhone 6+, 6s+, 7+, 8+
   if( (h > 20) && (comactX != m_spectrum->isAxisCompacted()) )
   {
@@ -1484,7 +1628,7 @@ void InterSpec::layoutSizeChanged( int w, int h )
     //        makes screen large, currently wont un-compactify axis, even if
     //        user wants this; should evaluate if its worth checking the user
     //        preference about this.
-    //const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    //const bool makeCompact = UserPreferences::preferenceValue<bool>( "CompactXAxis", this );
     
     if( comactX && !m_spectrum->isAxisCompacted() )
       m_spectrum->setCompactAxis( comactX );
@@ -1537,7 +1681,7 @@ void InterSpec::detectClientDeviceType()
   bool tablet = app->isTablet();
   bool mobile = app->isMobile();
   if( mobile && !phone && tablet )
-    tablet = mobile = !InterSpecUser::preferenceValue<bool>("TabletUseDesktopMenus", this);
+    tablet = mobile = !UserPreferences::preferenceValue<bool>("TabletUseDesktopMenus", this);
 
   for( ClientDeviceType type= ClientDeviceType( 0x1 );
        type < NumClientDeviceType; type= ClientDeviceType( type << 1 ) )
@@ -1584,7 +1728,7 @@ void InterSpec::detectClientDeviceType()
 
 void InterSpec::changeLocale( std::string languageCode )
 {
-  const string prevLangPref = InterSpecUser::preferenceValue<string>("Language", this);
+  const string prevLangPref = UserPreferences::preferenceValue<string>("Language", this);
   //if( prevLangPref == local )
   //  return;
   
@@ -1596,7 +1740,7 @@ void InterSpec::changeLocale( std::string languageCode )
     return;
   }//if( !languages.count(languageCode) )
   
-  InterSpecUser::setPreferenceValue( m_user, "Language", languageCode, this );
+  UserPreferences::setPreferenceValue( "Language", languageCode, this );
   
   // Add the style class to the item selected
   if( m_languagesSubMenu )
@@ -3151,12 +3295,8 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
 #if( USE_DB_TO_STORE_SPECTRA )
 void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 {
-  if( !entry || entry->user != m_user || !m_user.session() )
+  if( !entry || (entry->user != m_user) || !m_user.session() )
     throw runtime_error( "Invalid input to saveStateToDb()" );
-  
-  if( entry->isWriteProtected() )
-    throw runtime_error( "UserState is write protected; "
-                         "please clone state to re-save" );
 
   try
   {
@@ -3168,65 +3308,135 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
-  
+    
     if( !entry->creationTime.isValid() )
       entry.modify()->creationTime = entry->serializeTime;
     
-    const bool forTesting = (entry->stateType == UserState::kForTest);
+    const bool deepCopy = ((entry->stateType != UserState::kUserSaved) || !!entry->snapshotTagParent);
     
     std::shared_ptr<const SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
     std::shared_ptr<const SpecMeas> second = measurment( SpecUtils::SpectrumType::SecondForeground );
     std::shared_ptr<const SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
     
-    Dbo::ptr<UserFileInDb> dbforeground = measurmentFromDb( SpecUtils::SpectrumType::Foreground, true );
-    Dbo::ptr<UserFileInDb> dbsecond     = measurmentFromDb( SpecUtils::SpectrumType::SecondForeground, true );
-    Dbo::ptr<UserFileInDb> dbbackground = measurmentFromDb( SpecUtils::SpectrumType::Background, true );
+    const bool updateInDb = false; //We will update the file, or make a copy ourselves
+    Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
+    dbforeground = measurementFromDb( SpecUtils::SpectrumType::Foreground, updateInDb );
+    if( foreground != second )
+      dbsecond = measurementFromDb( SpecUtils::SpectrumType::SecondForeground, updateInDb );
+    if( (background != foreground) && (background != second) )
+      dbbackground = measurementFromDb( SpecUtils::SpectrumType::Background, updateInDb );
   
     //JIC, make sure indices have all been assigned to everything.
     m_sql->session()->flush();
     
-    if( (entry->snapshotTagParent || forTesting)
-        || (dbforeground && dbforeground->isWriteProtected()) )
-    {
-      dbforeground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbforeground, *m_sql, true );
-      if( dbforeground && !(entry->snapshotTagParent || forTesting) )
-        UserFileInDb::removeWriteProtection( dbforeground );
-    }
+    auto create_copy_or_update_in_db = [this, deepCopy, &entry]( Dbo::ptr<UserFileInDb> &dbfile,
+                      shared_ptr<const SpecMeas> &file, const SpecUtils::SpectrumType type ){
+      if( !file )
+        return;
+      
+      if( !dbfile )
+      {
+        // We seem to get here if we recently uploaded the foreground file, so it hasnt been saved
+        //  to the database yet.
+        Wt::Dbo::ptr<UserFileInDb> answer;
+        
+        SpectraFileModel *fileModel = m_fileManager->model();
+        assert( measurment(type) == file );
+        
+        const WModelIndex index = fileModel->index( file );
+        assert( index.isValid() );
+        
+        if( !index.isValid() )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+                      + " spectrum file to the database - unable to find in SpectraFileModel!?!" );
+          
+        shared_ptr<SpectraFileHeader> header = fileModel->fileHeader( index.row() );
+        assert( header );
+        if( !header )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+               + " spectrum file to the database - no associated header in SpectraFileModel!?!." );
+        
+        try
+        {
+          header->saveToDatabase( file );
+        }catch( std::exception &e )
+        {
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+          + " spectrum file to the database - call to write to db failed: " + string(e.what()) );
+        }
+        
+        dbfile = header->dbEntry();
+        assert( dbfile );
+        if( !dbfile )
+          throw runtime_error( "Error saving " + string(SpecUtils::descriptionText(type))
+              + " spectrum file to the database - unexpectedly missing reference in db!?!." );
+      }else if( deepCopy && (dbfile->isPartOfSaveState || dbfile->snapshotParent) )
+      {
+        // We dont need to make a copy of the file if it was not part of a save state, but now its
+        //  becoming part of one
+        dbfile = UserFileInDb::makeDeepCopyOfFileInDatabase( dbfile, *m_sql, true );
+        m_sql->session()->flush();
+      }
+      
+      dbfile.modify()->isPartOfSaveState = true;
+      
+      Dbo::ptr<UserFileInDbData> filedata;
+      for( auto iter = dbfile->filedata.begin(); iter != dbfile->filedata.end(); ++iter )
+      {
+        assert( !filedata );
+        if( filedata )
+          (*iter).remove();
+        else
+          filedata = *iter;
+      }
+      
+      //assert( filedata );
+      if( !filedata )
+      {
+        // We may get here if we've removed a state (i.e., a `UserState::kEndOfSessionTemp`) from
+        //  the database, but the pointer is still in memory.
+        UserFileInDbData *newdata = new UserFileInDbData();
+        filedata.reset( newdata );
+        newdata->fileInfo = dbfile;
+        m_sql->session()->add( filedata );
+      }
+      
+      // This next line will throw an exception if the file is too large to store in database
+      filedata.modify()->setFileData( file, UserFileInDbData::SerializedFileFormat::k2012N42 );
+    };//create_copy_or_update_in_db lambda
     
-    if( (entry->snapshotTagParent || forTesting)
-         && dbsecond
-         && !dbsecond->isWriteProtected()
-         && (foreground != second) )
-    {
-      dbsecond = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbsecond, *m_sql, true );
-      if( dbsecond && !(entry->snapshotTagParent || forTesting) )
-        UserFileInDb::removeWriteProtection( dbsecond );
-    }else if( foreground == second )
-      dbsecond = dbforeground;
-    
-    if( (entry->snapshotTagParent || forTesting)
-        && dbbackground
-        && !dbbackground->isWriteProtected()
-        && (background != foreground)
-        && (background != second))
-    {
-      dbbackground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbbackground, *m_sql, true );
-      if( dbbackground && !(entry->snapshotTagParent || forTesting) )
-        UserFileInDb::removeWriteProtection( dbbackground );
-    }else if( background == foreground )
-      dbbackground = dbforeground;
-    else if( background == second )
-      dbbackground = dbsecond;
-    
+    create_copy_or_update_in_db( dbforeground, foreground, SpecUtils::SpectrumType::Foreground );
     if( !dbforeground && foreground )
       throw runtime_error( "Error saving foreground to the database" );  //not displayed to user, so not internationalized
-    if( !dbsecond && second )
-      throw runtime_error( "Error saving second foreground to the database" );
-    if( !dbbackground && background )
-      throw runtime_error( "Error saving background to the database" );
+  
+    if( second )
+    {
+      if( second == foreground )
+      {
+        dbsecond = dbforeground;
+      }else
+      {
+        create_copy_or_update_in_db( dbsecond, second, SpecUtils::SpectrumType::SecondForeground );
+        if( !dbsecond )
+          throw runtime_error( "Error saving second foreground to the database" );
+      }
+    }//if( second )
     
-    entry.modify()->snapshotTagParent = entry->snapshotTagParent;
-    entry.modify()->snapshotTags = entry->snapshotTags;
+    if( background )
+    {
+      if( background == foreground )
+      {
+        dbbackground = dbforeground;
+      }else if( background == second )
+      {
+        dbbackground = dbsecond;
+      }else
+      {
+        create_copy_or_update_in_db( dbbackground, background, SpecUtils::SpectrumType::Background );
+        if( !dbbackground )
+          throw runtime_error( "Error saving background to the database" );
+      }
+    }//if( background )
     
     //We need to make sure dbforeground, dbbackground, dbsecond will have been
     //  written to the database, so there id()'s will be not -1.
@@ -3236,21 +3446,18 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     entry.modify()->backgroundId = static_cast<int>( dbbackground.id() );
     entry.modify()->secondForegroundId = static_cast<int>( dbsecond.id() );
     
-    /*
-    entry.modify()->shieldSourceModelId = -1;
-    if( m_shieldingSourceFit )
+    // If using is clicking save - remove any `kUserStateAutoSavedWork` states, as
+    //  they would now be behind the state the user is saving
+    if( entry->stateType == UserState::kUserSaved )
     {
-      Wt::Dbo::ptr<ShieldingSourceModel> model = m_shieldingSourceFit->modelInDb();
-      
-      //make sure model has actually been written to the DB, so index wont be 0
-      if( model )
-        m_sql->session()->flush();
-        
-      entry.modify()->shieldSourceModelId = model.id();
-    }
-     */
+      Dbo::collection<Dbo::ptr<UserState>> eosEntries = entry->snapshotTags.find()
+        .where( "StateType = ?" )
+        .bind(int(UserState::UserStateType::kUserStateAutoSavedWork));
+      for( auto iter = eosEntries.begin(); iter != eosEntries.end(); ++iter )
+        iter->remove();
+    }//if( remove `kUserStateAutoSavedWork` states )
     
-//    entry.modify()->otherSpectraCsvIds;
+    
     {
       string &str = (entry.modify()->foregroundSampleNumsCsvIds);
       str.clear();
@@ -3304,20 +3511,15 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     
     try
     {
-      if( m_user->preferenceValue<bool>( "ShowVerticalGridlines" ) )
+      if( UserPreferences::preferenceValue<bool>( "ShowVerticalGridlines", this ) )
         entry.modify()->shownDisplayFeatures |= UserState::kVerticalGridLines;
-    }catch(...)
-    {
-      // We can get here if we loaded from a state that didnt have this preference
-    }
-    
-    try
-    {
-      if( m_user->preferenceValue<bool>( "ShowHorizontalGridlines" ) )
+      
+      if( UserPreferences::preferenceValue<bool>( "ShowHorizontalGridlines", this ) )
         entry.modify()->shownDisplayFeatures |= UserState::kHorizontalGridLines;
     }catch(...)
     {
-      // We can get here if we loaded from a state that didnt have this preference
+      // We shouldnt get here
+      assert( 0 );
     }
     
     if( m_spectrum->legendIsEnabled() )
@@ -3527,7 +3729,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     try
     {
       Wt::Dbo::ptr<ColorThemeInfo> theme;
-      const int colorThemIndex = m_user->preferenceValue<int>("ColorThemeIndex", this);
+      const int colorThemIndex = UserPreferences::preferenceValue<int>("ColorThemeIndex", this);
       if( colorThemIndex > 0 )
         theme = m_user->m_colorThemes.find().where( "id = ?" ).bind( colorThemIndex ).resultValue();
       if( theme )
@@ -3538,69 +3740,19 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       cerr << "saveStateToDb(): Caught exception retrieving color theme from database" << endl;
     }//try / catch
     
-    if( forTesting || entry->snapshotTagParent )
-      UserState::makeWriteProtected( entry, m_sql->session() );
-    
     transaction.commit();
+  }catch( FileToLargeForDbException &e )
+  {
+    cerr << "Caught: " << e.what() << endl;
+    throw;
   }catch( std::exception &e )
   {
     cerr << "saveStateToDb(...) caught: " << e.what() << endl;
-    throw runtime_error( WString::tr("err-save-sate-to-db").toUTF8() );
-    //to do: handle errors
+    string errmsg = e.what();
+    errmsg = Wt::Utils::htmlEncode( errmsg, WFlags<Wt::Utils::HtmlEncodingFlag>{} );
+    throw runtime_error( WString::tr("err-save-sate-to-db").arg(errmsg).toUTF8() );
   }//try / catch
 }//void saveStateToDb( Wt::Dbo::ptr<UserState> entry )
-
-
-Dbo::ptr<UserState> InterSpec::serializeStateToDb( const Wt::WString &name,
-                                                        const Wt::WString &desc,
-                                                        const bool forTesting,
-                                                        Dbo::ptr<UserState> parent)
-{
-  Dbo::ptr<UserState> answer;
-  
-  UserState *state = new UserState();
-  state->user = m_user;
-  state->stateType = forTesting ? UserState::kForTest : UserState::kUserSaved;
-  state->creationTime = WDateTime::currentDateTime();
-  state->name = name;
-  state->description = desc;
-
-  
-  {//Begin interaction with database
-    DataBaseUtils::DbTransaction transaction( *m_sql );
-    if( parent )
-    {
-      //Making sure we get the main parent
-      while( parent->snapshotTagParent )
-        parent = parent->snapshotTagParent;
-      state->snapshotTagParent = parent;
-    }//parent
-    
-    answer = m_user.session()->add( state );
-    transaction.commit();
-  }//End interaction with database
-  
-  try
-  {
-    saveStateToDb( answer );
-  }catch( std::exception &e )
-  {
-    passMessage( e.what(), WarningWidget::WarningMsgHigh );
-  }
-      
-  if( parent )
-  {
-    WString msg = WString::tr("db-new-tag");
-    passMessage( msg.arg(name).arg(parent.get()->name), WarningWidget::WarningMsgInfo );
-  }else
-  {
-    WString msg = WString::tr("db-new-snapshot");
-    passMessage( msg.arg(name), WarningWidget::WarningMsgSave );
-  }
-    
-  return answer;
-}//Dbo::ptr<UserState> serializeStateToDb(...)
-
 
 
 void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
@@ -3612,11 +3764,24 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
-  Wt::Dbo::ptr<UserState> parent = entry->snapshotTagParent;
-  
   try
   {
+    //Essentially reset the state of the app
     closeShieldingSourceFit();
+    programmaticallyCloseMultimediaWindow();
+    assert( !m_multimedia );
+    
+    m_fileManager->removeAllFiles();
+    if( m_referencePhotopeakLines )
+      m_referencePhotopeakLines->clearAllLines();
+    
+    deletePeakEdit();
+    deleteGammaCountDialog();
+    closeNuclideSearchWindow();
+    
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
+
     
     switch( entry->stateType )
     {
@@ -3624,18 +3789,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       case UserState::kUserSaved:
       case UserState::kForTest:
       case UserState::kUndefinedStateType:
-      case UserState::kEndOfSessionHEAD:
+      case UserState::kUserStateAutoSavedWork:
       break;
     }//switch( entry->stateType )
 
     DataBaseUtils::DbTransaction transaction( *m_sql );
     
-    if( parent )
-    {
-      while( parent->snapshotTagParent )
-        parent = parent->snapshotTagParent;
-    }
-
+    Wt::Dbo::ptr<UserState> parent = entry->snapshotTagParent;
+    while( parent && parent->snapshotTagParent )
+      parent = parent->snapshotTagParent;
     
     Dbo::ptr<UserFileInDb> dbforeground, dbsecond, dbbackground;
     if( entry->foregroundId >= 0 )
@@ -3668,21 +3830,8 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         && (!dbsecond || !dbsecond->filedata.size()) )
       throw runtime_error( "Unable to locate second foreground in database" );
     
-    //Essentially reset the state of the app
-    m_fileManager->removeAllFiles();
-    if( m_referencePhotopeakLines )
-      m_referencePhotopeakLines->clearAllLines();
     
-    deletePeakEdit();
-    deleteGammaCountDialog();
     
-    if( m_shieldingSourceFitWindow && !m_shieldingSourceFitWindow->isHidden() )
-      m_shieldingSourceFitWindow->hide();
-    
-    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
-    if( toolTabsVisible() != wasDocked )
-      setToolTabsVisible( wasDocked );
-
     //Now start reloading the state
     std::shared_ptr<SpecMeas> foreground, second, background;
     std::shared_ptr<SpecMeas> snapforeground, snapsecond, snapbackground;
@@ -3693,25 +3842,11 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( parent )
     {
       //If we are loading a snapshot, we actually want to associate the
-      //  foreground/second/backgorund entries in the database with the parent
+      //  foreground/second/background entries in the database with the parent
       //  entries, but actually load the snapshots.  This is so when the user
-      //  saves changes, the parents saved state recieves the changes, and the
+      //  saves changes, the parents saved state receives the changes, and the
       //  snapshot doesnt get changed.
       //All of this is really ugly and horrible, and should be improved!
-      
-//      const bool autosave
-//        = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
-//      if( autosave )
-//      {
-//      Its actually to late, HEAD will be set to the tag version even if the
-//      user immediate selects save as.
-//        const char *txt = "Auto saving is currently enabled, meaning the most"
-//                          " recent version of this snapshot will get"
-//                          " over-written with the current state (plus any"
-//                          " changes you make) unless you disable auto saving,"
-//                          " or do a &quot;Save As&quot; asap.";
-//        passMessage( txt, WarningWidget::WarningMsgMedium );
-//      }
       
       if( dbforeground && dbforeground->filedata.size() )
         snapforeground = (*dbforeground->filedata.begin())->decodeSpectrum();
@@ -3772,6 +3907,20 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       }
     }//if( parent )
     
+    auto csvToInts = []( const string &str ) -> set<int> {
+      set<int> samples;
+      stringstream strm( str );
+      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
+                std::inserter( samples, end(samples) ) );
+      return samples;
+    }; //csvToInts lambda
+    
+    const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
+    const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
+    const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
+    const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
+    
+    
     if( dbforeground )
       m_fileManager->setDbEntry( dbforeground, foregroundheader, foreground, 0);
     
@@ -3809,9 +3958,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           background = snapbackground;
         }else if( snapbackground && dbbackground )
         {
-          dbbackground = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbbackground, *m_sql, true );
-          if( dbbackground )
-            UserFileInDb::removeWriteProtection( dbbackground );
+          dbbackground = UserFileInDb::makeDeepCopyOfFileInDatabase( dbbackground, *m_sql, true );
           m_fileManager->setDbEntry( dbbackground, backgroundheader, background, 0);
         }
       }//if( snapbackground != snapforeground )
@@ -3825,29 +3972,28 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           second = snapsecond;
         }else if( snapsecond && dbsecond )
         {
-          dbsecond = UserFileInDb::makeDeepWriteProtectedCopyInDatabase( dbsecond, *m_sql, true );
-          if( dbsecond )
-            UserFileInDb::removeWriteProtection( dbsecond );
+          dbsecond = UserFileInDb::makeDeepCopyOfFileInDatabase( dbsecond, *m_sql, true );
           m_fileManager->setDbEntry( dbsecond, secondheader, second, 0);
         }
       }
     }//if( parent )
     
-    auto csvToInts = []( const string &str ) -> set<int> {
-      set<int> samples;
-      stringstream strm( str );
-      std::copy( istream_iterator<int>( strm ), istream_iterator<int>(),
-                std::inserter( samples, end(samples) ) );
-      return samples;
-    }; //csvToInts lambda
     
-    const set<int> foregroundNums = csvToInts( entry->foregroundSampleNumsCsvIds );
-    const set<int> secondNums     = csvToInts( entry->secondForegroundSampleNumsCsvIds );
-    const set<int> backgroundNums = csvToInts( entry->backgroundSampleNumsCsvIds );
-    const set<int> otherSamples   = csvToInts( entry->otherSpectraCsvIds );
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
+    if( isPhone() )
+    {
+      wasDocked = (m_toolsTabs != nullptr);
+    }else if( toolTabsVisible() != wasDocked )
+    {
+      setToolTabsVisible( wasDocked );
+    }
+#else
+    bool wasDocked = (entry->shownDisplayFeatures & UserState::kDockedWindows);
+    if( toolTabsVisible() != wasDocked )
+      setToolTabsVisible( wasDocked );
+#endif
     
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
-    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
     
     Wt::WFlags<SetSpectrumOptions> options;
 #if( USE_REMOTE_RID )
@@ -3876,6 +4022,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     //  write protected so they may have been changed or removed
     //...should check to make sure that they are lazily loaded, so as to not
     //  waste to much CPU.
+    // TODO: this isnt currently saved when creating a state; should make it an option in the save-state dialog
     for( const int id : otherSamples )
     {
       try
@@ -3890,32 +4037,29 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//for( const int id : otherSamples )
     
     //Load the ShieldingSourceModel
-    Dbo::ptr<ShieldingSourceModel> fitmodel;
-    if( entry->shieldSourceModelId >= 0 )
-      fitmodel = m_sql->session()->find<ShieldingSourceModel>()
-                         .where( "id = ?" ).bind( entry->shieldSourceModelId );
-    if( fitmodel )
-    {
-      cerr << "When loading state from DB, not loading Shielding/Source Fit"
-      << " model, due to lame GUI ish" << endl;
-//      if( !m_shieldingSourceFit )
-//        shieldingSourceFit();
-      if( m_shieldingSourceFit )
-        m_shieldingSourceFit->loadModelFromDb( fitmodel );
-    }//if( fitmodel )
+    //  20250303: for a long time (10 years?) we've just stored the ShieldingSourceModel as part of
+    //            `SpecMeas`, and we arent doing a great job of actually loading the associated
+    //            model, so lets just not.  I guess we could/should set `fitmodel->xmlData` to
+    //            `foreground->setShieldingSourceModel(...)`, but this would require testing I dont
+    //            think I can do easily, so we'll just ignore this.
+    //Dbo::ptr<ShieldingSourceModel> fitmodel;
+    //if( entry->shieldSourceModelId >= 0 )
+    //  fitmodel = m_sql->session()->find<ShieldingSourceModel>()
+    //                     .where( "id = ?" ).bind( entry->shieldSourceModelId );
+    //
+    //if( fitmodel )
+    //{
+    //  cerr << "When loading state from DB, not loading Shielding/Source Fit"
+    //  << " model, due to lame GUI ish" << endl;
+//  //    if( !m_shieldingSourceFit )
+//  //      shieldingSourceFit();
+    //  if( m_shieldingSourceFit )
+    //    m_shieldingSourceFit->loadModelFromDb( fitmodel );
+    //}//if( fitmodel )
+    //
+    //if( m_shieldingSourceFitWindow )
+    //  m_shieldingSourceFitWindow->hide();
     
-    if( m_shieldingSourceFitWindow )
-      m_shieldingSourceFitWindow->hide();
-    
-    if( m_nuclideSearchWindow )
-    {
-      m_nuclideSearchContainer->layout()->removeWidget( m_nuclideSearch );
-      delete m_nuclideSearchContainer;
-      m_nuclideSearchContainer = nullptr;
-    }
-    
-//  std::string showingDetectorNumbersCsv;
-//  see:  std::vector<bool> detectorsToDisplay() const;
     
     float xmin = entry->energyAxisMinimum;
     float xmax = entry->energyAxisMaximum;
@@ -3931,25 +4075,8 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     }//if( xmin != xmax )
         
     
-    if( m_multimedia )
-      programmaticallyCloseMultimediaWindow();
-    assert( !m_multimedia );
-    
     if( foreground )
     {
-      // If we have a state without a foreground, then for the spectrum chart, changing the legend
-      //  enabled status, or setting the horizontal/vertical lines causes the client-side javascript
-      //  to crash - I spent some hours trying to figure it out, but no luck.  So for the moment,
-      //  we'll just do this work-around.
-      //  One hint was for the crashing case D3SpectrumDisplayDiv::defineJavaScript() seems to be
-      //  called multiple times, and maybe the id of the parent div changes???
-      //  Its really bizarre.
-#ifdef _MSC_VER
-#pragma message("Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error")
-#else
-#warning "Not setting show legend or grid lines on charts when loading states that do not have a foreground; should figure out why this causes a client-side error"
-#endif
-      
       const bool vertGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
       const bool horizontalGridLines = (entry->shownDisplayFeatures & UserState::kVerticalGridLines);
       m_spectrum->showVerticalLines( vertGridLines );
@@ -4001,84 +4128,138 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingGammaXsTool)
        && !entry->gammaXsToolUri.empty() )
     {
-      GammaXsWindow *w = showGammaXsTool();
-      if( w && w->xstool() )
-        w->xstool()->handleAppUrl( entry->gammaXsToolUri );
-    }
+      try
+      {
+        GammaXsWindow *w = showGammaXsTool();
+        if( w && w->xstool() )
+          w->xstool()->handleAppUrl( entry->gammaXsToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to xs tool GUI state with error: " << e.what() << endl;
+      }
+    }//if( show XS tool )
     
     
     if( (entry->shownDisplayFeatures & UserState::kShowingDoseCalcTool)
        && !entry->doseCalcToolUri.empty() )
     {
-      DoseCalcWindow *w = showDoseTool();
-      DoseCalcWidget *tool = w ? w->tool() : nullptr;
-      if( tool )
+      try
       {
-        string path, uri = entry->doseCalcToolUri;
-        const auto pos = uri.find('?');
-        if( pos != string::npos )
+        DoseCalcWindow *w = showDoseTool();
+        DoseCalcWidget *tool = w ? w->tool() : nullptr;
+        if( tool )
         {
-          path = uri.substr(0,pos);
-          uri = uri.substr(pos+1);
-        }
-        tool->handleAppUrl( path, uri );
-      }//if( tool )
-    }
+          string path, uri = entry->doseCalcToolUri;
+          const auto pos = uri.find('?');
+          if( pos != string::npos )
+          {
+            path = uri.substr(0,pos);
+            uri = uri.substr(pos+1);
+          }
+          tool->handleAppUrl( path, uri );
+        }//if( tool )
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set dose calc GUI state with error: " << e.what() << endl;
+      }
+    }//if( show dose calc window )
     
     if( (entry->shownDisplayFeatures & UserState::kShowing1OverR2Tool)
        && !entry->oneOverR2ToolUri.empty() )
     {
-      OneOverR2Calc *calc = createOneOverR2Calculator();
-      if( calc )
-        calc->handleAppUrl( entry->oneOverR2ToolUri );
-    }
+      try
+      {
+        OneOverR2Calc *calc = createOneOverR2Calculator();
+        if( calc )
+          calc->handleAppUrl( entry->oneOverR2ToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set 1/r2 calc GUI state with error: " << e.what() << endl;
+      }
+    }//if( show 1/r2 calculator )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingFluxTool)
        && !entry->fluxToolUri.empty() )
     {
-      FluxToolWindow *tool = createFluxTool();
-      if( tool )
-        tool->handleAppUrl( entry->fluxToolUri );
+      try
+      {
+        FluxToolWindow *tool = createFluxTool();
+        if( tool )
+          tool->handleAppUrl( entry->fluxToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set flux tool GUI state with error: " << e.what() << endl;
+      }
     }//if( m_fluxTool )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingUnitConvertTool)
        && !entry->unitsConverterToolUri.empty() )
     {
-      UnitsConverterTool *converter = createUnitsConverterTool();
-      if( converter )
-        converter->handleAppUrl( entry->unitsConverterToolUri );
+      try
+      {
+        UnitsConverterTool *converter = createUnitsConverterTool();
+        if( converter )
+          converter->handleAppUrl( entry->unitsConverterToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set unit converter GUI state with error: " << e.what() << endl;
+      }
     }
     
     if( (entry->shownDisplayFeatures & UserState::kShowingNucDecayInfo)
        && !entry->nucDecayInfoUri.empty() )
     {
-      DecayWindow *decay = createDecayInfoWindow();
-      if( decay )
-        decay->handleAppUrl( entry->nucDecayInfoUri );
-    }
+      try
+      {
+        DecayWindow *decay = createDecayInfoWindow();
+        if( decay )
+          decay->handleAppUrl( entry->nucDecayInfoUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set decay info GUI state with error: " << e.what() << endl;
+      }
+    }//if( show nuclide decay window )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingEnergyRangeSum)
        && !entry->energyRangeSumUri.empty() )
     {
-      GammaCountDialog *dialog = showGammaCountDialog();
-      if( dialog )
-        dialog->handleAppUrl( entry->energyRangeSumUri );
-    }
+      try
+      {
+        GammaCountDialog *dialog = showGammaCountDialog();
+        if( dialog )
+          dialog->handleAppUrl( entry->energyRangeSumUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set gamma count GUI state with error: " << e.what() << endl;
+      }
+    }//if( showing energy range sum )
     
     
 #if( USE_DETECTION_LIMIT_TOOL )
     if( (entry->shownDisplayFeatures & UserState::kShowingDetectionSens)
        && !entry->detectionSensitivityToolUri.empty() )
     {
-      showDetectionLimitTool( entry->detectionSensitivityToolUri );
+      try
+      {
+        showDetectionLimitTool( entry->detectionSensitivityToolUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set detection limit tool state with error: " << e.what() << endl;
+      }
     }//if( m_detectionLimitWindow )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingSimpleMda)
        && !entry->simpleMdaUri.empty() )
     {
-      auto dialog = showSimpleMdaWindow();
-      if( dialog )
-        dialog->tool()->handleAppUrl( entry->simpleMdaUri );
+      try
+      {
+        auto dialog = showSimpleMdaWindow();
+        if( dialog )
+          dialog->tool()->handleAppUrl( entry->simpleMdaUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set MDA GUI state with error: " << e.what() << endl;
+      }
     }//if( m_simpleMdaWindow )
 #endif
     
@@ -4102,6 +4283,56 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+      if( isPhone() )
+      {
+        switch( entry->currentTab )
+        {
+          case UserState::kPeakInfo:
+            m_toolsTabs->setCurrentIndex( 1 ); //m_peakInfoDisplay
+            break;
+          case UserState::kGammaLines:
+            m_toolsTabs->setCurrentIndex( 2 ); //m_referencePhotopeakLines
+            break;
+          case UserState::kCalibration:
+            m_toolsTabs->setCurrentIndex( 3 ); //m_energyCalTool
+            break;
+          case UserState::kIsotopeSearch:  
+            m_toolsTabs->setCurrentIndex( 4 ); //m_nuclideSearchContainer
+            break;
+          case UserState::kFileTab:
+            m_toolsTabs->setCurrentIndex( 0 ); //CompactFileManager
+            break;
+  #if( USE_TERMINAL_WIDGET )
+          case UserState::kTerminalTab:
+            if( m_terminal )
+              m_toolsTabs->setCurrentWidget( m_terminal );
+            break;
+  #endif
+  #if( USE_REL_ACT_TOOL )
+          case UserState::kRelActManualTab: 
+            if( m_relActManualGui )
+              m_toolsTabs->setCurrentWidget( m_relActManualGui );
+            break;
+  #endif
+          case UserState::kNoTabs:  
+            // Leave it where it was
+            break;
+        };//switch( entry->currentTab )
+      }else
+      {
+        for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
+        {
+          if( m_toolsTabs->tabText(tab).key() == titleKey )
+          {
+            // Note: this causes handleToolTabChanged(...) to be called
+            m_toolsTabs->setCurrentIndex( tab );
+            m_currentToolsTab = tab;
+            break;
+          }//if( m_toolsTabs->tabText( tab ) == title )
+        }//for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
+      }
+#else
       for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
       {
         if( m_toolsTabs->tabText(tab).key() == titleKey )
@@ -4112,41 +4343,54 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           break;
         }//if( m_toolsTabs->tabText( tab ) == title )
       }//for( int tab = 0; tab < m_toolsTabs->count(); ++tab )
+#endif
     }//if( wasDocked )
     
     
     //Should take care of entry->showingWindows here, so we can rely on it below
     if( entry->gammaLinesXml.size() )
     {
-      bool toolTabsHidden = false;
-      if( !m_referencePhotopeakLines )    //tool tabs must be hidden, so lets show the window
+      try
       {
-        showGammaLinesWindow();//if entry->showingWindows was implemented
-        toolTabsHidden = true;
-        assert( m_referencePhotopeakLines );
+        bool toolTabsHidden = false;
+        if( !m_referencePhotopeakLines )    //tool tabs must be hidden, so lets show the window
+        {
+          showGammaLinesWindow();//if entry->showingWindows was implemented
+          toolTabsHidden = true;
+          assert( m_referencePhotopeakLines );
+        }
+        
+        string data = entry->gammaLinesXml;
+        m_referencePhotopeakLines->deSerialize( data );
+        
+        if( toolTabsHidden )
+          closeGammaLinesWindow();
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set reference lines GUI state with error: " << e.what() << endl;
       }
-      
-      string data = entry->gammaLinesXml;
-      m_referencePhotopeakLines->deSerialize( data );
-      
-      if( toolTabsHidden )
-        closeGammaLinesWindow();
     }//if( entry->gammaLinesXml.size() )
     
     if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
     {
-      string data = entry->isotopeSearchEnergiesXml;
-      
-      bool display = (entry->currentTab == UserState::kIsotopeSearch);
-      
-      if( !wasDocked )
+      try
       {
-        display = (entry->shownDisplayFeatures & UserState::kShowingEnergySearch);
-        if( display )
-          showNuclideSearchWindow();
-      }//if( !wasDocked )
-      
-      m_nuclideSearch->deSerialize( data, display );
+        string data = entry->isotopeSearchEnergiesXml;
+        
+        bool display = (entry->currentTab == UserState::kIsotopeSearch);
+        
+        if( !wasDocked )
+        {
+          display = (entry->shownDisplayFeatures & UserState::kShowingEnergySearch);
+          if( display )
+            showNuclideSearchWindow();
+        }//if( !wasDocked )
+        
+        m_nuclideSearch->deSerialize( data, display );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set nuclide search GUI state with error: " << e.what() << endl;
+      }
     }//if( m_nuclideSearch && entry->isotopeSearchEnergiesXml.size() )
 
     for( SpectrumChart::PeakLabels label = SpectrumChart::PeakLabels(0);
@@ -4179,15 +4423,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           const string name = name_wstr.toUTF8();
           
           // Users probably wont expect loading a state to mess up preferences for how they
-          //  currently like things, so we wont set all preferences back to what they were
-          //  when the state was saved - we'll only set the ones that notably impact presentation
+          //  currently like things, so we we'll only set the ones that notably impact presentation
           //  of the data, and are hopefully obvious
-          static const std::string prefs_to_keep[] = {
-            "ShowVerticalGridlines", "ShowHorizontalGridlines", "LogY", "ColorThemeIndex",
-            "ShowXAxisSlider", "CompactXAxis", "ShowYAxisScalers", "DisplayBecquerel"
-          };//
+          static const std::string prefs_to_load[] = {
+            "LogY", "ShowVerticalGridlines", "ShowHorizontalGridlines",
+            "ColorThemeIndex", "ShowXAxisSlider", "CompactXAxis",
+            "ShowYAxisScalers", "DisplayBecquerel"
+          };
           
-          if( std::find(begin(prefs_to_keep), end(prefs_to_keep), name) == end(prefs_to_keep) )
+          if( std::find(begin(prefs_to_load), end(prefs_to_load), name) == end(prefs_to_load) )
             continue;
           
           const int type = obj.get("type");
@@ -4198,28 +4442,28 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
             case UserOption::String:
             {
               const std::string value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name, value, this );
+              UserPreferences::setPreferenceValue( name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Decimal:
             {
               const double value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name, value, this );
+              UserPreferences::setPreferenceValue( name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Integer:
             {
               const int value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name, value, this );
+              UserPreferences::setPreferenceValue( name, value, this );
               break;
             }//case UserOption::Boolean:
               
             case UserOption::Boolean:
             {
               const bool value = obj.get("value");
-              InterSpecUser::setPreferenceValue( m_user, name, value, this );
+              UserPreferences::setPreferenceValue( name, value, this );
             }//case UserOption::Boolean:
           }//switch( datatype )
         }//for( size_t i = 0; i < userOptions.size(); ++i )
@@ -4291,7 +4535,7 @@ void InterSpec::updateSaveWorkspaceMenu()
                                        .bind( db_index );
       transaction.commit();
       
-      if( state && (state->stateType==UserState::kEndOfSessionHEAD
+      if( state && (state->stateType==UserState::kUserStateAutoSavedWork
                     || state->stateType==UserState::kUserSaved) )
       {
         m_saveState->setDisabled(false);
@@ -4341,7 +4585,7 @@ std::shared_ptr<const ColorTheme> InterSpec::getColorTheme()
   
   try
   {
-    const int colorThemIndex = m_user->preferenceValue<int>("ColorThemeIndex", this);
+    const int colorThemIndex = UserPreferences::preferenceValue<int>("ColorThemeIndex", this);
     if( colorThemIndex < 0 )
     {
       auto deftheme = ColorTheme::predefinedTheme( ColorTheme::PredefinedColorTheme(-colorThemIndex) );
@@ -4450,7 +4694,7 @@ void InterSpec::osThemeChange( std::string name )
   
   try
   {
-    const bool autoDark = InterSpecUser::preferenceValue<bool>( "AutoDarkFromOs", this );
+    const bool autoDark = UserPreferences::preferenceValue<bool>( "AutoDarkFromOs", this );
     
     if( autoDark && (name == "dark") )
     {
@@ -4502,7 +4746,7 @@ void InterSpec::showLicenseAndDisclaimersWindow()
     return;
   }
   
-  m_licenseWindow = new LicenseAndDisclaimersWindow( renderedWidth(), renderedHeight() );
+  m_licenseWindow = new LicenseAndDisclaimersWindow( this );
   
   m_licenseWindow->finished().connect( this, &InterSpec::deleteLicenseAndDisclaimersWindow );
   
@@ -4541,6 +4785,22 @@ void InterSpec::startClearSession()
 }//void startClearSession()
 
 
+UserPreferences *InterSpec::preferences()
+{
+  return m_preferences;
+}
+
+
+const Wt::Dbo::ptr<InterSpecUser> &InterSpec::user()
+{
+  return m_user;
+}
+
+void InterSpec::reReadUserInfoFromDb()
+{
+  m_user.reread();
+}
+
 void InterSpec::deleteLicenseAndDisclaimersWindow()
 { 
   if( !m_licenseWindow )
@@ -4568,7 +4828,7 @@ void InterSpec::showWelcomeDialogWorker( const bool force )
   if( !force )
   {
     dontShowAgainCallback = [this](bool value){
-      InterSpecUser::setPreferenceValue<bool>( m_user, "ShowSplashScreen", value, this );
+      UserPreferences::setPreferenceValue( "ShowSplashScreen", value, this );
     };
   }//if( !force )
   
@@ -4599,7 +4859,7 @@ void InterSpec::showWelcomeDialog( const bool force )
   
   try
   {
-    if( !force && !m_user->preferenceValue<bool>("ShowSplashScreen") )
+    if( !force && !UserPreferences::preferenceValue<bool>("ShowSplashScreen", this) )
       return;
   }catch(...)
   {
@@ -4619,8 +4879,6 @@ void InterSpec::showWelcomeDialog( const bool force )
      in the JavaScript whenever the loading indicator is shown.  I'm pretty
      confused by it.
      I tried setting a new loading indicator in deleteWelcomeDialog(), but it didnt work
-     
-     Havent checked if creating this window via "posting" helps
      */
     WServer::instance()->post( wApp->sessionId(), std::bind(&InterSpec::showWelcomeDialogWorker, this, force ) );
   }
@@ -4760,7 +5018,9 @@ void InterSpec::showFileQueryDialog()
     return;
   
   
-  m_specFileQueryDialog = new AuxWindow( WString::tr("window-title-spec-file-query"), AuxWindowProperties::TabletNotFullScreen );
+  m_specFileQueryDialog = new AuxWindow( WString::tr("window-title-spec-file-query"), 
+                                        Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                        | AuxWindowProperties::SetCloseable );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
   m_specFileQueryDialog->setMinimumSize( 640, 480 );
@@ -4865,7 +5125,8 @@ void InterSpec::showWarningsWindow()
     m_warningsWindow = new AuxWindow( WString::tr("window-title-notification-log"),
                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
                    | AuxWindowProperties::DisableCollapse
-                   | AuxWindowProperties::EnableResize) );
+                   | AuxWindowProperties::EnableResize
+                   | AuxWindowProperties::SetCloseable) );
     m_warningsWindow->contents()->setOffsets( WLength(0, WLength::Pixel), Wt::Left | Wt::Top );
     m_warningsWindow->rejectWhenEscapePressed();
     m_warningsWindow->stretcher()->addWidget( m_warnings, 0, 0, 1, 1 );
@@ -4921,42 +5182,26 @@ void InterSpec::showPeakInfoWindow()
 {
   if( m_toolsTabs )
   {
-    cerr << "nterSpec::showPeakInfoWindow()\n\tTemporary hack - we dont want to show the"
-         << " peak info window when tool tabs are showing since things get funky"
-         << endl;
+    // We get here when user does hotkey (CNTRL, or Command)-2 (
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
     m_currentToolsTab = m_toolsTabs->currentIndex();
     return;
   }//if( m_toolsTabs )
- 
-  if( m_toolsTabs && m_peakInfoDisplay )
-  {
-    m_toolsTabs->removeTab( m_peakInfoDisplay );
-    m_toolsTabs->setCurrentIndex( 0 );
-    m_currentToolsTab = 0;
-  }//if( m_toolsTabs && m_peakInfoDisplay )
   
   if( !m_peakInfoWindow )
   {
-    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager") );
+    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"),
+                              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable) );
     m_peakInfoWindow->rejectWhenEscapePressed();
-    WBorderLayout *layout = new WBorderLayout();
-    layout->setContentsMargins(0, 0, 15, 0);
-    m_peakInfoWindow->contents()->setLayout( layout );
-    //m_peakInfoWindow->contents()->setPadding(0);
-    //m_peakInfoWindow->contents()->setMargin(0);
-    
-    layout->addWidget( m_peakInfoDisplay, Wt::WBorderLayout::Center );
-    WContainerWidget *buttons = new WContainerWidget();
-    layout->addWidget( buttons, Wt::WBorderLayout::South );
-
-    WContainerWidget* footer = m_peakInfoWindow->footer();
-    
-    WPushButton* closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"),true);
-    
+    WGridLayout *layout = m_peakInfoWindow->stretcher();
+    layout->setContentsMargins( 0, 0, 0, 0 );
+    layout->addWidget( m_peakInfoDisplay, 0, 0 );
+    // If the "Peak Manager" tab hasnt been explicitly shown yet, then `m_peakInfoDisplay` will
+    //  be hidden, so we need to explicitly show it.
+    m_peakInfoDisplay->show();
+    WContainerWidget *footer = m_peakInfoWindow->footer();
+    WPushButton *closeButton = m_peakInfoWindow->addCloseButtonToFooter(WString::tr("Close"),true);
     closeButton->clicked().connect( boost::bind( &AuxWindow::hide, m_peakInfoWindow ) );
-      
-    AuxWindow::addHelpInFooter( m_peakInfoWindow->footer(), "peak-manager" );
     
     WPushButton *b = new WPushButton( WString::tr(CalibrationTabTitleKey), footer );
     b->clicked().connect( this, &InterSpec::showEnergyCalWindow );
@@ -4966,6 +5211,7 @@ void InterSpec::showPeakInfoWindow()
     b->clicked().connect( this, &InterSpec::showGammaLinesWindow );
     b->setFloatSide(Wt::Right);
       
+    AuxWindow::addHelpInFooter( footer, "peak-manager" );
       
     m_peakInfoWindow->resizeScaledWindow( 0.75, 0.5 );
     m_peakInfoWindow->centerWindow();
@@ -4982,90 +5228,167 @@ void InterSpec::handlePeakInfoClose()
   if( !m_peakInfoWindow )
     return;
 
+  const bool removed = m_peakInfoWindow->stretcher()->removeWidget( m_peakInfoDisplay );
+  assert( removed );
+  
   if( m_toolsTabs )
   {
-    m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
     if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
     {
       m_toolsTabs->addTab( m_peakInfoDisplay, WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
       m_toolsTabs->setCurrentIndex( m_toolsTabs->indexOf(m_peakInfoDisplay) );
     }//if( m_toolsTabs->indexOf(m_peakInfoDisplay) < 0 )
     m_currentToolsTab = m_toolsTabs->currentIndex();
-    
-    delete m_peakInfoWindow;
-    m_peakInfoWindow = NULL;
   }//if( m_toolsTabs )
+  
+  delete m_peakInfoWindow;
+  m_peakInfoWindow = nullptr;
 }//void handlePeakInfoClose()
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-void InterSpec::finishStoreStateInDb( WLineEdit *nameedit,
-                                           WTextArea *descriptionarea,
-                                           AuxWindow *window,
-                                           const bool forTesting,
-                                           Dbo::ptr<UserState> parent )
+void InterSpec::finishStoreStateInDb( const WString &name,
+                                      const WString &desc,
+                                      Dbo::ptr<UserState> parent )
 {
-  const WString &name = nameedit->text();
   if( name.empty() )
   {
     passMessage( WString::tr("db-error-no-name"), WarningWidget::WarningMsgHigh );
     return;
   }//if( name.empty() )
   
-  const WString &desc = (!descriptionarea ? "" : descriptionarea->text());
   
-  Dbo::ptr<UserState> state = serializeStateToDb( name, desc, forTesting, parent );
+  Dbo::ptr<UserState> answer;
   
-  const long long int db_index = parent ? parent.id() : state.id();
+  UserState *state = new UserState();
+  state->user = m_user;
+  state->stateType = UserState::kUserSaved;
+  state->creationTime = WDateTime::currentDateTime();
+  state->name = name;
+  state->description = desc;
+  
+  {//Begin interaction with database
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    if( parent )
+    {
+      //Making sure we get the main parent
+      while( parent->snapshotTagParent )
+        parent = parent->snapshotTagParent;
+      state->snapshotTagParent = parent;
+    }//parent
+    
+    answer = m_user.session()->add( state );
+    transaction.commit();
+  }//End interaction with database
+  
+  try
+  {
+    saveStateToDb( answer );
+  }catch( FileToLargeForDbException &e )
+  {
+    passMessage( e.message(), WarningWidget::WarningMsgHigh );
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
+  }
+   
+#if( PERFORM_DEVELOPER_CHECKS )
+  {// Begin check if we are leaving any orphaned spectra that were part of a user state
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    
+    Dbo::collection< Dbo::ptr<UserFileInDb> > query;
+    const char *stateQueryTxt = "A.InterSpecUser_id = ? AND A.StateType = ? AND A.SnapshotTagParent_id IS NULL";
+    query = m_sql->session()->query<Dbo::ptr<UserFileInDb>>(
+              "SELECT ufd FROM UserFileInDb ufd"
+              " LEFT JOIN UserState us ON ufd.id IN (us.ForegroundId, us.BackgroundId, us.SecondForegroundId)"
+              " WHERE us.id IS NULL AND ufd.IsPartOfSaveState = 1 AND ufd.InterSpecUser_id = ?" ).bind( m_user.id() );
+    
+    const size_t num_dangling = query.size();
+    if( num_dangling )
+    {
+      // I think this can happen for end-of-session states - but not really sure
+      cerr << "There are " << query.size() << " dangling files" << endl;
+      for( auto iter = query.begin(); iter != query.end(); ++iter )
+        cerr << (*iter)->filename << endl;
+      
+      cerr << endl;
+      
+      //The following query is untested - but I think it would cleanup the database of dangling files.
+      //m_sql->session()->execute(
+      //  "DELETE FROM UserFileInDb WHERE id IN ("
+      //    " SELECT ufd.id FROM UserFileInDb ufd LEFT JOIN UserState us"
+      //    " ON ufd.id IN (us.ForegroundId, us.BackgroundId, us.SecondForegroundId)"
+      //    " WHERE us.id IS NULL AND ufd.IsPartOfSaveState = 1 AND ufd.InterSpecUser_id = ?"
+      //  ")"
+      //).bind( m_user.id() );
+    }//if( num_dangling )
+    transaction.commit();
+  }// End check if we are leaving any orphaned spectra that were part of a user state
+#endif //#if( PERFORM_DEVELOPER_CHECKS )
+  
+  if( parent )
+  {
+    WString msg = WString::tr("db-new-tag");
+    passMessage( msg.arg(name).arg(parent.get()->name), WarningWidget::WarningMsgInfo );
+  }else
+  {
+    WString msg = WString::tr("db-new-snapshot");
+    passMessage( msg.arg(name), WarningWidget::WarningMsgSave );
+  }
+  
+  const long long int db_index = parent ? parent.id() : answer.id();
   if( m_dataMeasurement )
     m_dataMeasurement->setDbStateId( db_index, m_displayedSamples );
   updateSaveWorkspaceMenu();
-  
+}//void finishStoreStateInDb()
+
+
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
-  if( forTesting )
+void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString descr  )
+{
+  try
   {
-    string filepath = SpecUtils::append_path(TEST_SUITE_BASE_DIR, "analysis_tests");
+    if( !m_dataMeasurement )
+      throw runtime_error( "No valid foreground file" );
     
+    // Open the output stream
+    string filepath = SpecUtils::append_path(TEST_SUITE_BASE_DIR, "analysis_tests");
+      
     if( !SpecUtils::is_directory( filepath ) )
       throw runtime_error( "CWD didnt contain a 'analysis_tests' folder as expected" );
-    
+      
     const int offset = wApp->environment().timeZoneOffset();
     auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
     localtime += std::chrono::seconds(60*offset);
     
     string timestr = SpecUtils::to_iso_string( localtime );
     string::size_type period_pos = timestr.find_last_of( '.' );
-    timestr.substr( 0, period_pos );
+    timestr = timestr.substr( 0, period_pos );
     
-    filepath = SpecUtils::append_path( filepath, (name.toUTF8() + "_" + timestr + ".n42") );
+    string filename = name.toUTF8() + "_" + timestr + ".n42";
+    SpecUtils::erase_any_character( filename, "\\/:?\"<>|" );
     
-#ifdef _WIN32
+    if( name.empty() )
+      throw runtime_error( "Name must NOT be empty." );
+    
+    filename += "_" + timestr + ".n42";
+    
+    filepath = SpecUtils::append_path( filepath, filename );
+      
+  #ifdef _WIN32
     const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
     ofstream output( wfilepath.c_str(), ios::binary|ios::out );
-#else
+  #else
     ofstream output( filepath.c_str(), ios::binary|ios::out );
-#endif
+  #endif
     if( !output.is_open() )
-      throw runtime_error( "Couldnt open test file ouput '"
-                           + filepath + "'" );
+      throw runtime_error( "Couldnt open test file output '" + filepath + "'" );
     
-    storeTestStateToN42( output, name.toUTF8(), desc.toUTF8() );
-  }//if( forTesting )
-#endif
-  if (window)
-      delete window;
-}//void finishStoreStateInDb()
-
-
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-void InterSpec::storeTestStateToN42( std::ostream &output,
-                                          const std::string &name,
-                                          const std::string &descr )
-{
-  try
-  {
-    if( !m_dataMeasurement )
-      throw runtime_error( "No valid foreground file" );
+    saveShieldingSourceModelToForegroundSpecMeas();
+  #if( USE_REL_ACT_TOOL )
+    saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+  #endif
     
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
@@ -5146,7 +5469,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     InterSpecNode->append_attribute( attr );
     
     //Add user options into the XML
-    m_user->userOptionsToXml( InterSpecNode, this );
+    preferences()->userOptionsToXml( InterSpecNode, this );
     
     if( newbacksamples.size() )
     {
@@ -5161,36 +5484,22 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
       InterSpecNode->append_node( backgroundsamples_node );
     }//if( newbacksamples.size() )
     
-    if( m_shieldingSourceFit
-        && m_shieldingSourceFit->userChangedDuringCurrentForeground() )
-    {
-      m_shieldingSourceFit->serialize( InterSpecNode );
-      cerr << "\n\nThe shielding/source fit model WAS changed for current foreground" << endl;
-    }else
-    {
-      cerr << "\n\nThe shielding/source fit model was NOT changed for current foreground" << endl;
-    }
-    
-    const int offset = wApp->environment().timeZoneOffset();
-    auto localtime = chrono::time_point_cast<chrono::microseconds>(chrono::system_clock::now());
-    localtime += std::chrono::seconds(60*offset);
-    
-    const string timestr = SpecUtils::to_iso_string( localtime );
-    
     const char *val = n42doc->allocate_string( timestr.c_str(), timestr.size()+1 );
     xml_node<char> *node = n42doc->allocate_node( node_element, "TestSaveDateTime", val );
     InterSpecNode->append_node( node );
     
-    if( name.size() )
+    if( !name.empty() )
     {
-      val = n42doc->allocate_string( name.c_str(), name.size()+1 );
+      const string txt = name.toUTF8();
+      val = n42doc->allocate_string( txt.c_str(), txt.size()+1 );
       node = n42doc->allocate_node( node_element, "TestName", val );
       InterSpecNode->append_node( node );
     }//if( name.size() )
     
-    if( descr.size() )
+    if( !descr.empty() )
     {
-      val = n42doc->allocate_string( descr.c_str(), descr.size()+1 );
+      const string txt = descr.toUTF8();
+      val = n42doc->allocate_string( txt.c_str(), txt.size()+1 );
       node = n42doc->allocate_node( node_element, "TestDescription", val );
       InterSpecNode->append_node( node );
     }//if( name.size() )
@@ -5199,7 +5508,7 @@ void InterSpec::storeTestStateToN42( std::ostream &output,
     rapidxml::print( std::back_inserter(xml_data), *n42doc, 0 );
     
     if( !output.write( xml_data.c_str(), xml_data.size() ) )
-      throw runtime_error( "" );
+      throw runtime_error( "writing to file failed." );
   }catch( std::exception &e )
   {
     string msg = "Failed to save test state to N42 file: ";
@@ -5271,7 +5580,7 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     
     const xml_node<char> *preferences = InterSpecNode->first_node( "preferences" );
     if( preferences )
-      InterSpecUser::restoreUserPrefsFromXml( m_user, preferences, this );
+      UserPreferences::restoreUserPrefsFromXml( preferences, this );
     else
       cerr << "Warning, couldnt find preferences in the XML"
               " when restoring state from XML" << endl;
@@ -5375,7 +5684,9 @@ void InterSpec::startN42TestStates()
     return;
   }//if( files.empty() )
   
-  AuxWindow *window = new AuxWindow( "Test State N42 Files" );
+  AuxWindow *window = new AuxWindow( "Test State N42 Files", 
+                                    (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                      | AuxWindowProperties::DisableCollapse) );
   window->resizeWindow( 450, 400 );
   
   WGridLayout *layout = window->stretcher();
@@ -5411,71 +5722,110 @@ void InterSpec::startN42TestStates()
 
 
 
-void InterSpec::startStoreTestStateInDb()
+void InterSpec::startStoreTestState()
 {
-  const long long int db_index = m_dataMeasurement ? m_dataMeasurement->dbStateId(m_displayedSamples)
-                                                   : static_cast<long long int>(-1);
+  AuxWindow *window = new AuxWindow( "Store app test state to N42",
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                     | AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::DisableCollapse) );
+  window->rejectWhenEscapePressed();
+  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  window->setClosable( false );
+  WGridLayout *layout = window->stretcher();
+  WLineEdit *edit = new WLineEdit();
+  edit->setEmptyText( WString::tr("db-name-empty-txt") );
   
-  if( db_index >= 0 )
-  {
-    AuxWindow *window = new AuxWindow( "Warning",
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
-                                       | AuxWindowProperties::DisableCollapse) );
-    WText *t = new WText( "Overwrite current test state?", window->contents() );
-    t->setInline( false );
-    
-    window->setClosable( false );
-
-    WPushButton *button = new WPushButton( "Overwrite", window->footer() );
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, false, true, false ) );
-    
-    button = new WPushButton( "Create New", window->footer() );
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    button->clicked().connect( boost::bind( &InterSpec::startStoreStateInDb, this, true, true, false, false ) );
-    
-    button = new WPushButton( "Cancel", window->footer() );
-    button->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-    window->centerWindow();
-    window->show();
-    
-    window->rejectWhenEscapePressed();
-    window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  }else
-  {
-    startStoreStateInDb( true, true, true, false );
-  }//if( db_index >= 0 ) / else
-}//void startStoreTestStateInDb()
+  edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  edit->setAttributeValue( "autocorrect", "off" );
+  edit->setAttributeValue( "spellcheck", "off" );
+#endif
+  
+  WText *label = new WText( WString::tr("Name") );
+  layout->addWidget( label, 0, 0 );
+  layout->addWidget( edit,  0, 1 );
+  
+  if( !!m_dataMeasurement && m_dataMeasurement->filename().size() )
+    edit->setText( m_dataMeasurement->filename() );
+  
+  WTextArea *summary = new WTextArea();
+  label = new WText( WString::tr("Desc.") );
+  summary->setEmptyText( WString::tr("db-dec-empty-txt") );
+  layout->addWidget( label, 1, 0 );
+  layout->addWidget( summary, 1, 1 );
+  layout->setColumnStretch( 1, 1 );
+  layout->setRowStretch( 1, 1 );
+  
+  
+  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
+  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+  
+  WPushButton *save = new WPushButton( WString::tr("Create"), window->footer() );
+  save->setIcon( "InterSpec_resources/images/disk2.png" );
+  
+  save->clicked().connect( std::bind( [this, edit, summary, window](){
+    const WString name = edit ? edit->text() : WString();
+    const WString sumtxt = summary ? summary->text() : WString();
+    storeTestStateToN42( name, sumtxt );
+    window->hide();
+  } ) );
+  
+  window->setMinimumSize(WLength(450), WLength(250));
+  
+  window->centerWindow();
+  window->show();
+}//void startStoreTestState()
 #endif //#if( INCLUDE_ANALYSIS_TEST_SUITE )
 
 
-//Save the snapshot and ALSO the spectra.
 void InterSpec::stateSave()
 {
+  Dbo::ptr<UserState> state;
   const long long int current_state_index = currentAppStateDbId();
   if( current_state_index >= 0 )
   {
-    //TODO: Should check if can save?
-    saveShieldingSourceModelToForegroundSpecMeas();
-#if( USE_REL_ACT_TOOL )
-    saveRelActManualStateToForegroundSpecMeas();
-    saveRelActAutoStateToForegroundSpecMeas();
-#endif
-    startStoreStateInDb( false, false, false, false ); //save snapshot
-  }else
+    try
+    {
+      DataBaseUtils::DbTransaction transaction( *m_sql );
+      state = m_sql->session()->find<UserState>( "where id = ?" )
+        .bind( current_state_index );
+      
+      // find ultimate parent state
+      while( state && state->snapshotTagParent )
+        state = state->snapshotTagParent;
+  
+      if( state && (state->stateType != UserState::kUserSaved) )
+        state.modify()->stateType = UserState::kUserSaved;
+      
+      transaction.commit();
+    }catch( std::exception &e )
+    {
+      assert( 0 );
+    }//try / catch
+  }//if( current_state_index >= 0 )
+    
+  
+  if( state )
   {
-    //No currentStateID, so just save as new snapshot
+    try
+    {
+      saveStateToDb( state );
+    }catch( FileToLargeForDbException &e )
+    {
+      passMessage( e.message(), WarningWidget::WarningMsgHigh );
+    }catch( std::exception &e )
+    {
+      passMessage( e.what(), WarningWidget::WarningMsgHigh );
+    }
+  }else //No currentStateID, so just save as new state
+  {
     stateSaveAs();
-  }//if( current_state_index >= 0 ) / else
-} //void stateSave()
+  }
+}//void stateSave()
 
 
-//Copied from startStoreStateInDb()
-//This is the new combined Save As method (snapshot/spectra)
 void InterSpec::stateSaveAs()
 {
-  const bool forTesting = false;
-    
   AuxWindow *window = new AuxWindow( WString::tr("window-title-store-state-as"),
     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
       | AuxWindowProperties::TabletNotFullScreen
@@ -5523,8 +5873,8 @@ void InterSpec::stateSaveAs()
   WPushButton *save = new WPushButton( WString::tr("Save") , window->footer() );
   save->setIcon( "InterSpec_resources/images/disk2.png" );
   
-  save->clicked().connect( boost::bind( &InterSpec::stateSaveAsAction,
-                                        this, edit, summary, window, forTesting ) );
+  save->clicked().connect( boost::bind( &InterSpec::stateSaveAsFinish,
+                                        this, edit, summary, window ) );
     
   window->setMinimumSize(WLength(450), WLength(250));
     
@@ -5574,7 +5924,7 @@ void InterSpec::stateSaveTag()
   WPushButton *save = new WPushButton( WString::tr("db-Tag"), window->footer() );
   //save->setIcon( "InterSpec_resources/images/disk2.png" );
     
-  save->clicked().connect( boost::bind( &InterSpec::stateSaveTagAction,
+  save->clicked().connect( boost::bind( &InterSpec::stateSaveTagFinish,
                                          this, edit, window ) );
     
   window->setMinimumSize(WLength(450), WLength::Auto);
@@ -5590,7 +5940,7 @@ void InterSpec::stateSaveTag()
 }//void stateSaveTag()
 
 
-void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
+void InterSpec::stateSaveTagFinish( WLineEdit *nameedit, AuxWindow *window )
 {
   Dbo::ptr<UserState> state;
     
@@ -5606,7 +5956,7 @@ void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
       transaction.commit();
     }catch( std::exception &e )
     {
-        cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
+      Wt::log("error") << "startStoreStateInDb() caught: " << e.what();
     }//try / catch
   }//if( current_state_index >= 0 )
     
@@ -5614,7 +5964,8 @@ void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
   assert( state ); // Should always be able to get the state
   if( state )
   {
-    finishStoreStateInDb( nameedit, 0, 0, false, state );
+    WString name = nameedit ? nameedit->text() : WString();
+    finishStoreStateInDb( name, "", state );
   }else
   {
     // Shouldnt ever get here
@@ -5624,178 +5975,277 @@ void InterSpec::stateSaveTagAction( WLineEdit *nameedit, AuxWindow *window )
       
   //close window
   AuxWindow::deleteAuxWindow( window );
-}//stateSaveTagAction()
+}//stateSaveTagFinish()
 
 
-//Action to Save As Snapshot
-void InterSpec::stateSaveAsAction( WLineEdit *nameedit,
+void InterSpec::stateSaveAsFinish( WLineEdit *nameedit,
                                       WTextArea *descriptionarea,
-                                      AuxWindow *window,
-                                      const bool forTesting )
+                                      AuxWindow *window )
 {
-  //Need to remove the current foregorund/background/second from the file
-  //  manager, and then re-add back in the SpecMeas so they will be saved to
-  //  new database entries.  Otherwise saving the current state as, will create
-  //  a new UserState that points to the current database entries for the
-  //  SpecMeas
+  // If the files in the DB are currently part of a saved-state, we need to duplicate
+  //  them, otherwise `finishStoreStateInDb` will just assume they are part of the measurement
+  //  and overwrite them - so in this case we'll just disconnect
+  //  Note that in this case `finishStoreStateInDb(...)` --> `saveStateToDb(...)` will
+  //  create a new entry in the database.
+  SpectraFileModel *filemodel = m_fileManager->model();
   for( int i = 0; i < 3; i++ )
   {
-    std::shared_ptr<SpecMeas> m = measurment( SpecUtils::SpectrumType(i) );
-    if( m )
-    {
-      m_fileManager->removeSpecMeas( m, false );
-      m_fileManager->addFile( m->filename(), m );
-      m->setModified();
-    }
+    const SpecUtils::SpectrumType type = SpecUtils::SpectrumType(i);
+    auto m = measurment( type );
+    if( !m )
+      continue;
+    
+    shared_ptr<SpectraFileHeader> hdr = filemodel->fileHeader( m );
+    assert( hdr );
+    if( !hdr )
+      continue;
+    
+    Wt::Dbo::ptr<UserFileInDb> dbmeas = hdr->dbEntry();
+    
+    if( dbmeas && (dbmeas->isPartOfSaveState || dbmeas->snapshotParent) )
+      hdr->clearDbEntry();
   }//for( int i = 0; i < 3; i++ )
   
-  //Save Snapshot/enviornment
-  finishStoreStateInDb( nameedit, descriptionarea, NULL, forTesting, Dbo::ptr<UserState>() );
+  //Save Snapshot
+  const WString name = nameedit->text();
+  const WString description = descriptionarea ? descriptionarea->text() : WString();
+  
+  finishStoreStateInDb( name, description, Dbo::ptr<UserState>() );
     
   //close window
   AuxWindow::deleteAuxWindow(window);
-}//stateSaveAsAction()
+}//stateSaveAsFinish()
 
 
-
-//Note: Used indirectly by new combined snapshot method stateSave()
-void InterSpec::startStoreStateInDb( const bool forTesting,
-                                          const bool asNewState,
-                                          const bool allowOverWrite,
-                                          const bool endOfSessionNoDelete )
+void InterSpec::saveStateAtForegroundChange( const bool doAsync )
 {
-  Dbo::ptr<UserState> state;
-  
-  const long long int current_state_index = currentAppStateDbId();
-  
-  if( current_state_index >= 0 && !asNewState )
+  const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+  if( !saveState || !m_dataMeasurement )
   {
-      //If saving a tag, make sure to save to the parent.  We never overwrite TAGS
-      try
+    saveShieldingSourceModelToForegroundSpecMeas();
+  #if( USE_REL_ACT_TOOL )
+    saveRelActManualStateToForegroundSpecMeas();
+    saveRelActAutoStateToForegroundSpecMeas();
+  #endif
+    
+    return;
+  }//if( !saveState || !m_dataMeasurement )
+  
+  Wt::log( "info" ) << "Auto-saving state for foreground change for file: '" << m_dataMeasurement->filename() << "'.";
+
+  // TODO: possibly check file size, and if we dont have a hope of saving to DB, i.e.,
+  //        if( m_dataMeasurement->memmorysize() > UserFileInDb::sm_maxFileSizeBytes )
+  //          return;
+  
+  const int offset = wApp->environment().timeZoneOffset();
+  WString desc = "Working Point";
+  const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
+  WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
+  
+  DataBaseUtils::DbTransaction transaction( *m_sql );
+  
+  try
+  {
+    const long long int current_state_index = currentAppStateDbId();
+    Wt::Dbo::ptr<UserState> parentState;
+    if( current_state_index >= 0 )
+    {
+      parentState = m_sql->session()->find<UserState>( "where id = ?" )
+            .bind( current_state_index );
+    }
+    
+    // If we are connected to a state in the database, we'll save a `kUserStateAutoSavedWork` state,
+    //  otherwise, we'll save just the files to the database
+    if( parentState )
+    {
+      // Remove previous `kUserStateAutoSavedWork` states for this user-saved state - we will make a new one
+      Dbo::collection<Dbo::ptr<UserState>> prevEosStates
+        = parentState->snapshotTags.find()
+        .where( "StateType = ?" )
+        .bind( int(UserState::UserStateType::kUserStateAutoSavedWork) );
+      
+      for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
+        UserState::removeFromDatabase( *iter, *m_sql );
+      
+      // We will only save a state if the foreground file has been modified
+      if( m_dataMeasurement && m_dataMeasurement->modified() )
       {
-          DataBaseUtils::DbTransaction transaction( *m_sql );
-          Dbo::ptr<UserState> childState  = m_sql->session()->find<UserState>( "where id = ? AND SnapshotTagParent_id >= 0" )
-          .bind( current_state_index );
+        UserState *state = new UserState();
+        state->user = m_user;
+        state->stateType = UserState::kUserStateAutoSavedWork;
+        state->creationTime = WDateTime::currentDateTime();
+        state->name = name;
+        state->description = desc;
+        state->snapshotTagParent = parentState;
+        
+        Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( state );
+        
+        saveStateToDb( dbstate );
+        
+        Wt::log("debug") << "saveStateAtForegroundChange(): Saved kUserStateAutoSavedWork"
+        " state to database";
+      }else
+      {
+        Wt::log("debug") << "saveStateAtForegroundChange(): not saving kUserStateAutoSavedWork"
+        " state to database, since there are no changes since last user save.";
+      }//if( we have done work we might want to save )
+    }else
+    {
+      saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+      saveRelActManualStateToForegroundSpecMeas();
+      saveRelActAutoStateToForegroundSpecMeas();
+#endif
+      
+      // Get foreground/background/secondary files, and update them to the database..
+      SpectraFileModel *filemodel = m_fileManager->model();
+      shared_ptr<SpectraFileHeader> forehdr, backhdr, secohdr;
+      
+      forehdr = filemodel->fileHeader( m_dataMeasurement );
+      if( m_backgroundMeasurement != m_dataMeasurement )
+        backhdr = filemodel->fileHeader( m_backgroundMeasurement );
+      if( (m_secondDataMeasurement != m_backgroundMeasurement)
+         && (m_secondDataMeasurement != m_dataMeasurement) )
+        secohdr = filemodel->fileHeader( m_secondDataMeasurement );
+      
+      auto save_to_db = [doAsync]( std::weak_ptr<SpectraFileHeader> wk_ptr, std::shared_ptr<SpecMeas> meas ){
+        auto call_save = [wk_ptr, meas](){
+          shared_ptr<SpectraFileHeader> hdr = wk_ptr.lock();
           
-          if (childState)
+          if( !hdr )
           {
-              state = m_sql->session()->find<UserState>( "where id = ?" )
-              .bind( childState.get()->snapshotTagParent.id() );
+            cerr << "SpectraFileHeader no longer in memory - not writing to DB." << endl;
+            return;
           }
           
-          transaction.commit();
-      }catch( std::exception &e )
-      {
-          cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
-      }//try / catch
+          try
+          {
+            hdr->saveToDatabase( meas );
+          }catch( FileToLargeForDbException &e )
+          {
+            // Expected problem - dont give an error message
+          }catch( std::exception &e )
+          {
+            Wt::log("error") << "InterSpec::saveStateAtForegroundChange() async error: " << e.what();
+          }
+        };//call_save lambda
+        
+        assert( wk_ptr.lock() );
+        if( doAsync )
+        {
+          WServer::instance()->schedule( 25, wApp->sessionId(), call_save, [](){
+            cerr << "Failed to save spectrum to DB in worker (session dead?)." << endl;
+            assert( 0 );
+          } );
+        }else
+        {
+          call_save();
+        }
+      };//save_to_db lambda
+      
+      // If we load a spectrum file, and get the dialog that lets us pick back up from a
+      //  previous working of the file, and we do, `forehdr` may be nullptr, because
+      //  #SpectraFileHeader::setDbEntry has not been called for the original file yet
+      if( forehdr )
+        save_to_db( forehdr, m_dataMeasurement );
+      
+      if( backhdr )
+        save_to_db( backhdr, m_backgroundMeasurement );
+      
+      if( secohdr )
+        save_to_db( secohdr, m_secondDataMeasurement );
+      
+      Wt::log("debug") << "saveStateAtForegroundChange(): Instead kUserStateAutoSavedWork state,"
+      " saved spectrum files to database since not in a user save-state.";
+    }//if( current_state_index >= 0 ) / else
+    
+    transaction.commit();
+  }catch( FileToLargeForDbException &e )
+  {
+    // Expected problem - dont give an error message - but I dont think we ever end up here
+    Wt::log("info") << "InterSpec::saveStateAtForegroundChange() Not saving state: " << e.what();
+    transaction.rollback();
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpec::saveStateAtForegroundChange() error: " << e.what();
+    transaction.rollback();
+  }
+}//void saveStateAtForegroundChange()
 
-    if (!state)
-    {
-        try
-        {
-            DataBaseUtils::DbTransaction transaction( *m_sql );
-            state = m_sql->session()->find<UserState>( "where id = ?" )
-                           .bind( current_state_index );
-            transaction.commit();
-        }catch( std::exception &e )
-        {
-            cerr << "\nstartStoreStateInDb() caught: " << e.what() << endl;
-        }//try / catch
-    } //!state
-  }//if( current_state_index >= 0 )
+
+void InterSpec::saveStateForEndOfSession()
+{
+  const bool saveState = UserPreferences::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+  Wt::log( "info" ) << "Will auto-save state for session-id: '" << wApp->sessionId() << "' at end of session.";
+
+  const int offset = wApp->environment().timeZoneOffset();
+  WString desc = "End of Session";
+  const auto now = chrono::system_clock::now() + chrono::seconds( 60*offset );
+  WString name = SpecUtils::to_common_string( chrono::time_point_cast<chrono::microseconds>(now), true ); //"9-Sep-2014 15:02:15"
   
-  if( state )
-  { //Save without dialog
-      
-    const bool writeProtected = state->isWriteProtected();
+  
+  // Remove existing end-of-session state
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    Dbo::collection<Dbo::ptr<UserState>> prevEosStates = m_sql->session()->find<UserState>()
+      .where( "InterSpecUser_id = ? AND StateType = ?" )
+      .bind( m_user.id() )
+      .bind( int(UserState::kEndOfSessionTemp) );
     
-    if( allowOverWrite && writeProtected )
-    {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      UserState::removeWriteProtection( state, m_sql->session() );
-      transaction.commit();
-    }//if( allowOverWrite && writeProtected )
-    
-      if (endOfSessionNoDelete)
-      {
-          DataBaseUtils::DbTransaction transaction( *m_sql );
-          state.modify()->stateType = UserState::kEndOfSessionHEAD;
-          transaction.commit();
-      }
-      
     try
     {
-      saveStateToDb( state );
+      for( auto iter = prevEosStates.begin(); iter != prevEosStates.end(); ++iter )
+        UserState::removeFromDatabase( *iter, *m_sql );
     }catch( std::exception &e )
     {
-      passMessage( e.what(), WarningWidget::WarningMsgHigh );
-    }//try / catch
+      Wt::log("error") << "InterSpec::saveStateForEndOfSession() error removing last state: " << e.what();
+    }
     
-    if( writeProtected )
-    {
-      DataBaseUtils::DbTransaction transaction( *m_sql );
-      UserState::makeWriteProtected( state, m_sql->session() );
-      transaction.commit();
-    }//if( writeProtected )
-    
-    passMessage( WString::tr("db-saved-state-msg").arg(state->name), WarningWidget::WarningMsgSave );
+    transaction.commit();
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error getting last state: " << e.what();
     return;
-  }//if( state )
+  }
   
-  AuxWindow *window = new AuxWindow( WString::tr("window-title-create-snapshot"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                                      | AuxWindowProperties::TabletNotFullScreen
-                                      | AuxWindowProperties::DisableCollapse) );
-  window->rejectWhenEscapePressed();
-  window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-  window->setClosable( false );
-  WGridLayout *layout = window->stretcher();
-  WLineEdit *edit = new WLineEdit();
-  edit->setEmptyText( WString::tr("db-name-empty-txt") );
+  // I we dont want to save states, or there is no foreground - nothing more to do here
+  if( !saveState || !m_dataMeasurement )
+    return;
   
-  edit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-  edit->setAttributeValue( "autocorrect", "off" );
-  edit->setAttributeValue( "spellcheck", "off" );
-#endif
-  
-  WText *label = new WText( WString::tr("Name") );
-  layout->addWidget( label, 0, 0 );
-  layout->addWidget( edit,  0, 1 );
-  
-  if( !!m_dataMeasurement && m_dataMeasurement->filename().size() )
-    edit->setText( m_dataMeasurement->filename() );
-  
-  WTextArea *summary = new WTextArea();
-  label = new WText( WString::tr("Desc.") );
-  summary->setEmptyText( WString::tr("db-dec-empty-txt") );
-  layout->addWidget( label, 1, 0 );
-  layout->addWidget( summary, 1, 1 );
-  layout->setColumnStretch( 1, 1 );
-  layout->setRowStretch( 1, 1 );
-  
-  
-  WPushButton *closeButton = window->addCloseButtonToFooter( WString::tr("Cancel"), false);
-  closeButton->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
-
-  WPushButton *save = new WPushButton( WString::tr("Create"), window->footer() );
-  save->setIcon( "InterSpec_resources/images/disk2.png" );
-  
-  save->clicked().connect( boost::bind( &InterSpec::finishStoreStateInDb,
-                                       this, edit, summary, window, forTesting, Wt::Dbo::ptr<UserState>() ) );
-
-  window->setMinimumSize(WLength(450), WLength(250));
-  
-  window->centerWindow();
-  window->show();
-}//void InterSpec::startStoreStateInDb()
-
-
-//Deprecated - no longer used
-void InterSpec::browseDatabaseStates( bool allowTests )
-{
-  new DbStateBrowser( this, allowTests );
-}//void InterSpec::browseDatabaseStates()
+  try
+  {
+    DataBaseUtils::DbTransaction transaction( *m_sql );
+    
+    // Check if we are connected with a database state
+    const long long int current_state_index = currentAppStateDbId();
+    Wt::Dbo::ptr<UserState> parentState;
+    if( current_state_index >= 0 )
+    {
+      parentState = m_sql->session()->find<UserState>( "where id = ?" )
+            .bind( current_state_index );
+    }
+    
+    UserState *state = new UserState();
+    state->user = m_user;
+    state->stateType = UserState::kEndOfSessionTemp;
+    state->creationTime = WDateTime::currentDateTime();
+    state->name = name;
+    state->description = desc;
+    state->snapshotTagParent = parentState;
+    
+    Wt::Dbo::ptr<UserState> dbstate = m_sql->session()->add( state );
+    
+    saveStateToDb( dbstate );
+    
+    transaction.commit();
+    
+    Wt::log("debug") << "Saved end of session app state to database";
+  }catch( std::exception &e )
+  {
+    Wt::log("error") << "InterSpec::saveStateForEndOfSession() error: " << e.what();
+  }
+}//void saveStateForEndOfSession()
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 
@@ -5815,7 +6265,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     return;
 
   const bool mobile = isMobile();
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
   WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
@@ -5890,6 +6340,16 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     m_createTag->triggered().connect( boost::bind(&InterSpec::stateSaveTag, this ));
     
     HelpSystem::attachToolTipOn(m_createTag, WString::tr("app-mi-tt-file-tag"), showToolTips );
+    
+#if( PERFORM_DEVELOPER_CHECKS || !defined(NDEBUG) )
+    // During development the app often gets killed by the IDE, before the state can
+    //  be updated - lets add in a way to trigger updating the on-load app state
+    item = m_fileMenuPopup->addMenuItem( "Store EoS" );
+    HelpSystem::attachToolTipOn(item,
+      "For development purposes - Stores current state as your end of session state, "
+      "for loading on next launch.", showToolTips );
+    item->triggered().connect( this, &InterSpec::saveStateForEndOfSession );
+#endif
     
     m_fileMenuPopup->addSeparator();
     
@@ -5980,12 +6440,8 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   m_fileMenuPopup->addSeparator();
   PopupDivMenu* testing = m_fileMenuPopup->addPopupMenuItem( "Testing" , "InterSpec_resources/images/testing.png");
   item = testing->addMenuItem( "Store App Test State..." );
-  item->triggered().connect( boost::bind( &InterSpec::startStoreTestStateInDb, this ) );
+  item->triggered().connect( boost::bind( &InterSpec::startStoreTestState, this ) );
   HelpSystem::attachToolTipOn(item,"Stores app state as part of the automated test suite", showToolTips );
-  
-  item = testing->addMenuItem( "Restore App Test State..." );
-  item->triggered().connect( boost::bind(&InterSpec::browseDatabaseStates, this, true) );
-  HelpSystem::attachToolTipOn(item, "Restores InterSpec to a previously stored state.", showToolTips );
   
   item = testing->addMenuItem( "Load N42 Test State..." );
   item->triggered().connect( boost::bind(&InterSpec::startN42TestStates, this) );
@@ -6125,6 +6581,15 @@ bool InterSpec::toolTabsVisible() const
   return m_toolsTabs;
 }
 
+
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+void InterSpec::toolTabContentHeightChanged( int height )
+{
+  m_toolsTabsContentHeight = height;
+}
+#endif
+
+
 void InterSpec::addToolsTabToMenuItems()
 {
   if( !m_toolsMenuPopup )
@@ -6137,7 +6602,7 @@ void InterSpec::addToolsTabToMenuItems()
   
   try
   {
-    showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+    showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   }catch(...)
   {
   }
@@ -6249,7 +6714,19 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   m_toolsResizer->setHidden( !showToolTabs );
 #else
   
+  string refNucXmlState;
+  if( m_referencePhotopeakLines
+      && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
+           || m_referencePhotopeakLines->persistedNuclides().size()) )
+  {
+    m_referencePhotopeakLines->serialize( refNucXmlState );
+  }
+  
   const int layoutVertSpacing = isMobile() ? 10 : 5;
+
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    const bool phone = isPhone();
+#endif
   
   if( showToolTabs )
   { //We are showing the tool tabs
@@ -6268,21 +6745,8 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_layout->setHorizontalSpacing( 0 );
     setLayout( m_layout );
     
-    if( m_peakInfoWindow )
-    {
-      m_peakInfoWindow->contents()->removeWidget( m_peakInfoDisplay );
-      delete m_peakInfoWindow;
-      m_peakInfoWindow = NULL;
-    }//if( m_peakInfoWindow )
-    
-    string refNucXmlState;
-    if( m_referencePhotopeakLines
-        && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
-             || m_referencePhotopeakLines->persistedNuclides().size()) )
-    {
-      m_referencePhotopeakLines->serialize( refNucXmlState );
-    }
-    
+    const bool wasShowingPeakManager = !!m_peakInfoWindow;
+    handlePeakInfoClose();
     closeGammaLinesWindow();
     
     if( m_energyCalWindow )
@@ -6295,16 +6759,31 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs = new WTabWidget();
     m_toolsTabs->addStyleClass( "ToolsTabs" );
     
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    const CompactFileManager::DisplayMode cfmDispMode = phone ? CompactFileManager::Tabbed : CompactFileManager::LeftToRight;
+    CompactFileManager *compact = new CompactFileManager( m_fileManager, this, cfmDispMode );
+    WString tabTitle = phone ? WString() : WString::tr(FileTabTitleKey);
+    WMenuItem *fileTab = m_toolsTabs->addTab( compact, tabTitle, TabLoadPolicy );
+    if( phone )
+      fileTab->setIcon( "InterSpec_resources/images/spec_files.svg" );
+#else
     CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
     m_toolsTabs->addTab( compact, WString::tr(FileTabTitleKey), TabLoadPolicy );
+#endif
     
     m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
                                                    boost::placeholders::_1,
                                                    boost::placeholders::_2,
                                                    boost::placeholders::_3 ) );
-    
-    //WMenuItem * peakManTab =
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    m_peakInfoDisplay->setNarrowPhoneLayout( phone );
+    tabTitle = phone ? WString() : WString::tr(PeakInfoTabTitleKey);
+    WMenuItem *peakManTab = m_toolsTabs->addTab( m_peakInfoDisplay, tabTitle, TabLoadPolicy );
+    if( phone )
+      peakManTab->setIcon( "InterSpec_resources/images/peakmanager.svg" ); //
+#else
     m_toolsTabs->addTab( m_peakInfoDisplay, WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
+#endif
 //    WString tooltip = WString::tr("app-tab-tt-peak-manager");
 //    HelpSystem::attachToolTipOn( peakManTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
@@ -6330,16 +6809,35 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     //XXX In Wt 3.3.4 at least, the contents of m_referencePhotopeakLines
     //  are not actually loaded to the client until the tab is clicked, and I
     //  cant seem to get this to actually happen.
-//  WMenuItem *refPhotoTab =
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    m_referencePhotopeakLines->setNarrowPhoneLayout( phone );
+    tabTitle = phone ? WString(): WString::tr(GammaLinesTabTitleKey);
+    WMenuItem *refPhotoTab = m_toolsTabs->addTab( m_referencePhotopeakLines, tabTitle, TabLoadPolicy );
+    if( phone )
+      refPhotoTab->setIcon( "InterSpec_resources/images/reflines.svg" );
+#else
     m_toolsTabs->addTab( m_referencePhotopeakLines, WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
+#endif
 //   WString tooltip = WString::tr("app-tab-tt-ref-photopeak");
 //      HelpSystem::attachToolTipOn( refPhotoTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
       
     m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
     
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( phone )
+      m_energyCalTool->setTallLayout();
+    else
+      m_energyCalTool->setWideLayout();
+      
+    tabTitle = phone ? WString() : WString::tr(CalibrationTabTitleKey);
+    WMenuItem *energyCalTab = m_toolsTabs->addTab( m_energyCalTool, tabTitle, TabLoadPolicy );
+    if( phone )
+      energyCalTab->setIcon( "InterSpec_resources/images/calibrate.svg" );
+#else
     m_energyCalTool->setWideLayout();
-//  WMenuItem *energyCalTab =
     m_toolsTabs->addTab( m_energyCalTool, WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
+#endif
+    
 //  WString tooltip = WString::tr("app-tab-tt-energy-cal");
 //  HelpSystem::attachToolTipOn( energyCalTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
@@ -6361,13 +6859,42 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     if( m_menuDiv && !m_menuDiv->isHidden() )  //get rid of a small amount of space between the menu bar and the chart
       m_charts->setMargin( -layoutVertSpacing, Wt::Top );
     
+#if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
+    // With out this next line the time chart wont show if we hide tool tabs, and then show
+    //  them again.  I think it has something to do with the timechart div getting taken out
+    //  of the DOM, and references lost.  Maybe.
+    m_timeSeries->refreshJs();
+#endif
+    
     //Without using the wrapper below, the tabs widget will change height, even
     //  if it is explicitly set, when different tabs are clicked (unless a
     //  manual resize is performed by the user first)
     //m_layout->addLayout( toolsLayout,   ++row, 0 );
-    WContainerWidget *toolsWrapper = new WContainerWidget();
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    WContainerWidget *toolsWrapper = new ToolTabContentWrapper( this );
     toolsWrapper->setLayout( m_toolsLayout );
+    if( (m_toolsTabsContentHeight <= 100)  //No height set yet (e.g., app is just loading), or user made way to small
+       || (m_renderedHeight < 100)         //App is loading
+       || ((m_renderedHeight > 0) && (m_toolsTabsContentHeight > (m_renderedHeight/2))) ) //No more than half the screen
+    {
+      if( phone )
+      {
+        m_toolsTabsContentHeight = 280;
+        if( m_renderedHeight > 100 )
+          m_toolsTabsContentHeight = std::max( 245, std::min( m_toolsTabsContentHeight, m_renderedHeight/2 ) );
+        else
+          m_toolsTabsContentHeight = std::max( 245, std::min( m_toolsTabsContentHeight, wApp->environment().screenHeight()/2 ) );
+      }else
+      {
+        m_toolsTabsContentHeight = 245;
+      }
+    }
+    toolsWrapper->setHeight( m_toolsTabsContentHeight );
+#else
+    WContainerWidget *toolsWrapper = new WContainerWidget();
     toolsWrapper->setHeight( 245 );
+#endif
+    
     m_layout->addWidget( toolsWrapper, ++row, 0 );
     m_layout->setRowStretch( row, 0 );
     
@@ -6391,8 +6918,15 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     isoSearchLayout->setRowStretch( 0, 1 );
     isoSearchLayout->setColumnStretch( 0, 1 );
     
-//  WMenuItem *nuclideTab =
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    m_nuclideSearch->setNarrowPhoneLayout( phone );
+    tabTitle = phone ? WString() : WString::tr(NuclideSearchTabTitleKey);
+    WMenuItem *nuclideTab = m_toolsTabs->addTab( m_nuclideSearchContainer, tabTitle, TabLoadPolicy );
+    if( phone )
+      nuclideTab->setIcon( "InterSpec_resources/images/magnifier_black.svg" );
+#else
     m_toolsTabs->addTab( m_nuclideSearchContainer, WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
+#endif
 //  WString tooltip = WString::tr("app-tab-tt-nuc-search");
 //  HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
     
@@ -6402,8 +6936,29 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
 #endif
     
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    // If `m_currentToolsTab` is for `m_peakInfoDisplay`, and the floating peak info display
+    //  window was showing when the user toggled to show tool tabs, then we get an exception:
+    //    "Uncaught exception in event loop: 'WContainerWidget: error parsing: undefined'."
+    //  Just switching to a different tab seems to fix this.  I dont really know why it happens.
+    if( wasShowingPeakManager && (m_currentToolsTab == m_toolsTabs->indexOf(m_peakInfoDisplay)) )
+      m_currentToolsTab = m_toolsTabs->indexOf(m_referencePhotopeakLines);
+       
+    if( (m_currentToolsTab >= 0) && (m_currentToolsTab < m_toolsTabs->count()) )
+    {
+      m_toolsTabs->setCurrentIndex( m_currentToolsTab );
+    }else
+    {
+      //These next `setCurrentWidget(...)` lines will cause `handleToolTabChanged(...)` to be called
+      if( phone || wasShowingPeakManager )
+        m_toolsTabs->setCurrentWidget( m_referencePhotopeakLines );
+      else
+        m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+    }
+#else
     //Make sure the current tab is the peak info display
     m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
+#endif
     
     if( m_referencePhotopeakLines && refNucXmlState.size() )
       m_referencePhotopeakLines->deSerialize( refNucXmlState );
@@ -6444,13 +6999,29 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     delete m_nuclideSearchContainer;
     m_nuclideSearchContainer = nullptr;
     
-    if( m_referencePhotopeakLines )
-      m_referencePhotopeakLines->clearAllLines();
     
     m_toolsTabs = nullptr;
     
-    if( !m_referencePhotopeakLinesWindow )
+    if( m_referencePhotopeakLines )
+    {
+      m_referencePhotopeakLines->clearAllLines();
+      delete m_referencePhotopeakLines;
       m_referencePhotopeakLines = nullptr;
+    }
+    
+    if( m_referencePhotopeakLinesWindow )
+      delete m_referencePhotopeakLinesWindow;
+    m_referencePhotopeakLinesWindow = nullptr;
+    
+    if( !refNucXmlState.empty() )
+    {
+      showGammaLinesWindow();
+      if( m_referencePhotopeakLines )
+        m_referencePhotopeakLines->deSerialize( refNucXmlState );
+      if( phone && m_referencePhotopeakLinesWindow )
+        m_referencePhotopeakLinesWindow->hide();
+    }//if( !refNucXmlState.empty() )
+    
     m_toolsLayout = nullptr;
     
     m_layout->clear();
@@ -6481,8 +7052,35 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
-  else
-    m_currentToolsTab = -1;
+  //else
+  //  m_currentToolsTab = -1;
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( phone )
+    {
+      const int w = (m_renderedWidth > 100) ? m_renderedWidth : wApp->environment().screenWidth();
+      const int h = (m_renderedWidth > 100) ? m_renderedHeight : wApp->environment().screenHeight();
+      if( w < h )
+      {
+        // On portrait phone, remove the scaler slider, without altering preference
+        m_showYAxisScalerItems[0]->show();
+        m_showYAxisScalerItems[1]->hide();
+        m_spectrum->showYAxisScalers( false );
+        
+        // TODO: adjust padding in spectrum chart, e.g. in JS:
+        //  SpectrumChartD3.padding.labelPad = 5
+        //  SpectrumChartD3.padding.left = 5
+        //  SpectrumChartD3.padding.right = 10
+      }else
+      {
+        // The phone is landscape, restore showing scaler to user preference
+        const bool showScalers = UserPreferences::preferenceValue<bool>( "ShowYAxisScalers", this );
+        m_showYAxisScalerItems[0]->setHidden( showScalers );
+        m_showYAxisScalerItems[1]->setHidden( !showScalers );
+        m_spectrum->showYAxisScalers( showScalers );
+      }
+    }//if( phone )
+#endif
   
   if( m_mobileBackButton && m_mobileForwardButton )
   {
@@ -6522,7 +7120,7 @@ void InterSpec::addViewMenu( WWidget *parent )
     throw runtime_error( "InterSpec::addViewMenu(): parent passed in"
                         " must be a PopupDivMenu  or WContainerWidget" );
  
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
   if( menuDiv )
   {
@@ -6541,7 +7139,6 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_toolTabsVisibleItems[0]->triggered().connect( boost::bind( &InterSpec::setToolTabsVisible, this, true ) );
   m_toolTabsVisibleItems[1]->triggered().connect( boost::bind( &InterSpec::setToolTabsVisible, this, false ) );
 
-  
   if( isPhone() )
   {
     //hide Dock mode on small phone screens
@@ -6560,7 +7157,7 @@ void InterSpec::addViewMenu( WWidget *parent )
                                               "InterSpec_resources/images/spec_settings_small.png");
   
   bool logypref = true;
-  try{ logypref = m_user->preferenceValue<bool>( "LogY" ); }catch(...){}
+  try{ logypref = UserPreferences::preferenceValue<bool>( "LogY", this ); }catch(...){}
   
   m_logYItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-logy") );
   m_logYItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-liny") );
@@ -6569,10 +7166,10 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_logYItems[0]->triggered().connect( boost::bind( &InterSpec::setLogY, this, true  ) );
   m_logYItems[1]->triggered().connect( boost::bind( &InterSpec::setLogY, this, false ) );
   m_spectrum->setYAxisLog( logypref );
-  InterSpecUser::addCallbackWhenChanged( m_user, "LogY", this, &InterSpec::setLogY );
+  m_spectrum->yAxisLogLinChanged().connect( boost::bind(&InterSpec::setLogY, this, boost::placeholders::_1) );
+  m_preferences->addCallbackWhenChanged( "LogY", this, &InterSpec::setLogY );
   
-  
-  const bool verticleLines = InterSpecUser::preferenceValue<bool>( "ShowVerticalGridlines", this );
+  const bool verticleLines = UserPreferences::preferenceValue<bool>( "ShowVerticalGridlines", this );
   m_verticalLinesItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-show-vert"),
                                           "InterSpec_resources/images/sc_togglegridvertical.png");
   m_verticalLinesItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-hide-vert"),
@@ -6583,9 +7180,9 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_verticalLinesItems[1]->setHidden( !verticleLines );
   m_spectrum->showVerticalLines( verticleLines );
   m_timeSeries->showVerticalLines( verticleLines );
-  InterSpecUser::addCallbackWhenChanged( m_user, "ShowVerticalGridlines", this, &InterSpec::setVerticalLines );
+  m_preferences->addCallbackWhenChanged( "ShowVerticalGridlines", this, &InterSpec::setVerticalLines );
   
-  const bool horizontalLines = InterSpecUser::preferenceValue<bool>( "ShowHorizontalGridlines", this );
+  const bool horizontalLines = UserPreferences::preferenceValue<bool>( "ShowHorizontalGridlines", this );
   m_horizantalLinesItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-show-horz"),
                                           "InterSpec_resources/images/sc_togglegridhorizontal.png");
   m_horizantalLinesItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-hide-horz"),
@@ -6596,7 +7193,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_horizantalLinesItems[1]->setHidden( !horizontalLines );
   m_spectrum->showHorizontalLines( horizontalLines );
   m_timeSeries->showHorizontalLines( horizontalLines );
-  InterSpecUser::addCallbackWhenChanged( m_user, "ShowHorizontalGridlines", this, &InterSpec::setHorizantalLines );
+  m_preferences->addCallbackWhenChanged( "ShowHorizontalGridlines", this, &InterSpec::setHorizantalLines );
   
   
   if( isPhone() )
@@ -6604,7 +7201,7 @@ void InterSpec::addViewMenu( WWidget *parent )
     m_compactXAxisItems[0] = m_compactXAxisItems[1] = nullptr;
   }else
   {
-    const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    const bool makeCompact = UserPreferences::preferenceValue<bool>( "CompactXAxis", this );
     m_spectrum->setCompactAxis( makeCompact );
     m_compactXAxisItems[0] = chartmenu->addMenuItem( WString::tr("app-mi-view-compact-x"), "");
     m_compactXAxisItems[1] = chartmenu->addMenuItem( WString::tr("app-mi-view-normal-x"), "");
@@ -6612,7 +7209,7 @@ void InterSpec::addViewMenu( WWidget *parent )
     m_compactXAxisItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisCompact, this, false ) );
     m_compactXAxisItems[0]->setHidden( makeCompact );
     m_compactXAxisItems[1]->setHidden( !makeCompact );
-    InterSpecUser::addCallbackWhenChanged( m_user, "CompactXAxis", this, &InterSpec::setXAxisCompact );
+    m_preferences->addCallbackWhenChanged( "CompactXAxis", this, &InterSpec::setXAxisCompact );
   }
   
   //What we should do here is have a dialog that pops up that lets users  select
@@ -6642,18 +7239,19 @@ void InterSpec::addViewMenu( WWidget *parent )
   
   addPeakLabelSubMenu( m_displayOptionsPopupDiv ); //add Peak menu
   
-  const bool showSlider = InterSpecUser::preferenceValue<bool>( "ShowXAxisSlider", this );
-  m_spectrum->showXAxisSliderChart( showSlider );
+  const bool showSlider = UserPreferences::preferenceValue<bool>( "ShowXAxisSlider", this );
   m_showXAxisSliderItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-show-slider"), "");
   m_showXAxisSliderItems[1] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-hide-slider"), "");
-  m_showXAxisSliderItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, true ) );
-  m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false ) );
+  m_showXAxisSliderItems[0]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, true, true ) );
+  m_showXAxisSliderItems[1]->triggered().connect( boost::bind( &InterSpec::setXAxisSlider, this, false, true ) );
   m_showXAxisSliderItems[0]->setHidden( showSlider );
   m_showXAxisSliderItems[1]->setHidden( !showSlider );
-  InterSpecUser::addCallbackWhenChanged( m_user, "ShowXAxisSlider", this, &InterSpec::setXAxisSlider );
   
+  m_spectrum->showXAxisSliderChart( showSlider );
+  m_spectrum->xAxisSliderShown().connect( boost::bind(&InterSpec::setXAxisSlider, this, boost::placeholders::_1, true) );
+  m_preferences->addCallbackWhenChanged( "ShowXAxisSlider", boost::bind( &InterSpec::setXAxisSlider, this, boost::placeholders::_1, false) );
   
-  const bool showScalers = InterSpecUser::preferenceValue<bool>( "ShowYAxisScalers", this );
+  const bool showScalers = UserPreferences::preferenceValue<bool>( "ShowYAxisScalers", this );
   m_spectrum->showYAxisScalers( showScalers );
   
   m_showYAxisScalerItems[0] = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-show-scaler"), "");
@@ -6662,8 +7260,7 @@ void InterSpec::addViewMenu( WWidget *parent )
   m_showYAxisScalerItems[1]->triggered().connect( boost::bind( &InterSpec::setShowYAxisScalers, this, false ) );
   m_showYAxisScalerItems[0]->setHidden( showScalers );
   m_showYAxisScalerItems[1]->setHidden( !showScalers );
-  m_showYAxisScalerItems[(showScalers ? 1 : 0)]->disable();
-  InterSpecUser::addCallbackWhenChanged( m_user, "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
+  m_preferences->addCallbackWhenChanged( "ShowYAxisScalers", this, &InterSpec::setShowYAxisScalers );
   
   m_displayOptionsPopupDiv->addSeparator();
   
@@ -6965,9 +7562,9 @@ void InterSpec::showEnergyCalWindow()
 
 void InterSpec::setLogY( bool logy )
 {
-  const bool wasLogY = m_spectrum->yAxisIsLog();
+  const bool wasLogY = UserPreferences::preferenceValue<bool>( "LogY", this );
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "LogY", logy, this );
+  UserPreferences::setPreferenceValue( "LogY", logy, this );
   m_logYItems[0]->setHidden( logy );
   m_logYItems[1]->setHidden( !logy );
   m_spectrum->setYAxisLog( logy );
@@ -7002,7 +7599,7 @@ void InterSpec::setVerticalLines( bool show )
 {
   const bool wasShow = m_spectrum->verticalLinesShowing();
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowVerticalGridlines", show, this );
+  UserPreferences::setPreferenceValue( "ShowVerticalGridlines", show, this );
   m_verticalLinesItems[0]->setHidden( show );
   m_verticalLinesItems[1]->setHidden( !show );
   m_spectrum->showVerticalLines( show );
@@ -7021,7 +7618,7 @@ void InterSpec::setHorizantalLines( bool show )
 {
   const bool wasShow = m_spectrum->horizontalLinesShowing();
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowHorizontalGridlines", show, this );
+  UserPreferences::setPreferenceValue( "ShowHorizontalGridlines", show, this );
   m_horizantalLinesItems[0]->setHidden( show );
   m_horizantalLinesItems[1]->setHidden( !show );
   m_spectrum->showHorizontalLines( show );
@@ -7221,11 +7818,9 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
 
 
 
-void InterSpec::setXAxisSlider( bool show )
+void InterSpec::setXAxisSlider( const bool show, const bool addUndoRedo )
 {
-  const bool wasShowing = m_spectrum->xAxisSliderChartIsVisible();
-  
-  InterSpecUser::setPreferenceValue<bool>( m_user, "ShowXAxisSlider", show, this );
+  UserPreferences::setPreferenceValue( "ShowXAxisSlider", show, this );
   m_showXAxisSliderItems[0]->setHidden( show );
   m_showXAxisSliderItems[1]->setHidden( !show );
   
@@ -7241,24 +7836,24 @@ void InterSpec::setXAxisSlider( bool show )
   }else
   {
     //Go back to whatever the user wants/selects
-    const bool makeCompact = InterSpecUser::preferenceValue<bool>( "CompactXAxis", this );
+    const bool makeCompact = UserPreferences::preferenceValue<bool>( "CompactXAxis", this );
     
     if( m_compactXAxisItems[0] )
       m_compactXAxisItems[0]->setHidden( makeCompact );
     if( m_compactXAxisItems[1] )
       m_compactXAxisItems[1]->setHidden( !makeCompact );
     
-    m_spectrum->setCompactAxis( makeCompact ); // This shouldnt be necassary, but JIC
+    m_spectrum->setCompactAxis( makeCompact ); // This shouldn't be necessary, but JIC
     m_timeSeries->setCompactAxis( makeCompact );
   }//show /hide
   
   m_spectrum->showXAxisSliderChart( show );
   
   
-  if( m_undo && (wasShowing != show) )
+  if( addUndoRedo && m_undo )
   {
-    m_undo->addUndoRedoStep( [this,show](){ setXAxisSlider(!show); },
-                            [this,show](){ setXAxisSlider(show); },
+    m_undo->addUndoRedoStep( [this,show](){ setXAxisSlider(!show, false); },
+                            [this,show](){ setXAxisSlider(show, false); },
                             "Show x-axis slider" );
   }//if( m_undo && (wasLogY != logy) )
 }//void setXAxisSlider( bool show )
@@ -7268,7 +7863,7 @@ void InterSpec::setXAxisCompact( bool compact )
 {
   const bool wasCompact = m_spectrum->isAxisCompacted();
   
-  InterSpecUser::setPreferenceValue<bool>( m_user, "CompactXAxis", compact, this );
+  UserPreferences::setPreferenceValue( "CompactXAxis", compact, this );
   
   if( m_compactXAxisItems[0] )
     m_compactXAxisItems[0]->setHidden( compact );
@@ -7295,17 +7890,14 @@ void InterSpec::setShowYAxisScalers( bool show )
   assert( m_showYAxisScalerItems[1] );
   
   m_showYAxisScalerItems[0]->setHidden( show );
-  m_showYAxisScalerItems[0]->setDisabled( !show && !hasSecond );
-  
   m_showYAxisScalerItems[1]->setHidden( !show );
-  m_showYAxisScalerItems[1]->setDisabled( show && !hasSecond );
   
   const bool wasShowing = m_spectrum->yAxisScalersIsVisible();
   m_spectrum->showYAxisScalers( show );
   
   try
   {
-    InterSpecUser::setPreferenceValue<bool>( m_user, "ShowYAxisScalers", show, this );
+    UserPreferences::setPreferenceValue( "ShowYAxisScalers", show, this );
   }catch( std::exception &e )
   {
     cerr << "InterSpec::setShowYAxisScalers: Got exception setting pref: " << e.what() << endl;
@@ -7470,69 +8062,66 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   PopupDivMenu *subPopup = m_helpMenuPopup->addPopupMenuItem( WString::tr("app-mi-help-opts"),
                                                       "InterSpec_resources/images/cog_small.png" );
     
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
-  const bool autoStore = InterSpecUser::preferenceValue<bool>( "AutoSaveSpectraToDb", this );
+  // Note: we will associate the WCheckBox's with a option, to set their checked state,
+  //       BEFORE adding to the menu - so this way macOS native menus will pickup the
+  //       correct values.
   WCheckBox *cb = new WCheckBox( WString::tr("app-mi-help-pref-auto-store") );
-  cb->setChecked( autoStore );
+  UserPreferences::associateWidget( "AutoSaveSpectraToDb", cb, this );
   item = subPopup->addWidget( cb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-auto-store"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "AutoSaveSpectraToDb", cb, this );
   
-    
-  const bool autoCheckOnLoad = InterSpecUser::preferenceValue<bool>( "CheckForPrevOnSpecLoad", this );
+  
   cb = new WCheckBox( WString::tr("app-mi-help-pref-check-prev") );
-  cb->setChecked( autoStore );
+  UserPreferences::associateWidget( "CheckForPrevOnSpecLoad", cb, this );
   item = subPopup->addWidget( cb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-check-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "CheckForPrevOnSpecLoad", cb, this );
   
   
   if( !isMobile() )
   {
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-show-tt") );
+    UserPreferences::associateWidget( "ShowTooltips", checkbox, this );
     item = subPopup->addWidget( checkbox );
-    checkbox->setChecked( showToolTips );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-show-tt"),
                                 true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "ShowTooltips", checkbox, this );
   }//if( !isMobile() )
   
   {//begin add "AskPropagatePeaks" to menu
-    const bool doPropogate = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-prop-peak") );
-    checkbox->setChecked( doPropogate );
+    UserPreferences::associateWidget( "AskPropagatePeaks", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prop-peak"),
                                  true, HelpSystem::ToolTipPosition::Right );
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
-    InterSpecUser::associateWidget( m_user, "AskPropagatePeaks", checkbox, this );
   }//end add "AskPropagatePeaks" to menu
   
   
   {//begin add "DisplayBecquerel"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-disp-bq") );
+    UserPreferences::associateWidget( "DisplayBecquerel", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-disp-bq"),
                                  true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "DisplayBecquerel", checkbox, this );
   }//end add "DisplayBecquerel"
     
   {//begin add "LoadDefaultDrf"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-def-drfs") );
+    UserPreferences::associateWidget( "LoadDefaultDrf", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-def-drfs"),
                                 true, HelpSystem::ToolTipPosition::Right );
-    InterSpecUser::associateWidget( m_user, "LoadDefaultDrf", checkbox, this );
   }//end add "LoadDefaultDrf"
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
   if( app && app->isTablet() )
   {
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-desktop") );
+    UserPreferences::associateWidget( "TabletUseDesktopMenus", checkbox, this );
     item = subPopup->addWidget( checkbox );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-desktop"),
                                 true, HelpSystem::ToolTipPosition::Right );
@@ -7548,17 +8137,15 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
       m_warnings, msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
     checkbox->unChecked().connect( boost::bind( &WarningWidget::addMessageUnsafe,
       m_warnings, msg, WarningWidget::WarningMsgShowOnBoardRiid, 5000 ) );
-    
-    InterSpecUser::associateWidget( m_user, "TabletUseDesktopMenus", checkbox, this );
   }//if( is tablet )
   
   WCheckBox *autoDarkCb = new WCheckBox( WString::tr("app-mi-help-pref-auto-dark") );
+  UserPreferences::associateWidget( "AutoDarkFromOs", autoDarkCb, this );
   item = subPopup->addWidget( autoDarkCb );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-auto-dark"),
                               true, HelpSystem::ToolTipPosition::Right );
-  InterSpecUser::associateWidget( m_user, "AutoDarkFromOs", autoDarkCb, this );
   
-  InterSpecUser::addCallbackWhenChanged( m_user, "AutoDarkFromOs", std::bind([](){
+  m_preferences->addCallbackWhenChanged( "AutoDarkFromOs", std::bind([](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
       viewer->doJavaScript( "try{ Wt.WT.DetectOsColorThemeJs('" + viewer->id() + "'); }"
@@ -7571,14 +8158,14 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
   subPopup->addSeparator();
   WCheckBox *promptOnLoad = new WCheckBox( WString::tr("app-mi-help-pref-prompt-prev") );
+  UserPreferences::associateWidget( "PromptStateLoadOnStart", promptOnLoad, this );
   item = subPopup->addWidget( promptOnLoad );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-prompt-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "PromptStateLoadOnStart", promptOnLoad, this );
   
   WCheckBox *doLoad = new WCheckBox( WString::tr("app-mi-help-pref-load-prev") );
+  UserPreferences::associateWidget( "LoadPrevStateOnStart", doLoad, this );
   item = subPopup->addWidget( doLoad );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-load-prev"), showToolTips );
-  InterSpecUser::associateWidget( m_user, "LoadPrevStateOnStart", doLoad, this );
 #endif
   
   
@@ -7586,7 +8173,7 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
   const set<string> &languages = InterSpecApp::languagesAvailable();
   if( languages.size() > 1 )
   {
-    const string langPref = InterSpecUser::preferenceValue<string>("Language", this);
+    const string langPref = UserPreferences::preferenceValue<string>("Language", this);
       
     m_languagesSubMenu = m_helpMenuPopup->addPopupMenuItem( WString::tr("app-mi-help-language")  );
     
@@ -7721,68 +8308,33 @@ std::shared_ptr<SpecMeas> InterSpec::measurment( SpecUtils::SpectrumType type )
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
-Wt::Dbo::ptr<UserFileInDb> InterSpec::measurmentFromDb( SpecUtils::SpectrumType type,
-                                                             bool update )
+Wt::Dbo::ptr<UserFileInDb> InterSpec::measurementFromDb( const SpecUtils::SpectrumType type,
+                                                          const bool update )
 {
-  try
-  {
-    Wt::Dbo::ptr<UserFileInDb> answer;
-    std::shared_ptr<SpectraFileHeader> header;
+  Wt::Dbo::ptr<UserFileInDb> answer;
   
-    SpectraFileModel *fileModel = m_fileManager->model();
-    std::shared_ptr<SpecMeas> meas = measurment( type );
-    if( !meas )
-      return answer;
+  SpectraFileModel *fileModel = m_fileManager->model();
+  std::shared_ptr<SpecMeas> meas = measurment( type );
+  if( !meas )
+    return answer;
   
-    WModelIndex index = fileModel->index( meas );
-    if( !index.isValid() )
-      return answer;
+  WModelIndex index = fileModel->index( meas );
+  if( !index.isValid() )
+    return answer;
     
-    header = fileModel->fileHeader( index.row() );
-    if( !header )
-      return answer;
+  shared_ptr<SpectraFileHeader> header = fileModel->fileHeader( index.row() );
+  if( !header )
+    return answer;
   
-    answer = header->dbEntry();
-    if( answer && !meas->modified() )
-      return answer;
+  answer = header->dbEntry();
+  if( answer && !meas->modified() )
+    return answer;
     
-    Dbo::ptr<UserFileInDb> dbback;
+  if( update )
+    header->saveToDatabase( meas );
     
-    if( type == SpecUtils::SpectrumType::Foreground )
-    {
-      WModelIndex bindex;
-      std::shared_ptr<SpectraFileHeader> bheader;
-      std::shared_ptr<SpecMeas> background = measurment( SpecUtils::SpectrumType::Background );
-      if( background )
-         bindex = fileModel->index( background );
-      if( bindex.isValid() )
-        bheader = fileModel->fileHeader( bindex.row() );
-      if( bheader )
-      {
-        dbback = bheader->dbEntry();
-        if( !dbback )
-        {
-          try
-          {
-            bheader->saveToDatabase( background );
-            dbback = bheader->dbEntry();
-          }catch(...){}
-        }
-      }//if( bheader )
-    }//if( type == SpecUtils::SpectrumType::Foreground )
-    
-    if( update )
-      header->saveToDatabase( meas );
-    
-    return header->dbEntry();
-  }catch( std::exception &e )
-  {
-    cerr << "\n\nSpectrumViewer::measurmentFromDb(...) caught: " << e.what()
-         << endl;
-  }//try / catch
-  
-  return Wt::Dbo::ptr<UserFileInDb>();
-}//Wt::Dbo::ptr<UserFileInDb> measurmentFromDb( SpecUtils::SpectrumType type, bool update );
+  return header->dbEntry();
+}//Wt::Dbo::ptr<UserFileInDb> measurementFromDb( SpecUtils::SpectrumType type, bool update );
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 std::shared_ptr<const SpecUtils::Measurement> InterSpec::displayedHistogram( SpecUtils::SpectrumType spectrum_type ) const
@@ -8088,7 +8640,7 @@ DecayWindow *InterSpec::createDecayInfoWindow()
       
       // TODO: We could do a little better and check the Shielding/Source Fit widget and grab those activities (and ages) if they match
       
-      const bool useBq = InterSpecUser::preferenceValue<bool>("DisplayBecquerel", InterSpec::instance());
+      const bool useBq = UserPreferences::preferenceValue<bool>("DisplayBecquerel", InterSpec::instance());
       const double act = useBq ? PhysicalUnits::MBq : (1.0E-6 * PhysicalUnits::curie);
       const string actStr = useBq ? "1 MBq" : "1 uCi";
       const double hl = nuc.m_nuclide->halfLife;
@@ -8222,17 +8774,32 @@ void InterSpec::handleDetectionLimitWindowClose()
   assert( caller );
   assert( !m_detectionLimitWindow || (caller == m_detectionLimitWindow) );
   
-  if( !m_detectionLimitWindow )
+  if( !m_detectionLimitWindow && !caller )
+    return;
+  
+  if( m_detectionLimitWindow && caller && (m_detectionLimitWindow != caller) )
     return;
     
-  auto dialog = m_detectionLimitWindow;
+  auto dialog = m_detectionLimitWindow ? m_detectionLimitWindow : caller;
+  assert( caller );
+  
+  if( !m_detectionLimitWindow )
+  {
+    AuxWindow::deleteAuxWindow( dialog );
+    return;
+  }
+  
   m_detectionLimitWindow = nullptr;
   
-  const string state_uri = dialog->tool()->encodeStateToUrl();
+  const bool canUndo = (m_undo && m_undo->canAddUndoRedoNow());
+  
+  string state_uri;
+  if( canUndo )
+    state_uri = dialog->tool()->encodeStateToUrl();
   
   AuxWindow::deleteAuxWindow( dialog );
   
-  if( m_undo && m_undo->canAddUndoRedoNow() )
+  if( canUndo )
   {
     // We'll just assume results for the foreground was showing, so we dont have to pass this around
     auto undo = [this,state_uri](){
@@ -8242,7 +8809,7 @@ void InterSpec::handleDetectionLimitWindowClose()
         tool->tool()->handleAppUrl(state_uri);
     };
     auto redo = [this](){ programmaticallyCloseSimpleMda(); };
-    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple MDA" );
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Detection Limit Tool" );
   }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
 }//void handleDetectionLimitWindowClose()
 
@@ -8254,7 +8821,7 @@ void InterSpec::programmaticallyCloseDetectionLimit()
   
   DetectionLimitWindow *dialog = m_detectionLimitWindow;
   m_detectionLimitWindow = nullptr; //Prevents undo/redo
-  dialog->done( WDialog::DialogCode::Accepted );
+  dialog->hide();
 }//void programmaticallyCloseDetectionLimit()
 
 
@@ -8479,9 +9046,9 @@ void InterSpec::deleteDecayInfoWindow()
 }//void deleteDecayInfoWindow()
 
 
-void InterSpec::createFileParameterWindow()
+void InterSpec::createFileParameterWindow( const SpecUtils::SpectrumType type )
 {
-  SpecFileSummary *window = new SpecFileSummary( this );
+  SpecFileSummary *window = new SpecFileSummary( type, this );
   new UndoRedoManager::BlockGuiUndoRedo( window ); // BlockGuiUndoRedo is WObject, so this `new` doesnt leak
 }//void createFileParameterWindow()
 
@@ -8766,7 +9333,10 @@ void InterSpec::create3DSearchModeChart()
   if( m_3dViewWindow )
     programmaticallyClose3DSearchModeChart();
   
-  m_3dViewWindow = new AuxWindow( WString::tr("window-title-3d") );
+  m_3dViewWindow = new AuxWindow( WString::tr("window-title-3d"),
+                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                  | AuxWindowProperties::EnableResize
+                                  | AuxWindowProperties::TabletNotFullScreen) );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
   m_3dViewWindow->setMinimumSize( 512, 420 );
@@ -9355,6 +9925,10 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   handleRelActManualClose();
   //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
+  
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+  m_currentToolsTab = m_toolsTabs->currentIndex();
+#endif
 }//void handleToolTabClosed( const int tabnum )
 #endif
 
@@ -9362,7 +9936,7 @@ void InterSpec::handleToolTabClosed( const int tabnum )
 void InterSpec::addToolsMenu( Wt::WWidget *parent )
 {
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
   PopupDivMenu *parentMenu = dynamic_cast<PopupDivMenu *>( parent );
   WContainerWidget *menuDiv = dynamic_cast<WContainerWidget *>( parent );
@@ -9437,23 +10011,31 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::createDecayInfoWindow, this ) );
 
 #if( USE_DETECTION_LIMIT_TOOL )
-  item = popup->addMenuItem( WString::tr("app-mi-tools-mda") );
-  HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-mda"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showDetectionLimitTool, this, string() ) );
+  if( !isPhone() )
+  {
+    // TODO: modify formatting of Detection Confidence tool to work on phones
+    item = popup->addMenuItem( WString::tr("app-mi-tools-mda") );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-mda"), showToolTips );
+    item->triggered().connect( boost::bind( &InterSpec::showDetectionLimitTool, this, string() ) );
+  }//if( !isPhone() )
 #endif
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-select-drf") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-select-drf"), showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showDrfSelectWindow, this ) );
   
-  item = popup->addMenuItem( WString::tr("app-mi-tools-make-drf") );
-  HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-make-drf"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
-
+  if( !isPhone() )
+  {
+    // The create DRF tool wont layout very good on phones - I dont think this is "phone"
+    //  work anyway, so we'll just skip it.
+    item = popup->addMenuItem( WString::tr("app-mi-tools-make-drf") );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-make-drf"), showToolTips );
+    item->triggered().connect( boost::bind( &InterSpec::showMakeDrfWindow, this ) );
+  }
   
   item = popup->addMenuItem( WString::tr("app-mi-tools-file-par") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-file-par"), showToolTips );
-  item->triggered().connect( this, &InterSpec::createFileParameterWindow );
+  item->triggered().connect( boost::bind( &InterSpec::createFileParameterWindow, this, SpecUtils::SpectrumType::Foreground ) );
 
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
@@ -9803,7 +10385,8 @@ void InterSpec::showCompactFileManagerWindow()
                                                  boost::placeholders::_3 ) );
   
   AuxWindow *window = new AuxWindow( WString::tr("window-title-compact-file"),
-                                    (AuxWindowProperties::TabletNotFullScreen) );
+                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                     |AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
@@ -9867,7 +10450,8 @@ void InterSpec::showNuclideSearchWindow()
   
   m_nuclideSearchWindow = new AuxWindow( WString::tr(NuclideSearchTabTitleKey),
                                         (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                         | AuxWindowProperties::EnableResize) );
+                                         | AuxWindowProperties::EnableResize
+                                         | AuxWindowProperties::SetCloseable) );
   m_nuclideSearchWindow->contents()->setOverflow(Wt::WContainerWidget::OverflowHidden);
   m_nuclideSearchWindow->finished().connect( boost::bind( &InterSpec::closeNuclideSearchWindow, this ) );
   m_nuclideSearchWindow->rejectWhenEscapePressed();
@@ -10044,7 +10628,8 @@ void InterSpec::showGammaLinesWindow()
 
   m_referencePhotopeakLinesWindow = new AuxWindow( WString::tr(GammaLinesTabTitleKey),
                                                   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                                   | AuxWindowProperties::EnableResize)
+                                                   | AuxWindowProperties::EnableResize
+                                                   | AuxWindowProperties::SetCloseable)
                                                   );
   m_referencePhotopeakLinesWindow->contents()->setOverflow(WContainerWidget::OverflowHidden);
   m_referencePhotopeakLinesWindow->rejectWhenEscapePressed();
@@ -10132,6 +10717,12 @@ void InterSpec::closeGammaLinesWindow()
                                                    this );
     setReferenceLineColors( nullptr );
     
+    
+#if( InterSpec_PHONE_ROTATE_FOR_TABS )
+    if( isPhone() && (renderedHeight() > renderedWidth()) )
+      m_referencePhotopeakLines->setNarrowPhoneLayout( true );
+#endif
+    
     m_toolsTabs->addTab( m_referencePhotopeakLines, WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
     
     if( xmlstate.size() )
@@ -10169,7 +10760,8 @@ void InterSpec::handleToolTabChanged( int tab )
     if( focus && (current_tab == calibtab) )
     {
       if( !m_infoNotificationsMade.count("recal-tab")
-         && InterSpecUser::preferenceValue<bool>( "ShowTooltips", this ) )
+         && UserPreferences::preferenceValue<bool>( "ShowTooltips", this )
+         && !isMobile() )
       {
         m_infoNotificationsMade.insert( "recal-tab" );
         passMessage( WString::tr("info-recal-tab-selected"), WarningWidget::WarningMsgInfo );
@@ -10698,23 +11290,23 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
-    closeShieldingSourceFit();
-    
 #if( USE_DB_TO_STORE_SPECTRA )
-    //if( m_user->preferenceValue<bool>( "AutoSaveSpectraToDb" ) )
-    //{
-    //  //We also need to do this in the InterSpec destructor as well.
-    //  //   Also maybe change size limitations to only apply to auto saving
-    //  if( current_state_index >= 0 )
-    //  {
-    //    //Save to (HEAD) of current state
-    //  }else
-    //  {
-    //    //Create a state
-    //    //Handle case where file is to large to be saved
-    //  }
-    //}
+    saveStateAtForegroundChange( true ); //This function will check "AutoSaveSpectraToDb" pref
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
+    
+    // Close Shielding/Source fit Window
+    if( m_shieldingSourceFitWindow )
+    {
+      delete m_shieldingSourceFitWindow;
+      m_shieldingSourceFitWindow = nullptr;
+      m_shieldingSourceFit = nullptr;
+    }
+    
+    
+    if( m_relActAutoGui )
+    {
+      // TODO: Should we close this?
+    }
     
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
@@ -10792,7 +11384,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
         if( !meas->detector() /* && (detType != SpecUtils::DetectorType::Unknown) */ )
         {
-          const bool doLoadDefault = InterSpecUser::preferenceValue<bool>( "LoadDefaultDrf", this );
+          const bool doLoadDefault = UserPreferences::preferenceValue<bool>( "LoadDefaultDrf", this );
           
           const string &manufacturer = meas->manufacturer();
           const string &model = meas->instrument_model();
@@ -10915,9 +11507,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     const int windex_0 = m_spectrum->yAxisScalersIsVisible() ? 0 : 1;
     const int windex_1 = m_spectrum->yAxisScalersIsVisible() ? 1 : 0;
     m_showYAxisScalerItems[windex_0]->hide();
-    m_showYAxisScalerItems[windex_0]->enable();
     m_showYAxisScalerItems[windex_1]->show();
-    m_showYAxisScalerItems[windex_1]->setDisabled( !enableScaler );
   }//if( !sameSpecFile )
   
   //Making fcn call take current data as a argument so that if this way a
@@ -10926,7 +11516,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   std::function<void(std::shared_ptr<const SpecUtils::Measurement>)> propigate_peaks_fcns;
   
   const bool askToPropigatePeaks
-          = InterSpecUser::preferenceValue<bool>( "AskPropagatePeaks", this );
+          = UserPreferences::preferenceValue<bool>( "AskPropagatePeaks", this );
   if( askToPropigatePeaks
      && options.testFlag(InterSpec::SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
      && !sameSpecFile && meas && m_dataMeasurement && previous && m_spectrum->data()
@@ -10950,6 +11540,15 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       }
       
       vector<PeakDef> original_peaks;
+      
+#if( USE_REL_ACT_TOOL )
+      // For some reason loading javascript from inside a
+      //  `WServer::instance()->post( sessionid, [=](){...} );`
+      //  call doesnt seem to work okay, or at least load the JS before
+      //  doing the other JS - so since `PeakSelectorWindow` _may_ make
+      //  a RelEffPlot, we'll load the JS here, just to make sure its ready.
+      wApp->require( "InterSpec_resources/RelEffPlot.js" );
+#endif
       
       const std::string sessionid = wApp->sessionId();
       propigate_peaks_fcns = [=]( std::shared_ptr<const SpecUtils::Measurement> data ){
@@ -11200,7 +11799,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( pref != ExternalRidAuotCallPref::DoNotCall )
     {
       Wt::WApplication *app = wApp;
-      auto callExternalRid = [app,this,sameSpecFile](){
+      auto callExternalRid = [app,this,sameSpecFile,pref](){
         WApplication::UpdateLock lock(app);
         if( lock )
         {
@@ -11218,7 +11817,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
         }
       };//callExternalRid lamda
       
-      furtherworkers.push_back( callExternalRid );
+      const string appid = wApp->sessionId();
+      
+      auto postExternalRid = [appid, callExternalRid](){
+        WServer::instance()->post( appid, callExternalRid );
+      };
+      
+      furtherworkers.push_back( postExternalRid );
     }//if( user selected to call either external REST API, or external EXE )
   }//if( meas )
 #endif //#if( USE_REMOTE_RID )
@@ -11291,7 +11896,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( show_notification )
     {
-      const bool show = InterSpecUser::preferenceValue<bool>( "AutoShowSpecMultimedia", this );
+      const bool show = UserPreferences::preferenceValue<bool>( "AutoShowSpecMultimedia", this );
       if( show )
       {
         showMultimedia( SpecUtils::SpectrumType::Foreground );
@@ -11320,7 +11925,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   if( spec_type==SpecUtils::SpectrumType::Foreground && !!m_dataMeasurement
       && m_dataMeasurement->passthrough() )
   {
-    const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", this );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", this );
   
     if( showToolTips )
     {
@@ -11426,7 +12031,7 @@ void InterSpec::userOpenFile( std::shared_ptr<SpecMeas> meas, std::string displa
   if( !m_fileManager )  //shouldnt ever happen.
     throw runtime_error( "Internal logic error, no valid m_fileManager" );
    
-  auto header = std::make_shared<SpectraFileHeader>( m_user, true, this );
+  auto header = std::make_shared<SpectraFileHeader>( true, this );
   header->setFile( displayFileName, meas );
   
   bool couldBeBackground = true;
@@ -11598,10 +12203,10 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     if( m_simpleMdaWindow )
       prev_state = m_simpleMdaWindow->tool()->encodeStateToUrl();
     
-    auto create_window = [this, query_str](){
+    auto create_window = [this, url](){
       DetectionLimitSimpleWindow *tool = showSimpleMdaWindow();
       if( tool )
-        tool->tool()->handleAppUrl( query_str );
+        tool->tool()->handleAppUrl( url );
     };//create_window lambda
     
     if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -11851,30 +12456,25 @@ void InterSpec::setDisplayedEnergyRange( float lowerEnergy, float upperEnergy )
 }//void setDisplayedEnergyRange()
 
 
-bool InterSpec::setYAxisRange( float lower_counts, float upper_counts )
+tuple<double,double,Wt::WString> InterSpec::setYAxisRange( double lower_counts, double upper_counts )
 {
-  bool success = true;
-  if( upper_counts < lower_counts )
-    std::swap( lower_counts, upper_counts );
-  
-  if( (lower_counts <= 1.0E-6) && (upper_counts <= 1.0E-6) )
-    return false;
-  
-  if( (lower_counts < 9.9E-7) && m_spectrum->yAxisIsLog() )
-  {
-    success = false;
-    lower_counts = 1.0E-6;
-    if( upper_counts <= lower_counts )
-      upper_counts = 10*lower_counts;
-  }//if( log y-axis, and specifying approx less than zero counts )
-  
-  m_spectrum->setYAxisRange( lower_counts, upper_counts );
-  
-  return success;
+  return m_spectrum->setYAxisRange( lower_counts, upper_counts );
 }//bool setYAxisRange(...)
 
 
+bool InterSpec::setLogYAxisMin( const double lower_value )
+{
+  try
+  {
+    m_spectrum->setLogYAxisMin( lower_value );
+  }catch( std::exception & )
+  {
+    return false;
+  }
+  return true;
+}//setLogYAxisMin( float lower_value )
 
+       
 void InterSpec::displayedSpectrumRange( double &xmin, double &xmax, double &ymin, double &ymax ) const
 {
   m_spectrum->visibleRange( xmin, xmax, ymin, ymax );
@@ -12246,6 +12846,165 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
 }//void excludePeaksFromRange( const double x0, const double x1 )
 
 
+void InterSpec::guessIsotopesForPeaks( WApplication *app )
+{
+  InterSpec *viewer = this;
+  if( !m_peakModel )
+    throw runtime_error( "InterSpec::refitPeakAmplitudes(...): "
+                         "shoudnt be called if peak model isnt set.");
+  
+  std::shared_ptr<const SpecUtils::Measurement> data;
+  std::shared_ptr<const DetectorPeakResponse> detector;
+  std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > all_peaks;
+  
+  {//begin code-block to get input data
+    std::unique_ptr<WApplication::UpdateLock> applock;
+    if( app )
+      applock.reset( new WApplication::UpdateLock(app) );
+    
+    if( app && m_peakModel->peaks() )
+      all_peaks = std::make_shared<deque<PeakModel::PeakShrdPtr> >( *m_peakModel->peaks() );
+    else
+      all_peaks = m_peakModel->peaks();
+    
+    if( !all_peaks || all_peaks->empty() )
+      return;
+    
+    data = m_spectrum->data();
+  
+    if( viewer && viewer->measurment(SpecUtils::SpectrumType::Foreground) )
+    {
+      detector = viewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
+      
+      if( detector )
+      {
+        DetectorPeakResponse *resp = new DetectorPeakResponse( *detector );
+        detector.reset( resp );
+      }//if( detector )
+    }//if( viewer && viewer->measurment(SpecUtils::SpectrumType::Foreground) )
+  
+    if( detector && !detector->hasResolutionInfo() )
+    {
+      try
+      {
+        std::shared_ptr<DetectorPeakResponse> newdetector = std::make_shared<DetectorPeakResponse>( *detector );
+        newdetector->fitResolution( all_peaks, data, DetectorPeakResponse::kGadrasResolutionFcn );
+        detector = newdetector;
+      }catch( std::exception & )
+      {
+        detector.reset();
+      }
+    }
+    
+    if( !detector || !detector->isValid() )
+    {
+      DetectorPeakResponse *detPtr = new DetectorPeakResponse();
+      detector.reset( detPtr );
+    
+      string drf_dir;
+      if( PeakFitUtils::is_high_res(data) )
+        drf_dir = SpecUtils::append_path(ns_staticDataDirectory, "GenericGadrasDetectors/HPGe 40%" );
+      else
+        drf_dir = SpecUtils::append_path(ns_staticDataDirectory, "GenericGadrasDetectors/NaI 1x1" );
+      
+      detPtr->fromGadrasDirectory( drf_dir );
+    }//if( !detector || !detector->isValid() )
+  }//end code-block to get input data
+  
+  vector<IsotopeId::PeakToNuclideMatch> idd( all_peaks->size() );
+  
+  size_t peakn = 0, rownum = 0;
+  vector<size_t> rownums;
+  SpecUtilsAsync::ThreadPool threadpool;
+//  vector< boost::function<void()> > workers;
+  vector<PeakModel::PeakShrdPtr> inputpeaks;
+  vector<PeakDef> modifiedPeaks;
+  for( PeakModel::PeakShrdPtr peak : *all_peaks )
+  {
+    ++rownum;
+    inputpeaks.push_back( peak );
+    
+    if( (peak->parentNuclide()
+         && (peak->nuclearTransition()
+             || (peak->sourceGammaType()==PeakDef::AnnihilationGamma) ))
+        || peak->reaction() || peak->xrayElement() )
+    {
+      modifiedPeaks.push_back( *peak );
+      continue;
+    }
+    
+    threadpool.post( boost::bind( &IsotopeId::suggestNuclides,
+                                  boost::ref(idd[peakn]), peak, all_peaks,
+                                  data, detector ) );
+//    workers.push_back( boost::bind( &suggestNuclides, boost::ref(idd[peakn]),
+//                                   peak, all_peaks, data, detector ) ) );
+    rownums.push_back( rownum-1 );
+    ++peakn;
+  }//for( PeakModel::PeakShrdPtr peak : *all_peaks )
+  
+  threadpool.join();
+//  SpecUtils::do_asyncronous_work( workers, false );
+
+    
+  for( size_t resultnum = 0; resultnum < rownums.size(); ++resultnum )
+  {
+    const size_t row = rownums[resultnum];
+    const PeakModel::PeakShrdPtr peak = m_peakModel->peakPtr( row ); 
+    PeakDef newPeak = *inputpeaks[row];
+      
+    if( newPeak.parentNuclide() || newPeak.reaction() || newPeak.xrayElement() )
+    {
+      modifiedPeaks.push_back( newPeak );
+      continue;
+    }//if( !isotopeData.empty() )
+      
+    const IsotopeId::PeakToNuclideMatch match = idd[resultnum];
+    vector<PeakDef::CandidateNuclide> candidates;
+      
+    for( size_t j = 0; j < match.nuclideWeightPairs.size(); ++j )
+    {
+      const IsotopeId::NuclideStatWeightPair &p = match.nuclideWeightPairs[j];
+      
+      PeakDef::SourceGammaType sourceGammaType = PeakDef::NormalGamma;
+      size_t radparticleIndex;
+      const SandiaDecay::Transition *transition = NULL;
+      const double sigma = newPeak.gausPeak() ? newPeak.sigma() : 0.125*newPeak.roiWidth();
+      PeakDef::findNearestPhotopeak( p.nuclide, match.energy,
+                                       4.0*sigma, false, -1.0, transition,
+                                       radparticleIndex, sourceGammaType );
+      if( j == 0 )
+        newPeak.setNuclearTransition( p.nuclide, transition,
+                                      int(radparticleIndex), sourceGammaType );
+        
+      if( transition || (sourceGammaType==PeakDef::AnnihilationGamma) )
+      {
+        PeakDef::CandidateNuclide candidate;
+        candidate.nuclide          = p.nuclide;
+        candidate.weight           = p.weight;
+        candidate.transition       = transition;
+        candidate.sourceGammaType  = sourceGammaType;
+        candidate.radparticleIndex = static_cast<int>(radparticleIndex);
+        candidates.push_back( candidate );
+      }//if( transition )
+    }//for( size_t j = 0; j < match.nuclideWeightPairs.size(); ++j )
+
+    newPeak.setCandidateNuclides( candidates );
+    modifiedPeaks.push_back( newPeak );
+  }//for( size_t i = 0; i < idd.size(); ++i )
+
+  {//begin codeblock to set modified peaks
+    std::unique_ptr<WApplication::UpdateLock> applock;
+    if( app )
+      applock.reset( new WApplication::UpdateLock(app) );
+    
+    m_peakModel->setPeaks( modifiedPeaks );
+    
+    if( app )
+      app->triggerUpdate();
+  }//end codeblock to set modified peaks
+}//void guessIsotopesForPeaks()
+
+
 vector<pair<float,int> > InterSpec::passthroughTimeToSampleNumber() const
 {
   if( !m_dataMeasurement )
@@ -12614,10 +13373,7 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     m_backgroundSubItems[0]->show();
     m_backgroundSubItems[1]->hide();
     m_hardBackgroundSub->disable();
-    
-    m_showYAxisScalerItems[0]->setDisabled( m_showYAxisScalerItems[0]->isVisible() );
-    m_showYAxisScalerItems[1]->setDisabled( m_showYAxisScalerItems[1]->isVisible() );
-    
+        
     if( m_spectrum->data() )
     {
       m_spectrum->setData( nullptr, false );

@@ -48,9 +48,9 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
-#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/LeafletRadMap.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/UserPreferences.h"
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 #include <Wt/Utils>
@@ -93,7 +93,7 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   InterSpec *viewer = InterSpec::instance();
   viewer->useMessageResourceBundle( "LeafletRadMap" );
   
-  const bool showWarning = InterSpecUser::preferenceValue<bool>( "ShowMapDataWarning", viewer );
+  const bool showWarning = UserPreferences::preferenceValue<bool>( "ShowMapDataWarning", viewer );
   
   if( forceNoWarning || !showWarning )
   {
@@ -129,7 +129,7 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   cb->checked().connect( std::bind([cb](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
-      InterSpecUser::setPreferenceValue(viewer->m_user, "ShowMapDataWarning", !cb->isChecked(), viewer);
+      UserPreferences::setPreferenceValue("ShowMapDataWarning", !cb->isChecked(), viewer);
   }) );
   
   WPushButton *accept = dialog->addButton( WString::tr("lrm-pre-warn-proceed-btn") );
@@ -138,7 +138,7 @@ SimpleDialog *LeafletRadMap::showForMeasurement( const std::shared_ptr<const Spe
   cancel->clicked().connect( std::bind([](){
     InterSpec *viewer = InterSpec::instance();
     if( viewer )
-      InterSpecUser::setPreferenceValue(viewer->m_user, "ShowMapDataWarning", true, viewer);
+      UserPreferences::setPreferenceValue("ShowMapDataWarning", true, viewer);
   }) );
   accept->setFocus();
   
@@ -366,6 +366,7 @@ void LeafletRadMap::defineJavaScript()
     ", cpsText: '" + WString::tr("CPS").toUTF8() + "'"
     ", loadTxt: '" + WString::tr("Load").toUTF8() + "'"
     ", measurementsAsTxt: '" + WString::tr("lrm-measurements-as").toUTF8() + "'"
+    ", loadTxtShort: '" + WString::tr("lrm-load-meas-as-short").toUTF8() + "'"
     ", realTimeTxt: '" + WString::tr("Real Time").toUTF8() + "'"
     ", liveTimeTxt: '" + WString::tr("Live Time").toUTF8() + "'"
   "}";

@@ -62,8 +62,14 @@ namespace GammaInteractionCalc
 {
   enum class GeometryType : int;
   enum class TraceActivityType : int;
+  
+  struct PeakDetail;
+  struct ShieldingDetails;
+  struct SourceDetails;
+  
+  struct PeakResultPlotInfo;
   class ShieldingSourceChi2Fcn;
-};
+}//namespace GammaInteractionCalc
 
 
 /** This namespace is structs that represent the data users input in the `ShieldingSelect` class, and the inputs of
@@ -91,6 +97,11 @@ namespace ShieldingSourceFitCalc
     
     //activity: in units of PhysicalUnits
     double activity;
+    /** If the activity is fit for.
+     
+     Note: if source type is `ShieldingSourceFitCalc::ModelSourceType::Intrinsic`, then this value will be false,
+     even if a shielding dimension is being fit for.
+     */
     bool fitActivity;
     
     //age: in units of PhysicalUnits::second
@@ -150,7 +161,7 @@ namespace ShieldingSourceFitCalc
     
   
   
-  /** Struct holding information cooresponding to the `TraceSrcDisplay` class defined in ShieldingSelect.cpp;
+  /** Struct holding information corresponding to the `TraceSrcDisplay` class defined in ShieldingSelect.cpp;
    represents information about a trace-source in a shielding (e.g., a volumetric source distributed unifrmly in a shielding
    material, but does not effect the attenuation or density of that material.
    */
@@ -186,7 +197,7 @@ namespace ShieldingSourceFitCalc
     bool m_isGenericMaterial;
     
     /** A kinda vestigial variable that indicates if the user input that made this info was Shielding/Source fit tool,
-     or somewhere else where fitting the material dimesnions or AN/AD wasnt intended.
+     or somewhere else where fitting the material dimensions or AN/AD wasnt intended.
      */
     bool m_forFitting;
     
@@ -207,11 +218,10 @@ namespace ShieldingSourceFitCalc
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     boost::optional<double> m_truthDimensions[3];
     boost::optional<double> m_truthDimensionsTolerances[3];
-    std::map<const SandiaDecay::Nuclide *,std::pair<double,double>> m_truthFitMassFractions;
+    std::map<const SandiaDecay::Element *,std::map<const SandiaDecay::Nuclide *,std::pair<double,double>>> m_truthFitMassFractions;
 #endif
     
     // Self-atten source stuff
-    bool m_fitMassFrac;
     
     /** Nuclide mass-fractions are only fit within the same element, and they are constrained to be the sum fraction
      of all the nuclides, for that element, that are being fit.
@@ -219,8 +229,14 @@ namespace ShieldingSourceFitCalc
      That is, if you have {{I131, 0.1}, {I124,0.01},{Cs131,0.01},{Cs137,0.02}} (and 0.89 stable I127, and 0.97 Cs133), then
      if you fit mass fractions, I131+I124 will always sum to be 0.11 fraction of the Iodine, and Cs137+Cs131 will always
      sum to be 0.03 of the Cesium.
+     
+     We will map from Element to nuclides to reinforce that the mass fractions are per-element, not for the whole material.
+     
+     A nuclide with a value of nullptr, indicates the fraction of other nuclides is being varied.
+     
+     TODO: move away from using the `tuple`, and make a proper struct
      */
-    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractions;
+    std::map<const SandiaDecay::Element *,std::vector<std::tuple<const SandiaDecay::Nuclide *,double,bool>>> m_nuclideFractions_;
     
     // Trace-source stuff
     std::vector<TraceSourceInfo> m_traceSources;
@@ -255,8 +271,10 @@ namespace ShieldingSourceFitCalc
     /** 1-sigma uncertainties of fit dimensions or AN/AD. */
     double m_dimensionUncerts[3];
     
-    /** 1-sigma uncertainties for fit mass fractions. */
-    std::map<const SandiaDecay::Nuclide *,double> m_nuclideFractionUncerts;
+    /** 1-sigma uncertainties for fit mass fractions.
+     nullptr nuclide indicates the "other" non-source component of the element.
+     */
+    std::map<const SandiaDecay::Element *,std::map<const SandiaDecay::Nuclide *,double>> m_nuclideFractionUncerts;
     
     /** 1-sigma uncertainties for fit trace source activities (duplicate information available in #IsoFitStruct) */
     std::map<const SandiaDecay::Nuclide *,double> m_traceSourceActivityUncerts;
@@ -336,6 +354,7 @@ namespace ShieldingSourceFitCalc
     double edm;  //estimated distance to minimum.
     double chi2;
     int num_fcn_calls;
+    unsigned int numDOF;
     std::vector<double> paramValues;
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
@@ -350,6 +369,14 @@ namespace ShieldingSourceFitCalc
     // Need to add: foreground spectrum, background spectrum,
     
     std::vector<ShieldingSourceFitCalc::IsoFitStruct> fit_src_info;
+    
+    std::unique_ptr<const std::vector<GammaInteractionCalc::PeakResultPlotInfo>> peak_comparisons;
+    
+    std::vector<std::string> peak_calc_log;
+    std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> peak_calc_details;
+    std::unique_ptr<const std::vector<GammaInteractionCalc::ShieldingDetails>> shield_calc_details;
+    std::unique_ptr<const std::vector<GammaInteractionCalc::SourceDetails>> source_calc_details;
+    
     
     ShieldingSourceFitOptions options;
   };//struct ModelFitResults

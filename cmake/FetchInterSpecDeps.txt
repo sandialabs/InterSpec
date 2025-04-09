@@ -162,13 +162,24 @@ if( USE_REL_ACT_TOOL )
   set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
   set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
   set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
+  set( EIGEN_BUILD_PKGCONFIG OFF )
   #set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
   
   FetchContent_Declare(
     eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG        3147391d946bb4b6c68edd901f2add6ac1f31f8c # release-3.4.0
+    #GIT_TAG        3147391d946bb4b6c68edd901f2add6ac1f31f8c # release-3.4.0
+    GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 #Updated 3.4 release, to pickup some CMake fixes
   )
+
+  FetchContent_MakeAvailable( eigen )
+  
+  # For Android and iOS, we need to force the path information for Eigen, for some reason.
+  if( CMAKE_CROSSCOMPILING )
+    set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
+    set( Eigen3_DIR "${eigen_BINARY_DIR}" CACHE PATH "" FORCE )  #${eigen_SOURCE_DIR}
+  endif( CMAKE_CROSSCOMPILING )
+
   
   # Set some Google Ceres options; both to allow compiling without further dependancies, and
   #  avoid some things we dont need
@@ -185,8 +196,9 @@ if( USE_REL_ACT_TOOL )
     ceres-solver
     GIT_REPOSITORY https://ceres-solver.googlesource.com/ceres-solver
     GIT_TAG        783637a6ed285abc6c57b16ccd968c594a91b35f # release-2.1.0
+    GIT_SHALLOW TRUE
   )
-  FetchContent_MakeAvailable(eigen ceres-solver)
+  FetchContent_MakeAvailable( ceres-solver )
 endif( USE_REL_ACT_TOOL )
 
 if( BUILD_AS_WX_WIDGETS_APP )

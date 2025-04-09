@@ -52,30 +52,46 @@
   display: inline;
 }
 
-
-.DbSpecFileItem
-{
-  padding-left: 5px;
-  padding-right: 3px;
-  padding-top: 3px;
+.DbSpecFileItem {
+  padding-left: 4px;
+  padding-right: 4px;
+  padding-top: 4px;
+  padding-bottom: 4px;
   margin-bottom: 7px;
   width: 95%;
-  height: 1.8em;
   border:1px solid #e1e1e1;
+  display: flex;
+}
+
+@media (min-width: 480px) {
+  .DbSpecFileItem {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+/* Styles for screens with a width of 480px or less */
+@media (max-width: 480px) {
+  .DbSpecFileItem
+  {
+    flex-direction: column;
+    align-items: center;
+    padding: 4px;
+    border-radius: 5px;
+  }
+
+  .DbSpecFileItemTxt
+  {
+  }
+
+  .DbSpecFileItemButton
+  {
+  }
 }
 
 
-.DbSpecFileItemTxt
-{
-  font-size:100%;
-  font-family:"Times New Roman", Times, serif;
-  position:absolute;
-}
-
-
-.DbSpecFileItemButton
-{
-  float: right;
+@media screen and (max-device-width: 480px) {
 }
 
 .ResumeWorkTxt

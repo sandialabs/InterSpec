@@ -645,21 +645,30 @@ namespace PeakDists
     const double norm = DSCB_norm( left_skew, left_n, right_skew, right_n );
     const double exp_lower_aa = std::exp(-0.5*left_skew*left_skew);
     const double exp_upper_aa = std::exp(-0.5*right_skew*right_skew);
-    const double right_tail_indef_at_rskew = norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew));
-    
+
+    const double right_tail_indef_at_rskew = norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew)); //this is the indefinete integral evaluation at `right_skew`.
+
     auto left_tail_indefinite_t = [left_skew, left_n, norm, exp_lower_aa]( const double t ) -> double {
       const double t_1 = (t == -left_skew) ? 1.0 : 1.0 - (left_skew / (left_n / (left_skew + t)));
       return -norm * exp_lower_aa * (t_1 / std::pow(t_1, left_n)) / ((left_skew / left_n) - left_skew); //slightly more stable
     };
     
     
-    auto right_tail_indefinite_t = [right_skew, right_n, norm, exp_upper_aa, right_tail_indef_at_rskew]( const double t ) -> double {
+    auto right_tail_area_t = [right_skew, right_n, norm, exp_upper_aa, right_tail_indef_at_rskew]( const double t ) -> double {
       const double t_1 = (t == right_skew) ? 1.0 : (1.0 + ((right_skew * (t - right_skew)) / right_n));
-      return norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew)) * std::pow(t_1, (1.0 - right_n)) - right_tail_indef_at_rskew;
+      const double answer = norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew)) * std::pow(t_1, (1.0 - right_n)) - right_tail_indef_at_rskew;
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      //Not quite as stable version
+      const double indef = (norm*(right_n * exp(-0.5*right_skew*right_skew) * pow((right_skew * (t - right_skew) + right_n) / right_n,1 - right_n)) / ((1 - right_n) * right_skew));
+      assert( fabs((indef - right_tail_indef_at_rskew) - answer) < 1.0E-5*norm );
+#endif
+
+      return answer;
     };
     
-    assert( right_tail_indefinite_t(right_skew) == 0 );
-    
+    assert( fabs(right_tail_area_t(right_skew)) < 1.E-8 );
+
     const double gaus_indef_at_left_skew = norm * root_half_pi * boost_erf_imp( -left_skew * one_div_root_two );
     auto gauss_indefinite_t = [norm, gaus_indef_at_left_skew, one_div_root_two, root_half_pi]( const double t ) -> double {
       return norm * root_half_pi * boost_erf_imp( one_div_root_two * t ) - gaus_indef_at_left_skew;
@@ -667,9 +676,33 @@ namespace PeakDists
     
     const double indef_at_left_skew = left_tail_indefinite_t( -left_skew );
     const double indef_at_right_skew = indef_at_left_skew + gauss_indefinite_t( right_skew );
-    
+
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+    const auto rindef_t = [=]( const double t ){
+      return norm*(right_n * exp(-0.5*right_skew*right_skew) * pow((right_skew * (t - right_skew) + right_n) / right_n,1 - right_n)) / ((1 - right_n) * right_skew);
+    };
+    const double check_indef_right = rindef_t( right_skew );
+    assert( fabs(check_indef_right - right_tail_indef_at_rskew) < 1.E-12 );
+
+    const double check_indef_right_2 = norm*DSCB_right_tail_indefinite_non_norm_t( right_skew, right_n, right_skew );
+    assert( fabs(check_indef_right_2 - right_tail_indef_at_rskew) < 1.E-6*norm );
+
+    const double expected_left_indef = norm*(left_n * exp(-0.5*left_skew*left_skew)) / ((left_n - 1) * left_skew);
+    assert( fabs(indef_at_left_skew - expected_left_indef) < 1.0E-6 );
+    const double expected_gaus_area = norm*root_half_pi * (std::erf(left_skew*one_div_root_two) + std::erf(right_skew*one_div_root_two));
+    const double expected_right_indef = expected_left_indef + expected_gaus_area;
+    assert( fabs(expected_right_indef - indef_at_right_skew) < 1.0E-6 );
+
+    const double rtail_area = right_tail_area_t( 1.0E32 );
+
+
+    const double rtail_area_exp = norm*(DSCB_right_tail_indefinite_non_norm_t( right_skew, right_n, 1.0E32 ) - DSCB_right_tail_indefinite_non_norm_t( right_skew, right_n, right_skew ));
+    assert( fabs(rtail_area - rtail_area_exp) < 1.0E-3 );
+#endif
+
     auto indefinite_x = [mean, sigma, left_skew, right_skew,
-                       left_tail_indefinite_t, right_tail_indefinite_t, gauss_indefinite_t,
+                       left_tail_indefinite_t, right_tail_area_t, gauss_indefinite_t,
                        indef_at_left_skew, indef_at_right_skew]( const double x ) {
       const double t = (x - mean) / sigma;
       if( t <= -left_skew )
@@ -677,8 +710,10 @@ namespace PeakDists
       
       if( t <= right_skew )
         return indef_at_left_skew + gauss_indefinite_t( t );
-      
-      return indef_at_right_skew + right_tail_indefinite_t( t );
+
+      const double right_frac = right_tail_area_t( t );
+
+      return indef_at_right_skew + right_frac;
     };
     
     
@@ -690,7 +725,7 @@ namespace PeakDists
       return -0.5*p + (1.0 - indefinite_x( x ));
     };
     
-    if( (p <= 1.0E-11) || (p > 0.999)  ) // for gaussian, 7 sigma would be 1.279812544E-12
+    if( (p <= 1.0E-11) || (p > (1.0 - 1.0E-11))  ) // for gaussian, 7 sigma would be 1.279812544E-12
       throw runtime_error( "double_sided_crystal_ball_coverage_limits: invalid p" );
     
     auto x_from_eqn = [mean, sigma, norm, left_skew, left_n, right_skew, right_n,
@@ -710,16 +745,28 @@ namespace PeakDists
         const double t_eqn = root_two * boost::math::erf_inv( (prob - indef_at_left_skew + gaus_indef_at_left_skew) / (norm * root_half_pi) );
         return t_eqn*sigma + mean;
       }
-  
-      // TODO: Fix these not working
-      const double pow_arg = right_tail_indef_at_rskew + ((right_skew / right_n) - right_skew)*(prob - indef_at_right_skew)/(norm * exp_upper_aa);
-      const double tmp = std::pow( pow_arg, 1.0/(1.0-right_n) );
-      const double t_eqn = right_skew + (right_n/right_skew) *(tmp - 1.0);
-      
-      // TODO: for some reason inverting the right tail doesnt work (`pow_arg` is negative); math must be wrong
-      throw runtime_error( "Inverting right tail doesnt work yet" );
-      
-      return t_eqn*sigma + mean;
+
+
+      const double remaining_prob = prob - indef_at_right_skew;
+      //remaining_prob == (right_tail_indef(t) - right_tail_indef(right_skew))
+      //remaining_prob = right_tail_indef(t) - right_tail_indef(right_skew)
+      //remaining_prob = right_tail_indef(t) - right_tail_indef_at_rskew
+      //remaining_prob + right_tail_indef_at_rskew = right_tail_indef(t)
+      //remaining_prob + right_tail_indef_at_rskew
+      //        = norm*(exp_upper_aa*right_n*std::pow((right_skew*(t + right_n/right_skew - right_skew))/right_n,1-right_n))/(right_skew*(1-right_n))
+      //(right_skew*(1-right_n)*(remaining_prob + right_tail_indef_at_rskew)/(norm*exp_upper_aa*right_n)
+      //              = (std::pow((right_skew*(t + right_n/right_skew - right_skew))/right_n,1-right_n)))
+      // Set left side equal to A
+      // A = std::pow((right_skew*(t + right_n/right_skew - right_skew))/right_n,1-right_n)))
+      //... put int chatGPT ...
+      const double A = (right_skew*(1-right_n))*(remaining_prob + right_tail_indef_at_rskew)/(norm*exp_upper_aa*right_n);
+      const double t_eqn = (right_n*pow(A,1.0/(1-right_n))/right_skew) - (right_n/right_skew) + right_skew;
+      const double x = t_eqn*sigma + mean;
+
+      if( IsInf(x) || IsNan(x) )
+        throw runtime_error("failed to symbolically solve");
+
+      return x;
     };//auto x_from_eqn
     
     
@@ -731,27 +778,94 @@ namespace PeakDists
 
       // TODO: if value is in right tail, we will fail, in which case we will resort to an iterative solution
       double lower_x = -999, upper_x = -999;
-      try{ lower_x = x_from_eqn( 0.5*p ); }catch( std::exception & ){ cout << "Failed to find lower answer by eqn from p=" << p << endl; }
-      try{ upper_x = x_from_eqn( 1.0 - 0.5*p ); }catch( std::exception & ){ cout << "Failed to find upper answer by eqn from p=" << p << endl; }
+      try
+      {
+        lower_x = x_from_eqn( 0.5*p );
+      }catch( std::exception & )
+      {
+        cout << "Failed to find lower answer by eqn from p=" << p << endl;
+      }
+      
+      try
+      {
+        upper_x = x_from_eqn( 1.0 - 0.5*p );
+      }catch( std::exception & )
+      {
+        cout << "Failed to find upper answer by eqn from p=" << p << endl;
+      }
       
 
-      if( (lower_x < 989) || IsNan(lower_x) || IsInf(lower_x) )
+      if( (lower_x < -998) || IsNan(lower_x) || IsInf(lower_x) )
       {
-        boost::uintmax_t max_iter = 100;
-        const double low_low_limit = mean - 200*sigma;  //200 sigma is arbitrary
-        const double low_up_limit = mean;
+        // With huge skew and/or small probabilities, the energy-value we are looking for can be
+        //  really far away from mean, so we will search by doubling the search range.
+        double low_low_limit;
+        bool found_lower = false;
+        const size_t max_range_doublings = 40;
+        double current_dx = 20.0 * std::max(sigma, 0.1); //20 sigma starting is arbitrary
+        for( size_t i = 0; !found_lower && (i < max_range_doublings); ++i, current_dx *= 2 )
+        {
+          low_low_limit = mean - current_dx;
+          const double y = lower_fcn( low_low_limit );
+          found_lower = (y < 0.0);
+        }//for( look for x where pdf has gone below limit )
+        
+        // If we didnt find the lower limit, `boost::math::tools::bisect(...)` will throw exception
+        //assert( found_lower );
+        
+#if( PERFORM_DEVELOPER_CHECKS )
+        if( !found_lower )
+        {
+          const string msg = "Failed to find lower limit by " + std::to_string(mean - current_dx)
+          + " for double_sided_crystal_ball_coverage_limits( "
+          + std::to_string(mean) + ", " + std::to_string(sigma) + ", " + std::to_string(left_skew)
+          + ", " + std::to_string(left_n) + ", " + std::to_string(right_skew) + ", "
+          + std::to_string(right_n) + ", " + std::to_string(p) + " )";
+          
+          log_developer_error( __func__, msg.c_str() );
+        }//if( !found_upper )
+#endif
+        
+        boost::uintmax_t max_iter = 1000;
         const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
-                                                                         low_up_limit, term_condition, max_iter );
+                                                                         mean, term_condition, max_iter );
         lower_x = 0.5*(lower_val.first + lower_val.second);
       }//if( lower_x < 989 || IsNan(lower_x) || IsInf(lower_x) )
       
        
-      if( (upper_x < 989) || IsNan(upper_x) || IsInf(upper_x) )
+      if( (upper_x < -998) || IsNan(upper_x) || IsInf(upper_x) )
       {
-        boost::uintmax_t max_iter = 100;
-        const double up_low_limit = mean;
-        const double up_up_limit = mean + 200*sigma;
-        const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, up_low_limit,
+        // With huge skew and/or small probabilities, the energy-value we are looking for can be
+        //  really huge, so we will search by doubling the search range.
+        double up_up_limit;
+        bool found_upper = false;
+        const size_t max_range_doublings = 40;
+        double current_dx = 20.0 * std::max(sigma, 0.1);
+        for( size_t i = 0; !found_upper && (i < max_range_doublings); ++i, current_dx *= 2 )
+        {
+          up_up_limit = mean + current_dx;
+          const double y = upper_fcn( up_up_limit );
+          found_upper = (y < 0.0);
+        }//for( look for x where pdf has gone below limit )
+        
+        // If we didnt find the upper limit, `boost::math::tools::bisect(...)` will throw exception
+        //assert( found_upper );
+        
+#if( PERFORM_DEVELOPER_CHECKS )
+        if( !found_upper )
+        {
+          const string msg = "Failed to find upper limit by " + std::to_string(mean + current_dx)
+          + " for double_sided_crystal_ball_coverage_limits( "
+          + std::to_string(mean) + ", " + std::to_string(sigma) + ", " + std::to_string(left_skew)
+          + ", " + std::to_string(left_n) + ", " + std::to_string(right_skew) + ", "
+          + std::to_string(right_n) + ", " + std::to_string(p) + " )";
+          
+          log_developer_error( __func__, msg.c_str() );
+        }//if( !found_upper )
+#endif
+
+        boost::uintmax_t max_iter = 1000;
+        const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, mean,
                                                                          up_up_limit, term_condition, max_iter );
         upper_x = 0.5*(upper_val.first + upper_val.second);
       }//if( upper_x < 989 || IsNan(upper_x) || IsInf(upper_x) )
@@ -764,7 +878,8 @@ namespace PeakDists
       return pair<double,double>( lower_x, upper_x );
     }catch( std::exception &e )
     {
-      throw runtime_error( "double_sided_crystal_ball_coverage_limits: failed to find limit: " + string(e.what()) );
+      const string excmsg = e.what();
+      throw runtime_error( "double_sided_crystal_ball_coverage_limits: failed to find limit: " + excmsg );
     }//try / catch
     
     assert( 0 );

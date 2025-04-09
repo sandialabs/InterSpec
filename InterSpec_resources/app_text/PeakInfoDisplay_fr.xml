@@ -1,23 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- pid is short for PeakInfoDisplay -->
+  <message id="pid-dialog-peak-erase">Effacer tous les pics ?</message>
 
-<message id="pid-dialog-peak-erase">Effacer Tous les Pics ?</message>
-<message id="pid-err-no-foreground">Un spectre de premier plan doit être chargé pour ajouter un pic.</message>
+  <message id="pid-err-no-foreground">Un spectre de premier plan doit être chargé pour ajouter un pic.</message>
 
-<message id="pid-search-peaks-btn">Rechercher des Pics</message>
-<message id="pid-tt-search-peaks-btn">Rechercher des pics en utilisant l'algorithme de détection automatique des pics.</message>
-<message id="pid-clear-peaks-btn">Effacer tous les Pics</message>
-<message id="pid-tt-clear-peaks-btn">Supprime <b>tous</b> les pics existants.</message>
-<message id="pid-nuc-from-ref-btn">Nucl. à partir de Réf.</message>
-<message id="pid-tt-nuc-from-ref-btn">
-    Attribuer les nucléides des pics à partir des lignes de référence affichées. S'applique uniquement aux
-    pics qui n'ont pas déjà un nucléide associé.
-</message>
+  <message id="pid-search-peaks-btn">Rechercher des pics</message>
+  <message id="pid-tt-search-peaks-btn">Rechercher des pics à l'aide de l'algorithme de recherche automatique de pics.</message>
+  <message id="pid-clear-peaks-btn">Effacer tous les pics</message>
+  <message id="pid-tt-clear-peaks-btn">Supprime <b>tous</b> les pics existants.</message>
+  <message id="pid-nuc-from-ref-btn">Nuc. à partir de Réf.</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    Attribuer les nucléides des pics à partir des lignes de référence affichées.  S'applique uniquement aux
+    pics qui n'ont pas déjà de nucléide associé.
+  </message>
 
-<message id="pid-add-peak-btn">Ajouter...</message>
-<message id="pid-tt-add-peak-btn">Ajouter manuellement un nouveau pic.</message>
-<message id="pid-tt-del-peaks">Supprime le pic actuellement en cours d'édition.</message>
-<message id="pid-better-editor-hint">Cliquez avec le bouton droit sur les pics pour un meilleur éditeur</message>
-<message id="pid-tt-csv-export">Exporter les informations sur les pics identifiés dans un format séparé par des virgules.</message>
+  <message id="pid-add-peak-btn">Ajouter...</message>
+  <message id="pid-tt-add-peak-btn">Ajouter manuellement un nouveau pic.</message>
+  <message id="pid-tt-del-peaks">Supprime le pic en cours d'édition.</message>
+  <message id="pid-better-editor-hint">Clic droit sur les pics pour un meilleur éditeur</message>
+  <message id="pid-better-editor-hint-mobile">Appuyez longuement sur les pics pour un meilleur éditeur</message>
+  <message id="pid-tt-csv-export">Exporter les informations sur les pics identifiés dans un format séparé par des virgules.</message>
+  <message id="pid-tt-csv-copy">Copier les informations CSV des pics dans votre presse-papiers.
+    <p>Les données des pics seront copiées dans votre presse-papiers dans des variantes formatées et en texte brut,
+      de sorte que le format des données dépendra de l'application dans laquelle vous les collez.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">Copier le CSV complet des pics</message>
+  <message id="pid-csv-copy-no-hdr">Copier sans en-têtes</message>
+  <message id="pid-csv-copy-compact">Copier les infos d'ajustement des pics</message>
 </messages>

@@ -41,6 +41,7 @@
 #include <Wt/WLineEdit>
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
+#include <Wt/WTabWidget>
 #include <Wt/WPushButton>
 #include <Wt/Http/Request>
 #include <Wt/WApplication>
@@ -73,6 +74,7 @@
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
@@ -124,6 +126,8 @@ const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_
 #if( USE_QR_CODES )
 namespace
 {
+  const int ns_min_screen_width_for_wide_layout = 750;
+  
 std::string clean_uuid( string uuid )
 {
   SpecUtils::trim(uuid);
@@ -730,18 +734,42 @@ void ExportSpecFileTool::init()
   
   addStyleClass( "ExportSpecFileTool" );
   
-  const bool showToolTips = InterSpecUser::preferenceValue<bool>( "ShowTooltips", m_interspec );
-  const bool isMobile = m_interspec && m_interspec->isMobile();
+  // Store Act/Shield fit and Rel Eff fit into file - if these tools are open, so the
+  //   tools current states will be available in the foreground N42 files.
+  m_interspec->saveShieldingSourceModelToForegroundSpecMeas();
+#if( USE_REL_ACT_TOOL )
+  m_interspec->saveRelActManualStateToForegroundSpecMeas();
+#endif
   
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
+  const bool isMobile = m_interspec && m_interspec->isMobile();
+
   if( isMobile )
     addStyleClass( "ExportSpecFileToolMobile" );
   
-  WContainerWidget *body = new WContainerWidget( this );
-  body->addStyleClass( "ExportSpecFileBody" );
+  const int screenWidth = m_interspec->renderedWidth();
+  const bool isPhone = (screenWidth > 100) ? (screenWidth < ns_min_screen_width_for_wide_layout) : m_interspec->isPhone();
+  
+  WTabWidget *mobileTabs = nullptr;
+  WContainerWidget *body = nullptr;
+
+  if( isPhone )
+  {
+    addStyleClass( "ExportSpecFileToolPhone" );
+
+    mobileTabs = new WTabWidget( this );
+    mobileTabs->addStyleClass( "ExportSpecFileTabs" );
+  }else
+  {
+    body = new WContainerWidget( this );
+    body->addStyleClass( "ExportSpecFileBody" );
+  }
   
   
   WContainerWidget *fileSelectDiv = new WContainerWidget( body );
   fileSelectDiv->addStyleClass( "ExportSpecSelect" );
+  if( isPhone )
+    mobileTabs->addTab( fileSelectDiv, "File", Wt::WTabWidget::LoadPolicy::PreLoading );
   
   if( !m_specific_spectrum )
   {
@@ -774,7 +802,7 @@ void ExportSpecFileTool::init()
       string title = "For." + string(back ? " + Back." : "") + string(secondary ? " + Secon." : "");
       
       m_forePlusBack = new WCheckBox( title, fileSelectDiv );
-      m_forePlusBack->addStyleClass( "ExportForPlusBack" );
+      m_forePlusBack->addStyleClass( "ExportForPlusBack CbNoLineBreak" );
       m_forePlusBack->checked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
       m_forePlusBack->unChecked().connect( this, &ExportSpecFileTool::handleForePlusBackChanged );
       m_forePlusBack->setToolTip( "Export the foreground and background and/or secondary"
@@ -788,6 +816,8 @@ void ExportSpecFileTool::init()
   // Spectrum format
   WContainerWidget *menuHolder = new WContainerWidget( body );
   menuHolder->addStyleClass( "ExportSpecFormat" );
+  if( isPhone )
+    mobileTabs->addTab( menuHolder, "Format", Wt::WTabWidget::LoadPolicy::PreLoading );
   
   WText *title = new WText( "File Format", menuHolder );
   title->addStyleClass( "ExportColTitle" );
@@ -857,26 +887,35 @@ void ExportSpecFileTool::init()
   // Meas/samples to include
   m_samplesHolder = new WContainerWidget( body );
   m_samplesHolder->addStyleClass( "ExportSpecSamples" );
+
+  if( isPhone )
+    mobileTabs->addTab( m_samplesHolder, "Options", Wt::WTabWidget::LoadPolicy::PreLoading );
+
   title = new WText( "Samples to Include", m_samplesHolder );
   title->addStyleClass( "ExportColTitle" );
   
   m_dispForeSamples   = new WCheckBox( "Disp. Foreground", m_samplesHolder );
+  m_dispForeSamples->addStyleClass( "CbNoLineBreak" );
   m_dispForeSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
   m_dispForeSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Foreground ) );
   
   m_dispBackSamples   = new WCheckBox( "Disp. Background", m_samplesHolder );
+  m_dispBackSamples->addStyleClass( "CbNoLineBreak" );
   m_dispBackSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
   m_dispBackSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::Background ) );
   
   m_dispSecondSamples = new WCheckBox( "Disp. Secondary", m_samplesHolder );
+  m_dispSecondSamples->addStyleClass( "CbNoLineBreak" );
   m_dispSecondSamples->checked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
   m_dispSecondSamples->unChecked().connect( boost::bind( &ExportSpecFileTool::handleDisplaySampleChanged, this, SpecUtils::SpectrumType::SecondForeground ) );
   
   m_allSamples = new WCheckBox( "All Samples", m_samplesHolder );
+  m_allSamples->addStyleClass( "CbNoLineBreak" );
   m_allSamples->checked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   m_allSamples->unChecked().connect( this, &ExportSpecFileTool::handleAllSampleChanged );
   
   m_customSamples = new WCheckBox( "Custom Samples", m_samplesHolder );
+  m_customSamples->addStyleClass( "CbNoLineBreak" );
   m_customSamples->checked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   m_customSamples->unChecked().connect( this, &ExportSpecFileTool::handleCustomSampleChanged );
   
@@ -909,6 +948,7 @@ void ExportSpecFileTool::init()
   m_customSamplesEdit->hide();
 
   m_filterDetector = new WCheckBox( "Filter Detectors", m_samplesHolder );
+  m_filterDetector->addStyleClass( "CbNoLineBreak" );
   m_filterDetector->checked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   m_filterDetector->unChecked().connect( this, &ExportSpecFileTool::handleFilterDetectorCbChanged );
   
@@ -925,6 +965,7 @@ void ExportSpecFileTool::init()
   
   
   m_sumAllToSingleRecord = new WCheckBox( "Sum to single record", m_optionsHolder );
+  m_sumAllToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = "All selected samples and/or detectors will be summed together into a single spectrum.<br />"
             "Caution: if you have both foreground and background selected, they will be summed together.";
   HelpSystem::attachToolTipOn( m_sumAllToSingleRecord, tooltip, true,
@@ -934,6 +975,7 @@ void ExportSpecFileTool::init()
   m_sumAllToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumToSingleRecordChanged );
   
   m_sumForeToSingleRecord = new WCheckBox( "Sum Fore to single record", m_optionsHolder );
+  m_sumForeToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = "There are either multiple sample numbers, or multiple detectors that comprise the"
             " displayed foreground; checking this option will sum all these to a single spectrum"
             " in the output file.";
@@ -944,6 +986,7 @@ void ExportSpecFileTool::init()
   m_sumForeToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
   m_sumBackToSingleRecord = new WCheckBox( "Sum Back to single record", m_optionsHolder );
+  m_sumBackToSingleRecord->addStyleClass( "CbNoLineBreak" );
   tooltip = "There are either multiple sample numbers, or multiple detectors that comprise the"
             " displayed background; checking this option will sum all these to a single spectrum"
             " in the output file.";
@@ -954,10 +997,12 @@ void ExportSpecFileTool::init()
   m_sumBackToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
   m_sumSecoToSingleRecord = new WCheckBox( "Sum Sec to single record", m_optionsHolder );
+  m_sumSecoToSingleRecord->addStyleClass( "CbNoLineBreak" );
   m_sumSecoToSingleRecord->checked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   m_sumSecoToSingleRecord->unChecked().connect( this, &ExportSpecFileTool::handleSumTypeToSingleRecordChanged );
   
   m_backSubFore = new WCheckBox( "Background subtract", m_optionsHolder );
+  m_backSubFore->addStyleClass( "CbNoLineBreak" );
   tooltip = "The output spectrum will be the foreground, minus the background.";
   HelpSystem::attachToolTipOn( m_backSubFore, tooltip, true,
                               HelpSystem::ToolTipPosition::Right,
@@ -966,6 +1011,7 @@ void ExportSpecFileTool::init()
   m_backSubFore->unChecked().connect( this, &ExportSpecFileTool::handleBackSubForeChanged );
   
   m_sumDetsPerSample = new WCheckBox( "Sum det. per sample", m_optionsHolder );
+  m_sumDetsPerSample->addStyleClass( "CbNoLineBreak" );
   tooltip = "For each sample number, sum all detectors for that sample number together.<br />"
             "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
             " then the results will have 120 spectra, each of which is the sum of the"
@@ -978,6 +1024,7 @@ void ExportSpecFileTool::init()
   
   
   m_sumSamplesPerDets = new WCheckBox( "Sum samples per det.", m_optionsHolder );
+  m_sumSamplesPerDets->addStyleClass( "CbNoLineBreak" );
   tooltip = "For each detector, sums all sample numbers together.<br />"
             "E.g., if you have 8 detectors in your spectrum file, each with 120 samples"
             " then the results will have 8 spectra, each of which is the sum of the"
@@ -990,6 +1037,7 @@ void ExportSpecFileTool::init()
   
   
   m_excludeInterSpecInfo = new WCheckBox( "Remove InterSpec info", m_optionsHolder );
+  m_excludeInterSpecInfo->addStyleClass( "CbNoLineBreak" );
   tooltip = "Removes detector response, peaks, and other analysis"
             " results you may have added in InterSpec.";
   HelpSystem::attachToolTipOn( m_excludeInterSpecInfo, tooltip, true,
@@ -999,6 +1047,7 @@ void ExportSpecFileTool::init()
   m_excludeInterSpecInfo->unChecked().connect( this, &ExportSpecFileTool::handleIncludeInterSpecInfoChanged );
   
   m_excludeGpsInfo = new WCheckBox( "Remove GPS", m_optionsHolder );
+  m_excludeGpsInfo->addStyleClass( "CbNoLineBreak" );
   
   m_sampleSelectNotAppTxt = new WText( "Not Applicable" );
   m_sampleSelectNotAppTxt->addStyleClass( "ExportNotAppTxt" );
@@ -1801,6 +1850,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     for( const string &name : spec->detector_names() )
     {
       WCheckBox *cb = new WCheckBox( name, m_detectorFilterCbs );
+      cb->addStyleClass( "CbNoLineBreak" );
       if( prev_check.count(cb->text().toUTF8()) )
         cb->setChecked( prev_check[cb->text().toUTF8()] );
       else
@@ -2953,12 +3003,14 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
       samples.erase( sample );
     
     // Now lets map sample numbers to 1 through N
+    samples.clear();
     int new_sample_number = 0;
     vector<pair<int,int>> old_to_new_samplenum;
     for( const int old_sample_number : answer->sample_numbers() )
     {
       ++new_sample_number;
       old_to_new_samplenum.emplace_back( old_sample_number, new_sample_number );
+      samples.insert( new_sample_number );
     }//for( loop over sample numbers )
     
     answer->change_sample_numbers( old_to_new_samplenum );
@@ -3589,9 +3641,16 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   addStyleClass( "export-spec-file" );
   
   const int w = viewer->renderedWidth();
-  //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
-  setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 600.0) : 600.0 ,WLength::Pixel), WLength::Auto );
-  
+  const bool isPhone = (w > 100) ? (w < ns_min_screen_width_for_wide_layout) : (viewer && viewer->isPhone());
+
+  if( isPhone )
+  {
+    resize( 320, Wt::WLength::Auto ); //320 px is about the smallest width Android phone to expect
+  }else 
+  {
+    //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Pixel), WLength::Auto );
+    setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 650.0) : 650.0, WLength::Pixel), WLength::Auto );
+  }
   m_tool = new ExportSpecFileTool( viewer, contents() );
   m_tool->done().connect( boost::bind(&ExportSpecFileWindow::accept, this) );
   

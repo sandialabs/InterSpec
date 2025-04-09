@@ -57,6 +57,7 @@ public:
   // Function that are straight pass-throughs to the WCheckBox functions
   bool isChecked() const;
   void setChecked( bool checked );
+  void setUnChecked( bool unChecked );
   virtual void setUnChecked();
   virtual void setChecked();
   

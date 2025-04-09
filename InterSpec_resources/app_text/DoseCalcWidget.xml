@@ -7,6 +7,7 @@
   <message id="dcw-inputs">Inputs</message>
   <message id="dcw-answer">Answer</message>
   <message id="dcw-intro-instructions">Select quantity you would like to compute on the left</message>
+  <message id="dcw-intro-instructions-vert-phone">Select quantity you would like to compute above</message>
   <message id="dcw-intro-calc-desc">Dose values computed using ANSI/ANS-6.1.1-1991 most
     conservative case: Anterior-Posterior orientation.
     Dose calculations are a rough guide, at best, and are

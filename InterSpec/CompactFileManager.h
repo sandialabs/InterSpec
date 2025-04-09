@@ -32,13 +32,11 @@
 namespace Wt
 {
   class WText;
-  class WSlider;
+  class WTable;
   class WComboBox;
   class WLineEdit;
-  class WDoubleSpinBox;
   class WPushButton;
-  class WEvent;
-} // namespace Wt
+}//namespace Wt
 
 
 namespace SpecUtils{ enum class SpectrumType : int; }
@@ -67,6 +65,11 @@ public:
 
   void refreshContents();
   void handleDisplayChange( SpecUtils::SpectrumType spectrum_type,
+                            const std::shared_ptr<SpecMeas> meas,
+                            const std::set<int> &sample_numbers,
+                            const std::vector<std::string> &detectors );
+  
+  void updateSummaryTable( SpecUtils::SpectrumType spectrum_type,
                             const std::shared_ptr<SpecMeas> meas,
                             const std::set<int> &sample_numbers,
                             const std::vector<std::string> &detectors );
@@ -107,6 +110,8 @@ protected:
   void handleRenormalizeByLIveTime( const SpecUtils::SpectrumType type );
   
 private:
+  /** A little SVG square in upper row that indicates the spectrum line color. */
+  Wt::WText *m_spectrumLineLegend[3];
   Wt::WComboBox *m_selects[3];
   Wt::WText *m_displayedPreTexts[3]; //Doesnt look to be used anymore
   Wt::WText *m_displayedPostTexts[3];
@@ -114,6 +119,7 @@ private:
   Wt::WLineEdit *m_displaySampleNumEdits[3];
   Wt::WInteractWidget *m_nextSampleNumButtons[3];
   Wt::WInteractWidget *m_prevSampleNumButtons[3];
+  Wt::WContainerWidget *m_scaleValueRow[3];
   NativeFloatSpinBox *m_scaleValueTxt[3];  //could use a WInPlaceEdit
   Wt::WPushButton *m_rescaleByLiveTime[3];
   
@@ -125,11 +131,29 @@ private:
   //  changed between the last spectrum data load and the blurr.
   Wt::WString m_previousSampleTxt[3];
 
-  //When exactly one sample number is dispayed, when there is exactly one
-  //  detector, if the measurment has a title, it will be displayed using
+  //When exactly one sample number is displayed, when there is exactly one
+  //  detector, if the measurement has a title, it will be displayed using
   //  m_foregroundTitle.  In the future it may be worth while to make this a
   //  WInPlaceEdit to allow the user an easy way to change it.
   Wt::WText *m_titles[3];
+  
+  /** Table giving a summary of current measurement. */
+  Wt::WTable *m_summaryTables[3];
+  
+  /** Buttons, that look like links in lower right-hand corner, that will show the detectors RID results,
+   when they are present.
+   */
+  Wt::WPushButton *m_showRidIdResult[3];
+  
+  /** Buttons, that look like links in lower right-hand corner, that will show the images embedded in
+   the spectrum file, if present.
+   */
+  Wt::WPushButton *m_showImage[3];
+  
+  /** Buttons, that look like links in lower right-hand corner that when clicked bring up the
+   "File Parameters" dialog for this file
+   */
+  Wt::WPushButton *m_moreInfoBtn[3];
   
   // A link to the file manager, as that's where everything's stored
   SpectraFileModel *m_files;

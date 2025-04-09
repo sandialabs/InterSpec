@@ -34,6 +34,8 @@
 #include <Wt/WValidator>
 #include <Wt/WPushButton>
 #include <Wt/WGridLayout>
+#include <Wt/WApplication>
+#include <Wt/WEnvironment>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
 
@@ -43,11 +45,12 @@
 
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/AuxWindow.h"
-#include "InterSpec/InterSpec.h"      // Only for preferenceValue<bool>("DisplayBecquerel")
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
-#include "InterSpec/InterSpecUser.h"  // Only for preferenceValue<bool>("DisplayBecquerel")
+#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h" // Only for preferenceValue<bool>("DisplayBecquerel")
 #include "InterSpec/UnitsConverterTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
@@ -468,7 +471,8 @@ UnitsConverterTool::UnitsConverterTool()
   run_tests();
 #endif
   
-  InterSpec::instance()->useMessageResourceBundle( "UnitsConverterTool" );
+  InterSpec *viewer = InterSpec::instance();
+  viewer->useMessageResourceBundle( "UnitsConverterTool" );
   
   //addStyleClass( "UnitsConverterTool" );
   
@@ -598,12 +602,24 @@ UnitsConverterTool::UnitsConverterTool()
   resizeToFitOnScreen();
 
   //Keep the keyboard form popping up
-  InterSpecApp *app = dynamic_cast<InterSpecApp *>(WApplication::instance());
-  if( app && app->isMobile() )
+  if( viewer->isMobile() )
   {
+    if( viewer->isPhone() )
+    {
+      int w = viewer->renderedWidth();
+      int h = viewer->renderedHeight();
+      if( w < 100 )
+      {
+        w = wApp->environment().screenWidth();
+        h = wApp->environment().screenHeight();
+      }
+      
+      if(  (w > 100) && (w > h) )
+        titleBar()->hide();
+    }//if( viewer->isPhone() )
+    
     closeButton->setFocus();
-    titleBar()->hide();
-  }
+  }//if( viewer->isMobile() )
   
 }//UnitsConverterTool constructor
 
@@ -653,7 +669,7 @@ std::string UnitsConverterTool::convert( std::string val )
       bool useCuries = false;
       InterSpec *viewer = InterSpec::instance();
       if( viewer)
-        useCuries = !InterSpecUser::preferenceValue<bool>( "DisplayBecquerel", viewer );
+        useCuries = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", viewer );
       
       return PhysicalUnits::printToBestActivityUnits( activity, num_sig_figs(val), useCuries );
     }catch(...)

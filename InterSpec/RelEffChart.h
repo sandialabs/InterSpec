@@ -30,12 +30,14 @@ public:
   void setData( const double live_time,
                const std::vector<PeakDef> &fit_peaks,
                const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts,
-               const std::string &jsRelEffEqn );
+               const std::string &jsRelEffEqn,
+               const Wt::WString &chi2_title_str );
   
   /** Set data from an "manual" relative efficiency fit. */
   void setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
-               const std::map<std::string,std::pair<double,std::string>> &relActsColors,
-               std::string relEffEqn );
+               const std::map<std::string,std::pair<double,std::string>> &nuc_to_act_and_color,
+               std::string relEffEqn,
+               const Wt::WString &chi2_title_str );
   
   void setLineColor( const Wt::WColor &color );
   void setTextColor( const Wt::WColor &color );

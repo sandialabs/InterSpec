@@ -216,20 +216,6 @@ width:100%;
 }
 
 
-
-.Wt-btn .with-label {
-  font-size: 0.9em;
-  font-weight: bold;
-  vertical-align: middle;
-  border: 1px solid #e1e1e1;
-  color: #FFFFFF;
-  background-color: #888888;
-  border-radius: 5px;
-  height: 23px;
-  white-space: nowrap;
-}
-
-
 /* A lighter-appearing button, with no background color, and text matching border. 
  We will also allow applying this style to WSplitButton
  */
@@ -241,12 +227,18 @@ button.Wt-btn.LightButton, .btn-group.LightButton
 }
 
 /* .btn-group is for WSplitButton */
+.btn-group
+{
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
 .btn-group.LightButton > button.Wt-btn
 {
   border-top: none;
   border-bottom: none;
-  margin-top: -1px;
-  padding-top: 3px;
 }
 
 .btn-group.LightButton > button.Wt-btn.dropdown-toggle.LightButton
@@ -618,19 +610,29 @@ ul.Wt-popupmenu > li > a > span > span:hover
   margin-left: 5px;
 }
 
-.SampleSpecLoadBtn
-{
-  display: none;
+.SampleSpecRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-.Wt-selected > .SampleSpecRow > .SampleSpecLoadBtn
-{
-  /* display: inline-block;
-  margin: 0px auto; */
-  display: inline;
-  float: right;
+.SampleSpecLoadBtn {
+  display: none;
   margin-right: 5px;
-  margin-top: 4px;  /* centers vertically; not a great solution since only works for 30px height rows, but works for now */
+}
+
+.Wt-selected > .SampleSpecRow > .SampleSpecLoadBtn {
+  display: block;
+}
+
+@media (max-width: 350px) {
+  .SampleSpecRow {
+    font-size: small;
+  }
+  
+  .SampleSpecLoadBtn {
+    font-size: small;
+  }
 }
 
 
@@ -645,9 +647,29 @@ ul.Wt-popupmenu > li > a > span > span:hover
 }
 
 
-.PeakInfoDisplayButtonDiv {
+.PeakInfoDisplayBottomDiv {
   padding-left: 3px;
+  display: flex;
+  align-items: center;
 }
+
+.PeakInfoDisplayBottomDiv button, .PeakInfoDisplayBottomDiv button:hover {
+  display: flex;
+  align-items: center;
+}
+
+/* Shrink the button sizes a little bit for narrower display */
+@media (max-width: 800px) {
+  .PeakInfoDisplayBottomDiv button, .PeakInfoDisplayBottomDiv button:hover {
+    font-size: 0.8em;
+    font-weight: normal;
+  }
+  
+  .PeakInfoDisplayBottomDiv  .Wt-btn.with-label img{
+    padding-right: 3px;
+  }
+}
+
 
 .PeakInfoHlpBtn {
   margin-right: 5px;
@@ -656,19 +678,25 @@ ul.Wt-popupmenu > li > a > span > span:hover
   bottom: 0px;
 }
 
-.PeakSearchBtn {
+.PeakInfoDisplayButtonsDiv, .PeakInfoDisplayCsvBtns {
   margin-left: 25px;
-}
-
-.PeakInfoDisplayButtonDiv > button {
-  margin-right: 5px;
+  display: flex;
+  flex-wrap: nowrap;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  column-gap: 5px
 }
 
 .PeakInfoDisplay .PeakEditHint
 {
-color: gray;
-margin-left: 2em;
-font-size:66%
+  color: gray;
+  margin-left: 2em;
+  font-size: 66%;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-grow: 1;
+  flex-shrink: 1;
 }
 
 
@@ -846,8 +874,6 @@ button, button:hover,
   border:1px solid #e1e1e1;
   color: #FFFFFF;
   background-color: #888888;
-  -moz-border-radius: 5px;
-  -webkit-border-radius: 5px;
   border-radius: 5px;
   height: 23px;
 }
@@ -870,6 +896,10 @@ button[disabled]
   filter: grayscale(100%);
 }
 
+button, button:hover {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
 
 li{ padding-top: 0; }
 table { margin-bottom:0; }
@@ -1563,6 +1593,10 @@ a:hover { color:#E88400; border-bottom:none; }
     border-bottom: 1px solid #e1e1e1;
   }
   
+  .IsPhone.Portrait .ToolTabTitledColumn .ToolTabColumnTitle {
+    font-size: 7pt;
+  }
+  
   .ToolTabTitledColumn .ToolTabTitledColumnContent
   {
     margin-left: 5px;
@@ -1581,3 +1615,11 @@ a:hover { color:#E88400; border-bottom:none; }
     /* TODO: style and make selector more specific */
     color: red;
   }
+
+.CbNoLineBreak
+{
+  white-space: nowrap;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}

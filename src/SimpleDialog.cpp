@@ -66,7 +66,8 @@ WT_DECLARE_WT_MEMBER
 SimpleDialog::SimpleDialog()
 : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
   m_title( nullptr ),
-  m_msgContents( nullptr )
+  m_msgContents( nullptr ),
+  m_multipleBringToFront( true )
 {
   init( "", "" );
 }
@@ -75,7 +76,8 @@ SimpleDialog::SimpleDialog()
 SimpleDialog::SimpleDialog( const Wt::WString &title )
  : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
   m_title( nullptr ),
-  m_msgContents( nullptr )
+  m_msgContents( nullptr ),
+  m_multipleBringToFront( true )
 {
   init( title, "" );
 }
@@ -84,7 +86,8 @@ SimpleDialog::SimpleDialog( const Wt::WString &title )
 SimpleDialog::SimpleDialog( const Wt::WString &title, const Wt::WString &content )
  : Wt::WDialog( InterSpec::instance() ),  //for lifetime purposes
   m_title( nullptr ),
-  m_msgContents( nullptr )
+  m_msgContents( nullptr ),
+  m_multipleBringToFront( true )
 {
   init( title, content );
 }
@@ -118,6 +121,19 @@ void SimpleDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
       wApp->doJavaScript(wApp->javaScriptClass() + ".RaiseWinCntrlsAboveCover();");
     }
 #endif
+    
+    // On mobile, it seems Wt.WT.AuxWindowBringToFront(...) may get called after this window is
+    //  created (happens on the "QR code" link on Nuclide Decay Tool - since the user clicks
+    //  a button in the titlebar), which will bring that dialog above this one - which isnt wanted,
+    //  so we'll manually bring this dialog to the top on a delay.
+    //  We'll add this JS, even on non-mobile, JIC
+    LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
+    
+    const string time_delays_array = m_multipleBringToFront ? "[5,100,500]" : "[5]";
+    
+    doJavaScript( "for( const d of " + time_delays_array + "){"
+                    "setTimeout( function(){ Wt.WT.SimpleDialogBringToFront('" + id() + "');}, d);"
+                  "}");
   }//if( flags & RenderFull )
 }//render( flags )
 
@@ -161,18 +177,9 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
   
 #if( WT_VERSION > 0x3040000 )
   // I havent checked version of Wt that does include `raiseToFront()`, but 3.3.4 doesnt.
-  raiseToFront();
+  //20250228: raiseToFront() call removed do to encountering some JS exception, that _maybe_ have something to do with this (the object not found), on Windows - I dont actually know if this function call is the problem.
+  //raiseToFront();
 #endif
-  
-  // On mobile, it seems Wt.WT.AuxWindowBringToFront(...) may get called after this window is
-  //  created (happens on the "QR code" link on Nuclide Decay Tool - since the user clicks
-  //  a button in the titlebar), which will bring that dialog above this one - which isnt wanted,
-  //  so we'll manually bring this dialog to the top on a delay.
-  //  We'll add this JS, even on non-mobile, JIC
-  LOAD_JAVASCRIPT(wApp, "SimpleDialog.cpp", "SimpleDialog", wtjsSimpleDialogBringToFront);
-  doJavaScript( "for( const d of [5,100,500]){"
-                  "setTimeout( function(){ Wt.WT.SimpleDialogBringToFront('" + id() + "');}, d);"
-                "}");
 }//init(...)
 
 
@@ -180,6 +187,11 @@ SimpleDialog::~SimpleDialog()
 {
 }
 
+
+void SimpleDialog::doNotUseMultpleBringstoFront()
+{
+  m_multipleBringToFront = false;
+}
 
 Wt::WPushButton *SimpleDialog::addButton( const Wt::WString &txt )
 {
