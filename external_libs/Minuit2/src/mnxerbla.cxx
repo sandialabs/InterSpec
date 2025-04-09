@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: mnxerbla.cxx 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -9,65 +9,66 @@
 
 /* xerbla.f -- translated by f2c (version 20010320).
    You must link the resulting object file with the libraries:
-	-lf2c -lm   (in that order)
+   -lf2c -lm   (in that order)
 */
 
 #include "Minuit2/MnConfig.h"
-#include <iostream>
+#include "Minuit2/MnPrint.h"
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 /* Table of constant values */
 
 // static integer c__1 = 1;
 
-int mnxerbla(const char* srname, int info) {
-    /* Format strings */
-//     static char fmt_9999[] = "(\002 ** On entry to \002,a6,\002 Parameter nu\// mber \002,i2,\002 had \002,\002an illegal Value\002)";
-  
-/*  -- LAPACK auxiliary routine (version 3.0) -- */
-/*     Univ. of Tennessee, Univ. of California Berkeley, NAG Ltd., */
-/*     Courant Institute, Argonne National Lab, and Rice University */
-/*     September 30, 1994 */
+int mnxerbla(const char *srname, int info)
+{
+   /* Format strings */
+   //     static char fmt_9999[] = "(\002 ** On entry to \002,a6,\002 Parameter nu\// mber \002,i2,\002 had \002,\002an
+   //     illegal Value\002)";
 
-/*     .. Scalar Arguments .. */
-/*     .. */
+   /*  -- LAPACK auxiliary routine (version 3.0) -- */
+   /*     Univ. of Tennessee, Univ. of California Berkeley, NAG Ltd., */
+   /*     Courant Institute, Argonne National Lab, and Rice University */
+   /*     September 30, 1994 */
 
-/*  Purpose */
-/*  ======= */
+   /*     .. Scalar Arguments .. */
+   /*     .. */
 
-/*  XERBLA  is an Error handler for the LAPACK routines. */
-/*  It is called by an LAPACK routine if an input Parameter has an */
-/*  invalid Value.  A message is printed and execution stops. */
+   /*  Purpose */
+   /*  ======= */
 
-/*  Installers may consider modifying the STOP statement in order to */
-/*  call system-specific exception-handling facilities. */
+   /*  XERBLA  is an Error handler for the LAPACK routines. */
+   /*  It is called by an LAPACK routine if an input Parameter has an */
+   /*  invalid Value.  A message is printed and execution stops. */
 
-/*  Arguments */
-/*  ========= */
+   /*  Installers may consider modifying the STOP statement in order to */
+   /*  call system-specific exception-handling facilities. */
 
-/*  SRNAME  (input) CHARACTER*6 */
-/*          The Name of the routine which called XERBLA. */
+   /*  Arguments */
+   /*  ========= */
 
-/*  INFO    (input) INTEGER */
-/*          The position of the invalid Parameter in the Parameter list */
-/*          of the calling routine. */
+   /*  SRNAME  (input) CHARACTER*6 */
+   /*          The Name of the routine which called XERBLA. */
 
-/* ===================================================================== */
+   /*  INFO    (input) INTEGER */
+   /*          The position of the invalid Parameter in the Parameter list */
+   /*          of the calling routine. */
 
-/*     .. Executable Statements .. */
-   
-   std::cout<<" ** On entry to "<<srname<<" Parameter number "<<info<<" had an illegal Value"<<std::endl;
-   
+   /* ===================================================================== */
+
+   /*     .. Executable Statements .. */
+
+   MnPrint print("mnxerbla");
+   print.Warn("On entry to", srname, "Parameter number", info, "had an illegal Value");
+
    /*     End of XERBLA */
-   
+
    return 0;
 } /* xerbla_ */
 
+} // namespace Minuit2
 
-   }  // namespace Minuit2
-
-}  // namespace ROOT
+} // namespace ROOT

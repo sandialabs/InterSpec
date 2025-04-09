@@ -1723,7 +1723,7 @@ std::shared_ptr<Measurement> estimateContinuum( std::shared_ptr<const Measuremen
   for( size_t i = 0; i < nchannels; ++i )
     (*source)[i] = data->gamma_channel_content(i);
 
-  calculateContinuum( &(source->operator[](0)), nchannels, numIteration, direction,
+  calculateContinuum( &(source->operator[](0)), static_cast<int>(nchannels), numIteration, direction,
                      filterOrder, smoothing, smoothWindow, compton );
   auto background = make_shared<Measurement>();
   *background = *data;
@@ -6365,6 +6365,8 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                                   std::vector<double> &amplitudes_uncerts,
                                   std::vector<double> &continuum_coeffs_uncerts )
 {
+  // TODO: Need to switch to using Eigen::SVD for this function - it is much more stable and predictable
+  //       See RelActCalcAuto::fit_continuum(...) for example of using this.
   if( sigmas.size() != means.size() )
     throw runtime_error( "fit_amp_and_offset: invalid input" );
   
@@ -6447,21 +6449,27 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //  function in half by calling a more optimized version of the peak integral function
   //
   const size_t nfixedpeak = fixedAmpPeaks.size();
-  const bool do_mt_fixed_peak = (nfixedpeak > 4); // 4 chosen arbitrarily
+  const bool do_mt_fixed_peak = (nfixedpeak > 0); // always use this method if fixed peaks
   vector<double> mt_fixed_peak_contrib( do_mt_fixed_peak ? nbin : size_t(0), 0.0f );
   
-  //peak.gauss_integral( const float * const energies, double *channels, const size_t nchannel )
+  
   if( do_mt_fixed_peak )
   {
-    const size_t nthread = std::thread::hardware_concurrency();
+    // 20250127: it looks like calling `pool.join()` is causing significant and unreasonable delays
+    //           on macOS (using GCD, at least).  This is likely a problem with
+    //           `SpecUtilsAsync::ThreadPool` - I would guess when creating ThreadPools inside of
+    //           other ThreadPools, but for the moment will just do this single threaded, which is
+    //           like 20 times faster for an example problem
+    
+    //SpecUtilsAsync::ThreadPool pool;
     double * const fixed_contrib = &(mt_fixed_peak_contrib[0]);
     
-    SpecUtilsAsync::ThreadPool pool;
-    
+    /*
     // 20240325: for complicated problems, it kinda looks like multiple cores arent being used that
     //           efficiently (perhaps because each thread is only getting <10 channels to work on).
     //           Perhaps it would be better to put each peak into a thread, for all channels, then
     //           sum results at the end (using vector operations).
+    const size_t nthread = std::thread::hardware_concurrency();
     const size_t nbin_per_thread = 1 + (nbin / nthread);
     
     for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
@@ -6481,8 +6489,27 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
         }
       } );
     }//for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
+    */
     
-    pool.join();
+    //std::mutex result_mutex;
+    for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
+    {
+      /*
+      pool.post( [&result_mutex, peak_index, &fixedAmpPeaks, nbin, x, fixed_contrib](){
+        vector<double> this_contribs(nbin, 0.0);
+        fixedAmpPeaks[peak_index].gauss_integral( x, &(this_contribs[0]), nbin );
+        
+        std::lock_guard<std::mutex> lock( result_mutex );
+        for( size_t i = 0; i < nbin; ++i )
+          fixed_contrib[i] += this_contribs[i];
+      });
+       */
+      
+      fixedAmpPeaks[peak_index].gauss_integral( x, &(fixed_contrib[0]), nbin );
+    }//for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
+    
+    
+    //pool.join();
   }//if( do_mt_fixed_peak )
   
   
@@ -7082,7 +7109,7 @@ void AutoPeakSearchChi2Fcn::second_derivative( const vector<float> &input, vecto
 {
   results.clear();
   SavitzyGolayCoeffs sgcoeffs( m_side_bins, m_side_bins, m_smooth_order, 2 );
-  sgcoeffs.smooth( &(input[0]), input.size(), results );
+  sgcoeffs.smooth( &(input[0]), static_cast<int>(input.size()), results );
 }//void smoothSpectrum(...)
 
 
@@ -7128,7 +7155,7 @@ std::vector<PeakDef> AutoPeakSearchChi2Fcn::candidate_peaks( const vector<float>
   int minbin = -1, firstzero = -1, secondzero=-1;
   float secondsum = 0.0f, minval = 9999999999.9f;
   
-  for( int bin = m_lower_channel; bin < (int)m_upper_channel; ++bin )
+  for( int bin = static_cast<int>(m_lower_channel); bin < static_cast<int>(m_upper_channel); ++bin )
   {
     const float secondDeriv = second_deriv[bin]; //Not dividing by binwidth^2 here,
     

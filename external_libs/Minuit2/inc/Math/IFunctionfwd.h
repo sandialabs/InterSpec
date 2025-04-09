@@ -1,4 +1,4 @@
-// @(#)root/mathcore:$Id: IFunctionfwd.h 20882 2007-11-19 11:31:26Z rdm $
+// @(#)root/mathcore:$Id$
 // Author: L. Moneta Tue Nov 14 14:38:48 2006
 
 /**********************************************************************
@@ -8,47 +8,38 @@
  *                                                                    *
  **********************************************************************/
 
-// Defines Forward declaration for template IFunction class and useful typedefs 
+// Defines Forward declaration for template IFunction class and useful typedefs
 
 #ifndef ROOT_Math_IFunctionfwd
 #define ROOT_Math_IFunctionfwd
 
+namespace ROOT {
 
-namespace ROOT { 
+   namespace Math {
 
-   namespace Math { 
+      class IBaseFunctionOneDim;
+      class IGradientFunctionOneDim;
+      template<class T>
+      class IBaseFunctionMultiDimTempl;
+      template <class T>
+      class IGradientFunctionMultiDimTempl;
+      template <class T>
+      class IGradientMultiDimTempl;
 
-#ifdef OLD
-      template<class DimensionType> class IBaseFunction; 
-      template<class DimensionType> class IGradientFunction; 
+      template<class T>
+      using IMultiGenFunctionTempl = IBaseFunctionMultiDimTempl<T>;
+      using IBaseFunctionMultiDim = IBaseFunctionMultiDimTempl<double>;
+      using IMultiGenFunction = IMultiGenFunctionTempl<double>;
 
+      using IGradientFunctionMultiDim = IGradientFunctionMultiDimTempl<double>;
+      using IGradientMultiDim = IGradientMultiDimTempl<double>;
 
-      /// tag for multi-dimensional functions
-      struct MultiDim {}; 
-      
-      /// tag for one-dimensional functions
-      struct OneDim {}; 
+      typedef IBaseFunctionOneDim        IGenFunction;
+      typedef IBaseFunctionMultiDim      IMultiGenFunction;
 
+      typedef IGradientFunctionOneDim        IGradFunction;
+      typedef IGradientFunctionMultiDim      IMultiGradFunction;
 
-      typedef IBaseFunction<OneDim>        IGenFunction;   
-      typedef IBaseFunction<MultiDim>      IMultiGenFunction; 
-
-      typedef IGradientFunction<OneDim>        IGradFunction; 
-      typedef IGradientFunction<MultiDim>      IMultiGradFunction; 
-#endif
-
-      class IBaseFunctionOneDim; 
-      class IGradientFunctionOneDim; 
-      class IBaseFunctionMultiDim; 
-      class IGradientFunctionMultiDim; 
-
-
-      typedef IBaseFunctionOneDim        IGenFunction;   
-      typedef IBaseFunctionMultiDim      IMultiGenFunction; 
-
-      typedef IGradientFunctionOneDim        IGradFunction; 
-      typedef IGradientFunctionMultiDim      IMultiGradFunction; 
-      
 
    } // end namespace Math
 

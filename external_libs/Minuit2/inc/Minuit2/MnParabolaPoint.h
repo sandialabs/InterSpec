@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnParabolaPoint.h 23522 2008-04-24 15:09:19Z moneta $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -12,11 +12,9 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
-
-
-/** 
+/**
 
 A point of a parabola.
 
@@ -24,7 +22,7 @@ A point of a parabola.
 
 ????!!!! in reality it is just a general point in two dimensional space,
 there is nothing that would indicate, that it belongs to a parabola.
-This class defines simpy an (x,y) pair!!!!
+This class defines simply an (x,y) pair!!!!
 
 @author Fred James and Matthias Winkler; comments added by Andras Zsenei
 and Lorenzo Moneta
@@ -35,55 +33,49 @@ and Lorenzo Moneta
 
  */
 
-
 class MnParabolaPoint {
 
 public:
+   /**
 
+   Initializes the point with its coordinates.
 
-  /**
-    
-  Initializes the point with its coordinates.
+   @param x the x (first) coordinate of the point.
+   @param y the y (second) coordinate of the point.
 
-  @param x the x (first) coordinate of the point.
-  @param y the y (second) coordinate of the point. 
+   */
 
-  */
+   MnParabolaPoint(double x, double y) : fX(x), fY(y) {}
 
-  MnParabolaPoint(double x, double y) : fX(x), fY(y) {}
+   ~MnParabolaPoint() {}
 
-  ~MnParabolaPoint() {}
+   /**
 
+   Accessor to the x (first) coordinate.
 
-  /**
+   @return the x (first) coordinate of the point.
 
-  Accessor to the x (first) coordinate.
+   */
 
-  @return the x (first) coordinate of the point.
+   double X() const { return fX; }
 
-  */
+   /**
 
-  double X() const {return fX;}
+   Accessor to the y (second) coordinate.
 
+   @return the y (second) coordinate of the point.
 
-  /**
+   */
 
-  Accessor to the y (second) coordinate.
-
-  @return the y (second) coordinate of the point.
-
-  */
-
-  double Y() const {return fY;}
+   double Y() const { return fY; }
 
 private:
-
-  double fX;
-  double fY;
+   double fX;
+   double fY;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnParabolaPoint
+#endif // ROOT_Minuit2_MnParabolaPoint

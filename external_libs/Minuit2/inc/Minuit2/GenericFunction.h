@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: GenericFunction.h 21530 2007-12-20 11:14:35Z moneta $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -12,15 +12,16 @@
 
 #include "Minuit2/MnConfig.h"
 
+#include <ROOT/RSpan.hxx>
+
 #include <vector>
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 //_____________________________________________________________________
-/** 
+/**
 
 Class from which all the other classes, representing functions,
 inherit. That is why it defines only one method, the operator(),
@@ -35,29 +36,24 @@ which allows to call the function.
 class GenericFunction {
 
 public:
-
    virtual ~GenericFunction() {}
-
 
    /**
 
       Evaluates the function using the vector containing the input values.
 
-      @param x vector of the coordinates (for example the x coordinate for a 
+      @param x vector of the coordinates (for example the x coordinate for a
       one-dimensional Gaussian)
 
       @return the result of the evaluation of the function.
 
    */
 
-   virtual double operator()(const std::vector<double>& x) const=0;
-
-
-
+   virtual double operator()(std::vector<double> const& x) const = 0;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_GenericFunction
+#endif // ROOT_Minuit2_GenericFunction

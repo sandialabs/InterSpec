@@ -59,10 +59,12 @@
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/RelEffChart.h"
@@ -75,10 +77,12 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/SwitchCheckbox.h"
+#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActTxtResults.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/RelEffShieldWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -240,7 +244,7 @@ namespace
         const string orig_extension = SpecUtils::file_extension(filename);
         if( orig_extension.size() && (orig_extension.size() < filename.size()) )
           filename = filename.substr(0,filename.size() - orig_extension.size());
-        filename += ".xml";
+        filename += "_releff.xml";
         
         suggestFileName( filename, WResource::Attachment );
         response.setMimeType( "application/xml" );
@@ -576,16 +580,16 @@ namespace
       
       const char *tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>"
       ", <b>U-235m</b> (meta stable state)"
-      ", <b>Cs137</b>, etc.";
+      ", <b>Cs137</b>, Pb, Fe(n,n), etc.";
       HelpSystem::attachToolTipOn( m_nuclide_edit, tooltip, showToolTips );
       
       string replacerJs, matcherJs;
       IsotopeNameFilterModel::replacerJs( replacerJs );
       IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
       IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
-      isoSuggestModel->excludeXrays( true );
-      isoSuggestModel->excludeEscapes( true );
-      isoSuggestModel->excludeReactions( true );
+      isoSuggestModel->excludeXrays( false );
+      isoSuggestModel->excludeEscapes( false );
+      isoSuggestModel->excludeReactions( false );
       
       WSuggestionPopup *nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
 #if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
@@ -637,104 +641,114 @@ namespace
     
     void handleIsotopeChange()
     {
-      const SandiaDecay::Nuclide *nuc = nuclide();
-      if( !nuc )
-      {
-        const string nucstr = m_nuclide_edit->text().toUTF8();
-        
+      const auto nuc_input = nuclide();
+
+      const auto hide_age_stuff = [this,&nuc_input](){
+        m_age_label->hide();
+        m_age_edit->hide();
         m_fit_age->setUnChecked();
         m_fit_age->hide();
-        
-        if( !nucstr.empty() )
-          passMessage( nucstr + " is not a valid nuclide.", WarningWidget::WarningMsgHigh );
-        
-        m_updated.emit();
-        return;
-      }//if( !nuc )
-      
-      if( IsInf(nuc->halfLife) )
-      {
+
         const string nucstr = m_nuclide_edit->text().toUTF8();
-        passMessage( nucstr + " is a stable nuclide.", WarningWidget::WarningMsgHigh );
-        
-        m_nuclide_edit->setText( "" );
-        m_nuclide_edit->validate();
-        m_fit_age->setUnChecked();
-        m_fit_age->hide();
-        
+        if( !nucstr.empty() && std::holds_alternative<std::monostate>(nuc_input) )
+          passMessage( nucstr + " is not a valid nuclide, x-ray, or reaction.", WarningWidget::WarningMsgHigh );
+      };//hide_age_stuff
+
+      if( std::holds_alternative<std::monostate>(nuc_input) )
+      {
+        hide_age_stuff();
         m_updated.emit();
         return;
-      }//if( IsInf(nuc->halfLife) )
-      
-      const bool age_is_fittable = !PeakDef::ageFitNotAllowed( nuc );
-      
-      if( nuc->decaysToStableChildren() )
+      }
+
+      std::string src_name;
+      const SandiaDecay::Nuclide *nuc = nullptr;
+      const SandiaDecay::Element *el = nullptr;
+      const ReactionGamma::Reaction * reaction = nullptr;
+
+      if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
       {
-        m_age_edit->setText( "0y" );
-      }else
-      {
-        string agestr;
-        PeakDef::defaultDecayTime( nuc, &agestr );
-        m_age_edit->setText( agestr );
+        nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
+
+        assert( nuc );
+        if( !nuc )
+          throw runtime_error( "No valid nuclide" );
+
+        src_name = nuc->symbol;
+      
+        if( IsInf(nuc->halfLife) )
+        {
+          const string nucstr = m_nuclide_edit->text().toUTF8();
+          passMessage( nucstr + " is a stable nuclide.", WarningWidget::WarningMsgHigh );
+        
+          m_nuclide_edit->setText( "" );
+          m_nuclide_edit->validate();
+          m_fit_age->setUnChecked();
+          m_fit_age->hide();
+        
+          m_updated.emit();
+          return;
+        }//if( IsInf(nuc->halfLife) )
+      
+        const bool age_is_fittable = !PeakDef::ageFitNotAllowed( nuc );
+      
+        if( nuc->decaysToStableChildren() )
+        {
+          m_age_edit->setText( "0y" );
+        }else
+        {
+          string agestr;
+          PeakDef::defaultDecayTime( nuc, &agestr );
+          m_age_edit->setText( agestr );
+        }
+      
+        m_age_label->setHidden( !age_is_fittable );
+        m_age_edit->setHidden( !age_is_fittable );
+        m_fit_age->setHidden( !age_is_fittable );
+        m_fit_age->setChecked( false );
       }
       
-      m_age_label->setHidden( !age_is_fittable );
-      m_age_edit->setHidden( !age_is_fittable );
-      m_fit_age->setHidden( !age_is_fittable );
-      m_fit_age->setChecked( false );
+      if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
+      {
+        el = std::get<const SandiaDecay::Element *>(nuc_input);
+        assert( el );
+        src_name = el->symbol;
+        hide_age_stuff();
+      }
+
+      if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
+      {
+        reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
+        assert( reaction );
+        src_name = reaction->name();
+        hide_age_stuff();
+      }
       
       bool haveFoundColor = false;
       
-      // Check if user is showing reference lines for this nuclide, and if so, use that color
+      // Check user is showing reference lines, displayed peaks, and previous user-selected colors
       if( !haveFoundColor )
       {
-        vector<ReferenceLineInfo> reflines;
         const ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
         if( refdisp )
-          reflines = refdisp->showingNuclides();
-        
-        for( const auto &refline : reflines )
         {
-          if( (refline.m_nuclide == nuc) && !refline.m_input.m_color.isDefault() )
+          const Wt::WColor c = refdisp->suggestColorForSource( src_name );
+          if( !c.isDefault() )
           {
             haveFoundColor = true;
-            m_color_select->setColor( refline.m_input.m_color );
-            break;
-          }//if( we found a match )
-        }//for( const auto &refline : reflines )
-        
-        // TODO: look in ReferencePhotopeakDisplay cache of previous colors
+            m_color_select->setColor( c );
+          }
+        }//if( refdisp )
       }//if( !haveFoundColor )
       
-      // Check for user-fit peaks
-      if( !haveFoundColor )
-      {
-        PeakModel *peakmodel = InterSpec::instance()->peakModel();
-        if( peakmodel && peakmodel->peaks() )
-        {
-          for( auto peakshrdptr : *peakmodel->peaks() )
-          {
-            if( !peakshrdptr )
-              continue;
-            
-            if( (peakshrdptr->parentNuclide() == nuc) && !peakshrdptr->lineColor().isDefault() )
-            {
-              haveFoundColor = true;
-              m_color_select->setColor( peakshrdptr->lineColor() );
-              break;
-            }//if( we found a matching nuclide )
-          }//for( loop over user peaks )
-        }//if( PeakModel is valid  - should always be )
-      }//if( !haveFoundColor )
-      
-      // Finally check
+      // Check if the theme explicitly specifies a color for this nuclide
       if( !haveFoundColor )
       {
         shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
         if( theme )
         {
           const map<string,WColor> &defcolors = theme->referenceLineColorForSources;
-          const auto pos = defcolors.find( nuc->symbol );
+          const auto pos = defcolors.find( src_name );
           if( pos != end(defcolors) )
             m_color_select->setColor( pos->second );
         }//if( theme )
@@ -798,13 +812,46 @@ namespace
       m_updated.emit();
     }
     
-    /** Will return nullptr if invalid text entered. */
-    const SandiaDecay::Nuclide *nuclide() const
+    /** Will return std::monostate if invalid text entered. */
+    std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> nuclide() const
     {
       const string nucstr = m_nuclide_edit->text().toUTF8();
       const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      assert( db );
+      if( !db )
+        throw runtime_error( "Couldnt load decay DB" );
       
-      return db->nuclide( nucstr );
+      const SandiaDecay::Nuclide *nuc = db->nuclide( nucstr );
+      if( nuc )
+        return nuc;
+      
+      const SandiaDecay::Element *el = db->element( nucstr );
+      if( el )
+        return el;
+      
+      const ReactionGamma * const reaction_db = ReactionGammaServer::database();
+      assert( reaction_db );
+      if( !reaction_db )
+        throw runtime_error( "Couldnt load reaction DB" );
+      
+      try
+      {
+        const ReactionGamma::Reaction *reaction = nullptr;
+        vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+        reaction_db->gammas( nucstr, possible_rctns );
+        
+        // TODO: we are currently taking the first reaction; however, in principle there could be multiple - however, `ReactionGamma` doesnt have an interface to just return a reaction by name, I guess because
+        for( size_t i = 0; !reaction && (i < possible_rctns.size()); ++i )
+          reaction = possible_rctns[i].reaction;
+        
+        if( reaction )
+          return reaction;
+      }catch( std::exception & )
+      {
+        //ReactionGamma::gammas(...) throws if not a valid reaction
+      }//try / catch
+      
+      return std::monostate{};
     }
     
     WColor color() const
@@ -819,7 +866,11 @@ namespace
     
     double age() const
     {
-      const SandiaDecay::Nuclide * const nuc = nuclide();
+      const auto nuc_input = nuclide();
+      if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
+        return 0.0;
+      
+      const SandiaDecay::Nuclide * const nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
       if( !nuc )
         return 0.0;
     
@@ -842,15 +893,26 @@ namespace
     
     RelActCalcAuto::NucInputInfo toNucInputInfo() const
     {
-      const SandiaDecay::Nuclide * const nuc = nuclide();
-      if( !nuc )
-        throw runtime_error( "No valid nuclide" );
+      const auto nuc_input = nuclide();
       
+   
       RelActCalcAuto::NucInputInfo nuc_info;
 
-      nuc_info.nuclide = nuc;
-      nuc_info.age = age(); // Must not be negative.
-      nuc_info.fit_age = m_fit_age->isChecked();
+      if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
+      {
+        nuc_info.nuclide = std::get<const SandiaDecay::Nuclide *>(nuc_input);
+        nuc_info.age = age(); // Must not be negative.
+        nuc_info.fit_age = m_fit_age->isChecked();
+      }else if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
+      {
+        nuc_info.element = std::get<const SandiaDecay::Element *>(nuc_input);
+      }else if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
+      {
+        nuc_info.reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
+      }else
+      {
+        throw runtime_error( "No valid nuclide" );
+      }
       
       // TODO: Not implemented: vector<double> gammas_to_exclude;
       //nuc_info.gammas_to_exclude = ;
@@ -863,7 +925,7 @@ namespace
     
     void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
     {
-      if( !info.nuclide )
+      if( !info.nuclide && !info.element && !info.reaction )
       {
         m_nuclide_edit->setText( "" );
         if( !info.peak_color_css.empty() )
@@ -878,34 +940,50 @@ namespace
         m_updated.emit();
         
         return;
-      }//if( !info.nuclide )
+      }//if( !info.nuclide && !info.element && !info.reaction )
       
-      m_nuclide_edit->setText( WString::fromUTF8(info.nuclide->symbol) );
-      handleIsotopeChange();
+      if( info.nuclide )
+        m_nuclide_edit->setText( WString::fromUTF8(info.nuclide->symbol) );
+      else if( info.element )
+        m_nuclide_edit->setText( WString::fromUTF8(info.element->symbol) );
+      else if( info.reaction )
+        m_nuclide_edit->setText( WString::fromUTF8(info.reaction->name()) );
       
       if( !info.peak_color_css.empty() )
         m_color_select->setColor( WColor(info.peak_color_css) );
       
-      const SandiaDecay::Nuclide * const nuc = nuclide();
-      
-      const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
-      m_age_label->setHidden( !age_is_fittable );
-      m_age_edit->setHidden( !age_is_fittable );
-      m_fit_age->setHidden( !age_is_fittable );
-      m_fit_age->setChecked( age_is_fittable && info.fit_age );
-      
-      if( !age_is_fittable || (info.age < 0.0) )
+      if( info.nuclide )
       {
-        string agestr = "0s";
-        if( nuc )
-          PeakDef::defaultDecayTime( nuc, &agestr );
-        m_age_edit->setText( WString::fromUTF8(agestr) );
-      }else
+        const SandiaDecay::Nuclide * const nuc = info.nuclide;
+        
+        const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
+        m_age_label->setHidden( !age_is_fittable );
+        m_age_edit->setHidden( !age_is_fittable );
+        m_fit_age->setHidden( !age_is_fittable );
+        m_fit_age->setChecked( age_is_fittable && info.fit_age );
+      
+        if( !age_is_fittable || (info.age < 0.0) )
+        {
+          string agestr = "0s";
+          if( nuc )
+            PeakDef::defaultDecayTime( nuc, &agestr );
+          m_age_edit->setText( WString::fromUTF8(agestr) );
+        }else
+        {
+          const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
+          m_age_edit->setText( WString::fromUTF8(agestr) );
+        }
+      }else 
       {
-        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
-        m_age_edit->setText( WString::fromUTF8(agestr) );
-      }
+        m_age_label->hide();
+        m_age_edit->hide();
+        m_fit_age->setUnChecked();
+        m_fit_age->hide();
+      }//if( info.nuclide )
+      
       // Not currently supported: info.gammas_to_exclude -> vector<double>;
+
+      handleIsotopeChange();
     }//void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
     
     
@@ -1186,6 +1264,24 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
 
 
 
+const char *RelActAutoGui::to_str( const RelActAutoGui::AddUncert val )
+{
+  switch( val )
+  {
+    case RelActAutoGui::AddUncert::StatOnly:           return "StatOnly";
+    case RelActAutoGui::AddUncert::OnePercent:         return "OnePercent";
+    case RelActAutoGui::AddUncert::FivePercent:        return "FivePercent";
+    case RelActAutoGui::AddUncert::TenPercent:         return "TenPercent";
+    case RelActAutoGui::AddUncert::TwentyFivePercent:  return "TwentyFivePercent";
+    case RelActAutoGui::AddUncert::FiftyPercent:       return "FiftyPercent";
+    case RelActAutoGui::AddUncert::SeventyFivePercent: return "SeventyFivePercent";
+    case RelActAutoGui::AddUncert::OneHundredPercent:  return "OneHundredPercent";
+    case RelActAutoGui::AddUncert::NumAddUncert:       return "NumAddUncert";
+  }//
+  
+  return "InvalidAddUncert";
+}//to_str( const AddUncert val )
+
 
 RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
@@ -1206,14 +1302,23 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_loading_preset( false ),
   m_current_preset_index( -1 ),
   m_error_msg( nullptr ),
+  m_fit_chi2_msg( nullptr ),
   m_rel_eff_eqn_form( nullptr ),
+  m_rel_eff_eqn_order_label( nullptr ),
   m_rel_eff_eqn_order( nullptr ),
   m_fwhm_eqn_form( nullptr ),
+  m_fwhm_estimation_method( nullptr ),
   m_fit_energy_cal( nullptr ),
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
   m_pu_corr_method( nullptr ),
   m_skew_type( nullptr ),
+  m_add_uncert( nullptr ),
+  m_phys_model_opts( nullptr ),
+  m_phys_model_shields( nullptr ),
+  m_phys_model_self_atten( nullptr ),
+  m_phys_ext_attens( nullptr ),
+  m_phys_model_use_hoerl( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -1250,8 +1355,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
   
-  WText *alpha_warning = new WText( "This tool is under active development - this is an early preview", this );
-  alpha_warning->addStyleClass( "RelActCalcAutoAlphaBuildWarning" );
+  //WText *alpha_warning = new WText( "This tool is under active development - this is an early preview", this );
+  //alpha_warning->addStyleClass( "RelActCalcAutoAlphaBuildWarning" );
     
   WContainerWidget *upper_div = new WContainerWidget( this );
   upper_div->addStyleClass( "RelActAutoUpperArea" );
@@ -1386,7 +1491,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   m_error_msg = new WText( "Not Calculated.", presetDiv );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
-  
+
+  m_fit_chi2_msg = new WText( "", presetDiv );
+  m_fit_chi2_msg->addStyleClass( "RelActAutoChi2Msg" );
+
   m_status_indicator = new WText( "Calculating...", presetDiv );
   m_status_indicator->addStyleClass( "RelActAutoStatusMsg" );
   m_status_indicator->hide();
@@ -1414,13 +1522,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( {label,m_rel_eff_eqn_form}, tooltip, showToolTips );
   
   // Will assume FramEmpirical is the highest
-  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical)
+  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel)
                 > static_cast<int>(RelActCalc::RelEffEqnForm::LnXLnY),
                 "RelEffEqnForm was changed!"
                 );
   
   
-  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical); ++i )
+  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel); ++i )
   {
     const auto eqn_form = RelActCalc::RelEffEqnForm( i );
     
@@ -1446,6 +1554,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
         //y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
         txt = "Empirical";
         break;
+        
+      case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+        txt = "Physical";
+        break;
     }
     
     m_rel_eff_eqn_form->addItem( txt );
@@ -1453,46 +1565,84 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
-  label = new WLabel( "Eqn Order", optionsDiv );
-  label->addStyleClass( "GridThirdCol GridFirstRow" );
+  m_rel_eff_eqn_order_label = new WLabel( "Eqn Order", optionsDiv );
+  m_rel_eff_eqn_order_label->addStyleClass( "GridThirdCol GridFirstRow" );
   
   m_rel_eff_eqn_order = new WComboBox( optionsDiv );
   m_rel_eff_eqn_order->addStyleClass( "GridFourthCol GridFirstRow" );
-  label->setBuddy( m_rel_eff_eqn_order );
+  m_rel_eff_eqn_order_label->setBuddy( m_rel_eff_eqn_order );
   m_rel_eff_eqn_order->activated().connect( this, &RelActAutoGui::handleRelEffEqnOrderChanged );
   
+  m_rel_eff_eqn_order->addItem( "0" );
   m_rel_eff_eqn_order->addItem( "1" );
   m_rel_eff_eqn_order->addItem( "2" );
   m_rel_eff_eqn_order->addItem( "3" );
   m_rel_eff_eqn_order->addItem( "4" );
   m_rel_eff_eqn_order->addItem( "5" );
   m_rel_eff_eqn_order->addItem( "6" );
-  m_rel_eff_eqn_order->setCurrentIndex( 2 );
+  m_rel_eff_eqn_order->setCurrentIndex( 3 );
   
   
   tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
   HelpSystem::attachToolTipOn( {label, m_rel_eff_eqn_order}, tooltip, showToolTips );
   
+
+  label = new WLabel( "FWHM Est.", optionsDiv );
+  label->addStyleClass( "GridFirstCol GridSecondRow" );
+  m_fwhm_estimation_method = new WComboBox( optionsDiv );
+  m_fwhm_estimation_method->addStyleClass( "GridSecondCol GridSecondRow" );
+  label->setBuddy( m_fwhm_estimation_method );
+
+  for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency); ++i )
+  {
+    const char *name = "";
+    switch( RelActCalcAuto::FwhmEstimationMethod(i) )
+    {
+      case RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum: 
+        name = "Start from Det/Peaks"; 
+        break;
+
+      case RelActCalcAuto::FwhmEstimationMethod::StartingFromAllPeaksInSpectrum: 
+        name = "Start from Peaks"; 
+        break;
+      
+      case RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum: 
+        name = "Fixed to Peaks"; 
+        break;
+
+      case RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency: 
+        name = "Start from Det. Eff."; 
+        break;
+
+      case RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency: 
+        name = "Fixed to Det. Eff."; 
+        break;
+    }//switch( RelActCalcAuto::FwhmEstimationMethod(i) )
+    
+    m_fwhm_estimation_method->addItem( name );
+  }//for( loop over RelActCalcAuto::FwhmEstimationMethod )
+
   label = new WLabel( "FWHM Form", optionsDiv );
-  label->addStyleClass( "GridFifthCol GridFirstRow" );
+  label->addStyleClass( "GridThirdCol GridSecondRow" );
   
   m_fwhm_eqn_form = new WComboBox( optionsDiv );
-  m_fwhm_eqn_form->addStyleClass( "GridSixthCol GridFirstRow" );
+  m_fwhm_eqn_form->addStyleClass( "GridFourthCol GridSecondRow" );
   label->setBuddy( m_fwhm_eqn_form );
-  
+
   for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_6); ++i )
   {
     const char *name = "";
     switch( RelActCalcAuto::FwhmForm(i) )
     {
-      case RelActCalcAuto::FwhmForm::Gadras:       name = "Gadras"; break;
+      case RelActCalcAuto::FwhmForm::Gadras:        name = "Gadras"; break;
       case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:  name = "sqrt(A0 + A1*E + A2/E)"; break;
       case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = "A0 + A1*sqrt(E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_2: name = "sqrt(A0 + A1*E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_3: name = "sqrt(A0 + A1*E + A2*E*E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_4: name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_5: name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_6: name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_2:  name = "sqrt(A0 + A1*E)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_3:  name = "sqrt(A0 + A1*E + A2*E*E)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_4:  name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_5:  name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
+      case RelActCalcAuto::FwhmForm::Polynomial_6:  name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
+      case RelActCalcAuto::FwhmForm::NotApplicable: name = "Use Det. Eff."; break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     
     m_fwhm_eqn_form->addItem( name );
@@ -1502,9 +1652,12 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( {label, m_fwhm_eqn_form}, tooltip, showToolTips );
   
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
-  m_fwhm_eqn_form->setCurrentIndex( 1 );
+  m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse) );
+  m_fwhm_estimation_method->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum) );
   m_fwhm_eqn_form->changed().connect( this, &RelActAutoGui::handleFwhmFormChanged );
+  m_fwhm_estimation_method->changed().connect( this, &RelActAutoGui::handleFwhmEstimationMethodChanged );
   
+
 /*
   label = new WLabel( "Yield Info", optionsDiv );
   label->addStyleClass( "GridSeventhCol GridFirstRow" );
@@ -1538,19 +1691,19 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
  */
   
   m_fit_energy_cal = new WCheckBox( "Fit Energy Cal.", optionsDiv );
-  m_fit_energy_cal->addStyleClass( "GridFirstCol GridSecondRow GridSpanTwoCol" );
+  m_fit_energy_cal->addStyleClass( "GridFirstCol GridThirdRow GridSpanTwoCol" );
   m_fit_energy_cal->checked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
   m_fit_energy_cal->unChecked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
   
   
   m_background_subtract = new WCheckBox( "Back. Sub.", optionsDiv );
-  m_background_subtract->addStyleClass( "GridThirdCol GridSecondRow GridSpanTwoCol" );
+  m_background_subtract->addStyleClass( "GridThirdCol GridThirdRow GridSpanTwoCol" );
   m_background_subtract->checked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   m_background_subtract->unChecked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   
   
   m_same_z_age = new WCheckBox( "Same El. Same Age", optionsDiv );
-  m_same_z_age->addStyleClass( "GridFifthCol GridSecondRow GridSpanTwoCol" );
+  m_same_z_age->addStyleClass( "GridFifthCol GridThirdRow GridSpanTwoCol" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   
@@ -1570,9 +1723,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
     
   label = new WLabel( "Peak Skew", optionsDiv );
-  label->addStyleClass( "GridNinthCol GridFirstRow" );
+  label->addStyleClass( "GridFifthCol GridSecondRow" );
   m_skew_type = new WComboBox( optionsDiv );
-  m_skew_type->addStyleClass( "GridTenthCol GridFirstRow" );
+  m_skew_type->addStyleClass( "GridSixthCol GridSecondRow" );
   label->setBuddy( m_skew_type );
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
   tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
@@ -1585,6 +1738,66 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }//for( loop over SkewTypes )
     
   m_skew_type->setCurrentIndex( 0 );
+  
+    
+  label = new WLabel( "Add. Uncert", optionsDiv );
+  label->addStyleClass( "GridFifthCol GridFirstRow" );
+  m_add_uncert = new WComboBox( optionsDiv );
+  m_add_uncert->addStyleClass( "GridSixthCol GridFirstRow" );
+  label->setBuddy( m_add_uncert );
+    m_add_uncert->activated().connect( this, &RelActAutoGui::handleAdditionalUncertChanged );
+    
+  for( RelActAutoGui::AddUncert i = RelActAutoGui::AddUncert(0);
+      i < RelActAutoGui::AddUncert::NumAddUncert;
+      i = RelActAutoGui::AddUncert(static_cast<int>(i) + 1) )
+  {
+    WString uncert_txt;
+    switch( i )
+    {
+      case AddUncert::StatOnly:           uncert_txt = WString::fromUTF8("None"); break;
+      case AddUncert::OnePercent:         uncert_txt = WString::fromUTF8("1%");   break;
+      case AddUncert::FivePercent:        uncert_txt = WString::fromUTF8("5%");   break;
+      case AddUncert::TenPercent:         uncert_txt = WString::fromUTF8("10%");  break;
+      case AddUncert::TwentyFivePercent:  uncert_txt = WString::fromUTF8("25%");  break;
+      case AddUncert::FiftyPercent:       uncert_txt = WString::fromUTF8("50%");  break;
+      case AddUncert::SeventyFivePercent: uncert_txt = WString::fromUTF8("75%");  break;
+      case AddUncert::OneHundredPercent:  uncert_txt = WString::fromUTF8("100%"); break;
+      case AddUncert::NumAddUncert:       assert(0);                              break;
+    }//switch( i )
+       
+    m_add_uncert->addItem( uncert_txt );
+  }//for( loop over AddUncert )
+     
+  m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
+    
+    
+  m_phys_model_opts = new WContainerWidget( optionsDiv );
+  m_phys_model_opts->addStyleClass( "PhysicalModelOpts GridEleventhCol GridFirstRow GridSpanThreeRows" );
+  
+  m_phys_model_shields = new WContainerWidget( m_phys_model_opts );
+  m_phys_model_shields->addStyleClass( "PhysicalModelShields" );
+    
+  m_phys_ext_attens = new WContainerWidget( m_phys_model_shields );
+  
+  // We will pu the Use 
+  WContainerWidget *phys_opt_row = new WContainerWidget( m_phys_model_opts );
+  phys_opt_row->setStyleClass( "PhysicalModelOptRow" );
+  
+  m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", phys_opt_row );
+  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb" );
+  m_phys_model_use_hoerl->setChecked( true );
+  m_phys_model_use_hoerl->setWordWrap( false );
+  m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
+  m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
+
+  SpecMeasManager *spec_manager = m_interspec->fileManager();
+  SpectraFileModel *spec_model = spec_manager ? spec_manager->model() : nullptr;
+  DetectorDisplay *det_disp = new DetectorDisplay( m_interspec, spec_model, phys_opt_row );
+  m_interspec->detectorChanged().connect( this, &RelActAutoGui::handleDetectorChange );
+  m_interspec->detectorModified().connect( this, &RelActAutoGui::handleDetectorChange );
+
+  m_phys_model_opts->hide();
+    
     
   WPushButton *more_btn = new WPushButton( optionsDiv );
   more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
@@ -1839,11 +2052,12 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
 {
   RelActCalcAuto::Options options;
   
+  
   options.fit_energy_cal = m_fit_energy_cal->isChecked();
-  options.nucs_of_el_same_age = m_same_z_age->isChecked();
-  options.rel_eff_eqn_type = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
-  options.rel_eff_eqn_order = 1 + std::max( 0, m_rel_eff_eqn_order->currentIndex() );
   options.fwhm_form = RelActCalcAuto::FwhmForm( std::max(0,m_fwhm_eqn_form->currentIndex()) );
+  options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod( std::max(0,m_fwhm_estimation_method->currentIndex()) );
+  if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+    options.fwhm_form = RelActCalcAuto::FwhmForm::NotApplicable;
   
   const shared_ptr<const SpecUtils::Measurement> fore
                            = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
@@ -1854,7 +2068,59 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   else if( meas && !meas->filename().empty() )
     options.spectrum_title = meas->filename();
   
+  options.skew_type = PeakDef::SkewType::NoSkew;
+  const int skew_index = m_skew_type->currentIndex();
+  if( (skew_index >= 0) && (skew_index <= PeakDef::SkewType::DoubleSidedCrystalBall) )
+    options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
   
+  options.additional_br_uncert = -1.0;
+  const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
+  switch( add_uncert )
+  {
+    case AddUncert::StatOnly:           options.additional_br_uncert = 0.00;  break;
+    case AddUncert::OnePercent:         options.additional_br_uncert = 0.01;  break;
+    case AddUncert::FivePercent:        options.additional_br_uncert = 0.05;  break;
+    case AddUncert::TenPercent:         options.additional_br_uncert = 0.10;  break;
+    case AddUncert::TwentyFivePercent:  options.additional_br_uncert = 0.25;  break;
+    case AddUncert::FiftyPercent:       options.additional_br_uncert = 0.50;  break;
+    case AddUncert::SeventyFivePercent: options.additional_br_uncert = 0.75;  break;
+    case AddUncert::OneHundredPercent:  options.additional_br_uncert = 1.00;  break;
+    case AddUncert::NumAddUncert:       assert( 0 );                          break;
+  }//switch( add_uncert )
+  assert( options.additional_br_uncert >= 0.0 );
+  options.additional_br_uncert = std::max( options.additional_br_uncert, 0.0 );
+  
+  options.floating_peaks = getFloatingPeaks();
+  options.rois = getRoiRanges();
+
+
+  RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+  rel_eff_curve.nuclides = getNucInputInfo();
+  rel_eff_curve.nucs_of_el_same_age = m_same_z_age->isChecked();
+  rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
+  rel_eff_curve.rel_eff_eqn_order = 0;
+  if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    rel_eff_curve.rel_eff_eqn_order = static_cast<size_t>( std::max( 0, m_rel_eff_eqn_order->currentIndex() ) );
+  
+  if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    if( m_phys_model_self_atten && m_phys_model_self_atten->nonEmpty() )
+      rel_eff_curve.phys_model_self_atten = m_phys_model_self_atten->fitInput();
+    
+    for( WWidget *w : m_phys_ext_attens->children() )
+    {
+      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
+      if( sw && sw->nonEmpty() )
+      {
+        auto input = sw->fitInput();
+        if( input )
+          rel_eff_curve.phys_model_external_atten.push_back( input );
+      }
+    }//for( WWidget *w : m_phys_ext_attens->children() )
+    
+    rel_eff_curve.phys_model_use_hoerl = m_phys_model_use_hoerl->isChecked();
+  }//if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
   if( m_pu_corr_method->isVisible() )
   {
     const string currtxt = m_pu_corr_method->currentText().toUTF8();
@@ -1864,17 +2130,14 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
       const string &desc = RelActCalc::to_description( method );
       if( desc == currtxt )
       {
-        options.pu242_correlation_method = method;
+        rel_eff_curve.pu242_correlation_method = method;
         break;
       }
     }//for( loop over RelActCalc::PuCorrMethod )
   }//if( m_pu_corr_method->isVisible() )
-  
-  options.skew_type = PeakDef::SkewType::NoSkew;
-  const int skew_index = m_skew_type->currentIndex();
-  if( (skew_index >= 0) && (skew_index <= PeakDef::SkewType::DoubleSidedCrystalBall) )
-    options.skew_type = PeakDef::SkewType( m_skew_type->currentIndex() );
-  
+
+  options.rel_eff_curves = { rel_eff_curve };
+
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
 
@@ -1888,7 +2151,7 @@ vector<RelActCalcAuto::NucInputInfo> RelActAutoGui::getNucInputInfo() const
   {
     const RelActAutoNuclide *nuc = dynamic_cast<const RelActAutoNuclide *>( w );
     assert( nuc );
-    if( nuc && nuc->nuclide() )
+    if( nuc && !std::holds_alternative<std::monostate>(nuc->nuclide()) )
       answer.push_back( nuc->toNucInputInfo() );
   }//for( WWidget *w : kids )
   
@@ -1993,9 +2256,24 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     }
   }//for( WWidget *w : kids )
 
-  if( !range || min_de > 1.0 )  //0.001 would probably be fine instead of 1.0
+  if( !range || (min_de > 2.5) )  // Sometimes the ROI might say its original lower energy is like 603 keV, but the RelActAutoEnergyRange might say 604.2.
   {
     cerr << "Unexpectedly couldnt find ROI in getRoiRanges()!" << endl;
+    cout << "\t\toriginal_roi_lower_energy=" << original_roi_lower_energy
+    << ", new_roi_lower_energy=" << new_roi_lower_energy << ", new_roi_upper_energy=" << new_roi_upper_energy
+    << ", is_final_range=" << is_final_range << endl;
+    for( WWidget *w : kids )
+    {
+      RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      assert( roi );
+      if( !roi || roi->isEmpty() )
+        continue;
+      
+      RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
+      cout << "\t\tRange: " << roi_range.lower_energy << ", " << roi_range.upper_energy << endl;
+    }
+    cout << endl << endl;
+    
     return;
   }//if( failed to find continuum )
   
@@ -2420,14 +2698,183 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
 
 void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
 {
-  m_fit_energy_cal->setChecked( options.fit_energy_cal );
-  m_same_z_age->setChecked( options.nucs_of_el_same_age );
-  m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(options.rel_eff_eqn_type) );
-  m_rel_eff_eqn_order->setCurrentIndex( std::max(options.rel_eff_eqn_order,size_t(1)) - 1 );
-  m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
-  m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
-  // options.spectrum_title
+  assert( options.rel_eff_curves.size() == 1 );
+  if( options.rel_eff_curves.size() != 1 )
+    throw runtime_error( "RelActAutoGui::setCalcOptionsGui: for dev, must have exactly one rel-eff curve." );
   
+  m_fit_energy_cal->setChecked( options.fit_energy_cal );
+  
+  m_fwhm_estimation_method->setCurrentIndex( static_cast<int>(options.fwhm_estimation_method) );
+  const bool fixed_to_det_eff = (options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency);
+  
+  m_fwhm_eqn_form->setHidden( fixed_to_det_eff );
+  if( m_fwhm_eqn_form->label() )
+    m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
+  if( !fixed_to_det_eff && (options.fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable) )
+    m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
+  
+  m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
+  
+  // We'll just round add-uncert to the nearest-ish value we allow in the GUI
+  RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
+  if( options.additional_br_uncert <= 0.005 )
+    add_uncert = AddUncert::StatOnly;
+  else if( options.additional_br_uncert <= 0.025 )
+    add_uncert = AddUncert::OnePercent;
+  else if( options.additional_br_uncert <= 0.075 )
+    add_uncert = AddUncert::FivePercent;
+  else if( options.additional_br_uncert <= 0.175 )
+    add_uncert = AddUncert::TenPercent;
+  else if( options.additional_br_uncert <= 0.375 )
+    add_uncert = AddUncert::TwentyFivePercent;
+  else if( options.additional_br_uncert <= 0.625 )
+    add_uncert = AddUncert::FiftyPercent;
+  else if( options.additional_br_uncert <= 0.875 )
+    add_uncert = AddUncert::SeventyFivePercent;
+  else
+    add_uncert = AddUncert::OneHundredPercent;
+  
+  assert( add_uncert != AddUncert::NumAddUncert );
+  if( add_uncert == AddUncert::NumAddUncert )
+    add_uncert = AddUncert::StatOnly;
+  m_add_uncert->setCurrentIndex( static_cast<int>(add_uncert) );
+  
+  
+  m_nuclides->clear();
+  
+  const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[0];
+  m_same_z_age->setChecked( rel_eff.nucs_of_el_same_age );
+  m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(rel_eff.rel_eff_eqn_type) );
+  if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    m_rel_eff_eqn_order->setCurrentIndex( static_cast<int>(rel_eff.rel_eff_eqn_order) );
+  
+  const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &self_atten = rel_eff.phys_model_self_atten;
+  const vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> &ext_attens = rel_eff.phys_model_external_atten;
+  
+  if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+     || self_atten || !ext_attens.empty() )
+  {
+    initPhysModelShields();  //Sets shielding widgets to default state
+    
+    assert( m_phys_model_self_atten );
+    if( !m_phys_model_self_atten || !m_phys_ext_attens )
+      throw std::logic_error( "!m_phys_model_self_atten || !m_phys_ext_attens ?!?" );
+    assert( m_phys_ext_attens->count() == 1 );
+    
+    
+    if( self_atten )
+    {
+      RelEffShieldState state;
+      state.setStateFromFitInput( *self_atten );
+      m_phys_model_self_atten->setState( state );
+    }
+    
+    // Fill out the external shielding widgets
+    vector<RelEffShieldWidget *> ext_shields;
+    for( WWidget *w : m_phys_ext_attens->children() )
+    {
+      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
+      assert( sw );
+      if( sw )
+        ext_shields.push_back( sw );
+    }
+    
+    assert( ext_shields.size() == 1 );
+    
+    // Remove any extra shielding widgets
+    while( (ext_shields.size() > 1) && (ext_shields.size() > ext_attens.size()) )
+    {
+      delete ext_shields.back();
+      ext_shields.pop_back();
+    }
+    
+    if( (ext_shields.size()) == 1 && ext_attens.empty() )
+      ext_shields[0]->resetState();
+    
+    // Set state, reusing as many shielding widgets as we can
+    const size_t num_ext_reused = std::min( ext_shields.size(), ext_attens.size() );
+    for( size_t i = 0; i < num_ext_reused; ++i )
+    {
+      RelEffShieldState state;
+      state.setStateFromFitInput( *ext_attens[i] );
+      ext_shields[i]->setState( state );
+    }
+    
+    // Add any new shielding widgets we need
+    for( size_t i = num_ext_reused; i < ext_attens.size(); ++i )
+    {
+      RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_phys_ext_attens );
+      sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
+      ext_shields.push_back( sw );
+      
+      RelEffShieldState state;
+      state.setStateFromFitInput( *ext_attens[i] );
+      sw->setState( state );
+    }
+  }else
+  {
+    // Normally we will keep Physical model shielding around, incase the user is
+    //  messing around, but if we are setting state from XML, we'll hard reset them
+    if( m_phys_model_self_atten )
+    {
+      delete m_phys_model_self_atten;
+      m_phys_model_self_atten = nullptr;
+    }
+    while( !m_phys_ext_attens->children().empty() )
+      delete m_phys_ext_attens->children().front();
+  }//if( Physical Model ) / else
+
+  showAndHideOptionsForEqnType();
+  
+  for( const RelActCalcAuto::NucInputInfo &nuc : rel_eff.nuclides )
+  {
+    RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
+    nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
+    nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
+                                              this, static_cast<WWidget *>(nuc_widget) ) );
+    nuc_widget->fromNucInputInfo( nuc );
+  }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+  
+  
+  m_energy_ranges->clear();
+  for( const RelActCalcAuto::RoiRange &roi : options.rois )
+  {
+    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+    
+    energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
+    
+    energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
+                                                this, static_cast<WWidget *>(energy_range) ) );
+    
+    energy_range->setFromRoiRange( roi );
+  }//for( const RelActCalcAuto::RoiRange &roi : rois )
+  
+  
+  // Free Peaks
+  m_free_peaks->clear();
+  if( options.floating_peaks.empty() && !m_free_peaks_container->isHidden() )
+    handleHideFreePeaks();
+  
+  if( !options.floating_peaks.empty() && m_free_peaks_container->isHidden() )
+    handleShowFreePeaks();
+  
+  for( const RelActCalcAuto::FloatingPeak &peak : options.floating_peaks )
+    handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
+  
+  
+  // We will be a bit cheap here, and set one entry in pu correlation selector, and then
+  //  rely on `updateDuringRenderForNuclideChange()` to input all the actual options
+  m_pu_corr_method->setHidden( rel_eff.pu242_correlation_method == RelActCalc::PuCorrMethod::NotApplicable );
+  m_pu_corr_method->clear();
+  m_pu_corr_method->addItem( RelActCalc::to_description(rel_eff.pu242_correlation_method) );
+  m_pu_corr_method->setCurrentIndex( 0 );
+  if( m_pu_corr_method->label() )
+    m_pu_corr_method->label()->setHidden( m_pu_corr_method->isHidden() );
+  
+  
+  
+  // options.spectrum_title
+  m_render_flags |= RenderActions::UpdateNuclidesPresent;  //To trigger calling `updateDuringRenderForNuclideChange()`
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void setCalcOptionsGui( const RelActCalcAuto::Options &options )
@@ -2512,338 +2959,44 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
 
 rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
-  assert( parent_node );
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.options = getCalcOptions();
+  state.background_subtract = (m_background_subtract->isEnabled() && m_background_subtract->isChecked());
+  state.show_ref_lines = m_hide_ref_lines_item->isEnabled();
+  state.lower_display_energy = m_spectrum->xAxisMinimum();
+  state.upper_display_energy = m_spectrum->xAxisMaximum();
   
-  using namespace rapidxml;
-  xml_document<char> * const doc = parent_node->document();
-  
-  assert( doc );
-  if( !doc )
-    throw runtime_error( "RelActAutoGui::serialize: no xml_document" );
-  
-  xml_node<char> *base_node = doc->allocate_node( node_element, "RelActCalcAuto" );
-  parent_node->append_node( base_node );
-  
-  xml_attribute<char> *attrib = doc->allocate_attribute( "version", "0" );
-  base_node->append_attribute( attrib );
-  
-  // Elements in the offline-xml we dont deal with here
-  //  base_node->append_node( <"ForegroundFileName"> );
-  //  base_node->append_node( <"BackgroundFileName"> );
-  //  base_node->append_node( <"OutputHtmlFileName"> );
-  //  base_node->append_node( <"RoiAndNucsFromFile"> );
-  
-  const RelActCalcAuto::Options options = getCalcOptions();
-  const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
-  const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo();
-  const vector<RelActCalcAuto::FloatingPeak> floating_peaks = getFloatingPeaks();
-  rapidxml::xml_node<char> *options_node = options.toXml( base_node );
-  
-  {// Begin put extra options
-    //options_node
-    
-    
-    /*
-    if( m_u_pu_data_source->isVisible() )
-    {
-      const int src_index = m_u_pu_data_source->currentIndex();
-      if( (src_index>= 0)
-         && (src_index < static_cast<int>(RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined)) )
-      {
-        const auto src_type = RelActCalcManual::PeakCsvInput::NucDataSrc( src_index );
-        const char *val = RelActCalcManual::PeakCsvInput::to_str( src_type );
-        xml_node<char> *node = doc->allocate_node( node_element, "UPuDataSrc", val );
-        options_node->append_node( node );
-      }//if( a valid index )
-    }//if( we hav eU or Pu in the problem )
-     */
-  
-  
-    if( m_background_subtract->isEnabled() )
-    {
-      const char *val = m_background_subtract->isChecked() ? "true" : "false";
-      xml_node<char> *node = doc->allocate_node( node_element, "BackgroundSubtract", val );
-      options_node->append_node( node );
-    }//if( we have a background to subtract )
-    
-    if( m_pu_corr_method->isVisible() && m_pu_corr_method->count() )
-    {
-      string valstr;
-      const string currtxt = m_pu_corr_method->currentText().toUTF8();
-      for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
-      {
-        const auto method = RelActCalc::PuCorrMethod(i);
-        const string &desc = RelActCalc::to_description( method );
-        if( desc == currtxt )
-        {
-          valstr = RelActCalc::to_str(method);
-          break;
-        }
-      }//for( loop over RelActCalc::PuCorrMethod )
-      
-      assert( !valstr.empty() );
-      
-      if( !valstr.empty() )
-      {
-        const char *val = doc->allocate_string( valstr.c_str() );
-        xml_node<char> *node = doc->allocate_node( node_element, "Pu242CorrMethod", val );
-        options_node->append_node( node );
-      }
-    }//if( we have U or Pu in the problem )
-  }// End put extra options
-  
-  
-  if( !rois.empty() )
-  {
-    xml_node<char> *node = doc->allocate_node( node_element, "RoiRangeList" );
-    base_node->append_node( node );
-    for( const auto &range : rois )
-      range.toXml( node );
-  }
-  
-  if( !nuclides.empty() )
-  {
-    xml_node<char> *node = doc->allocate_node( node_element, "NucInputInfoList" );
-    base_node->append_node( node );
-    for( const auto &nuc : nuclides )
-      nuc.toXml( node );
-  }//if( !nuclides.empty() )
-  
-  if( !floating_peaks.empty() )
-  {
-    xml_node<char> *node = doc->allocate_node( node_element, "FloatingPeakList" );
-    base_node->append_node( node );
-    for( const auto &peak : floating_peaks )
-      peak.toXml( node );
-  }//if( !floating_peaks.empty() )
-  
-  
-  {
-    const bool show_ref_lines = m_hide_ref_lines_item->isEnabled();
-    const char *val = show_ref_lines ? "true" : "false";
-    xml_node<char> *node = doc->allocate_node( node_element, "ShowRefGammaLines", val );
-    options_node->append_node( node );
-  }//if( !refline_cb )
-  
-  const double lower_display_energy = m_spectrum->xAxisMinimum();
-  const double upper_display_energy = m_spectrum->xAxisMaximum();
-  
-  if( lower_display_energy < upper_display_energy )
-  {
-    const string lower_energy_str = std::to_string( lower_display_energy );
-    const string upper_energy_str = std::to_string( upper_display_energy );
-    
-    const char *val = doc->allocate_string( lower_energy_str.c_str() );
-    xml_node<char> *node = doc->allocate_node( node_element, "LowerDisplayEnergy", val );
-    options_node->append_node( node );
-    
-    val = doc->allocate_string( upper_energy_str.c_str() );
-    node = doc->allocate_node( node_element, "UpperDisplayEnergy", val );
-    options_node->append_node( node );
-  }//if( lower_display_energy < upper_display_energy )
-  
-  
-  
-  return parent_node;
+  return state.serialize( parent_node );
 }//rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent )
 
 
 void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
 {
-  using namespace rapidxml;
+  MaterialDB *materialDb = m_interspec->materialDataBase();
   
-  assert( base_node );
-  if( !base_node )
-    throw runtime_error( "RelActAutoGui::deSerialize: nullptr passed in." );
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( base_node, materialDb );
   
-  const string base_node_name = SpecUtils::xml_name_str(base_node);
-  if( base_node_name != "RelActCalcAuto" )
-    throw runtime_error( "RelActAutoGui::deSerialize: invalid node passed in named '"
-                         + base_node_name + "'" );
+  m_background_subtract->setChecked( state.background_subtract );
   
-  const xml_attribute<char> *attrib = XML_FIRST_ATTRIB(base_node, "version");
-  const string base_version = SpecUtils::xml_value_str(attrib);
-  if( !SpecUtils::istarts_with(base_version, "0") )
-    throw runtime_error( "RelActAutoGui::deSerialize: invalid xml version='" + base_version + "'" );
-  
-  const xml_node<char> *node = XML_FIRST_NODE(base_node, "Options");
-  if( !node )
-    throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
-  
-  bool loaded_display_energy_range = false;
-  
-  RelActCalcAuto::Options options;
-  vector<RelActCalcAuto::RoiRange> rois;
-  vector<RelActCalcAuto::NucInputInfo> nuclides;
-  vector<RelActCalcAuto::FloatingPeak> floating_peaks;
-  
-  options.fromXml( node );
-  
-  
-  {// Begin get extra options
-    const xml_node<char> *opt_node = XML_FIRST_NODE(node, "BackgroundSubtract");
-    string val = SpecUtils::xml_value_str( opt_node );
-    const bool back_sub = SpecUtils::iequals_ascii(val, "true");
-    m_background_subtract->setChecked( back_sub );
+  m_show_ref_lines_item->setHidden( state.show_ref_lines );
+  m_hide_ref_lines_item->setHidden( !state.show_ref_lines );
+  m_show_ref_lines_item->setDisabled( state.show_ref_lines );
+  m_hide_ref_lines_item->setDisabled( !state.show_ref_lines );
     
-
-    if( m_pu_corr_method->label() )
-      m_pu_corr_method->label()->hide();
-    opt_node = XML_FIRST_NODE(node, "Pu242CorrMethod");
-    val = SpecUtils::xml_value_str( opt_node );
-    
-    // Start off assuming we will hide this option
-    m_pu_corr_method->clear();
-    m_pu_corr_method->hide();
-      
-    for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
-    {
-      const auto method = RelActCalc::PuCorrMethod(i);
-      if( val == RelActCalc::to_str(method) )
-      {
-        m_pu_corr_method->addItem( RelActCalc::to_description( method ) );
-        m_pu_corr_method->setCurrentIndex( 0 );
-        m_pu_corr_method->show();
-        if( m_pu_corr_method->label() )
-          m_pu_corr_method->label()->show();
-        break;
-      }
-    }//for( loop over RelActCalc::PuCorrMethod )
-    
-    
-    opt_node = XML_FIRST_NODE(node, "ShowRefGammaLines");
-    val = SpecUtils::xml_value_str( opt_node );
-    const bool show_ref_lines = SpecUtils::iequals_ascii(val, "true");
-    m_show_ref_lines_item->setHidden( show_ref_lines );
-    m_hide_ref_lines_item->setHidden( !show_ref_lines );
-    m_show_ref_lines_item->setDisabled( show_ref_lines );
-    m_hide_ref_lines_item->setDisabled( !show_ref_lines );
-    
-    opt_node = XML_FIRST_NODE(node, "LowerDisplayEnergy");
-    const string lower_display_energy_str = SpecUtils::xml_value_str( opt_node );
-    opt_node = XML_FIRST_NODE(node, "UpperDisplayEnergy");
-    const string upper_display_energy_str = SpecUtils::xml_value_str( opt_node );
-    
-    double lower_display_energy, upper_display_energy;
-    if( !lower_display_energy_str.empty() && !upper_display_energy_str.empty()
-       && (stringstream(lower_display_energy_str) >> lower_display_energy)
-       && (stringstream(upper_display_energy_str) >> upper_display_energy)
-       && (upper_display_energy > lower_display_energy)
-       && !IsInf(lower_display_energy) && !IsNan(lower_display_energy)
-       && !IsInf(upper_display_energy) && !IsNan(upper_display_energy)
-       )
-    {
-      loaded_display_energy_range = true;
-      
-      // Note: this next line only works when creating this widget and then loading its state
-      //       because #updateDuringRenderForSpectrumChange checks if the widget has rendered
-      //       yet, and if not, and it looks like a custom range has been set, then it wont
-      //       reset the range.
-      m_spectrum->setXAxisRange( lower_display_energy, upper_display_energy );
-    }
-    
-    
-    /*
-    opt_node = XML_FIRST_NODE(node, "UPuDataSrc");
-    val = SpecUtils::xml_value_str( opt_node );
-    if( !val.empty() )
-    {
-      using RelActCalcManual::PeakCsvInput::NucDataSrc;
-      
-      bool set_src = false;
-      for( int i = 0; i < static_cast<int>(NucDataSrc::Undefined); ++i )
-      {
-        const NucDataSrc src = NucDataSrc(i);
-        const char *src_str = RelActCalcManual::PeakCsvInput::to_str(src);
-        if( val == src_str )
-        {
-          set_src = true;
-          m_u_pu_data_source->setCurrentIndex( i );
-          break;
-        }
-      }//for( int i = 0; i < static_cast<int>(NucDataSrc::Undefined); ++i )
-      
-      if( !set_src )
-        cerr << "Failed to convert '" << val << "' into a NucDataSrc" << endl;
-    }//if( UPuDataSrc not empty )
-     */
-  }// End get extra options
-  
-
-  node = XML_FIRST_NODE(base_node, "RoiRangeList");
-  if( node )
+  if( state.lower_display_energy < state.upper_display_energy )
   {
-    XML_FOREACH_CHILD( roi_node, node, "RoiRange" )
-    {
-      RelActCalcAuto::RoiRange roi;
-      roi.fromXml( roi_node );
-      rois.push_back( roi );
-    }
-  }//if( <RoiRangeList> )
-  
-  
-  node = XML_FIRST_NODE(base_node, "NucInputInfoList");
-  if( node )
-  {
-    XML_FOREACH_CHILD( nuc_node, node, "NucInputInfo" )
-    {
-      RelActCalcAuto::NucInputInfo nuc;
-      nuc.fromXml( nuc_node );
-      nuclides.push_back( nuc );
-    }
-  }//if( <NucInputInfoList> )
-  
-  
-  node = XML_FIRST_NODE(base_node, "FloatingPeakList");
-  if( node )
-  {
-    XML_FOREACH_CHILD( peak_node, node, "FloatingPeak" )
-    {
-      RelActCalcAuto::FloatingPeak peak;
-      peak.fromXml( peak_node );
-      floating_peaks.push_back( peak );
-    }
-  }//if( <NucInputInfoList> )
-  
+    // Note: this next line only works when creating this widget and then loading its state
+    //       because #updateDuringRenderForSpectrumChange checks if the widget has rendered
+    //       yet, and if not, and it looks like a custom range has been set, then it wont
+    //       reset the range.
+    
+    m_spectrum->setXAxisRange( state.lower_display_energy, state.upper_display_energy );
+  }
+    
   m_loading_preset = true;
   
-  setCalcOptionsGui( options );
-  m_nuclides->clear();
-  m_energy_ranges->clear();
-  
-  for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
-  {
-    RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
-    nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
-    nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
-                                              this, static_cast<WWidget *>(nuc_widget) ) );
-    nuc_widget->fromNucInputInfo( nuc );
-  }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
-  
-  
-  for( const RelActCalcAuto::RoiRange &roi : rois )
-  {
-    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
-    
-    energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
-    
-    energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
-                                                this, static_cast<WWidget *>(energy_range) ) );
-    
-    energy_range->setFromRoiRange( roi );
-  }//for( const RelActCalcAuto::RoiRange &roi : rois )
-  
-  
-  // Free Peaks
-  m_free_peaks->clear();
-  if( floating_peaks.empty() && !m_free_peaks_container->isHidden() )
-    handleHideFreePeaks();
-  
-  if( !floating_peaks.empty() && m_free_peaks_container->isHidden() )
-    handleShowFreePeaks();
-  
-  for( const RelActCalcAuto::FloatingPeak &peak : floating_peaks )
-    handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
+  setCalcOptionsGui( state.options );
   
   m_solution.reset();
   m_peak_model->setPeaks( vector<PeakDef>{} );
@@ -2856,7 +3009,7 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::UpdateFreePeaks;
   m_render_flags |= RenderActions::UpdateRefGammaLines;
-  if( !loaded_display_energy_range )
+  if( state.lower_display_energy >= state.upper_display_energy )
     m_render_flags |= RenderActions::ChartToDefaultRange;
   
   scheduleRender();
@@ -2989,6 +3142,8 @@ void RelActAutoGui::handlePresetChange()
 
 void RelActAutoGui::handleRelEffEqnFormChanged()
 {
+  showAndHideOptionsForEqnType();
+  
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3009,6 +3164,22 @@ void RelActAutoGui::handleFwhmFormChanged()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFwhmFormChanged()
+
+
+void RelActAutoGui::handleFwhmEstimationMethodChanged()
+{
+  const RelActCalcAuto::FwhmEstimationMethod index 
+           = static_cast<RelActCalcAuto::FwhmEstimationMethod>( m_fwhm_estimation_method->currentIndex() );
+  
+  const bool fixed_to_det_eff = (index == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency);
+  if( m_fwhm_eqn_form->label() )
+    m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
+  m_fwhm_eqn_form->setHidden( fixed_to_det_eff );
+  
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleFwhmEstimationMethodChanged()
 
 
 void RelActAutoGui::handleFitEnergyCalChanged()
@@ -3092,11 +3263,26 @@ void RelActAutoGui::handleFreePeakChange()
 }//void handleFreePeakChange()
 
 
+void RelActAutoGui::handleAdditionalUncertChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleAdditionalUncertChanged()
+
+
 void RelActAutoGui::setOptionsForNoSolution()
 {
+  //if( !m_spectrum->chartTitle().empty() )
+  //  m_spectrum->setChartTitle( WString() );
+  m_fit_chi2_msg->setText( "" );
+  m_fit_chi2_msg->hide();
+
   makeZeroAmplitudeRoisToChart();
   m_set_peaks_foreground->setDisabled( true );
-  
+
+  m_rel_eff_chart->setData( 0.0, {}, {}, "", "" );
+
   for( WWidget *w : m_energy_ranges->children() )
   {
     RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
@@ -3117,7 +3303,7 @@ void RelActAutoGui::setOptionsForValidSolution()
   // Check if we should allow setting energy calibration from fit solution
   const bool fit_energy_cal = (m_solution->m_fit_energy_cal[0] || m_solution->m_fit_energy_cal[1]);
   m_apply_energy_cal_item->setDisabled( !fit_energy_cal );
-  m_set_peaks_foreground->setDisabled( m_solution->m_fit_peaks.empty() );
+  m_set_peaks_foreground->setDisabled( m_solution->m_fit_peaks_in_spectrums_cal.empty() );
   
   for( WWidget *w : m_energy_ranges->children() )
   {
@@ -3434,7 +3620,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
       return;
     }//
     
-    const int orig_w_index = pos - begin(kids);
+    const int orig_w_index = static_cast<int>( pos - begin(kids) );
     
     delete w;
     
@@ -3614,19 +3800,34 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
   
   char buffer[128] = { '\0' };
   
+  bool printed_some = false;
   if( fit_offset )
   {
-    const double offset = -m_solution->m_energy_cal_adjustments[0];
+    double offset = -(m_solution->m_energy_cal_adjustments[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV;
     snprintf( buffer, sizeof(buffer), " add an offset of %.2f keV", offset );
     msg += buffer;
+    printed_some = true;
   }
   
   if( fit_gain )
   {
-    const double gain = 1.0 / m_solution->m_energy_cal_adjustments[1];
-    snprintf( buffer, sizeof(buffer), "%s multiple the gain by %.5f", (fit_offset ? " and" : ""), gain );
+    double gain = -(m_solution->m_energy_cal_adjustments[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
+    snprintf( buffer, sizeof(buffer), "%s increase gain by %.5f", (printed_some ? " and" : ""), gain );
     msg += buffer;
+    printed_some = true;
   }//if( fit_gain )
+  
+  if( m_solution && (m_solution->m_fit_energy_cal.size() > 2) && m_solution->m_fit_energy_cal[2] )
+  {
+    double quad = -(m_solution->m_energy_cal_adjustments[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
+                      * RelActCalcAuto::RelActAutoSolution::sm_energy_quad_range_keV;
+    snprintf( buffer, sizeof(buffer), "%s increase quadratic by %.5f", (printed_some ? " and" : ""), quad );
+    msg += buffer;
+    printed_some = true;
+  }//if( fit_gain )
+  
   
   msg += " for the primary foreground";
   const bool has_back = !!m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
@@ -3653,7 +3854,7 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
   try
   {
     assert( m_solution->m_foreground );
-    if( !m_solution->m_foreground )
+    if( !m_solution || !m_solution->m_foreground )
       throw runtime_error( "Solution foreground not set???" );
     
     const auto orig_cal = m_solution->m_foreground->energy_calibration();
@@ -3663,49 +3864,8 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     
     const size_t nchannel = orig_cal->num_channels();
     
-    shared_ptr<SpecUtils::EnergyCalibration> new_cal = make_shared<SpecUtils::EnergyCalibration>();
-    
-    const double offset = m_solution->m_energy_cal_adjustments[0];
-    const double gain_mult = m_solution->m_energy_cal_adjustments[1];
-    
-    switch( orig_cal->type() )
-    {
-      case SpecUtils::EnergyCalType::Polynomial:
-      case SpecUtils::EnergyCalType::FullRangeFraction:
-      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-      {
-        vector<float> coefs = orig_cal->coefficients();
-        assert( coefs.size() >= 2 );
-        coefs[0] -= offset;
-        coefs[1] /= gain_mult;
-        
-        const auto &dev_pairs = orig_cal->deviation_pairs();
-        if( orig_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
-          new_cal->set_full_range_fraction( nchannel, coefs, dev_pairs );
-        else
-          new_cal->set_polynomial( nchannel, coefs, dev_pairs );
-        break;
-      }//case polynomial or FRF
-        
-        
-      case SpecUtils::EnergyCalType::LowerChannelEdge:
-      {
-        assert( orig_cal->channel_energies() );
-        if( !orig_cal->channel_energies() || orig_cal->channel_energies()->empty() )
-          throw runtime_error( "Invalid lower channel energies???" );
-        
-        vector<float> lower_energies = *orig_cal->channel_energies();
-        for( float &x : lower_energies )
-          x = (x - offset) / gain_mult;
-        
-        new_cal->set_lower_channel_energy( nchannel, std::move(lower_energies) );
-      }//case SpecUtils::EnergyCalType::LowerChannelEdge:
-        
-      case SpecUtils::EnergyCalType::InvalidEquationType:
-        assert( 0 );
-        throw runtime_error( "Solution foreground energy calibration invalid equation???" );
-        break;
-    }//switch( m_energy_cal->type() )
+    shared_ptr<const SpecUtils::EnergyCalibration> new_cal = m_solution->m_spectrum
+                                      ? m_solution->m_spectrum->energy_calibration() : nullptr; // or m_solution->get_adjusted_energy_cal()
     
     assert( new_cal && new_cal->valid() );
     if( !new_cal || !new_cal->valid() ) //shouldnt ever happen
@@ -3787,8 +3947,8 @@ void RelActAutoGui::handleShowRefLines( const bool show )
 
 void RelActAutoGui::setPeaksToForeground()
 {
-  assert( m_solution && !m_solution->m_fit_peaks.empty() );
-  if( !m_solution || m_solution->m_fit_peaks.empty() )
+  assert( m_solution && !m_solution->m_fit_peaks_in_spectrums_cal.empty() );
+  if( !m_solution || m_solution->m_fit_peaks_in_spectrums_cal.empty() )
   {
     SimpleDialog *dialog = new SimpleDialog( "Can't Continue", "No peaks in current solution" );
     dialog->addButton( "Close" );
@@ -3843,7 +4003,7 @@ void RelActAutoGui::setPeaksToForeground()
   WPushButton *yes = dialog->addButton( "Yes" );
   
   
-  const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks;
+  const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks_in_spectrums_cal;
   std::shared_ptr<const DetectorPeakResponse> ana_drf = m_solution->m_drf;
   
   if( m_solution->m_options.fit_energy_cal )
@@ -4007,6 +4167,87 @@ void RelActAutoGui::setPeaksToForeground()
   }) );
   
 }//void setPeaksToForeground()
+
+
+void RelActAutoGui::initPhysModelShields()
+{
+  if( m_phys_model_self_atten )
+  {
+    m_phys_model_self_atten->resetState();
+  }else
+  {
+    m_phys_model_self_atten = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
+    m_phys_model_shields->insertWidget( 0, m_phys_model_self_atten );
+    m_phys_model_self_atten->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
+  }
+  
+  vector<RelEffShieldWidget *> starting_ext_shields;
+  const vector<WWidget *> &ext_atten_widgets = m_phys_ext_attens->children();
+  for( WWidget *w : ext_atten_widgets )
+  {
+    RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
+    assert( sw );
+    if( sw )
+      starting_ext_shields.push_back( sw );
+  }
+  
+  if( starting_ext_shields.empty() )
+  {
+    RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
+                                                    m_phys_ext_attens );
+    sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
+  }else
+  {
+    starting_ext_shields[0]->resetState();
+    for( size_t i = 1; i < starting_ext_shields.size(); ++i )
+      delete starting_ext_shields[i];
+  }//if( starting_ext_shields.empty() )
+}//void initPhysModelShields()
+
+
+void RelActAutoGui::handlePhysModelUseHoerlChange()
+{
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handlePhysModelUseHoerlChange()
+
+
+void RelActAutoGui::handlePhysModelShieldChange()
+{
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handlePhysModelShieldChange()
+
+
+void RelActAutoGui::showAndHideOptionsForEqnType()
+{
+  const RelActCalc::RelEffEqnForm eqn_type
+                  = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
+  
+  const bool is_physical = (eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+  
+  m_rel_eff_eqn_order->setDisabled( is_physical );
+  m_rel_eff_eqn_order_label->setDisabled( is_physical );
+  m_phys_model_opts->setHidden( !is_physical );
+  if( is_physical && !m_phys_model_self_atten )
+    initPhysModelShields();
+}//void showAndHideOptionsForEqnType()
+
+
+void RelActAutoGui::handleDetectorChange()
+{
+  // We could sometimes get away with not updating calculations if we arent using a physical model,
+  //  but I think having the detectors FWHM may slightly impact the auto-search peaks (not 100% sure),
+  //  so we'll just always refresh calculations on detector changes.
+
+  m_cached_drf = nullptr;
+  m_cached_all_peaks.clear();
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void RelActAutoGui::handleDetectorChange()
 
 
 Wt::Signal<> &RelActAutoGui::calculationStarted()
@@ -4231,7 +4472,10 @@ void RelActAutoGui::updateDuringRenderForSpectrumChange()
   m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
   
   m_spectrum->removeAllDecorativeHighlightRegions();
-  
+  //m_spectrum->setChartTitle( WString() );
+  m_fit_chi2_msg->setText( "" );
+  m_fit_chi2_msg->hide();
+
   m_background_subtract->setHidden( !m_background );
 }//void updateDuringRenderForSpectrumChange()
 
@@ -4413,8 +4657,8 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     map<std::string,Wt::WColor> nuclide_colors;
     for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
     {
-      if( nuc.nuclide && !nuc.peak_color_css.empty() )
-        nuclide_colors[nuc.nuclide->symbol] = WColor( nuc.peak_color_css );
+      if( (nuc.nuclide || nuc.element || nuc.reaction) && !nuc.peak_color_css.empty() )
+        nuclide_colors[nuc.name()] = WColor( nuc.peak_color_css );
     }
     
     // If the user has a ColorTheme preference to assign a specific color to a nuclide, that
@@ -4428,7 +4672,17 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
       
       if( i )
         m_photopeak_widget->persistCurentLines();
-      m_photopeak_widget->setIsotope( nuc.nuclide, nuc.age );
+      
+      if( nuc.nuclide )
+      {
+        m_photopeak_widget->setIsotope( nuc.nuclide, nuc.age );
+      }else if( nuc.element )
+      {
+        m_photopeak_widget->setElement( nuc.element );
+      }else if( nuc.reaction )
+      {
+        m_photopeak_widget->setReaction( nuc.reaction );
+      }
     }//
   }//if( !show_ref_lines ) / else
 }//void updateDuringRenderForRefGammaLineChange()
@@ -4492,6 +4746,8 @@ void RelActAutoGui::startUpdatingCalculation()
 {
   m_error_msg->setText("");
   m_error_msg->hide();
+  m_fit_chi2_msg->setText("");
+  m_fit_chi2_msg->hide();
   m_status_indicator->hide();
   
   // Disable being able to apply energy calibration fit from solution, until we get a new solution
@@ -4501,9 +4757,6 @@ void RelActAutoGui::startUpdatingCalculation()
   shared_ptr<const SpecUtils::Measurement> foreground = m_foreground;
   shared_ptr<const SpecUtils::Measurement> background = m_background;
   RelActCalcAuto::Options options;
-  vector<RelActCalcAuto::RoiRange> rois;
-  vector<RelActCalcAuto::NucInputInfo> nuclides;
-  vector<RelActCalcAuto::FloatingPeak> floating_peaks;
   
   try
   {
@@ -4517,23 +4770,24 @@ void RelActAutoGui::startUpdatingCalculation()
       background = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
     
     options = getCalcOptions();
-    rois = getRoiRanges();
-    nuclides = getNucInputInfo();
-    floating_peaks = getFloatingPeaks();
     
-    if( nuclides.empty() && rois.empty() )
-      throw runtime_error( "No energy ranges or nuclides defined." );
-    else if( nuclides.empty() )
-      throw runtime_error( "No nuclides defined." );
-    else if( rois.empty() )
+    if( options.rel_eff_curves.size() != 1 )
+      throw runtime_error( "No relative efficiency curves defined - currently you must have exactly one curve." );
+
+    for( const auto &rel_eff_curve : options.rel_eff_curves )
+    {
+      if( rel_eff_curve.nuclides.empty() )
+        throw runtime_error( "No nuclides defined for relative efficiency curve." );
+    }
+
+    if( options.rois.empty() )
       throw runtime_error( "No energy ranges defined." );
-    
   }catch( std::exception &e )
   {
     m_is_calculating = false;
     m_error_msg->setText( e.what() );
     m_error_msg->show();
-    
+
     setOptionsForNoSolution();
     
     return;
@@ -4575,9 +4829,7 @@ void RelActAutoGui::startUpdatingCalculation()
     try
     {
       RelActCalcAuto::RelActAutoSolution answer
-        = RelActCalcAuto::solve( options, rois, nuclides, floating_peaks,
-                                foreground, background, cached_drf,
-                                cached_all_peaks, cancel_calc );
+        = RelActCalcAuto::solve( options, foreground, background, cached_drf, cached_all_peaks, cancel_calc );
       
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();
@@ -4595,12 +4847,16 @@ void RelActAutoGui::startUpdatingCalculation()
       } );
     }catch( std::exception &e )
     {
+      const string msg = e.what();
+      cout << "Caught exception: " << msg << endl;
+      cout << endl;
+      
       WServer::instance()->post( sessionId, [=](){
         WApplication *app = WApplication::instance();
         
         if( app )
         {
-          *error_msg = e.what();
+          *error_msg = msg;
           error_callback();
           app->triggerUpdate();
         }else
@@ -4630,6 +4886,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   if( cancel_flag != m_cancel_calc )
     return;
   
+  if( cancel_flag && (*cancel_flag) )
+    return;
+  
   m_is_calculating = false;
   m_status_indicator->hide();
   
@@ -4649,8 +4908,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       
       m_error_msg->setText( msg );
       m_error_msg->show();
+
       m_txt_results->setNoResults();
-      
+
       setOptionsForNoSolution();
       
       return;
@@ -4667,14 +4927,13 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   m_txt_results->updateResults( *answer );
   
-  m_peak_model->setPeaks( answer->m_fit_peaks );
+  m_peak_model->setPeaks( answer->m_fit_peaks_in_spectrums_cal );
   
   cout << "\n\n\nCalc finished: \n";
   answer->print_summary( std::cout );
   cout << "\n\n\n";
   
-  const string rel_eff_eqn_js = RelActCalc::rel_eff_eqn_js_function( answer->m_rel_eff_form,
-                                                                  answer->m_rel_eff_coefficients );
+  const string rel_eff_eqn_js = answer->rel_eff_eqn_js_function(0);
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
@@ -4682,11 +4941,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   WString chi2_title("χ²/dof = {1}/{2}{3}");
   chi2_title.arg( SpecUtils::printCompact(answer->m_chi2, 3) )
             .arg( static_cast<int>(answer->m_dof) );
-  
+
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio
   set<const SandiaDecay::Nuclide *> isotopes;
-  for( const auto &relact : answer->m_rel_activities )
+  for( const auto &relact : answer->m_rel_activities[0] )
   {
     if( relact.nuclide )
       isotopes.insert( relact.nuclide );
@@ -4704,7 +4963,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
      || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
   {
     const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
-    const double nominal = answer->mass_enrichment_fraction( iso );
+    const double nominal = answer->mass_enrichment_fraction( iso, 0 );
     // TODO: add errors
     string enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4)
                         // + "±" + SpecUtils::printCompact(100.0*error, 4)
@@ -4712,7 +4971,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     chi2_title.arg( enrich );
   }else if( isotopes.size() == 2 )
   {
-    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities;
+    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities.at(0);
     const int num_index = (rel_acts[0].rel_activity > rel_acts[1].rel_activity) ? 1 : 0;
     const int denom_index = (num_index ? 0 : 1);
     const SandiaDecay::Nuclide * const num_nuc = rel_acts[num_index].nuclide;
@@ -4720,7 +4979,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     assert( num_nuc && den_nuc );
     if( num_nuc && den_nuc )
     {
-      const double ratio = answer->activity_ratio( num_nuc, den_nuc );
+      const double ratio = answer->activity_ratio( num_nuc, den_nuc, 0 );
       // TODO: add errors
       string ratio_txt = ", act(" + num_nuc->symbol + "/" + den_nuc->symbol + ")="
       + SpecUtils::printCompact(ratio, 4);
@@ -4734,13 +4993,25 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     chi2_title.arg( "" );
   }
-  
-  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities,
-                           rel_eff_eqn_js, chi2_title );
-  
-  
+
+  string rel_eff_eqn_txt;
+  try
+  {
+    rel_eff_eqn_txt = "y = " + answer->rel_eff_txt( false, 0);
+  }catch( std::exception & )
+  {
+    // Oh well
+    assert( 0 );
+  }
+
+  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities.at(0),
+                           rel_eff_eqn_js, rel_eff_eqn_txt );
+
+  m_fit_chi2_msg->setText( chi2_title );
+  m_fit_chi2_msg->show();
+
   bool any_nucs_updated = false;
-  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
+  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities.at(0) )
   {
     if( !fit_nuc.age_was_fit || (fit_nuc.age < 0.0) )
       continue;
@@ -4750,10 +5021,40 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     {
       RelActAutoNuclide *nuc = dynamic_cast<RelActAutoNuclide *>( w );
       assert( nuc );
-      if( !nuc || !nuc->nuclide() )
+      
+      if( !nuc || std::holds_alternative<std::monostate>(nuc->nuclide()) )
         continue;
       
-      if( fit_nuc.nuclide == nuc->nuclide() )
+      const std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>
+           src_info = nuc->nuclide();
+      const SandiaDecay::Nuclide *nuclide = nullptr;
+      const SandiaDecay::Element *element = nullptr;
+      const ReactionGamma::Reaction * reaction = nullptr;
+      
+      std::visit( [&]( auto &&arg ) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr( std::is_same_v<T,std::monostate> )
+        {
+          
+        }if constexpr( std::is_same_v<T, const SandiaDecay::Nuclide *> )
+        {
+          nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
+        }else if constexpr( std::is_same_v<T, const SandiaDecay::Element *> )
+        {
+          element = std::get<const SandiaDecay::Element *>(src_info);
+        }else if constexpr( std::is_same_v<T, const ReactionGamma::Reaction *> )
+        {
+          reaction = std::get<const ReactionGamma::Reaction *>(src_info);
+        }else
+        {
+          assert( 0 );
+          //static_assert( false, "Non-exhaustive visitor.");
+        }
+      }, src_info );
+
+      if( (fit_nuc.nuclide == nuclide)
+          && (fit_nuc.element == element)
+          && (fit_nuc.reaction == reaction) )
       {
         const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
         nuc->setAge( agestr );
@@ -4764,6 +5065,125 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   
   setOptionsForValidSolution();
+  
+  // Check if we need to update Physical model shieldings
+  assert( m_solution->m_options.rel_eff_curves.size() == 1 );
+  if( m_solution->m_options.rel_eff_curves.size() != 1 )
+    throw runtime_error( "updateFromCalc: only a single rel eff curve is supported" );
+  const RelActCalcAuto::RelEffCurveInput &rel_eff = m_solution->m_options.rel_eff_curves[0];
+    
+    
+  if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+     && m_solution->m_phys_model_results.at(0).has_value() )
+  {
+    const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &phys_info = *m_solution->m_phys_model_results.at(0);
+    
+    assert( m_phys_model_self_atten );
+    if( !m_phys_model_self_atten )
+      initPhysModelShields();
+    assert( m_phys_model_self_atten );
+    
+    const auto update_shield_widget = []( const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo &shield,
+                                      RelEffShieldWidget *w ) {
+      if( !w )
+        return;
+      
+      const Material * const widget_mat = w->material();
+      assert( (!!shield.material) == (!!widget_mat) );
+      assert( !widget_mat || !shield.material || (widget_mat->name == shield.material->name) );
+      
+      if( (!!shield.material) != (!!widget_mat) )
+        w->setMaterialSelected( !!shield.material );
+      
+      if( shield.material && (!widget_mat || (widget_mat->name != shield.material->name)) )
+        w->setMaterial( shield.material->name );
+      
+      if( shield.atomic_number )
+      {
+        assert( shield.atomic_number_was_fit == w->fitAtomicNumber() );
+        assert( shield.atomic_number_was_fit || ((*shield.atomic_number) == w->atomicNumber()));
+        if( (*shield.atomic_number) != w->atomicNumber() )
+          w->setAtomicNumber( *shield.atomic_number );
+        
+        if( shield.atomic_number_was_fit != w->fitAtomicNumber() )
+          w->setFitAtomicNumber( shield.atomic_number_was_fit );
+      }//if( shield.atomic_number )
+      
+      
+      if( shield.areal_density )
+      {
+        if( shield.material )
+        {
+          assert( shield.areal_density_was_fit == w->fitThickness() );
+          const double thick = shield.areal_density / shield.material->density;
+          
+          if( !shield.areal_density_was_fit && (thick != w->thickness()) )
+          {
+            cerr << "Found fixed shielding thickness has changed for '" << shield.material->name << "'; was "
+            << PhysicalUnits::printToBestLengthUnits(w->thickness()) << " but returned answer is "
+            << PhysicalUnits::printToBestLengthUnits(thick) << endl;
+            cerr << endl;
+          }
+          assert( shield.areal_density_was_fit || (thick == w->thickness()));
+          
+          w->setThickness( thick );
+          if( shield.areal_density_was_fit != w->fitThickness() )
+            w->setFitThickness( shield.areal_density_was_fit );
+        }else
+        {
+          const double ad_g_cm2 = shield.areal_density / PhysicalUnits::g_per_cm2;
+          
+          assert( shield.areal_density_was_fit == w->fitArealDensity() );
+          assert( shield.areal_density_was_fit || (ad_g_cm2 == w->arealDensity()));
+          
+          if( ad_g_cm2 != w->arealDensity() )
+            w->setArealDensity( ad_g_cm2 );
+          
+          if( shield.areal_density_was_fit != w->fitArealDensity() )
+            w->setFitArealDensity( shield.areal_density_was_fit );
+        }//if( shield.material ) / else
+      }//if( shield.areal_density )
+    };//set_shield_widget lambda
+   
+    if( phys_info.self_atten.has_value() )
+      update_shield_widget( *phys_info.self_atten, m_phys_model_self_atten );
+    else if( m_phys_model_self_atten )
+      m_phys_model_self_atten->resetState();
+    
+    vector<RelEffShieldWidget *> ext_shields;
+    for( WWidget *w : m_phys_ext_attens->children() )
+    {
+      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
+      if( sw )
+        ext_shields.push_back( sw );
+    }//for( WWidget *w : m_phys_ext_attens->children() )
+    
+    assert( ext_shields.size() >= phys_info.ext_shields.size() );
+    while( ext_shields.size() < phys_info.ext_shields.size() )
+    {
+      RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_phys_ext_attens );
+      sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
+      ext_shields.push_back( sw );
+    }
+    
+    while( (ext_shields.size() > 1) && (ext_shields.size() > phys_info.ext_shields.size()) )
+    {
+      delete ext_shields.back();
+      ext_shields.pop_back();
+    }
+    
+    if( (ext_shields.size() == 1) && phys_info.ext_shields.empty() )
+      ext_shields[0]->resetState();
+    
+    assert( ext_shields.size() >= phys_info.ext_shields.size() );
+    for( size_t i = 0; i < phys_info.ext_shields.size(); ++i )
+      update_shield_widget( phys_info.ext_shields[i], ext_shields[i] );
+   
+    assert( phys_info.hoerl_b.has_value() == phys_info.hoerl_c.has_value() );
+    assert( !m_phys_model_use_hoerl || (phys_info.hoerl_b.has_value() == m_phys_model_use_hoerl->isChecked()) );
+    if( m_phys_model_use_hoerl && (m_phys_model_use_hoerl->isChecked() != phys_info.hoerl_b.has_value()) )
+      m_phys_model_use_hoerl->setChecked( phys_info.hoerl_b.has_value() );
+  }//if( m_solution->m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   
   m_solution_updated.emit( m_solution );
   if( m_solution && (m_solution->m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
@@ -4799,7 +5219,10 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   
   m_error_msg->setText( msg );
   m_error_msg->show();
-  
+
+  m_fit_chi2_msg->setText( "" ); // should already be hidden, but JIC
+  m_fit_chi2_msg->hide();
+
   m_solution.reset();
   
   setOptionsForNoSolution();

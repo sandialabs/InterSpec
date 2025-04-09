@@ -40,3 +40,9 @@ div.RelEffPlotTooltip {
     border-radius: 8px;
     pointer-events: none;
 }
+
+.RelEffPlot path.RelEffPlotErrorBounds {
+  /* fill and stroke dont seem to apply from here, so they are set in the JS */
+  /* fill: rgba(0, 0, 255, 0.15); */
+  /* stroke: none; */
+}

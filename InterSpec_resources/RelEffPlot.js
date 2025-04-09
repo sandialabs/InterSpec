@@ -71,6 +71,11 @@ RelEffPlot = function (elem,options) {
   this.xScale.domain([0, 3000]);
   this.yScale.domain([0, 1]);
 
+  this.path_uncert = this.chartArea.append("path")
+    .attr("class", "RelEffPlotErrorBounds") //Applying in CSS doesnt seem to work for some reason
+    .style("fill", "rgba(0, 0, 255, 0.1)")
+    .style("stroke", "none");
+
   // Add the valueline path.
   this.path = this.chartArea.append("path")    // Add the valueline path.
     .attr("class", "line");
@@ -169,7 +174,7 @@ RelEffPlot.prototype.setYAxisTitle = function( title, dontCallResize ){
 }//RelEffPlot.prototype.setYAxisTitle
 
 
-RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
+RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit_uncert_fcn) {
   const self = this;
 
   if( !Array.isArray(data_vals) || (data_vals.length === 0) )
@@ -223,7 +228,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
 
   this.data_vals = data_vals;
   this.fit_eqn = fit_eqn;
-    
+  this.fit_uncert_fcn = fit_uncert_fcn;
   const num_eqn_points = chartAreaWidth / 4;
 
   // Scale the range of the data
@@ -249,7 +254,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
   if( fit_eqn ){
     for (let i = 0; i < num_eqn_points; ++i) {
       const ene = min_x + i * (max_x - min_x) / num_eqn_points;
-      fit_eqn_points.push({ energy: ene, eff: fit_eqn(ene) });
+      fit_eqn_points.push({ energy: ene, eff: fit_eqn(ene), eff_uncert: (fit_uncert_fcn ? fit_uncert_fcn(ene) : null) });
     }
     min_y = Math.min(min_y, d3.min(fit_eqn_points, function (d) { return d.eff; }));
     max_y = Math.max(max_y, d3.max(fit_eqn_points, function (d) { return d.eff; }));
@@ -318,8 +323,19 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
       .y(function (d) { return self.yScale(d.eff); });
     this.path
       .attr("d", valueline(fit_eqn_points));
+
+    if( fit_uncert_fcn ){
+      let area = d3.svg.area()
+        .x(function(d) { return self.xScale(d.energy); })
+        .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
+        .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
+      this.path_uncert.attr("d", area(fit_eqn_points));
+    }else{
+      this.path_uncert.attr("d", null);
+    }
   }else{
     this.path.attr("d", null);
+    this.path_uncert.attr("d", null);
   }
 
   // For some reason the circles position arent being updated on resize, so we'll just remove them first
@@ -436,5 +452,5 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
 
 
 RelEffPlot.prototype.handleResize = function () {
-  this.setRelEffData(this.data_vals, this.fit_eqn, this.chi2Txt );
+  this.setRelEffData(this.data_vals, this.fit_eqn, this.chi2Txt, this.fit_uncert_fcn);
 };//RelEffPlot.prototype.handleResize

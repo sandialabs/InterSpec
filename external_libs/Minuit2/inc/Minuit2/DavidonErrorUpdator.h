@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: DavidonErrorUpdator.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -10,14 +10,11 @@
 #ifndef ROOT_Minuit2_DavidonErrorUpdator
 #define ROOT_Minuit2_DavidonErrorUpdator
 
-#ifndef ROOT_Minuit2_MinimumErrorUpdator
 #include "Minuit2/MinimumErrorUpdator.h"
-#endif
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 /**
    Update of the covariance matrix for the Variable Metric minimizer (MIGRAD)
@@ -25,20 +22,17 @@ namespace ROOT {
 class DavidonErrorUpdator : public MinimumErrorUpdator {
 
 public:
+   DavidonErrorUpdator() {}
 
-  DavidonErrorUpdator() {}
-  
-  virtual ~DavidonErrorUpdator() {}
+   ~DavidonErrorUpdator() override {}
 
-  virtual MinimumError Update(const MinimumState&, const MinimumParameters&,
-			      const FunctionGradient&) const;
+   MinimumError Update(const MinimumState &, const MinimumParameters &, const FunctionGradient &) const override;
 
 private:
-
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_DavidonErrorUpdator
+#endif // ROOT_Minuit2_DavidonErrorUpdator

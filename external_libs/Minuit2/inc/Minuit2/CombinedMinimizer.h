@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: CombinedMinimizer.h 21530 2007-12-20 11:14:35Z moneta $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -16,37 +16,35 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
 //__________________________________________________________________________
 /**
    Combined minimizer: combination of Migrad and Simplex. I
    If the Migrad method fails at first attempt, a simplex
    minimization is performed and then migrad is tried again.
-  
-    
+
+
 */
 
 class CombinedMinimizer : public ModularFunctionMinimizer {
 
 public:
+   CombinedMinimizer() : fMinSeedGen(MnSeedGenerator()), fMinBuilder(CombinedMinimumBuilder()) {}
 
-   CombinedMinimizer() : fMinSeedGen(MnSeedGenerator()),
-                         fMinBuilder(CombinedMinimumBuilder()) {}
-  
-   ~CombinedMinimizer() {}
+   ~CombinedMinimizer() override {}
 
-   const MinimumSeedGenerator& SeedGenerator() const {return fMinSeedGen;}
-   const MinimumBuilder& Builder() const {return fMinBuilder;}
+   const MinimumSeedGenerator &SeedGenerator() const override { return fMinSeedGen; }
+   const MinimumBuilder &Builder() const override { return fMinBuilder; }
+   MinimumBuilder &Builder() override { return fMinBuilder; }
 
 private:
-
    MnSeedGenerator fMinSeedGen;
    CombinedMinimumBuilder fMinBuilder;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_CombinedMinimizer
+#endif // ROOT_Minuit2_CombinedMinimizer

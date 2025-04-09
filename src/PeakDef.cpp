@@ -628,11 +628,11 @@ size_t findROILimit( const PeakDef &peak,
   //Try to detect if there is a signficant skew on the peak by comparing
   //  4 to 7 sigma, to 7 to 11.75 sigma (or wherever is lastbin) to see if they
   //  are statistically compatible; if they are, just have ROI go to 7 sigma
-  const int mean_channel = dataH->find_gamma_channel( mean );
-  const int good_cont_channel = dataH->find_gamma_channel( mean + direction*7.05*sigma );
+  const int mean_channel = static_cast<int>( dataH->find_gamma_channel( mean ) );
+  const int good_cont_channel = static_cast<int>( dataH->find_gamma_channel( mean + direction*7.05*sigma ) );
   if( (std::abs(int(lastchannel)-mean_channel) > std::abs(good_cont_channel-mean_channel)) )
   {
-    const indexing_t nearest_channel = dataH->find_gamma_channel( mean + direction*3.5*sigma );
+    const indexing_t nearest_channel = static_cast<indexing_t>( dataH->find_gamma_channel( mean + direction*3.5*sigma ) );
     const bool isNotDecreasing = isStatisticallyGreaterOrEqual( nearest_channel, good_cont_channel,
                                             good_cont_channel, lastchannel, dataH, 3.0 );
 
@@ -695,14 +695,14 @@ bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
   size_t lowerbin = std::min( start1, end1 );
   size_t upperbin = std::max( start1, end1 );
   const double lower_area = dataH->gamma_channels_sum( lowerbin, upperbin );
-  const int num_near_mean_bins = upperbin - lowerbin + 1;
+  const int num_near_mean_bins = static_cast<int>( upperbin - lowerbin + 1 );
   const double avrg_near_mean_area = lower_area / num_near_mean_bins;
   const double avrg_near_mean_uncert = sqrt(lower_area) / num_near_mean_bins;
   
   lowerbin = std::min( start2, end2 );
   upperbin = std::max( start2, end2 );
   const double upper_area = dataH->gamma_channels_sum( lowerbin, upperbin );
-  const int num_tail_bins = upperbin - lowerbin + 1;
+  const int num_tail_bins = static_cast<int>( upperbin - lowerbin + 1 );
   const double tail_area = upper_area / num_tail_bins;
   const double avrg_tail_uncert = sqrt(upper_area) / num_tail_bins;
   
@@ -1396,8 +1396,9 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
     {
       if( coef != CoefficientType::SkewPar0 )
         return false;
-      
-      starting_value = 2.0;
+
+      // The smaller the skew paramater, the less skew there is
+      starting_value = 0.5;
       step_size = 1.0;
       lower_value = 0.0; //Below 0.005 would be numerically bad, but the Bortel function should protect against it.
       upper_value = 15;
@@ -1428,8 +1429,8 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
           // fall-though intentional
         case CoefficientType::SkewPar1: //n (left)
           // The valid values of `n` is probably a bit more complicated than just the range
-          starting_value = 15;
-          step_size = 2;
+          starting_value = 2;
+          step_size = 0.75;
           lower_value = 1.05; //1.0 would be divide by zero
           upper_value = 100;  //much higher than this and we run into numerical issues
           break;
@@ -2946,7 +2947,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         break;
     }//switch( p.type() )
 
-    if( p.skewType() != PeakDef::NoSkew )
+    if( (p.skewType() != PeakDef::NoSkew) && (!IsNan(dist_norm) && !IsInf(dist_norm)) )
       answer << q << "DistNorm" << q << ":" << dist_norm << ",";
     
     if( (p.type() == PeakDef::GaussianDefined) && (p.skewType() != PeakDef::NoSkew) )
@@ -3217,6 +3218,13 @@ string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks
     json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground);
 
   json += "]";
+  
+  if( json.find("nan") != string::npos )
+  {
+    cerr << "Found nan: " << json << endl;
+    cerr << endl;
+  }
+  
   return json;
 }//string peak_json( inpeaks )
 #endif //#if( SpecUtils_ENABLE_D3_CHART )

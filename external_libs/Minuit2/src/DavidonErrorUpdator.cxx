@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: DavidonErrorUpdator.cxx 27589 2009-02-24 11:23:44Z moneta $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -11,91 +11,109 @@
 #include "Minuit2/MinimumState.h"
 #include "Minuit2/LaSum.h"
 #include "Minuit2/LaProd.h"
-
-//#define DEBUG 
-
-#if defined(DEBUG) || defined(WARNINGMSG)
-#include "Minuit2/MnPrint.h" 
-#endif
-
-
+#include "Minuit2/MnPrint.h"
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
+double inner_product(const LAVector &, const LAVector &);
+double similarity(const LAVector &, const LASymMatrix &);
+double sum_of_elements(const LASymMatrix &);
 
-double inner_product(const LAVector&, const LAVector&);
-double similarity(const LAVector&, const LASymMatrix&);
-double sum_of_elements(const LASymMatrix&);
-
-MinimumError DavidonErrorUpdator::Update(const MinimumState& s0, 
-                                         const MinimumParameters& p1,
-                                         const FunctionGradient& g1) const {
+MinimumError
+DavidonErrorUpdator::Update(const MinimumState &s0, const MinimumParameters &p1, const FunctionGradient &g1) const
+{
 
    // update of the covarianze matrix (Davidon formula, see Tutorial, par. 4.8 pag 26)
-   // in case of delgam > gvg (PHI > 1) use rank one formula 
+   // in case of delgam > gvg (PHI > 1) use rank one formula
    // see  par 4.10 pag 30
+   // ( Tutorial: https://seal.web.cern.ch/seal/documents/minuit/mntutorial.pdf )
 
-   const MnAlgebraicSymMatrix& v0 = s0.Error().InvHessian();
+   MnPrint print("DavidonErrorUpdator");
+
+   const MnAlgebraicSymMatrix &v0 = s0.Error().InvHessian();
    MnAlgebraicVector dx = p1.Vec() - s0.Vec();
    MnAlgebraicVector dg = g1.Vec() - s0.Gradient().Vec();
-  
+
    double delgam = inner_product(dx, dg);
    double gvg = similarity(dg, v0);
 
+   print.Debug("\ndx", dx, "\ndg", dg, "\ndelgam", delgam, "gvg", gvg);
 
-#ifdef DEBUG
-   std::cout << "dx = " << dx << std::endl; 
-   std::cout << "dg = " << dg << std::endl; 
-   std::cout<<"delgam= "<<delgam<<" gvg= "<<gvg<<std::endl;
-#endif
-
-   if (delgam == 0 ) { 
-#ifdef WARNINGMSG
-      MN_INFO_MSG("DavidonErrorUpdator: delgam = 0 : cannot update - return same matrix ");
-#endif
+   if (delgam == 0) {
+      print.Warn("delgam = 0 : cannot update - return same matrix (details in info log)");
+      print.Info("Explanation:\n"
+                 "   The distance from the minimum cannot be estimated, since at two\n"
+                 "   different points s0 and p1, the function gradient projected onto\n"
+                 "   the difference of s0 and p1 is zero, where:\n"
+                 " * s0: ", s0.Vec(), "\n"
+                 " * p1: ", p1.Vec(), "\n"
+                 " * gradient at s0: ", s0.Gradient().Vec(), "\n"
+                 " * gradient at p1: ", g1.Vec(), "\n"
+                 "   To understand whether this hints to an issue in the minimized function,\n"
+                 "   the minimized function can be plotted along points between s0 and p1 to\n"
+                 "   look for unexpected behavior.");
       return s0.Error();
    }
-#ifdef WARNINGMSG
-   if (delgam < 0)  MN_INFO_MSG("DavidonErrorUpdator: delgam < 0 : first derivatives increasing along search line");
-#endif
 
-   if (gvg <= 0 ) { 
+   if (delgam < 0) {
+      print.Warn("delgam < 0 : first derivatives increasing along search line (details in info log)");
+      print.Info("Explanation:\n"
+                 "   The distance from the minimum cannot be estimated, since the minimized\n"
+                 "   function seems not to be strictly convex in the space probed by the fit.\n"
+                 "   That is expected if the starting parameters are e.g. close to a local maximum\n"
+                 "   of the minimized function. If this function is expected to be fully convex\n"
+                 "   in the probed range or Minuit is already close to the function minimum, this\n"
+                 "   may hint to numerical or analytical issues with the minimized function.\n"
+                 "   This was found by projecting the difference of gradients at two points, s0 and p1,\n"
+                 "   onto the direction given by the difference of s0 and p1, where:\n"
+                 " * s0: ", s0.Vec(), "\n"
+                 " * p1: ", p1.Vec(), "\n"
+                 " * gradient at s0: ", s0.Gradient().Vec(), "\n"
+                 " * gradient at p1: ", g1.Vec(), "\n"
+                 "   To understand whether this hints to an issue in the minimized function,\n"
+                 "   the minimized function can be plotted along points between s0 and p1 to\n"
+                 "   look for unexpected behavior.");
+   }
+
+   if (gvg <= 0) {
       // since v0 is pos def this gvg can be only = 0 if  dg = 0 - should never be here
-#ifdef WARNINGMSG
-      MN_INFO_MSG("DavidonErrorUpdator: gvg <= 0 : cannot update - return same matrix "); 
-#endif
+      print.Warn("gvg <= 0 : cannot update - return same matrix");
       return s0.Error();
    }
 
+   MnAlgebraicVector vg = v0 * dg;
 
-   MnAlgebraicVector vg = v0*dg;
+   // use rank 2 formula (Davidon)
+   MnAlgebraicSymMatrix vUpd = Outer_product(dx) / delgam - Outer_product(vg) / gvg;
 
-   MnAlgebraicSymMatrix vUpd = Outer_product(dx)/delgam - Outer_product(vg)/gvg;
-
-   if(delgam > gvg) {
-      // use rank 1 formula
-      vUpd += gvg*Outer_product(MnAlgebraicVector(dx/delgam - vg/gvg));
+   if (delgam > gvg) {
+      // use dual formula formula (BFGS)
+      vUpd += gvg * Outer_product(MnAlgebraicVector(dx / delgam - vg / gvg));
+      print.Debug("delgam<gvg : use dual (BFGS)  formula");
+   }
+   else {
+    print.Debug("delgam<gvg : use rank 2 Davidon formula");
    }
 
    double sum_upd = sum_of_elements(vUpd);
    vUpd += v0;
-  
-   double dcov = 0.5*(s0.Error().Dcovar() + sum_upd/sum_of_elements(vUpd));
-  
+
+   double dcov = 0.5 * (s0.Error().Dcovar() + sum_upd / sum_of_elements(vUpd));
+
    return MinimumError(vUpd, dcov);
 }
 
 /*
-MinimumError DavidonErrorUpdator::Update(const MinimumState& s0, 
-					 const MinimumParameters& p1,
-					 const FunctionGradient& g1) const {
+MinimumError DavidonErrorUpdator::Update(const MinimumState& s0,
+                const MinimumParameters& p1,
+                const FunctionGradient& g1) const {
 
   const MnAlgebraicSymMatrix& v0 = s0.Error().InvHessian();
   MnAlgebraicVector dx = p1.Vec() - s0.Vec();
   MnAlgebraicVector dg = g1.Vec() - s0.Gradient().Vec();
-  
+
   double delgam = inner_product(dx, dg);
   double gvg = similarity(dg, v0);
 
@@ -110,7 +128,7 @@ MinimumError DavidonErrorUpdator::Update(const MinimumState& s0,
 //   vUpd = dd - VggV;
 //   MnAlgebraicSymMatrix vUpd = ( 1./delgam )*outer_product(dx) - ( 1./gvg )*outer_product(vg);
   MnAlgebraicSymMatrix vUpd = Outer_product(dx)/delgam - Outer_product(vg)/gvg;
-  
+
   if(delgam > gvg) {
 //     dx *= ( 1./delgam );
 //     vg *= ( 1./gvg );
@@ -121,14 +139,14 @@ MinimumError DavidonErrorUpdator::Update(const MinimumState& s0,
     vUpd += gvg*outer_product(dx/delgam - vg/gvg);
   }
 
-//   
+//
 //     MnAlgebraicSymMatrix dd = Outer_product(dx);
 //     dd *= ( 1./delgam );
 //     MnAlgebraicSymMatrix VggV = Outer_product(vg);
 //     VggV *= ( 1./gvg );
 //     vUpd = dd - VggV;
-//   
-//     
+//
+//
 //   double phi = delgam/(delgam - gvg);
 
 //   MnAlgebraicSymMatrix vUpd(v0.Nrow());
@@ -146,15 +164,15 @@ MinimumError DavidonErrorUpdator::Update(const MinimumState& s0,
 //     vUpd = Outer_product(tmp);
 //     vUpd *= ( 1./(delgam - gvg) );
 //   }
-//     
+//
 
-//     
+//
 //   if(delgam > gvg) {
 //     // rank-1 Update
 //     MnAlgebraicVector tmp = dx - vg;
 //     vUpd = Outer_product(tmp);
 //     vUpd *= ( 1./(delgam - gvg) );
-//   } else { 
+//   } else {
 //     // rank-2 Update
 //     MnAlgebraicSymMatrix dd = Outer_product(dx);
 //     dd *= ( 1./delgam );
@@ -162,20 +180,20 @@ MinimumError DavidonErrorUpdator::Update(const MinimumState& s0,
 //     VggV *= ( 1./gvg );
 //     vUpd = dd - VggV;
 //   }
-//   
+//
 
   double sum_upd = sum_of_elements(vUpd);
   vUpd += v0;
-    
+
 //   MnAlgebraicSymMatrix V1 = v0 + vUpd;
 
-  double dcov = 
+  double dcov =
     0.5*(s0.Error().Dcovar() + sum_upd/sum_of_elements(vUpd));
-  
+
   return MinimumError(vUpd, dcov);
 }
 */
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT

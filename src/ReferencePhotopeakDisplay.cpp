@@ -1494,7 +1494,7 @@ void ReferencePhotopeakDisplay::handleDrfChange( std::shared_ptr<DetectorPeakRes
 }//void handleDrfChange()
 
 
-std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::currentlyUsedPeakColors()
+std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::currentlyUsedPeakColors() const
 {
   std::map<string,vector<WColor>> answer;
   
@@ -2072,7 +2072,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
   // TODO: Need to deal the "more info" button
 
-  auto displayDetectorOrExternal = [=]( const WString &title, vector<pair<string,string>> nucs ){
+  auto displayDetectorOrExternal = [=,this]( const WString &title, vector<pair<string,string>> nucs ){
     if( nucs.empty() )
       return;
     
@@ -2282,6 +2282,31 @@ std::vector<DecayParticleModel::RowData> ReferencePhotopeakDisplay::createTableR
 
   return inforows;
 }//vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
+
+
+Wt::WColor ReferencePhotopeakDisplay::suggestColorForSource( const std::string &src ) const
+{
+  const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
+  const auto used_pos = usedColors.find( src );
+  if( used_pos != end(usedColors) )
+  {
+    for( const WColor &c : used_pos->second )
+    {
+      if( !c.isDefault() )
+        return c;
+    }
+  }//if( used_pos != end(usedColors) )
+  
+  const auto prev_pos = m_previouslyPickedSourceColors.find(src);
+  if( (prev_pos != end(m_previouslyPickedSourceColors)) && !prev_pos->second.isDefault() )
+    return prev_pos->second;
+    
+  const auto specific_pos = m_specificSourcelineColors.find(src);
+  if( (specific_pos != end(m_specificSourcelineColors)) && !specific_pos->second.isDefault() )
+    return specific_pos->second;
+  
+  return WColor{};
+}//Wt::WColor suggestColorForSource( const std::string &src ) const;
 
 
 Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src )

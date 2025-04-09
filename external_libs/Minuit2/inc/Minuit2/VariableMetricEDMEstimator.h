@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: VariableMetricEDMEstimator.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -12,8 +12,7 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class FunctionGradient;
 class MinimumError;
@@ -21,19 +20,17 @@ class MinimumError;
 class VariableMetricEDMEstimator {
 
 public:
+   VariableMetricEDMEstimator() {}
 
-  VariableMetricEDMEstimator() {}
-  
-  ~VariableMetricEDMEstimator() {}
+   ~VariableMetricEDMEstimator() {}
 
-  double Estimate(const FunctionGradient&, const MinimumError&) const;
+   double Estimate(const FunctionGradient &, const MinimumError &) const;
 
 private:
-
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_VariableMetricEDMEstimator
+#endif // ROOT_Minuit2_VariableMetricEDMEstimator

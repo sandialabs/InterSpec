@@ -1003,7 +1003,7 @@ void SnapshotBrowser::startEditSelected()
   yes->setFloatSide( Wt::Side::Right );
   
   cancel->clicked().connect( m_editWindow, &AuxWindow::hide );
-  yes->clicked().connect( std::bind([=](){
+  yes->clicked().connect( std::bind([=,this](){
     if( nameEdit->text().toUTF8().empty() ) //should happen
     {
       passMessage( "You must enter a name", WarningWidget::WarningMsgHigh );

@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <deque>
 #include <string>
 #include <memory>
 #include <utility>
@@ -38,7 +39,10 @@ class AuxWindow;
 class InterSpec;
 class RelEffChart;
 class NativeFloatSpinBox;
+struct RelEffShieldState;
+class RelEffShieldWidget;
 class RowStretchTreeView;
+class DetectorPeakResponse;
 
 namespace Wt
 {
@@ -55,6 +59,11 @@ namespace rapidxml
   template<class Ch> class xml_node;
 }//namespace rapidxml
 
+namespace SpecUtils
+{
+  class Measurement;
+}
+
 namespace RelActCalc
 {
   enum class RelEffEqnForm : int;
@@ -62,6 +71,7 @@ namespace RelActCalc
 
 namespace RelActCalcManual
 {
+  struct RelEffInput;
   struct RelEffSolution;
   namespace PeakCsvInput
   {
@@ -87,6 +97,19 @@ namespace RelActCalcManual
 
 class RelActManualGui : public Wt::WContainerWidget
 {
+public:
+  struct GuiState; //Forward declaration
+  
+  // The additional uncertainty is a bit confusing, so to not overwhelm users, or have them worry
+  //  about it to much, we'll provide a limited number of options.
+  enum class AddUncert : int
+  {
+    Unweighted, StatOnly, OnePercent, FivePercent, TenPercent, TwentyFivePercent,
+    FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
+  };//enum class AddUncert
+  
+  static const char *to_str( const AddUncert val );
+  
 public:
   RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
   
@@ -115,12 +138,17 @@ protected:
   void updateGuiWithError( std::shared_ptr<Wt::WString> error_msg );
   void updateGuiWithResults( std::shared_ptr<RelActCalcManual::RelEffSolution> answer );
   
-  void relEffEqnFormChanged();
+  /** Handles hiding/showing and initializing widgets for the (now) currently set relative efficiency equation type.
+   @param user_action If true, for when the user causes this action through the GUI, will add an undo/redo step.
+   */
+  void relEffEqnFormChanged( const bool user_action );
   void relEffEqnOrderChanged();
+  void physModelUseHoerlChanged();
   void nucDataSrcChanged();
   void matchToleranceChanged();
   void addUncertChanged();
   void backgroundSubtractChanged();
+  void initPhysicalModelAttenShieldWidgets();
   //void resultTabChanged(); //Creates a undo/redo cycle, so not currently tracking
   
   /** Marks that nuclides needs to be updated, and schedules rending; but doesnt do any real work */
@@ -141,10 +169,11 @@ protected:
   size_t relEffEqnOrder() const;
   RelActCalcManual::PeakCsvInput::NucDataSrc nucDataSrc() const;
   
-protected:
+  void handlePhysicalModelShieldChanged();
   
+protected:
   // Some items for adding undo/redo steps
-  struct GuiState; //Forward declaration
+  
   std::shared_ptr<const GuiState> getGuiState() const;
   void setGuiState( const GuiState &state );
   void addUndoRedoStep( const std::shared_ptr<const GuiState> &state );
@@ -169,22 +198,17 @@ protected:
   Wt::WContainerWidget *m_optionsColumn;
   
   Wt::WComboBox *m_relEffEqnForm;
+  
   Wt::WComboBox *m_relEffEqnOrder;
+  Wt::WTableRow *m_relEffEqnOrderHolder;
+
+  Wt::WCheckBox *m_physModelUseHoerl;
+  Wt::WTableRow *m_physModelUseHoerlHolder;
   
   Wt::WTableRow *m_nucDataSrcHolder;
   Wt::WComboBox *m_nucDataSrc;
   
   NativeFloatSpinBox *m_matchTolerance;
-  
-  // The additional uncertainty is a bit confusing, so to not overwhelm users, or have them worry
-  //  about it to much, we'll provide a limited number of options.
-  enum class AddUncert : int
-  {
-    Unweighted, StatOnly, OnePercent, FivePercent, TenPercent, TwentyFivePercent,
-    FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
-  };//enum class AddUncert
-  
-  static const char *to_str( const AddUncert val );
   
   Wt::WComboBox *m_addUncertainty;
   
@@ -204,7 +228,13 @@ protected:
   
   /// All entries in this next <div> will be of class ManRelEffNucDisp
   Wt::WContainerWidget *m_nuclidesDisp;
-  
+  Wt::WText *m_nucColumnTitle;
+
+  Wt::WContainerWidget *m_physicalModelShields;
+  RelEffShieldWidget *m_selfAttenShield;
+  Wt::WContainerWidget *m_extAttenShields;
+
+
   /// Keep a cache of nuclide ages around incase the user removes a nuclide, but adds it in later.
   std::map<std::string,double> m_nucAge;
   /// Keep a cache of if we should decay-correct the nuclide incase the user removes a nuclide, but adds it in later.
@@ -214,29 +244,69 @@ protected:
   
   RelEffChart *m_chart;
   Wt::WContainerWidget *m_results;
+
+  /** A default detector to use, only if using `RelActCalc::RelEffEqnForm::FramPhysicalModel` 
+   * and foreground detector is not found. 
+  */
+  std::shared_ptr<const DetectorPeakResponse> m_defaultDetector;
   
   /** The GUI state that is updated inside each call to #render. Will be used to add an undo/redo step
    if the #RenderActions::AddUndoRedoStep flag is set.
    */
   std::shared_ptr<const GuiState> m_currentGuiState;
   
+public:
   /** A "lightweight" GUI state, for undo/redo steps, to keep in memory. */
   struct GuiState
   {
-    int m_relEffEqnFormIndex = -1;
-    int m_relEffEqnOrderIndex = -1;
-    int m_nucDataSrcIndex = -1;
-    float m_matchToleranceValue = -1.0f;
-    int m_addUncertIndex = -1;
+    RelActCalc::RelEffEqnForm m_relEffEqnFormIndex;
+    int m_relEffEqnOrderIndex = 0;
+    RelActCalcManual::PeakCsvInput::NucDataSrc m_nucDataSrcIndex;;
+    float m_matchToleranceValue; //In FWHM
+    RelActManualGui::AddUncert m_addUncertIndex;
+    int m_resultTab = 0;
     bool m_backgroundSubtract = false;
-    std::vector<std::tuple<std::string,double,bool>> m_nucAgesAndDecayCorrect; 
-    // TODO: could track nuclide WPanel collapse un-collapse
-    int m_resultTab = 0; //Not currently having in for undo/redo steps, but will track
+    std::map<std::string,double> nucAge;
+    std::map<std::string,bool> nucDecayCorrect;
+    //std::vector<std::tuple<std::string,double,bool>> m_nucAgesAndDecayCorrect; //Previous to 20250115, we used this, instead of above two maps; it only tracks visible/current nuclide
+    
+    bool m_physModelUseHoerl = true;
+    std::unique_ptr<RelEffShieldState> m_selfAttenShield;
+    std::vector<std::unique_ptr<RelEffShieldState>> m_externalShields;
+    
+    ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent_node ) const;
+    void deSerialize( const ::rapidxml::xml_node<char> *base_node );
     
     bool operator==( const GuiState &rhs ) const;
   };//struct GuiState
   
+  
+  /** Struct that represents kinda raw information needed, to use to prepare the input for calculation.
+   
+   This information requires to be in the Wt GUI main thread to collect
+   */
+  struct RelActCalcRawInput
+  {
+    std::shared_ptr<const GuiState> state;
+    std::shared_ptr<const SpecUtils::Measurement> fore_spec, back_spec;
+    std::deque<std::shared_ptr<const PeakDef>> peaks, background_peaks;
+    std::shared_ptr<const DetectorPeakResponse> detector;
+  };//struct RelActCalcRawInput
 
+  /** Collects together the 'raw' information that is needed to then prepair the actual actual input for computation.
+   
+   Must be called from the Wt GUI main thread.
+   
+   Throws exception on error.
+   */
+  RelActCalcRawInput get_raw_info_for_calc_input();
+  
+  /** Throws exception on error. */
+  static void prepare_calc_input( const RelActCalcRawInput &input,
+                                 MaterialDB *materialDB,
+                                 RelActCalcManual::RelEffInput &output );
+  
+public:
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;
 };//class RelActManualGui

@@ -2273,7 +2273,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         // For peaks from a InterSpec/PeakEasy CSV file, we will re-fit the peaks, as in practice
         //  they might not be from this exact spectrum file.
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=](){
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=,this](){
           PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
                                                  orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
         } ) );
@@ -4382,7 +4382,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
       
       SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-vd-load-title"), msgtxt );
       
-      auto add_button = [=]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
+      auto add_button = [=,this]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
         if( btn_txt.size() > max_txt_size )
         {
           SpecUtils::utf8_limit_str_size( btn_txt, max_txt_size - 1 );

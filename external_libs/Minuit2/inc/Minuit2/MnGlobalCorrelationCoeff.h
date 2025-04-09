@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnGlobalCorrelationCoeff.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -17,8 +17,7 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 /**
    class for global correlation coefficient
@@ -26,26 +25,23 @@ namespace ROOT {
 class MnGlobalCorrelationCoeff {
 
 public:
+   MnGlobalCorrelationCoeff() : fGlobalCC(std::vector<double>()), fValid(false) {}
 
-  MnGlobalCorrelationCoeff() : 
-    fGlobalCC(std::vector<double>()), fValid(false) {}
+   MnGlobalCorrelationCoeff(const MnAlgebraicSymMatrix &);
 
-  MnGlobalCorrelationCoeff(const MnAlgebraicSymMatrix&);
+   ~MnGlobalCorrelationCoeff() {}
 
-  ~MnGlobalCorrelationCoeff() {}
+   const std::vector<double> &GlobalCC() const { return fGlobalCC; }
 
-  const std::vector<double>& GlobalCC() const {return fGlobalCC;}
-
-  bool IsValid() const {return fValid;}
+   bool IsValid() const { return fValid; }
 
 private:
-
-  std::vector<double> fGlobalCC;
-  bool fValid;
+   std::vector<double> fGlobalCC;
+   bool fValid;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnGlobalCorrelationCoeff
+#endif // ROOT_Minuit2_MnGlobalCorrelationCoeff

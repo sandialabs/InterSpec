@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnUserFcn.h 23654 2008-05-06 07:30:34Z moneta $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -14,33 +14,32 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MnUserTransformation;
 
- /**
-    Wrapper used by Minuit of FCN interface 
-    containing a reference to the transformation object
-  */
+/**
+   Wrapper used by Minuit of FCN interface
+   containing a reference to the transformation object
+ */
 class MnUserFcn : public MnFcn {
 
 public:
+   MnUserFcn(const FCNBase &fcn, const MnUserTransformation &trafo, int ncall = 0)
+      : MnFcn(fcn, ncall), fTransform(trafo)
+   {
+   }
 
-   MnUserFcn(const FCNBase& fcn, const MnUserTransformation& trafo, int ncall = 0) :
-      MnFcn(fcn,ncall), fTransform(trafo) {}
+   ~MnUserFcn() override {}
 
-  ~MnUserFcn() {}
-
-  virtual double operator()(const MnAlgebraicVector&) const;
+   double operator()(const MnAlgebraicVector &) const override;
 
 private:
-
-  const MnUserTransformation& fTransform;
+   const MnUserTransformation &fTransform;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnUserFcn
+#endif // ROOT_Minuit2_MnUserFcn

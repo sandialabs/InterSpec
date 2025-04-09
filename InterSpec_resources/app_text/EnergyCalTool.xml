@@ -82,4 +82,10 @@
   <message id="ect-short-fore">For.</message>
   <message id="ect-short-back">Back</message>
   <message id="ect-short-secondary">Sec.</message>
+  
+  <message id="ect-offset-label">Offset</message>
+  <message id="ect-linear-label">Linear</message>
+  <message id="ect-quad-label">Quad.</message>
+  <message id="ect-cubic-label">Cubic</message>
+  <message id="ect-nth-label">{1}'th order</message>
 </messages>

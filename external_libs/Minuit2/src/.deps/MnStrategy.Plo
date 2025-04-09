@@ -1,3 +1,0 @@
-MnStrategy.lo MnStrategy.o: MnStrategy.cxx ../inc/Minuit2/MnStrategy.h
-
-../inc/Minuit2/MnStrategy.h:

@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnPosDef.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -12,8 +12,7 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MinimumState;
 class MinimumError;
@@ -26,19 +25,18 @@ class MnMachinePrecision;
 class MnPosDef {
 
 public:
-  
-  MnPosDef() {}
-  
-  ~MnPosDef() {}
-  
-  MinimumState operator()(const MinimumState&, const MnMachinePrecision&) const;
-  MinimumError operator()(const MinimumError&, const MnMachinePrecision&) const;
-private:
+   MnPosDef() {}
 
+   ~MnPosDef() {}
+
+   MinimumState operator()(const MinimumState &, const MnMachinePrecision &) const;
+   MinimumError operator()(const MinimumError &, const MnMachinePrecision &) const;
+
+private:
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnPosDef
+#endif // ROOT_Minuit2_MnPosDef

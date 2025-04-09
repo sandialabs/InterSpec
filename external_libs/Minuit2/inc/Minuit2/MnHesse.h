@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnHesse.h 23654 2008-05-06 07:30:34Z moneta $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -13,12 +13,13 @@
 #include "Minuit2/MnConfig.h"
 #include "Minuit2/MnStrategy.h"
 
+#include <ROOT/RSpan.hxx>
+
 #include <vector>
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class FCNBase;
 class MnUserParameterState;
@@ -28,19 +29,18 @@ class MnUserTransformation;
 class MinimumState;
 class MnMachinePrecision;
 class MnFcn;
-class FunctionMinimum; 
+class FunctionMinimum;
 
 //_______________________________________________________________________
-/** 
-    API class for calculating the numerical covariance matrix 
-    (== 2x Inverse Hessian == 2x Inverse 2nd derivative); can be used by the 
+/**
+    API class for calculating the numerical covariance matrix
+    (== 2x Inverse Hessian == 2x Inverse 2nd derivative); can be used by the
     user or Minuit itself
  */
 
 class MnHesse {
 
 public:
-
    /// default constructor with default strategy
    MnHesse() : fStrategy(MnStrategy(1)) {}
 
@@ -48,52 +48,40 @@ public:
    MnHesse(unsigned int stra) : fStrategy(MnStrategy(stra)) {}
 
    /// conctructor with specific strategy
-   MnHesse(const MnStrategy& stra) : fStrategy(stra) {}
+   MnHesse(const MnStrategy &stra) : fStrategy(stra) {}
 
-   ~MnHesse() {}
-
-   ///
-   /// low-level API
-   ///
-   /// FCN + parameters + errors
-   MnUserParameterState operator()(const FCNBase&, const std::vector<double>&, const std::vector<double>&, unsigned int maxcalls=0) const;
-   /// FCN + parameters + covariance
-   MnUserParameterState operator()(const FCNBase&, const std::vector<double>&,  unsigned int nrow, const std::vector<double>&, unsigned int maxcalls = 0) const;
-   /// FCN + parameters + MnUserCovariance
-   MnUserParameterState operator()(const FCNBase&, const std::vector<double>&, const MnUserCovariance&, unsigned int maxcalls=0) const;
-   ///
-   /// high-level API
-   ///
-   /// FCN + MnUserParameters
-   MnUserParameterState operator()(const FCNBase&, const MnUserParameters&, unsigned int maxcalls=0) const;
-   /// FCN + MnUserParameters + MnUserCovariance
-   MnUserParameterState operator()(const FCNBase&, const MnUserParameters&, const MnUserCovariance&, unsigned int maxcalls=0) const;
    /// FCN + MnUserParameterState
-   MnUserParameterState operator()(const FCNBase&, const MnUserParameterState&, unsigned int maxcalls=0) const;
-   /// 
-   /// API to use MnHesse after minimization when function mimimum is avalilable, otherwise information on the last state will be 
-   /// lost. (It would be needed to re-call the gradient and spend extra useless function calls) 
-   /// The Function Minimum is updated (modified) by adding the Hesse results as last state of minimization
+   MnUserParameterState operator()(const FCNBase &, const MnUserParameterState &, unsigned int maxcalls = 0) const;
    ///
-   void operator()(const FCNBase&, FunctionMinimum&, unsigned int maxcalls=0) const;
-   
+   /// API to use MnHesse after minimization when function minimum is avalilable, otherwise information on the last
+   /// state will be lost. (It would be needed to re-call the gradient and spend extra useless function calls) The
+   /// Function Minimum is updated (modified) by adding the Hesse results as last state of minimization
+   ///
+   void operator()(const FCNBase &, FunctionMinimum &, unsigned int maxcalls = 0) const;
 
    /// internal interface
    ///
-   MinimumState operator()(const MnFcn&, const MinimumState&, const MnUserTransformation&, unsigned int maxcalls=0) const;
+   MinimumState
+   operator()(const MnFcn &, const MinimumState &, const MnUserTransformation &, unsigned int maxcalls = 0) const;
 
    /// forward interface of MnStrategy
-   unsigned int Ncycles() const {return fStrategy.HessianNCycles();}
-   double Tolerstp() const {return fStrategy.HessianStepTolerance();}
-   double TolerG2() const {return fStrategy.HessianG2Tolerance();}
+   unsigned int Ncycles() const { return fStrategy.HessianNCycles(); }
+   double Tolerstp() const { return fStrategy.HessianStepTolerance(); }
+   double TolerG2() const { return fStrategy.HessianG2Tolerance(); }
 
 private:
+
+   /// internal function to compute the Hessian using numerical derivative computation
+   MinimumState ComputeNumerical(const MnFcn &, const MinimumState &, const MnUserTransformation &, unsigned int maxcalls) const;
+
+   /// internal function to compute the Hessian using an analytical computation or externally provided in the FCNBase class
+   MinimumState ComputeAnalytical(const FCNBase &, const MinimumState &, const MnUserTransformation &) const;
 
    MnStrategy fStrategy;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnHesse
+#endif // ROOT_Minuit2_MnHesse

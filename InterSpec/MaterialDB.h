@@ -175,6 +175,13 @@ public:
   //  thread failed.
   const std::vector<std::string> &names() const;
 
+  /** Returns all materials.
+
+   Will throw exception if the database has not been initialized, and the waite of 1 seconds elapesd for
+   initialization in a background thread failed.
+   */
+  const std::vector<const Material *> materials() const;
+
   //material(...) is not case sensitive
   //  For the case of elements, the names have been altered to include both
   //  the symbol and the name, for instance "Fe (iron)" - in this case a

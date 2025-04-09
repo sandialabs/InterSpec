@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: AnalyticalGradientCalculator.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -11,39 +11,47 @@
 #define ROOT_Minuit2_AnalyticalGradientCalculator
 
 #include "Minuit2/GradientCalculator.h"
+#include "Minuit2/MnMatrixfwd.h"
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
-
-class FCNGradientBase;
+class FCNBase;
 class MnUserTransformation;
+
 
 class AnalyticalGradientCalculator : public GradientCalculator {
 
 public:
+   AnalyticalGradientCalculator(const FCNBase &fcn, const MnUserTransformation &state)
+      : fGradFunc(fcn), fTransformation(state)
+   {
+   }
 
-  AnalyticalGradientCalculator(const FCNGradientBase& fcn, const MnUserTransformation& state) : fGradCalc(fcn), fTransformation(state) {}
+   ~AnalyticalGradientCalculator() override {}
 
-  ~AnalyticalGradientCalculator() {}
+   FunctionGradient operator()(const MinimumParameters &) const override;
 
- 
-  virtual FunctionGradient operator()(const MinimumParameters&) const;
+   FunctionGradient operator()(const MinimumParameters &, const FunctionGradient &) const override;
 
-  virtual FunctionGradient operator()(const MinimumParameters&,
-				      const FunctionGradient&) const;
+   /// compute Hessian matrix
+   bool Hessian(const MinimumParameters &, MnAlgebraicSymMatrix &) const override;
 
-  virtual bool CheckGradient() const;
+   /// compute second derivatives (diagonal of Hessian)
+   bool G2(const MinimumParameters &, MnAlgebraicVector &) const override;
 
-private:
+   virtual bool CanComputeG2() const;
 
-  const FCNGradientBase& fGradCalc;
-  const MnUserTransformation& fTransformation;
+   virtual bool CanComputeHessian() const;
+
+protected:
+   const FCNBase &fGradFunc;
+   const MnUserTransformation &fTransformation;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_AnalyticalGradientCalculator
+#endif // ROOT_Minuit2_AnalyticalGradientCalculator

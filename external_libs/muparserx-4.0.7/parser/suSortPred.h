@@ -44,7 +44,7 @@ namespace su
     */
     template<class TString>
 	  struct SortByLength
-      :public std::binary_function<TString, TString, bool>
+      /* :public std::binary_function<TString, TString, bool> */  //Commented out by wcjohns to compile under C++17
 	  {	
 	    bool operator()(const TString& a_sLeft, const TString& a_sRight) const
       {	

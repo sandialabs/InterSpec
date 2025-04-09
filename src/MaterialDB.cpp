@@ -354,6 +354,16 @@ const std::vector<std::string> &MaterialDB::names() const
 }//std::vector<std::string> MaterialDB::names() const
 
 
+const std::vector<const Material *> MaterialDB::materials() const
+{
+  if( !wait_material_ready() )
+    throw std::runtime_error( "Material database is not initialized" );
+
+  std::unique_lock<std::mutex> lock( m_mutex );
+  return m_materials;
+}//
+
+
 bool MaterialDB::wait_material_ready() const
 {
   std::unique_lock<std::mutex> lock( m_mutex );
@@ -399,8 +409,11 @@ const Material *MaterialDB::material( const std::string &name ) const
 
     if( SpecUtils::iequals_ascii( thisname, name )
         || SpecUtils::iequals_ascii( thissymbol, name )
-        || SpecUtils::iequals_ascii( thisdescrip, name ) )
+        || SpecUtils::iequals_ascii( thisdescrip, name )
+        || SpecUtils::iequals_ascii( m->description, name ) )
+    {
       return m;
+    }
   }//for( const Material *m : m_materials )
 
   throw std::runtime_error( "Couldnt find material '" + name + "'" );

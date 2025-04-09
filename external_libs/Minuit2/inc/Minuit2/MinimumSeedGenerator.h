@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MinimumSeedGenerator.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -12,8 +12,7 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MinimumSeed;
 class MnFcn;
@@ -22,7 +21,7 @@ class MnUserParameterState;
 class MnStrategy;
 class AnalyticalGradientCalculator;
 
-/** base class for seed generators (starting values); the seed generator 
+/** base class for seed generators (starting values); the seed generator
     prepares initial starting values from the input (MnUserParameterState)
     for the minimization;
  */
@@ -30,16 +29,17 @@ class AnalyticalGradientCalculator;
 class MinimumSeedGenerator {
 
 public:
+   virtual ~MinimumSeedGenerator() {}
 
-  virtual ~MinimumSeedGenerator() {}
+   virtual MinimumSeed
+   operator()(const MnFcn &, const GradientCalculator &, const MnUserParameterState &, const MnStrategy &) const = 0;
 
-  virtual MinimumSeed operator()(const MnFcn&, const GradientCalculator&, const MnUserParameterState&, const MnStrategy&) const = 0;
-
-  virtual MinimumSeed operator()(const MnFcn&, const AnalyticalGradientCalculator&, const MnUserParameterState&, const MnStrategy&) const = 0;
+   virtual MinimumSeed operator()(const MnFcn &, const AnalyticalGradientCalculator &, const MnUserParameterState &,
+                                  const MnStrategy &) const = 0;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MinimumSeedGenerator
+#endif // ROOT_Minuit2_MinimumSeedGenerator

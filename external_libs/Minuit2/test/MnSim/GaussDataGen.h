@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: GaussDataGen.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -14,36 +14,33 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class GaussDataGen {
 
 public:
+   GaussDataGen(unsigned int npar = 100);
 
-  GaussDataGen(unsigned int npar = 100);
+   ~GaussDataGen() {}
 
-  ~GaussDataGen() {}
+   std::vector<double> Positions() const { return fPositions; }
+   std::vector<double> Measurements() const { return fMeasurements; }
+   std::vector<double> Variances() const { return fVariances; }
 
-  std::vector<double> Positions() const {return fPositions;}
-  std::vector<double> Measurements() const {return fMeasurements;}
-  std::vector<double> Variances() const {return fVariances;}
-
-  double Sim_Mean() const {return fSimMean;}
-  double Sim_var() const {return fSimVar;}
-  double Sim_const() const {return 1.;}
+   double Sim_Mean() const { return fSimMean; }
+   double Sim_var() const { return fSimVar; }
+   double Sim_const() const { return 1.; }
 
 private:
-
-  double fSimMean;
-  double fSimVar;
-  std::vector<double> fPositions;
-  std::vector<double> fMeasurements;
-  std::vector<double> fVariances;
+   double fSimMean;
+   double fSimVar;
+   std::vector<double> fPositions;
+   std::vector<double> fMeasurements;
+   std::vector<double> fVariances;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif //MN_GaussDataGen_H_
+#endif // MN_GaussDataGen_H_

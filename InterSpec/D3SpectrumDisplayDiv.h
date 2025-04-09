@@ -246,7 +246,8 @@ public:
   const Wt::WString &yAxisTitle() const;
 
   void setChartTitle( const Wt::WString &title );
-  
+  const Wt::WString &chartTitle() const;
+
   void enableLegend();
   void disableLegend();
   bool legendIsEnabled() const;

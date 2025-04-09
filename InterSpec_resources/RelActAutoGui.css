@@ -94,7 +94,9 @@
 }
 
 
-.RelActAutoGui .RelActAutoErrMsg, .RelActAutoGui .RelActAutoStatusMsg
+.RelActAutoGui .RelActAutoErrMsg,
+.RelActAutoGui .RelActAutoStatusMsg,
+.RelActAutoGui .RelActAutoChi2Msg
 {
   float: right;
   display: inline-block;
@@ -103,6 +105,11 @@
 .RelActAutoGui .RelActAutoErrMsg
 {
   color: red;
+}
+
+.RelActAutoGui .RelActAutoChi2Msg
+{
+
 }
 
 .RelActAutoGui .RelActAutoStatusMsg
@@ -154,6 +161,42 @@
   justify-self: end;
 }
 
+.RelActAutoGui .PhysicalModelOpts
+{
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  
+  /* flex: 1 1 auto; */
+  /* gap: 10px; */
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelShields
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  
+  /* flex: 1 1 auto; */
+  gap: 10px;
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow
+{
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > .DetectorDisplay
+{
+  transform: scale(0.66);
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .UseCorrFcnCb
+{
+  font-size: x-small;
+}
 
 .RelActAutoGui .MoreMenuIcon,
 .RelActAutoGui .MoreMenuIcon:hover

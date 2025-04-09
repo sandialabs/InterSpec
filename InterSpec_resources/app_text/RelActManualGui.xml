@@ -36,10 +36,25 @@
       <tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
       <tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
       <tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM Physical:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [Det. Eff.]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
     </table>
   </message>
   <message id="ramg-eqn-order-label">Eqn Order</message>
   <message id="ramg-tt-eqn-order">The order (how many energy-dependent terms) relative efficiency equation to use.</message>
+  <message id="ramg-phys-model-use-hoerl">Use Corr. Fcn.</message>
+  <message id="ramg-tt-phys-model-use-hoerl">When checked, the Modified Hoerl correction factor (i.e. E<sup>b</sup> * C<sup>1/E</sup>) is used to account for differences between the physical model and/or detector efficiency, and observed data.</message>
   <message id="ramg-yield-info-label">Yield Info</message>
   <message id="ramg-tt-data-src">The nuclear data source for gamma branching ratios.</message>
   <message id="ramg-match-tol-label">Match tol.</message>
@@ -71,6 +86,7 @@
   <message id="ramg-back-sub-cb">Background Subtract</message>
   <message id="ramg-html-export-label">HTML Report</message>
   <message id="ramg-nucs-label">Nuclides</message>
+  <message id="ramg-nucs-shield-label">Shields/Nucs</message>
   <message id="ramg-peaks-to-use-label">Peaks to Use</message>
   <message id="ramg-results-label">Results</message>
   <message id="ramg-mi-results">Table</message>

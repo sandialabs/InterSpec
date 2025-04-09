@@ -1524,7 +1524,7 @@ void DoseCalcWidget::updateResultForGammaSource()
         const double dist_delta = ((dist_guess < PhysicalUnits::meter) ? 0.1 : 1.0) * PhysicalUnits::mm;
         
         // Make a lambda to easily compute dose for a trial distance
-        auto dose_root_calc = [=]( const double radius ) -> double {
+        auto dose_root_calc = [=,this]( const double radius ) -> double {
           const double dose = DoseCalc::gamma_dose_with_shielding( energies, intensities,
                                                   shielding_ad, shielding_an, radius, *m_scatter );
           return user_entered_dose - dose;

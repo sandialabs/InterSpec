@@ -1979,10 +1979,10 @@ std::string TerminalModel::searchforPeak( const std::string& arguments )
             throw mup::ParserError( "Unable to add peak at energy (0)." );      // throw domain error if user is adding peak at 0 keV
         
         
-        const int previousPeakVecSize = peakModel->peaks()->size();
+        const int previousPeakVecSize = static_cast<int>( peakModel->peaks()->size() );
     
         m_viewer->searchForSinglePeak( energy );
-        const int currentPeakVecSize = peakModel->peaks()->size();
+        const int currentPeakVecSize = static_cast<int>( peakModel->peaks()->size() );
         PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
         
         if ( !peak || currentPeakVecSize <= previousPeakVecSize || energy == 0 )

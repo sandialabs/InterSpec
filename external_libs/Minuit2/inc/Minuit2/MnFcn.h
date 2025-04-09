@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnFcn.h 23654 2008-05-06 07:30:34Z moneta $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -13,54 +13,48 @@
 #include "Minuit2/MnConfig.h"
 #include "Minuit2/MnMatrix.h"
 
-#include <vector>
-
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class FCNBase;
 /**
    Wrapper class to FCNBase interface used internally by Minuit.
-   Apply conversion from calling the function from a Minuit Vector (MnAlgebraicVector) to a std::vector  for 
-   the function coordinates. 
-   The class counts also the number of function calls. By default counter strart from zero, but a different value
+   Apply conversion from calling the function from a Minuit Vector (MnAlgebraicVector) to a std::vector  for
+   the function coordinates.
+   The class counts also the number of function calls. By default counter start from zero, but a different value
    might be given if the class is  instantiated later on, for example for a set of different minimizaitons
-   Normally the derived class MnUserFCN should be instantiated with performs in addition the transformatiopn 
-   internal-> external parameters 
+   Normally the derived class MnUserFCN should be instantiated with performs in addition the transformatiopn
+   internal-> external parameters
  */
 class MnFcn {
 
 public:
+   /// constructor of
+   explicit MnFcn(const FCNBase &fcn, int ncall = 0) : fFCN(fcn), fNumCall(ncall) {}
 
-   /// constructor of 
-   explicit MnFcn(const FCNBase& fcn, int ncall = 0) : fFCN(fcn), fNumCall(ncall) {}
+   virtual ~MnFcn();
 
-  virtual ~MnFcn();
+   virtual double operator()(const MnAlgebraicVector &) const;
+   unsigned int NumOfCalls() const { return fNumCall; }
 
-  virtual double operator()(const MnAlgebraicVector&) const;
-  unsigned int NumOfCalls() const {return fNumCall;}
+   //
+   // forward interface
+   //
+   double ErrorDef() const;
+   double Up() const;
 
-  //
-  //forward interface
-  //
-  double ErrorDef() const;
-  double Up() const;
-
-  const FCNBase& Fcn() const {return fFCN;}
+   const FCNBase &Fcn() const { return fFCN; }
 
 private:
-
-  const FCNBase& fFCN;
+   const FCNBase &fFCN;
 
 protected:
-
-  mutable int fNumCall;
+   mutable int fNumCall;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnFcn
+#endif // ROOT_Minuit2_MnFcn

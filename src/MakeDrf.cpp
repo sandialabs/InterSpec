@@ -2043,7 +2043,7 @@ void MakeDrf::startSaveAs()
       DataBaseUtils::DbTransaction transaction( *sql );
       //Create a separate DetectorPeakResponse because shared_ptr and dbo::ptr don't work well together
       DetectorPeakResponse *tempDetector = new DetectorPeakResponse( *drf );
-      tempDetector->m_user = m_interspec->user().id();
+      tempDetector->m_user = static_cast<int>( m_interspec->user().id() );
       auto newDbDet = sql->session()->add( tempDetector );
       
       transaction.commit();

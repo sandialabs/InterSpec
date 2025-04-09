@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnFcn.cxx 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -13,14 +13,15 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
-
-MnFcn::~MnFcn() {
+MnFcn::~MnFcn()
+{
    //   std::cout<<"Total number of calls to FCN: "<<fNumCall<<std::endl;
 }
 
-double MnFcn::operator()(const MnAlgebraicVector& v) const {
+double MnFcn::operator()(const MnAlgebraicVector &v) const
+{
    // evaluate FCN converting from from MnAlgebraicVector to std::vector
    fNumCall++;
    return fFCN(MnVectorTransform()(v));
@@ -30,10 +31,16 @@ double MnFcn::operator()(const MnAlgebraicVector& v) const {
 //     return fFCN(par);
 // }
 
-double MnFcn::ErrorDef() const {return fFCN.Up();}
+double MnFcn::ErrorDef() const
+{
+   return fFCN.Up();
+}
 
-double MnFcn::Up() const {return fFCN.Up();}
+double MnFcn::Up() const
+{
+   return fFCN.Up();
+}
 
-   }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT

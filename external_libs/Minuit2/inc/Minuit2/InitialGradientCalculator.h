@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: InitialGradientCalculator.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -14,50 +14,35 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MnFcn;
 class MnUserTransformation;
 class MnMachinePrecision;
-class MnStrategy;
 
 /**
    Class to calculate an initial estimate of the gradient
  */
 class InitialGradientCalculator : public GradientCalculator {
-  
+
 public:
-  
-  InitialGradientCalculator(const MnFcn& fcn, const MnUserTransformation& par,
-			    const MnStrategy& stra) : 
-    fFcn(fcn), fTransformation(par), fStrategy(stra) {};
-  
-  virtual ~InitialGradientCalculator() {}
+   InitialGradientCalculator(const MnFcn &fcn, const MnUserTransformation &par) : fFcn(fcn), fTransformation(par) {}
 
-  virtual FunctionGradient operator()(const MinimumParameters&) const;
+   FunctionGradient operator()(const MinimumParameters &) const override;
 
-  virtual FunctionGradient operator()(const MinimumParameters&,
-				      const FunctionGradient&) const;
+   FunctionGradient operator()(const MinimumParameters &, const FunctionGradient &) const override;
 
-  const MnFcn& Fcn() const {return fFcn;}
-  const MnUserTransformation& Trafo() const {return fTransformation;} 
-  const MnMachinePrecision& Precision() const;
-  const MnStrategy& Strategy() const {return fStrategy;}
-
-  unsigned int Ncycle() const;
-  double StepTolerance() const;
-  double GradTolerance() const;
+   const MnFcn &Fcn() const { return fFcn; }
+   const MnUserTransformation &Trafo() const { return fTransformation; }
+   const MnMachinePrecision &Precision() const;
 
 private:
-
-  const MnFcn& fFcn;
-  const MnUserTransformation& fTransformation; 
-  const MnStrategy& fStrategy;
+   const MnFcn &fFcn;
+   const MnUserTransformation &fTransformation;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_InitialGradientCalculator
+#endif // ROOT_Minuit2_InitialGradientCalculator

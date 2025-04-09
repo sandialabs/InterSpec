@@ -4977,8 +4977,8 @@ GammaCountDialog *InterSpec::showGammaCountDialog()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    m_undo->addUndoRedoStep( [=](){deleteGammaCountDialog();},
-                            [=](){showGammaCountDialog();},
+    m_undo->addUndoRedoStep( [=,this](){deleteGammaCountDialog();},
+                            [=,this](){showGammaCountDialog();},
                             "Show Energy Range Sum." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
   
@@ -8997,7 +8997,7 @@ void InterSpec::startSimpleMdaFromRightClick()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [=](){
+    auto undo = [=,this](){
       if( wasShowing )
       {
         if( prevState.empty() )
@@ -9011,7 +9011,7 @@ void InterSpec::startSimpleMdaFromRightClick()
       }
     };//undo
     
-    auto redo = [=](){
+    auto redo = [=,this](){
       showSimpleMdaWindow();
       assert( m_simpleMdaWindow );
       if( m_simpleMdaWindow )
@@ -9716,7 +9716,7 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
       log_developer_error( __func__, ("Error deserializing Rel. Act. GUI state: " + string(e.what())).c_str() );
 #endif
       
-      assert( 0 );
+      //assert( 0 );
     }//try / catch
   }else
   {
@@ -10109,10 +10109,34 @@ void InterSpec::pushMaterialSuggestionsToUsers()
   if( !m_materialDB || !m_shieldingSuggestion )
     throw runtime_error( "pushMaterialSuggestionsToUsers(): you must"
                         " call initMaterialDbAndSuggestions() first." );
-  
-  for( const string &name : m_materialDB->names() )
+
+  const vector<const Material *> materials = m_materialDB->materials();
+  for( const Material *material : materials )
+  {
+    const string &name = material->name;
+    const string &desc = material->description;
+
+    // Lets filter out things like "PuO2 - X.X% Pu240 Plutonium dioxide", since
+    //  InterSpec doesnt make used of this enrichment anywhere; but we'll leave
+    //  in the material database incase a shielding used it or something in the
+    //  past.
+    const string::size_type name_pos = name.find( "% Pu" );
+    if( name_pos != string::npos )
+      continue;
+
+    const string::size_type desc_pos = desc.find( "% Pu" );
+    if( desc_pos != string::npos )
+      continue;
+
     m_shieldingSuggestion->addSuggestion( name, name );
-  
+    if( SpecUtils::iequals_ascii(name, desc) )
+      continue;
+
+    const string::size_type sub_pos = SpecUtils::ifind_substr_ascii(name, desc.c_str());
+    if( sub_pos == string::npos )
+      m_shieldingSuggestion->addSuggestion( desc, desc );
+  }//for( const Material *material : materials )
+
   wApp->triggerUpdate();
 }//void pushMaterialSuggestionsToUsers()
 
@@ -10821,6 +10845,12 @@ PeakModel *InterSpec::peakModel()
 MaterialDB *InterSpec::materialDataBase()
 {
   return m_materialDB.get();
+}
+
+
+std::shared_ptr<MaterialDB> InterSpec::materialDataBaseShared()
+{
+  return m_materialDB;
 }
 
 
@@ -11551,7 +11581,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 #endif
       
       const std::string sessionid = wApp->sessionId();
-      propigate_peaks_fcns = [=]( std::shared_ptr<const SpecUtils::Measurement> data ){
+      propigate_peaks_fcns = [=,this]( std::shared_ptr<const SpecUtils::Measurement> data ){
         PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
                        PeakSearchGuiUtils::PeakTemplateFitSrc::PreviousSpectrum,
                        sessionid );
@@ -11587,7 +11617,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     {
       if( propigate_peaks_fcns )
       {
-        m_preserveCalibWindow->finished().connect( std::bind( [=](){
+        m_preserveCalibWindow->finished().connect( std::bind( [=,this](){
           deleteEnergyCalPreserveWindow();
           std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
           WServer::instance()->ioService().boost::asio::io_service::post( std::bind([=](){ propigate_peaks_fcns(data); }) );

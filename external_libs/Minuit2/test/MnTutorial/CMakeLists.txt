@@ -1,46 +1,24 @@
-project(minuit2)
+# Copyright (C) 1995-2019, Rene Brun and Fons Rademakers.
+# All rights reserved.
+#
+# For the licensing terms see $ROOTSYS/LICENSE.
+# For the list of contributors see $ROOTSYS/README/CREDITS.
 
 
-#-----------------------------------------------------------------------------
-# CMake administrivia
-cmake_minimum_required( VERSION 2.8 )
-if ( COMMAND cmake_policy )
-  cmake_policy( SET CMP0003 NEW )
-endif( COMMAND cmake_policy )
+add_minuit2_test(Quad1F Quad1FMain.cxx Quad1F.h)
 
+add_minuit2_test(Quad4F Quad4FMain.cxx Quad4F.h)
 
-set( LIBRARY_OUTPUT_PATH lib CACHE PATH "Path to libraries" FORCE )
-set( EXECUTABLE_OUTPUT_PATH bin CACHE PATH "Path to executables" FORCE )
+add_minuit2_test(Quad8F Quad8FMain.cxx Quad8F.h)
 
-set( UPDATE_TYPE "svn" )
-set( CMAKE_COLOR_MAKEFILE ON CACHE BOOL "Color" FORCE )
+add_minuit2_test(Quad12F Quad12FMain.cxx Quad12F.h)
 
-
-#SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBOOST_FILESYSTEM_VERSION=3")
-
-#-----------------------------------------------------------------------------
-
-#SET(CMAKE_MODULE_PATH "${WT_HISTOGRAM_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
-#MESSAGE( ${WT_HISTOGRAM_SOURCE_DIR} )
-
-
-
-INCLUDE_DIRECTORIES(
-  ../../inc
-  .
-  ..
-)
-
-find_library( MINUIT2_LIBRARY minuit2 ../../build/lib )
-
-
-add_executable( Quad12FMain Quad12FMain.cxx )
-add_executable( Quad1FMain Quad1FMain.cxx )
-add_executable( Quad4FMain Quad4FMain.cxx )
-add_executable( Quad8FMain Quad8FMain.cxx )
-
-target_link_libraries ( Quad12FMain ${MINUIT2_LIBRARY} )
-target_link_libraries ( Quad1FMain ${MINUIT2_LIBRARY} )
-target_link_libraries ( Quad4FMain ${MINUIT2_LIBRARY} )
-target_link_libraries ( Quad8FMain ${MINUIT2_LIBRARY} )
-
+add_test(
+    NAME ExampleCMakeBuild
+    COMMAND "${CMAKE_CTEST_COMMAND}"
+            --build-and-test
+            "${Minuit2_SOURCE_DIR}/examples/simple/"
+            "${CMAKE_CURRENT_BINARY_DIR}/simple/"
+            --build-generator "${CMAKE_GENERATOR}"
+            --test-command "${CMAKE_CTEST_COMMAND}"
+    )

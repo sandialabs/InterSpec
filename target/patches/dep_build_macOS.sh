@@ -166,13 +166,13 @@ else
     fi # if b2 already built / else
 
     # build and stage boost for arm64
-    ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
+    ./b2 toolset=clang-darwin target-os=darwin architecture=arm abi=aapcs cxxflags="-stdlib=libc++ -arch arm64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch arm64  -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch arm64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" link=static variant=release threading=multi --build-dir=macOS_arm64_build --prefix=${MY_WT_PREFIX} -a stage
 
     # copy arm libraries to a separate directory
     mkdir -p arm64 && cp stage/lib/libboost_* arm64/
 
     # build boost for x86_64 and install it (we'll copy over the libraries later)
-    ./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch x86_64 -std=c++14 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
+    ./b2 toolset=clang-darwin target-os=darwin architecture=x86 cxxflags="-stdlib=libc++ -arch x86_64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" cflags="-arch x86_64 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" linkflags="-stdlib=libc++ -arch x86_64 -std=c++20 -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" abi=sysv binary-format=mach-o link=static variant=release threading=multi --build-dir=macOS_x64_build --prefix=${MY_WT_PREFIX} -a install
 
     # move x86 libraries to a seperate directory
     mkdir x86_64 && mv ${MY_WT_PREFIX}/lib/libboost_* x86_64/
@@ -322,7 +322,7 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DHARU_LIB="${MY_WT_PREFIX}/lib/libhpdfs.a" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++14" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DHARU_LIB="${MY_WT_PREFIX}/lib/libhpdfs.a" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++20" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
   make -j10 install
   touch "${working_directory}/wt.installed"
 fi #if wt.installed exists / else
@@ -337,24 +337,25 @@ if [ -f "${working_directory}/Eigen.installed" ]; then
 else
   # Build Eigen, which is required by ceres-solver, and used a few other places
   # in InterSpec if its available
-  file_url="https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz"
-  file_name="eigen-3.4.0.tar.gz"
-  expected_sha256="8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72"
-  src_dir="eigen-3.4.0"
+
+  src_dir="eigen-3.x"
+  # Get trunk version as of 20250114 to pickup some compile issues for c++20 (minimizing how much history we download)
+  git_hash="2e76277bd049f7bec36b0f908c69734a42c5234f"
   
-  download_file "${file_url}" "${file_name}" "${expected_sha256}"
-
   if [ -d "${src_dir}" ]; then
-    echo "Eigen already unzipped, not doing again."
+    echo "Eigen cloned - not doing it again."
+    cd "${src_dir}"
   else
-    tar -xzvf "${file_name}"
+    git clone --recursive https://gitlab.com/libeigen/eigen.git --branch master --single-branch --depth 1 "${src_dir}"
+    cd "${src_dir}"
+    git fetch --depth 1 origin ${git_hash}
+    git checkout ${git_hash}
+    git submodule update --init --recursive
   fi
-
-  cd "${src_dir}"
 
   if [ -d build ]; then
     rm -r build
-    echo "Deleted previous libharu build directory."
+    echo "Deleted previous Eigen build directory."
   fi
 
   mkdir build
@@ -371,24 +372,16 @@ cd "${working_directory}"
 
 ## Build Ceres-Solver
 if [ -f "${working_directory}/Ceres.installed" ]; then
-    echo "Ceres-Solver already installed (as indicated by existance of Ceres.installed file) - skipping."
+    echo "Ceres-Solver already installed (as indicated by existence of Ceres.installed file) - skipping."
 else
   # Build ceres-solver; this is the optimizer used for the relative efficiency
   # tool, and a small amount of the peak fitting.
-  file_url="http://ceres-solver.org/ceres-solver-2.1.0.tar.gz"
-  file_name="ceres-solver-2.1.0.tar.gz"
-  expected_sha256="f7d74eecde0aed75bfc51ec48c91d01fe16a6bf16bce1987a7073286701e2fc6"
-  src_dir="ceres-solver-2.1.0"
-  
-  download_file "${file_url}" "${file_name}" "${expected_sha256}"
-
-  if [ -d "${src_dir}" ]; then
-    echo "Ceres-Solver already unzipped, not doing again."
-  else
-    tar -xzvf "${file_name}"
-  fi
-
-  cd "${src_dir}"
+  git clone --recursive https://github.com/ceres-solver/ceres-solver.git --branch master --single-branch --depth 1
+  cd ceres-solver
+  # Get version 2.2.0, Oct 12, 2023 (minimizing how much history we download)
+  git fetch --depth 1 origin 85331393dc0dff09f6fb9903ab0c4bfa3e134b01
+  git checkout 85331393dc0dff09f6fb9903ab0c4bfa3e134b01
+  git submodule update --init --recursive
 
   if [ -d build_macos ]; then
     rm -r build_macos
@@ -398,7 +391,7 @@ else
   mkdir build_macos
   cd build_macos
 
-  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
+  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DMINIGLOG=ON -DGFLAGS=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" ..
   cmake --build . --config Release --target install -j 16
 
   touch "${working_directory}/Ceres.installed"

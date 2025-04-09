@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: GaussFcn.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -16,42 +16,36 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class GaussFcn : public FCNBase {
 
 public:
+   GaussFcn(std::span<const double> meas, std::span<const double> pos, std::span<const double> mvar)
+      : fMeasurements(meas.begin(), meas.end()),
+        fPositions(pos.begin(), pos.end()),
+        fMVariances(mvar.begin(), mvar.end())
+   {
+   }
 
-  GaussFcn(const std::vector<double>& meas,
-	   const std::vector<double>& pos,
-	   const std::vector<double>& mvar) : fMeasurements(meas),
-					      fPositions(pos),
-					      fMVariances(mvar), 
-					      fErrorDef(1.) {}
+   double Up() const override { return fErrorDef; }
+   double operator()(std::vector<double> const &) const override;
 
-  ~GaussFcn() {}
+   std::vector<double> Measurements() const { return fMeasurements; }
+   std::vector<double> Positions() const { return fPositions; }
+   std::vector<double> Variances() const { return fMVariances; }
 
-  virtual double Up() const {return fErrorDef;}
-  virtual double operator()(const std::vector<double>&) const;
-  
-  std::vector<double> Measurements() const {return fMeasurements;}
-  std::vector<double> Positions() const {return fPositions;}
-  std::vector<double> Variances() const {return fMVariances;}
-
-  void SetErrorDef(double def) {fErrorDef = def;}
+   void SetErrorDef(double def) override { fErrorDef = def; }
 
 private:
-
-  
-  std::vector<double> fMeasurements;
-  std::vector<double> fPositions;
-  std::vector<double> fMVariances;
-  double fErrorDef;
+   std::vector<double> fMeasurements;
+   std::vector<double> fPositions;
+   std::vector<double> fMVariances;
+   double fErrorDef = 1.;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif //MN_GaussFcn_H_
+#endif // MN_GaussFcn_H_

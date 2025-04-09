@@ -14,6 +14,11 @@ div.RelActManualGui
 {
 }
 
+.PhysicalModelShields
+{
+  
+}
+
 .ManRelEffNucDisp.Wt-panel
 {
   width: 175px;
@@ -32,6 +37,7 @@ div.RelActManualGui
   background: none;
   color: black;
   border-radius: 5px;
+  height: 20px;
 }
 
 
@@ -197,7 +203,7 @@ div.RelActManualGui
   background: yellow;
 }
 
-.RelActManualGui .CalcWarning,
+.RelActManualGui .CalcWarning
 {
   color: navy;
   font-weight: bold;
@@ -239,3 +245,7 @@ div.RelActManualGui
 }
 
 
+.PhysModelUseHoerl
+{
+  float: right;
+}

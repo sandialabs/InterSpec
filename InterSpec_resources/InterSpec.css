@@ -22,6 +22,12 @@ textarea, select
   outline: none;
 }
 
+/* Align the label with the checkbox. :has only supported in Safari 15.4 (macOS Monterey, 12.3), Chrome 105 (Aug 2022), FF 121. */
+label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+}
+
 .Wt-suggest
 {
   padding-left: 5px;

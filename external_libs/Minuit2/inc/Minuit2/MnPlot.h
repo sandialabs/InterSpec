@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnPlot.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -11,45 +11,48 @@
 #define ROOT_Minuit2_MnPlot
 
 #include "Minuit2/MnConfig.h"
+
+#include <ROOT/RSpan.hxx>
+
 #include <vector>
 #include <utility>
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
-
-/** MnPlot produces a text-screen graphical output of (x,y) points, e.g. 
+/** MnPlot produces a text-screen graphical output of (x,y) points, e.g.
     from Scan or Contours.
 */
 
 class MnPlot {
 
 public:
-  
-  MnPlot() : fPageWidth(80), fPageLength(30) {}
+   MnPlot() : fPageWidth(80), fPageLength(30) {}
 
-  MnPlot(unsigned int width, unsigned int length) : fPageWidth(width), fPageLength(length) {
-    if(fPageWidth > 120) fPageWidth = 120;
-    if(fPageLength > 56) fPageLength = 56;
-  }
+   MnPlot(unsigned int width, unsigned int length) : fPageWidth(width), fPageLength(length)
+   {
+      if (fPageWidth > 120)
+         fPageWidth = 120;
+      if (fPageLength > 56)
+         fPageLength = 56;
+   }
 
-  ~MnPlot() {}
+   ~MnPlot() {}
 
-  void operator()(const std::vector<std::pair<double,double> >&) const;
-  void operator()(double, double, const std::vector<std::pair<double,double> >&) const;
+   void operator()(std::span<const std::pair<double, double>> ) const;
+   void operator()(double, double, std::span<const std::pair<double, double>> ) const;
 
-  unsigned int Width() const {return fPageWidth;}
-  unsigned int Length() const {return fPageLength;}
+   unsigned int Width() const { return fPageWidth; }
+   unsigned int Length() const { return fPageLength; }
 
 private:
-
-  unsigned int fPageWidth;
-  unsigned int fPageLength;
+   unsigned int fPageWidth;
+   unsigned int fPageLength;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnPlot
+#endif // ROOT_Minuit2_MnPlot

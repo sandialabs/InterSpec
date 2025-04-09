@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnReferenceCounter.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -16,48 +16,41 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
-
-//extern StackAllocator gStackAllocator;
+// extern StackAllocator gStackAllocator;
 
 class MnReferenceCounter {
 
 public:
+   MnReferenceCounter() : fReferences(0) {}
 
-  MnReferenceCounter() : fReferences(0) {}
+   MnReferenceCounter(const MnReferenceCounter &other) : fReferences(other.fReferences) {}
 
-  MnReferenceCounter(const MnReferenceCounter& other) : 
-    fReferences(other.fReferences) {}
+   MnReferenceCounter &operator=(const MnReferenceCounter &other)
+   {
+      fReferences = other.fReferences;
+      return *this;
+   }
 
-  MnReferenceCounter& operator=(const MnReferenceCounter& other) {
-    fReferences = other.fReferences;
-    return *this;
-  }
-  
-  ~MnReferenceCounter() {assert(fReferences == 0);}
-  
-  void* operator new(size_t nbytes) {
-    return StackAllocatorHolder::Get().Allocate(nbytes);
-  }
-  
-  void operator delete(void* p, size_t /*nbytes */) {
-    StackAllocatorHolder::Get().Deallocate(p);
-  }
+   ~MnReferenceCounter() { assert(fReferences == 0); }
 
-  unsigned int References() const {return fReferences;}
+   void *operator new(size_t nbytes) { return StackAllocatorHolder::Get().Allocate(nbytes); }
 
-  void AddReference() const {fReferences++;}
+   void operator delete(void *p, size_t /*nbytes */) { StackAllocatorHolder::Get().Deallocate(p); }
 
-  void RemoveReference() const {fReferences--;}
-  
+   unsigned int References() const { return fReferences; }
+
+   void AddReference() const { fReferences++; }
+
+   void RemoveReference() const { fReferences--; }
+
 private:
-  
-  mutable unsigned int fReferences;
+   mutable unsigned int fReferences;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnReferenceCounter
+#endif // ROOT_Minuit2_MnReferenceCounter

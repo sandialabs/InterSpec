@@ -110,6 +110,7 @@ namespace
   }//bool is_directory( const std::string &name )
 #endif
   
+  /** Struct to read in CrossSection.lib (from GADAS). */
   struct AttCoeffData
   {
     float ZA[100];           //atomic number / atomic weight
@@ -210,7 +211,7 @@ namespace
                                    const std::vector<float> &logenergy,
                                    const std::vector<float> &logxs );
     
-    /** Gives approximatly how much memorry is being taken up by this object.
+    /** Gives approximately how much memory is being taken up by this object.
      * Gives ~722 kb on my 64 bit mac.
      * \returns approximate memory this object is taking up, in bytes.
      */

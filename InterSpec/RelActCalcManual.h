@@ -28,18 +28,23 @@
 #include <vector>
 #include <memory>
 #include <istream>
+#include "ReactionGamma.h"
 
 // Forward declarations
 class PeakDef;
 
+class DetectorPeakResponse;
+
 namespace RelActCalc
 {
   enum class RelEffEqnForm : int;
+  struct PhysicalModelShieldInput;
 }
 
 namespace SandiaDecay
 {
   struct Nuclide;
+  struct Element;
 }
 
 namespace SpecUtils
@@ -47,6 +52,10 @@ namespace SpecUtils
   class Measurement;
 }
 
+namespace ceres
+{
+  class Problem;
+}
 
 /** The structs/functions in this namespace facilitate performing a relative activity calculation
  on user-fit peaks (hence the term "Manual").
@@ -67,20 +76,23 @@ struct SandiaDecayNuc
   const SandiaDecay::Nuclide *nuclide = nullptr;
   double age = -1;
   bool correct_for_decay_during_meas = false;
+  const SandiaDecay::Element *element = nullptr;
   const ReactionGamma::Reaction *reaction = nullptr;
 };//struct SandiaDecayNuc
 
 
 /** Information about a SandiaDecay defined nuclide for input into relative efficiency calculation.
  */
+/*
+template<typename T>
 struct SandiaDecayNucRelAct
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
-  /** Age at start of measurement. */
+  /// Age at start of measurement.
   double age = -1.0;
-  double rel_activity = -1.0;
+  T rel_activity = -1.0;
 };//struct SandiaDecayNucRelAct
-
+*/
 
 /** Struct to specify the yield of a nuclide, that will be associated with a specific peak. */
 struct GenericLineInfo
@@ -171,6 +183,26 @@ struct GenericPeakInfo
   GenericPeakInfo();
 };//struct GenericPeakInfo
 
+/** A constraint on the activity ratio of two nuclides.
+ 
+ This is used to pin the activity ratio of one nuclide to another.
+ */
+struct ManualActRatioConstraint
+{
+  std::string m_constrained_nuclide;
+  std::string m_controlling_nuclide;
+  double m_constrained_to_controlled_activity_ratio;
+
+/*
+  static const int sm_xmlSerializationVersion = 0;
+  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *constraint_node );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const ManualActRatioConstraint &lhs, const ManualActRatioConstraint &rhs );
+#endif
+*/
+};//struct ManualActRatioConstraint
 
 /** Adds the `GenericLineInfo` info (e.g. nuclides and their BR) to input `peaks` by clustering gamma lines of
  provided nuclides.
@@ -246,14 +278,15 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
  @par covariance [out] If non-nullptr, the covariance matrix will be placed into this vector of
       vectors; see notes above
  */
+/*
 void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
                            const size_t order,
-                           const std::vector<SandiaDecayNucRelAct> &nuclides,
+                           const std::vector<SandiaDecayNucRelAct<double>> &nuclides,
                            const double base_rel_eff_uncert,
                            const std::vector<std::shared_ptr<const PeakDef>> &peak_infos,
                            std::vector<double> &fit_pars,
                            std::vector<std::vector<double>> *covariance );
-
+*/
 
 /** Function to do actual LLS work.  Split out from the above for testing purposes.  */
 void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
@@ -270,8 +303,30 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
  \param fit_rel_acts The relative activities of the isotopes. Corresponds to \p isotopes on an index-by-index basis.
  
  */
+void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
+                        const std::vector<std::string> &isotopes,
+                        const std::vector<GenericPeakInfo> &peak_infos,
+                        std::vector<double> &fit_rel_acts,
+                        std::vector<double> &fit_rel_act_uncerts );
+
+/** convenience method for calling above `fit_act_to_rel_eff(...)`. 
+ * @param eqn_form The form of the relative efficiency equation to use.
+ *                  May not be `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+ */
 void fit_act_to_rel_eff( const RelActCalc::RelEffEqnForm eqn_form,
                         const std::vector<double> &eqn_pars,
+                        const std::vector<std::string> &isotopes,
+                        const std::vector<GenericPeakInfo> &peak_infos,
+                        std::vector<double> &fit_rel_acts,
+                        std::vector<double> &fit_rel_act_uncerts );
+
+struct RelEffInput;  //Forward declaration
+/** Fits the activities, for a given PhysicalModel Relative Efficiency equation.
+ * 
+ * The input `RelEffInput` must have valid DRF and self attenuation set.  Parameter values
+ * are determined similar to the starting values used in the full Relative Activity fit.
+ */
+void fit_act_to_phys_rel_eff( const RelEffInput &input,
                         const std::vector<std::string> &isotopes,
                         const std::vector<GenericPeakInfo> &peak_infos,
                         std::vector<double> &fit_rel_acts,
@@ -300,6 +355,93 @@ struct IsotopeRelativeActivity
 };//struct IsotopeRelativeActivity
 
 
+/** The input for the manual relative efficiency calculation. */
+struct RelEffInput
+{
+  /** The required input peak information.
+ 
+   Each peak must have at least one source isotope, have counts above zero, have counts
+   uncertainty greater than zero (or equal to -1.0), and each isotope must have yields
+   at each energy greater than 0.
+   
+   If you are decay-correcting yields during measurement, the `GenericPeakInfo::m_source_gammas::m_yield`
+   values should have already had this applied.
+   */
+  std::vector<GenericPeakInfo> peaks;
+  
+  /** If you are decay-correcting peaks, then the non-decay-corrected version of the peaks
+   are put here.   Only peaks with corrections should be put here, and should only include info
+   for only gamma lines that have been corrected.
+   
+   Only includes peaks that have at least one correction, and the only entries in
+   `GenericPeakInfo::m_source_gammas`, are the ones with corrections.
+   
+   The peaks are _not_ used during computation, and placed here only so
+   you can list effects of decay-correction.  Not super clean, but maybe the best way
+   to carry all the information together.
+   */
+  std::vector<GenericPeakInfo> peaks_before_decay_correction;
+  
+  /** Any warnings or notes you encountered while preparing input.
+   
+   These are not used for computation, but will be copied into `RelEffSolution::m_warnings`.
+   */
+  std::vector<std::string> prep_warnings;
+  
+  /** The equation form to use; i.e., EqnForm::LnX, EqnForm::LnY, or EqnForm::LnXLn */
+  RelActCalc::RelEffEqnForm eqn_form;
+
+  /** The order of equation to be fit for.  i.e., the number of energy-dependent terms
+  to be fit for (e.g., the total number of terms will be this plus one). 
+  
+  If eqn_form is `RelActCalc::RelEffEqnForm::FramPhysicalModel`, then this value must
+  be 0, as it is not used.
+  */
+  size_t eqn_order;
+
+  /** If true, use Ceres to fit the relative efficiency equation.
+   * If false, use LLS to fit the relative efficiency equation.
+   * 
+   * For `RelActCalc::RelEffEqnForm::FramPhysicalModel`, this must be true.
+   */
+  bool use_ceres_to_fit_eqn = false;
+
+  /** If true, fit the modified Hoerl equation form for the physical model. 
+   * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
+   * 
+   * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+  */
+  bool phys_model_use_hoerl = true;
+
+  /** The detector peak response to use as part of the relative efficiency equation for 
+   `RelActCalc::RelEffEqnForm::FramPhysicalModel`, and if so, the detector must be non-null 
+   and valid.
+   Not used for other equation forms.
+  */
+  std::shared_ptr<const DetectorPeakResponse> phys_model_detector;
+  
+  /** The self attenuation if the equation form is `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+    If specified for any other equation form, will throw an exception.
+  */
+  std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> phys_model_self_atten;
+  
+  /** The external attenuations for equation form `RelActCalc::RelEffEqnForm::FramPhysicalModel`. 
+    If specified for any other equation form, will throw an exception.
+  */
+  std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
+
+  /** The activity ratio constraints. */
+  std::vector<ManualActRatioConstraint> act_ratio_constraints;
+
+
+  /** Checks that the nuclide constraints are valid.
+
+   Checks for cyclical constraints, and that all constrained nuclides are found in #nuclides.
+   
+   Throws an exception if they are not valid.
+   */
+  void check_nuclide_constraints() const; 
+};//struct RelEffInput
 
 /** The status of fitting for a solution. */
 enum class ManualSolutionStatus : int
@@ -316,23 +458,71 @@ enum class ManualSolutionStatus : int
  */
 struct RelEffSolution
 {
-  RelActCalc::RelEffEqnForm m_rel_eff_eqn_form;
-  size_t m_rel_eff_eqn_order = 0;
+  /** The input used to compute this solution.
+   
+   Note that if you fit the atomic number of a physical model shielding, this values in this
+   struct may not exactly match your input, because we are currently scanning the AN
+   range to get the an.  See portions of the source code marked by
+   `SCAN_AN_FOR_BEST_FIT`.
+   */
+  RelEffInput m_input;
+
   std::vector<double> m_rel_eff_eqn_coefficients;
+
+  /** The covariance matrix of the relative efficiency equation coefficients. 
+   
+   Note that if `m_input.use_ceres_to_fit_eqn` is false, then this is the covariance matrix 
+   for the `log` efficiency function, and is computed using the matrices of least linear squares.
+   If `m_input.use_ceres_to_fit_eqn` is true, then this is relative efficiency portion
+   of the full covariance matrix fit by Ceres; and the rel. eff. equations are not ``log''
+   transformed.
+  */
   std::vector<std::vector<double>> m_rel_eff_eqn_covariance;
   
   /** The relative activities for each of the input nuclides. */
   std::vector<IsotopeRelativeActivity> m_rel_activities;
 
-  /** Covariance matrix of relative activities; same index ordering as \p m_rel_activities. 
+  /** The parameters fit by Ceres. */
+  std::vector<double> m_fit_parameters;
+
+  /** Covariance matrix of nonlinear parameters fit by Ceres.
    
+   If not empty, the first `m_rel_activities.size()` indices are the
+   relative activities, in the same index ordering as \p m_rel_activities. 
    But also see `m_activity_norms`, as you need to multiple the relative activities by these
    scale factors before using with this covariance matrix.
+   
+   If the equation form is `RelActCalc::RelEffEqnForm::PhysicalModel`, then the following
+   indeices are for the shielding parameters:
+   - {self-atten AN}
+   - {self-atten AD}
+   - {external-atten 0 AN} (if >=1 external attens specified)
+   - {external-atten 0 AD} (if >=1 external attens specified)
+   - {external-atten 1 AN} (if >=2 external attens specified)
+   - {external-atten 1 AD} (if >=2 external attens specified)
+   - ...
+   - {Modified Hoerl b}
+   - {Modified Hoerl c}
    */
-  std::vector<std::vector<double>> m_rel_act_covariance;
+  std::vector<std::vector<double>> m_nonlin_covariance;
 
   // TODO: we should probably save the full covariance matrix
   
+  /** The Jacobian matrix of the nonlinear parameters fit by Ceres.
+  
+  i.e, `m_nonlin_jacobian[k][i] = d residual[k] / d parameters[i]`
+  
+  To access the Jacobian for the k'th residual and i'th parameter, 
+  use `m_nonlin_jacobian[k][i]`.  The k-index cooresponds to the index 
+  of the peak in `m_input.peaks`.  The i-index cooresponds to the index 
+  of the parameter in `m_fit_parameters`.  You might want to think of it as
+  `m_nonlin_jacobian[peak][parameter]`.
+
+  Note: if the compile time option `USE_RESIDUAL_TO_BREAK_DEGENERACY` is true, 
+  then there will be one more residual than the number of peaks.
+  */
+  std::vector<std::vector<double>> m_nonlin_jacobian;
+
   /** The Chi2 summed over all peaks between their actual and fit relative efficiencies.
    
    Note that this always uses the peaks statistical uncertainties, and does not include
@@ -340,12 +530,14 @@ struct RelEffSolution
    */
   double m_chi2 = 0.0;
   
-  /** The number of degrees of freedom in the fit for equation parameters.
+  /** An estimate for the number of degrees of freedom in the fit for equation parameters.
    
    Note: right now just have as just the number of peaks used minus number of equation parameters fit for, minus one less than the
-   number of isotopes - probably off by one, or more - need to think on this and come back to it
+   number of isotopes - probably off by one, or more - need to think on this and come back to it.
+   
+   For Physical Model, this estimate is totally not valid, and can even be negative.
    */
-  size_t m_dof = 0;
+  int m_dof = 0;
   
   /** The number of evaluation calls it took L-M to reach a solution.
    Only useful for debugging and curiosity.
@@ -377,23 +569,27 @@ struct RelEffSolution
   
   /** Warnings about the setup or solution of the problem; by no means comprehensive of potential
    issues!
+   
+   Note: contents of `RelEffInput::prep_warnings` are copied into this variable.
    */
   std::vector<std::string> m_warnings;
   
-  /** The input peaks that were used to create the solution. */
-  std::vector<GenericPeakInfo> m_input_peak;
-  
-  /** Peaks with un-decay-corrected yields; useful only to note the effect of the decay correction.
-   
-   Only includes peaks that have at least one correction, and the only entries in
-   `GenericPeakInfo::m_source_gammas`, are the ones with corrections.
-   
-   Note: these are not filled out by `solve_relative_efficiency(...)`, like the rest of this struct,
-   but rather must be filled out after finding a solution.  Not super clean, but these are informational
-   only.
-   */
-  std::vector<GenericPeakInfo> m_input_peaks_before_decay_corr;
-  
+
+  /** A struct to hold the self attenuation shield fit results. 
+   * This is fine for simple accesses, but not if you need to take into account the correlations, which 
+   * you really should do a lot of the time.
+  */
+  struct PhysModelShieldFit
+  {
+    std::shared_ptr<const Material> m_material;
+    double m_areal_density = 0.0;
+    double m_areal_density_uncert = -1.0;
+    double m_atomic_number = 0.0;
+    double m_atomic_number_uncert = -1.0;
+  };//struct PhysModelShieldFit
+  std::unique_ptr<PhysModelShieldFit> m_phys_model_self_atten_shield;
+  std::vector<std::unique_ptr<PhysModelShieldFit>> m_phys_model_external_atten_shields;
+
   /////////////////////////////////////////////////////////////////////////////////////////////////
   //            Below here are member functions for simplified access to information             //
   /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -403,6 +599,17 @@ struct RelEffSolution
    Throws std::exception if an invalid nuclide.
    */
   size_t nuclide_index( const std::string &nuc ) const;
+
+  /** Walks the constraints to find the controlling nuclide for the specified nuclide.
+   * 
+   * @param iso_index The index of the nuclide to walk to the controlling nuclide of.
+   * @param multiple The multiple to multiply the activity by to get to the controlling nuclide.
+   * 
+   * @return True if a controlling nuclide was found, false otherwise.
+   * 
+   * \sa RelEffInput::act_ratio_constraints
+   */
+  bool walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const;
   
   /** The relative activity of a nuclide.
    
@@ -461,6 +668,12 @@ struct RelEffSolution
    */
   double mass_fraction( const std::string &iso, const double num_sigma ) const;
   
+  /** Returns a short parameter description.
+   
+   Same indexing as `m_fit_parameters`; throws exception if invalid index.
+   */
+  std::string parameter_name( const size_t par_num ) const;
+  
   /** Prints out a summary of the results to the provided stream; for development/debug. */
   std::ostream &print_summary( std::ostream &strm ) const;
   
@@ -495,24 +708,48 @@ struct RelEffSolution
    and "Activity Ratio".
    */
   void get_mass_ratio_table( std::ostream &strm ) const;
+  
+  /** Returns the value of the relative efficiency equation at the specified energy.
+   */
+  double rel_eff_eqn_value( const double energy ) const;
+
+  /** Returns the uncertainty of the relative efficiency equation at the specified energy.
+    
+     throws std::exception if covariances are not available, or there is another error.
+   */
+  double rel_eff_eqn_uncert( const double energy ) const;
+
+  /** Returns a JavaScript function that returns the uncertainty of the relative efficiency equation at the specified energy.
+   * 
+   * The function interpolates between values computed by the C++.
+   * 
+   * If couldnt evaluate the function, returns "null".
+   */
+  std::string rel_eff_eqn_js_uncert_fcn() const;
+
+
+  /** Returns the equation text.
+   
+   @param html_format Currently only applicable to Physical Model.
+   
+   This is a convenience wrapper over `RelActCalc::rel_eff_eqn_text(...)` and `RelActCalc::physical_model_rel_eff_eqn_text(...)`
+   */
+  std::string rel_eff_eqn_txt( const bool html_format ) const;
+  
+  /** A convenience wrapper over `RelActCalc::rel_eff_eqn_js_function(...)` and
+   `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
+   */
+  std::string rel_eff_eqn_js_function() const;
 };//struct RelEffSolution
+
 
 /** Solve for the relative efficiency equation and relative activities for all isotopes
  
- @param peak_infos The input peak information.
- Each peak must have at least one source isotope, have counts above zero, have counts
- uncertainty greater than zero (or equal to -1.0), and each isotope must have yields
- at each energy greater than 0.
- @param eqn_form The equation form to use; i.e., EqnForm::LnX, EqnForm::LnY, or EqnForm::LnXLn
- @param eqn_order The order of equation to be fit for.  i.e., the number of energy-dependent terms
- to be fit for (e.g., the total number of terms will be this plus one).
-
+ @param input The input peaks and options for the calculation.
  @returns The solution to the problem.  Make sure to check RelEffSolution::m_status,
           RelEffSolution::m_warnings, and RelEffSolution::m_error_message.
  */
-RelEffSolution solve_relative_efficiency( const std::vector<GenericPeakInfo> &peak_infos,
-                                         const RelActCalc::RelEffEqnForm eqn_form,
-                                         const size_t eqn_order );
+RelEffSolution solve_relative_efficiency( const RelEffInput &input );
 
 
 /** Functions in this namespace are for importing peak data from CSV files, and then matching
@@ -640,9 +877,8 @@ struct NucAndAge
         ages are assumed.
  @param energy_ranges The energy ranges of peaks to keep.  If empty, will not filter on this.
  @param isotopes The names of isotopes to potentially match up.
- @param energy_tolerance_fwhm The matching tolerance, in the peaks FWHM; all source gammas within
-        this energy range of the peak mean will be attributed to the peak.  A value of 0.57 will
-        include all gammas within 1.5 sigma of the mean.
+ @param energy_tolerance_sigma The matching tolerance, in the peaks sigma; all source gammas within
+        this energy range of the peak mean will be attributed to the peak.
  @param excluded_peak_energies Peaks to explicitly exclude from the analysis.
  @param measurement_duration The duration of the measurement; only used if correcting activities for decay during measurement.
         \sa `NucAndAge::decay_during_measurement`

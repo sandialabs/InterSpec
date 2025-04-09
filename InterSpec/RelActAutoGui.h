@@ -42,6 +42,7 @@ class RelEffChart;
 class PopupDivMenu;
 class PopupDivMenuItem;
 class RelActTxtResults;
+class RelEffShieldWidget;
 class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
 
@@ -75,6 +76,15 @@ namespace rapidxml
 class RelActAutoGui : public Wt::WContainerWidget
 {
 public:
+  enum class AddUncert : int
+  {
+    StatOnly, OnePercent, FivePercent, TenPercent, TwentyFivePercent,
+    FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
+  };//enum class AddUncert
+  
+  static const char *to_str( const AddUncert val );
+  
+public:
   RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
   
   ~RelActAutoGui();
@@ -99,6 +109,7 @@ public:
   void handleRelEffEqnFormChanged();
   void handleRelEffEqnOrderChanged();
   void handleFwhmFormChanged();
+  void handleFwhmEstimationMethodChanged();
   void handleFitEnergyCalChanged();
   void handleBackgroundSubtractChanged();
   void handleSameAgeChanged();
@@ -134,6 +145,8 @@ public:
   
   /** Called when free peaks are added, removed, or edited. */
   void handleFreePeakChange();
+  
+  void handleAdditionalUncertChanged();
   
   void setOptionsForNoSolution();
   void setOptionsForValidSolution();
@@ -199,6 +212,12 @@ protected:
   void handleShowRefLines( const bool show );
   void setPeaksToForeground();
   
+  void initPhysModelShields();
+  void handlePhysModelUseHoerlChange();
+  void handlePhysModelShieldChange();
+  void showAndHideOptionsForEqnType();
+  void handleDetectorChange();
+
   /** Calculation has been started. */
   Wt::Signal<> &calculationStarted();
   
@@ -273,13 +292,18 @@ protected:
    they can go back to it. The map index corresponds to the #m_preset index for the state.
    */
   std::map<int,std::unique_ptr<rapidxml::xml_document<char>>> m_previous_presets;
-  
+
+  /** The place to indicate errors in calculation, when calc is not successful. */
   Wt::WText *m_error_msg;
-  
+  /* The place to give a summary of the fit, so like "chi2 = 123", or "Chi2 = 123, Uranium Enrichment 23.2%" */
+  Wt::WText *m_fit_chi2_msg;
+
   Wt::WComboBox *m_rel_eff_eqn_form;
+  Wt::WLabel *m_rel_eff_eqn_order_label;
   Wt::WComboBox *m_rel_eff_eqn_order;
   
   Wt::WComboBox *m_fwhm_eqn_form;
+  Wt::WComboBox *m_fwhm_estimation_method;
   
   Wt::WCheckBox *m_fit_energy_cal;
   Wt::WCheckBox *m_background_subtract;
@@ -289,6 +313,14 @@ protected:
   Wt::WComboBox *m_pu_corr_method;
   
   Wt::WComboBox *m_skew_type;
+  
+  Wt::WComboBox *m_add_uncert;
+  
+  Wt::WContainerWidget *m_phys_model_opts;
+  Wt::WContainerWidget *m_phys_model_shields;
+  RelEffShieldWidget *m_phys_model_self_atten;
+  Wt::WContainerWidget *m_phys_ext_attens;
+  Wt::WCheckBox *m_phys_model_use_hoerl;
   
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;

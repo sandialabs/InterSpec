@@ -30,12 +30,15 @@
 #include <memory>
 #include <vector>
 #include <ostream>
+#include <optional>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
 
 
 // Forward declarations
 class DetectorPeakResponse;
+struct Material;
+class MaterialDB;
 
 namespace rapidxml
 {
@@ -45,6 +48,7 @@ namespace rapidxml
 namespace SpecUtils
 {
   class Measurement;
+  struct EnergyCalibration;
 }//namespace SpecUtils
 
 namespace SandiaDecay
@@ -57,6 +61,7 @@ namespace RelActCalc
   enum class PuCorrMethod : int;
   enum class RelEffEqnForm : int;
   struct Pu242ByCorrelationOutput;
+  struct PhysicalModelShieldInput;
 }//namespace RelActCalc
 
 
@@ -87,6 +92,9 @@ namespace RelActCalcAuto
 
 int run_test();
 
+/** A typdef for passing either Nuclide, Element, or Reaction to functions. */
+typedef std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> SrcVariant;
+  
 /** Struct to specify an energy range to consider for doing relative-efficiency/activity calc.
  */
 struct RoiRange
@@ -111,6 +119,10 @@ struct RoiRange
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const RoiRange &lhs, const RoiRange &rhs );
+#endif
 };//struct RoiRange
 
 
@@ -120,25 +132,74 @@ struct NucInputInfo
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
   
-  /** Age in units of PhysicalUnits (i.e., 1.0 == second).
+  const SandiaDecay::Element *element = nullptr;
+  const ReactionGamma::Reaction *reaction = nullptr;
+  
+  /** Age in units of PhysicalUnits (i.e., 1.0 == second), for the nuclide.
    
    If the age is being fit, this will be used as the initial age to start with.
    
-   Must not be negative.
+   Must not be negative if this is a nuclide, but must be zero or negative for element or reaction.
    */
   double age = -1.0;
   
-  
+  /** If nuclide age should be fit.  Must be false for x-ray or reaction. */
   bool fit_age = false;
   
-  /** Energy corresponding to SandiaDecay::EnergyRatePair::energy */
+  /** Minimum age to fit; if specified, must be zero or greater. 
+   
+   In units of PhysicalUnits (i.e., 1.0 == second).
+   
+   May not be specified if `fit_age` is false, or a x-ray or reaction.
+  */
+  std::optional<double> fit_age_min;
+  
+  /** Maximum age to fit; if specified, must be greater than #fit_age_min (if specified). 
+  
+   In units of PhysicalUnits (i.e., 1.0 == second).
+
+   May not be specified if `fit_age` is false, or a x-ray or reaction.
+  */
+  std::optional<double> fit_age_max;
+
+  /** Minimum relative activity to fit; if specified, must be zero or greater. 
+   
+   May not be specified if this nuclide is subject to a ActRatioConstraint (as the controlled nuclide).
+
+   Setting #min_rel_act equal to #max_rel_act will cause the fit to be constrained to that value (
+   and if #starting_rel_act is set, it must be exactly equal to that value).
+  */
+  std::optional<double> min_rel_act;
+  
+  /** Maximum relative activity to fit; if specified, must be greater than #min_rel_act (if specified). 
+   
+   May not be specified if this nuclide is subject to a ActRatioConstraint (as the controlled nuclide).
+
+   Setting #min_rel_act equal to #max_rel_act will cause the fit to be constrained to that value (
+   and if #starting_rel_act is set, it must be exactly equal to that value).
+  */
+  std::optional<double> max_rel_act;
+
+  /** Starting relative activity; if specified, must be zero or greater. 
+   
+   May not be specified if this nuclide is subject to a ActRatioConstraint (as the controlled nuclide).
+  */
+  std::optional<double> starting_rel_act;
+
+  /** Energy corresponding to SandiaDecay::EnergyRatePair::energy, or equivalent for x-ray or reactions. */
   std::vector<double> gammas_to_exclude;
   
   std::string peak_color_css;
   
+  const std::string name() const;
+
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const NucInputInfo &lhs, const NucInputInfo &rhs );
+#endif
 };//struct NucInputInfo
 
 
@@ -176,6 +237,10 @@ struct FloatingPeak
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const FloatingPeak &lhs, const FloatingPeak &rhs );
+#endif
 };//struct FloatingPeak
 
 
@@ -214,8 +279,16 @@ enum class FwhmForm : int
   Polynomial_3,
   Polynomial_4,
   Polynomial_5,
-  Polynomial_6
-};//enum ResolutionFnctForm
+  Polynomial_6,
+
+  /** Do not fit the FWHM equation - use the FWHM from the detector efficiency function.
+   
+   #Options::fwhm_estimation_method must be set to FwhmEstimationMethod::FixedToDetectorEfficiency,
+   and you must provide a DetectorPeakResponse, with FWHM information, to `RelActCalcAuto::solve(...)`.
+  */
+  NotApplicable
+};//enum FwhmForm
+
 
 /** Returns string representation of the #FwhmForm.
  String returned is a static string, so do not delete it.
@@ -228,10 +301,182 @@ const char *to_str( const FwhmForm form );
  */
 FwhmForm fwhm_form_from_str( const char *str );
 
+
+/** How the FWHM of peaks should be determined.
+ 
+ We could add in ability to specify parameters and the ranges they can vary over, but for now
+ we'll keep it simple - it isnt clear complicating things will actually be useful to users.
+ */
+enum class FwhmEstimationMethod : int
+{
+  /** Will use the FWHM of the DetectorPeakResponse, if available, or if not will fit the
+   peaks in the spectrum, and use the derived FWHM to start with, refining it in the non-linear
+   fit for the relative activities.
+   */
+  StartFromDetEffOrPeaksInSpectrum,
+
+  /** Use the FWHM equation fit from all peaks in the spectrum, 
+    but further refine this during the non-linear fit for the relative activities. 
+  */
+  StartingFromAllPeaksInSpectrum,
+  
+  /** Use the FWHM equation fit from all peaks in the spectrum, 
+    and do not further refine this during the non-linear fit for the relative activities. 
+   */
+  FixedToAllPeaksInSpectrum,
+
+  /** Use the detector efficiency function to estimate the FWHM,
+    but further refine this during the non-linear fit for the relative activities. 
+
+    Will throw exception if detector efficiency function does not have a FWHM
+   */
+  StartingFromDetectorEfficiency,
+  
+  /** Use the detector efficiency function to estimate the FWHM,
+    and do not further refine this during the non-linear fit for the relative activities. 
+
+    Options::fwhm_form
+   */
+  FixedToDetectorEfficiency
+};//enum FwhmEstimationMethod
+
+
+/** Returns string representation of the #FwhmEstimationMethod.
+ String returned is a static string, so do not delete it.
+ */
+const char *to_str( const FwhmEstimationMethod form );
+
+
+/** Converts from the string representation of #FwhmEstimationMethod to enumerated value.
+ 
+ Throws exception if invalid string (i.e., any string not returned by #to_str(FwhmEstimationMethod) ).
+ */
+FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str );
+
+
 /** Evaluates the FWHM equation for the input energy, returning the FWHM. */
 float eval_fwhm( const float energy, const FwhmForm form, const std::vector<float> &coeffs );
 
 size_t num_parameters( const FwhmForm eqn_form );
+
+
+struct RelEffCurveInput
+{
+  RelEffCurveInput();
+
+  /** The nuclides that apply to this relative efficiency curve.
+   * You may specify the same nuclide for multiple different RelEffCurveInput inputs,
+   * but becareful of degeneracies in the problem.
+   */
+  std::vector<NucInputInfo> nuclides;
+  
+  /** If true, all nuclides of a given element will be constrained to be the same age.
+   
+   If true, all #NucInputInfo::age of nuclides of the same element must be the same, or an exception
+   will be thrown (even if age is being fit, this is .
+   */
+  bool nucs_of_el_same_age;
+  
+  /** The functional form of the relative efficiency equation to use.
+   */
+  RelActCalc::RelEffEqnForm rel_eff_eqn_type;
+  
+  /** The number of energy dependent terms to use for the relative efficiency equation.  I.e., the
+   number of terms fit for will be one more than this value.
+   
+   Not used for `RelEffEqnForm::FramPhysicalModel`; see `phys_model_self_atten_an`
+   and `phys_model_ext_atten_an`
+   */
+  size_t rel_eff_eqn_order;
+
+  /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for self-attenuating sources.
+   
+   May be nullptr if physical model.
+   */
+  std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> phys_model_self_atten;
+  
+  /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for external attenuators. */
+  std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten;
+
+  /** If true, fit the modified Hoerl equation form for the physical model.
+   * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
+   *
+   * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+  */
+  bool phys_model_use_hoerl = true;
+
+  /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
+   Pu isotopics).
+   
+   When specified #RelActAutoSolution::m_corrected_pu will be filled-out (unless an error occurred
+   while doing the correction - which shouldnt really ever happen); this will then be used by the
+   #RelActAutoSolution::mass_enrichment_fraction function, and activity ratio function.
+   
+   Defaults to #PuCorrMethod::NotApplicable; if any other value is specified, and sufficient
+   plutonium isotopes for that method are not in the problem, then finding the solution will
+   fail.
+   */
+  RelActCalc::PuCorrMethod pu242_correlation_method;
+
+  /** A constraint on the activity of a nuclide, relative to another nuclide. */
+  struct ActRatioConstraint
+  {
+    const SandiaDecay::Nuclide *controlling_nuclide = nullptr;
+    const SandiaDecay::Nuclide *constrained_nuclide = nullptr;
+    double constrained_to_controlled_activity_ratio = 0.0;
+    
+    static ActRatioConstraint from_mass_ratio( const SandiaDecay::Nuclide *constrained, 
+                                              const SandiaDecay::Nuclide *controlling, 
+                                            const double mass_ratio_constrained_to_controlling );
+
+    // TODO: add ability to specify an uncertainty.
+    //double constrained_to_controlled_activity_ratio_uncertainty = 0.0;
+
+  static const int sm_xmlSerializationVersion = 0;
+  void toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *constraint_node );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const ActRatioConstraint &lhs, const ActRatioConstraint &rhs );
+#endif
+  };//struct ActRatioConstraint
+
+  /** Constraints on nuclide activities. 
+    
+    All input nuclides must be valid, and be found in `nuclides`.
+
+    The constrained nuclides must not be cyclical; e.g., if Nuc1 is constrained to Nuc2, 
+    then there can not be a constraint that Nuc2 is constrained to Nuc1.
+  */
+  std::vector<ActRatioConstraint> act_ratio_constraints;
+
+  /** Checks that the nuclide constraints are valid.
+
+   Checks for cyclical constraints, and that all constrained nuclides are found in #nuclides.
+   
+   Throws an exception if they are not valid.
+   */
+  void check_nuclide_constraints() const; 
+
+  // TODO: add a element mass fraction constraint.  Accepts just a single element, and a mass fraction - for that one element.
+  //       Will require adding some logic to `RelActAutoCostFcn::relative_activity(...)` to handle this.
+
+  static const int sm_xmlSerializationVersion = 0;
+
+  /** Puts this object to XML
+   * 
+   * @param parent The parent node to add this object to.
+   * @param into_parent_node If true, this objects fields will be added to the parent node, otherwise a new node will be created.
+   * @returns The node the fields were written into (so the added node, or the parent node passed in).
+   */
+  rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
+  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const RelEffCurveInput &lhs, const RelEffCurveInput &rhs );
+#endif
+};//struct RelEffCurveInput
+
 
 
 struct Options
@@ -249,42 +494,16 @@ struct Options
    */
   bool fit_energy_cal;
   
-  /** If true, all nuclides of a given element will be constrained to be the same age.
-   
-   If true, all #NucInputInfo::age of nuclides of the same element must be the same, or an exception
-   will be thrown (even if age is being fit, this is .
-   */
-  bool nucs_of_el_same_age;
-  
-  /** The functional form of the relative efficiency equation to use.
-   */
-  RelActCalc::RelEffEqnForm rel_eff_eqn_type;
-  
-  /** The number of energy dependent terms to use for the relative efficiency equation.  I.e., the
-   number of terms fit for will be one more than this value.
-   */
-  size_t rel_eff_eqn_order;
-  
   /** The functional form of the FWHM equation to use.  The coefficients of this equation will
    be fit for across all energy ranges.
    */
   FwhmForm fwhm_form;
   
+  /** How the FWHM of peaks should be determined. */
+  FwhmEstimationMethod fwhm_estimation_method;
+
   /** Optional title of the spectrum; used as title in HTML and text summaries. */
   std::string spectrum_title;
-  
-  /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
-   Pu isotopics).
-   
-   When specified #RelActAutoSolution::m_corrected_pu will be filled-out (unless an error occurred
-   while doing the correction - which shouldnt really ever happen); this will then be used by the
-   #RelActAutoSolution::mass_enrichment_fraction function, and activity ratio function.
-   
-   Defaults to #PuCorrMethod::NotApplicable; if any other value is specified, and sufficient
-   plutonium isotopes for that method are not in the problem, then finding the solution will
-   fail.
-   */
-  RelActCalc::PuCorrMethod pu242_correlation_method;
   
   
   /** Peak skew to apply to the entire spectrum.
@@ -296,24 +515,97 @@ struct Options
    */
   PeakDef::SkewType skew_type;
   
-  static const int sm_xmlSerializationVersion = 0;
+  /** An additional uncertainty applied to each roughly independent peak.
+   * 
+   * Contributing gammas are clustered into roughly independent peaks based on their energy and the 
+   * initially estimated FWHM from the spectrum.  Then for each clustered energy range, the gammas 
+   * within that range are allowed to vary in amplitude, with the deviation from nominally predicted
+   * amplitude punished according to this uncertanty.
+   * 
+   * Its not perfect, but its something.
+   */
+  double additional_br_uncert;
+  
+
+  /** The relative efficiency curves to use.
+   */
+  std::vector<RelActCalcAuto::RelEffCurveInput> rel_eff_curves;
+
+
+  std::vector<RelActCalcAuto::RoiRange> rois;
+
+
+  std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
+
+
+  /** If true, use the same Hoerl equation form for all relative efficiency curves.
+   *
+   * If false, each relative efficiency curve will have its own Hoerl equation fit (if applicable).
+   * 
+   * if true, and you do not have multiple physical models with `RelEffCurveInput::phys_model_use_hoerl`
+   * set to true, then an exception will be thrown.
+   */
+  bool same_hoerl_for_all_rel_eff_curves = false;
+
+  /** If true, use the same external shielding for all relative efficiency curves.
+   *
+   * If true, you must have multiple physical models defined, each with the same 
+   * external shielding defined for each relative efficiency curve - or an exception 
+   * will be thrown.
+   * 
+   * If the initial starting solution for the AutoRelEff curve is to be determined using
+   * the ManualRelEff method, then the first RelEffCurveInput estimate will be what is 
+   * used.
+   */
+  bool same_external_shielding_for_all_rel_eff_curves = false;
+
+  /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
+   * this will check that the specifications are consistent.
+   *
+   * Throws an exception if they are not consistent.
+   */
+  void check_same_hoerl_and_external_shielding_specifications() const;
+
+  /** Version history:
+   - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
+   - 20250130: incremented to 2 to handle multiple rel eff curves; can read backward compatible, but not write.
+   */
+  static const int sm_xmlSerializationVersion = 2;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
-  void fromXml( const ::rapidxml::xml_node<char> *parent );
+  
+  /** Sets the member variables from an XML element created by `toXml(...)`.
+   @param parent An XML element with name "Options".
+   @param materialDB The material database to use to retrieve a material from for the #PhysicalModelShieldInput;
+          for other equation types, or for AN/AD defined shields, this isnt used/required.
+          `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
+          were also added, and are optional.
+   */
+  void fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const Options &lhs, const Options &rhs );
+#endif
 };//struct Options
 
 
 struct NuclideRelAct
 {
-  const SandiaDecay::Nuclide *nuclide;
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  const SandiaDecay::Element *element = nullptr;
+  const ReactionGamma::Reaction *reaction = nullptr;
   
-  double age;
-  double age_uncertainty;
-  bool age_was_fit;
+  std::string name() const;
+
+  double age = -1.0;
+  double age_uncertainty = -1.0;
+  bool age_was_fit = false;
   
-  double rel_activity;
-  double rel_activity_uncertainty;
+  double rel_activity = -1.0;
+  double rel_activity_uncertainty = -1.0;
   
-  /** The energy and its respective number of gammas per decay for this nuclide, at its age. */
+  /** The energy and its respective number of gammas per decay for this nuclide, at its age. 
+   Note: this has not had the branching ratio uncertainty correction applied (if they were fit for).
+  */
   std::vector<std::pair<double,double>> gamma_energy_br;
 };//struct NuclideRelAc
 
@@ -328,6 +620,32 @@ struct FloatingPeakResult
 };//struct FloatingPeakResult
 
 
+/** This struct hold the `RelActAutoGui` state, but is defined here because we may want to use the XML
+ from the GUI for batch processing, or whatever.
+*/
+struct RelActAutoGuiState
+{
+  RelActAutoGuiState();
+  
+  RelActCalcAuto::Options options;
+  
+    
+  bool background_subtract;
+  
+  bool show_ref_lines;
+  double lower_display_energy;
+  double upper_display_energy;
+  
+  /** Returns XML node added; i.e., will have name "RelActCalcAuto" */
+  ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent ) const;
+  void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const RelActAutoGuiState &lhs, const RelActAutoGuiState &rhs );
+#endif
+};//struct RelActAutoGuiState
+  
+  
 struct RelActAutoSolution
 {
   RelActAutoSolution();
@@ -340,7 +658,10 @@ struct RelActAutoSolution
    
    Note: currently this code largely duplicates #RelEffChart::setData, so need to refactor.
    */
-  void rel_eff_json_data( std::ostream &json, std::ostream &css ) const;
+  void rel_eff_json_data( std::ostream &json, std::ostream &css, const size_t rel_eff_index ) const;
+  
+  /** Prints the txt version of relative eff eqn. */
+  std::string rel_eff_txt( const bool html_format, const size_t rel_eff_index ) const;
   
   /** Returns the fractional amount of an element (by mass), the nuclide composes.
    
@@ -354,7 +675,7 @@ struct RelActAutoSolution
    
    TODO: add uncertainty, via returning pair<double,double>
    */
-  double mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide ) const;
+  double mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
   
   /** Returns the mass ratio of two nuclides.
    
@@ -362,18 +683,66 @@ struct RelActAutoSolution
    
    TODO: add uncertainty, via returning pair<double,double>
    */
-  double mass_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator ) const;
+  double mass_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator, const size_t rel_eff_index ) const;
   
+
+  const NuclideRelAct &nucinfo( const SrcVariant src, const size_t rel_eff_index ) const;
+  
+
   /** Returns the activity ratio of two nuclides.
    
    Throws exception if either input \c nuclide is nullptr, or was not in the problem.
    
    TODO: add uncertainty, via returning pair<double,double>
    */
-  double activity_ratio( const SandiaDecay::Nuclide *numerator, const SandiaDecay::Nuclide *denominator ) const;
+  double activity_ratio( const SrcVariant &numerator, const SrcVariant &denominator, const size_t rel_eff_index ) const;
+
+  double activity_ratio( const NuclideRelAct &numerator, const NuclideRelAct &denominator, const size_t rel_eff_index ) const;
   
-  /** Get the index of specified nuclide within #m_rel_activities and #m_rel_act_covariance. */
-  size_t nuclide_index( const SandiaDecay::Nuclide *nuclide ) const;
+  /** Returns the relative activity of a nuclide.
+  
+  Please note that the interpretation of this value is a little tortured, as it depends on the relative efficiency curve.
+
+  Throws exception if \c nuclide is nullptr, or was not in the problem.
+  
+  TODO: add uncertainty, via returning pair<double,double>
+  */
+  double rel_activity( const SrcVariant &src, const size_t rel_eff_index ) const;
+
+  double rel_activity( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
+
+  /** Returns the counts in all peaks for a source in the relative efficency curve.
+
+  Note: it actually returns the sum of peak amplitudes, for all gammas within `m_final_roi_ranges`.
+
+  Throws exception if \c nuclide is nullptr, or was not in the problem, or any counts were inf or NaN.
+  */
+  double nuclide_counts( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
+
+  /** A convience function for calling the above for a specific nuclide. */
+  double nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const;
+
+  /**  Gives the relative efficiency for a given energy. 
+  */
+  double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
+
+  /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
+  size_t nuclide_index( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
+
+  size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
+  
+  /** Returns result of `RelActCalc::rel_eff_eqn_js_function(...)` or
+   `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
+   */
+  std::string rel_eff_eqn_js_function( const size_t rel_eff_index ) const;
+  
+  /** Returns the updated energy calibration.
+   
+   Note: You could instead call `m_spectrum->energy_calibration()` to avoid computing from scratch.
+   
+   Will throw exception if runs into any issues.
+   */
+  std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const;
   
   enum class Status : int
   {
@@ -393,7 +762,26 @@ struct RelActAutoSolution
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
+  /** The final fit parameters. */
   std::vector<double> m_final_parameters;
+  
+  /** The uncertainties on the final fit parameters; the sqrt of covariance matrix diagonal.
+   Will be empty if covariance matrix failed to compute; otherwise same ordering as
+   `m_final_parameters`.
+   */
+  std::vector<double> m_final_uncertainties;
+  
+  /** The covariance matrix of the fit.
+ 
+   Will be empty if computation of the covariance failed.
+   the rows/columns have same size and ordering as `m_final_parameters`.
+   */
+  std::vector<std::vector<double>> m_covariance;
+
+  /** The short names of the parameters. */
+  std::vector<std::string> m_parameter_names;
+
+  std::vector<bool> m_parameter_were_fit;
   
   /** This is a spectrum that will be background subtracted and energy calibrated, if those options
    where wanted.
@@ -408,17 +796,33 @@ struct RelActAutoSolution
    */
   std::vector<std::shared_ptr<const PeakDef>> m_spectrum_peaks;
   
-  RelActCalc::RelEffEqnForm m_rel_eff_form;
+  std::vector<RelActCalc::RelEffEqnForm> m_rel_eff_forms;
   
-  std::vector<double> m_rel_eff_coefficients;
-  std::vector<std::vector<double>> m_rel_eff_covariance;
+  /** The coefficients for the relative efficiency curve(s)
+   * 
+   * If Hoerl or external shieldings were shared between Physical Model curves, then the
+   * coefficents fit for these values will be copied from the first physical model curve
+   * to all the others.
+   */
+  std::vector<std::vector<double>> m_rel_eff_coefficients;
+
+  /** The covariance matrix of the relative efficiency curve(s)
+   * 
+   * If Hoerl or external shieldings were shared between Physical Model curves, then the
+   * covariance matrix entries these values will NOT have been copied from the first 
+   * physical model curve to all the others - since I dont think this makes sense.
+   */
+  std::vector<std::vector<std::vector<double>>> m_rel_eff_covariance;
   
   /** The relative activities of each of the input nuclides.
    
    If a Pu242 correlation method was specified in #Options::pu242_correlation_method, then Pu242
    will NOT be in this variable, see #m_corrected_pu.
+
+   Note: the gamma yields are nominal for the activity/age, and have not had the branching ratio
+   uncertainty correction applied (if they were fit for).
    */
-  std::vector<NuclideRelAct> m_rel_activities;
+  std::vector<std::vector<NuclideRelAct>> m_rel_activities;
   
   std::vector<std::vector<double>> m_rel_act_covariance;
   
@@ -428,24 +832,47 @@ struct RelActAutoSolution
   
   std::vector<FloatingPeakResult> m_floating_peaks;
   
+  /** The fit peaks.
+   
+   If energy calibration fitting was selected, these peaks will have been adjusted back to "true" energy.
+   
+   You would use these peaks for `m_spectrum`.
+   */
   std::vector<PeakDef> m_fit_peaks;
   
-  std::vector<RoiRange> m_input_roi_ranges;
+  /** The fit peaks, in the energy calibration of the spectrum (i.e., what you would display,
+   if you are not updating the displayed spectrum for the adjusted energy cal).
+   
+   You would use these peaks for `m_foreground`.
+   */
+  std::vector<PeakDef> m_fit_peaks_in_spectrums_cal;
   
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
    be assessed based on peak localities and expected counts; this variable holds the ROI
    ranges that were assessed and used to compute final answer.
    If all input RoiRanges had #RoiRange::force_full_range as true, and computation was
-   successful then this variable will be equal to #m_input_roi_ranges.
+   successful then this variable will be equal to #m_options.rois.
    If computation is not successful, this variable may, or may not, be empty.
+
+   Note: these ROIs are in true energy, not the energy of the spectrum.
    */
   std::vector<RoiRange> m_final_roi_ranges;
+
+  /** These ROIs are in the energy of the spectrum. */
+  std::vector<RoiRange> m_final_roi_ranges_in_spectrum_cal;
   
   
   /** This DRF will be the input DRF you passed in, if it was valid and had energy resolution info.
-   Otherwise, this will be a "FLAT" DRF with a rough energy resolution function fit from the
-   foreground spectrum; in this case, it may be useful to re-use the DRF on subsequent calls to
-   avoid the overhead of searching for all the peaks and such.
+     
+   If you passed in a valid DRF, but no energy resolution info, this DRF will have
+   the resolution info added.
+   
+   If you didnt pass in a valid detector, then this will be a generic detector, with rough
+   energy resolution derived from the spectrum, or at least the best we could do, before
+   the fit.
+   
+   It may be useful to re-use the DRF on subsequent calls to  avoid the overhead of searching
+   for all the peaks and such (although this isnt a garuntee this wont need to be done).
    */
   std::shared_ptr<const DetectorPeakResponse> m_drf;
   
@@ -456,11 +883,67 @@ struct RelActAutoSolution
    Note: this is a shared ptr just to avoid creating a copy constructor that would be needed
          if we make it a unique ptr...
    */
-  std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> m_corrected_pu;
+  std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput>> m_corrected_pu;
   
-  double m_energy_cal_adjustments[2];
-  bool m_fit_energy_cal[2];
+  /** We will allow corrections to the first following number of energy calibration coefficients.
+ 
+   Implemented for values of 2 or 3; lower channel energy calibration will only ever use up to 2.
+   */
+  constexpr static size_t sm_num_energy_cal_pars = 2;
   
+  /** It seems parameters centered around zero maybe don't work quite as well, we'll center the energy calibration
+   parameters at 1, and allow to vary between 0 and 2.
+   */
+  constexpr static double sm_energy_par_offset = 1.0;
+  
+  /** We will allow the energy offset to vary by +-55 keV. This is arbitrarily chosen. */
+  constexpr static double sm_energy_offset_range_keV = 15.0;  // Allow +-15 keV offset adjust
+  
+  /** We will allow the energy gain to vary by +-20 keV, at the right side of the spectrum.
+   This is arbitrarily chosen, and non ideal, because it doesnt account for different energy ranges of the spectrum (e.g., a 400 keV
+   spectrum can get a lot larger of a relative adjust, than a 8 MeV spectrum).
+   */
+  constexpr static double sm_energy_gain_range_keV   = 20.0; // Allow 20 keV energy range gain adjust
+  
+  /** If `sm_num_energy_cal_pars == 3` we will allow up to 5 keV adjustment to quadratic energy range, at the right-hand
+   side of the spectrum.
+   */
+  constexpr static double sm_energy_quad_range_keV   = 10.0;  // Allow 10 keV energy range quad correction
+  
+  /** With numeric differentiation, we run into an issue where the initial small delta use (e.x. 1.0E-6 of parameter value)
+   isnt quite enough to actually have a change (and might even get lost in float precision of energy cal pars) - so we will "fix" this by
+   multiplying the change of the value away from `sm_energy_par_offset`, by a multiple like 100, so this way the parameter will
+   actually fit.
+   We then adjust the limits of the parameter (`sm_energy_offset_range_keV` and `sm_energy_gain_range_keV`) to take
+   this into account, so the gain parameter will go between 0.8 and 1.2, for +- 20 keV effect on the spectrum
+   */
+  constexpr static double sm_energy_cal_multiple    = 100.0;
+  
+  /** The fit energy calibration adjustments.
+   
+   To get the effect, in keV to the spectrum (e.g., on right-hand side of spectrum), you would do:
+     `(m_energy_cal_adjustments[i]/sm_energy_par_offset - 1)*sm_energy_cal_multiple`
+   */
+  std::array<double,sm_num_energy_cal_pars> m_energy_cal_adjustments;
+  
+  /** Whether each energy cal parameter was fit.
+   Which parameters are fit are subject to number and energy range of ROIs.
+   */
+  std::array<bool,sm_num_energy_cal_pars> m_fit_energy_cal;
+  
+  /** The index of the first parameter that will be used to adjust the peak amplitude. 
+   
+   Will be valid only if `m_options.additional_br_uncert > 0.0`.
+  */
+  size_t m_add_br_uncert_start_index = std::numeric_limits<size_t>::max();
+  
+  /** The energy ranges cooresponding to the additional peak amplitude uncertainty paramaters.
+   
+   Will only be valid/filled-out if `m_options.additional_br_uncert > 0.0`.
+   
+   \sa m_add_br_uncert_start_index
+   */
+  std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
   
   /** */
   double m_chi2;
@@ -471,6 +954,35 @@ struct RelActAutoSolution
    */
   size_t m_dof;
   
+  /** A struct to hold information about the Physical Model result of the fit. */
+  struct PhysicalModelFitInfo
+  {
+    /** Info on an individual shielding. */
+    struct ShieldInfo
+    {
+      std::shared_ptr<const Material> material;
+      std::optional<double> atomic_number;        /// Will not be present if material
+      std::optional<double> atomic_number_uncert; /// Only present if not a material, and AN was fit; sqrt of diagonal of covariance matrix
+      bool atomic_number_was_fit;                 /// If AN was fit
+      double areal_density;                       /// In PhysicalUnits units
+      std::optional<double> areal_density_uncert; /// Only present if AD was fit; sqrt of diagonal of covariance matrix
+      bool areal_density_was_fit;                 /// If AD was fit
+    };//struct ShieldInfo
+    
+    /** Self attenuator info will only be present if was input into fit. */
+    std::optional<ShieldInfo> self_atten;
+    std::vector<ShieldInfo> ext_shields;
+    
+    // Modified Hoerl corrections only present if fitting the Hoerl function was selected
+    //  Uncertainties are just sqrt of covariance diagnal
+    std::optional<double> hoerl_b, hoerl_b_uncert;
+    std::optional<double> hoerl_c, hoerl_c_uncert;
+  };//struct PhysicalModelFitInfo
+  
+  
+  std::vector<std::optional<PhysicalModelFitInfo>> m_phys_model_results;
+  
+  
   /** The number of evaluation calls it took L-M to reach a solution.
    Only useful for debugging and curiosity.
    */
@@ -479,8 +991,13 @@ struct RelActAutoSolution
   /** The number of evaluation calls it took to reach a solution, and compute final covariance. */
   int m_num_function_eval_total;
   
+  /** This is the total time spent solving the problem. */
   int m_num_microseconds_eval;
+  
+  /** This is the total time spent in the `eval(...)` function. */
+  int m_num_microseconds_in_eval;
 };//struct RelEffSolution
+
 
 /**
  
@@ -488,9 +1005,6 @@ struct RelActAutoSolution
         equation (e.g., one more parameter than this will be fit for).
  */
 RelActAutoSolution solve( const Options options,
-                         const std::vector<RoiRange> energy_ranges,
-                         const std::vector<NucInputInfo> nuclides,
-                         const std::vector<FloatingPeak> extra_peaks,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,
                          std::shared_ptr<const SpecUtils::Measurement> background,
                          std::shared_ptr<const DetectorPeakResponse> drf,

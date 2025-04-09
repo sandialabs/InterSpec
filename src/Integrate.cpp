@@ -58,7 +58,10 @@ void CuhreIntegrate( const int ndim,
   
   const int ncomp = 1;
   Cuhre( ndim, ncomp, integrand, userdata,
-         epsrel, epsabs, flags, mineval, maxeval, key,
+         epsrel, epsabs, flags,
+        static_cast<int>(mineval),
+        static_cast<int>(maxeval),
+        key,
          &pnregions, &pneval, &pfail,
          &integral, &error, &prob );
 }//CuhreIntegrate(...)

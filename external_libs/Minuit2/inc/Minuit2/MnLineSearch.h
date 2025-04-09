@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnLineSearch.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -14,22 +14,18 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MnFcn;
 class MinimumParameters;
 class MnMachinePrecision;
 class MnParabolaPoint;
 
+/**
 
-
-
-/** 
-
-Implements a 1-dimensional minimization along a given direction 
-(i.e. quadratic interpolation) It is independent of the algorithm 
-that generates the direction vector. It brackets the 1-dimensional 
+Implements a 1-dimensional minimization along a given direction
+(i.e. quadratic interpolation) It is independent of the algorithm
+that generates the direction vector. It brackets the 1-dimensional
 Minimum and iterates to approach the real Minimum of the n-dimensional
 function.
 
@@ -41,31 +37,29 @@ and Lorenzo Moneta
 
 */
 
-
-
-
-class MnLineSearch  {
+class MnLineSearch {
 
 public:
+   MnLineSearch() {}
 
-  MnLineSearch() {}
+   ~MnLineSearch() {}
 
-  ~MnLineSearch() {}
-
-  MnParabolaPoint operator()(const MnFcn&, const MinimumParameters&, const MnAlgebraicVector&, double, const MnMachinePrecision&, bool debug = false) const;
+   MnParabolaPoint operator()(const MnFcn &, const MinimumParameters &, const MnAlgebraicVector &, double,
+                              const MnMachinePrecision &) const;
 
 #ifdef USE_OTHER_LS
-  MnParabolaPoint CubicSearch(const MnFcn&, const MinimumParameters&, const MnAlgebraicVector&, double, double, const MnMachinePrecision&, bool debug = false) const;
+   MnParabolaPoint CubicSearch(const MnFcn &, const MinimumParameters &, const MnAlgebraicVector &, double, double,
+                               const MnMachinePrecision &) const;
 
-  MnParabolaPoint BrentSearch(const MnFcn&, const MinimumParameters&, const MnAlgebraicVector&, double, double, const MnMachinePrecision&, bool debug = false) const;
+   MnParabolaPoint BrentSearch(const MnFcn &, const MinimumParameters &, const MnAlgebraicVector &, double, double,
+                               const MnMachinePrecision &) const;
 #endif
 
 private:
-
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnLineSearch
+#endif // ROOT_Minuit2_MnLineSearch

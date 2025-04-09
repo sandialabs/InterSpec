@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: SimplexBuilder.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -10,14 +10,11 @@
 #ifndef ROOT_Minuit2_SimplexBuilder
 #define ROOT_Minuit2_SimplexBuilder
 
-#ifndef ROOT_Minuit2_MinimumBuilder
 #include "Minuit2/MinimumBuilder.h"
-#endif
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class FunctionMinimum;
 class MnFcn;
@@ -30,19 +27,18 @@ class MinimumSeed;
 class SimplexBuilder : public MinimumBuilder {
 
 public:
+   SimplexBuilder() {}
 
-  SimplexBuilder() {}
+   ~SimplexBuilder() override {}
 
-  ~SimplexBuilder() {}
-
-  virtual FunctionMinimum Minimum(const MnFcn&, const GradientCalculator&, const MinimumSeed&, const MnStrategy&, unsigned int, double) const;
+   FunctionMinimum Minimum(const MnFcn &, const GradientCalculator &, const MinimumSeed &, const MnStrategy &,
+                                   unsigned int, double) const override;
 
 private:
-
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_SimplexBuilder
+#endif // ROOT_Minuit2_SimplexBuilder

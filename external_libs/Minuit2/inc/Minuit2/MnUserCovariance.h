@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnUserCovariance.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -10,83 +10,79 @@
 #ifndef ROOT_Minuit2_MnUserCovariance
 #define ROOT_Minuit2_MnUserCovariance
 
-#ifndef ROOT_Minuit2_MnConfig
 #include "Minuit2/MnConfig.h"
-#endif
+
+#include <ROOT/RSpan.hxx>
+
 #include <vector>
 #include <cassert>
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 /**
-   Class containing the covariance matrix data represented as a vector of 
+   Class containing the covariance matrix data represented as a vector of
    size n*(n+1)/2
    Used to hide internal matrix representation to user
  */
 class MnUserCovariance {
 
 public:
+   MnUserCovariance() = default;
 
-  MnUserCovariance() : fData(std::vector<double>()), fNRow(0) {}
+   // safe constructor using std::vector
+   MnUserCovariance(std::span<const double> data, unsigned int nrow) : fData(data.begin(), data.end()), fNRow(nrow)
+   {
+      assert(data.size() == nrow * (nrow + 1) / 2);
+   }
 
-  MnUserCovariance(const std::vector<double>& data, unsigned int nrow) :
-    fData(data), fNRow(nrow) {
-    assert(data.size() == nrow*(nrow+1)/2);
-  }
+   // unsafe constructor using just a pointer
+   MnUserCovariance(const double *data, unsigned int nrow)
+      : fData(std::vector<double>(data, data + nrow * (nrow + 1) / 2)), fNRow(nrow)
+   {
+   }
 
-  MnUserCovariance(unsigned int n) : 
-    fData(std::vector<double>(n*(n+1)/2, 0.)), fNRow(n) {}
+   MnUserCovariance(unsigned int n) : fData(std::vector<double>(n * (n + 1) / 2, 0.)), fNRow(n) {}
 
-  ~MnUserCovariance() {}
+   double operator()(unsigned int row, unsigned int col) const
+   {
+      assert(row < fNRow && col < fNRow);
+      if (row > col)
+         return fData[col + row * (row + 1) / 2];
+      else
+         return fData[row + col * (col + 1) / 2];
+   }
 
-  MnUserCovariance(const MnUserCovariance& cov) : fData(cov.fData), fNRow(cov.fNRow) {}
+   double &operator()(unsigned int row, unsigned int col)
+   {
+      assert(row < fNRow && col < fNRow);
+      if (row > col)
+         return fData[col + row * (row + 1) / 2];
+      else
+         return fData[row + col * (col + 1) / 2];
+   }
 
-  MnUserCovariance& operator=(const MnUserCovariance& cov) {
-    fData = cov.fData;
-    fNRow = cov.fNRow;
-    return *this;
-  }
+   void Scale(double f)
+   {
+      for (unsigned int i = 0; i < fData.size(); i++)
+         fData[i] *= f;
+   }
 
-  double operator()(unsigned int row, unsigned int col) const {
-    assert(row < fNRow && col < fNRow);
-    if(row > col) 
-      return fData[col+row*(row+1)/2];
-    else
-      return fData[row+col*(col+1)/2];
-  }
+   const std::vector<double> &Data() const { return fData; }
 
-  double& operator()(unsigned int row, unsigned int col) {
-    assert(row < fNRow && col < fNRow);
-    if(row > col) 
-      return fData[col+row*(row+1)/2];
-    else
-      return fData[row+col*(col+1)/2];
-  }
+   unsigned int Nrow() const { return fNRow; }
 
-  void Scale(double f) {
-    for(unsigned int i = 0; i < fData.size(); i++) fData[i] *= f;
-  }
-
-  const std::vector<double>& Data() const {return fData;}
-
-  unsigned int Nrow() const {return fNRow;}
-
-// VC 7.1 warning: conversion from size_t to unsigned int
-  unsigned int size() const 
-  { return static_cast < unsigned int > ( fData.size() );
-  }
+   // VC 7.1 warning: conversion from size_t to unsigned int
+   unsigned int size() const { return static_cast<unsigned int>(fData.size()); }
 
 private:
-
-  std::vector<double> fData;
-  unsigned int fNRow;
+   std::vector<double> fData;
+   unsigned int fNRow = 0;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnUserCovariance
+#endif // ROOT_Minuit2_MnUserCovariance

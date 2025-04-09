@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnTiny.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -12,28 +12,25 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MnTiny {
-  
+
 public:
-  
-  MnTiny() : fOne(1.) {}
-  
-  ~MnTiny() {}
-  
-  double One() const;
-  
-  double operator()(double epsp1) const;
-  
+   MnTiny() : fOne(1.) {}
+
+   ~MnTiny() {}
+
+   double One() const;
+
+   double operator()(double epsp1) const;
+
 private:
-  
-  double fOne;
+   double fOne;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnTiny
+#endif // ROOT_Minuit2_MnTiny

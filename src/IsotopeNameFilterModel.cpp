@@ -527,6 +527,9 @@ void IsotopeNameFilterModel::suggestNuclides(
   
   for( const SandiaDecay::Element *el : candidate_elements )
   {
+    if( el->xrays.empty() )
+      continue;
+    
     bool is_exact_element = false;
     if( numericstrs.empty() )
     {

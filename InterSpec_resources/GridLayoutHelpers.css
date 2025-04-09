@@ -68,6 +68,11 @@
   grid-column-start: 10;
 }
 
+.GridEleventhCol
+{
+  grid-column-start: 11;
+}
+
 
 .GridFirstRow
 {
@@ -142,6 +147,11 @@
 .GridSpanTwoRows
 {
   grid-row-end: span 2;
+}
+
+.GridSpanThreeRows
+{
+  grid-row-end: span 3;
 }
 
 

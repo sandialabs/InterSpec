@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: SimplexMinimizer.h 21530 2007-12-20 11:14:35Z moneta $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -15,11 +15,9 @@
 #include "Minuit2/SimplexBuilder.h"
 #include "Minuit2/SimplexSeedGenerator.h"
 
-#include <vector>
-
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
 //_____________________________________________________________
 /**
@@ -30,23 +28,21 @@ namespace ROOT {
 class SimplexMinimizer : public ModularFunctionMinimizer {
 
 public:
+   SimplexMinimizer() : fSeedGenerator(SimplexSeedGenerator()), fBuilder(SimplexBuilder()) {}
 
-   SimplexMinimizer() : fSeedGenerator(SimplexSeedGenerator()), 
-                        fBuilder(SimplexBuilder()) {}
+   ~SimplexMinimizer() override {}
 
-   ~SimplexMinimizer() {}
-
-   const MinimumSeedGenerator& SeedGenerator() const {return fSeedGenerator;}
-   const MinimumBuilder& Builder() const {return fBuilder;}
+   const MinimumSeedGenerator &SeedGenerator() const override { return fSeedGenerator; }
+   const MinimumBuilder &Builder() const override { return fBuilder; }
+   MinimumBuilder &Builder() override { return fBuilder; }
 
 private:
-
    SimplexSeedGenerator fSeedGenerator;
    SimplexBuilder fBuilder;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_SimplexMinimizer
+#endif // ROOT_Minuit2_SimplexMinimizer

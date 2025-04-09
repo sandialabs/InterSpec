@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnSeedGenerator.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -14,8 +14,7 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 /** concrete implementation of the MinimumSeedGenerator interface; used within
     ModularFunctionMinimizer;
@@ -24,21 +23,21 @@ namespace ROOT {
 class MnSeedGenerator : public MinimumSeedGenerator {
 
 public:
+   MnSeedGenerator() {}
 
-  MnSeedGenerator() {}
+   ~MnSeedGenerator() override {}
 
-  virtual ~MnSeedGenerator() {}
+   MinimumSeed
+   operator()(const MnFcn &, const GradientCalculator &, const MnUserParameterState &, const MnStrategy &) const override;
 
-  virtual MinimumSeed operator()(const MnFcn&, const GradientCalculator&, const MnUserParameterState&, const MnStrategy&) const;
-
-  virtual MinimumSeed operator()(const MnFcn&, const AnalyticalGradientCalculator&, const MnUserParameterState&, const MnStrategy&) const;
+   MinimumSeed operator()(const MnFcn &, const AnalyticalGradientCalculator &, const MnUserParameterState &,
+                                  const MnStrategy &) const override;
 
 private:
-
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnSeedGenerator
+#endif // ROOT_Minuit2_MnSeedGenerator

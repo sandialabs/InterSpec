@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: Quad1F.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -9,44 +9,41 @@
 
 #include "Minuit2/FCNGradientBase.h"
 
+#include <vector>
+
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class Quad1F : public FCNGradientBase {
 
 public:
+   double operator()(std::vector<double> const &par) const override
+   {
 
-  Quad1F() : fErrorDef(1.) {}
+      double x = par[0];
 
-  ~Quad1F() {}
+      return x * x;
+   }
 
-  double operator()(const std::vector<double>& par) const {
+   std::vector<double> Gradient(std::vector<double> const &par) const override
+   {
 
-    double x = par[0];
+      double x = par[0];
 
-    return ( x*x );
-  }
-  
-  std::vector<double> Gradient(const std::vector<double>& par) const {
-    
-    double x = par[0];
-    
-    return ( std::vector<double>(1, 2.*x) );  
-  }
+      return std::vector<double>(1, 2. * x);
+   }
 
-  void SetErrorDef(double up) {fErrorDef = up;}
+   void SetErrorDef(double up) override { fErrorDef = up; }
 
-  double Up() const {return fErrorDef;}
+   double Up() const override { return fErrorDef; }
 
-  const FCNBase* Base() const {return this;}
+   const FCNBase *Base() const { return this; }
 
 private:
-  double fErrorDef;
+   double fErrorDef = 1.;
 };
 
+} // namespace Minuit2
 
-  }  // namespace Minuit2
-
-}  // namespace ROOT
+} // namespace ROOT

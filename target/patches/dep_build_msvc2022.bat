@@ -320,35 +320,42 @@ if not exist %WT_BUILT_FILE% (
 )
 
 rem Build/install Eigen
-set EIGEN_TAR="eigen-3.4.0.tar.gz"
-set EIGEN_DIR="eigen-3.4.0"
+set EIGEN_DIR="eigen-3.x"
 set EIGEN_BUILT_FILE=built_%EIGEN_DIR%
-set EIGEN_REQUIRED_SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
+set EIGEN_GIT_HASH=2e76277bd049f7bec36b0f908c69734a42c5234f
 
 if not exist %EIGEN_BUILT_FILE% (
-    curl -L https://gitlab.com/libeigen/eigen/-/archive/3.4.0/%EIGEN_TAR% --output %EIGEN_TAR% && (
-        echo Downloaded Eigen
-    ) || (
-        echo Failed to download Eigen
-        GOTO :cmderr
-    )
 
-    set "EIGEN_SHA256="
-    for /f %%A in ('certutil -hashfile "%EIGEN_TAR%" SHA256 ^| find /i /v ":" ') do set "EIGEN_SHA256=%%A"
-    
-    if not "!EIGEN_SHA256!"=="%EIGEN_REQUIRED_SHA256%" (
-        echo Invalid hash of eigen.  Expected "%EIGEN_REQUIRED_SHA256%" and got "!EIGEN_SHA256!"
-        GOTO :cmderr
-    )
-
-    tar -xzvf %EIGEN_TAR% && (
-        echo "Untarred Eigen"
+    git clone --recursive https://gitlab.com/libeigen/eigen.git --branch master --single-branch --depth 1 %EIGEN_DIR% && (
+        echo Cloned into Eigen
     ) || (
-        echo Failed to untar Eigen
+        echo "Failed to clone into Eigen"
         GOTO :cmderr
     )
 
     cd %EIGEN_DIR%
+
+    git fetch --depth 1 origin %EIGEN_GIT_HASH% && (
+        echo Fetched Eigen
+    ) || (
+        echo "Failed to fetch wanted Eigen commit"
+        GOTO :cmderr
+    )
+
+    git checkout %EIGEN_GIT_HASH% && (
+        echo Checked out wanted Eigen version
+    ) || (
+        echo "Failed to checkout wanted Eigen commit"
+        GOTO :cmderr
+    )
+
+    git submodule update --init --recursive && (
+        echo Updated Eigen submodules
+    ) || (
+        echo "Failed to update Eigen submodules"
+        GOTO :cmderr
+    )
+
     mkdir build
     cd build
     
@@ -381,42 +388,49 @@ if not exist %EIGEN_BUILT_FILE% (
 )
 
 rem Build/install Ceres Solver
-set CERES_TAR="ceres-solver-2.1.0.tar.gz"
-set CERES_DIR="ceres-solver-2.1.0"
+set CERES_DIR="ceres-solver-2.2.0"
 set CERES_BUILT_FILE=built_%CERES_DIR%
-set CERES_REQUIRED_SHA256=f7d74eecde0aed75bfc51ec48c91d01fe16a6bf16bce1987a7073286701e2fc6
+set CERES_GIT_HASH=85331393dc0dff09f6fb9903ab0c4bfa3e134b01
 
 if not exist %CERES_BUILT_FILE% (
 
-    curl -L http://ceres-solver.org/%CERES_TAR% --output %CERES_TAR% && (
-        echo Downloaded Eigen
+    git clone --recursive https://github.com/ceres-solver/ceres-solver.git --branch master --single-branch --depth 1 %CERES_DIR% && (
+        echo Cloned into ceres-solver
     ) || (
-        echo Failed to download ceres-solver
-        GOTO :cmderr
-    )
-
-    set "CERES_SHA256="
-    for /f %%A in ('certutil -hashfile "%CERES_TAR%" SHA256 ^| find /i /v ":" ') do set "CERES_SHA256=%%A"
-    
-    if not "!CERES_SHA256!"=="%CERES_REQUIRED_SHA256%" (
-          echo Invalid hash of ceres.  Expected "%CERES_REQUIRED_SHA256%" and got "!CERES_SHA256!"
-          GOTO :cmderr
-    )
-
-    tar -xzvf %CERES_TAR% && (
-        echo Untarred Ceres
-    ) || (
-        echo Failed to untar ceres-solver
+        echo "Failed to clone into ceres-solver"
         GOTO :cmderr
     )
 
     cd %CERES_DIR%
+
+    rem checkout version 2.2.0, Oct 12, 2023.  We need to fetch, then checkout, then bring submodules to listed versions
+    git fetch --depth 1 origin %CERES_GIT_HASH% && (
+        echo Fetched ceres 2.2.0
+    ) || (
+        echo "Failed to fetch wanted ceres commit"
+        GOTO :cmderr
+    )
+
+    git checkout %CERES_GIT_HASH% && (
+        echo Checked out ceres 2.2.0
+    ) || (
+        echo "Failed to checkout wanted ceres commit"
+        GOTO :cmderr
+    )
+
+    git submodule update --init --recursive && (
+        echo Updated Ceres submodules
+    ) || (
+        echo "Failed to update Ceres submodules"
+        GOTO :cmderr
+    )
+
     if defined builddebug (
         echo "Building CERES Debug"
         mkdir build_msvc_debug
         cd build_msvc_debug
 
-        cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug -DMSVC_USE_STATIC_CRT=ON .. && (
+        cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug -DMSVC_USE_STATIC_CRT=ON .. && (
             echo Configured Debug Ceres
         ) || (
             echo Failed to configure Debug ceres-solver
@@ -424,7 +438,7 @@ if not exist %CERES_BUILT_FILE% (
         )
     
         cmake --build . --config Debug --target install && (
-            echo Built and installed Debug Cerres
+            echo Built and installed Debug Ceres
         ) || (
             echo Failed to build Debug ceres-solver
             GOTO :cmderr
@@ -438,7 +452,7 @@ if not exist %CERES_BUILT_FILE% (
     mkdir build_msvc_rel
     cd build_msvc_rel
 
-    cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DMSVC_USE_STATIC_CRT=ON .. && (
+    cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DMSVC_USE_STATIC_CRT=ON .. && (
         echo Configured Release Ceres
     ) || (
         echo Failed to configure Release ceres-solver
@@ -446,7 +460,7 @@ if not exist %CERES_BUILT_FILE% (
     )
 
     cmake --build . --config Release --target install && (
-        echo Built and installed Release Cerres
+        echo Built and installed Release Ceres
     ) || (
         echo Failed to build Release ceres-solver
         GOTO :cmderr
@@ -555,7 +569,7 @@ if not exist %WX_BUILT_FILE% (
 )
 
 popd
-echo "Completed Succesfully"
+echo "Completed Successfully"
 exit /b 0
 goto :EOF
 

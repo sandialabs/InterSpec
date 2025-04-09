@@ -1,0 +1,1 @@
+File 'spec184_235U_12.9543.n42' is from "An International Database of Reference Gamma Spectra", https://nds.iaea.org/idb/, retrieved on 20241004; file was renamed to reflect uranium enrichment.

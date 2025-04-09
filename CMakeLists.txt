@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
+ cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
 project(InterSpec VERSION 1.0.13)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
@@ -147,12 +147,6 @@ endif()
 
 
 SET(MYSQL_DATABASE_TO_USE "dev" CACHE STRING "Which mysql database to use (if applicable): dev/qc/prod")
-
-
-# I think requiring c++14 will require GCC>=5, but we'll double check anyway
-if( CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0 )
-  message( FATAL_ERROR, "GCC less than 5 not supported." )
-endif()
 
 # Make a cached variable available to parent cmake projects
 set( INTERSPEC_VERSION "${PROJECT_VERSION}" CACHE STRING "InterSpec version" )
@@ -367,6 +361,7 @@ set(headers
     InterSpec/PeakFitUtils.h
     InterSpec/PeakDef.h
     InterSpec/PeakDists.h
+    InterSpec/PeakDists_imp.hpp
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
     InterSpec/PeakFitChi2Fcn.h
@@ -434,6 +429,7 @@ set(headers
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
+    InterSpec/XmlUtils.hpp
 )
 
 
@@ -520,17 +516,23 @@ if( USE_REL_ACT_TOOL )
         src/RelActManualGui.cpp
         src/RelActTxtResults.cpp
         src/RelEffChart.cpp
+        src/RelEffShieldWidget.cpp
+        src/RelActAutoDev.cpp
   )
   
   list( APPEND headers
         InterSpec/PeakFitLM.h
         InterSpec/RelActCalc.h
+        InterSpec/RelActCalc_imp.hpp
         InterSpec/RelActCalcAuto.h
+        InterSpec/RelActCalcAuto_imp.hpp
         InterSpec/RelActCalcManual.h
         InterSpec/RelActAutoGui.h
         InterSpec/RelActManualGui.h
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
+        InterSpec/RelEffShieldWidget.h
+        InterSpec/RelActAutoDev.h
   )
 endif( USE_REL_ACT_TOOL )
 
@@ -663,7 +665,7 @@ target_link_libraries(
     Threads::Threads
     SpecUtils
     SandiaDecay
-    minuit2
+    Minuit2::Minuit2
     Cuba-3.0
     muparserx
     Boost::thread
@@ -743,7 +745,7 @@ endif(WIN32)
 
 
 if( USE_REL_ACT_TOOL )
-  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres )
+  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres)
 endif( USE_REL_ACT_TOOL )
 
 

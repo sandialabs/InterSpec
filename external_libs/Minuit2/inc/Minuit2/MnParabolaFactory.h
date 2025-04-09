@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: MnParabolaFactory.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -12,8 +12,7 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MnParabola;
 class MnParabolaPoint;
@@ -21,23 +20,19 @@ class MnParabolaPoint;
 class MnParabolaFactory {
 
 public:
+   MnParabolaFactory() {}
 
-  MnParabolaFactory() {}
+   ~MnParabolaFactory() {}
 
-  ~MnParabolaFactory() {}
+   MnParabola operator()(const MnParabolaPoint &, const MnParabolaPoint &, const MnParabolaPoint &) const;
 
-  MnParabola operator()(const MnParabolaPoint&, const MnParabolaPoint&, 
-			const MnParabolaPoint&) const;
+   MnParabola operator()(const MnParabolaPoint &, double, const MnParabolaPoint &) const;
 
-  MnParabola operator()(const MnParabolaPoint&, double, 
-			const MnParabolaPoint&) const;
-
-private: 
-  
+private:
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_MnParabolaFactory
+#endif // ROOT_Minuit2_MnParabolaFactory

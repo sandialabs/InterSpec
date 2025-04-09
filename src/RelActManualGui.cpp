@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include "rapidxml/rapidxml.hpp"
+#include "rapidxml/rapidxml_print.hpp"
 
 #include <boost/math/distributions/chi_squared.hpp>
 
@@ -34,6 +35,7 @@
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WComboBox>
+#include <Wt/WGroupBox>
 #include <Wt/WLineEdit>
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
@@ -49,8 +51,9 @@
 #include <Wt/Http/Response>
 #include <Wt/WItemDelegate>
 #include <Wt/WStackedWidget>
-#include <Wt/WRegExpValidator>
 #include <Wt/WContainerWidget>
+#include <Wt/WRegExpValidator>
+#include <Wt/WSuggestionPopup>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -64,6 +67,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/RelEffChart.h"
 #include "InterSpec/InterSpecApp.h"
@@ -72,13 +76,16 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/SwitchCheckbox.h"
 #include "InterSpec/RelActManualGui.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/RelActCalcManual.h"
-#include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/NativeFloatSpinBox.h"
+#include "InterSpec/RelEffShieldWidget.h"
+#include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
@@ -189,7 +196,7 @@ public:
       for( const shared_ptr<const PeakDef> &p : all_peaks )
       {
         bool use_peak = false;
-        for( const auto &r : solution->m_input_peak )
+        for( const auto &r : solution->m_input.peaks )
         {
           if( fabs(p->mean() - r.m_mean) < 1.0 )
             use_peak = true;
@@ -490,6 +497,8 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   m_optionsColumn( nullptr ),
   m_relEffEqnForm( nullptr ),
   m_relEffEqnOrder( nullptr ),
+  m_physModelUseHoerl( nullptr ),
+  m_physModelUseHoerlHolder( nullptr ),
   m_nucDataSrcHolder( nullptr ),
   m_nucDataSrc( nullptr ),
   m_matchTolerance( nullptr ),
@@ -500,11 +509,16 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   m_peakTableColumn( nullptr ),
   m_peakModel( viewer ? viewer->peakModel() : nullptr ),
   m_nuclidesDisp( nullptr ),
+  m_nucColumnTitle( nullptr ),
+  m_physicalModelShields( nullptr ),
+  m_selfAttenShield( nullptr ),
+  m_extAttenShields( nullptr ),
   m_nucAge{},
   m_nucDecayCorrect{},
   m_resultMenu( nullptr ),
   m_chart( nullptr ),
-  m_results( nullptr )
+  m_results( nullptr ),
+  m_defaultDetector( nullptr )
 {
   assert( m_interspec && m_peakModel );
   if( !m_interspec || !m_peakModel )
@@ -568,23 +582,24 @@ void RelActManualGui::init()
   
   WTable *optionsList = new WTable( optionsDiv );
   optionsList->addStyleClass( "OptionsList" );
-  WLabel *label = new WLabel( WString::tr("ramg-eqn-form-label"), optionsList->elementAt(0, 0) );
+  int row = optionsList->rowCount();
+  WLabel *label = new WLabel( WString::tr("ramg-eqn-form-label"), optionsList->elementAt(row, 0) );
   
-  m_relEffEqnForm = new WComboBox( optionsList->elementAt(0, 1) );
-  m_relEffEqnForm->activated().connect( this, &RelActManualGui::relEffEqnFormChanged );
+  m_relEffEqnForm = new WComboBox( optionsList->elementAt(row, 1) );
+  m_relEffEqnForm->activated().connect( boost::bind(&RelActManualGui::relEffEqnFormChanged, this, true) );
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(0,0), optionsList->elementAt(0,1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row,0), optionsList->elementAt(row,1)},
                               WString::tr("ramg-tt-eqn-form"), showToolTips );
   
   
-  // Will assume FramEmpirical is the highest
-  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical)
+  // Will assume FramPhysicalModel is the highest
+  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel)
                  > static_cast<int>(RelActCalc::RelEffEqnForm::LnXLnY),
                 "RelEffEqnForm was changed!"
   );
   
   
-  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramEmpirical); ++i )
+  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel); ++i )
   {
     const auto eqn_form = RelActCalc::RelEffEqnForm( i );
     
@@ -610,6 +625,11 @@ void RelActManualGui::init()
         //y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
         txt = "Empirical";
         break;
+
+      case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+        //y = [(1 - exp(-mu_0 * x_0))/(mu_0 * x_0) * [exp(-mu_1 * x_1) * ...] * [Det Eff] * [(0.001*E)^b * c^(1000/E)]
+        txt = "Physical";
+        break;
     }//switch( eqn_form )
     
     m_relEffEqnForm->addItem( txt );
@@ -617,9 +637,10 @@ void RelActManualGui::init()
   
   m_relEffEqnForm->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
   
-  label = new WLabel( WString::tr("ramg-eqn-order-label"), optionsList->elementAt(1, 0) );
+  row = optionsList->rowCount();
+  label = new WLabel( WString::tr("ramg-eqn-order-label"), optionsList->elementAt(row, 0) );
   
-  m_relEffEqnOrder = new WComboBox( optionsList->elementAt(1, 1) );
+  m_relEffEqnOrder = new WComboBox( optionsList->elementAt(row, 1) );
   m_relEffEqnOrder->activated().connect( this, &RelActManualGui::relEffEqnOrderChanged );
   
   m_relEffEqnOrder->addItem( "0" );
@@ -631,15 +652,29 @@ void RelActManualGui::init()
   m_relEffEqnOrder->addItem( "6" );
   m_relEffEqnOrder->setCurrentIndex( 3 );
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(1, 0),optionsList->elementAt(1, 1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-eqn-order"), showToolTips );
   
-  label = new WLabel( WString::tr("ramg-yield-info-label"), optionsList->elementAt(2, 0) );
-  m_nucDataSrc = new WComboBox( optionsList->elementAt(2, 1) );
+  m_relEffEqnOrderHolder = optionsList->rowAt(row);
+
+  row = optionsList->rowCount();
+  m_physModelUseHoerl = new WCheckBox( WString::tr("ramg-phys-model-use-hoerl"), optionsList->elementAt(row, 0) );
+  m_physModelUseHoerl->setChecked( true );
+  m_physModelUseHoerl->checked().connect( this, &RelActManualGui::physModelUseHoerlChanged );
+  m_physModelUseHoerl->unChecked().connect( this, &RelActManualGui::physModelUseHoerlChanged );
+  optionsList->elementAt(row, 0)->setColumnSpan( 2 );
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0)},
+                              WString::tr("ramg-tt-phys-model-use-hoerl"), showToolTips );
+  m_physModelUseHoerl->addStyleClass( "PhysModelUseHoerl" );
+  m_physModelUseHoerlHolder = optionsList->rowAt(row);
+
+  row = optionsList->rowCount();
+  label = new WLabel( WString::tr("ramg-yield-info-label"), optionsList->elementAt(row, 0) );
+  m_nucDataSrc = new WComboBox( optionsList->elementAt(row, 1) );
   label->setBuddy( m_nucDataSrc );
   m_nucDataSrc->activated().connect( this, &RelActManualGui::nucDataSrcChanged );
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(2, 0),optionsList->elementAt(2, 1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-data-src"), showToolTips );
   
   
@@ -661,28 +696,30 @@ void RelActManualGui::init()
   
   m_nucDataSrc->setCurrentIndex( static_cast<int>(NucDataSrc::SandiaDecay) );
   
-  m_nucDataSrcHolder = optionsList->rowAt(2);
+  m_nucDataSrcHolder = optionsList->rowAt(row);
 
-  label = new WLabel( WString::tr("ramg-match-tol-label"), optionsList->elementAt(3, 0) ); //(FWHM)
-  m_matchTolerance = new NativeFloatSpinBox( optionsList->elementAt(3, 1) );
+  row = optionsList->rowCount();
+  label = new WLabel( WString::tr("ramg-match-tol-label"), optionsList->elementAt(row, 0) ); //(FWHM)
+  m_matchTolerance = new NativeFloatSpinBox( optionsList->elementAt(row, 1) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->setSpinnerHidden();
   m_matchTolerance->setWidth( 35 );
   m_matchTolerance->setRange( 0, 5 );
   m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
-  label = new WLabel( WString("&nbsp;{1}").arg(WString::tr("FWHM")), optionsList->elementAt(3, 1) );
+  label = new WLabel( WString("&nbsp;{1}").arg(WString::tr("FWHM")), optionsList->elementAt(row, 1) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->valueChanged().connect( this, &RelActManualGui::matchToleranceChanged );
   
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(3, 0),optionsList->elementAt(3, 1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-match-tol"), showToolTips );
   
-  label = new WLabel( WString::tr("ramg-add-uncert-label"), optionsList->elementAt(4, 0) );
-  m_addUncertainty = new WComboBox( optionsList->elementAt(4, 1) );
+  row = optionsList->rowCount();
+  label = new WLabel( WString::tr("ramg-add-uncert-label"), optionsList->elementAt(row, 0) );
+  m_addUncertainty = new WComboBox( optionsList->elementAt(row, 1) );
   label->setBuddy( m_addUncertainty );
   
-  HelpSystem::attachToolTipOn( {optionsList->elementAt(4, 0),optionsList->elementAt(4, 1)},
+  HelpSystem::attachToolTipOn( {optionsList->elementAt(row, 0),optionsList->elementAt(row, 1)},
                               WString::tr("ramg-tt-add-uncert"), showToolTips );
   
   m_addUncertainty->activated().connect( this, &RelActManualGui::addUncertChanged );
@@ -709,14 +746,15 @@ void RelActManualGui::init()
   
   m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::StatOnly) );
   
-  
-  m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(5, 0) );
+  row = optionsList->rowCount();
+  m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(row, 0) );
   m_backgroundSubtract->addStyleClass( "BackSub CbNoLineBreak" );
-  optionsList->elementAt(5, 0)->setColumnSpan( 2 );
-  m_backgroundSubtractHolder = optionsList->rowAt(5);
+  optionsList->elementAt(row, 0)->setColumnSpan( 2 );
+  m_backgroundSubtractHolder = optionsList->rowAt(row);
+
   m_backgroundSubtract->checked().connect( this, &RelActManualGui::backgroundSubtractChanged );
   m_backgroundSubtract->unChecked().connect( this, &RelActManualGui::backgroundSubtractChanged );
-  
+
   
   WContainerWidget *btndiv = new WContainerWidget();
   btndiv->addStyleClass( "BtmBtnDiv" );
@@ -761,14 +799,23 @@ void RelActManualGui::init()
   header = new WText( WString::tr("ramg-nucs-label") );
   header->addStyleClass( "ToolTabColumnTitle" );
   collayout->addWidget( header, 0, 0 );
+  m_nucColumnTitle = header;
   
   m_nuclidesDisp = new WContainerWidget();
   m_nuclidesDisp->addStyleClass( "ToolTabTitledColumnContent" );
   collayout->addWidget( m_nuclidesDisp, 1, 0 );
   collayout->setRowStretch( 1, 1 );
   m_layout->addWidget( nucCol, 0, 1 );
-  
-  // Create the "Cal Peaks" table
+
+
+  m_physicalModelShields = new WContainerWidget( m_nuclidesDisp );
+  m_physicalModelShields->addStyleClass( "PhysicalModelShields" );
+  m_selfAttenShield = nullptr; //We wont create it until we need it
+  m_extAttenShields = new WContainerWidget( m_physicalModelShields );
+  m_physicalModelShields->hide();
+
+
+  // Create the "Peaks to Use" table
   m_peakTableColumn = new WContainerWidget();
   m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
   m_layout->addWidget( m_peakTableColumn, 0, 2 );
@@ -910,36 +957,81 @@ void RelActManualGui::init()
 
 shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
 {
-  shared_ptr<GuiState> state = make_shared<GuiState>();
-  
-  state->m_relEffEqnFormIndex = m_relEffEqnForm->currentIndex();
-  state->m_relEffEqnOrderIndex = m_relEffEqnOrder->currentIndex();
-  state->m_nucDataSrcIndex = m_nucDataSrc->currentIndex();
-  state->m_matchToleranceValue = m_matchTolerance->value();
-  state->m_addUncertIndex = m_addUncertainty->currentIndex();
-  state->m_backgroundSubtract = m_backgroundSubtract->isChecked();
-  state->m_resultTab = m_resultMenu->currentIndex();
-  
-  for( auto w : m_nuclidesDisp->children() )
+  try
   {
-    ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
-    if( rr && rr->m_nuc )
-      state->m_nucAgesAndDecayCorrect.emplace_back( rr->m_nuc->symbol, rr->m_current_age,
-                                                    rr->decayDuringMeasurement() );
-  }//for( auto w : m_nuclidesDisp->children() )
+    shared_ptr<GuiState> state = make_shared<GuiState>();
+    
+    state->m_relEffEqnFormIndex = relEffEqnForm();
+    state->m_relEffEqnOrderIndex = static_cast<int>( relEffEqnOrder() );
+    state->m_physModelUseHoerl = m_physModelUseHoerl->isChecked();
+    state->m_nucDataSrcIndex = nucDataSrc();
+    state->m_matchToleranceValue = m_matchTolerance->value();
+    state->m_addUncertIndex = RelActManualGui::AddUncert(m_addUncertainty->currentIndex());
+    state->m_resultTab = m_resultMenu->currentIndex();
+    state->m_backgroundSubtract = (!m_backgroundSubtractHolder->isHidden()
+                                   && m_backgroundSubtract->isChecked());
+    state->nucAge = m_nucAge;
+    state->nucDecayCorrect = m_nucDecayCorrect;
+    
+    for( auto w : m_nuclidesDisp->children() )
+    {
+      const ManRelEffNucDisp *rr = dynamic_cast<const ManRelEffNucDisp *>(w);
+      if( rr && rr->m_nuc )
+      {
+        //state->m_nucAgesAndDecayCorrect.emplace_back( rr->m_nuc->symbol, rr->m_current_age,
+        //                                                rr->decayDuringMeasurement() );
+        
+        state->nucAge[rr->m_nuc->symbol] = rr->m_current_age;
+        
+        if( rr->m_decay_during_meas )
+          state->nucDecayCorrect[rr->m_nuc->symbol] = rr->m_decay_during_meas->isChecked();
+        else
+          state->nucDecayCorrect.erase( rr->m_nuc->symbol );
+      }
+    }//for( auto w : m_nuclidesDisp->children() )
+    
+    // We could store the state of the Physical model shields, or not
+    if( state->m_relEffEqnFormIndex == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      if( m_selfAttenShield && m_selfAttenShield->nonEmpty() )
+        state->m_selfAttenShield = m_selfAttenShield->state();
+      
+      // We'll store the state of the Physical model shields in the XML, even if they are not used right now
+      auto ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>();
+      for( auto w : ext_kids )
+      {
+        RelEffShieldWidget *rr = dynamic_cast<RelEffShieldWidget *>(w);
+        if( rr && rr->nonEmpty() )
+          state->m_externalShields.push_back( rr->state() );
+      }//for( auto w : m_extAttenShields->children() )
+    }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    
+    return state;
+  }catch( std::exception &e )
+  {
+    cerr << "getGuiState(): Unexpected exception: " << e.what() << endl;
+    assert( 0 );
+  }
   
-  return state;
+  return nullptr;
 }//std::shared_ptr<const GuiState> getGuiState() const
 
 
-void RelActManualGui::setGuiState( const GuiState &state )
+void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
 {
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
   bool updateCalc = false;
-  if( m_relEffEqnForm->currentIndex() != state.m_relEffEqnFormIndex )
+  const auto eqn_form = RelActCalc::RelEffEqnForm( state.m_relEffEqnFormIndex );
+
+  if( m_relEffEqnForm->currentIndex() != static_cast<int>(state.m_relEffEqnFormIndex) )
   {
     updateCalc = true;
-    m_relEffEqnForm->setCurrentIndex( state.m_relEffEqnFormIndex );
+    m_relEffEqnForm->setCurrentIndex( static_cast<int>(state.m_relEffEqnFormIndex) );
+    relEffEqnFormChanged( false );
   }
+  
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
   
   if( m_relEffEqnOrder->currentIndex() != state.m_relEffEqnOrderIndex )
   {
@@ -947,23 +1039,39 @@ void RelActManualGui::setGuiState( const GuiState &state )
     m_relEffEqnOrder->setCurrentIndex( state.m_relEffEqnOrderIndex );
   }
   
-  if( m_nucDataSrc->currentIndex() != state.m_nucDataSrcIndex )
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
+  if( m_physModelUseHoerl->isChecked() != state.m_physModelUseHoerl )
   {
-    updateCalc = true;
-    m_nucDataSrc->setCurrentIndex( state.m_nucDataSrcIndex );
+    updateCalc |= (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+    m_physModelUseHoerl->setChecked( state.m_physModelUseHoerl );
   }
 
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
+  if( m_nucDataSrc->currentIndex() != static_cast<int>(state.m_nucDataSrcIndex) )
+  {
+    updateCalc = true;
+    m_nucDataSrc->setCurrentIndex( static_cast<int>(state.m_nucDataSrcIndex) );
+  }
+
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
   if( m_matchTolerance->value() != state.m_matchToleranceValue )
   {
     updateCalc = true;
     m_matchTolerance->setValue( state.m_matchToleranceValue );
   }
   
-  if( m_addUncertainty->currentIndex() != state.m_addUncertIndex )
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
+  if( m_addUncertainty->currentIndex() != static_cast<int>(state.m_addUncertIndex) )
   {
     updateCalc = true;
-    m_addUncertainty->setCurrentIndex( state.m_addUncertIndex );
+    m_addUncertainty->setCurrentIndex( static_cast<int>(state.m_addUncertIndex) );
   }
+  
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
   
   if( m_backgroundSubtract->isChecked() != state.m_backgroundSubtract )
   {
@@ -971,9 +1079,15 @@ void RelActManualGui::setGuiState( const GuiState &state )
     m_backgroundSubtract->setChecked( state.m_backgroundSubtract );
   }
   
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
   if( m_resultMenu->currentIndex() != state.m_resultTab )
     m_resultMenu->select( state.m_resultTab );
   
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
+  m_nucAge = state.nucAge;
+  m_nucDecayCorrect = state.nucDecayCorrect;
   
   for( auto w : m_nuclidesDisp->children() )
   {
@@ -981,32 +1095,96 @@ void RelActManualGui::setGuiState( const GuiState &state )
     if( !rr || !rr->m_nuc )
       continue;
     
-    for( const auto &i : state.m_nucAgesAndDecayCorrect )
+    const auto age_pos = state.nucAge.find( rr->m_nuc->symbol );
+    if( (age_pos != end(state.nucAge)) && (age_pos->second != rr->m_current_age) )
     {
-      if( std::get<0>(i) == rr->m_nuc->symbol )
-      {
-        if( std::get<1>(i) != rr->m_current_age )
-        {
-          rr->setAge( std::get<1>(i) );
-          m_nucAge[std::get<0>(i)] = std::get<1>(i);
-          m_renderFlags |= RenderActions::UpdateNuclides;
-          updateCalc = true;
-        }//if( i.second != rr->m_current_age )
-        
-        const bool decayCorr = rr->decayDuringMeasurement();
-        if( std::get<2>(i) != decayCorr )
-        {
-          rr->setDecayDuringMeasurement( std::get<2>(i) );
-          m_nucDecayCorrect[std::get<0>(i)] = std::get<2>(i);
-          m_renderFlags |= RenderActions::UpdateNuclides;
-          updateCalc = true;
-        }
-        
-        break;
-      }//if( i.first == rr->m_nuc->symbol )
-    }//for( loop over previous ages )
+      rr->setAge( age_pos->second );
+      m_renderFlags |= RenderActions::UpdateNuclides;
+      updateCalc = true;
+    }//
+    
+    const bool decayCorr = rr->decayDuringMeasurement();
+    const auto correct_pos = state.nucDecayCorrect.find( rr->m_nuc->symbol );
+    if( (correct_pos != end(state.nucDecayCorrect)) && (decayCorr != correct_pos->second) )
+    {
+      rr->setDecayDuringMeasurement( correct_pos->second );
+      m_renderFlags |= RenderActions::UpdateNuclides;
+      updateCalc = true;
+    }
   }//for( auto w : m_nuclidesDisp->children() )
   
+  assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+  
+  if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    updateCalc = true;
+    initPhysicalModelAttenShieldWidgets();
+    assert( m_selfAttenShield );
+    
+    if( state.m_selfAttenShield )
+    {
+      if( m_selfAttenShield )
+        m_selfAttenShield->setState( *state.m_selfAttenShield );
+    }else
+    {
+      if( m_selfAttenShield )
+        m_selfAttenShield->resetState();
+    }//if( state.m_selfAttenShield )
+
+    assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+    
+    assert( m_extAttenShields );
+    
+    vector<RelEffShieldWidget *> existing_external;
+    for( const auto &s : m_extAttenShields->children() )
+    {
+      RelEffShieldWidget *rr = dynamic_cast<RelEffShieldWidget *>(s);
+      if( rr )
+        existing_external.push_back( rr );
+    }
+    
+    while( !existing_external.empty()
+          && (existing_external.size() > state.m_externalShields.size()) )
+    {
+      RelEffShieldWidget *rr = existing_external.back();
+      existing_external.resize( existing_external.size() - 1 );
+    }
+    assert( (existing_external.size() == 1) || (existing_external.size() <= state.m_externalShields.size()) );
+    
+    for( size_t i = 0; i < state.m_externalShields.size(); ++i )
+    {
+      const unique_ptr<RelEffShieldState> &shield_state = state.m_externalShields[i];
+      assert( shield_state );
+      
+      if( i >= existing_external.size() )
+      {
+        RelEffShieldWidget *rr = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+        rr->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
+        existing_external.push_back( rr );
+      }
+      
+      assert( i < existing_external.size() );
+      
+      if( shield_state )
+        existing_external.at(i)->setState( *shield_state );
+    }//for( size_t i = 0; i < state.m_externalShields.size(); ++i )
+    
+    if( state.m_externalShields.empty() && !existing_external.empty() )
+    {
+      assert( existing_external.size() == 1 );
+      existing_external.front()->resetState();
+    }
+  
+    assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
+    
+    m_physModelUseHoerlHolder->setHidden( false );
+    m_relEffEqnOrderHolder->setHidden( true );
+  }else
+  {
+    m_physModelUseHoerlHolder->setHidden( true );
+    m_relEffEqnOrderHolder->setHidden( false );
+  }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else
+
   if( updateCalc )
   {
     m_renderFlags |= RenderActions::UpdateCalc;
@@ -1015,19 +1193,6 @@ void RelActManualGui::setGuiState( const GuiState &state )
   
   assert( !m_renderFlags.testFlag(RenderActions::AddUndoRedoStep) );
 }//void setGuiState( const GuiState &state )
-
-
-bool RelActManualGui::GuiState::operator==( const RelActManualGui::GuiState &rhs ) const
-{
-  return (m_relEffEqnFormIndex == rhs.m_relEffEqnFormIndex)
-    && (m_relEffEqnOrderIndex == rhs.m_relEffEqnOrderIndex)
-    && (m_nucDataSrcIndex == rhs.m_nucDataSrcIndex)
-    && (m_matchToleranceValue == rhs.m_matchToleranceValue)
-    && (m_addUncertIndex == rhs.m_addUncertIndex)
-    && (m_backgroundSubtract == rhs.m_backgroundSubtract)
-    && (m_resultTab == rhs.m_resultTab)
-    && (m_nucAgesAndDecayCorrect == rhs.m_nucAgesAndDecayCorrect);
-}//RelActManualGui::GuiState::operator==
 
 
 void RelActManualGui::addUndoRedoStep( const shared_ptr<const RelActManualGui::GuiState> &state )
@@ -1086,11 +1251,12 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   
   const shared_ptr<const GuiState> current_gui_state = getGuiState();
-  if( m_renderFlags.testFlag(RelActManualGui::RenderActions::AddUndoRedoStep ) )
+  if( current_gui_state && m_renderFlags.testFlag(RelActManualGui::RenderActions::AddUndoRedoStep ) )
   {
     addUndoRedoStep( current_gui_state );
   }
-  m_currentGuiState = current_gui_state;
+  if( current_gui_state )
+    m_currentGuiState = current_gui_state;
   
   
   m_renderFlags = 0;
@@ -1099,404 +1265,560 @@ void RelActManualGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//render( Wt::WFlags<Wt::RenderFlag> )
 
 
+RelActManualGui::RelActCalcRawInput RelActManualGui::get_raw_info_for_calc_input()
+{
+  InterSpec *viewer = InterSpec::instance();
+  assert( viewer );
+  if( !viewer )
+    throw runtime_error( "Not in GUI thread???" );
+
+  assert( m_peakModel );
+  if( !m_peakModel )
+    throw runtime_error( "No peak model" );
+  
+  RelActCalcRawInput setup_input;
+  
+  setup_input.state = getGuiState();
+  assert( setup_input.state );
+  if( !setup_input.state )
+    throw runtime_error( "RelActManualGui::get_raw_info_for_calc_input: GUI is in invalid state???" );
+  
+  // PeakModel stores all PeakDefs as const, so I think it is fine to just make a copy of
+  //  the deque, and then it should be thread-safe to access the PeakDef objects from off
+  //  of the main thread.
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
+  if( !peaks )
+    throw runtime_error( "No foreground peaks not set/" );
+  
+  setup_input.peaks = *peaks;
+  
+  setup_input.fore_spec = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  setup_input.back_spec = viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
+  
+  const float background_live_time = setup_input.back_spec ? setup_input.back_spec->live_time() : 1.0f;
+  
+  const std::shared_ptr<const SpecMeas> back_meas = viewer->measurment(SpecUtils::SpectrumType::Background);
+  
+  
+  if( setup_input.state->m_backgroundSubtract
+     && setup_input.back_spec
+     && back_meas
+     && (background_live_time > 0.0) )
+  {
+    const auto &displayed = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> backpeaks = back_meas->peaks( displayed );
+    if( backpeaks )
+      setup_input.background_peaks = *backpeaks;
+  }//if( background_sub && back_spec && back_meas )
+  
+  const auto fore = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  if( fore )
+    setup_input.detector = fore->detector();
+  
+  if( setup_input.state->m_relEffEqnFormIndex == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    if( !setup_input.detector )
+      setup_input.detector = m_defaultDetector;
+
+    if( !setup_input.detector )
+    {
+      const string datadir = InterSpec::staticDataDirectory();
+      const string basename = SpecUtils::append_path( datadir, "GenericGadrasDetectors" );
+      const string detdir = SpecUtils::append_path( basename, "HPGe 40%" );
+      
+      try
+      {
+        shared_ptr<DetectorPeakResponse> det = make_shared<DetectorPeakResponse>();
+        det->fromGadrasDirectory( detdir );
+        det->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
+        setup_input.detector = det;
+        m_defaultDetector = det;
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to load default Gadras detector: " << e.what() << endl;
+      }
+    }//if( !phys_model_detector )
+  }//if( FramPhysicalModel )
+  
+  return setup_input;
+}//RelActCalcRawInput get_raw_info_for_calc_input() const
+
+
+
+void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
+                                         MaterialDB *materialDB,
+                                         RelActCalcManual::RelEffInput &setup_output )
+{
+  const shared_ptr<const GuiState> &state = setup_input.state;
+  if( !state )
+    throw runtime_error( "Invalid GUI state" );
+  
+  using namespace RelActCalcManual;
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  
+  const shared_ptr<const SpecUtils::Measurement> &fore_spec = setup_input.fore_spec;
+  const shared_ptr<const SpecUtils::Measurement> &back_spec = setup_input.back_spec;
+  
+  
+  const deque<shared_ptr<const PeakDef>> &peaks = setup_input.peaks;
+  const deque<shared_ptr<const PeakDef>> &background_peaks = setup_input.background_peaks;
+  
+  vector<GenericPeakInfo> peak_infos;
+  
+  const double back_sub_nsigma_near = 1.0; // Fairly arbitrary.  TODO: have this be a user settable value?
+  const float foreground_live_time = fore_spec ? fore_spec->live_time() : 1.0f;
+  const float background_live_time = back_spec ? back_spec->live_time() : 1.0f;
+  const bool background_sub = state->m_backgroundSubtract;
+  
+  double addUncert = -2.0;
+  
+  const AddUncert addUncertType = state->m_addUncertIndex;
+  switch( addUncertType )
+  {
+    case AddUncert::Unweighted:         addUncert = -1.0; break;
+    case AddUncert::StatOnly:           addUncert = 0.0;  break;
+    case AddUncert::OnePercent:         addUncert = 0.01; break;
+    case AddUncert::FivePercent:        addUncert = 0.05; break;
+    case AddUncert::TenPercent:         addUncert = 0.1;  break;
+    case AddUncert::TwentyFivePercent:  addUncert = 0.25; break;
+    case AddUncert::FiftyPercent:       addUncert = 0.5;  break;
+    case AddUncert::SeventyFivePercent: addUncert = 0.75; break;
+    case AddUncert::OneHundredPercent:  addUncert = 1.0;  break;
+    case AddUncert::NumAddUncert:       assert(0);        break;
+  }//switch( i )
+  
+  if( addUncert < -1.0 )
+    throw runtime_error( "Invalid add. uncert. selected." );
+    
+  const double match_tol_sigma = 2.35482 * state->m_matchToleranceValue;
+  
+  const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = state->m_nucDataSrcIndex;
+  
+  map<const SandiaDecay::Nuclide *,double> nuclide_ages;
+  for( const auto &kv : state->nucAge )
+  {
+    const SandiaDecay::Nuclide * const nuc = db->nuclide(kv.first);
+    if( nuc )
+      nuclide_ages[nuc] = kv.second;
+  }
+  
+  map<const SandiaDecay::Nuclide *,bool> decay_correct_during_meas;
+  for( const auto &kv : state->nucDecayCorrect )
+  {
+    const SandiaDecay::Nuclide * const nuc = db->nuclide(kv.first);
+    if( nuc )
+      decay_correct_during_meas[nuc] = kv.second;
+  }
+  
+  bool has_reaction = false;
+  set<pair<float,float>> energy_cal_match_warning_energies;
+  
+  vector<SandiaDecayNuc> nuclides_to_match_to;
+  
+  size_t num_peaks_back_sub = 0;
+  double lowest_energy_peak = 3000;
+  bool has_U_or_Pu = false;
+  set<string> unique_isotopes;
+  set<int> src_atomic_numbers;
+  for( const PeakModel::PeakShrdPtr &p : peaks )
+  {
+    if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
+    {
+      GenericPeakInfo peak;
+      peak.m_mean = peak.m_energy = p->mean();
+      peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
+      peak.m_counts = p->amplitude();
+      peak.m_counts_uncert = p->amplitudeUncert();
+      peak.m_base_rel_eff_uncert = addUncert;
+      
+      lowest_energy_peak = std::min( lowest_energy_peak, peak.m_energy );
+      
+      if( background_sub )
+      {
+        const double sigma = p->gausPeak() ? p->sigma() : 0.25*p->roiWidth();
+        const double scale = foreground_live_time / background_live_time;
+        
+        double back_counts = 0.0, back_uncert_2 = 0.0;
+        for( const shared_ptr<const PeakDef> &back_peak : background_peaks )
+        {
+          // In principle the peak shouldnt need to be a gaussian peak - but this has yet to be
+          //  tested
+          //if( !back_peak->gausPeak() )
+          //  continue;
+          
+          if( fabs(back_peak->mean() - p->mean()) < (back_sub_nsigma_near * sigma) )
+          {
+            back_counts += scale * back_peak->peakArea();
+            back_uncert_2 += scale * scale * back_peak->peakAreaUncert() * back_peak->peakAreaUncert();
+          }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
+        }//for( const PeakDef &peak : backPeaks )
+        
+        if( back_counts > 0.0 )
+        {
+          num_peaks_back_sub += 1;
+          peak.m_counts -= back_counts;
+          peak.m_counts_uncert = sqrt( peak.m_counts_uncert*peak.m_counts_uncert + back_uncert_2 );
+        }
+        
+        if( peak.m_counts <= 0.0 )
+        {
+          char buffer[32];
+          snprintf( buffer, sizeof(buffer), "%.2f", peak.m_mean );
+          
+          setup_output.prep_warnings.push_back( WString::tr("ramg-back-sub-neg").arg( buffer ).toUTF8() );
+          continue;
+        }
+      }//if( background_sub )
+      
+      // If we are using SandiaDecay as our nuclear data source, we will use the energy of the
+      //  gamma line, and not the fit-energy.  I'm a little torn on this, as the behavior could
+      //  be unexpected to the user, either way.  But if we dont do this, and the energy
+      //  calibration is slightly off for HPGe detectors, we will miss the match
+      if( srcData == RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay )
+      {
+        if( (fabs(peak.m_energy - p->gammaParticleEnergy()) > (match_tol_sigma*(peak.m_fwhm/2.35482)))
+           && (match_tol_sigma > 0.0) )
+        {
+          energy_cal_match_warning_energies.emplace( static_cast<float>(peak.m_energy), p->gammaParticleEnergy() );
+        }
+        
+        peak.m_energy = p->gammaParticleEnergy();
+      }//if( using SandiaDecay nuc data )
+      
+      SandiaDecayNuc nuc;
+      bool hadNuclide = false;
+      for( const auto &existing : nuclides_to_match_to )
+      {
+        if( (p->parentNuclide() && (existing.nuclide == p->parentNuclide()))
+           || (p->reaction() && (existing.reaction == p->reaction())) )
+        {
+          nuc = existing;
+          hadNuclide = true;
+          break;
+        }
+      }//for( const auto &existing : nuclides_to_match_to )
+      
+      if( !hadNuclide )
+      {
+        nuc.age = -1.0;
+        if( p->parentNuclide() )
+        {
+          nuc.nuclide = p->parentNuclide();
+          const auto age_pos = nuclide_ages.find(nuc.nuclide);
+          assert( age_pos != end(nuclide_ages) );
+        
+          if( age_pos != end(nuclide_ages) )
+            nuc.age = age_pos->second;
+        
+          assert( nuc.age >= 0.0 );
+          if( nuc.age < 0.0 )
+            throw runtime_error( "Error finding age for " + nuc.nuclide->symbol );
+          
+          const auto decay_corr_pos = decay_correct_during_meas.find(nuc.nuclide);
+          
+          // This next assert will trigger sometime; if a nuclide display doesnt have the decay
+          //  during option (like long half-life nuclides), then that nuclide entry will be
+          //  removed from `state->nucDecayCorrect` (because we dont have user preference info about
+          //  it - or something)
+          //assert( decay_corr_pos != end(decay_correct_during_meas) );
+          
+          if( decay_corr_pos != end(decay_correct_during_meas) )
+            nuc.correct_for_decay_during_meas = decay_corr_pos->second;
+        }else
+        {
+          has_reaction = true;
+          nuc.reaction = p->reaction();
+        }
+        
+        assert( nuc.nuclide || nuc.reaction );
+        
+        nuclides_to_match_to.push_back( nuc );
+      }//if( !hadNuclide )
+      
+/*
+//Above we set the peak energy to the gamma line energy, so I believe
+//  `RelActCalcManual::PeakCsvInput::fill_in_nuclide_info(...)`, should math things correctly.
+      if( match_tol_sigma == 0.0 )
+      {
+        GenericLineInfo info;
+        info.m_yield = 0.0;
+        info.m_isotope = p->parentNuclide()->symbol;
+        
+        const double decay_act_mult = SandiaDecay::MBq;
+        SandiaDecay::NuclideMixture mix;
+        mix.addAgedNuclideByActivity( nuc.nuclide, decay_act_mult, nuc.age );
+        const vector<SandiaDecay::EnergyRatePair> gammas = mix.gammas( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
+        for( const auto &g : gammas )
+        {
+          if( fabs(g.energy - p->gammaParticleEnergy()) < 0.01 )
+            info.m_yield += (g.numPerSecond / decay_act_mult);
+        }
+        
+        // Or could use:
+        //vector<EnergyYield> decay_gammas( const SandiaDecay::Nuclide * const parent,
+        //                                        const double age,
+        //                                        const std::vector<double> &gammas_to_exclude )
+        
+        peak.m_source_gammas.push_back( info );
+      }//if( match_tol_sigma == 0.0 )
+*/
+      
+      peak_infos.push_back( peak );
+      
+      if( p->parentNuclide() )
+      {
+        has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 92);
+        has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 94);
+        
+        unique_isotopes.insert( p->parentNuclide()->symbol );
+        src_atomic_numbers.insert( p->parentNuclide()->atomicNumber );
+      }else
+      {
+        assert( p->reaction() );
+        unique_isotopes.insert( p->reaction()->name() );
+      }
+    }//
+  }//for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
+  
+  if( has_reaction )
+  {
+    setup_output.prep_warnings.push_back( WString::tr("ramg-warn-reaction").toUTF8() );
+  }//if( user is using reactions )
+  
+  if( background_sub && !num_peaks_back_sub )
+  {
+    setup_output.prep_warnings.push_back( WString::tr("ramg-warn-no-bkg-sub-used").toUTF8() );
+  }//if( user wanted to background subtract peaks, but no peaks matched up )
+  
+  
+  if( energy_cal_match_warning_energies.size() && (match_tol_sigma > 0.0) )
+  {
+    const bool multiple = (energy_cal_match_warning_energies.size() > 1);
+    
+    string nuc_energies, peak_energies;
+    for( const auto &pp : energy_cal_match_warning_energies )
+    {
+      nuc_energies += string(nuc_energies.empty() ? "" : ", ") + SpecUtils::printCompact(pp.second, 4);
+      peak_energies += string(peak_energies.empty() ? "" : ", ") + SpecUtils::printCompact(pp.first, 4);
+    }
+    
+    if( multiple )
+    {
+      nuc_energies = "{" + nuc_energies + "}";
+      peak_energies = "{" + peak_energies + "}";
+    }
+    
+    WString msg = WString::tr("ramg-warn-match-outside-tol")
+                    .arg( multiple ? "s" : "" )
+                    .arg( nuc_energies )
+                    .arg( peak_energies );
+
+    setup_output.prep_warnings.push_back( msg.toUTF8() );
+  }//if( energy_cal_match_warning_energies.size() )
+  
+  // Check that if we are using a specialized nuc data source, we actually have uranium in the
+  //  problem
+  switch( srcData )
+  {
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay:
+      break;
+      
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U:
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::Lanl_U:
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::IcrpLanlGadras_U:
+    {
+      if( match_tol_sigma <= 0.0 )
+        throw runtime_error( "You must have a non-zero match tolerance if you are not using InterSpecs default nuclear data." );
+      
+      size_t num_u_isos = 0;
+      for( const auto &n : nuclides_to_match_to )
+      {
+        if( n.nuclide && (n.nuclide->atomicNumber == 92) )
+          num_u_isos += 1;
+      }
+      
+      if( !num_u_isos )
+        throw runtime_error( "A uranium specialized data source was selected, but there is no uranium in this problem." );
+      
+      break;
+    }//case( not using SandiaDecay for uranium )
+      
+    case RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined:
+      break;
+  }//switch( srcData )
+  
+  if( peak_infos.empty() )
+    throw runtime_error( "No peaks selected." );
+  
+  assert( !nuclides_to_match_to.empty() );
+  if( nuclides_to_match_to.empty() )
+    throw runtime_error( "No nuclides selected." );
+  
+  
+  {// Begin code to fill in nuclide information
+    vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
+    for( const auto &n : nuclides_to_match_to )
+    {
+      assert( n.nuclide || n.reaction );
+      
+      if( n.nuclide )
+        isotopes.emplace_back( n.nuclide->symbol, n.age, n.correct_for_decay_during_meas );
+      else
+        isotopes.emplace_back( n.reaction->name(), -1.0, false );
+    }//for( const auto &n : nuclides_to_match_to )
+    
+    const float meas_time = fore_spec ? fore_spec->real_time() : -1.0f;
+    
+    
+    // Make sure the match tolerance is ever so slightly above zero, for practical purposes
+    const double tol = std::max( match_tol_sigma, 0.0001 );
+    
+    const RelActCalcManual::PeakCsvInput::NucMatchResults matched_res
+      = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peak_infos, srcData,
+                                                         {}, isotopes, tol, {}, meas_time );
+    
+    // Add decay correction factors to `matched_res`, and then copy over to RelActCalcManual::RelEffSolution, and then put in the results HTML table
+    
+    if( matched_res.unused_isotopes.size() )
+    {
+      string unused_nucs;
+      for( size_t i = 0; i < matched_res.unused_isotopes.size(); ++i )
+        unused_nucs += string(i ? ", " : "") + matched_res.unused_isotopes[i];
+      
+      WString msg = WString::tr("ramg-warn-failed-match")
+                      .arg( (matched_res.unused_isotopes.size() > 1) ? "s" : "" )
+                      .arg( unused_nucs );
+      
+      throw runtime_error( msg.toUTF8() );
+    }//if( matched_res.unused_isotopes.size() )
+    
+    if( (srcData == RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay)
+       && matched_res.peaks_not_matched.size() )
+    {
+      throw runtime_error( "logic error: not all input peaks were matched to a nuclide - even though they should have been." );
+    }//if( we somehow didnt match a peak the user wanted to be used )
+  
+    peak_infos = matched_res.peaks_matched;
+    //peak_infos.insert( end(peak_infos),
+    //                begin(matched_res.peaks_not_matched),
+    //                end(matched_res.peaks_not_matched) );
+  
+    //std::sort( begin(peak_infos), end(peak_infos),
+    //        []( const RelActCalcManual::GenericPeakInfo &lhs, const RelActCalcManual::GenericPeakInfo &rhs ){
+    //  return lhs.m_energy < rhs.m_energy;
+    //});
+    
+    setup_output.peaks_before_decay_correction = matched_res.not_decay_corrected_peaks;
+  }// End code to fill in nuclide information
+  
+
+  // We'll do the actual calculation off of the main thread; in order to make sure the widget
+  //  still exists at the end of computations, we'll use WApplication::bind(), in combination
+  //  with shared_ptrs's to make sure everything is okay
+  const RelActCalc::RelEffEqnForm eqn_form = state->m_relEffEqnFormIndex;
+  const size_t eqn_order = static_cast<size_t>( std::max(0,state->m_relEffEqnOrderIndex) );
+  
+  
+  setup_output.peaks = peak_infos;
+  setup_output.eqn_form = eqn_form;
+  setup_output.eqn_order = eqn_order;
+  // We will only use Ceres to fit equation parameters when we have to; using matrix math (i.e.
+  //  Eigen) looks to be at least about twice as fast.
+  setup_output.use_ceres_to_fit_eqn = (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+
+  if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    setup_output.use_ceres_to_fit_eqn = true;
+    setup_output.phys_model_use_hoerl = setup_input.state->m_physModelUseHoerl;
+    setup_output.phys_model_detector = setup_input.detector;
+
+    if( state->m_selfAttenShield )
+    {
+      setup_output.phys_model_self_atten = state->m_selfAttenShield->fitInput(materialDB);
+      assert( setup_output.phys_model_self_atten );
+    }
+
+    for( const unique_ptr<RelEffShieldState> &w : state->m_externalShields )
+    {
+      shared_ptr<const RelActCalc::PhysicalModelShieldInput> rr = w ? w->fitInput(materialDB) : nullptr;
+      assert( rr );
+      if( rr )
+        setup_output.phys_model_external_attens.push_back( rr );
+    }//for( auto w : m_extAttenShields->children() )
+  }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
+
+  // We will warn about the x-ray absorption edges if the user is not using the Physical Model
+  //  and the lowest energy peak is below 122 keV for U or Pu, or below 90 keV for other nuclides.
+  //  And even if using the Physical Model, we will warn unless a shielding is same atomic number
+  //  as one of the nuclides (this doesnt catch all cases, but is maybe an okay tradef off of not
+  //  giving too many false-positives to the user).
+  bool warn_xray = has_U_or_Pu ? (lowest_energy_peak < 122) : (lowest_energy_peak < 90);
+
+  if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    const auto shares_atomic_number = [&src_atomic_numbers]( const RelActCalc::PhysicalModelShieldInput &shield ){
+      const auto mat = shield.material;
+
+      if( mat )
+      {
+         for( const auto &nuc_frac : mat->nuclides )
+         {
+           if( src_atomic_numbers.count(nuc_frac.first->atomicNumber) )
+             return true;
+         }
+
+         for( const auto &elem_frac : mat->elements )
+         {
+           if( src_atomic_numbers.count(elem_frac.first->atomicNumber) )
+             return true;
+         }
+      }else
+      {
+        if( shield.fit_atomic_number )
+          return true;
+
+        const int lower_an = static_cast<int>(std::floor(shield.atomic_number));
+        const int upper_an = static_cast<int>(std::ceil(shield.atomic_number));
+        
+        if( src_atomic_numbers.count(lower_an) || src_atomic_numbers.count(upper_an) )
+          return true;
+      }//if( mat ) / else
+
+      return false;
+    };//shares_atomic_number
+    
+    if( warn_xray && setup_output.phys_model_self_atten )
+      warn_xray = (warn_xray && !shares_atomic_number( *setup_output.phys_model_self_atten ));
+
+    for( const auto &s : setup_output.phys_model_external_attens )
+    {
+      if( !warn_xray )
+        break;
+      warn_xray = (warn_xray && !shares_atomic_number( *s ));
+    }
+  }//if( solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  
+  if( has_U_or_Pu && warn_xray )
+  {
+    setup_output.prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-u/pu-xray").toUTF8() );
+  }else if( warn_xray )
+  {
+    setup_output.prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-other-xray").toUTF8() );
+  }
+}//RelActCalcSetupOutput prepare_calc_input( const RelActCalcRawInput &input )
+
+
 void RelActManualGui::calculateSolution()
 {
   m_currentSolution.reset();
-  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
+  m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {}, "" );
   m_results->clear();
   
-  // TODO: should do the actual computation not on the GUI thread!
   try
   {
-    using namespace RelActCalcManual;
-    bool has_reaction = false;
-    vector<string> prep_warnings;
-    vector<GenericPeakInfo> peak_infos;
-    
-    InterSpec *viewer = InterSpec::instance();
-    assert( viewer );
-    if( !viewer )
-      throw runtime_error( "Not in GUI thread???" );
-    
-    if( !m_peakModel || !m_peakModel->peaks() )
-      throw runtime_error( "No peaks available" );
-    
-    // PeakModel stores all PeakDefs as const, so I think it is fine to just make a copy of
-    //  the deque, and then it should be thread-safe to access the PeakDef objects from off
-    //  of the main thread.
-    const deque<shared_ptr<const PeakDef>> peaks = *m_peakModel->peaks();
-    
-    const shared_ptr<const SpecUtils::Measurement> fore_spec = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-    const shared_ptr<const SpecUtils::Measurement> back_spec = viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
-    const std::shared_ptr<const SpecMeas> back_meas = viewer->measurment(SpecUtils::SpectrumType::Background);
-    
-    const double back_sub_nsigma_near = 1.0; // Fairly arbitrary.  TODO: have this be a user setable value?
-    const float foreground_live_time = fore_spec ? fore_spec->live_time() : 1.0f;
-    const float background_live_time = back_spec ? back_spec->live_time() : 1.0f;
-    const bool background_sub = (!m_backgroundSubtractHolder->isHidden()
-                                 && m_backgroundSubtract->isChecked());
-    
-    deque<shared_ptr<const PeakDef>> background_peaks;
-    if( background_sub && back_spec && back_meas && (background_live_time > 0.0) )
-    {
-      const auto &displayed = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
-      shared_ptr<const deque<shared_ptr<const PeakDef>>> backpeaks = back_meas->peaks( displayed );
-      if( backpeaks )
-        background_peaks = *backpeaks;
-    }//if( background_sub && back_spec && back_meas )
-    
-    double addUncert = -2.0;
-    
-    const AddUncert addUncertType = AddUncert( m_addUncertainty->currentIndex() );
-    switch( addUncertType )
-    {
-        case AddUncert::Unweighted:         addUncert = -1.0; break;
-        case AddUncert::StatOnly:           addUncert = 0.0;  break;
-        case AddUncert::OnePercent:         addUncert = 0.01; break;
-        case AddUncert::FivePercent:        addUncert = 0.05; break;
-        case AddUncert::TenPercent:         addUncert = 0.1;  break;
-        case AddUncert::TwentyFivePercent:  addUncert = 0.25; break;
-        case AddUncert::FiftyPercent:       addUncert = 0.5;  break;
-        case AddUncert::SeventyFivePercent: addUncert = 0.75; break;
-        case AddUncert::OneHundredPercent:  addUncert = 1.0;  break;
-        case AddUncert::NumAddUncert:       assert(0);        break;
-    }//switch( i )
-    
-    if( addUncert < -1.0 )
-      throw runtime_error( "Invalid add. uncert. selected." );
-      
-    const double match_tol_sigma = 2.35482 * m_matchTolerance->value();
-    
-    const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = nucDataSrc();
-    
-    map<const SandiaDecay::Nuclide *,double> nuclide_ages;
-    map<const SandiaDecay::Nuclide *,bool> decay_correct_during_meas;
-    for( auto w : m_nuclidesDisp->children() )
-    {
-      ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
-      if( rr && rr->m_nuc )
-      {
-        nuclide_ages[rr->m_nuc] = rr->m_current_age;
-        decay_correct_during_meas[rr->m_nuc] = rr->decayDuringMeasurement();
-      }
-    }//for( auto w : m_nuclidesDisp->children() )
-    
-    
-    
-    // I *think* (but worth a second check) everything below here, until results are updated to the
-    //  GUI could be done off the main thread, and then post'd to update the gui at the end
-    
-    set<pair<float,float>> energy_cal_match_warning_energies;
-    
-    vector<SandiaDecayNuc> nuclides_to_match_to;
-    
-    size_t num_peaks_back_sub = 0;
-    double lowest_energy_peak = 3000;
-    bool has_U_or_Pu = false;
-    set<string> unique_isotopes;
-    for( const PeakModel::PeakShrdPtr &p : peaks )
-    {
-      if( p && (p->parentNuclide() || p->reaction()) && p->useForManualRelEff() )
-      {
-        GenericPeakInfo peak;
-        peak.m_mean = peak.m_energy = p->mean();
-        peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
-        peak.m_counts = p->amplitude();
-        peak.m_counts_uncert = p->amplitudeUncert();
-        peak.m_base_rel_eff_uncert = addUncert;
-        
-        lowest_energy_peak = std::min( lowest_energy_peak, peak.m_energy );
-        
-        if( background_sub )
-        {
-          const double sigma = p->gausPeak() ? p->sigma() : 0.25*p->roiWidth();
-          const double scale = foreground_live_time / background_live_time;
-          
-          double back_counts = 0.0, back_uncert_2 = 0.0;
-          for( const shared_ptr<const PeakDef> &back_peak : background_peaks )
-          {
-            // In principle the peak shouldnt need to be a gaussian peak - but this has yet to be
-            //  tested
-            //if( !back_peak->gausPeak() )
-            //  continue;
-            
-            if( fabs(back_peak->mean() - p->mean()) < (back_sub_nsigma_near * sigma) )
-            {
-              back_counts += scale * back_peak->peakArea();
-              back_uncert_2 += scale * scale * back_peak->peakAreaUncert() * back_peak->peakAreaUncert();
-            }//if( fabs(backPeak.mean()-peak.mean()) < sigma )
-          }//for( const PeakDef &peak : backPeaks )
-          
-          if( back_counts > 0.0 )
-          {
-            num_peaks_back_sub += 1;
-            peak.m_counts -= back_counts;
-            peak.m_counts_uncert = sqrt( peak.m_counts_uncert*peak.m_counts_uncert + back_uncert_2 );
-          }
-          
-          if( peak.m_counts <= 0.0 )
-          {
-            char buffer[32];
-            snprintf( buffer, sizeof(buffer), "%.2f", peak.m_mean );
-            
-            prep_warnings.push_back( WString::tr("ramg-back-sub-neg").arg( buffer ).toUTF8() );
-            continue;
-          }
-        }//if( background_sub )
-        
-        // If we are using SandiaDecay as our nuclear data source, we will use the energy of the
-        //  gamma line, and not the fit-energy.  I'm a little torn on this, as the behavior could
-        //  be unexpected to the user, either way.  But if we dont do this, and the energy
-        //  calibration is slightly off for HPGe detectors, we will miss the match
-        if( srcData == RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay )
-        {
-          if( (fabs(peak.m_energy - p->gammaParticleEnergy()) > (match_tol_sigma*(peak.m_fwhm/2.35482)))
-             && (match_tol_sigma > 0.0) )
-          {
-            energy_cal_match_warning_energies.emplace( static_cast<float>(peak.m_energy), p->gammaParticleEnergy() );
-          }
-          
-          peak.m_energy = p->gammaParticleEnergy();
-        }//if( using SandiaDecay nuc data )
-        
-        SandiaDecayNuc nuc;
-        bool hadNuclide = false;
-        for( const auto &existing : nuclides_to_match_to )
-        {
-          if( (p->parentNuclide() && (existing.nuclide == p->parentNuclide()))
-             || (p->reaction() && (existing.reaction == p->reaction())) )
-          {
-            nuc = existing;
-            hadNuclide = true;
-            break;
-          }
-        }//for( const auto &existing : nuclides_to_match_to )
-        
-        if( !hadNuclide )
-        {
-          nuc.age = -1.0;
-          if( p->parentNuclide() )
-          {
-            nuc.nuclide = p->parentNuclide();
-            const auto age_pos = nuclide_ages.find(nuc.nuclide);
-            assert( age_pos != end(nuclide_ages) );
-          
-            if( age_pos != end(nuclide_ages) )
-              nuc.age = age_pos->second;
-          
-            assert( nuc.age >= 0.0 );
-            if( nuc.age < 0.0 )
-              throw runtime_error( "Error finding age for " + nuc.nuclide->symbol );
-            
-            const auto decay_corr_pos = decay_correct_during_meas.find(nuc.nuclide);
-            assert( decay_corr_pos != end(decay_correct_during_meas) );
-            
-            if( decay_corr_pos != end(decay_correct_during_meas) )
-              nuc.correct_for_decay_during_meas = decay_corr_pos->second;
-          }else
-          {
-            has_reaction = true;
-            nuc.reaction = p->reaction();
-          }
-          
-          assert( nuc.nuclide || nuc.reaction );
-          
-          nuclides_to_match_to.push_back( nuc );
-        }//if( !hadNuclide )
-        
-/*
- //Above we set the peak energy to the gamma line energy, so I believe
- //  `RelActCalcManual::PeakCsvInput::fill_in_nuclide_info(...)`, should math things correctly.
-        if( match_tol_sigma == 0.0 )
-        {
-          GenericLineInfo info;
-          info.m_yield = 0.0;
-          info.m_isotope = p->parentNuclide()->symbol;
-          
-          const double decay_act_mult = SandiaDecay::MBq;
-          SandiaDecay::NuclideMixture mix;
-          mix.addAgedNuclideByActivity( nuc.nuclide, decay_act_mult, nuc.age );
-          const vector<SandiaDecay::EnergyRatePair> gammas = mix.gammas( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
-          for( const auto &g : gammas )
-          {
-            if( fabs(g.energy - p->gammaParticleEnergy()) < 0.01 )
-              info.m_yield += (g.numPerSecond / decay_act_mult);
-          }
-          
-          // Or could use:
-          //vector<EnergyYield> decay_gammas( const SandiaDecay::Nuclide * const parent,
-          //                                        const double age,
-          //                                        const std::vector<double> &gammas_to_exclude )
-          
-          peak.m_source_gammas.push_back( info );
-        }//if( match_tol_sigma == 0.0 )
-*/
-        
-        peak_infos.push_back( peak );
-        
-        if( p->parentNuclide() )
-        {
-          has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 92);
-          has_U_or_Pu |= (p->parentNuclide()->atomicNumber == 94);
-          
-          unique_isotopes.insert( p->parentNuclide()->symbol );
-        }else
-        {
-          assert( p->reaction() );
-          unique_isotopes.insert( p->reaction()->name() );
-        }
-      }//
-    }//for( const PeakModel::PeakShrdPtr &p : *m_peakModel->peaks() )
-    
-    if( has_reaction )
-    {
-      prep_warnings.push_back( WString::tr("ramg-warn-reaction").toUTF8() );
-    }//if( user is using reactions )
-    
-    if( background_sub && !num_peaks_back_sub )
-    {
-      prep_warnings.push_back( WString::tr("ramg-warn-no-bkg-sub-used").toUTF8() );
-    }//if( user wanted to background subtract peaks, but no peaks matched up )
-    
-    if( has_U_or_Pu && (lowest_energy_peak < 122) )
-    {
-      prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-u/pu-xray").toUTF8() );
-    }else if( lowest_energy_peak < 90 )
-    {
-      prep_warnings.push_back( WString::tr("ramg-warn-rel-eff-other-xray").toUTF8() );
-    }
-    
-    
-    if( energy_cal_match_warning_energies.size() && (match_tol_sigma > 0.0) )
-    {
-      const bool multiple = (energy_cal_match_warning_energies.size() > 1);
-      
-      string nuc_energies, peak_energies;
-      for( const auto &pp : energy_cal_match_warning_energies )
-      {
-        nuc_energies += string(nuc_energies.empty() ? "" : ", ") + SpecUtils::printCompact(pp.second, 4);
-        peak_energies += string(peak_energies.empty() ? "" : ", ") + SpecUtils::printCompact(pp.first, 4);
-      }
-      
-      if( multiple )
-      {
-        nuc_energies = "{" + nuc_energies + "}";
-        peak_energies = "{" + peak_energies + "}";
-      }
-      
-      WString msg = WString::tr("ramg-warn-match-outside-tol")
-                      .arg( multiple ? "s" : "" )
-                      .arg( nuc_energies )
-                      .arg( peak_energies );
+    const RelActCalcRawInput raw_info = get_raw_info_for_calc_input();
 
-      prep_warnings.push_back( msg.toUTF8() );
-    }//if( energy_cal_match_warning_energies.size() )
-    
-    // Check that if we are using a specialized nuc data source, we actually have uranium in the
-    //  problem
-    switch( srcData )
-    {
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay:
-        break;
-        
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U:
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::Lanl_U:
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::IcrpLanlGadras_U:
-      {
-        if( match_tol_sigma <= 0.0 )
-          throw runtime_error( "You must have a non-zero match tolerance if you are not using InterSpecs default nuclear data." );
-        
-        size_t num_u_isos = 0;
-        for( const auto &n : nuclides_to_match_to )
-        {
-          if( n.nuclide && (n.nuclide->atomicNumber == 92) )
-            num_u_isos += 1;
-        }
-        
-        if( !num_u_isos )
-          throw runtime_error( "A uranium specialized data source was selected, but there is no uranium in this problem." );
-        
-        break;
-      }//case( not using SandiaDecay for uranium )
-        
-      case RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined:
-        break;
-    }//switch( srcData )
-    
-    if( peak_infos.empty() )
-      throw runtime_error( "No peaks selected." );
-    
-    assert( !nuclides_to_match_to.empty() );
-    if( nuclides_to_match_to.empty() )
-      throw runtime_error( "No nuclides selected." );
-    
-    // Note peaks that have been corrected for decay during measurement; only peaks with corrections
-    //  will get put in here - and will include info for only gamma lines that have been corrected.
-    vector<RelActCalcManual::GenericPeakInfo> pre_decay_correction_info;
-    
-    {// Begin code to fill in nuclide information
-      vector<RelActCalcManual::PeakCsvInput::NucAndAge> isotopes;
-      for( const auto &n : nuclides_to_match_to )
-      {
-        assert( n.nuclide || n.reaction );
-        
-        if( n.nuclide )
-          isotopes.emplace_back( n.nuclide->symbol, n.age, n.correct_for_decay_during_meas );
-        else
-          isotopes.emplace_back( n.reaction->name(), -1.0, false );
-      }//for( const auto &n : nuclides_to_match_to )
-      
-      const float meas_time = fore_spec ? fore_spec->real_time() : -1.0f;
-      
-      
-      // Make sure the match tolerance is ever so slightly above zero, for practical purposes
-      const double tol = std::max( match_tol_sigma, 0.0001 );
-      
-      const RelActCalcManual::PeakCsvInput::NucMatchResults matched_res
-        = RelActCalcManual::PeakCsvInput::fill_in_nuclide_info( peak_infos, srcData,
-                                                           {}, isotopes, tol, {}, meas_time );
-      
-      // Add decay correction factors to `matched_res`, and then copy over to RelActCalcManual::RelEffSolution, and then put in the results HTML table
-      
-      if( matched_res.unused_isotopes.size() )
-      {
-        string unused_nucs;
-        for( size_t i = 0; i < matched_res.unused_isotopes.size(); ++i )
-          unused_nucs += string(i ? ", " : "") + matched_res.unused_isotopes[i];
-        
-        WString msg = WString::tr("ramg-warn-failed-match")
-                        .arg( (matched_res.unused_isotopes.size() > 1) ? "s" : "" )
-                        .arg( unused_nucs );
-        
-        throw runtime_error( msg.toUTF8() );
-      }//if( matched_res.unused_isotopes.size() )
-      
-      if( (srcData == RelActCalcManual::PeakCsvInput::NucDataSrc::SandiaDecay)
-         && matched_res.peaks_not_matched.size() )
-      {
-        throw runtime_error( "logic error: not all input peaks were matched to a nuclide - even though they should have been." );
-      }//if( we somehow didnt match a peak the user wanted to be used )
-    
-      peak_infos = matched_res.peaks_matched;
-      //peak_infos.insert( end(peak_infos),
-      //                begin(matched_res.peaks_not_matched),
-      //                end(matched_res.peaks_not_matched) );
-    
-      //std::sort( begin(peak_infos), end(peak_infos),
-      //        []( const RelActCalcManual::GenericPeakInfo &lhs, const RelActCalcManual::GenericPeakInfo &rhs ){
-      //  return lhs.m_energy < rhs.m_energy;
-      //});
-      
-      pre_decay_correction_info = matched_res.not_decay_corrected_peaks;
-    }// End code to fill in nuclide information
-    
-
-    // We'll do the actual calculation off of the main thread; in order to make sure the widget
-    //  still exists at the end of computations, we'll use WApplication::bind(), in combination
-    //  with shared_ptrs's to make sure everything is okay
-    const RelActCalc::RelEffEqnForm eqn_form = relEffEqnForm();
-    const size_t eqn_order = relEffEqnOrder();
-    
     const string sessionId = wApp->sessionId();
     auto solution = make_shared<RelActCalcManual::RelEffSolution>();
     auto updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithResults, this, solution ) );
@@ -1504,13 +1826,21 @@ void RelActManualGui::calculateSolution()
     auto errmsg = make_shared<WString>();
     auto err_updater = wApp->bind( boost::bind( &RelActManualGui::updateGuiWithError, this, errmsg ) );
     
+    InterSpec *interspec = InterSpec::instance();
+    std::shared_ptr<MaterialDB> materialdb = interspec ? interspec->materialDataBaseShared() : nullptr;
+    
+    // We could almost call `prepare_calc_input(...)` off the GUI thread, and I think the only
+    //  impact would be warning messages wouldnt be localized.
+    RelActCalcManual::RelEffInput setup_output;
+    prepare_calc_input( raw_info, materialdb.get(), setup_output );
+    
+
     WServer::instance()->ioService().boost::asio::io_service::post( std::bind(
-      [peak_infos, pre_decay_correction_info, eqn_form, eqn_order, sessionId, solution, updater, prep_warnings, errmsg, err_updater](){
+      [setup_output, materialdb, sessionId, solution, updater, errmsg, err_updater](){
         try
         {
-          *solution = solve_relative_efficiency( peak_infos, eqn_form, eqn_order );
-          solution->m_warnings.insert(begin(solution->m_warnings), begin(prep_warnings), end(prep_warnings));
-          solution->m_input_peaks_before_decay_corr = pre_decay_correction_info;
+          *solution = solve_relative_efficiency( setup_output );
+
           WServer::instance()->post( sessionId, updater );
         }catch( std::exception &e )
         {
@@ -1588,7 +1918,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     case RelActCalcManual::ManualSolutionStatus::ErrorFindingSolution:
     case RelActCalcManual::ManualSolutionStatus::ErrorGettingSolution:
     {
-      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {} );
+      m_chart->setData( vector<RelActCalcManual::GenericPeakInfo>{}, {}, "", {}, "" );
       break;
     }
       
@@ -1618,7 +1948,149 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     return;
   
   // We'll first update the chart
-  const string relEffEqn = RelActCalc::rel_eff_eqn_js_function( solution.m_rel_eff_eqn_form, solution.m_rel_eff_eqn_coefficients );
+  string relEffEqn = solution.rel_eff_eqn_js_function();
+  string relEffEqnUncert = solution.rel_eff_eqn_js_uncert_fcn();
+  if( solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    // Update shield widgets
+    const auto &input = solution.m_input;
+    assert( input.phys_model_external_attens.size() == solution.m_phys_model_external_atten_shields.size() );
+
+    const auto update_shield = [&]( RelEffShieldWidget *w,
+                      const unique_ptr<RelActCalcManual::RelEffSolution::PhysModelShieldFit> &fit,
+                      const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &input ){
+      assert( w );
+      if( !w )
+        return;
+      
+      assert( input );
+      
+      if( !fit )
+      {
+        w->resetState();
+      }else if( fit->m_material )
+      {
+        w->setMaterialSelected( true );
+        if( w->materialNameTxt().toUTF8() != fit->m_material->name )
+          w->setMaterial( fit->m_material->name );
+        
+        const double thickness = fit->m_areal_density / fit->m_material->density;
+        
+        if( !input || (input->fit_areal_density) )
+        {
+          w->setThickness( thickness );
+        }else
+        {
+          // We'll just double check that thickness was actually not changed.
+          assert( fabs(fit->m_areal_density - input->areal_density)
+                 <= 0.00001*std::max(fit->m_areal_density,input->areal_density) );
+          
+          const double dx = w->thickness() - thickness;
+          assert( fabs(dx) <= 0.00001*std::max(w->thickness(),thickness) );
+          if( fabs(dx) > 0.00001*std::max(w->thickness(),thickness) )
+            w->setThickness( thickness );
+        }//if( input->fit_areal_density ) / else
+        
+
+        if( input )
+          w->setFitThickness( input->fit_areal_density );
+      }else
+      {
+        w->setMaterialSelected( false );
+        
+        if( !input || input->fit_atomic_number )
+        {
+          w->setAtomicNumber( fit->m_atomic_number );
+        }else if( input )
+        {
+          const double prev_an = w->atomicNumber();
+          const double new_an = fit->m_atomic_number;
+          const double delta_an = fabs(new_an - prev_an);
+          assert( delta_an <= 0.0001*std::max(prev_an, new_an) );
+          if( delta_an > 0.0001*std::max(prev_an, new_an) )
+            w->setAtomicNumber( new_an );
+        }//if( fit_atomic_number ) / else
+        
+        const double new_ad = fit->m_areal_density / PhysicalUnits::g_per_cm2;
+        if( !input || input->fit_areal_density )
+        {
+          w->setArealDensity( new_ad );
+        }else if( input )
+        {
+          const double prev_ad = w->arealDensity();
+          const double delta_ad = fabs(new_ad - prev_ad);
+          assert( delta_ad <= 0.0001*std::max(prev_ad, new_ad) );
+          if( delta_ad > 0.0001*std::max(prev_ad, new_ad) )
+            w->setAtomicNumber( new_ad );
+        }//if( fit_areal_density ) / else
+        
+        if( input )
+        {
+          w->setFitAtomicNumber( input->fit_atomic_number );
+          w->setFitArealDensity( input->fit_areal_density );
+        }
+      }//if( fit->m_material ) / else
+    };//update_shield lambda
+
+    if( !m_selfAttenShield )
+      initPhysicalModelAttenShieldWidgets();
+    
+    if( m_selfAttenShield )
+      update_shield( m_selfAttenShield, solution.m_phys_model_self_atten_shield, input.phys_model_self_atten );
+    
+    // We shouldnt need to update the number of external attenuation shield widgets,
+    //  but we'll go ahead and implement it anyway, incase something odd changed while 
+    //  computation was happening.
+    assert( m_extAttenShields );
+    vector<RelEffShieldWidget *> ext_shields;
+    vector<WWidget *> ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>{};
+    for( auto w : ext_kids )
+    {
+      const auto shield = dynamic_cast<RelEffShieldWidget *>(w);
+      if( shield && ((ext_shields.size() < solution.m_phys_model_external_atten_shields.size()) || shield->nonEmpty()) )
+      {
+        ext_shields.push_back( shield );
+      }else if( shield && !shield->nonEmpty() )
+      {
+        assert( !shield->nonEmpty() );
+        delete shield;
+      }
+    }//for( auto w : ext_kids )
+
+    assert( ext_shields.size() == solution.m_phys_model_external_atten_shields.size() ); //Again, should be the right size
+    // We shouldnt need to add any more shields, but we'll go ahead and implement doing this
+    while( ext_shields.size() < solution.m_phys_model_external_atten_shields.size() )
+    {
+      auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+      shield->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
+      ext_shields.push_back( shield );
+    }
+
+    assert( ext_shields.size() == input.phys_model_external_attens.size() );
+    assert( ext_shields.size() == solution.m_phys_model_external_atten_shields.size() );
+    
+    for( size_t i = 0; i < std::max(ext_shields.size(), solution.m_phys_model_external_atten_shields.size()); ++i )
+    {
+      if( i >= solution.m_phys_model_external_atten_shields.size() )
+      {
+        ext_shields[i]->resetState();
+        continue;
+      }
+      const auto &fit_val = solution.m_phys_model_external_atten_shields[i];
+      const shared_ptr<const RelActCalc::PhysicalModelShieldInput> in_shield = input.phys_model_external_attens[i];
+
+      assert( fit_val );
+      if( i < ext_shields.size() )
+        update_shield( ext_shields[i], fit_val, in_shield );
+    }//for( loop over external shields )
+
+    ext_kids = m_extAttenShields ? m_extAttenShields->children() : vector<WWidget *>{};
+    if( ext_kids.empty() )
+    {
+      auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+      shield->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
+    }
+  }//if( !FramPhysicalModel ) / else
   
   deque<PeakModel::PeakShrdPtr> displayed_peaks;
   if( m_peakModel && m_peakModel->peaks() )
@@ -1716,7 +2188,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     chi2_title.arg( "" );
   }
   
-  m_chart->setData( solution.m_input_peak, relActsColors, relEffEqn, chi2_title );
+  m_chart->setData( solution.m_input.peaks, relActsColors, relEffEqn, chi2_title, relEffEqnUncert );
   
   
   // Now update the text
@@ -1730,9 +2202,10 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   solution.get_mass_ratio_table( results_html );
   results_html << "<br />";
   
-  results_html << "<div class=\"releffeqn\">Rel. Eff.: y = "
-  << RelActCalc::rel_eff_eqn_text( solution.m_rel_eff_eqn_form, solution.m_rel_eff_eqn_coefficients )
-  << "</div>\n";
+  results_html << "<div class=\"releffeqn\">Rel. Eff.: y = ";
+  results_html << solution.rel_eff_eqn_txt(true);
+
+  results_html << "</div>\n";
   
   results_html << "<br /> <div>&chi;<sup>2</sup>=" << SpecUtils::printCompact( solution.m_chi2, 4)
   << " " << WString::tr("ramg-and-there-were").toUTF8() << " " << solution.m_dof
@@ -1774,10 +2247,34 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
 }//void updateGuiWithResults( const RelActCalcManual::RelEffSolution &solution );
 
 
-void RelActManualGui::relEffEqnFormChanged()
+void RelActManualGui::relEffEqnFormChanged( const bool user_action )
 {
+  const auto eqn_form = RelActCalc::RelEffEqnForm( m_relEffEqnForm->currentIndex() );
+  switch( eqn_form )
+  {
+    case RelActCalc::RelEffEqnForm::LnX:
+    case RelActCalc::RelEffEqnForm::LnY:
+    case RelActCalc::RelEffEqnForm::LnXLnY:
+    case RelActCalc::RelEffEqnForm::FramEmpirical:
+      m_physicalModelShields->hide();
+      m_nucColumnTitle->setText( WString::tr("ramg-nucs-label") );
+      m_relEffEqnOrderHolder->show();
+      m_physModelUseHoerlHolder->hide();
+      break;
+    
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+      m_physicalModelShields->show();
+      m_nucColumnTitle->setText( WString::tr("ramg-nucs-shield-label") );
+      m_relEffEqnOrderHolder->hide();
+      m_physModelUseHoerlHolder->show();
+      initPhysicalModelAttenShieldWidgets();
+      break;
+  }//switch( eqn_form )
+
+  
   m_renderFlags |= RenderActions::UpdateCalc;
-  m_renderFlags |= RenderActions::AddUndoRedoStep;
+  if( user_action )
+    m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void relEffEqnFormChanged()
 
@@ -1790,12 +2287,26 @@ void RelActManualGui::relEffEqnOrderChanged()
 }
 
 
+void RelActManualGui::physModelUseHoerlChanged()
+{
+  m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}
+
 void RelActManualGui::nucDataSrcChanged()
 {
   m_renderFlags |= RenderActions::UpdateCalc;
   m_renderFlags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }
+
+void RelActManualGui::handlePhysicalModelShieldChanged()
+{
+  m_renderFlags |= RenderActions::UpdateCalc;
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void handlePhysicalModelShieldChanged()
 
 
 void RelActManualGui::matchToleranceChanged()
@@ -1821,6 +2332,28 @@ void RelActManualGui::backgroundSubtractChanged()
   scheduleRender();
 }
 
+void RelActManualGui::initPhysicalModelAttenShieldWidgets()
+{
+  assert( m_physicalModelShields );
+
+  if( m_selfAttenShield )
+  {
+    m_selfAttenShield->resetState();
+  }else
+  {      
+    m_selfAttenShield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
+    m_selfAttenShield->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
+    m_physicalModelShields->insertWidget( 0, m_selfAttenShield );
+  }
+  
+  assert( m_extAttenShields );
+  if( m_extAttenShields )
+  {
+    m_extAttenShields->clear();
+    auto shield = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_extAttenShields );
+    shield->changed().connect( this, &RelActManualGui::handlePhysicalModelShieldChanged );
+  }//if( m_extAttenShields )
+}//void initPhysicalModelAttenShieldWidgets()
 
 //void RelActManualGui::resultTabChanged()
 //{
@@ -1862,6 +2395,8 @@ void RelActManualGui::updateNuclides()
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
+    if( !rr )
+      continue; // Shielding inputs for Physical Model
     assert( rr && (rr->m_nuc || rr->m_reaction) && !current_nucs.count(rr->m_nuc) && !current_rctns.count(rr->m_reaction) );
     if( rr && rr->m_nuc )
       current_nucs[rr->m_nuc] = rr;
@@ -1908,9 +2443,13 @@ void RelActManualGui::updateNuclides()
     for( size_t index = 0; index < kids.size(); ++index )
     {
       ManRelEffNucDisp *prev = dynamic_cast<ManRelEffNucDisp *>( kids[index] );
-      assert( prev );
+      assert( prev || kids[index]->hasStyleClass("PhysicalModelShields") );
       if( !prev || !prev->m_nuc )
+      {
+        if( kids[index] && kids[index]->hasStyleClass("PhysicalModelShields") )
+          insert_index = static_cast<int>( index + 1 );  //Make sure shields are always before nuclides
         continue;
+      }
       
       if( prev->m_nuc->atomicNumber > nuc->atomicNumber )
       {
@@ -1963,7 +2502,11 @@ void RelActManualGui::updateNuclides()
       ManRelEffNucDisp *prev = dynamic_cast<ManRelEffNucDisp *>( kids[index] );
       assert( prev );
       if( !prev || !prev->m_reaction )
+      {
+        if( kids[index] && kids[index]->hasStyleClass("PhysicalModelShields") )
+          insert_index = static_cast<int>( index + 1 );  //Make sure shields are always before nuclides
         continue;
+      }
       
       const SandiaDecay::Element *prev_el = prev->m_reaction->targetElement;
       if( !prev_el && prev->m_reaction->productNuclide )
@@ -2036,7 +2579,7 @@ void RelActManualGui::updateNuclides()
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
-    assert( rr );
+    assert( rr || w->hasStyleClass("PhysicalModelShields") );
     if( rr && rr->m_nuc )
     {
       const bool isU = (rr->m_nuc->atomicNumber == 92);
@@ -2137,6 +2680,7 @@ RelActCalc::RelEffEqnForm RelActManualGui::relEffEqnForm() const
     case RelActCalc::RelEffEqnForm::LnY:
     case RelActCalc::RelEffEqnForm::LnXLnY:
     case RelActCalc::RelEffEqnForm::FramEmpirical:
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
       validSelect = true;
       break;
   }//switch( eqn_form )
@@ -2150,6 +2694,10 @@ RelActCalc::RelEffEqnForm RelActManualGui::relEffEqnForm() const
 
 size_t RelActManualGui::relEffEqnOrder() const
 {
+  RelActCalc::RelEffEqnForm eqgnForm = relEffEqnForm();
+  if( eqgnForm == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    return 0;
+
   const int orderIndex = m_relEffEqnOrder->currentIndex();
   if( (orderIndex < 0) || (orderIndex > 7) )
     throw runtime_error( "Invalid RelEffEqnOrder" );
@@ -2214,8 +2762,50 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
 
 ::rapidxml::xml_node<char> *RelActManualGui::serialize( ::rapidxml::xml_node<char> *parent_node )
 {
+  auto state = getGuiState();
+  if( !state )
+    return nullptr;
+  
+  return state->serialize( parent_node );
+}//serialize(...)
+
+
+void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
+{
+  // Clear out any existing nuclides
+  GuiState state;
+  state.deSerialize( base_node );
+  
+  setGuiState( state );
+}//deSerialize(...)
+
+
+const char *RelActManualGui::to_str( const RelActManualGui::AddUncert val )
+{
+  switch( val )
+  {
+    case AddUncert::Unweighted:         return "Unweighted";
+    case AddUncert::StatOnly:           return "StatOnly";
+    case AddUncert::OnePercent:         return "OnePercent";
+    case AddUncert::FivePercent:        return "FivePercent";
+    case AddUncert::TenPercent:         return "TenPercent";
+    case AddUncert::TwentyFivePercent:  return "TwentyFivePercent";
+    case AddUncert::FiftyPercent:       return "FiftyPercent";
+    case AddUncert::SeventyFivePercent: return "SeventyFivePercent";
+    case AddUncert::OneHundredPercent:  return "OneHundredPercent";
+    case AddUncert::NumAddUncert:       return "NumAddUncert";
+  }//
+  
+  return "InvalidAddUncert";
+}//to_str( const AddUncert val )
+
+
+::rapidxml::xml_node<char> *RelActManualGui::GuiState::serialize( ::rapidxml::xml_node<char> *parent_node ) const
+{
   ::rapidxml::xml_document<char> *doc = parent_node->document();
   assert( doc );
+  
+  const GuiState &state = *this;
   
   const char *name = "RelActManualGui";
   ::rapidxml::xml_node<char> * const base_node = doc->allocate_node( ::rapidxml::node_element, name );
@@ -2229,64 +2819,42 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
   ::rapidxml::xml_attribute<> *attr = doc->allocate_attribute( "version", value );
   base_node->append_attribute( attr );
   
-  const RelActCalc::RelEffEqnForm eqn_form = relEffEqnForm();
-  value = RelActCalc::to_str( eqn_form );
+  value = RelActCalc::to_str( state.m_relEffEqnFormIndex );
   ::rapidxml::xml_node<char> *node = doc->allocate_node( ::rapidxml::node_element, "RelEffEqnForm", value );
   base_node->append_node( node );
   
-  const size_t eqn_order = relEffEqnOrder();
-  value = doc->allocate_string( std::to_string(eqn_order).c_str() );
+  value = doc->allocate_string( std::to_string(state.m_relEffEqnOrderIndex).c_str() );
   node = doc->allocate_node( ::rapidxml::node_element, "RelEffEqnOrder", value );
   base_node->append_node( node );
   
-  const RelActCalcManual::PeakCsvInput::NucDataSrc srcData = nucDataSrc();
-  
-  value = RelActCalcManual::PeakCsvInput::to_str( srcData );
+  value = state.m_physModelUseHoerl ? "true" : "false";
+  node = doc->allocate_node( ::rapidxml::node_element, "PhysModelUseHoerl", value );
+  base_node->append_node( node );
+
+  value = RelActCalcManual::PeakCsvInput::to_str( state.m_nucDataSrcIndex );
   node = doc->allocate_node( ::rapidxml::node_element, "NucDataSrc", value );
   base_node->append_node( node );
   
-  const float match_tolerance = m_matchTolerance->value();
-  const string match_tolerance_str = SpecUtils::printCompact(match_tolerance, 7);
+  const string match_tolerance_str = SpecUtils::printCompact(state.m_matchToleranceValue, 7);
   value = doc->allocate_string( match_tolerance_str.c_str() );
   node = doc->allocate_node( ::rapidxml::node_element, "MatchTolerance", value );
   base_node->append_node( node );
   
-  value = RelActManualGui::to_str( AddUncert(m_addUncertainty->currentIndex()) );
+  value = RelActManualGui::to_str( state.m_addUncertIndex );
   node = doc->allocate_node( ::rapidxml::node_element, "AddUncertainty", value );
   base_node->append_node( node );
   
-  
-  value = m_resultMenu->currentIndex() ? "1" : "0";
+  value = state.m_resultTab ? "1" : "0";
   node = doc->allocate_node( ::rapidxml::node_element, "ResultTabShowing", value );
   base_node->append_node( node );
   
-  const bool background_sub = (!m_backgroundSubtractHolder->isHidden()
-                               && m_backgroundSubtract->isChecked());
-  value = background_sub ? "1" : "0";
+  value = state.m_backgroundSubtract ? "1" : "0";
   node = doc->allocate_node( ::rapidxml::node_element, "BackgroundSubtract", value );
   base_node->append_node( node );
   
-  map<string,double> nuc_age_cache = m_nucAge;
-  map<string,bool> nuc_decay_correct = m_nucDecayCorrect;
-  
-  for( auto w : m_nuclidesDisp->children() )
-  {
-    const ManRelEffNucDisp *rr = dynamic_cast<const ManRelEffNucDisp *>(w);
-    if( rr && rr->m_nuc )
-    {
-      nuc_age_cache[rr->m_nuc->symbol] = rr->m_current_age;
-      
-      if( rr->m_decay_during_meas )
-        nuc_decay_correct[rr->m_nuc->symbol] = rr->m_decay_during_meas->isChecked();
-      else
-        nuc_decay_correct.erase( rr->m_nuc->symbol );
-    }
-  }//for( auto w : m_nuclidesDisp->children() )
-  
-  
   ::rapidxml::xml_node<char> *nuc_ages_node = doc->allocate_node( ::rapidxml::node_element, "NuclideAges" );
   base_node->append_node( nuc_ages_node );
-  for( const auto &n : nuc_age_cache )
+  for( const auto &n : state.nucAge )
   {
     ::rapidxml::xml_node<char> *nuc_node = doc->allocate_node( ::rapidxml::node_element, "Nuclide" );
     nuc_ages_node->append_node( nuc_node );
@@ -2299,8 +2867,8 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
     ::rapidxml::xml_node<char> *age_node = doc->allocate_node( ::rapidxml::node_element, "Age", value );
     nuc_node->append_node(age_node);
     
-    const auto decay_corr_pos = nuc_decay_correct.find(n.first);
-    if( decay_corr_pos != end(nuc_decay_correct) )
+    const auto decay_corr_pos = state.nucDecayCorrect.find(n.first);
+    if( decay_corr_pos != end(state.nucDecayCorrect) )
     {
       value = decay_corr_pos->second ? "true" : "false";
       ::rapidxml::xml_node<char> *corr_node = doc->allocate_node( ::rapidxml::node_element, "DecayDuringMeasurement", value );
@@ -2308,11 +2876,32 @@ shared_ptr<const RelActCalcManual::RelEffSolution> RelActManualGui::currentSolut
     }
   }//for( const auto &n : nuc_age_cache )
   
+  if( state.m_selfAttenShield || !state.m_externalShields.empty() )
+  {
+    ::rapidxml::xml_node<char> *shields_node = doc->allocate_node( ::rapidxml::node_element, "PhysicalModelShields" );
+    base_node->append_node( shields_node );
+    
+    if( state.m_selfAttenShield )
+    {
+      ::rapidxml::xml_node<char> *self_node = doc->allocate_node( ::rapidxml::node_element, "SelfAttenShield" );
+      shields_node->append_node( self_node );
+      state.m_selfAttenShield->toXml( self_node );
+    }//if( state.self_atten_shield )
+    
+    if( !state.m_externalShields.empty() )
+    {
+      ::rapidxml::xml_node<char> *ext_node = doc->allocate_node( ::rapidxml::node_element, "ExternalAttenShields" );
+      shields_node->append_node( ext_node );
+      for( const unique_ptr<RelEffShieldState> &s : state.m_externalShields )
+        s->toXml( ext_node );
+    }//if( !ext_atten_shields.empty() )
+  }//if( state.self_atten_shield || !state.ext_atten_shields.empty() )
+
   return base_node;
-}//serialize(...)
+}//::rapidxml::xml_node<char> *GuiState::serialize( ::rapidxml::xml_node<char> *parent_node )
 
 
-void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
+void RelActManualGui::GuiState::deSerialize( const ::rapidxml::xml_node<char> *base_node )
 {
   if( SpecUtils::xml_name_str(base_node) != "RelActManualGui" )
     throw runtime_error( "RelActManualGui::deSerialize: invalid base node passed in: '"
@@ -2323,38 +2912,38 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( !attr || !attr->value() || !(stringstream(attr->value()) >> version) )
     throw runtime_error( "Deserializing requires a version" );
   
-  if( version != sm_xmlSerializationMajorVersion )
+  if( version != RelActManualGui::sm_xmlSerializationMajorVersion )
     throw runtime_error( "Invalid version of RelActManualGui XML" );
-  
-  m_nuclidesDisp->clear();
-  //m_nucAge.clear();
   
   const ::rapidxml::xml_node<char> *RelEffEqnForm_node = XML_FIRST_NODE(base_node, "RelEffEqnForm");
   const ::rapidxml::xml_node<char> *RelEffEqnOrder_node = XML_FIRST_NODE(base_node, "RelEffEqnOrder");
+  const ::rapidxml::xml_node<char> *PhysModelUseHoerl_node = XML_FIRST_NODE(base_node, "PhysModelUseHoerl");
   const ::rapidxml::xml_node<char> *NucDataSrc_node = XML_FIRST_NODE(base_node, "NucDataSrc");
   const ::rapidxml::xml_node<char> *MatchTolerance_node = XML_FIRST_NODE(base_node, "MatchTolerance");
   const ::rapidxml::xml_node<char> *AddUncertainty_node = XML_FIRST_NODE(base_node, "AddUncertainty");
   const ::rapidxml::xml_node<char> *ResultTabShowing_node = XML_FIRST_NODE(base_node, "ResultTabShowing");
   const ::rapidxml::xml_node<char> *BackgroundSubtract_node = XML_FIRST_NODE(base_node, "BackgroundSubtract");
   const ::rapidxml::xml_node<char> *NuclideAges_node = XML_FIRST_NODE(base_node, "NuclideAges");
+  const ::rapidxml::xml_node<char> *PhysicalModelShields_node = XML_FIRST_NODE(base_node, "PhysicalModelShields");
   
-  
-  if( !RelEffEqnForm_node || !RelEffEqnOrder_node || !NucDataSrc_node || !MatchTolerance_node
+  if( !RelEffEqnForm_node || !NucDataSrc_node || !MatchTolerance_node
      || !AddUncertainty_node || !ResultTabShowing_node || !NuclideAges_node )
     throw runtime_error( "RelActManualGui::deSerialize: missing required node" );
   
+  GuiState &state = *this;
+  
   bool got_eqn_form = false;
-  RelActCalc::RelEffEqnForm eqn_form = RelActCalc::RelEffEqnForm::LnX;
+  state.m_relEffEqnFormIndex = RelActCalc::RelEffEqnForm::LnX;
   const string rel_eff_eqn_form_str = SpecUtils::xml_value_str( RelEffEqnForm_node );
   for( RelActCalc::RelEffEqnForm form = RelActCalc::RelEffEqnForm(0);
-      form <= RelActCalc::RelEffEqnForm::FramEmpirical;
+      form <= RelActCalc::RelEffEqnForm::FramPhysicalModel;
       form = RelActCalc::RelEffEqnForm(static_cast<int>(form)+1) )
   {
     const char * const test_form = RelActCalc::to_str( form );
     if( test_form == rel_eff_eqn_form_str )
     {
       got_eqn_form = true;
-      eqn_form = form;
+      state.m_relEffEqnFormIndex = form;
       break;
     }
   }//for( loop over RelEffEqnForm )
@@ -2362,18 +2951,27 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( !got_eqn_form )
     throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_eqn_form_str + "' is invalid RelEffEqnForm" );
   
-  
-  int eqn_order = -1;
-  const string rel_eff_order_str = SpecUtils::xml_value_str(RelEffEqnOrder_node);
-  if( !(stringstream(rel_eff_order_str) >> eqn_order)
-     || (eqn_order <= 0)
-     || (eqn_order > m_relEffEqnOrder->count() ) )
+  state.m_relEffEqnOrderIndex = 0; //We'll let this node be optional for physical mode.
+  if( RelEffEqnOrder_node || (state.m_relEffEqnFormIndex != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
   {
-    throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_order_str + "' is invalid RelEffEqnOrder" );
+    const string rel_eff_order_str = SpecUtils::xml_value_str(RelEffEqnOrder_node);
+    if( !(stringstream(rel_eff_order_str) >> state.m_relEffEqnOrderIndex)
+       || (state.m_relEffEqnOrderIndex < 0) )
+    {
+      throw runtime_error( "RelActManualGui::deSerialize: '" + rel_eff_order_str + "' is invalid RelEffEqnOrder" );
+    }
+  }//if( we expect, or are seeing equation order node ).
+
+  state.m_physModelUseHoerl = true;
+  if( PhysModelUseHoerl_node )
+  {
+    const string use_hoerl_str = SpecUtils::xml_value_str( PhysModelUseHoerl_node );
+    state.m_physModelUseHoerl = ((use_hoerl_str == "true") || (use_hoerl_str == "1"));
   }
+
   
   bool got_data_src = false;
-  auto data_src = RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U;
+  state.m_nucDataSrcIndex = RelActCalcManual::PeakCsvInput::NucDataSrc::Icrp107_U;
   const string data_src_str = SpecUtils::xml_value_str(NucDataSrc_node);
   for( auto src = RelActCalcManual::PeakCsvInput::NucDataSrc(0);
       src < RelActCalcManual::PeakCsvInput::NucDataSrc::Undefined;
@@ -2383,7 +2981,7 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
     if( val == data_src_str )
     {
       got_data_src = true;
-      data_src = src;
+      state.m_nucDataSrcIndex = src;
       break;
     }
   }
@@ -2391,28 +2989,27 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
   if( !got_data_src )
     throw runtime_error( "RelActManualGui::deSerialize: '" + data_src_str + "' is invalid NucDataSrc" );
   
-  float match_tolerance;
   const string match_tol_str = SpecUtils::xml_value_str(MatchTolerance_node);
-  if( !(stringstream( match_tol_str ) >> match_tolerance)
-     || (match_tolerance < 0.0f)
-     || (match_tolerance > 5.0f)
-     || IsNan(match_tolerance))
+  if( !(stringstream( match_tol_str ) >> state.m_matchToleranceValue)
+     || (state.m_matchToleranceValue < 0.0f)
+     || (state.m_matchToleranceValue > 5.0f)
+     || IsNan(state.m_matchToleranceValue))
   {
     throw runtime_error( "RelActManualGui::deSerialize: '" + match_tol_str + "' is invalid match tolerance" );
   }
   
   bool got_add_uncert = false;
-  AddUncert add_uncert = AddUncert::FiftyPercent;
+  state.m_addUncertIndex = RelActManualGui::AddUncert::FiftyPercent;
   const string add_uncert_str = SpecUtils::xml_value_str(AddUncertainty_node);
-  for( AddUncert uncert = AddUncert(0);
-      uncert <= AddUncert::NumAddUncert;
-      uncert = AddUncert(static_cast<int>(uncert) + 1) )
+  for( RelActManualGui::AddUncert uncert = RelActManualGui::AddUncert(0);
+      uncert <= RelActManualGui::AddUncert::NumAddUncert;
+      uncert = RelActManualGui::AddUncert(static_cast<int>(uncert) + 1) )
   {
     const char *test_str = RelActManualGui::to_str( uncert );
     if( test_str == add_uncert_str )
     {
       got_add_uncert = true;
-      add_uncert = uncert;
+      state.m_addUncertIndex = uncert;
       break;
     }
   }//for( loop over AddUncert )
@@ -2421,20 +3018,20 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
     cerr << "RelActManualGui::deSerialize: failed to decode '"
          << add_uncert_str << "' into a AddUncert enum" << endl;
   
-  int tab_showing = 0;
+  state.m_resultTab = 0;
   const string tab_show_str = SpecUtils::xml_value_str(ResultTabShowing_node);
-  if( !(stringstream(tab_show_str) >> tab_showing) )
+  if( !(stringstream(tab_show_str) >> state.m_resultTab) )
     cerr << "RelActManualGui::deSerialize: invalid ResultTabShowing node '"
          << tab_show_str << "'" << endl;
   
-  if( (tab_showing != 0) && (tab_showing != 1) )
-    tab_showing = 0;
+  if( (state.m_resultTab != 0) && (state.m_resultTab != 1) )
+    state.m_resultTab = 0;
   
-  bool backSub = false;
+  state.m_backgroundSubtract = false;
   if( BackgroundSubtract_node )
   {
     const string back_sub_str = SpecUtils::xml_value_str(BackgroundSubtract_node);
-    backSub = ((back_sub_str == "1") || SpecUtils::iequals_ascii(back_sub_str, "true"));
+    state.m_backgroundSubtract = ((back_sub_str == "1") || SpecUtils::iequals_ascii(back_sub_str, "true"));
   }
   
   
@@ -2460,47 +3057,52 @@ void RelActManualGui::deSerialize( const ::rapidxml::xml_node<char> *base_node )
       continue;
     }
     
-    m_nucAge[nuc] = age;
+    state.nucAge[nuc] = age;
     
     if( decay_corr_node )
     {
       const string decay_corr = SpecUtils::xml_value_str(decay_corr_node);
-      m_nucDecayCorrect[nuc] = ((decay_corr == "true") || (decay_corr == "1"));
+      state.nucDecayCorrect[nuc] = ((decay_corr == "true") || (decay_corr == "1"));
     }
   }//for( loop over <Nuclide> nodes )
-  
-  
-  // Now need to set state of widgets
-  m_relEffEqnForm->setCurrentIndex( static_cast<int>(eqn_form) );
-  m_relEffEqnOrder->setCurrentIndex( eqn_order );
-  m_nucDataSrc->setCurrentIndex( static_cast<int>(data_src) );
-  m_matchTolerance->setValue( match_tolerance );
-  m_addUncertainty->setCurrentIndex( static_cast<int>(add_uncert) );
-  m_resultMenu->select( tab_showing );
-  m_backgroundSubtract->setChecked( backSub );
-  
-  // Schedule calc/render
-  m_renderFlags |= RenderActions::UpdateCalc;
-  m_renderFlags |= RenderActions::UpdateNuclides;
-  scheduleRender();
-}//deSerialize(...)
-
-
-const char *RelActManualGui::to_str( const RelActManualGui::AddUncert val )
-{
-  switch( val )
+    
+  if( PhysicalModelShields_node )
   {
-    case AddUncert::Unweighted:         return "Unweighted";
-    case AddUncert::StatOnly:           return "StatOnly";
-    case AddUncert::OnePercent:         return "OnePercent";
-    case AddUncert::FivePercent:        return "FivePercent";
-    case AddUncert::TenPercent:         return "TenPercent";
-    case AddUncert::TwentyFivePercent:  return "TwentyFivePercent";
-    case AddUncert::FiftyPercent:       return "FiftyPercent";
-    case AddUncert::SeventyFivePercent: return "SeventyFivePercent";
-    case AddUncert::OneHundredPercent:  return "OneHundredPercent";
-    case AddUncert::NumAddUncert:       return "NumAddUncert";
-  }//
-  
-  return "InvalidAddUncert";
-}//to_str( const AddUncert val )
+    const ::rapidxml::xml_node<char> *self_node = XML_FIRST_NODE(PhysicalModelShields_node, "SelfAttenShield");
+    const ::rapidxml::xml_node<char> *self_shield_node = self_node ? XML_FIRST_NODE(self_node, "RelEffShield") : nullptr;
+    if( self_shield_node )
+    {
+      auto shield_state = make_unique<RelEffShieldState>();
+      shield_state->fromXml( self_shield_node );
+      state.m_selfAttenShield = std::move(shield_state);
+    }
+    
+    const ::rapidxml::xml_node<char> *ext_node = XML_FIRST_NODE(PhysicalModelShields_node, "ExternalAttenShields");
+    if( ext_node )
+    {
+      XML_FOREACH_CHILD( shield_node, ext_node, "RelEffShield" )
+      {
+        auto shield_state = make_unique<RelEffShieldState>();
+        shield_state->fromXml( shield_node );
+        state.m_externalShields.push_back( std::move(shield_state) );
+      }
+    }//if( ext_node )
+  }//if( PhysicalModelShields_node )
+}//void GuiState::deSerialize( const ::rapidxml::xml_node<char> *base_node )
+
+
+bool RelActManualGui::GuiState::operator==( const RelActManualGui::GuiState &rhs ) const
+{
+  return (m_relEffEqnFormIndex == rhs.m_relEffEqnFormIndex)
+    && (m_relEffEqnOrderIndex == rhs.m_relEffEqnOrderIndex)
+    && (m_physModelUseHoerl == rhs.m_physModelUseHoerl)
+    && (m_nucDataSrcIndex == rhs.m_nucDataSrcIndex)
+    && (m_matchToleranceValue == rhs.m_matchToleranceValue)
+    && (m_addUncertIndex == rhs.m_addUncertIndex)
+    && (m_backgroundSubtract == rhs.m_backgroundSubtract)
+    && (m_resultTab == rhs.m_resultTab)
+    //&& (m_nucAgesAndDecayCorrect == rhs.m_nucAgesAndDecayCorrect)
+    && (nucAge == rhs.nucAge)
+    && (nucDecayCorrect == rhs.nucDecayCorrect)
+  ;
+}//RelActManualGui::GuiState::GuiState::operator==

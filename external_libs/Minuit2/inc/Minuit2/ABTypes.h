@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: ABTypes.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -12,115 +12,115 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
+class gen {
+};
+class sym {
+};
+class vec {
+};
 
-class gen {};
-class sym {};
-class vec {};
-
-template<class A, class B>
+template <class A, class B>
 class AlgebraicSumType {
 public:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template<class T>
+template <class T>
 class AlgebraicSumType<T, T> {
 public:
-  typedef T Type;
+   typedef T Type;
 };
 
-template < >
+template <>
 class AlgebraicSumType<vec, gen> {
 private:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicSumType<gen, vec> {
 private:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicSumType<vec, sym> {
 private:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicSumType<sym, vec> {
 private:
-  typedef gen Type;
+   typedef gen Type;
 };
 
 //
 
-template<class A, class B>
+template <class A, class B>
 class AlgebraicProdType {
 private:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template<class T>
+template <class T>
 class AlgebraicProdType<T, T> {
 private:
-  typedef T Type;
+   typedef T Type;
 };
 
-template < >
+template <>
 class AlgebraicProdType<gen, gen> {
 public:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicProdType<sym, sym> {
 public:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicProdType<sym, gen> {
 public:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicProdType<gen, sym> {
 public:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicProdType<vec, gen> {
 private:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicProdType<gen, vec> {
 public:
    typedef vec Type;
 };
 
-template < >
+template <>
 class AlgebraicProdType<vec, sym> {
 private:
-  typedef gen Type;
+   typedef gen Type;
 };
 
-template < >
+template <>
 class AlgebraicProdType<sym, vec> {
 public:
-  typedef vec Type;
+   typedef vec Type;
 };
 
+} // namespace Minuit2
 
+} // namespace ROOT
 
-  }  // namespace Minuit2
-
-}  // namespace ROOT
-
-#endif  // ROOT_Minuit2_ABTypes
+#endif // ROOT_Minuit2_ABTypes

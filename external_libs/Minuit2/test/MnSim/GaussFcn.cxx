@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: GaussFcn.cxx 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -14,23 +14,22 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
+namespace Minuit2 {
 
+double GaussFcn::operator()(std::vector<double> const &par) const
+{
 
-double GaussFcn::operator()(const std::vector<double>& par) const {
-  
-  assert(par.size() == 3);
-  GaussFunction gauss(par[0], par[1], par[2]);
+   assert(par.size() == 3);
+   GaussFunction gauss(par[0], par[1], par[2]);
 
-  double chi2 = 0.;
-  for(unsigned int n = 0; n < fMeasurements.size(); n++) {
-    chi2 += ((gauss(fPositions[n]) - fMeasurements[n])*(gauss(fPositions[n]) - fMeasurements[n])/fMVariances[n]);
-  }
+   double chi2 = 0.;
+   for (unsigned int n = 0; n < fMeasurements.size(); n++) {
+      chi2 += ((gauss(fPositions[n]) - fMeasurements[n]) * (gauss(fPositions[n]) - fMeasurements[n]) / fMVariances[n]);
+   }
 
-  return chi2;
+   return chi2;
 }
 
+} // namespace Minuit2
 
-  }  // namespace Minuit2
-
-}  // namespace ROOT
+} // namespace ROOT

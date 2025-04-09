@@ -131,9 +131,10 @@
     <script>
         const data_vals = ${REL_EFF_DATA_VALS};
         const fit_eqn = ${FIT_REL_EFF_EQUATION};
-
+        const fit_uncert_fcn = ${FIT_REL_EFF_EQUATION_UNCERTAINTY};
         let chart = new RelEffPlot("releffchart");
-        chart.setRelEffData(data_vals, fit_eqn);
+        const chi2_txt = null; // TODO: Add chi2_txt
+        chart.setRelEffData(data_vals, fit_eqn, chi2_txt, fit_uncert_fcn);
 
         var olddivhight = 0;
         let divobserver = new ResizeObserver(entries => {

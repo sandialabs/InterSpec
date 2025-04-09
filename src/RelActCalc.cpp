@@ -31,16 +31,42 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/GammaInteractionCalc.h"
+
+#include "InterSpec/RelActCalc_imp.hpp"
 
 using namespace std;
 
+namespace 
+{
+  /** Make "Pu (plutonium)" into "Pu", for printing PhysicalModelShieldInput materials. */
+  string cleanup_mat_name( string text )
+  {
+    size_t first = text.find('(');
+    if( first != std::string::npos )
+    {
+      size_t second = text.find(')', first);
+      if( second != std::string::npos )
+        text.erase(first, second - first + 1);
+    }
+    
+    SpecUtils::trim( text );
+    return text;
+  };//cleanup_mat_name(...)
+}//namespace 
 
 namespace RelActCalc
 {
+const double PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2 = 500.0;
 
 const char *to_str( const RelEffEqnForm form )
 {
@@ -50,6 +76,8 @@ const char *to_str( const RelEffEqnForm form )
     case RelEffEqnForm::LnY:    return "LnY";
     case RelEffEqnForm::LnXLnY: return "LnXLnY";
     case RelEffEqnForm::FramEmpirical: return "FRAM Empirical";
+    case RelEffEqnForm::FramPhysicalModel: return "FRAM Physical";
+      
   }
   
   assert( 0 );
@@ -65,7 +93,8 @@ RelEffEqnForm rel_eff_eqn_form_from_str( const char *str )
     RelEffEqnForm::LnX,
     RelEffEqnForm::LnY,
     RelEffEqnForm::LnXLnY,
-    RelEffEqnForm::FramEmpirical
+    RelEffEqnForm::FramEmpirical,
+    RelEffEqnForm::FramPhysicalModel
   };
   
   for( const RelEffEqnForm eqn : eqn_forms )
@@ -180,6 +209,9 @@ string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double>
       
       break;
     }//case RelActCalc::RelEffEqnForm::FramEmpirical:
+      
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+      throw runtime_error( "rel_eff_eqn_text: can not be called for FramPhysicalModel" );
   }//switch( answer.m_eqn_form )
   
   return rel_eff_eqn_str;
@@ -254,6 +286,9 @@ std::string rel_eff_eqn_js_function( const RelEffEqnForm eqn_form, const std::ve
       
       rel_eff_fcn += " )";
       break;
+      
+    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
+      throw runtime_error( "rel_eff_eqn_js_function: can not be called for FramPhysicalModel" );
     }//case RelActCalc::RelEffEqnForm::FramEmpirical:
   }//switch( answer.m_eqn_form )
   
@@ -272,102 +307,12 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const vector
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
                 const double * const coeffs, const size_t num_coefs )
 {
-  if( energy <= 0.0 )
-    throw runtime_error( "eval_eqn: energy must be greater than zero." );
-  
-  if( num_coefs < 1 )
-    throw runtime_error( "eval_eqn: need at least one coefficients." );
-  
-  
-  double answer = 0.0;
-  
-  switch( eqn_form )
-  {
-    case RelEffEqnForm::LnX:
-    {
-      // y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...
-      const double log_energy = std::log(energy);
-      
-      for( size_t order = 0; order < num_coefs; ++order )
-      {
-        switch( order )
-        {
-          case 0:  answer += coeffs[order];                                         break;
-          case 1:  answer += coeffs[order] * log_energy;                            break;
-          default: answer += coeffs[order] * std::pow( log_energy, (double)order ); break;
-        }//switch( order )
-      }//for( loop over coeffs )
-      
-      break;
-    }//case RelEffEqnForm::LnX:
-      
-    case RelEffEqnForm::LnY:
-    {
-      // y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
-      // Note that it would be a little more convenient to have y = exp(a*x + b + c/x + ...), but
-      //  I want to keep the leading term independent of energy.
-      for( size_t order = 0; order < num_coefs; ++order )
-      {
-        switch( order )
-        {
-          case 0:  answer += coeffs[order];                                   break;
-          case 1:  answer += coeffs[order] * energy;                          break;
-          case 2:  answer += coeffs[order] / energy;                          break;
-          default: answer += coeffs[order] / std::pow( energy, order - 1.0 ); break;
-        }//switch( order )
-      }//for( loop over coeffs )
-      
-      answer = std::exp( answer );
-      
-      break;
-    }//case RelEffEqnForm::LnY:
-      
-    case RelEffEqnForm::LnXLnY:
-    {
-      // y = exp (a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )
-      const double log_energy = std::log(energy);
-      
-      for( size_t order = 0; order < num_coefs; ++order )
-      {
-        switch( order )
-        {
-          case 0:  answer += coeffs[order]; break;
-          case 1:  answer += coeffs[order] * log_energy; break;
-          default: answer += coeffs[order] * std::pow( log_energy, (double)order ); break;
-        }//switch( order )
-      }//for( loop over coeffs )
-      
-      answer = std::exp( answer );
-      
-      break;
-    }//case RelEffEqnForm::LnXLnY:
-      
-    case RelEffEqnForm::FramEmpirical:
-    {
-      // y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
-      const double log_energy = std::log(energy);
-      
-      for( size_t order = 0; order < num_coefs; ++order )
-      {
-        switch( order )
-        {
-          case 0:  answer += coeffs[order];  break;
-          case 1:  answer += coeffs[order] / (energy*energy); break;
-          default: answer += coeffs[order] * std::pow( log_energy, order - 1.0 ); break;
-        }//switch( order )
-      }//for( loop over coeffs )
-      
-      answer = std::exp( answer );
-      
-      break;
-    }//case RelEffEqnForm::FramEmpirical:
-  }//switch( eqn_form )
-  
-  return answer;
+  return RelActCalc::eval_eqn_imp<double>( energy, eqn_form, coeffs, num_coefs );
 }//eval_eqn(...)
 
 
 double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
+                            const std::vector<double> &coefs,
                             const std::vector<std::vector<double>> &covariance )
 {
   if( covariance.empty() )
@@ -388,8 +333,8 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
         if( covariance[i].size() != covariance.size() )  //JIC for release builds
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
-        for( size_t j = 0; j <= covariance.size(); ++j )
-        uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
+        for( size_t j = 0; j < covariance.size(); ++j )
+          uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( uncert_sq >= 0.0 );
@@ -401,6 +346,8 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
     case RelEffEqnForm::LnY:
     {
       // y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
+      const double eval_val = eval_eqn( energy, eqn_form, coefs );
+      
       const auto eval_term_log = [energy]( const size_t order ) -> double {
         switch( order )
         {
@@ -421,19 +368,20 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
         if( covariance[i].size() != covariance.size() )  //JIC for release builds
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
-        for( size_t j = 0; j <= covariance.size(); ++j )
-        log_uncert_sq += eval_term_log(i) * covariance[i][j] * eval_term_log(j);
+        for( size_t j = 0; j < covariance.size(); ++j )
+          log_uncert_sq += eval_term_log(i) * covariance[i][j] * eval_term_log(j);
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( log_uncert_sq >= 0.0 );
       
-      return exp( sqrt(log_uncert_sq) );
+      return eval_val * sqrt(log_uncert_sq);
     }//case RelEffEqnForm::LnY:
       
     case RelEffEqnForm::LnXLnY:
     {
       // y = exp(a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )
       const double log_energy = std::log(energy);
+      const double eval_val = eval_eqn( energy, eqn_form, coefs );
       
       double log_uncert_sq = 0.0;
       
@@ -443,25 +391,20 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
         if( covariance[i].size() != covariance.size() )  //JIC for release builds
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
-        for( size_t j = 0; j <= covariance.size(); ++j )
+        for( size_t j = 0; j < covariance.size(); ++j )
         log_uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
       assert( log_uncert_sq >= 0.0 );
       
-      return exp( sqrt(log_uncert_sq) );
+      return eval_val * sqrt(log_uncert_sq);
     }//case RelEffEqnForm::LnXLnY:
       
     case RelEffEqnForm::FramEmpirical:
     {
       // y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
       const double log_energy = std::log(energy);
-      
-#ifdef _MSC_VER
-#pragma message( "eval_eqn_uncertainty with RelEffEqnForm::FramEmpirical not tested!" )
-#else
-#warning "eval_eqn_uncertainty with RelEffEqnForm::FramEmpirical not tested!"
-#endif
+      const double eval_val = eval_eqn( energy, eqn_form, coefs );
       
       double log_uncert_sq = 0.0;
       
@@ -479,7 +422,7 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
           default: i_component = std::pow(log_energy, i - 1.0); break;
         }//switch( i )
         
-        for( size_t j = 0; j <= covariance.size(); ++j )
+        for( size_t j = 0; j < covariance.size(); ++j )
         {
           double j_component = 0.0;
           switch( j )
@@ -495,8 +438,12 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       
       assert( log_uncert_sq >= 0.0 );
       
-      return exp( sqrt(log_uncert_sq) );
+      return eval_val * sqrt(log_uncert_sq);
     }//case RelEffEqnForm::FramEmpirical:
+      
+    case RelEffEqnForm::FramPhysicalModel:
+      assert( 0 );
+      throw runtime_error( "RelActCalc::eval_eqn_uncertainty() can not be called for FramPhysicalModel." );
   }//switch( eqn_form )
   
   
@@ -748,4 +695,509 @@ void test_pu242_by_correlation()
 }//void test_pu242_by_correlation()
 
 
+double mass_ratio_to_act_ratio( const SandiaDecay::Nuclide * const numerator_nuclide, 
+                                const SandiaDecay::Nuclide * const denominator_nuclide, 
+                                const double mass_ratio )
+{
+  assert( numerator_nuclide );
+  assert( denominator_nuclide );
+  assert( mass_ratio > 0.0 );
+/*
+Nuc1: 3 bq/g
+Nuc2: 2 bq/g
+
+constraining Nuc1, controlling Nuc2
+
+want mass ratio 1:
+  mass_ratio_to_act_ratio( Nuc1, Nuc2, 1 ) --> (3/2)*1 = 3/2 (3 bq Nuc1, 2 bq Nuc2)
+
+want mass ratio 0.5:
+  mass_ratio_to_act_ratio( Nuc1, Nuc2, 0.5 ) --> (3/2)*0.5 = 3/4 (3 bq Nuc1, 4 bq Nuc2 --> 1g Nuc1, 2g Nuc2)
+*/
+
+  const double num_act_per_g = numerator_nuclide->activityPerGram();
+  const double denom_act_per_g = denominator_nuclide->activityPerGram();
+  const double act_ratio = mass_ratio * num_act_per_g / denom_act_per_g;
+
+  return act_ratio;
+}
+
+void PhysicalModelShieldInput::check_valid() const
+{
+  const PhysicalModelShieldInput &input = *this;
+    
+  double ad_gcm2 = input.areal_density / PhysicalUnits::g_per_cm2;
+  const double ad_ll_gcm2 = input.lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+  double ad_ul_gcm2 = input.upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+  if( ad_ul_gcm2 == 0.0 )
+    ad_ul_gcm2 = sm_upper_allowed_areal_density_in_g_per_cm2;
+  
+  if( input.fit_areal_density )
+  {
+    if( ad_gcm2 == 0.0 )
+      ad_gcm2 = 0.5*(ad_ll_gcm2 + ad_ul_gcm2);
+    
+    if( ad_ul_gcm2 <= ad_ll_gcm2 )
+      throw runtime_error( "PhysicalModelShieldInput: upper AD must be greater than lower AD." );
+    
+    if( (ad_gcm2 < ad_ll_gcm2) || (ad_gcm2 > ad_ul_gcm2) )
+      throw runtime_error( "PhysicalModelShieldInput: starting AD must be within limits." );
+  }//if( input.fit_areal_density )
+  
+  if( (ad_gcm2 < 0.0) || (ad_gcm2 > sm_upper_allowed_areal_density_in_g_per_cm2) )
+    throw runtime_error( "PhysicalModelShieldInput: AD must be in range [0,500] g/cm2." );
+  
+  if( input.material )
+  {
+    if( input.atomic_number != 0.0 )
+      throw runtime_error( "PhysicalModelShieldInput: when material is specified"
+                          " the atomic number must be set to zero");
+    if( input.fit_atomic_number )
+      throw runtime_error( "PhysicalModelShieldInput: when material is specified, must set fit"
+                          " atomic number to false." );
+  }else
+  {
+    if( input.fit_atomic_number )
+    {
+      if( (input.atomic_number != 0.0)
+         && ((input.atomic_number < 1.0) || (input.atomic_number > 98)) )
+        throw runtime_error( "PhysicalModelShieldInput: atomic number must be in [1,98], or 0 when"
+                            " fitting it." );
+      
+      if( (input.lower_fit_atomic_number != 0.0)
+         && ((input.lower_fit_atomic_number < 1.0) || (input.lower_fit_atomic_number > 98)) )
+        throw runtime_error( "PhysicalModelShieldInput: lower atomic number must be in [1,98]." );
+      
+      if( (input.upper_fit_atomic_number != 0.0)
+         && ((input.upper_fit_atomic_number < 1.0) || (input.upper_fit_atomic_number > 98)) )
+        throw runtime_error( "PhysicalModelShieldInput: upper atomic number must be in [1,98]." );
+      
+      if( (input.upper_fit_atomic_number <= input.lower_fit_atomic_number)
+         && (input.upper_fit_atomic_number != 0.0) )
+        throw runtime_error( "PhysicalModelShieldInput: upper atomic number must be less than lower." );
+    }else
+    {
+      if( (input.atomic_number < 1.0) || (input.atomic_number > 98) )
+        throw runtime_error( "PhysicalModelShieldInput: invalid atomic number; must be in [1,98]" );
+    }
+  }//if( input.material ) / else.
+    
+};//PhysicalModelShieldInput::check_valid()
+  
+  
+#if( PERFORM_DEVELOPER_CHECKS )
+void PhysicalModelShieldInput::equalEnough( const PhysicalModelShieldInput &lhs, const PhysicalModelShieldInput &rhs )
+{
+  if( fabs(lhs.atomic_number - rhs.atomic_number) > 1.0E-6 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: atomic number mismatch" );
+  
+  if( !lhs.material != !rhs.material )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: material being present mismatch" );
+  
+  if( lhs.material && (lhs.material->name != rhs.material->name) )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: material name mismatch" );
+  
+  if( fabs(lhs.areal_density - rhs.areal_density) > 1.0E-3 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: areal density mismatch" );
+  
+  if( lhs.fit_atomic_number != rhs.fit_atomic_number )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: fit atomic number mismatch" );
+  
+  if( fabs(lhs.lower_fit_atomic_number - rhs.lower_fit_atomic_number) > 1.0E-4 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: lower fit atomic number mismatch" );
+  
+  if( fabs(lhs.upper_fit_atomic_number - rhs.upper_fit_atomic_number) > 1.0E-4 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: upper fit atomic number mismatch" );
+  
+  if( lhs.fit_areal_density != rhs.fit_areal_density )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: fit areal density mismatch" );
+  
+  if( fabs(lhs.lower_fit_areal_density - rhs.lower_fit_areal_density) > 1.0E-6 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: lower fit areal density mismatch" );
+  
+  if( fabs(lhs.upper_fit_areal_density - rhs.upper_fit_areal_density) > 1.0E-3 )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: upper fit areal density mismatch" );
+}//void PhysicalModelShieldInput::equalEnough(...)
+#endif
+  
+rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "PhysicalModelShieldInput::toXml: invalid parent." );
+  
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "PhysicalModelShield" );
+  parent->append_node( base_node );
+  
+  XmlUtils::append_version_attrib( base_node, PhysicalModelShieldInput::sm_xmlSerializationVersion );
+  
+  XmlUtils::append_float_node( base_node, "AtomicNumber", atomic_number );
+  if( material )
+    XmlUtils::append_string_node( base_node, "Material", material->name );
+  XmlUtils::append_float_node( base_node, "ArealDensity", areal_density / PhysicalUnits::g_per_cm2 );
+  XmlUtils::append_bool_node( base_node, "FitAtomicNumber", fit_atomic_number );
+  XmlUtils::append_float_node( base_node, "LowerFitAtomicNumber", lower_fit_atomic_number );
+  XmlUtils::append_float_node( base_node, "UpperFitAtomicNumber", upper_fit_atomic_number );
+  XmlUtils::append_bool_node( base_node, "FitArealDensity", fit_areal_density );
+  XmlUtils::append_float_node( base_node, "LowerFitArealDensity", lower_fit_areal_density / PhysicalUnits::g_per_cm2 );
+  XmlUtils::append_float_node( base_node, "UpperFitArealDensity", upper_fit_areal_density / PhysicalUnits::g_per_cm2 );
+}//rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const
+  
+  
+void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *materialDB )
+{
+  try
+  {
+    if( !parent )
+      throw runtime_error( "invalid input" );
+    
+    if( !rapidxml::internal::compare( parent->name(), parent->name_size(), "PhysicalModelShield", 19, false ) )
+      throw std::logic_error( "invalid input node name" );
+    
+    // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+    static_assert( PhysicalModelShieldInput::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+    XmlUtils::check_xml_version( parent, PhysicalModelShieldInput::sm_xmlSerializationVersion );
+    
+    const rapidxml::xml_node<char> *material_node = XML_FIRST_NODE( parent, "Material" );
+    
+    
+    areal_density = 0.0;
+    lower_fit_areal_density = 0.0;
+    upper_fit_areal_density = 0.0;
+    fit_areal_density = XmlUtils::get_bool_node_value( parent, "FitArealDensity" );
+    
+    if( fit_areal_density )
+    {
+      // We require AD limits if we are fitting AD
+      lower_fit_areal_density = XmlUtils::get_float_node_value( parent, "LowerFitArealDensity" );
+      upper_fit_areal_density = XmlUtils::get_float_node_value( parent, "UpperFitArealDensity" );
+      
+      // Wont require AD if we are fitting it
+      try
+      {
+        areal_density = XmlUtils::get_float_node_value( parent, "ArealDensity" );
+      }catch( std::exception & )
+      {
+      }
+    }else
+    {
+      // We wont really require AD limits if we are not fitting AD
+      try
+      {
+        lower_fit_areal_density = XmlUtils::get_float_node_value( parent, "LowerFitArealDensity" );
+      }catch( std::exception & )
+      {
+      }
+      
+      try
+      {
+        upper_fit_areal_density = XmlUtils::get_float_node_value( parent, "UpperFitArealDensity" );
+      }catch( std::exception & )
+      {
+      }
+      
+      // Require AD if we are fitting it
+      areal_density = XmlUtils::get_float_node_value( parent, "ArealDensity" );
+    }//if( fit_areal_density ) / else
+    
+    areal_density *= PhysicalUnits::g_per_cm2;
+    lower_fit_areal_density *= PhysicalUnits::g_per_cm2;
+    upper_fit_areal_density *= PhysicalUnits::g_per_cm2;
+    
+    
+    fit_atomic_number = false;
+    lower_fit_atomic_number = 1.0;
+    upper_fit_atomic_number = 98.0;
+    
+    if( material_node )
+    {
+      if( !materialDB )
+        throw runtime_error( "PhysicalModelShieldInput::fromXml: need MaterialDB" );
+      
+      const string name = SpecUtils::xml_value_str(material_node);
+      const Material * mat = materialDB->material( name );
+      if( !mat )
+      {
+        try
+        {
+          const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+          mat = materialDB->parseChemicalFormula( name, db );
+        }catch( std::exception & )
+        {
+        }
+      }//if( !mat )
+      
+      if( !mat )
+        throw runtime_error( "Invalid material name '" + name + "'" );
+      
+      material = make_shared<Material>( *mat );
+      
+      try
+      {
+        fit_atomic_number = XmlUtils::get_bool_node_value( parent, "FitAtomicNumber" );
+      }catch( std::exception & )
+      {
+      }
+      
+      try
+      {
+        atomic_number = XmlUtils::get_float_node_value( parent, "AtomicNumber" );
+        lower_fit_atomic_number = XmlUtils::get_float_node_value( parent, "LowerFitAtomicNumber" );
+        upper_fit_atomic_number = XmlUtils::get_float_node_value( parent, "UpperFitAtomicNumber" );
+      }catch( std::exception & )
+      {
+      }
+    }else
+    {
+      fit_atomic_number = XmlUtils::get_bool_node_value( parent, "FitAtomicNumber" );
+      atomic_number = XmlUtils::get_float_node_value( parent, "AtomicNumber" );
+      lower_fit_atomic_number = XmlUtils::get_float_node_value( parent, "LowerFitAtomicNumber" );
+      upper_fit_atomic_number = XmlUtils::get_float_node_value( parent, "UpperFitAtomicNumber" );
+      
+      double lower_an = 1.0, upper_an = 98.0;
+      if( fit_atomic_number && (lower_fit_atomic_number == upper_fit_atomic_number) )
+      {
+        lower_fit_atomic_number = 1.0;
+        upper_fit_atomic_number = 98.0;
+      }
+      
+      if( fit_atomic_number )
+      {
+        if( (lower_fit_atomic_number < 1.0) || (lower_fit_atomic_number > 98.0) )
+          throw runtime_error( "invalid lower atomic number fit range." );
+        
+        if( (upper_fit_atomic_number < 1.0) || (upper_fit_atomic_number > 98.0) )
+          throw runtime_error( "invalid lower atomic number fit range." );
+        
+        if( lower_fit_atomic_number >= upper_fit_atomic_number )
+          throw runtime_error( "lower atomic number is larger than upper atomic number." );
+      }//if( fit_atomic_number )
+      
+      if( (atomic_number < 1.0) || (atomic_number > 98.0) )
+      {
+        assert( atomic_number == 0.0 );
+        if( fit_atomic_number )
+          atomic_number = 0.5*(lower_fit_atomic_number + upper_fit_atomic_number);
+        else
+          atomic_number = 26.0;
+      }//
+    }// if( material_node ) / else
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "PhysicalModelShieldInput::fromXml(): " + string(e.what()) );
+  }
+}//void fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
+double eval_physical_model_eqn( const double energy,
+                               const std::optional<PhysModelShield<double>> &self_atten,
+                               const std::vector<PhysModelShield<double>> &external_attens,
+                               const DetectorPeakResponse * const drf,
+                               std::optional<double> hoerl_b,
+                               std::optional<double> hoerl_c )
+{
+  return eval_physical_model_eqn_imp<double>( energy, self_atten, external_attens, drf, hoerl_b, hoerl_c );
+}//eval_physical_model_eqn(...)
+  
+    
+double eval_physical_model_eqn_uncertainty( const double energy,
+                               const std::optional<PhysModelShield<double>> &self_atten,
+                               const std::vector<PhysModelShield<double>> &external_attens,
+                               const DetectorPeakResponse * const drf,
+                               std::optional<double> hoerl_b,
+                               std::optional<double> hoerl_c,
+                               const std::vector<std::vector<double>> &covariance )
+{
+#warning "eval_physical_model_eqn_uncertainty not implemented."
+static int ntimeshere = 0;
+if( ntimeshere++ < 5 )  
+  cerr << "eval_physical_model_eqn_uncertainty not implemented. " << endl;
+return 0.0;
+}
+  
+std::function<double(double)> physical_model_eff_function( const std::optional<PhysModelShield<double>> &self_atten,
+                                                          const std::vector<PhysModelShield<double>> &external_attens,
+                                                          const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                                          std::optional<double> hoerl_b,
+                                                          std::optional<double> hoerl_c )
+{
+  const auto sanity_check_shield = []( const PhysModelShield<double> &shield ){
+    double atomic_number = shield.atomic_number;
+    double areal_density = shield.areal_density;
+    
+    assert( (areal_density >= -1.0E-6) && !IsInf(areal_density) );
+    if( (areal_density <= -1.0E-6) || IsNan(areal_density) || IsInf(areal_density) )
+      throw runtime_error( "physical_model_eff_function: areal density must be >= 0." );
+    areal_density = std::max( 0.0, areal_density );
+
+    if( shield.material )
+    {
+      assert( atomic_number == 0.0f );
+      if( atomic_number != 0.0f )
+        throw runtime_error( "physical_model_eff_function: atomic number must be zero if material defined." );
+    }else if( atomic_number == 0.0 )
+    {
+      assert( areal_density == 0.0 );
+      if( areal_density != 0.0 )
+        throw runtime_error( "physical_model_eff_function: areal density must be zero if atomic number is zero." );
+    }else
+    {
+      assert( !IsNan(atomic_number) && !IsInf(atomic_number) && (atomic_number > 0.9) && (atomic_number < 98.1) );
+      
+      if( IsNan(atomic_number) || IsInf(atomic_number) )
+        throw runtime_error( "physical_model_eff_function: atomic number is inf or NaN." );
+
+      if( (atomic_number < 0.9) || (atomic_number > 98.1) )
+        throw runtime_error( "physical_model_eff_function: atomic number must in in range [1,98]" );
+    }
+  };//sanity_check_shield lamda
+  
+  if( self_atten.has_value() )
+    sanity_check_shield( *self_atten );
+  for( size_t i = 0; i < external_attens.size(); ++i )
+    sanity_check_shield( external_attens[i] );
+  
+  assert( hoerl_b.has_value() == hoerl_c.has_value() );
+  if( hoerl_b.has_value() != hoerl_c.has_value() )
+    throw std::logic_error( "hoerl_b.has_value() != hoerl_c.has_value()" );
+  
+  //const function<float(float)> drffcn = drf ? drf->intrinsicEfficiencyFcn() : []( float ){ return 1.0f; };
+  
+  return [drf, self_atten, external_attens, hoerl_b, hoerl_c]( double energy ) -> double {
+    return eval_physical_model_eqn_imp<double>( energy, self_atten, external_attens, drf.get(), hoerl_b, hoerl_c );
+  };
+}//physical_model_eff_function(...)
+  
+
+
+string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<double>> &self_atten,
+                                       const std::vector<PhysModelShield<double>> &external_attens,
+                                       const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                       std::optional<double> hoerl_b,
+                                       std::optional<double> hoerl_c,
+                                                const bool html_format )
+{
+  string eqn;
+  
+  if( self_atten.has_value() && (self_atten->material || ((self_atten->atomic_number > 0.9) && (self_atten->atomic_number < 98.1))) )
+  {
+    const double sa_an = self_atten->atomic_number;
+    const double sa_ad = self_atten->areal_density / PhysicalUnits::g_per_cm2;
+    const string sa_ad_str = SpecUtils::printCompact(sa_ad, 3);
+    const string mu_name = self_atten->material ? cleanup_mat_name(self_atten->material->name) : SpecUtils::printCompact(sa_an, 3);
+    if( html_format )
+    {
+      eqn +=
+      "<span style=\"display: inline-block; vertical-align: middle;\">\n"
+        "<span style=\"display: block; text-align: center;\">\n"
+          "(1 - exp(-" + sa_ad_str + "*μ<sub>" + mu_name + "</sub>))\n"
+        "</span>\n"
+        "<span style=\"display: block; border-top: 1px solid black; text-align: center;\">\n"
+          "(" + sa_ad_str + "*μ<sub>" + mu_name + "</sub>)\n"
+        "</span>\n"
+      "</span>\n";
+    }else
+    {
+      eqn += "(1 - exp(-" + sa_ad_str + "*μ_" + mu_name + "))/(" + sa_ad_str + "*μ_" + mu_name + ")";
+    }//if( html_format ) / else
+  }//if( using self attenuation )
+  
+  if( !external_attens.empty() )
+  {
+    eqn += " * [";
+    
+    for( size_t i = 0; i < external_attens.size(); ++i )
+    {
+      const PhysModelShield<double> &atten = external_attens[i];
+      if( !atten.material && ((atten.atomic_number < 0.9) || (atten.atomic_number > 98.1)) )
+        continue;
+        
+      eqn += (i ? " * " : "");
+      const shared_ptr<const Material> &mat = atten.material;
+      const string mu_name = mat ? cleanup_mat_name(mat->name) : SpecUtils::printCompact(atten.atomic_number, 3);
+      const string ad_str = SpecUtils::printCompact(atten.areal_density/PhysicalUnits::g_per_cm2, 3);
+      if( html_format )
+      { 
+        eqn += "exp(-" + ad_str + "*μ<sub>" + mu_name + "</sub>)";
+      }else
+      {
+        eqn += "exp(-" + ad_str + "*μ_" + mu_name + ")";
+      }//if( html_format ) / else
+    }//for( size_t i = 0; i < external_attens.size(); ++i )
+    
+    eqn += "]";
+  }//if( !external_attens.empty() )
+
+  eqn += (eqn.empty() ? "" : " * ");
+  eqn += "[Det. Eff.]";
+
+  
+  if( hoerl_b.has_value() && hoerl_c.has_value() && ((hoerl_b.value() != 0.0) || (hoerl_c.value() != 1.0)) )
+  {
+    if( html_format )
+    {
+      eqn += " * [E<sup>" + SpecUtils::printCompact(hoerl_b.value(), 3) + "</sup> * "
+        + SpecUtils::printCompact(hoerl_c.value(), 3) + "<sup>1/E</sup>]";
+    }else
+    {
+      eqn += " * [E^" + SpecUtils::printCompact(hoerl_b.value(), 3) + " * "
+         + SpecUtils::printCompact(hoerl_c.value(), 3) + "^(1/E)]";
+    }//if( html_format ) / else
+  }//if( c_index < num_pars )
+   
+  return eqn;
+}//string physical_model_rel_eff_eqn_text(...)
+
+
+std::string physical_model_rel_eff_eqn_js_function( const std::optional<PhysModelShield<double>> &self_atten,
+                                                   const std::vector<PhysModelShield<double>> &external_attens,
+                                                   const DetectorPeakResponse * const drf,
+                                                   std::optional<double> hoerl_b,
+                                                   std::optional<double> hoerl_c )
+{
+  cerr << "physical_model_rel_eff_eqn_js_function: TODO: implement better than just interpolating" << endl;
+  string fcn = "function(x){\n"
+  "  const points = [";
+  for( int x = 20; x < 3000; )
+  {
+    double y = eval_physical_model_eqn( x, self_atten, external_attens, drf, hoerl_b, hoerl_c );
+    if( (y < 0.0) || IsNan(y) || IsInf(y) )
+      y = 0.0;
+    
+    fcn += (x == 20) ? "" : ",";
+    fcn += "[" + std::to_string(x) + "," + SpecUtils::printCompact(y, 4) + "]";
+    
+    if( x < 130 )
+      x += 1;
+    else if( x < 300 )
+      x += 5;
+    else
+      x += 15;
+  }//for( int x = 20; x < 3000; )
+  fcn += "];\n"
+  "  if( x <= points[0][0] )\n"
+  "    return points[0][1];\n"
+  "  if( x >= points[points.length - 1][0] )\n"
+  "    return points[points.length - 1][1];\n"
+  "  for (let i = 0; i < points.length - 1; i++) {\n"
+  "    const [x1, y1] = points[i];\n"
+  "    const [x2, y2] = points[i + 1];\n"
+  "    if( x >= x1 && x <= x2) {\n"
+  "      const t = (x - x1) / (x2 - x1);\n"
+  "      return y1 + t * (y2 - y1);\n"
+  "    }\n"
+  "  }\n"
+  "console.assert(0,'Shouldnt get here in interpolating');\n"
+  "return points[points.length - 1][1];"
+  "}";
+  
+  return fcn;
+}
+
+  
 }//namespace RelActCalc

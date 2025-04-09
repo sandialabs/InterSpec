@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: SimplexSeedGenerator.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -14,8 +14,7 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MinimumSeed;
 class MnFcn;
@@ -28,21 +27,21 @@ class MnStrategy;
 class SimplexSeedGenerator : public MinimumSeedGenerator {
 
 public:
+   SimplexSeedGenerator() {}
 
-  SimplexSeedGenerator() {}
+   ~SimplexSeedGenerator() override {}
 
-  ~SimplexSeedGenerator() {}
+   MinimumSeed
+   operator()(const MnFcn &, const GradientCalculator &, const MnUserParameterState &, const MnStrategy &) const override;
 
-  virtual MinimumSeed operator()(const MnFcn&, const GradientCalculator&, const MnUserParameterState&, const MnStrategy&) const;
-
-  virtual MinimumSeed operator()(const MnFcn&, const AnalyticalGradientCalculator&, const MnUserParameterState&, const MnStrategy&) const;
+   MinimumSeed operator()(const MnFcn &, const AnalyticalGradientCalculator &, const MnUserParameterState &,
+                                  const MnStrategy &) const override;
 
 private:
-
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_SimplexSeedGenerator
+#endif // ROOT_Minuit2_SimplexSeedGenerator

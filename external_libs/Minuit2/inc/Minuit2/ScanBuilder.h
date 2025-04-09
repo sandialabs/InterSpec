@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: ScanBuilder.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -14,8 +14,7 @@
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class FunctionMinimum;
 class MnFcn;
@@ -28,19 +27,18 @@ class MinimumSeed;
 class ScanBuilder : public MinimumBuilder {
 
 public:
+   ScanBuilder() {}
 
-  ScanBuilder() {}
+   ~ScanBuilder() override {}
 
-  ~ScanBuilder() {}
-
-  virtual FunctionMinimum Minimum(const MnFcn&, const GradientCalculator&, const MinimumSeed&, const MnStrategy&, unsigned int, double) const;
+   FunctionMinimum Minimum(const MnFcn &, const GradientCalculator &, const MinimumSeed &, const MnStrategy &,
+                                   unsigned int, double) const override;
 
 private:
-
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_ScanBuilder
+#endif // ROOT_Minuit2_ScanBuilder

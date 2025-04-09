@@ -1,5 +1,5 @@
-// @(#)root/minuit2:$Id: Numerical2PGradientCalculator.h 20880 2007-11-19 11:23:41Z rdm $
-// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005  
+// @(#)root/minuit2:$Id$
+// Authors: M. Winkler, F. James, L. Moneta, A. Zsenei   2003-2005
 
 /**********************************************************************
  *                                                                    *
@@ -10,20 +10,17 @@
 #ifndef ROOT_Minuit2_Numerical2PGradientCalculator
 #define ROOT_Minuit2_Numerical2PGradientCalculator
 
-#ifndef ROOT_Minuit2_MnConfig
 #include "Minuit2/MnConfig.h"
-#endif
 
-#ifndef ROOT_Minuit2_GradientCalculator
 #include "Minuit2/GradientCalculator.h"
-#endif
+
+#include <ROOT/RSpan.hxx>
 
 #include <vector>
 
 namespace ROOT {
 
-   namespace Minuit2 {
-
+namespace Minuit2 {
 
 class MnFcn;
 class MnUserTransformation;
@@ -35,47 +32,38 @@ class MnStrategy;
  */
 
 class Numerical2PGradientCalculator : public GradientCalculator {
-  
+
 public:
-  
-  Numerical2PGradientCalculator(const MnFcn& fcn, 
-				const MnUserTransformation& par,
-				const MnStrategy& stra) : 
-    fFcn(fcn), fTransformation(par), fStrategy(stra) {}
-  
-  virtual ~Numerical2PGradientCalculator() {}
+   Numerical2PGradientCalculator(const MnFcn &fcn, const MnUserTransformation &par, const MnStrategy &stra)
+      : fFcn(fcn), fTransformation(par), fStrategy(stra)
+   {
+   }
 
-  virtual FunctionGradient operator()(const MinimumParameters&) const;
+   ~Numerical2PGradientCalculator() override {}
 
+   FunctionGradient operator()(const MinimumParameters &) const override;
 
+   virtual FunctionGradient operator()(std::span<const double> params) const;
 
+   FunctionGradient operator()(const MinimumParameters &, const FunctionGradient &) const override;
 
-  virtual FunctionGradient operator()(const std::vector<double>& params) const;
+   const MnFcn &Fcn() const { return fFcn; }
+   const MnUserTransformation &Trafo() const { return fTransformation; }
+   const MnMachinePrecision &Precision() const;
+   const MnStrategy &Strategy() const { return fStrategy; }
 
-
-
-
-  virtual FunctionGradient operator()(const MinimumParameters&,
-				      const FunctionGradient&) const;
-
-  const MnFcn& Fcn() const {return fFcn;}
-  const MnUserTransformation& Trafo() const {return fTransformation;} 
-  const MnMachinePrecision& Precision() const;
-  const MnStrategy& Strategy() const {return fStrategy;}
-
-  unsigned int Ncycle() const;
-  double StepTolerance() const;
-  double GradTolerance() const;
+   unsigned int Ncycle() const;
+   double StepTolerance() const;
+   double GradTolerance() const;
 
 private:
-
-  const MnFcn& fFcn;
-  const MnUserTransformation& fTransformation; 
-  const MnStrategy& fStrategy;
+   const MnFcn &fFcn;
+   const MnUserTransformation &fTransformation;
+   const MnStrategy &fStrategy;
 };
 
-  }  // namespace Minuit2
+} // namespace Minuit2
 
-}  // namespace ROOT
+} // namespace ROOT
 
-#endif  // ROOT_Minuit2_Numerical2PGradientCalculator
+#endif // ROOT_Minuit2_Numerical2PGradientCalculator
