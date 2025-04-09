@@ -2370,7 +2370,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
   std::vector<std::shared_ptr<const PeakDef>> prev_shown_peaks = m_last_being_added_peaks;
   
   auto fcnworker = [foreground,detector,lower_energy,upper_energy,nForcedPeaks,isfinal,window_xpx,window_ypx,app,spectrum,peakModel,isHPGe,prev_shown_peaks](){
-  
+
     const float erange = upper_energy - lower_energy;
     const float midenergy = 0.5f*(lower_energy + upper_energy);
     
@@ -2380,7 +2380,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
       //const auto start_wall_time = SpecUtils::get_wall_time();
       
       float min_sigma_width_kev, max_sigma_width_kev;
-      expected_peak_width_limits( midenergy, isHpge, foreground, min_sigma_width_kev, max_sigma_width_kev );
+      expected_peak_width_limits( midenergy, isHPGe, foreground, min_sigma_width_kev, max_sigma_width_kev );
       
       if( erange < min_sigma_width_kev )
         throw runtime_error( "to small range" );

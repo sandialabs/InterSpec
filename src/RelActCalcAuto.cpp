@@ -895,8 +895,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     
     //Need to initialize m_energy_ranges
-    const bool isHPGe = PeakFitUtils::is_high_res( spectrum );
-    
+    const bool highres = PeakFitUtils::is_high_res( spectrum );
+
     for( size_t roi_index = 0; roi_index < energy_ranges.size(); ++roi_index )
     {
       const RelActCalcAuto::RoiRange &roi_range = energy_ranges[roi_index];

@@ -1130,7 +1130,7 @@ string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak,
 }//string SpectrumViewerTester::makePeakSummarryTable( const PeakDef &peak )
 
 
-struct PeakLessThan : binary_function <PeakDef,PeakDef,bool>
+struct PeakLessThan
 {
   bool operator() (const PeakDef& x, const PeakDef& y) const
   {

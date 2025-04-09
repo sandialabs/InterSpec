@@ -661,7 +661,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
       }else
       {
         float lowersigma, uppersigma;
-        expected_peak_width_limits( mean, highres, dataH, lowersigma, uppersigma );
+        expected_peak_width_limits( mean, isHPGe, dataH, lowersigma, uppersigma );
         if( !i )
           minsigma = lowersigma;
         if( i == (coFitPeaks.size()-1) )

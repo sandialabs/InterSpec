@@ -2214,8 +2214,8 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       //  (We could check on auto-searched peaks and estimate from those, but
       //   really, at this point, its not worth the effort as things are probably
       //   low quality)
-      const bool highres = PeakFitUtils::is_high_res(m_foreground);
-      if( highres )
+      const bool isHPGe = PeakFitUtils::is_high_res(m_foreground);
+      if( isHPGe )
       {
         lower_energy = energy - 5;
         upper_energy = energy + 5;

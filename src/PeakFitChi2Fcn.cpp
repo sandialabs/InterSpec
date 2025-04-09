@@ -627,7 +627,7 @@ double PeakFitChi2Fcn::chi2( const double *params ) const
         const size_t channel = start_channel + i;
         const double ndata = gamma_counts[channel];
         const double nfitpeak = peak_counts[i];
-        
+        const double ncontinuum = continuum->offset_integral(energies[i], energies[i+1], m_data);
         const double uncert2 = ndata > 1.0 ? ndata : 1.0;
         
         // 20240911: Changed to prevent edge-case of background subtracted spectra having bin

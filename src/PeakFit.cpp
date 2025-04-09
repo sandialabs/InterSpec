@@ -1175,8 +1175,8 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     if( !fixSigma )
     {
       float minw, maxw;
-      expected_peak_width_limits( inpeaks[i].mean(), isHpge, dataH, minw, maxw );
-      
+      expected_peak_width_limits( inpeaks[i].mean(), isHPGe, dataH, minw, maxw );
+
       maxsigma = std::max( maxsigma, double(maxw) );
       minsigma = std::min( minsigma, double(minw) );
       sigma = std::max( sigma, minsigma );
@@ -1304,8 +1304,8 @@ void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
   LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, skew_type, x0, x1 );
   
   float minw_lower, maxw_lower, minw_upper, maxw_upper;
-  expected_peak_width_limits( x0, isHpge, dataH, minw_lower, maxw_lower );
-  expected_peak_width_limits( x1, isHpge, dataH, minw_upper, maxw_upper );
+  expected_peak_width_limits( x0, isHPGe, dataH, minw_lower, maxw_lower );
+  expected_peak_width_limits( x1, isHPGe, dataH, minw_upper, maxw_upper );
   
   float minsigma = std::min( minw_lower, minw_upper );
   float maxsigma = std::min( maxw_lower, maxw_upper );
@@ -2839,8 +2839,8 @@ void get_candidate_peak_estimates_for_user_click(
   size_t highchannel = ((midbin + upper_chan_sub) >= nchannels) ? nchannels-1 : static_cast<size_t>(midbin + upper_chan_sub);
   
   float min_sigma_width_kev, max_sigma_width_kev;
-  expected_peak_width_limits( x, highres, dataH, min_sigma_width_kev, max_sigma_width_kev );
-  
+  expected_peak_width_limits( x, isHPGe, dataH, min_sigma_width_kev, max_sigma_width_kev );
+
   
   
   const size_t lower_reasonable_channel = dataH->find_gamma_channel( x - 20*max_sigma_width_kev );
@@ -2860,8 +2860,8 @@ void get_candidate_peak_estimates_for_user_click(
   
 
   float min_sigma, max_sigma;
-  expected_peak_width_limits( x, highres, dataH, min_sigma, max_sigma );
-  
+  expected_peak_width_limits( x, isHPGe, dataH, min_sigma, max_sigma );
+
   sigma0 = 0.5*(min_sigma + max_sigma) * (isHPGe ? 0.20 : 0.25);  //expected_peak_width_limits multiplies max width by  4 for isHPGe, and 3 for lowres
   mean0 = x;
   area0 = 100.0;
