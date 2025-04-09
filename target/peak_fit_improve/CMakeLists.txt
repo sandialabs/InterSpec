@@ -39,7 +39,7 @@ include(FetchContent)
 FetchContent_Declare(
   openGA
   GIT_REPOSITORY git@github.com:Arash-codedev/openGA.git
-  GIT_TAG        b2f292eaccfda77363bcc8f30c001392f3b71241 # latest as of 20240718
+  GIT_HASH        b2f292eaccfda77363bcc8f30c001392f3b71241 # latest as of 20240718
   GIT_SHALLOW    ON
 )
 FetchContent_MakeAvailable( openGA )
