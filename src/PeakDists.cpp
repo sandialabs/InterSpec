@@ -30,8 +30,6 @@
 #include <boost/math/special_functions/erf.hpp>
 #include <boost/math/distributions/poisson.hpp>
 
-#include <unsupported/Eigen/SpecialFunctions>
-
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakDists.h"
 
