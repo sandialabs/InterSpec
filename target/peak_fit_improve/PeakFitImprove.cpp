@@ -74,7 +74,7 @@ using namespace std;
 //  well as PeakDefs
 #define RETURN_PeakDef_Candidates 1
 
-bool debug_printout = false;
+const bool debug_printout = false;
 
 
 /** The weights and limits to apply to the various optimizations.
@@ -249,7 +249,7 @@ struct InitialPeakFindSettings
     NumFwhmFcnForm
   };
   
-  FwhmFcnForm fwhm_fcn_form;
+  FwhmFcnForm fwhm_fcn_form = FwhmFcnForm::SqrtPolynomialTwoCoefs;
   
   
   /** Adds peaks based on now kinda known FWHM functional form.
@@ -675,7 +675,7 @@ namespace CandidatePeak_GA
     ga_obj.problem_mode=EA::GA_MODE::SOGA; //Single objective genetic algorithm
     ga_obj.multi_threading=true;
     ga_obj.idle_delay_us=1; // switch between threads quickly
-    ga_obj.dynamic_threading=false; //If false,  thread responsibilities are divided at the beginning
+    ga_obj.dynamic_threading = true; //If false,  thread responsibilities are divided at the beginning
     ga_obj.verbose=false;
     ga_obj.population=1000;
     ga_obj.generation_max=1000;
@@ -788,17 +788,17 @@ namespace InitialFit_GA
   void init_genes(InitialFitSolution& p,const std::function<double(void)> &rnd01)
   {
     // rnd01() gives a random number in 0~1
-    p.initial_stat_threshold=0.0+8*rnd01();
-    p.initial_hypothesis_threshold=-0.1+10.1*rnd01();
-    p.initial_min_nsigma_roi=2+6*rnd01();
-    p.initial_max_nsigma_roi=4+8*rnd01();
-    p.fwhm_fcn_form=0+3*rnd01();
-    p.search_roi_nsigma_deficit=1+9*rnd01();
-    p.search_stat_threshold=0.0+8*rnd01();
-    p.search_hypothesis_threshold=-0.1+10.1*rnd01();
-    p.search_stat_significance=1+5*rnd01();
-    p.ROI_add_nsigma_required=1+7*rnd01();
-    p.ROI_add_chi2dof_improve=0.0+8*rnd01();
+    p.initial_stat_threshold       = 0.0 + 8*rnd01();
+    p.initial_hypothesis_threshold = 0.25 + 2.75*rnd01(); //best values tend to be about 1.0
+    p.initial_min_nsigma_roi       = 2.0 + 6*rnd01();
+    p.initial_max_nsigma_roi       = 4.0 + 8*rnd01();
+    p.fwhm_fcn_form                = static_cast<int>( InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs ); //0+3*rnd01();
+    p.search_roi_nsigma_deficit    = 3.0 + 7*rnd01();
+    p.search_stat_threshold        = 1.0 + 8*rnd01();
+    p.search_hypothesis_threshold  = -0.1+10.1*rnd01();
+    p.search_stat_significance     = 1.0 + 5*rnd01();
+    p.ROI_add_nsigma_required      = 1.0 + 7*rnd01();
+    p.ROI_add_chi2dof_improve      = 0.0 + 8*rnd01();
   }
 
   bool eval_solution( const InitialFitSolution &p, InitialFitCost &c )
@@ -808,7 +808,7 @@ namespace InitialFit_GA
     c.objective1 = ns_ga_eval_fcn( settings );
     
     ns_num_evals_this_generation += 1;
-    if( (ns_num_evals_this_generation % 1) == 0 )
+    if( (ns_num_evals_this_generation % 10) == 0 )
       cout << "Have evaluated " << ns_num_evals_this_generation.load() << " individuals this generation." << endl;
     
     
@@ -855,17 +855,20 @@ namespace InitialFit_GA
       X_new.initial_stat_threshold += mu*(rnd01()-rnd01());
       in_range = in_range&&(X_new.initial_stat_threshold>=0.0 && X_new.initial_stat_threshold<8);
       X_new.initial_hypothesis_threshold+=mu*(rnd01()-rnd01());
-      in_range=in_range&&(X_new.initial_hypothesis_threshold>=-0.1 && X_new.initial_hypothesis_threshold<10.0);
+      in_range=in_range&&(X_new.initial_hypothesis_threshold>=0.25 && X_new.initial_hypothesis_threshold<3.0);
       X_new.initial_min_nsigma_roi+=mu*(rnd01()-rnd01());
       in_range=in_range&&(X_new.initial_min_nsigma_roi>=2 && X_new.initial_min_nsigma_roi<8);
       X_new.initial_max_nsigma_roi+=mu*(rnd01()-rnd01());
       in_range=in_range&&(X_new.initial_max_nsigma_roi>=4 && X_new.initial_max_nsigma_roi<12);
-      X_new.fwhm_fcn_form+=mu*(rnd01()-rnd01());
-      in_range=in_range&&(X_new.fwhm_fcn_form>=0 && X_new.fwhm_fcn_form<3);
+      
+      X_new.fwhm_fcn_form = X_base.fwhm_fcn_form; //unnecessary, but to be explicit
+      //X_new.fwhm_fcn_form+=mu*(rnd01()-rnd01());
+      //in_range=in_range&&(X_new.fwhm_fcn_form>=0 && X_new.fwhm_fcn_form<3);
+      
       X_new.search_roi_nsigma_deficit+=mu*(rnd01()-rnd01());
-      in_range=in_range&&(X_new.search_roi_nsigma_deficit>=1 && X_new.search_roi_nsigma_deficit<10.0);
+      in_range=in_range&&(X_new.search_roi_nsigma_deficit>=3 && X_new.search_roi_nsigma_deficit < 10.0);
       X_new.search_stat_threshold+=mu*(rnd01()-rnd01());
-      in_range=in_range&&(X_new.search_stat_threshold>=0.0 && X_new.search_stat_threshold<8);
+      in_range=in_range&&(X_new.search_stat_threshold>=1 && X_new.search_stat_threshold<9);
       X_new.search_hypothesis_threshold+=mu*(rnd01()-rnd01());
       in_range=in_range&&(X_new.search_hypothesis_threshold>=-0.1 && X_new.search_hypothesis_threshold<10.0);
       X_new.search_stat_significance+=mu*(rnd01()-rnd01());
@@ -986,7 +989,7 @@ namespace InitialFit_GA
     ga_obj.problem_mode=EA::GA_MODE::SOGA;
     ga_obj.multi_threading = true;
     ga_obj.idle_delay_us = 1; // switch between threads quickly
-    ga_obj.dynamic_threading = false;
+    ga_obj.dynamic_threading = true;
     ga_obj.verbose = false;
     ga_obj.population = 100;
     ga_obj.generation_max = 450;
@@ -1015,6 +1018,92 @@ namespace InitialFit_GA
     return genes_to_settings( m_best_genes );
   }
 }//namespace InitialFit_GA
+
+
+namespace G2k
+{
+  struct G2kPeak
+  {
+    char multiplet;
+    int PeakNum;
+    float Energy, PeakSig, FWHM, ContinuumCounts, NetPeakArea, NetAreaError, NetCountRate;
+  };
+  
+  vector<G2kPeak> g2k_peaks_from_file( ifstream &strm )
+  {
+    bool found_peaks_start = false;
+    string line;
+    while( !found_peaks_start && SpecUtils::safe_get_line(strm, line) )
+    {
+      SpecUtils::trim( line );
+      if( !found_peaks_start
+         && SpecUtils::icontains( line, "*                              Peak Search Report                               *") )
+      {
+        while( !found_peaks_start && SpecUtils::safe_get_line(strm, line) )
+        {
+          SpecUtils::trim( line );
+          if( SpecUtils::istarts_with( line, "-----" ) )
+          {
+            found_peaks_start = true;
+            break;
+          }
+        }
+      }
+    }//while( !found_peaks_start && SpecUtils::safe_get_line(strm, line) )
+    
+    if( !found_peaks_start )
+      throw runtime_error( "Failed to find peaks part of report" );
+    
+    vector<G2kPeak> result;
+    while( SpecUtils::safe_get_line(strm, line) )
+    {
+      SpecUtils::trim( line );
+      if( line.empty() )
+        continue;
+      
+      if( SpecUtils::istarts_with(line, "Errors" ) )
+        break;
+      
+      vector<string> fields;
+      SpecUtils::split( fields, line, " \t");
+      
+      assert( (fields.size() == 8) || (fields.size() == 9) );
+      if( (fields.size() != 8) && (fields.size() != 9) )
+        throw runtime_error( "Got line w/o 8 or 9 fields: '" + line + "'" );
+      
+      assert( (fields.size() == 8) || (fields[0] == "M") || (fields[0] == "m") );
+      if( (fields.size() == 9) && ((fields[0] != "M") && (fields[0] != "m")) )
+        throw runtime_error( "First field is not M or m: '" + line + "'" );
+      
+      const char mutltiplet = (fields.size() == 9) ? fields[0].at(0) : ' ';
+      if( fields.size() == 9 )
+      {
+        line = line.substr( 1 );
+        SpecUtils::trim( line );
+      }
+      
+      vector<float> values;
+      SpecUtils::split_to_floats( line.c_str(), values, " \t", false );
+      assert( values.size() == 8 );
+      
+      G2kPeak peak;
+      peak.multiplet = mutltiplet;
+      peak.PeakNum = static_cast<int>( values[0] );
+      peak.Energy = values[1];
+      peak.PeakSig = values[2];
+      peak.FWHM = values[3];
+      peak.ContinuumCounts = values[4];
+      peak.NetPeakArea = values[5];
+      peak.NetAreaError = 0.5*values[6]; //the RPT files give uncert at 2-sigma
+      peak.NetCountRate = values[7];
+      
+      assert( result.empty() || ((result.back().PeakNum + 1) == peak.PeakNum) );
+      result.push_back( peak );
+    }//while( SpecUtils::safe_get_line(strm, line) )
+    
+    return result;
+  };//auto g2k_peaks_from_file
+}//namespace G2k
 
 
 std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils::Measurement> data,
@@ -2028,13 +2117,61 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
    `fitPeaks(...)`, even though it is what `fitPeaksInRange` calls/uses.
    Should probably look into.
    */
-  fitPeaks( candidate_peaks,
-           fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-           data, zeroth_fit_results, dummy_fixedpeaks, amplitudeOnly, isHPGe );
-  const double ncausality = 1.5;
+  //fitPeaks( candidate_peaks,
+  //         fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
+  //         data, zeroth_fit_results, dummy_fixedpeaks, amplitudeOnly, isHPGe );
+  //const double ncausality = 1.5;
   //zeroth_fit_results = fitPeaksInRange( 0.0, data->gamma_energy_max(), ncausality,
   //                fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
   //                                     candidate_peaks, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
+  
+  auto fit_peaks_per_roi = [&fit_settings, &data, isHPGe]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
+    
+    const bool amplitudeOnly = false;
+    const std::vector<PeakDef> dummy_fixedpeaks;
+    
+    map<const PeakContinuum *,vector<PeakDef>> roi_to_peaks_map;
+    for( const PeakDef &p : input_peaks )
+      roi_to_peaks_map[p.continuum().get()].push_back( p );
+    
+    vector<vector<PeakDef>> fit_rois( roi_to_peaks_map.size() );
+    
+    SpecUtilsAsync::ThreadPool threadpool;
+    
+    size_t fit_rois_index = 0;
+    for( auto &roi_peaks : roi_to_peaks_map )
+    {
+      const vector<PeakDef> &peaks = roi_peaks.second;
+      
+      vector<PeakDef> &results = fit_rois[fit_rois_index];
+      
+      threadpool.post( boost::bind( &fitPeaks,
+                                   boost::cref(peaks),
+                                   fit_settings.initial_stat_threshold,
+                                   fit_settings.initial_hypothesis_threshold,
+                                   data,
+                                   boost::ref( results ),
+                                   dummy_fixedpeaks,
+                                   amplitudeOnly,
+                                   isHPGe ) );
+      
+      fit_rois_index += 1;
+    }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
+    
+    threadpool.join();
+    
+    vector<PeakDef> fit_results;
+    fit_results.reserve( input_peaks.size() );
+    
+    for( const vector<PeakDef> &fit_peaks : fit_rois )
+      fit_results.insert( end(fit_results), begin(fit_peaks), end(fit_peaks) );
+    
+    std::sort( begin(fit_results), end(fit_results), &PeakDef::lessThanByMean );
+    
+    return fit_results;
+  };//fit_peaks_per_roi lambda
+  
+  zeroth_fit_results = fit_peaks_per_roi( candidate_peaks );
   
   // Now go through and make sure there is at least `0.5*initial_min_nsigma_roi` on left and right,
   //  and no more than `0.5*initial_max_nsigma_roi`, since the mean may have changed, etc
@@ -2083,10 +2220,10 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
   //         fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
   //         data, initial_fit_results, dummy_fixedpeaks, amplitudeOnly, isHPGe );
   
-  initial_fit_results = fitPeaksInRange( 0.0, data->gamma_energy_max(), ncausality,
-                  fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-                  zeroth_fit_results, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
-  
+  //initial_fit_results = fitPeaksInRange( 0.0, data->gamma_energy_max(), ncausality,
+  //                fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
+  //                zeroth_fit_results, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
+  initial_fit_results = fit_peaks_per_roi( zeroth_fit_results );
   
   //vector<PeakDef> refit_results;
   //fitPeaks( initial_fit_results,
@@ -2446,11 +2583,11 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       //         fit_settings.search_stat_threshold, fit_settings.search_hypothesis_threshold,
       //         data, trial_peak_fit_results, dummy_fixedpeaks, amplitudeOnly, isHPGe );
       
-      amplitudeOnly = false;
-      trial_peak_fit_results = fitPeaksInRange( peak.mean() - 1.0, peak.mean() + 1.0, ncausality,
-                      fit_settings.search_stat_threshold, fit_settings.search_hypothesis_threshold,
-                                               {peak}, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
-      
+      //amplitudeOnly = false;
+      //trial_peak_fit_results = fitPeaksInRange( peak.mean() - 1.0, peak.mean() + 1.0, ncausality,
+      //                fit_settings.search_stat_threshold, fit_settings.search_hypothesis_threshold,
+      //                                         {peak}, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
+      trial_peak_fit_results = fit_peaks_per_roi( {peak} );
       
       
       bool is_stat_sig = false;
@@ -2846,7 +2983,9 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         //  Also check that overall peak area went up, and anything else?
       }catch( std::exception &e )
       {
+#ifndef NDEBUG
         cerr << "Caught exception trying to add a peak: " << e.what() << endl;
+#endif
       }//try / catch
     }//for( size_t chnl = start_chnl; chnl < end_chnl; ++chnl )
     
@@ -3217,7 +3356,7 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
                            const InitialPeakFindSettings &initial_fit_settings,
                            const vector<DataSrcInfo> &input_srcs )
 {
-  vector<vector<PeakDef>> initial_peak_fits( input_srcs.size(), {} );
+  vector<vector<PeakDef>> initial_peak_fits( input_srcs.size(), vector<PeakDef>{} );
   
   {// Begin get initial peak fit
     cout << "Starting to fit initial peaks." << endl;
@@ -3233,7 +3372,7 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
       
       auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, data, result](){
         size_t dummy1, dummy2;
-        *result = initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, dummy1, dummy2 )
+        *result = initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, dummy1, dummy2 );
       }; //fit_initial_peaks_worker
       
       pool.post( fit_initial_peaks_worker );
@@ -3249,7 +3388,7 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
     << endl;
   }// end get initial peak fit
   
-  cout << "Will use candidate and initial fit settings:"
+  cout << "Will use candidate and initial fit settings:" << endl;
   candidate_settings.print( "\tcandidate_settings" );
   initial_fit_settings.print( "\tinitial_fit_settings" );
   cout << "\n" << endl;
@@ -3361,14 +3500,13 @@ int main( int argc, char **argv )
         
         const boost::filesystem::path livetime_path = livetime_itr->path();
         
- 
         
         if( debug_printout )
         {
           vector<string> live_times{
-            //"30_seconds",
+            "30_seconds",
             "300_seconds",
-            //"1800_seconds"
+            "1800_seconds"
           };
           
           bool is_wanted_lt = false;
@@ -3407,7 +3545,6 @@ int main( int argc, char **argv )
             cerr << "No gamma lines CSV for " << file_itr->path() << " - skipping" << endl;
             continue;
           }
-          
           
           if( debug_printout )
           {
@@ -3498,14 +3635,15 @@ int main( int argc, char **argv )
       //   5%: Lose  4 out of 223 files
       //  10%: Lose  4 out of 223 files
       
-#if( !RETURN_PeakDef_Candidates )
+//#if( !RETURN_PeakDef_Candidates )
+#warning "Only using <2% dead-time files"
       if( info.src_no_poisson->live_time() < 0.98*info.src_no_poisson->real_time() )
       {
         continue;
       }
-#else
-#warning "Using all Live-Times for peak search"
-#endif
+//#else
+//#warning "Using all Live-Times for peak search"
+//#endif
       
       const shared_ptr<const SpecUtils::Measurement> meas = info.src_spectra[0];
       vector<PeakTruthInfo> lines = info.source_lines;
@@ -4063,7 +4201,8 @@ int main( int argc, char **argv )
     Candidate,
     InitialFit,
     FinalFit,
-    CodeDev
+    CodeDev,
+    AccuracyFromCsvsStudy
   };//enum class OptimizationAction : int
   
   const OptimizationAction action = OptimizationAction::InitialFit;
@@ -4256,25 +4395,313 @@ int main( int argc, char **argv )
       candidate_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 1.451548;
       candidate_settings.more_scrutiny_min_dev_from_line = 5.866464;
       candidate_settings.amp_to_apply_line_test_below = 6;
-      best_settings = candidate_settings
+      best_settings = candidate_settings;
+      
       
       InitialPeakFindSettings initial_fit_settings;
-      initial_fit_settings.initial_stat_threshold = ;
-      initial_fit_settings.initial_hypothesis_threshold = ;
-      initial_fit_settings.initial_min_nsigma_roi = ;
-      initial_fit_settings.initial_max_nsigma_roi = ;
-      initial_fit_settings.fwhm_fcn_form = FwhmFcnForm::;
-      initial_fit_settings.search_roi_nsigma_deficit = ;
-      initial_fit_settings.search_stat_threshold = ;
-      initial_fit_settings.search_hypothesis_threshold = ;
-      initial_fit_settings.search_stat_significance = ;
-      initial_fit_settings.ROI_add_nsigma_required = ;
-      initial_fit_settings.ROI_add_chi2dof_improve = ;
+      //20240806: Generation [84], Best=-62960.8, Average=-58257.3, , Best generation yet
+      initial_fit_settings.initial_stat_threshold = 2.890059;
+      initial_fit_settings.initial_hypothesis_threshold = 0.746688;
+      initial_fit_settings.initial_min_nsigma_roi = 3.801792;
+      initial_fit_settings.initial_max_nsigma_roi = 7.315852;
+      initial_fit_settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
+      initial_fit_settings.search_roi_nsigma_deficit = 5.642556;
+      initial_fit_settings.search_stat_threshold = 2.951359;
+      initial_fit_settings.search_hypothesis_threshold= 4.328742;
+      initial_fit_settings.search_stat_significance = 1.814627;
+      initial_fit_settings.ROI_add_nsigma_required = 3.654512;
+      initial_fit_settings.ROI_add_chi2dof_improve = 0.374546;
+      
       
       do_final_peak_fit_ga_optimization( candidate_settings, initial_fit_settings, input_srcs );
       
       break;
     }//case OptimizationAction::FinalFit
+      
+      
+    case OptimizationAction::AccuracyFromCsvsStudy:
+    {
+      const string result_base_path = "/Users/wcjohns/rad_ana/InterSpec/target/peak_fit_improve/build_xcode/PeakSearchCsvs";
+      
+      shared_ptr<DetectorPeakResponse> drf = DrfSelect::initARelEffDetector( SpecUtils::DetectorType::DetectiveX, "Ortec", "Detective-X" );
+      
+      size_t total_num_expected = 0;
+      size_t peak_easy_num_found = 0, peak_easy_num_extra = 0;
+      size_t gad4s_num_found = 0, gad4s_num_extra = 0;
+      size_t gad5s_num_found = 0, gad5s_num_extra = 0;
+      size_t g2k_num_found = 0, g2k_num_extra = 0;
+      size_t interspec_num_found = 0, interspec_num_extra = 0;
+      
+      vector<float> peak_easy_nsigma_away, gadras_nsigma_away, g2k_nsigma_away, interspec_nsigma_away;
+      
+      vector<float> significances;
+      for( const DataSrcInfo &info : input_srcs )
+      {
+        string result_path = SpecUtils::append_path( result_base_path, info.detector_name );
+        result_path = SpecUtils::append_path( result_path, info.location_name );
+        result_path = SpecUtils::append_path( result_path, info.live_time_name );
+
+        const string peak_easy_result_dir = SpecUtils::append_path( result_path, "PeakEasy" );
+        const string gadras_4sigma_result_dir = SpecUtils::append_path( result_path, "GADRAS_4sigma" );
+        const string gadras_5sigma_result_dir = SpecUtils::append_path( result_path, "GADRAS_5sigma" );
+        const string g2k_result_dir = SpecUtils::append_path( result_path, "G2k_reports/NBSSTD" );
+        
+        const string peak_easy_file = SpecUtils::append_path( peak_easy_result_dir, "PeakEasy_" + info.src_info.src_name + ".CSV" );
+        const string gad4s_file = SpecUtils::append_path( gadras_4sigma_result_dir, info.src_info.src_name + "-Pks.CSV" );
+        const string gad5s_file = SpecUtils::append_path( gadras_5sigma_result_dir, info.src_info.src_name + "-Pks.CSV" );
+        
+        
+        string g2k_file;
+        const vector<string> g2k_results = SpecUtils::recursive_ls( g2k_result_dir );
+        for( const string &filename : g2k_results )
+        {
+          if( SpecUtils::iequals_ascii( SpecUtils::filename(filename) , info.src_info.src_name + ".RPT") )
+          {
+            assert( g2k_file.empty() );
+            g2k_file = filename;
+            //break;
+          }
+        }//for( const string &filename : g2k_results )
+        assert( !g2k_file.empty() );
+        
+        assert( SpecUtils::is_file(peak_easy_file) );
+        assert( SpecUtils::is_file(gad4s_file) );
+        assert( SpecUtils::is_file(gad5s_file) );
+        assert( SpecUtils::is_file(g2k_file) );
+        
+        ifstream peakeasy_strm( peak_easy_file.c_str(), (ios::binary | ios::in) );
+        assert( peakeasy_strm.good() );
+        if( !peakeasy_strm.good() )
+          throw runtime_error( "Failed to open CSV: " + peak_easy_file );
+        
+        ifstream gad4s_strm( gad4s_file.c_str(), (ios::binary | ios::in) );
+        assert( gad4s_strm.good() );
+        if( !gad4s_strm.good() )
+          throw runtime_error( "Failed to open CSV: " + gad4s_file );
+        
+        ifstream gad5s_strm( gad5s_file.c_str(), (ios::binary | ios::in) );
+        assert( gad5s_strm.good() );
+        if( !gad5s_strm.good() )
+          throw runtime_error( "Failed to open CSV: " + gad5s_file );
+        
+        ifstream g2k_strm( g2k_file.c_str(), (ios::binary | ios::in) );
+        assert( g2k_strm.good() );
+        if( !g2k_strm.good() )
+          throw runtime_error( "Failed to open RPT: " + g2k_file );
+        
+        shared_ptr<const SpecUtils::Measurement> data = info.src_info.src_spectra[0];
+        
+        //
+        //vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks( std::shared_ptr<const SpecUtils::Measurement> meas, std::istream &csv );
+        
+        const vector<PeakDef> peak_easy_peaks = PeakModel::gadras_peak_csv_to_peaks( data, peakeasy_strm );
+        const vector<PeakDef> gad4s_peaks = PeakModel::gadras_peak_csv_to_peaks( data, gad4s_strm );
+        const vector<PeakDef> gad5s_peaks = PeakModel::gadras_peak_csv_to_peaks( data, gad5s_strm );
+        const vector<G2k::G2kPeak> g2k_peaks_initial = G2k::g2k_peaks_from_file( g2k_strm );
+        vector<PeakDef> g2k_peaks;
+        for( const G2k::G2kPeak &p : g2k_peaks_initial )
+        {
+          g2k_peaks.emplace_back( p.Energy, p.FWHM/PhysicalUnits::fwhm_nsigma, p.NetPeakArea );
+          g2k_peaks.back().setAmplitudeUncert( p.NetAreaError ); //We get 2-sigma errors from G2k
+        }
+        vector<shared_ptr<const PeakDef> > interspec_peaks_initial
+            = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, nullptr, false, true );
+        vector<PeakDef> interspec_peaks;
+        for( const auto &p : interspec_peaks_initial )
+          interspec_peaks.push_back( *p );
+        
+        
+        // Get dist of stat sig of peaks
+        for( const ExpectedPhotopeakInfo &expected : info.expected_photopeaks )
+        {
+          //expected.effective_energy
+          significances.push_back( expected.nsigma_over_background );
+        }
+        
+        const float min_nsigma = 5, min_counts = 15;
+        size_t num_expected = 0;
+        for( const ExpectedPhotopeakInfo &expected : info.expected_photopeaks )
+        {
+          if( expected.nsigma_over_background >= min_nsigma && expected.peak_area > min_counts )
+            num_expected += 1;
+        }
+        
+        total_num_expected += num_expected;
+        
+        auto num_found_or_not = [&info,min_nsigma,min_counts]( const vector<PeakDef> &peaks, vector<float> &nsigma_away ) -> pair<size_t,size_t> {
+          vector<bool> fit_peaks_matched_to_expected( peaks.size(), false );
+          vector<bool> expected_peaks_matched_to_fit( info.expected_photopeaks.size(), false );
+          
+          for( size_t i = 0; i < peaks.size(); ++i )
+          {
+            float expected_area = 0.0f;
+            const PeakDef &peak = peaks[i];
+            // Avoid Alpha-Li reaction and 511
+            if( (fabs(peak.mean() - 478.0) < 3) || (fabs(peak.mean() - 511.0) < 2.0) )
+            {
+              continue;
+            }
+            
+            if( info.expected_photopeaks.size() )
+            {
+              double nearest_de = DBL_MAX, largest_sig = 0;
+              size_t nearest_expected = info.expected_photopeaks.size();
+              for( size_t j = 0; j < info.expected_photopeaks.size(); ++j )
+              {
+                const ExpectedPhotopeakInfo &expected = info.expected_photopeaks[j];
+                const double exp_energy = expected.effective_energy;
+                const double delta_e = exp_energy - peak.mean();
+                
+                if( peak.mean() >= expected.roi_lower
+                   && peak.mean() <= expected.roi_upper
+                  && (delta_e < 0.5*expected.gamma_lines.front().fwhm)
+                   //&& expected.nsigma_over_background > 4
+                   //&& expected.nsigma_over_background < 10
+                   )
+                {
+                  if( largest_sig < expected.nsigma_over_background )
+                  {
+                    largest_sig = expected.nsigma_over_background;
+                    expected_area = expected.peak_area;
+                  }
+                }
+                
+                if( peak.mean() >= expected.roi_lower
+                   && peak.mean() <= expected.roi_upper
+                   && fabs(delta_e) < fabs(nearest_de) )
+                {
+                  fit_peaks_matched_to_expected[i] = true;
+                  
+                  if( expected.nsigma_over_background > min_nsigma
+                     && expected.peak_area > min_counts )
+                  {
+                    nearest_expected = j;
+                    nearest_de = delta_e;
+                  }
+                }
+              }
+              
+              if( nearest_expected < info.expected_photopeaks.size() )
+              {
+                expected_peaks_matched_to_fit[nearest_expected] = true;
+              }
+            }//if( info.expected_photopeaks.size() )
+            
+            
+            if( expected_area > 0 )
+            {
+              nsigma_away.push_back( (peak.amplitude() - expected_area) / peak.amplitudeUncert() );
+            }
+            
+          }//for( const PeakDef &peak : peaks )
+          
+          
+          size_t num_found = 0, num_not_expected = 0;
+          
+          for( size_t j = 0; j < info.expected_photopeaks.size(); ++j )
+          {
+            const ExpectedPhotopeakInfo &expected = info.expected_photopeaks[j];
+            if( expected.nsigma_over_background > min_nsigma
+               && expected.peak_area > min_counts )
+            {
+              if( expected_peaks_matched_to_fit[j] )
+                num_found += 1;
+            }
+          }
+          
+          for( size_t i = 0; i < peaks.size(); ++i )
+          {
+            const PeakDef &peak = peaks[i];
+            if( (fabs(peak.mean() - 478.0) > 3) && (fabs(peak.mean() - 511.0) > 2.0) )
+            {
+              if( !fit_peaks_matched_to_expected[i] )
+                num_not_expected += 1;
+            }
+          }
+          
+          return make_pair( num_found, num_not_expected );
+        };//num_found_or_not(...)
+        
+        
+        const pair<size_t,size_t> peak_easy_found_not = num_found_or_not(peak_easy_peaks, peak_easy_nsigma_away);
+        peak_easy_num_found += peak_easy_found_not.first;
+        peak_easy_num_extra += peak_easy_found_not.second;
+        
+        const pair<size_t,size_t> gad_4s_found_not = num_found_or_not(gad4s_peaks, gadras_nsigma_away);
+        gad4s_num_found += gad_4s_found_not.first;
+        gad4s_num_extra += gad_4s_found_not.second;
+        
+        vector<float> dummy;
+        const pair<size_t,size_t> gad_5s_found_not = num_found_or_not(gad5s_peaks, dummy);
+        gad5s_num_found += gad_5s_found_not.first;
+        gad5s_num_extra += gad_5s_found_not.second;
+        
+        const pair<size_t,size_t> g2k_found_not = num_found_or_not(g2k_peaks, g2k_nsigma_away);
+        g2k_num_found += g2k_found_not.first;
+        g2k_num_extra += g2k_found_not.second;
+        
+        const pair<size_t,size_t> interspec_found_not = num_found_or_not(interspec_peaks, interspec_nsigma_away);
+        interspec_num_found += interspec_found_not.first;
+        interspec_num_extra += interspec_found_not.second;
+        
+      }//for( const DataSrcInfo &info : input_srcs )
+     
+      ofstream output_significances( "truth_level_significances.csv" );
+      for( const float val : significances )
+        output_significances << val << endl;
+      
+      
+      cout << "Expected total = " << total_num_expected << endl;
+      cout << "Program, Num Expected Found, Not Found, Num Not Expected" << endl;
+      cout << "GADRAS 4-sigma, " << gad4s_num_found << ", " << (total_num_expected - gad4s_num_found) << ", " << gad4s_num_extra << endl;
+      cout << "GADRAS 5-sigma, " << gad5s_num_found << ", " << (total_num_expected - gad5s_num_found)<< ", " << gad5s_num_extra << endl;
+      cout << "PeakEasy 5.21, " << peak_easy_num_found << ", " << (total_num_expected - peak_easy_num_found)<< ", " << peak_easy_num_extra << endl;
+      cout << "InterSpec 1.0.12, " << interspec_num_found << ", " << (total_num_expected - interspec_num_found)<< ", " << interspec_num_extra << endl;
+      cout << "Genie 2k, " << g2k_num_found << ", " << (total_num_expected - g2k_num_found) << ", " << g2k_num_extra << endl;
+      
+      
+      {
+        ofstream output_nsigma_off( "peakeasy_nsigma_away.csv" );
+        for( const float val : peak_easy_nsigma_away )
+          output_nsigma_off << val << endl;
+      }
+      
+      {
+        ofstream output_nsigma_off( "gadras_nsigma_away.csv" );
+        for( const float val : gadras_nsigma_away )
+          output_nsigma_off << val << endl;
+      }
+      
+      {
+        ofstream output_nsigma_off( "interspec_nsigma_away.csv" );
+        for( const float val : interspec_nsigma_away )
+          output_nsigma_off << val << endl;
+      }
+      
+      {
+        ofstream output_nsigma_off( "g2k_nsigma_away.csv" );
+        for( const float val : g2k_nsigma_away )
+          output_nsigma_off << val << endl;
+      }
+      
+      if( false ) //output some N42 files
+      {
+        FindCandidateSettings candidate_settings;
+        candidate_settings.num_smooth_side_channels = 9;
+        candidate_settings.smooth_polynomial_order = 2;
+        candidate_settings.threshold_FOM = 1.127040;
+        candidate_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.498290;
+        candidate_settings.pos_sum_threshold_sf = 0.081751;
+        candidate_settings.num_chan_fluctuate = 1;
+        candidate_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 1.451548;
+        candidate_settings.more_scrutiny_min_dev_from_line = 5.866464;
+        candidate_settings.amp_to_apply_line_test_below = 6;
+        eval_candidate_settings( candidate_settings, true );
+      }//if( make N42 files )
+      
+      
+      break;
+    }//case OptimizationAction::AccuracyFromCsvsStudy:
       
     case OptimizationAction::CodeDev:
     {
@@ -4311,6 +4738,66 @@ int main( int argc, char **argv )
         }
       }//if( benchmark find_candidate_peaks )
       
+      if( true ) //benchmark peak-fitting
+      {
+        for( const DataSrcInfo &info : input_srcs )
+        {
+          const shared_ptr<const SpecUtils::Measurement> &data = info.src_info.src_spectra.front();
+          
+          vector<tuple<float,float,float>> dummy;
+          vector<PeakDef> candidate_peaks = find_candidate_peaks( data, 0, 0, dummy, best_settings );
+          
+          for( PeakDef &p : candidate_peaks )
+          {
+            p.continuum()->setType( PeakContinuum::OffsetType::FlatStep );
+            //p.continuum()->setType( PeakContinuum::OffsetType::Linear );
+          }
+          
+          const bool isHPGe = true, amplitudeOnly = false;
+          vector<PeakDef> zeroth_fit_results, initial_fit_results;
+          const std::vector<PeakDef> dummy_fixedpeaks;
+          
+          
+          {//Begin optimization block - delta when done optimizing `fitPeaks(...)`
+            const double start_wall = SpecUtils::get_wall_time();
+            const double start_cpu = SpecUtils::get_cpu_time();
+            
+            //for( size_t i = 0; i < 1; ++i )
+            for( size_t i = 0; i < 20; ++i )
+              //while( true )
+            {
+              assert( 0 );
+              
+              // Check why one of these seems to be multithreaded, but not the other
+              
+              //We need to actually score using these two methods; using `fitPeaks(...)` takes
+              //  {11.3/11.3}s, while `fitPeaksInRange(...)` takes {0.071/0.45}s.
+              //  Although `fitPeaksInRange(...)` actually uses `fitPeaks(...)` to do the
+              //  work - maybe fitPeaks doesnt separate ROIs???
+              //  Also, need to compare to using `LinearProblemSubSolveChi2Fcn`, which is used by
+              //  `refitPeaksThatShareROI(...)` and `refit_for_new_roi(...)` and `fit_peak_for_user_click(...)`
+              //And also could try using Ceres to see if it works better than Minuit.
+              vector<PeakDef> peaks;
+              fitPeaks( candidate_peaks, 0.0, 0.0, data, peaks, dummy_fixedpeaks, amplitudeOnly, isHPGe );
+              
+              //vector<PeakDef> peaksInRange = fitPeaksInRange( 0.0, data->gamma_energy_max(), 1.5, 0.0, 0.0, candidate_peaks, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
+              
+              //assert( peaksInRange.size() == peaks.size() );
+              //for( size_t i = 0; i < peaksInRange.size(); ++i )
+              //  cout << i << "\t" << peaks[i].mean() <<  ":\t"
+              //  << candidate_peaks[i].amplitude() << "\t"
+              //  << peaks[i].amplitude() << "\t" << peaksInRange[i].amplitude() << endl;
+            }
+            
+            //Do this timing - and then disbale continua integral optimization and re-due
+            const double end_wall = SpecUtils::get_wall_time();
+            const double end_cpu = SpecUtils::get_cpu_time();
+            
+            cout << "Eval of step continua took " << (end_wall - start_wall) << " s, wall and " << (end_cpu - start_cpu) << " s cpu" << endl;
+            exit(1);
+          }//End optimization block
+        }//for( const DataSrcInfo &info : input_srcs )
+      }//if( benchmark peak-fitting )
       
       // Some real guess settings, to use just for development
       InitialPeakFindSettings fit_settings;
@@ -4340,6 +4827,7 @@ int main( int argc, char **argv )
       }//for( const DataSrcInfo &info : input_srcs )
       
       cout << "Average weight of " << input_srcs.size() << " files is " << (sum_weight/input_srcs.size()) << endl;
+      
       break;
     }//case OptimizationAction::CodeDev:
   }//switch( action )
