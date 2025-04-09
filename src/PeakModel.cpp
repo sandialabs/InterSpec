@@ -837,16 +837,19 @@ vector<PeakDef> PeakModel::gadras_peak_csv_to_peaks( std::shared_ptr<const SpecU
     {
       csv_format = PeakCsvFormat::Gadras;
       break;
-    }else if( (fields[0] == "Centroid") && (fields[1] == "Net_Area")
-             && (fields[2] == "Net_Area") && (fields[3] == "Peak") )
+    }else if( (fields[0] == "Centroid") && (SpecUtils::trim_copy(fields[1]) == "Net_Area")
+             && (SpecUtils::trim_copy(fields[2]) == "Net_Area") && (SpecUtils::trim_copy(fields[3]) == "Peak") )
     {
       if( !std::getline( csv, line ) )
         throw runtime_error( "Failed to get second line of PeakEasy CSV" );
       
       SpecUtils::split_no_delim_compress( fields, line, "," );
       
-      if( (fields.size() < 9) || (fields[0] != "keV") || (fields[1] != "Counts")
-         || (fields[2] != "Uncertainty") || (fields[3] != "CPS") )
+      if( (fields.size() < 9) 
+         || (SpecUtils::trim_copy(fields[0]) != "keV")
+         || (SpecUtils::trim_copy(fields[1]) != "Counts")
+         || (SpecUtils::trim_copy(fields[2]) != "Uncertainty")
+         || (SpecUtils::trim_copy(fields[3]) != "CPS") )
       {
         throw runtime_error( "Second line of PeakEasy CSV file is not correct: '" + line + "'" );
       }
@@ -890,6 +893,9 @@ vector<PeakDef> PeakModel::gadras_peak_csv_to_peaks( std::shared_ptr<const SpecU
       {
         case PeakCsvFormat::PeakEasy:
         {
+          for( string &v : fields )
+            SpecUtils::trim( v );
+          
           energy = std::stod( fields[0] );
           energy_uncert = -1.0;
           counts = std::stod( fields[1] );

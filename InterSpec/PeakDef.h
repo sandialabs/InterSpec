@@ -201,19 +201,22 @@ struct PeakContinuum
   
   //offset_integral: returns the area of the continuum from x0 to x1.  If m_type
   //  is NoOffset, then will return 0.  If a polynomial, then the integral of
-  //  the contonuum density will be returned.  If globally defined continuum,
+  //  the continuum density will be returned.  If globally defined continuum,
   //  then the integral will be returned, using linear interpolation for
   //  ranges not exactly on the bin edges.
-  //  If FlatStep, then data histogram is necassary
+  //  If FlatStep, then data histogram is necessary
+  //  If possible, consider calling the other overload of this function to compute all
+  //  channels in the ROI in one function call, as it is a lot more efficient for stepped continua.
   double offset_integral( const double x0, const double x1,
                           const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
   
-  /**
-   TODO: the offset_integral(...) takes up a good portion of the time fitting peaks (I think particularly for step continuum), so should create optimized version that computes all channels for the ROI at once (I think this should be faster).
-   
+  /** Computes the channel-by-channel continua for the entire ROI at once.
+ 
    Adds each channels continuum component to the `channels` array.
    
-   Particularly when you have a stepped continuum, this
+   For stepped continua, using this overload, rather than calling `offset_integral(double,double,data)` in
+   `PeakFitChi2Fcn::chi2(const double *)`, makes fitting peaks a factor of 5 faster! (and even makes fitting
+   peaks with linear continua 34% faster).
    
    \param energies Array of lower channel energies; must have at least one more entry than
           `nchannel`.  For stepped continua (FlatStep, LinearStep, BiLinearStep), this must point

@@ -4493,6 +4493,42 @@ void PeakContinuum::setParameters( double referenceEnergy,
 }//void setParameters(...)
 
 
+void PeakContinuum::setParameters( double referenceEnergy,
+                                   const double *parameters,
+                                   const double *uncertainties )
+{
+  if( !parameters )
+    throw runtime_error( "PeakContinuum::setParameters invalid parameters" );
+  
+  switch( m_type )
+  {
+    case NoOffset: case External:
+      throw runtime_error( "PeakContinuum::setParameters(): called for external or no-offset continuum - not allowed" );
+      
+    case Constant:   case Linear:
+    case Quadratic: case Cubic:
+    case FlatStep:
+    case LinearStep:
+    case BiLinearStep:
+    {
+      const size_t npar = num_parameters(m_type);
+      
+      m_values.resize( npar );
+      m_uncertainties.resize( npar );
+      m_fitForValue.resize( npar, true );
+      m_referenceEnergy = referenceEnergy;
+      
+      for( size_t i = 0; i < npar; ++i )
+      {
+        m_values[i] = parameters[i];
+        m_uncertainties[i] = uncertainties ? uncertainties[i] : 0.0;
+      }
+      
+      break;
+    }//case - polynomial continuum
+  };//switch( m_type )
+}//setParameters
+
 
 bool PeakContinuum::setPolynomialCoefFitFor( size_t polyCoefNum, bool fit )
 {
@@ -4522,38 +4558,6 @@ bool PeakContinuum::setPolynomialUncert( size_t polyCoef, double val )
   m_uncertainties[polyCoef] = val;
   return true;
 }
-
-void PeakContinuum::setParameters( double referenceEnergy,
-                                   const double *parameters,
-                                   const double *uncertainties )
-{
-  if( !parameters )
-    throw runtime_error( "PeakContinuum::setParameters invalid parameters" );
-  
-  vector<double> uncerts, values;
-  
-  switch( m_type )
-  {
-    case NoOffset: case External:
-      throw runtime_error( "PeakContinuum::setParameters invalid m_type" );
-      
-    case Constant:   case Linear:
-    case Quadratic: case Cubic:
-    case FlatStep:
-    case LinearStep:
-    case BiLinearStep:
-    {
-      const size_t npar = num_parameters(m_type);
-      values.insert( end(values), parameters, parameters + npar );
-      if( uncertainties )
-        uncerts.insert( end(uncerts), uncertainties, uncertainties + npar );
-      
-      break;
-    }
-  };//switch( m_type )
-  
-  setParameters( referenceEnergy, values, uncerts );
-}//setParameters
 
 
 void PeakContinuum::setExternalContinuum( const std::shared_ptr<const Measurement> &data )

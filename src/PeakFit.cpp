@@ -5891,7 +5891,7 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
   {
     fitpeaks.clear();
       
-    //We have to seperate out non-fgaussian peaks since they cant enter the
+    //We have to separate out non-gaussian peaks since they cant enter the
     //  fitting methods
     vector<PeakDef> fixedpeaks, near_peaks, datadefined_peaks;
     
@@ -6652,6 +6652,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
 #endif
   }catch( std::exception &e )
   {
+#ifndef NDEBUG
     cerr << "fit_amp_and_offset(...): caught: " << e.what() << endl;
     cerr << "For means = {";
     for( double m : means )
@@ -6684,10 +6685,12 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       printf( "\n" );
     }
     printf( "\n\n\n" );
+#endif //#ifndef NDEBUG
   }//try / catch
   
   if( !success )
   {
+#ifndef NDEBUG
     cerr << "For means = {";
     for( double m : means )
       cerr << m << ", ";
@@ -6695,6 +6698,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     for( double m : sigmas )
       cerr << m << ", ";
     cerr << "}" << endl;
+#endif //#ifndef NDEBUG
     throw runtime_error( "fit_amp_and_offset(...): trouble inverting matrix" );
   }
   

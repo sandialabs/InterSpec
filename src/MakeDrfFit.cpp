@@ -288,8 +288,9 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
         fit_using_lls = true;
       }catch( std::exception &e )
       {
+#ifndef NDEBUG
         cerr << "MakeDrfFit::fit_sqrt_poly_fwhm_lls threw exception: " << e.what() << endl;
-        
+#endif
       }//try / catch
       
       break;
@@ -356,8 +357,9 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
         fit_using_lls = true;
       }catch( std::exception &e )
       {
+#ifndef NDEBUG
         cerr << "MakeDrfFit::fit_sqrt_poly_fwhm_lls threw exception: " << e.what() << endl;
-        
+#endif
       }//try / catch
       
       break;

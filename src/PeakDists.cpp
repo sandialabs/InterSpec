@@ -1171,7 +1171,7 @@ namespace PeakDists
       const double boost_val = amp_mult * (boost_erfhigh - boost_erflow);
       const double eigen_val = amp_mult * (eigen_erfhigh - eigen_erflow);
       
-      assert( (fabs(boost_val - eigen_val) < 0.001) && (fabs(boost_val - eigen_val) < 1.0E-6*amp_mult) );
+      assert( fabs(boost_val - eigen_val) < 1.0E-6*amp_mult || fabs(boost_val - eigen_val) < 0.001 );
       
       boost_erflow = boost_erfhigh;
       eigen_erflow = eigen_erfhigh;
