@@ -57,6 +57,8 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
+#include "InterSpec/PeakDists_imp.hpp"
+
 using namespace std;
 using SpecUtils::Measurement;
 
@@ -2963,6 +2965,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           case NoSkew:
             vis_limits.first = p.mean() - 5.0*p.sigma();
             vis_limits.second = p.mean() + 5.0*p.sigma();
+            //const boost::math::normal_distribution gaus_dist( 1.0 );
+            //vis_limits.first = mean +  sigma*boost::math::quantile( gaus_dist, 0.5*hidden_frac );
+            //vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - 0.5*hidden_frac );
             break;
             
           case Bortel:
@@ -4978,7 +4983,9 @@ void PeakContinuum::offset_integral( const float *energies, double *channels, co
   // This function should give the same answer as
   //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel
   //  basis, just be a little faster computationally, especially for stepped continua.
-  
+  PeakDists::offset_integral<PeakContinuum,double>( *this, energies, channels, nchannel, data );
+
+  /*
   assert( nchannel > 0 );
   if( !nchannel )
     return;
@@ -5147,6 +5154,7 @@ void PeakContinuum::offset_integral( const float *energies, double *channels, co
       break;
     }//case External:
   }//switch( m_type )
+  */
 }//void PeakContinuum::offset_integral( ... ) const
 
 

@@ -1,6 +1,15 @@
+#ifndef PeakDists_imp_h
+#define PeakDists_imp_h
+
+#include <vector>
+#include <numeric>
+#include <algorithm>
+#include <exception>
 
 #include <boost/math/constants/constants.hpp>
 #include <unsupported/Eigen/SpecialFunctions>
+
+#include "SpecUtils/SpecFile.h" //Needed for `offset_integral(...)`
 
 // Had a little trouble with the auto-derivative when using Jet - so will define some functions
 //  here to help find the issues - but make them be no-ops for non-debug builds
@@ -1270,5 +1279,231 @@ void double_sided_crystal_ball_integral( const T peak_mean,
 
   check_jet_array_for_NaN( channels, nchannel );
 }//double_sided_crystal_ball_integral(...)
-  
+
+
+
+template<typename ContType, typename T>
+void offset_integral( const ContType &cont,
+                     const float *energies,
+                     T *channels,
+                     const size_t nchannel,
+                     const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType>
+{
+  // This function should give the same answer as
+  //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel
+  //  basis, just be a little faster computationally, especially for stepped continua.
+
+  using namespace std;
+
+  assert( nchannel > 0 );
+  if( !nchannel )
+    return;
+
+  const T reference_energy = cont.referenceEnergy();
+
+  const auto &pars = cont.parameters();
+
+  const PeakContinuum::OffsetType cont_type = cont.type();
+
+  switch( cont_type )
+  {
+    case PeakContinuum::OffsetType::NoOffset:
+      return;
+
+    case PeakContinuum::OffsetType::Constant:
+    case PeakContinuum::OffsetType::Linear:
+    case PeakContinuum::OffsetType::Quadratic:
+    case PeakContinuum::OffsetType::Cubic:
+    {
+      for( size_t i = 0; i < nchannel; ++i )
+      {
+        const T x0 = static_cast<double>(energies[i]) - reference_energy;
+        const T x1 = static_cast<double>(energies[i+1]) - reference_energy;
+
+        T answer(0.0);
+        switch( cont_type )
+        {
+          case PeakContinuum::OffsetType::NoOffset:
+          case PeakContinuum::OffsetType::External:
+          case PeakContinuum::OffsetType::FlatStep:
+          case PeakContinuum::OffsetType::LinearStep:
+          case PeakContinuum::OffsetType::BiLinearStep:
+            assert( 0 );
+
+          case PeakContinuum::OffsetType::Cubic:
+            assert( pars.size() >= 4 );
+            answer += 0.25*pars[3]*(x1*x1*x1*x1 - x0*x0*x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Quadratic:
+            assert( pars.size() >= 3 );
+            answer += 0.333333333333333*pars[2]*(x1*x1*x1 - x0*x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Linear:
+            assert( pars.size() >= 2 );
+            answer += 0.5*pars[1]*(x1*x1 - x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Constant:
+            assert( pars.size() >= 1 );
+            answer += pars[0]*(x1 - x0);
+            break;
+        };//switch( type )
+
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          assert( std::max(answer,0.0) == cont.offset_eqn_integral( &(pars[0]), cont_type, energies[i], energies[i+1], reference_energy ) );
+        }
+
+        channels[i] += max( answer, T(0.0) );
+      }//for( size_t i = 0; i < nchannel; ++i )
+
+      break;
+    }//case Constant: case Linear: case Quadratic: case Cubic:
+
+
+    case PeakContinuum::OffsetType::FlatStep:
+    case PeakContinuum::OffsetType::LinearStep:
+    case PeakContinuum::OffsetType::BiLinearStep:
+    {
+      if( !data || !data->num_gamma_channels() )
+        throw std::runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
+
+      // To be consistent with how fit_amp_and_offset(...) handles things, we will do our own
+      //  summing here, rather than calling Measurement::gamma_integral.
+      double lowerEnergy, upperEnergy;
+
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        lowerEnergy = cont.lowerEnergy();
+        upperEnergy = cont.upperEnergy();
+      }else
+      {
+        lowerEnergy = cont.lowerEnergy().a;
+        upperEnergy = cont.upperEnergy().a;
+      }
+
+      const size_t roi_lower_channel = data->find_gamma_channel( lowerEnergy );
+      const size_t roi_upper_channel = data->find_gamma_channel( upperEnergy );
+
+      //const double roi_lower = data->gamma_channel_lower(roi_lower_channel);
+      //const double roi_upper = data->gamma_channel_upper(roi_upper_channel);
+
+      const std::vector<float> &counts = *data->gamma_counts();
+
+      assert( roi_lower_channel < counts.size() );
+      assert( roi_upper_channel < counts.size() );
+
+
+      const double roi_data_sum = std::accumulate( begin(counts) + roi_lower_channel, begin(counts) + roi_upper_channel + 1,  0.0 );
+      // Might be able to take advantage of vectorized sum using something like:
+      //const double roi_data_sum = Eigen::VectorXf::Map( &(counts[roi_lower_channel]), (1 + roi_upper_channel - roi_lower_channel) ).sum();
+
+
+      const size_t begin_channel = data->find_gamma_channel( energies[0] );
+      assert( energies[0] == data->gamma_channel_lower(begin_channel) );
+      const size_t end_channel = begin_channel + nchannel; //one past last channel we want
+
+      // Lets check that `energies` points into the lower channel energies of `data`.
+      //  We actually only care that the values of the array are the same, but we'll be
+      //  a little tighter for development.
+      const std::vector<float> &data_energies = *data->channel_energies();
+
+      if( (energies[0] != data->gamma_channel_lower(begin_channel))
+         || (energies[nchannel] != data->gamma_channel_lower(begin_channel+nchannel)) )
+        throw std::logic_error( "PeakContinuum::offset_integral: for stepped continua" );
+
+      double cumulative_data = 0.0;
+
+      // Incase we are starting
+      if( begin_channel > roi_lower_channel )
+      {
+        for( size_t i = begin_channel; i < begin_channel; ++i )
+          cumulative_data += counts[i];
+      }//if( begin_channel > lower_channel )
+
+
+      for( size_t i = begin_channel; i < end_channel; ++i )
+      {
+        const size_t input_index = i - begin_channel;
+        assert( data_energies[i] == energies[input_index] );
+
+        const T x0_rel = static_cast<double>(data_energies[i]) - reference_energy;
+        const T x1_rel = static_cast<double>(data_energies[i+1]) - reference_energy;
+
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5*counts[i];
+
+        const double frac_data = cumulative_data / roi_data_sum;
+
+        switch( cont_type )
+        {
+          case PeakContinuum::OffsetType::FlatStep:
+          case PeakContinuum::OffsetType::LinearStep:
+          {
+            const T offset = pars[0]*(x1_rel - x0_rel);
+            const T linear = ((cont_type == PeakContinuum::OffsetType::FlatStep) ? T(0.0) :  0.5*pars[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
+            const size_t step_index = ((cont_type == PeakContinuum::OffsetType::FlatStep) ? 1 : 2);
+            const T step_contribution = pars[step_index] * frac_data * (x1_rel - x0_rel);
+
+            const T answer = max( T(0.0), offset + linear + step_contribution );
+
+            if constexpr ( std::is_same_v<T, double> )
+            {
+              assert( answer == cont.offset_integral( data_energies[i], data_energies[i+1], data ) );
+            }
+
+            channels[input_index] += answer;
+            break;
+          }//case FlatStep: case LinearStep:
+
+          case PeakContinuum::OffsetType::BiLinearStep:
+          {
+            assert( pars.size() == 4 );
+            const T left_poly = pars[0]*(x1_rel - x0_rel) + 0.5*pars[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const T right_poly = pars[2]*(x1_rel - x0_rel) + 0.5*pars[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const T contrib = std::max( T(0.0), ((1.0 - frac_data) * left_poly) + (frac_data * right_poly) );
+
+            if constexpr ( std::is_same_v<T, double> )
+            {
+              assert( contrib == cont.offset_integral( data_energies[i], data_energies[i+1], data ) );
+            }
+
+            channels[input_index] += contrib;
+            break;
+          }//case BiLinearStep:
+
+          case PeakContinuum::OffsetType::NoOffset:
+          case PeakContinuum::OffsetType::Constant:
+          case PeakContinuum::OffsetType::Linear:
+          case PeakContinuum::OffsetType::Quadratic:
+          case PeakContinuum::OffsetType::Cubic:
+          case PeakContinuum::OffsetType::External:
+            assert( 0 );
+            break;
+        }//switch( cont_type )
+
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5*counts[i];
+      }//for( size_t i = 0; i < channels; ++i )
+
+      break;
+    }//case FlatStep/LinearStep/BiLinearStep
+
+    case PeakContinuum::OffsetType::External:
+    {
+      std::shared_ptr<const SpecUtils::Measurement> ext_cont = cont.externalContinuum();
+      assert( ext_cont );
+      if( !ext_cont )
+        break;
+
+      for( size_t i = 0; i < nchannel; ++i )
+        channels[i] += ext_cont ? ext_cont->gamma_integral( energies[i], energies[i+1] ) : 0.0;
+      break;
+    }//case PeakContinuum::OffsetType::External:
+  }//switch( cont_type )
+}//void PeakContinuum::offset_integral( ... ) const
 }//namespace PeakDists
+
+#endif //PeakDists_imp_h

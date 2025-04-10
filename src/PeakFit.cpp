@@ -72,6 +72,24 @@
 #include "InterSpec/PeakFitLM.h"
 #endif
 
+/** Using google Ceres to fit peaks is an experiment in using Ceres.
+
+ Its actually maybe a slower (although this is probably not the fault of Ceres - but of my
+ coding - and actually this is only when using a single thread, and for a single peak - for
+ multiple peaks and multiple Ceres threads, it doe beat-out minuit - even with my non-optimal
+ usage of Ceres), is totally untested, and hasnt been finished implementing everything.
+ */
+#if( USE_REL_ACT_TOOL )
+//#ifdef _MSC_VER
+//#pragma message( "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined." )
+//#else
+//#warning "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined."
+//#endif
+#define USE_LM_PEAK_FIT 1
+#else
+#define USE_LM_PEAK_FIT 0
+#endif
+
 using namespace std;
 
 using SpecUtils::Measurement;
@@ -3100,7 +3118,12 @@ void fit_peak_for_user_click( PeakShrdVec &results,
       = fitter.Minimize( chi2Fcn, params, strategy, maxFcnCall, tolerance );
       
       params = minimum.UserState().Parameters();
-      
+
+
+#if( USE_LM_PEAK_FIT )
+      cout << "Minuit required NFcn=" << minimum.NFcn() << endl;
+#endif
+
       const vector<double> pars = params.Params();
       const vector<double> errors = params.Errors();
       
@@ -4888,25 +4911,6 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   vector<double> lowerEnergies, upperEnergies;
   lowerEnergies.push_back( roiLower );
   upperEnergies.push_back( roiUpper );
-  
-  /** Using google Ceres to fit peaks is an experiment in using Ceres.
-   
-   Its actually maybe a slower (although this is probably not the fault of Ceres - but of my
-   coding - and actually this is only when using a single thread, and for a single peak - for
-   multiple peaks and multiple Ceres threads, it doe beat-out minuit - even with my non-optimal
-   usage of Ceres), is totally untested, and hasnt been finished implementing everything.
-   
-   */
-#if( USE_REL_ACT_TOOL )
-#ifdef _MSC_VER
-#pragma message( "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined." )
-#else
-#warning "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined."
-#endif
-#define USE_LM_PEAK_FIT 0
-#else
-#define USE_LM_PEAK_FIT 0
-#endif
 
   
 #if( !USE_LM_PEAK_FIT )
@@ -4971,7 +4975,8 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   }
   
   cout << "Old method: " << std::chrono::duration<double, std::milli>(t2 - t1).count()
-  << "ms, vs new method " << std::chrono::duration<double, std::milli>(t4 - t3).count()
+  << " ms, vs new method " << std::chrono::duration<double, std::milli>(t4 - t3).count()
+  << " ms"
   << endl;
   
   

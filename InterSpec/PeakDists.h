@@ -31,6 +31,11 @@
 
 #include "InterSpec/PeakDef.h" //for PeakDef::SkewType
 
+namespace SpecUtils
+{
+  class Measurement;
+}
+
 /** The functions in this .h/.cpp are for computing skewed and Gaussian photopeak distributions.
  
  */
@@ -494,15 +499,34 @@ namespace PeakDists
   
   extern template double DSCB_norm<double>( const double, const double, const double, const double );
     
-    double DSCB_left_tail_indefinite_non_norm_t( const double alpha_low, const double n_low,
+  double DSCB_left_tail_indefinite_non_norm_t( const double alpha_low, const double n_low,
                                                  const double t );
     
-    double DSCB_right_tail_indefinite_non_norm_t( const double alpha_high,
+  double DSCB_right_tail_indefinite_non_norm_t( const double alpha_high,
                                                              const double n_high,
                                                              const double t);
     
-    double DSCB_gauss_indefinite_non_norm_t( const double t );
-    
+  double DSCB_gauss_indefinite_non_norm_t( const double t );
+
+
+  template <typename T>
+  concept ContinuumTypeConcept = requires(T cont) {
+    { cont.parameters() };
+    { cont.referenceEnergy() };
+    { cont.lowerEnergy() };
+    { cont.upperEnergy() };
+    { cont.type() } -> std::same_as<PeakContinuum::OffsetType>;
+    { cont.externalContinuum() } -> std::same_as<std::shared_ptr<const SpecUtils::Measurement>>;
+  };
+
+  // This function is just templated version of `PeakContinuum::offset_integral(...)` - need to refactor
+  //  both to use the same code
+  template<typename ContType, typename T>
+  void offset_integral( const ContType &cont,
+                  const float *energies,
+                  T *channels,
+                  const size_t nchannel,
+                  const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType>;
 }//namespace PeakDists
 
 #endif  //PeakDists_h
