@@ -57,13 +57,14 @@
 #include "Minuit2/SimplexMinimizer.h"
 #include "Minuit2/MnMinimize.h"
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakDists.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
-#include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -71,6 +72,8 @@
 #if( USE_REL_ACT_TOOL )
 #include "InterSpec/PeakFitLM.h"
 #endif
+
+#include "InterSpec/PeakFit_imp.hpp"
 
 /** Using google Ceres to fit peaks is an experiment in using Ceres.
 
@@ -94,14 +97,6 @@ using namespace std;
 
 using SpecUtils::Measurement;
 
-// 20240911: The minimum uncertainty allowed for a gamma spectrum channel.
-// Background subtracted spectra can end up with tiny bins, like 0.0007,
-// which if we take its uncertainty to be its sqrt, a single bin like this will
-// totally mess up the whole ROI.  So we'll impose a minimum uncertainty on
-// each channel.
-// However, if a spectrum is scaled, and not Poisson errored, this will totally
-// mess things up (even though it wouldnt be right in the first place).
-#define MIN_CHANNEL_UNCERT 1.0
 
 template<class T>
 bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
@@ -1807,7 +1802,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
         const double ncontinuum = continuum->offset_integral(xbinlow, xbinup, data);
         
         const double npeak = gauss_counts[i];
-        const double uncert = ndata > MIN_CHANNEL_UNCERT ? sqrt(ndata) : 1.0;
+        const double uncert = ndata > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(ndata) : 1.0;
         const double chi = (ndata-ncontinuum-npeak)/uncert;
         
         chi2 += chi*chi;
@@ -1837,7 +1832,7 @@ double chi2_for_region( const PeakShrdVec &peaks,
       {
         const double peakarea = i->second;
         const double ndata = data->gamma_channel_content( i->first );
-        const double uncert = ndata > MIN_CHANNEL_UNCERT ? sqrt(ndata) : 1.0;
+        const double uncert = ndata > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(ndata) : 1.0;
         const double chi = (ndata-peakarea)/uncert;
         chi2 += chi*chi;
       }//for( int bin = minbin; bin <= maxbin; ++bin )
@@ -2107,7 +2102,7 @@ double evaluate_chi2dof_for_range( const std::vector<PeakDef> &peaks,
     if( y_pred < 0.0 )
       y_pred = 0.0;
     
-    const double uncert = (y > MIN_CHANNEL_UNCERT ? sqrt(y) : 1.0);
+    const double uncert = (y > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(y) : 1.0);
     chi2 += std::pow( (y_pred - y) / uncert, 2.0 );
   }//for( int bin = 0; bin < nbin; ++bin )
   
@@ -3770,7 +3765,7 @@ bool check_lowres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       const double x = dataH->gamma_channel_lower( channel );
       const double y = dataH->gamma_channel_content( channel );
       const double y_pred = poly_coeffs[0] + poly_coeffs[1]*x;
-      const double uncert = (y > MIN_CHANNEL_UNCERT ? std::sqrt(y) : 1.0);
+      const double uncert = (y > PEAK_FIT_MIN_CHANNEL_UNCERT ? std::sqrt(y) : 1.0);
       const double thichi2 = std::pow( (y_pred - y) / uncert, 2.0 );
       
       linechi2 += thichi2;
@@ -4169,7 +4164,7 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
       const double x = dataH->gamma_channel_lower( channel );
       const double y = dataH->gamma_channel_content( channel );
       const double y_pred = poly_coeffs[0] + poly_coeffs[1]*x;
-      const double uncert = (y > MIN_CHANNEL_UNCERT ? sqrt(y) : 1.0);
+      const double uncert = (y > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(y) : 1.0);
       linechi2 += std::pow( (y_pred - y) / uncert, 2.0 );
     }//for( int bin = 0; bin < nbin; ++bin )
     
@@ -4692,7 +4687,7 @@ bool check_highres_single_peak_fit( const std::shared_ptr<const PeakDef> peak,
       const double x = dataH->gamma_channel_lower( channel );
       const double y = dataH->gamma_channel_content( channel );
       const double y_pred = poly_coeffs[0] + poly_coeffs[1]*x;
-      const double uncert = (y > MIN_CHANNEL_UNCERT ? std::sqrt(y) : 1.0);
+      const double uncert = (y > PEAK_FIT_MIN_CHANNEL_UNCERT ? std::sqrt(y) : 1.0);
       const double thichi2 = std::pow( (y_pred - y) / uncert, 2.0 );
       
       linechi2 += thichi2;
@@ -6318,7 +6313,7 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
   
   for( size_t row = 0; row < nbin; ++row )
   {
-    const double uncert = (data[row] > MIN_CHANNEL_UNCERT ? sqrt( data[row] ) : 1.0);
+    const double uncert = (data[row] > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt( data[row] ) : 1.0);
     b(row) = (data[row] > 0.0 ? sqrt( data[row] ) : 0.0);
     for( int col = 0; col < poly_terms; ++col )
       A(row,col) = std::pow( double(x[row]), double(col)) / uncert;
@@ -6348,7 +6343,7 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
     double y_pred = 0.0;
     for( int i = 0; i < poly_terms; ++i )
       y_pred += a(i) * std::pow( double(x[bin]), double(i) );
-    const double uncert = (data[bin] > MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
+    const double uncert = (data[bin] > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
     chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
   }//for( int bin = 0; bin < nbin; ++bin )
   
@@ -6370,8 +6365,23 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
                                   std::vector<double> &amplitudes_uncerts,
                                   std::vector<double> &continuum_coeffs_uncerts )
 {
+  //20250410: I believe `PeakFit::fit_amp_and_offset_imp(...)` should be the better function to use, as it uses SVD
+  //          but currently leaving the below check in to make sure the re-implementation of this function is correct
+  //          TODO: remove this check after a while
+#if( !PERFORM_DEVELOPER_CHECKS )
+  return PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
+                  ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
+                  dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts );
+#else
+  std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
+
+  const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
+                          ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
+                                         dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts );
+
+
   // TODO: Need to switch to using Eigen::SVD for this function - it is much more stable and predictable
-  //       See RelActCalcAuto::fit_continuum(...) for example of using this.
+  //       See PeakFit::fit_continuum(...) for example of using this.
   if( sigmas.size() != means.size() )
     throw runtime_error( "fit_amp_and_offset: invalid input" );
   
@@ -6404,29 +6414,13 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //
   
   
-//For experimentation to see how much all the allocations are actually slowing
-//  things done - horribly thread un-safe, and will explode if used from GUI!
-#define TRIAL_MINIMIZE_MATRIX_ALLOCATIONS 0
-  
-  
   using namespace boost::numeric;
   const size_t npeaks = sigmas.size();
   const size_t npoly = static_cast<size_t>( num_polynomial_terms );
   const int nfit_terms = static_cast<int>( npoly + npeaks );
-  
-#if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
-#warning "TRIAL_MINIMIZE_MATRIX_ALLOCATIONS Is enabled - this will blow up if making an InterSpec GUI"
-  static ublas::matrix<double> A( nbin, nfit_terms );
-  static ublas::vector<double> b( nbin );
-  
-  if( A.size1() != nbin || A.size2() != nfit_terms )
-    A.resize( nbin, nfit_terms, false );
-  if( b.size() != nbin )
-    b.resize( nbin, false );
-#else
+
   ublas::matrix<double> A( nbin, nfit_terms );
   ublas::vector<double> b( nbin );
-#endif
   
   //  cerr << endl << "Input: " << ref_energy << ", ";
   //  for( size_t i = 0; i < npeaks; ++i )
@@ -6468,53 +6462,12 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     
     //SpecUtilsAsync::ThreadPool pool;
     double * const fixed_contrib = &(mt_fixed_peak_contrib[0]);
-    
-    /*
-    // 20240325: for complicated problems, it kinda looks like multiple cores arent being used that
-    //           efficiently (perhaps because each thread is only getting <10 channels to work on).
-    //           Perhaps it would be better to put each peak into a thread, for all channels, then
-    //           sum results at the end (using vector operations).
-    const size_t nthread = std::thread::hardware_concurrency();
-    const size_t nbin_per_thread = 1 + (nbin / nthread);
-    
-    for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
-    {
-      const float *this_x = x + start_channel;
-      double *this_contribs = fixed_contrib + start_channel;
-      const size_t end_channel = start_channel + nbin_per_thread;
-      const size_t this_nchannel = std::min( end_channel, nbin ) - start_channel; //make sure we dont go out of range
-      
-      assert( (this_nchannel > 0) && (this_nchannel <= nbin_per_thread) );
-      
-      pool.post( [this_x, this_contribs, this_nchannel, &fixedAmpPeaks](){
-        for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
-        {
-          const PeakDef &peak = fixedAmpPeaks[peak_index];
-          peak.gauss_integral( this_x, this_contribs, this_nchannel );
-        }
-      } );
-    }//for( size_t start_channel = 0; start_channel < nbin; start_channel += nbin_per_thread )
-    */
-    
+
     //std::mutex result_mutex;
     for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
     {
-      /*
-      pool.post( [&result_mutex, peak_index, &fixedAmpPeaks, nbin, x, fixed_contrib](){
-        vector<double> this_contribs(nbin, 0.0);
-        fixedAmpPeaks[peak_index].gauss_integral( x, &(this_contribs[0]), nbin );
-        
-        std::lock_guard<std::mutex> lock( result_mutex );
-        for( size_t i = 0; i < nbin; ++i )
-          fixed_contrib[i] += this_contribs[i];
-      });
-       */
-      
       fixedAmpPeaks[peak_index].gauss_integral( x, &(fixed_contrib[0]), nbin );
     }//for( size_t peak_index = 0; peak_index < fixedAmpPeaks.size(); ++peak_index )
-    
-    
-    //pool.join();
   }//if( do_mt_fixed_peak )
   
   
@@ -6536,39 +6489,11 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     //  However, there are also highly scaled spectra, whose all values are really small, so
     //  in this case we want to do something more reasonable.
     // TODO: evaluate these choices of thresholds and tradeoffs, more better
-    double uncert = (dataval > MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
-  
+    double uncert = (dataval > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
+
     if( step_continuum )
       step_cumulative_data += dataval;
-    
-/*
-    // If data is zero, or negative, lets look for the nearest non-zero bin, within 5 bins of here
-    //  This situation might happen more often after a hard background subtraction.
-    //
-    //  TODO: this doesnt fix the one-example I was looking at - perhaps need to try ignoring a
-    //        region. Maybe try looking for regions that are anomalously low (e.g., essentially
-    //        zero), and just ignore them if they are extremely below surrounding region.
-    //
-    const double non_poisson_threshold = 0.5; //FLT_EPSILON
-    const double significant_stats_threshold = 5.0;
-  
-    if( dataval < non_poisson_threshold )
-    {
-      double nearest_data = dataval;
-      
-      for( size_t i = 1; (i <= 5) && (nearest_data < significant_stats_threshold); ++i )
-      {
-        if( ((row + i) < nbin) && (data[row+i] > significant_stats_threshold) )
-          nearest_data = data[row+i];
-        
-        if( i <= row && (data[row-i] > significant_stats_threshold) )
-          nearest_data = data[row-i];
-      }//for( size_t i = 1; (i <= 5) && (nearest_data < non_poisson_threshold); ++i )
-      
-      if( nearest_data > non_poisson_threshold )
-        uncert = sqrt(nearest_data);
-    }//if( dataval < FLT_EPSILON )
-*/
+
     
     if( do_mt_fixed_peak )
     {
@@ -6666,28 +6591,14 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     for( size_t channel = 0; channel < nbin; ++channel )
     {
       const double dataval = data[channel];
-      const double uncert = (dataval > MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
+      const double uncert = (dataval > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
       A(channel,npoly + i) = peak_areas[channel] / uncert;
     }//for( size_t channel = 0; channel < nbin; ++channel )
   }//for( size_t i = 0; i < npeaks; ++i )
-  
-#if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  static ublas::matrix<double> alpha;
-  
-  if( alpha.size1() != A.size2() )
-    alpha.resize( A.size2(), A.size2(), false );
-  
-  prod( A_transpose, A, alpha );
-  
-  static ublas::matrix<double> C;
-  if( C.size1() != alpha.size1() || C.size2() != alpha.size2() )
-    C.resize( alpha.size1(), alpha.size2(), false );
-#else
+
   const ublas::matrix<double> A_transpose = ublas::trans( A );
   const ublas::matrix<double> alpha = prod( A_transpose, A );
   ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-#endif
   
   bool success = false;
   
@@ -6702,27 +6613,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     //boost::numeric::ublas::vector_range<VectorType> ublas_b2(ublas_b, ublas_range);
     //boost::numeric::ublas::inplace_solve(ublas_R, ublas_b2, boost::numeric::ublas::upper_tag());
 
-#if( TRIAL_MINIMIZE_MATRIX_ALLOCATIONS )
-    static boost::numeric::ublas::matrix<double> local_alpha;
-    if( local_alpha.size1() != alpha.size1() || local_alpha.size2() != alpha.size2() )
-      local_alpha.resize( alpha.size1(), alpha.size2());
-    local_alpha.assign( alpha );
-    
-    ublas::permutation_matrix<std::size_t> pm( local_alpha.size1() );
-    //if( pm.size() != local_alpha.size1() )
-    //  pm.resize( local_alpha.size1(), false );
-    
-    const size_t res = boost::numeric::ublas::lu_factorize(local_alpha, pm);
-    //const size_t res = boost::numeric::ublas::axpy_lu_factorize(local_alpha, pm);  //sometimes faster?
-    success = (res == 0);
-    if( success )
-    {
-      C.assign( boost::numeric::ublas::identity_matrix<double>( local_alpha.size1() ) );
-      lu_substitute(local_alpha, pm, C);
-    }
-#else
     success = matrix_invert( alpha, C );
-#endif
   }catch( std::exception &e )
   {
 #ifndef NDEBUG
@@ -6867,11 +6758,44 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       y_pred += fixedAmpPeaks[i].gauss_integral( x0, x1 );
     
     //    cerr << "bin " << bin << " predicted " << y_pred << " data=" << data[bin] << endl;
-    const double uncert = (data[bin] > MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
+    const double uncert = (data[bin] > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
     chi2 += std::pow( (y_pred - data[bin]) / uncert, 2.0 );
   }//for( int bin = 0; bin < nbin; ++bin )
-  
+
+
+
+  {
+    assert( dummy_amplitudes.size() == amplitudes.size() );
+    assert( dummy_continuum_coeffs.size() == continuum_coeffs.size() );
+    assert( dummy_amplitudes_uncerts.size() == amplitudes_uncerts.size() );
+    assert( dummy_continuum_coeffs_uncerts.size() == continuum_coeffs_uncerts.size() );
+
+    //cout << "For fit, comparison of amplitudes:" << endl << "Prev\t\tNew\n";
+    for( size_t i = 0; i < dummy_amplitudes.size(); ++i )
+    {
+      assert( abs(amplitudes[i] - dummy_amplitudes[i])
+             < 0.0001*max(abs(amplitudes[i]),abs(dummy_amplitudes[i])) );
+      assert( abs(amplitudes_uncerts[i] - dummy_amplitudes_uncerts[i])
+             < 0.001*max(abs(amplitudes_uncerts[i]),abs(dummy_amplitudes_uncerts[i])) );
+      //cout << "  " << amplitudes[i] << "+-" << amplitudes_uncerts[i] << "\t\t" << dummy_amplitudes[i] << "+-" << dummy_amplitudes_uncerts[i] << endl;
+    }
+
+
+    //cout << "For fit, comparison of continuum coeffs:" << endl << "Prev\t\tNew\n";
+    for( size_t i = 0; i < continuum_coeffs.size(); ++i )
+    {
+      assert( abs(continuum_coeffs[i] - dummy_continuum_coeffs[i])
+              < 0.0001*max(abs(continuum_coeffs[i]),abs(dummy_continuum_coeffs[i])) );
+      assert( abs(continuum_coeffs_uncerts[i] - dummy_continuum_coeffs_uncerts[i])
+             < 0.001*max(abs(continuum_coeffs_uncerts[i]),abs(dummy_continuum_coeffs_uncerts[i])) );
+      //cout << "  " << continuum_coeffs[i] << "+-" << continuum_coeffs_uncerts[i] << "\t\t" << dummy_continuum_coeffs[i] << "+-" << dummy_continuum_coeffs_uncerts[i] << endl;
+    }
+    //cout << "And prev Chi2=" << chi2 << ", with new Chi2=" << dummy_chi2 << endl<< endl<< endl;
+    assert( abs(chi2 - dummy_chi2) < 0.01*max(chi2,dummy_chi2) );
+  }
+
   return chi2;
+#endif // !PERFORM_DEVELOPER_CHECKS )
 }//double fit_amp_and_offset(...)
         
         
@@ -8509,7 +8433,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
             y_pred += continuum_coeffs[col] * (1.0/exp) * (pow(x1cont,exp) - pow(x0cont,exp));
           }//for( int order = 0; order < maxorder; ++order )
           
-          const double uncert = (data[bin] > MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
+          const double uncert = (data[bin] > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt( data[bin] ) : 1.0);
           
           if( y_pred < 0.0 )
             y_pred = 0.0;

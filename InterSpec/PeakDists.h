@@ -78,14 +78,20 @@ namespace PeakDists
           Note that the distribution sum for each channel is _added_ to this array, so you should zero-initialize it.
           Must have at least `nchannel` entries.
    */
-  void photopeak_function_integral( const double mean,
-                                          const double sigma,
-                                          const double amplitude,
-                                          const PeakDef::SkewType skew_type,
-                                          const double * const skew_parameters,
-                                          const size_t nchannel,
-                                          const float * const lower_energies,
-                                          double *peak_count_channels );
+template<typename T>
+void photopeak_function_integral( const T mean,
+                                  const T sigma,
+                                  const T amp,
+                                  const PeakDef::SkewType skew_type,
+                                  const T * const skew_parameters,
+                                  const size_t nchannel,
+                                  const float * const energies,
+                                 T *channels );
+
+extern template void photopeak_function_integral<double>( const double, const double,const double,
+                         const PeakDef::SkewType, const double * const, const size_t, const float * const, double * );
+
+
   
   
   
@@ -509,24 +515,25 @@ namespace PeakDists
   double DSCB_gauss_indefinite_non_norm_t( const double t );
 
 
-  template <typename T>
-  concept ContinuumTypeConcept = requires(T cont) {
-    { cont.parameters() };
-    { cont.referenceEnergy() };
-    { cont.lowerEnergy() };
-    { cont.upperEnergy() };
+  template <typename ContType, typename ScalarType>
+  concept ContinuumTypeConcept = requires(ContType cont, ScalarType scalar, std::size_t index) {
+    // Check `cont.parameters()` returns something like an array, or vector, or something
+    { scalar = cont.parameters()[index] };
+    { cont.referenceEnergy() } -> std::same_as<ScalarType>;
+    { cont.lowerEnergy() } -> std::same_as<ScalarType>;
+    { cont.upperEnergy() } -> std::same_as<ScalarType>;
     { cont.type() } -> std::same_as<PeakContinuum::OffsetType>;
     { cont.externalContinuum() } -> std::same_as<std::shared_ptr<const SpecUtils::Measurement>>;
   };
 
   // This function is just templated version of `PeakContinuum::offset_integral(...)` - need to refactor
   //  both to use the same code
-  template<typename ContType, typename T>
+  template<typename ContType, typename ScalarType>
   void offset_integral( const ContType &cont,
                   const float *energies,
-                  T *channels,
+                  ScalarType *channels,
                   const size_t nchannel,
-                  const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType>;
+                  const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType,ScalarType>;
 }//namespace PeakDists
 
 #endif  //PeakDists_h

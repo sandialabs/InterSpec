@@ -88,6 +88,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 
 
+#include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 #include "InterSpec/RelActCalc_CeresJetTraits.hpp"
@@ -5837,7 +5838,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     T *continuum_coeffs = answer.continuum.m_values.data();
 
     vector<RelActCalcAuto::PeakDefImp<T>> dummy;
-    RelActCalcAuto::fit_continuum( energies, data, num_channels, num_polynomial_terms,
+    PeakFit::fit_continuum( energies, data, num_channels, num_polynomial_terms,
                                   is_step_continuum, ref_energy, peaks, multithread,
                                   continuum_coeffs,
                                   peak_counts.data() );
@@ -6067,7 +6068,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     vector<RelActCalcAuto::PeaksForEnergyRangeImp<T>> peaks_in_ranges_imp( m_energy_ranges.size() );
 
-    // TODO: multi-thread computation needs to be looked at more hollistically, both here and in `RelActCalcAuto::fit_continuum(...)`, and possibly in peaks_for_energy_range_imp
+    // TODO: multi-thread computation needs to be looked at more hollistically, both here and in `PeakFit::fit_continuum(...)`, and possibly in peaks_for_energy_range_imp
     const bool multhread_each_roi = (m_energy_ranges.size() < 6);
     
     // Calling `m_pool.join()` puts the threadpool in a state where it will no longer work,

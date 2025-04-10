@@ -52,6 +52,14 @@ typedef std::vector< std::shared_ptr<const PeakDef> > PeakShrdVec;
 
 // TODO: put everything in this file into a namespace
 
+// 20240911: The minimum uncertainty allowed for a gamma spectrum channel.
+// Background subtracted spectra can end up with tiny bins, like 0.0007,
+// which if we take its uncertainty to be its sqrt, a single bin like this will
+// totally mess up the whole ROI.  So we'll impose a minimum uncertainty on
+// each channel.
+// However, if a spectrum is scaled, and not Poisson errored, this will totally
+// mess things up (even though it wouldnt be right in the first place).
+#define PEAK_FIT_MIN_CHANNEL_UNCERT 1.0
 
 struct SavitzyGolayCoeffs
 {
@@ -362,7 +370,7 @@ double evaluate_polynomial( const double x,
  @param[out] continuum_coeffs The fit continuum coefficients
  @param[out] amplitudes_uncerts The (statistical) uncertainties for the amplitudes
  @param[out] continuum_coeffs_uncerts The (statistical) uncertainties for the continuum coefficients
- 
+ @returns The chi2 of the ROI
  Currently the implementation is reasonably inefficient.
  
  Skew uncertainties are also not taken into account in determining amplitude or continuum uncertainties.

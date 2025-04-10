@@ -143,7 +143,7 @@ void gaussian_integral( const T peak_mean,
       const double boost_val = amp_mult * (boost_erfhigh - boost_erflow);
       const double eigen_val = amp_mult * (eigen_erfhigh - eigen_erflow);
 
-      assert( fabs(boost_val - eigen_val) < 1.0E-6*amp_mult || fabs(boost_val - eigen_val) < 0.001 );
+      assert( fabs(boost_val - eigen_val) < 1.0E-5*abs(amp_mult) || fabs(boost_val - eigen_val) < 0.001 );
 
       boost_erflow = boost_erfhigh;
       eigen_erflow = eigen_erfhigh;
@@ -1281,13 +1281,56 @@ void double_sided_crystal_ball_integral( const T peak_mean,
 }//double_sided_crystal_ball_integral(...)
 
 
+template<typename T>
+void photopeak_function_integral( const T mean,
+                                  const T sigma,
+                                  const T amp,
+                                  const PeakDef::SkewType skew_type,
+                                  const T * const skew_parameters,
+                                  const size_t nchannel,
+                                  const float * const energies,
+                                  T *channels )
+{
+  assert( (skew_type == PeakDef::SkewType::NoSkew) || skew_parameters );
+
+  switch( skew_type )
+  {
+    case PeakDef::SkewType::NoSkew:
+      gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::Bortel:
+      bortel_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::CrystalBall:
+      crystal_ball_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+      double_sided_crystal_ball_integral( mean, sigma, amp,
+                                         skew_parameters[0], skew_parameters[1],
+                                         skew_parameters[2], skew_parameters[3],
+                                         energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::GaussExp:
+      gauss_exp_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::ExpGaussExp:
+      exp_gauss_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
+      break;
+  }//switch( skew_type )
+}//void photopeak_function_integral(...)
+
 
 template<typename ContType, typename T>
 void offset_integral( const ContType &cont,
                      const float *energies,
                      T *channels,
                      const size_t nchannel,
-                     const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType>
+                     const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType,T>
 {
   // This function should give the same answer as
   //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel
