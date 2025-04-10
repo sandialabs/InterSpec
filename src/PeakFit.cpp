@@ -4952,8 +4952,15 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     cout << (i ? ", " : "") << lmCont->parameters()[i] << " +- " << (i < lmCont->uncertainties().size() ? lmCont->uncertainties()[i] : 0.0);
   }
   cout << "}\n";
-  
-  
+
+  const size_t lower_channel = dataH->find_gamma_channel( static_cast<float>(roiLower) );
+  const size_t upper_channel = dataH->find_gamma_channel( static_cast<float>(roiUpper) );
+
+
+  const double old_chi2 = chi2_for_region( mnInitialfitpeaks, dataH, static_cast<int>(lower_channel), static_cast<int>(upper_channel) );
+  const double new_chi2 = chi2_for_region( lmInitialfitpeaks, dataH, static_cast<int>(lower_channel), static_cast<int>(upper_channel) );
+
+
   for( size_t i = 0; i < npeaks; ++i )
   {
     const PeakDef &mnPeak = *mnInitialfitpeaks[i];
@@ -4966,7 +4973,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     << "\t\t" << std::setw(10) << lmPeak.sigma() << " +- " << std::setw(10) << lmPeak.sigmaUncert() << endl;
     cout << "\tamp:   " << std::setw(10) << mnPeak.amplitude() << " +- " << std::setw(10) << mnPeak.amplitudeUncert()
     << "\t\t" << std::setw(10) << lmPeak.amplitude() << " +- " << std::setw(10) << lmPeak.amplitudeUncert() << endl;
-    cout << "\tchi2:  " << std::setw(24) << mnPeak.chi2dof() << "\t\t" << std::setw(24) << lmPeak.chi2dof() << endl;
+    cout << "\tchi2:  " << std::setw(24) << old_chi2 /*mnPeak.chi2dof()*/ << "\t\t" << std::setw(24) << new_chi2 /*lmPeak.chi2dof()*/ << endl;
   }
   
   cout << "Old method: " << std::chrono::duration<double, std::milli>(t2 - t1).count()
@@ -6375,9 +6382,12 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
 #else
   std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
 
+  double * const dummy_channel_counts = nullptr;
   const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
                           ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
-                                         dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts );
+                                         dummy_amplitudes, dummy_continuum_coeffs,
+                              dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts,
+                                                            dummy_channel_counts );
 
 
   // TODO: Need to switch to using Eigen::SVD for this function - it is much more stable and predictable

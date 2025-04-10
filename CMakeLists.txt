@@ -358,6 +358,7 @@ set(headers
     InterSpec/PopupDiv.h
     InterSpec/SpecMeas.h
     InterSpec/PeakFit.h
+    InterSpec/PeakFit_imp.hpp
     InterSpec/PeakFitUtils.h
     InterSpec/PeakDef.h
     InterSpec/PeakDists.h

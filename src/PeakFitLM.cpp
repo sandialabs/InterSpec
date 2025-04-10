@@ -42,6 +42,7 @@
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/PeakDists_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 
@@ -55,8 +56,6 @@ namespace PeakFitLM
     Or maybe more directly analogous to LinearProblemSubSolveChi2Fcn
 
  Current shortcommings of this class
- - We are using Ceres to fit peak amplitudes, so we can just call `RelActCalcAuto::fit_continuum(...)` (which is templated for `ceres::Jet<>`'s),
-   but ideally we would want to refactor `fit_amp_and_offset(...)`  to also fit for peak amplitudes.
  - Should add choice of a free-for-all for peak means, or to have it as a function of energy, like now.
 
  Takes 1 parameter blocks, of size number_parameters() - e.g., we are putting all parameters together:
@@ -209,7 +208,7 @@ struct PeakFitDiffCostFunction
     const size_t num_skew = PeakDef::num_skew_parameters( m_skew_type );
     const size_t num_continuum_pars = PeakContinuum::num_parameters( m_offset_type );
 
-    return num_continuum_pars + num_skew + number_sigma_parameters() + 2*m_num_peaks;
+    return num_continuum_pars + num_skew + number_sigma_parameters() + m_num_peaks;
   }
   
   size_t number_sigma_parameters() const
@@ -294,15 +293,17 @@ struct PeakFitDiffCostFunction
     const size_t num_sigmas_fit = number_sigma_parameters();
     const size_t num_skew = PeakDef::num_skew_parameters( m_skew_type );
 
-    vector<PeakType> peaks( m_num_peaks );
+    vector<PeakType> peaks, fixed_amp_peaks;
 
     for( size_t i = 0; i < m_num_peaks; ++i )
     {
-      const size_t start_par = num_continuum_pars + num_skew + num_sigmas_fit + 2*i;
-      assert( (start_par + 1) < number_parameters() );
+      const size_t start_par = num_continuum_pars + num_skew + num_sigmas_fit + i;
+      assert( start_par < number_parameters() );
+
+      const bool fit_amp = m_starting_peaks[i]->fitFor(PeakDef::GaussAmplitude);
 
       const T mean = params[start_par + 0];
-      const T amp = params[start_par + 1];
+      const T amp = fit_amp ? T(1.0) : T(m_starting_peaks[i]->amplitude());
 
       T sigma, sigma_uncert;
 
@@ -331,16 +332,17 @@ struct PeakFitDiffCostFunction
         }//if( num_sigmas_fit > 1 )
       }//if( num_sigmas_fit == 0 ) / else
 
-      peaks[i].setMean( mean );
-      peaks[i].setSigma( sigma );
-      peaks[i].setAmplitude( amp );
+      PeakType peak;
+      peak.setMean( mean );
+      peak.setSigma( sigma );
+      peak.setAmplitude( amp );
 
-      peaks[i].setSkewType( m_skew_type );
+      peak.setSkewType( m_skew_type );
       for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
       {
         const PeakDef::CoefficientType coeff_num = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + static_cast<int>(skew_index) );
         const T skew_coef = params[num_continuum_pars + skew_index];
-        peaks[i].set_coefficient( skew_coef, coeff_num );
+        peak.set_coefficient( skew_coef, coeff_num );
       }
 
       if( uncertainties )
@@ -355,14 +357,19 @@ struct PeakFitDiffCostFunction
           amp_uncert = T(m_starting_peaks[i]->amplitudeUncert());
 
         if( mean_uncert > 0.0 )
-          peaks[i].setMeanUncert( mean_uncert );
+          peak.setMeanUncert( mean_uncert );
 
         if( amp_uncert > 0.0 )
-          peaks[i].setAmplitudeUncert( amp_uncert );
+          peak.setAmplitudeUncert( amp_uncert );
 
         if( sigma_uncert > 0.0 )
-          peaks[i].setSigmaUncert( sigma_uncert );
+          peak.setSigmaUncert( sigma_uncert );
       }//if( uncertainties )
+
+      if( fit_amp )
+        peaks.push_back( peak );
+      else
+        fixed_amp_peaks.push_back( peak );
     }//for( size_t i = 0; i < m_num_peaks; ++i )
 
     // Sort the peaks to make calculating the punishment for peaks being to close easier
@@ -415,12 +422,40 @@ struct PeakFitDiffCostFunction
         case PeakContinuum::Linear:       case PeakContinuum::Quadratic:
         case PeakContinuum::Cubic:        case PeakContinuum::FlatStep:
         case PeakContinuum::LinearStep:   case PeakContinuum::BiLinearStep:
-          RelActCalcAuto::fit_continuum( energies, channel_counts, nchannel, num_polynomial_terms,
-                                        is_step_continuum, T(m_ref_energy), peaks, multithread,
-                                        continuum_coeffs, &(peak_counts[0]) );
+        {
+          vector<T> means, sigmas;
+          for( const auto &peak : peaks )
+          {
+            means.push_back( peak.mean() );
+            sigmas.push_back( peak.sigma() );
+          }
 
-          continuum->setParameters( T(m_ref_energy), continuum_coeffs, nullptr );
+          const vector<T> skew_pars( params + num_continuum_pars, params + num_continuum_pars + num_skew );
+
+          vector<T> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
+
+          PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nchannel, num_polynomial_terms, is_step_continuum,
+                                          T(m_ref_energy), means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
+                                          amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
+                                          &(peak_counts[0]) );
+
+          //PeakFit::fit_continuum( energies, channel_counts, nchannel, num_polynomial_terms,
+          //                       is_step_continuum, T(m_ref_energy), peaks, multithread,
+          //                       continuum_coeffs, &(peak_counts[0]) );
+
+          assert( peaks.size() == amplitudes.size() );
+          assert( amp_uncerts.empty() || (amp_uncerts.size() == peaks.size()));
+          for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
+          {
+            peaks[peak_index].setAmplitude( amplitudes[peak_index] );
+            if( !amp_uncerts.empty() )
+              peaks[peak_index].setAmplitudeUncert( amp_uncerts[peak_index] );
+          }
+
+          continuum->setParameters( T(m_ref_energy), continuum_coeffs.data(), cont_uncerts.data() );
           break;
+        }
+
 
         case PeakContinuum::NoOffset:
         case PeakContinuum::External:
@@ -437,8 +472,18 @@ struct PeakFitDiffCostFunction
       }//switch( offset_type )
     }//if( m_use_lls_for_cont )
 
-    for( size_t i = 0; i < m_num_peaks; ++i )
-      peaks[i].setContinuum( continuum );
+
+    // Put fixed amplitude peaks into `peaks`.
+    if( !fixed_amp_peaks.empty() )
+    {
+      for( auto &peak : fixed_amp_peaks )
+        peaks.push_back( peak );
+      std::sort( begin(peaks), end(peaks), &PeakType::lessThanByMean );
+    }
+
+
+    for( auto &peak : peaks )
+      peak.setContinuum( continuum );
 
 
     T chi2( 0.0 );
@@ -764,8 +809,6 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
      - Constrains the widths of the peaks to have a linearly related width
    
    In the future:
-     - we should do like LinearProblemSubSolveChi2Fcn and just use matrices to solve for peak amplitudes and continuum parameters - see Options below for how I think this should be setup
-      - Should separate the linear and non-linear parameter blocks now at least
      - Add punishment for stat insignificant peaks
      - Need to deal with errors during solving, and during Covariance computation
      - Deal with setting number of threads reasonably.
@@ -942,9 +985,8 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
       const double sigma = coFitPeaks[i]->sigma();
       const double amp = coFitPeaks[i]->amplitude();
       
-      const size_t start_par = num_continuum_pars + num_skew + num_sigmas_fit + 2*i;
-      parameters[start_par + 0] = mean;
-      parameters[start_par + 1] = amp;
+      const size_t start_par = num_continuum_pars + num_skew + num_sigmas_fit + i;
+      parameters[start_par] = mean;
       
       if( !coFitPeaks[i]->fitFor(PeakDef::Mean) )
       {
@@ -961,15 +1003,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
           upper_bounds[start_par + 0] = mean + 0.25*sigma;
         }
       }//
-      
-      // Either set the amplitude as fixed, or the minimum amplitude to zero
-      if( !coFitPeaks[i]->fitFor(PeakDef::GaussAmplitude) )
-      {
-        constant_parameters.push_back( static_cast<int>(start_par + 1) );
-      }else
-      {
-        lower_bounds[start_par + 1] = 0.0;
-      }
+
 
       if( !coFitPeaks[i]->fitFor(PeakDef::Sigma) )
       {

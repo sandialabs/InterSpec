@@ -260,6 +260,9 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
  @param[out] continuum_coeffs The fit continuum coefficients
  @param[out] amplitudes_uncerts The (statistical) uncertainties for the amplitudes
  @param[out] continuum_coeffs_uncerts The (statistical) uncertainties for the continuum coefficients
+ @param[out] peak_counts Optional array (at least of length `nbin`) to place the summed counts of the peaks plus continuum;
+             the sums of each channel are added to each array element (i.e., the elements arent set equal to sum, so you should
+             zero thier values, if you want that)
 
  @returns The chi2 of the ROI
 
@@ -280,7 +283,8 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
                           std::vector<ScalarType> &amplitudes,
                           std::vector<ScalarType> &continuum_coeffs,
                           std::vector<ScalarType> &amplitudes_uncerts,
-                          std::vector<ScalarType> &continuum_coeffs_uncerts )
+                          std::vector<ScalarType> &continuum_coeffs_uncerts,
+                          ScalarType * const peak_counts )
 {
   using namespace std;
 
@@ -312,15 +316,15 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
   Eigen::VectorX<ScalarType> uncerts( static_cast<Eigen::Index>(nbin) );
 
 
-  double roi_data_sum = 0.0, step_cumulative_data = 0.0;
+  ScalarType roi_data_sum( 0.0 ), step_cumulative_data( 0.0 );
 
   const double roi_lower = x[0];
   const double roi_upper = x[nbin];
 
   for( size_t row = 0; row < nbin; ++row )
-    roi_data_sum += std::max( data[row], 0.0f );
+    roi_data_sum += std::max( static_cast<double>(data[row]), 0.0 );
 
-  const double avrg_data_val = roi_data_sum / nbin;
+  const ScalarType avrg_data_val = roi_data_sum / static_cast<double>(nbin);
 
   // TODO: implement multi-threaded computation
   // 20250127: Using SpecUtilsAsync::ThreadPool, it looks like calling `pool.join()` is causing significant and unreasonable delays
@@ -358,9 +362,9 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
     //  However, there are also highly scaled spectra, whose all values are really small, so
     //  in this case we want to do something more reasonable.
     // TODO: evaluate these choices of thresholds and tradeoffs, more better
-    double uncert = (dataval > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(dataval) : 1.0);
+    ScalarType uncert = (dataval > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(dataval) : ScalarType(1.0));
 
-    uncerts(row) = ScalarType(uncert);
+    uncerts(row) = uncert;
 
     if( step_continuum )
       step_cumulative_data += dataval;
@@ -383,15 +387,15 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...), and code
         // If you change it in one place - change it in here, below, and in offset_integral.
-        const double frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
-        const double contribution = frac_data * (x1 - x0);
+        const ScalarType frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
+        const ScalarType contribution = frac_data * (x1 - x0);
 
         A(row,col) = ScalarType( contribution / uncert );
       }else if( step_continuum && (num_polynomial_terms == 4) )
       {
-        const double frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
+        const ScalarType frac_data = (step_cumulative_data - 0.5*data[row]) / roi_data_sum;
 
-        double contrib = 0.0;
+        ScalarType contrib( 0.0 );
         switch( col )
         {
           case 0: contrib = (1.0 - frac_data) * (x1_rel - x0_rel);                     break;
@@ -401,19 +405,21 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
           default: assert( 0 ); break;
         }//switch( col )
 
-        A(row,col) = ScalarType( contrib / uncert );
+        A(row,col) = contrib / uncert;
       }else
       {
-        const double contribution = (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
+        const ScalarType contribution = (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
 
-        A(row,col) = ScalarType( contribution / uncert );
+        A(row,col) = contribution / uncert;
       }
     }//for( int order = 0; order < maxorder; ++order )
   }//for( size_t row = 0; row < nbin; ++row )
 
   //  TODO: multithread if we have more than X peaks, etc.
+  //
+  // For convienience, we'll keep peak unit-area counts around, but
+  //  we could just use `A`, i.e., `unit_peak_counts[i][bin] == A(bin,num_poly_terms + i)* uncerts(bin)`.
   vector<vector<ScalarType>> unit_peak_counts( npeaks, vector<ScalarType>(nbin,ScalarType(0.0)) );
-
 
   for( size_t i = 0; i < npeaks; ++i )
   {
@@ -473,14 +479,14 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
       amplitudes_uncerts[i] = uncertainties[coef];
     }//for( size_t i = 0; i < npeaks; ++i )
 
-    ScalarType chi2 = 0;
-    step_cumulative_data = 0.0;
+    ScalarType chi2( 0.0 );
+    step_cumulative_data = ScalarType(0.0);
     for( size_t bin = 0; bin < nbin; ++bin )
     {
       const double x0 = x[bin];
       const double x1 = x[bin+1];
 
-      double dataval = data[bin];
+      ScalarType dataval( static_cast<double>(data[bin]) );
 
       if( step_continuum )
         step_cumulative_data += dataval;
@@ -492,54 +498,20 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
         dataval -= fixed_peak_contrib[bin];
       }
 
-      ScalarType y_pred = 0.0;
+      ScalarType y_pred( 0.0 );
       for( size_t col = 0; col < num_poly_terms; ++col )
-      {
-        const ScalarType exp = ScalarType(col + 1.0);
-        const ScalarType x0_rel = x0 - ref_energy;
-        const ScalarType x1_rel = x1 - ref_energy;
-
-        if( step_continuum
-           && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
-           && (col == (num_polynomial_terms - 1)) )
-        {
-          // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
-          //  function that defines the matrix, see above for comments
-          const double frac_data = (step_cumulative_data - 0.5*data[bin]) / roi_data_sum;
-          const double contribution = frac_data * (x1 - x0);
-
-          y_pred += coeffs(col)*contribution;
-        }else if( step_continuum && (num_polynomial_terms == 4) )
-        {
-          // This logic mirrors that of PeakContinuum::offset_integral(...) and above code in this
-          //  function that defines the matrix, see above for comments
-
-          const double frac_data = (step_cumulative_data - 0.5*data[bin]) / roi_data_sum;
-
-          double contrib = 0.0;
-          switch( col )
-          {
-            case 0: contrib = (1.0 - frac_data) * (x1_rel - x0_rel);                     break;
-            case 1: contrib = 0.5 * (1.0 - frac_data) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
-            case 2: contrib = frac_data * (x1_rel - x0_rel);                             break;
-            case 3: contrib = 0.5 * frac_data * (x1_rel*x1_rel - x0_rel*x0_rel);         break;
-            default: assert( 0 ); break;
-          }//switch( col )
-
-          y_pred += coeffs(col) * contrib;
-        }else
-        {
-          y_pred += coeffs(col) * (1.0/exp) * (pow(ScalarType(x1_rel),exp) - pow(ScalarType(x0_rel),exp));
-        }//if( step_continuum ) / else
-      }//for( int order = 0; order < maxorder; ++order )
+        y_pred += coeffs(col) * A(bin,col) * uncerts(bin);
 
       if( y_pred < 0.0 )
-        y_pred = 0.0;
+        y_pred = ScalarType(0.0);
 
       for( size_t i = 0; i < npeaks; ++i )
       {
         const size_t col = num_poly_terms + i;
         y_pred += coeffs(col) * unit_peak_counts[i][bin];
+
+        // We could get rid of keeping `unit_peak_counts[][]` around, as `A` has this same info.
+        assert( abs(unit_peak_counts[i][bin] - A(bin,num_poly_terms + i)* uncerts(bin)) < 1.0E-4 );
       }
 
       if( nfixedpeak )
@@ -548,7 +520,10 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
         y_pred += fixed_peak_contrib[bin];
       }
 
-      chi2 += std::pow( (y_pred - data[bin]) / uncerts(bin), ScalarType(2.0) );
+      if( peak_counts )
+        peak_counts[bin] += y_pred;
+
+      chi2 += pow( (y_pred - static_cast<double>(data[bin])) / uncerts(bin), ScalarType(2.0) );
     }//for( int bin = 0; bin < nbin; ++bin )
 
     return chi2;
