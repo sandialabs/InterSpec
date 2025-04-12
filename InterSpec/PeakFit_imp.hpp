@@ -480,24 +480,8 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
     }//for( size_t i = 0; i < npeaks; ++i )
 
     ScalarType chi2( 0.0 );
-    step_cumulative_data = ScalarType(0.0);
     for( size_t bin = 0; bin < nbin; ++bin )
     {
-      const double x0 = x[bin];
-      const double x1 = x[bin+1];
-
-      ScalarType dataval( static_cast<double>(data[bin]) );
-
-      if( step_continuum )
-        step_cumulative_data += dataval;
-
-      //TODO: We are not taking into account the possibility of fixed peak uncertainties
-      if( nfixedpeak )
-      {
-        assert( fixed_peak_contrib.size() == nbin );
-        dataval -= fixed_peak_contrib[bin];
-      }
-
       ScalarType y_pred( 0.0 );
       for( size_t col = 0; col < num_poly_terms; ++col )
         y_pred += coeffs(col) * A(bin,col) * uncerts(bin);
