@@ -2230,7 +2230,7 @@ void PeakEdit::refit()
     return;
   }
   
-  vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+  vector<PeakDef> inputPeak, peaks_outside_roi, outputPeak;
   vector< std::shared_ptr<const PeakDef> > inpkptrs;
   
   const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
@@ -2255,7 +2255,9 @@ void PeakEdit::refit()
       inputPeak.push_back( *p );
       inpkptrs.push_back( p );
     }else
-      fixedPeaks.push_back( *p );
+    {
+      peaks_outside_roi.push_back( *p );
+    }
   }//for( int peak = 0; peak < npeak; ++peak )
 
   if( inputPeak.size() > 1 )  //JIC
@@ -2283,8 +2285,7 @@ void PeakEdit::refit()
     const bool isRefit = true;
     const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                                  hypothesis_threshold, inputPeak, data,
-                                  fixedPeaks, isRefit, isHPGe );
+                                  hypothesis_threshold, inputPeak, data, isRefit, isHPGe );
   }
   
   
@@ -2301,61 +2302,36 @@ void PeakEdit::refit()
   shared_ptr<const deque< PeakModel::PeakShrdPtr > > prev_peaks_ptr = m_peakModel->peaks();
   if( prev_peaks_ptr )
     prev_peaks.insert( end(prev_peaks), begin(*prev_peaks_ptr), end(*prev_peaks_ptr) );
-  
-  /*
-  if( inputPeak.size() > 1 )
-  {
-   */
-    fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
-    std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+
+  vector<PeakDef> all_peaks = peaks_outside_roi;
+  all_peaks.insert( end(all_peaks), begin(outputPeak), end(outputPeak) );
+  std::sort( begin(all_peaks), end(all_peaks), &PeakDef::lessThanByMean );
+
+  m_energy = newEnergy;
+  m_peakModel->setPeaks( all_peaks );
+  changePeak( m_energy );
     
-    m_energy = newEnergy;
-    m_peakModel->setPeaks( fixedPeaks );
-    changePeak( m_energy );
+  auto undo = [prev_peaks,origEnergy](){
+    PeakEdit *edit = get_session_peak_editor();
+    if( !edit )
+      return;
+    edit->m_peakModel->setPeaks( prev_peaks );
+    edit->changePeak( origEnergy );
+  };//undo
     
-    auto undo = [prev_peaks,origEnergy](){
-      PeakEdit *edit = get_session_peak_editor();
-      if( !edit )
-        return;
-      edit->m_peakModel->setPeaks( prev_peaks );
-      edit->changePeak( origEnergy );
-    };//undo
+  auto redo = [newEnergy,all_peaks](){
+    PeakEdit *edit = get_session_peak_editor();
+    if( !edit )
+      return;
+
+    edit->m_energy = newEnergy;
+    edit->m_peakModel->setPeaks( all_peaks );
+    edit->changePeak( newEnergy );
+  };
     
-    auto redo = [newEnergy,fixedPeaks](){
-      PeakEdit *edit = get_session_peak_editor();
-      if( !edit )
-        return;
-      
-      edit->m_energy = newEnergy;
-      edit->m_peakModel->setPeaks( fixedPeaks );
-      edit->changePeak( newEnergy );
-    };
-    
-    UndoRedoManager *undo_manager = m_viewer->undoRedoManager();
-    if( undo_manager )
-      undo_manager->addUndoRedoStep( undo, redo, "Peak refit." );
-  /*
-  }else
-  {
-    // 20230423: This should have already been taken care of by PeakDef::inheritUserSelectedOptions
-    //for( PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
-    //    t < PeakDef::NumCoefficientTypes;
-    //    t = PeakDef::CoefficientType(t+1) )
-    //{
-    //  outputPeak[0].setFitFor(t, m_currentPeak.fitFor(t));
-    //}//for( loop over PeakDef::CoefficientType )
-    
-    m_currentPeak = outputPeak[0];
-    m_energy = m_currentPeak.mean();
-    m_blockInfoRefresh = true;
-    m_peakModel->removePeak( m_peakIndex );
-    m_peakIndex   = m_viewer->addPeak( m_currentPeak, false );
-    m_currentPeak = *m_peakModel->peak( m_peakIndex );
-    m_blockInfoRefresh = false;
-    
-    refreshPeakInfo();
-  }//if( inputPeak.size() > 1 )
-   */
+  UndoRedoManager *undo_manager = m_viewer->undoRedoManager();
+  if( undo_manager )
+    undo_manager->addUndoRedoStep( undo, redo, "Peak refit." );
 }//void refit()
 
 void PeakEdit::setAmplitudeForDataDefinedPeak()

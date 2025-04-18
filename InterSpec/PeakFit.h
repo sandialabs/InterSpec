@@ -188,7 +188,6 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
                                       const double hypothesis_threshold,
                                       std::vector<PeakDef> all_peaks,
                                       std::shared_ptr<const SpecUtils::Measurement> data,
-                                      const std::vector<PeakDef> &fixedpeaks,
                                       bool isRefit,
                                       const bool isHPGe );
 
@@ -282,7 +281,6 @@ void fitPeaks( const std::vector<PeakDef> &input_peaks,
                       const double hypothesis_threshold,
                       std::shared_ptr<const SpecUtils::Measurement> data,
                       std::vector<PeakDef> &results,
-                      const std::vector<PeakDef> &fixedpeaks,
                       bool amplitudeOnly,
                       const bool isHPGe ) throw();
 
@@ -320,6 +318,11 @@ std::vector<PeakDef> peaksInRange( const double lowx,
                                    const double highx,
                                    const double nsigma,
                                    const std::vector<PeakDef> &inputs );
+
+std::vector<std::shared_ptr<const PeakDef>> peaksInRange( const double lowx,
+                                   const double highx,
+                                   const double nsigma,
+                                   const std::vector<std::shared_ptr<const PeakDef>> &inputs );
 
 //peaksTouchingRange(...): similar to peaksInRange(...), but instead uses the
 //  peaks own definition of the peaks range (e.g. lowerX(), upperX()) to decide

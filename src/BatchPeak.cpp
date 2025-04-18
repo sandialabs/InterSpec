@@ -1143,7 +1143,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         
         vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                 stat_threshold, hypothesis_threshold,
-                                                energy_cal_peaks, spec, {}, isRefit, isHPGe );
+                                                energy_cal_peaks, spec, isRefit, isHPGe );
         try
         {
           fit_energy_cal_from_fit_peaks( spec, peaks );
@@ -1178,14 +1178,14 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     
     vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                 stat_threshold, hypothesis_threshold,
-                                                candidate_peaks, spec, {}, isRefit, isHPGe );
+                                                candidate_peaks, spec, isRefit, isHPGe );
     
     // Re-fit the peaks again a few more times
     for( size_t i = 0; i < 3; ++i )
     {
       fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                   stat_threshold, hypothesis_threshold,
-                                  fit_peaks, spec, {}, true, isHPGe );
+                                  fit_peaks, spec, true, isHPGe );
     }
     
     //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "

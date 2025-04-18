@@ -2144,7 +2144,9 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       const vector<PeakDef> &peaks = roi_peaks.second;
       
       vector<PeakDef> &results = fit_rois[fit_rois_index];
-      
+
+      //20250409: check per
+
       threadpool.post( boost::bind( &fitPeaks,
                                    boost::cref(peaks),
                                    fit_settings.initial_stat_threshold,
@@ -3394,7 +3396,28 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
   cout << "\n" << endl;
   
   // Now go through and setup genetic algorithm, as well implement final peak fitting code
-  
+
+/*
+  std::function<double( const InitialPeakFindSettings &)> ga_eval_fcn
+        = [best_settings, &input_srcs]( const InitialPeakFindSettings &settings ) -> double {
+    double score_sum = 0.0;
+    for( const DataSrcInfo &info : input_srcs )
+    {
+      const double score = eval_initial_peak_find_and_fit( settings, best_settings, info );
+      score_sum += score;
+    }
+
+    return -score_sum;
+  };// set InitialFit_GA::ns_ga_eval_fcn
+
+  const InitialPeakFindSettings best_initial_fit_settings = InitialFit_GA::do_ga_eval( ga_eval_fcn );
+*/
+
+
+
+
+
+
   //TODO:
   // - Should time using LinearProblemSubSolveChi2Fcn - may be faster/better?
   // - Also, try using Ceres instead of Minuit.  Look for `USE_LM_PEAK_FIT`
@@ -4205,8 +4228,8 @@ int main( int argc, char **argv )
     AccuracyFromCsvsStudy
   };//enum class OptimizationAction : int
   
-  const OptimizationAction action = OptimizationAction::InitialFit;
-  
+  const OptimizationAction action = OptimizationAction::CodeDev; //OptimizationAction::InitialFit;
+
   switch( action )
   {
     case OptimizationAction::Candidate:
@@ -4738,7 +4761,7 @@ int main( int argc, char **argv )
         }
       }//if( benchmark find_candidate_peaks )
       
-      if( true ) //benchmark peak-fitting
+      if( false ) //benchmark peak-fitting
       {
         for( const DataSrcInfo &info : input_srcs )
         {
@@ -4752,7 +4775,7 @@ int main( int argc, char **argv )
             p.continuum()->setType( PeakContinuum::OffsetType::FlatStep );
             //p.continuum()->setType( PeakContinuum::OffsetType::Linear );
           }
-          
+
           const bool isHPGe = true, amplitudeOnly = false;
           vector<PeakDef> zeroth_fit_results, initial_fit_results;
           const std::vector<PeakDef> dummy_fixedpeaks;
@@ -4815,6 +4838,8 @@ int main( int argc, char **argv )
       fit_settings.ROI_add_chi2dof_improve = 0.5;
       
       double sum_weight = 0.0;
+      const double start_wall = SpecUtils::get_wall_time();
+      const double start_cpu = SpecUtils::get_cpu_time();
       for( const DataSrcInfo &info : input_srcs )
       {
         if( debug_printout )
@@ -4825,9 +4850,11 @@ int main( int argc, char **argv )
         if( debug_printout )
           cout << "Got weight=" << weight << endl;
       }//for( const DataSrcInfo &info : input_srcs )
-      
+      const double end_wall = SpecUtils::get_wall_time();
+      const double end_cpu = SpecUtils::get_cpu_time();
+
       cout << "Average weight of " << input_srcs.size() << " files is " << (sum_weight/input_srcs.size()) << endl;
-      
+      cout << "\t\teval took " << (end_wall - start_wall) << " s, wall and " << (end_cpu - start_cpu) << " s cpu" << endl;
       break;
     }//case OptimizationAction::CodeDev:
   }//switch( action )

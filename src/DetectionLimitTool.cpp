@@ -3885,7 +3885,7 @@ void DetectionLimitTool::do_development()
           
       if( removed_peak )
         fitPeaks( fitpeaks, stat_threshold, hypothesis_threshold,
-                  data, fitpeaks, fixedpeaks, false );
+                  data, fitpeaks, false );
           
       if( datadefined_peaks.size() )
       {

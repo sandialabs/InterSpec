@@ -4100,7 +4100,7 @@ void RelActAutoGui::setPeaksToForeground()
           {
             cout << "refitPeaksThatShareROI gave " << fit_peaks[roi_num].size() << " peaks, while"
             << " we wanted " << peaks->size() << ", will try fitPeaksInRange(...)" << endl;
-            vector<PeakDef> input_peaks, fixed_peaks;
+            vector<PeakDef> input_peaks;
             for( const auto &p : peaks_to_refit )
               input_peaks.push_back( *p );
             
@@ -4113,7 +4113,7 @@ void RelActAutoGui::setPeaksToForeground()
             
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, fixed_peaks, true, isHPGe );
+                                                          foreground, true, isHPGe );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )

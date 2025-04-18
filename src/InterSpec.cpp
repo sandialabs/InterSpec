@@ -7782,7 +7782,7 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
         const double lowE = newspec->gamma_energy_min();
         const double upE = newspec->gamma_energy_max();
       
-        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, {}, true, isHPGe );
+        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, true, isHPGe );
         
         std::deque<std::shared_ptr<const PeakDef> > peakdeque;
         for( const auto &p : refit_peaks )
@@ -12863,8 +12863,7 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
                                  maxEffectedPeak,
                                  3.0, stat_threshold, hypothesis_threshold,
                                  all_peaks,
-                                 m_spectrum->data(),
-                                 vector<PeakDef>() );
+                                 m_spectrum->data() );
       if( all_peaks.size() == newpeaks.size() )
         all_peaks = newpeaks;
        */
