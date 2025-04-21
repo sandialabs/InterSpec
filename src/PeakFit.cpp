@@ -83,11 +83,6 @@
  usage of Ceres), is totally untested, and hasnt been finished implementing everything.
  */
 #if( USE_REL_ACT_TOOL )
-//#ifdef _MSC_VER
-//#pragma message( "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined." )
-//#else
-//#warning "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined."
-//#endif
 #define USE_LM_PEAK_FIT 1
 #else
 #define USE_LM_PEAK_FIT 0
@@ -1591,13 +1586,35 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
   typedef vector<PeakDef> PeakVec;
   typedef PeakVec::iterator PeakVecIter;
 
-#if( USE_LM_PEAK_FIT )
-  const auto orig_input_peaks = input_peaks;
-#endif
 
   if( !data || (x1<x0) )
     return input_peaks;
-  
+
+#if( USE_LM_PEAK_FIT )
+  const auto orig_input_peaks = input_peaks;
+  vector<shared_ptr<const PeakDef>> peak_from_LM;
+  try
+  {
+    vector<shared_ptr<const PeakDef>> lm_input_peaks;
+    for( const auto &p : orig_input_peaks )
+      lm_input_peaks.push_back( make_shared<PeakDef>(p) );
+    peak_from_LM = PeakFitLM::fit_peaks_in_range_LM( x0, x1, ncausality, stat_threshold, hypothesis_threshold,
+                                                    lm_input_peaks, data, amplitudeOnly, isHPGe );
+
+    // If a debug build, we'll compare to old method, for the moment
+#ifdef NDEBUG
+    input_peaks.clear();
+    for( const auto &p : peak_from_LM )
+      input_peaks.push_back( *p );
+    return input_peaks;
+#endif
+  }catch( std::exception &e )
+  {
+    cerr << "PeakFitLM::fit_peaks_in_range_LM threw: '" << e.what() << "'." << endl;
+    assert( 0 );
+  }
+#endif
+
   vector<PeakDef> all_peaks = input_peaks;
   std::sort( all_peaks.begin(), all_peaks.end(), &PeakDef::lessThanByMean );
 
@@ -1679,19 +1696,10 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
                            stat_threshold, hypothesis_threshold,
                            input_peaks, data, amplitudeOnly, isHPGe );
   }//if( migration )
-  
-  //  cout << "Fit took: " << timer.format() << endl;
 
 #if( USE_LM_PEAK_FIT )
-  try
-  {
-    vector<shared_ptr<const PeakDef>> lm_input_peaks;
-    for( const auto &p : orig_input_peaks )
-      lm_input_peaks.push_back( make_shared<PeakDef>(p) );
-    const vector<shared_ptr<const PeakDef>> peak_from_LM
-            = PeakFitLM::fit_peaks_in_range_LM( x0, x1, ncausality, stat_threshold, hypothesis_threshold,
-                                                    lm_input_peaks, data, amplitudeOnly, isHPGe );
 
+#ifndef NDEBUG
     vector<shared_ptr<const PeakDef>> old_way_peaks;
     for( const auto &p : input_peaks )
       old_way_peaks.push_back( make_shared<PeakDef>(p) );
@@ -1749,17 +1757,14 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
       else
         cout << "Returning new method peaks (ehty are better anyway)" << endl;
     }
-    
-    input_peaks.clear();
-    for( const auto &p : peak_from_LM )
-      input_peaks.push_back( *p );
-    return input_peaks;
-  }catch( std::exception &e )
-  {
-    cerr << "PeakFitLM::fit_peaks_in_range_LM threw: '" << e.what() << "'." << endl;
-    assert( 0 );
-  }
 #endif
+
+  input_peaks.clear();
+  for( const auto &p : peak_from_LM )
+    input_peaks.push_back( *p );
+#endif
+
+  //  cout << "Fit took: " << timer.format() << endl;
 
   return input_peaks;
 }//std::vector<PeakDef> fitPeaksInRange(...)
@@ -2112,9 +2117,14 @@ vector<shared_ptr<const PeakDef>> refitPeaksThatShareROI( const std::shared_ptr<
                                    const PeakShrdVec &inpeaks,
                                    const double meanSigmaVary )
 {
-  vector<shared_ptr<const PeakDef>> answer = refitPeaksThatShareROI_imp( dataH, detector, inpeaks, meanSigmaVary );
-
 #if( USE_LM_PEAK_FIT )
+#ifdef NDEBUG
+  // For release builds we'll just return the L-M based results.
+  //  For debug builds we'll print out some comparisons, for the moment
+  return PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, meanSigmaVary );
+#endif
+
+  vector<shared_ptr<const PeakDef>> answer = refitPeaksThatShareROI_imp( dataH, detector, inpeaks, meanSigmaVary );
   vector<shared_ptr<const PeakDef>> answer_LM = PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, meanSigmaVary );
 
   if( !inpeaks.empty() )
@@ -2148,8 +2158,8 @@ vector<shared_ptr<const PeakDef>> refitPeaksThatShareROI( const std::shared_ptr<
 
   return answer_LM;
 #else
-  return answer;
-#endif //USE_LM_PEAK_FIT
+  return refitPeaksThatShareROI_imp( dataH, detector, inpeaks, meanSigmaVary );
+#endif
 }//PeakShrdVec refitPeaksThatShareROI(...)
 
 
@@ -3206,7 +3216,9 @@ void fit_peak_for_user_click( PeakShrdVec &results,
 
 
 #if( USE_LM_PEAK_FIT )
+#ifndef NDEBUG
       cout << "Minuit required NFcn=" << minimum.NFcn() << endl;
+#endif
 #endif
 
       const vector<double> pars = params.Params();
@@ -5003,26 +5015,28 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
 #else
+
+#ifndef NDEBUG
   PeakShrdVec mnInitialfitpeaks;
   const auto t1 = std::chrono::high_resolution_clock::now();
   fit_peak_for_user_click( mnInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
                            mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
   const auto t2 = std::chrono::high_resolution_clock::now();
-  
   for( size_t i = 0; i < mnInitialfitpeaks.size(); ++i )
   {
     cout << "PRE LM  Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << mnInitialfitpeaks[i]->mean()
     << " keV, FWHM=" << std::setw(10) << mnInitialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
     << mnInitialfitpeaks[i]->amplitude() << endl;
   }
-  
+#endif
+
   PeakShrdVec lmInitialfitpeaks;
   const auto t3 = std::chrono::high_resolution_clock::now();
   PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, dataH, coFitPeaks,
                              mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
   const auto t4 = std::chrono::high_resolution_clock::now();
   
-  
+#ifndef NDEBUG
   cout << "Old way fit " << mnInitialfitpeaks.size() << " peaks - LM way fit " << lmInitialfitpeaks.size() << endl;
   const size_t npeaks = std::min( lmInitialfitpeaks.size(), mnInitialfitpeaks.size() );
   
@@ -5070,8 +5084,8 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   << " ms, vs new method " << std::chrono::duration<double, std::milli>(t4 - t3).count()
   << " ms"
   << endl;
-  
-  
+#endif //#ifndef NDEBUG
+
   PeakShrdVec initialfitpeaks = lmInitialfitpeaks;
 #endif // !USE_LM_PEAK_FIT / else
   
@@ -5127,27 +5141,34 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       lowerEnergies = vector<double>( 1, roiLower );
       upperEnergies = vector<double>( 1, roiUpper );
       
-      fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                          mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
+
       
 #if( USE_LM_PEAK_FIT )
+#ifndef NDEBUG
+      fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
         cout << "OLD Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()
         << " keV, FWHM=" << std::setw(10) << initialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
         << initialfitpeaks[i]->amplitude() << endl;
       }
-      
-      
+#endif
+
+      initialfitpeaks.clear();
       PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, dataH, coFitPeaks,
                                  mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
-      
+#ifndef NDEBUG
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
         cout << "LM  Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()
         << " keV, FWHM=" << std::setw(10) << initialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
         << initialfitpeaks[i]->amplitude() << endl;
       }
+#endif
+#else
+      fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
 #endif  //!USE_LM_PEAK_FIT / else
     }else
     {
@@ -6460,14 +6481,16 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   //20250410: I believe `PeakFit::fit_amp_and_offset_imp(...)` should be the better function to use, as it uses SVD
   //          but currently leaving the below check in to make sure the re-implementation of this function is correct
   //          TODO: remove this check after a while
+  double * const dummy_channel_counts = nullptr;
+  std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
 #if( !PERFORM_DEVELOPER_CHECKS )
   return PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
                   ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
-                  dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts );
+                  dummy_amplitudes, dummy_continuum_coeffs,
+                                         dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts,
+                                         dummy_channel_counts );
 #else
-  std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
 
-  double * const dummy_channel_counts = nullptr;
   const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
                           ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          dummy_amplitudes, dummy_continuum_coeffs,
@@ -8297,7 +8320,11 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
 #endif
 )
 {
-  
+  // A temporary check to see how/if we get here - not to be committed
+  cerr << "Got to search_for_peaks" << endl;
+  assert( 0 );
+  exit(-1);
+
   vector<PeakDef> finalpeaks;
   
   if( !meas )

@@ -1307,9 +1307,10 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
 
     ceres::Problem problem;
 
-    // TODO: investigate using a LossFunction; from a brief investigation it maybe really affects the amplitude uncertainty if not chosen carefully
-    ceres::LossFunction *lossfcn = nullptr;
-    //ceres::LossFunction *lossfcn = new ceres::CauchyLoss(4.0);// or new HuberLoss(...), or ...
+    // A brief look at a dataset of ~4k HPGe spectra with known truth-value peaks areas shows
+    //  that using a loss function doesnt seem improve outcomes, when measured by sucessful
+    //  peak fits, and by comparison of fit to truth peak areas.
+    //ceres::LossFunction *lossfcn = nullptr;
 
     problem.AddResidualBlock( cost_function, lossfcn, pars );
 
@@ -1342,32 +1343,51 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT; //ceres::DOGLEG
     options.use_nonmonotonic_steps = true;
     options.max_consecutive_nonmonotonic_steps = 10;
-    options.initial_trust_region_radius = 1e4;
-    //options.initial_trust_region_radius = 2*cost_functor->number_parameters();
+    // Initial trust region was very coursely optimized using a fit over ~4k HPGe spectra, using the median peak area
+    //  error from truth value (whose value was 1.65*sqrt(area)); but also the average error was also about optimal
+    //  (value 3.12*sqrt(area)).
+    options.initial_trust_region_radius = 35*(cost_functor->number_parameters() - prob_setup.m_constant_parameters.size());
+    //options.initial_trust_region_radius = 1e4; //
     options.max_trust_region_radius = 1e16;
 
     // Minimizer terminates when the trust region radius becomes smaller than this value.
     options.min_trust_region_radius = 1e-32;
     // Lower bound for the relative decrease before a step is accepted.
-    options.min_relative_decrease = 1e-3;
+    options.min_relative_decrease = 1e-3; //pseudo optimized based on success rate of fitting peaks - but unknown effect on accuracy of fits.
     options.max_num_iterations = 50000;
 #ifndef NDEBUG
     options.max_solver_time_in_seconds = 300.0;
+    options.minimizer_progress_to_stdout = true;
+    options.logging_type = ceres::PER_MINIMIZER_ITERATION;
 #else
     options.max_solver_time_in_seconds = 30.0;
+    options.minimizer_progress_to_stdout = false;
+    options.logging_type = ceres::SILENT;
 #endif
-    options.function_tolerance = 1e-9; //default 1e-9;
-    options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11
-    // TODO: there are a ton of ceres::Solver::Options that might be useful for us to set
-    options.minimizer_progress_to_stdout = true;
-    options.num_threads = 1;
 
+    /** Termination when `(new_cost - old_cost) < function_tolerance * old_cost`
+     Default 1e-9;  Setting this to 1e-6 from 1e-9 is a ~80x speedup, and slgiht success fitting more peaks.
+     Values from 1E-5 to 1E-9 dont seem to have a big effect on accuracy, but 1E-7 had best results for a HPGe dataset
+
+     Value      AvrgAccuracyNSigma   MedianAccuracyNSigma   CPU-Time
+     1e-5      3.25068                           1.66096                             465.296 s
+     1e-6      3.20428                           1.69388                             581.317 s
+     1e-7      3.16456                           1.6934                               1864.5 s
+     1e-8      3.29325                           1.6936                               16833.9 s
+     */
+    options.function_tolerance = 1e-7;
+    options.parameter_tolerance = 1e-11; //Default value is 1e-8.  Using 1e-11, so its usually the function tolerance that terminates things.
+    options.num_threads = 1; //Probably wont have much/any effect
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
+
+#ifndef NDEBUG
     //std::cout << summary.BriefReport() << "\n";
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
+#endif
+
     cost_functor->m_ncalls = 0;
     
     switch( summary.termination_type )
@@ -1430,8 +1450,10 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       }//
     }//if( we failed to computer covariance ) / else
 
+#ifndef NDEBUG
     // Using numeric differentiation, should only be a single call to get covariance.
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to get covariance." << endl;
+#endif
 
     vector<double> residuals( cost_functor->number_residuals(), 0.0 );
     auto final_peaks = cost_functor->parametersToPeaks<PeakDef,double>( &parameters[0], uncertainties_ptr, residuals.data() );

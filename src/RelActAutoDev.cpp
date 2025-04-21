@@ -968,6 +968,7 @@ return;
   state.options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
 
   // Check serialization to/from XML
+#if( PERFORM_DEVELOPER_CHECKS )
   {
     rapidxml::xml_document<char> doc;
     rapidxml::xml_node<char> *base_node = doc.allocate_node( rapidxml::node_element, "State" );
@@ -981,7 +982,8 @@ return;
 
     RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state_cpy );
   } 
-
+#endif
+  
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
                                                                             foreground, background, det, all_peaks, nullptr );
   ofstream out_html( "U02_" + mult_name + "_rel_eff_result.html" );

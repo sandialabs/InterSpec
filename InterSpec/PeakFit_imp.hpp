@@ -439,15 +439,42 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
 
   try
   {
+    // The SVD seem to takeup something like 50% of the time creating peaks for `PeakFitLM::fit_peaks_LM(...)`,
+    //  There are other faster methods below, but SVD does the best job.
+    //
+    //  Comparison over a large number of HPGe spectra searching for peaks, and using `PeakFitLM::fit_peaks_LM(...)`
+    //    to fit candidates:
+    // ----------------------------------------------------------------------------------------------------------------
+    //  Method                            CPU Time        Score (lower is better - derived from success rate of fitting truth-known peaks, not accounting for area accuracy)
+    //  BDCSVD                            40487 s         9.09444
+    //  ColPivHouseholderQR               27316 s         9.1103
+    //  PartialPivLU                      25234 s         9.10558
+    //  LLT                               24900 s         9.10558
+    //  CompleteOrthogonalDecomposition   27552 s         9.1103
+    //  Minuit2-based methods               975 s         11.3892
+    // -----------------------------------------------------------------------------------------------------------------
+    //  (the required function_tolerance was set to 1E-9 I think, or maybe 1E-11)
+    //
 #if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
     const Eigen::JacobiSVD<Eigen::MatrixX<ScalarType>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
 #else
     const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
 #endif
-    //If time is a real issue, we could try other methods, like:
-    //Eigen::VectorX<ScalarType> coeffs = A.colPivHouseholderQr().solve(y);
-
     const Eigen::VectorX<ScalarType> coeffs = svd.solve(y); // coeffs will contain [c_0, c_1, ..., PeakAmp0, ....]
+    // Or:
+    //const Eigen::ColPivHouseholderQR<Eigen::MatrixX<ScalarType>> qr(A);
+    //const Eigen::VectorX<ScalarType> coeffs = qr.solve(y);
+    // Or:
+    //const Eigen::PartialPivLU<Eigen::MatrixX<ScalarType>> lu(A);
+    //const Eigen::VectorX<ScalarType> coeffs = lu.solve(y);
+    // Or (if A is positive definite):
+    //const Eigen::MatrixX<ScalarType> AtA = A.transpose() * A;
+    //const Eigen::VectorX<ScalarType> Atb = A.transpose() * y;
+    //const Eigen::LLT<Eigen::MatrixX<ScalarType>> llt(AtA);
+    //const Eigen::VectorX<ScalarType> coeffs = llt.solve(Atb);
+    // Or (useful when matrix is rank-defiecient):
+    //const Eigen::CompleteOrthogonalDecomposition<Eigen::MatrixX<ScalarType>> cod(A);
+    //const Eigen::VectorX<ScalarType> coeffs = cod.solve(y);
 
     check_jet_array_for_NaN( coeffs.data(), coeffs.size() );
 

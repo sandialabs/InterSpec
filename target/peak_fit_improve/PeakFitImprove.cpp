@@ -61,6 +61,7 @@
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakDists.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/InterSpecServer.h"
@@ -73,6 +74,9 @@ using namespace std;
 //  so while we're transitioning phases here we will return the vector of tuple results, as
 //  well as PeakDefs
 #define RETURN_PeakDef_Candidates 1
+
+
+#define USE_CERES_PEAK_FITTING 1
 
 const bool debug_printout = false;
 
@@ -2090,7 +2094,6 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
   
   bool amplitudeOnly = false;
   vector<PeakDef> zeroth_fit_results, initial_fit_results;
-  const std::vector<PeakDef> dummy_fixedpeaks;
   
   if( false )
   {//Begin optimization block - delte when done optimizing `fitPeaks(...)`
@@ -2101,9 +2104,21 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
     //while( true )
     {
       vector<PeakDef> zeroth_fit_results, initial_fit_results;
+#if( USE_CERES_PEAK_FITTING )
+      vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
+      for( const auto &p : candidate_peaks )
+        input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
+
+      PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
+                              fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
+                              amplitudeOnly, isHPGe );
+      for( const auto &p : results_tmp )
+        zeroth_fit_results.push_back( *p );
+#else
       fitPeaks( candidate_peaks,
                fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
-               data, zeroth_fit_results, dummy_fixedpeaks, amplitudeOnly, isHPGe );
+               data, zeroth_fit_results, amplitudeOnly, isHPGe );
+#endif
     }
     
     const double end_wall = SpecUtils::get_wall_time();
@@ -2128,24 +2143,39 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
   auto fit_peaks_per_roi = [&fit_settings, &data, isHPGe]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
     
     const bool amplitudeOnly = false;
-    const std::vector<PeakDef> dummy_fixedpeaks;
     
     map<const PeakContinuum *,vector<PeakDef>> roi_to_peaks_map;
     for( const PeakDef &p : input_peaks )
       roi_to_peaks_map[p.continuum().get()].push_back( p );
     
     vector<vector<PeakDef>> fit_rois( roi_to_peaks_map.size() );
-    
+#if( USE_CERES_PEAK_FITTING )
+    vector<vector<shared_ptr<const PeakDef>>> fit_rois_tmp( roi_to_peaks_map.size() );
+#endif
+
     SpecUtilsAsync::ThreadPool threadpool;
     
     size_t fit_rois_index = 0;
     for( auto &roi_peaks : roi_to_peaks_map )
     {
       const vector<PeakDef> &peaks = roi_peaks.second;
-      
-      vector<PeakDef> &results = fit_rois[fit_rois_index];
 
-      //20250409: check per
+#if( USE_CERES_PEAK_FITTING )
+      vector<shared_ptr<const PeakDef>> &results = fit_rois_tmp[fit_rois_index];
+      vector<shared_ptr<const PeakDef>> input_peaks_tmp;
+      for( const auto &p : peaks )
+        input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
+
+      threadpool.post( boost::bind( &PeakFitLM::fit_peaks_LM,
+                                   boost::ref(results),
+                                   input_peaks_tmp,
+                                   data,
+                                   fit_settings.initial_stat_threshold,
+                                   fit_settings.initial_hypothesis_threshold,
+                                   amplitudeOnly,
+                                   isHPGe ) );
+#else
+      vector<PeakDef> &results = fit_rois[fit_rois_index];
 
       threadpool.post( boost::bind( &fitPeaks,
                                    boost::cref(peaks),
@@ -2153,15 +2183,25 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
                                    fit_settings.initial_hypothesis_threshold,
                                    data,
                                    boost::ref( results ),
-                                   dummy_fixedpeaks,
                                    amplitudeOnly,
                                    isHPGe ) );
-      
+#endif
       fit_rois_index += 1;
     }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
     
     threadpool.join();
-    
+
+#if( USE_CERES_PEAK_FITTING )
+    for( size_t i = 0; i < fit_rois.size(); ++i )
+    {
+      vector<PeakDef> &to_fil = fit_rois[i];
+      assert( to_fil.empty() );
+      const vector<shared_ptr<const PeakDef>> &to_fill_from = fit_rois_tmp[i];
+      for( const auto &p : to_fill_from )
+        to_fil.push_back( *p );
+    }
+#endif
+
     vector<PeakDef> fit_results;
     fit_results.reserve( input_peaks.size() );
     
@@ -3045,8 +3085,26 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 }//vector<PeakDef> initial_peak_find_and_fit(...)
 
 
+struct PeakFindAndFitWeights
+{
+  double find_weight = std::numeric_limits<double>::max();
 
-double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
+  // For def wanted peaks, this is sum of fabs(fit_area - actual_area)/max(sqrt(actual_area),0.01*actual_area),
+  //  divided by number of peaks. (if actual_area is really large, then sigma is capped as though the uncert of
+  //  10k counts)
+  double def_wanted_area_weight = std::numeric_limits<double>::max();
+  double maybe_wanted_area_weight = std::numeric_limits<double>::max();
+
+  /** The sum of sqrt of peak areas, that are less than 10 sigma significant (maybe we messed up and fifnt expect an actual real peak) */
+  double not_wanted_area_weight = std::numeric_limits<double>::max();
+
+  double def_wanted_area_median_weight = std::numeric_limits<double>::max();
+  double maybe_wanted_area_median_weight = std::numeric_limits<double>::max();
+  double not_wanted_area_median_weight = std::numeric_limits<double>::max();
+};//struct PeakFindAndFitWeights
+
+
+PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                                       const FindCandidateSettings &candidate_settings,
                                       const DataSrcInfo &src_info )
 {
@@ -3205,7 +3263,7 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
   }
   
   double score = found_def_wanted.size();
-  
+
   for( const auto &pp : found_maybe_wanted )
   {
     const ExpectedPhotopeakInfo * epi = pp.first;
@@ -3252,8 +3310,7 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
   assert( num_add_candidates_fit_for >= num_add_candidates_accepted );
   if( num_add_candidates_fit_for > 0 )
     score -= JudgmentFactors::extra_add_fits_punishment * (num_add_candidates_fit_for - num_add_candidates_accepted) / num_add_candidates_fit_for;
-  
-  // blah - blah blah - so now we need to test this function by walking through a few spectra.
+
   if( debug_printout )
   {
     SpecMeas output;
@@ -3323,9 +3380,66 @@ double eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settin
     
     cout << "Wrote: " << out_n42 << endl;
   }//if( write output N42 file to inspect
-  
-  
-  return score;
+
+
+  const auto sum_area_weight = []( const map<const ExpectedPhotopeakInfo *,vector<PeakDef>> &data ) -> pair<double,double> {
+    if( data.empty() )
+      return {0.0, 0.0};
+    vector<double> weights;
+    weights.reserve( data.size() );
+
+    double area_weight = 0;
+    for( const auto &pp : data )
+    {
+      const ExpectedPhotopeakInfo * epi = pp.first;
+      double fit_area = 0;
+      for( const PeakDef &p : pp.second )
+        fit_area += p.amplitude();
+      const double sigma = (epi->peak_area < 10000.0) ? sqrt(epi->peak_area) : 0.01*epi->peak_area;
+      const double weight = fabs(epi->peak_area - fit_area) / sigma;
+      area_weight += weight;
+      weights.push_back(weight);
+    }
+
+    std::sort( begin(weights), end(weights) );
+
+    return {area_weight / data.size(), weights[weights.size()/2] };
+  };//sum_area_weight lambda
+
+
+  vector<double> not_wanted_area_weights;
+  double not_wanted_area_weight = 0.0;
+  for( const PeakDef &p : found_not_expected )
+  {
+    if( ((p.peakAreaUncert() > 0.001) && (p.amplitude() < 10.0*p.peakAreaUncert())) || (p.amplitude() > 25) )
+    {
+      not_wanted_area_weights.push_back( sqrt(p.peakArea()) );
+      not_wanted_area_weight += sqrt( p.peakArea() );
+    }
+  }
+
+
+  PeakFindAndFitWeights answer;
+  answer.find_weight = score;
+  const pair<double,double> def_want_weights = sum_area_weight( found_def_wanted );
+  answer.def_wanted_area_weight = def_want_weights.first;
+  answer.def_wanted_area_median_weight = def_want_weights.second;
+
+  const pair<double,double> maybe_want_weights = sum_area_weight( found_maybe_wanted );
+  answer.maybe_wanted_area_weight = maybe_want_weights.first;
+  answer.maybe_wanted_area_median_weight = maybe_want_weights.second;
+
+  if( not_wanted_area_weights.size() )
+  {
+    answer.not_wanted_area_weight = not_wanted_area_weight;
+    answer.not_wanted_area_median_weight = not_wanted_area_weights[not_wanted_area_weights.size()/2];
+  }else
+  {
+    answer.not_wanted_area_weight = 0.0;
+    answer.not_wanted_area_median_weight = 0.0;
+  }
+
+  return answer;
 }//double eval_initial_peak_find_and_fit(...)
 
 
@@ -3403,7 +3517,7 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
     double score_sum = 0.0;
     for( const DataSrcInfo &info : input_srcs )
     {
-      const double score = eval_initial_peak_find_and_fit( settings, best_settings, info );
+      const double score = eval_initial_peak_find_and_fit( settings, best_settings, info ).find_weight;
       score_sum += score;
     }
 
@@ -3524,7 +3638,7 @@ int main( int argc, char **argv )
         const boost::filesystem::path livetime_path = livetime_itr->path();
         
         
-        if( debug_printout )
+        //if( debug_printout )
         {
           vector<string> live_times{
             "30_seconds",
@@ -3573,7 +3687,7 @@ int main( int argc, char **argv )
           {
             const vector<string> wanted_sources{
               //"Ac225_Unsh",
-              "Eu152_Sh",
+              //"Eu152_Sh",
               //"Fe59_Phant",
               //"Am241_Unsh"
             };
@@ -4366,7 +4480,7 @@ int main( int argc, char **argv )
         double score_sum = 0.0;
         for( const DataSrcInfo &info : input_srcs )
         {
-          const double score = eval_initial_peak_find_and_fit( settings, best_settings, info );
+          const double score = eval_initial_peak_find_and_fit( settings, best_settings, info ).find_weight;
           score_sum += score;
         }
         
@@ -4527,6 +4641,8 @@ int main( int argc, char **argv )
           g2k_peaks.emplace_back( p.Energy, p.FWHM/PhysicalUnits::fwhm_nsigma, p.NetPeakArea );
           g2k_peaks.back().setAmplitudeUncert( p.NetAreaError ); //We get 2-sigma errors from G2k
         }
+        // As of 20250418, `search_for_peaks(...)` still partially uses Minuit2 based peak-fitting,
+        //  even when USE_CERES_PEAK_FITTING is true.
         vector<shared_ptr<const PeakDef> > interspec_peaks_initial
             = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, nullptr, false, true );
         vector<PeakDef> interspec_peaks;
@@ -4778,7 +4894,6 @@ int main( int argc, char **argv )
 
           const bool isHPGe = true, amplitudeOnly = false;
           vector<PeakDef> zeroth_fit_results, initial_fit_results;
-          const std::vector<PeakDef> dummy_fixedpeaks;
           
           
           {//Begin optimization block - delta when done optimizing `fitPeaks(...)`
@@ -4801,8 +4916,17 @@ int main( int argc, char **argv )
               //  `refitPeaksThatShareROI(...)` and `refit_for_new_roi(...)` and `fit_peak_for_user_click(...)`
               //And also could try using Ceres to see if it works better than Minuit.
               vector<PeakDef> peaks;
-              fitPeaks( candidate_peaks, 0.0, 0.0, data, peaks, dummy_fixedpeaks, amplitudeOnly, isHPGe );
-              
+#if( USE_CERES_PEAK_FITTING )
+              vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
+              for( const auto &p : candidate_peaks )
+                input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
+              PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data, 0.0, 0.0, amplitudeOnly, isHPGe );
+              for( const auto &p : results_tmp )
+                peaks.push_back( *p );
+#else
+              fitPeaks( candidate_peaks, 0.0, 0.0, data, peaks, amplitudeOnly, isHPGe );
+#endif
+
               //vector<PeakDef> peaksInRange = fitPeaksInRange( 0.0, data->gamma_energy_max(), 1.5, 0.0, 0.0, candidate_peaks, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
               
               //assert( peaksInRange.size() == peaks.size() );
@@ -4836,25 +4960,67 @@ int main( int argc, char **argv )
       
       fit_settings.ROI_add_nsigma_required = 3;
       fit_settings.ROI_add_chi2dof_improve = 0.5;
-      
-      double sum_weight = 0.0;
+
+      std::mutex score_mutex;
+      double sum_find_weight = 0.0, sum_def_wanted_area_weight = 0.0, sum_maybe_wanted_area_weight = 0.0, sum_not_wanted_area_weight = 0.0;
+      double sum_def_wanted_area_median_weight = 0.0, sum_maybe_wanted_area_median_weight = 0.0, sum_not_wanted_area_median_weight = 0.0;
       const double start_wall = SpecUtils::get_wall_time();
       const double start_cpu = SpecUtils::get_cpu_time();
+
+      SpecUtilsAsync::ThreadPool pool;
+
+      size_t num_posted = 0;
       for( const DataSrcInfo &info : input_srcs )
       {
-        if( debug_printout )
-          cout << "Evaluating " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name << endl;
-        
-        const double weight = eval_initial_peak_find_and_fit( fit_settings, best_settings, info );
-        sum_weight += weight;
-        if( debug_printout )
-          cout << "Got weight=" << weight << endl;
+        num_posted += 1;
+        pool.post( [&](){
+          if( debug_printout )
+          {
+            std::lock_guard<std::mutex> lock( score_mutex );
+            cout << "Evaluating " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name << endl;
+          }
+
+          const PeakFindAndFitWeights weight = eval_initial_peak_find_and_fit( fit_settings, best_settings, info );
+
+          std::lock_guard<std::mutex> lock( score_mutex );
+          sum_find_weight += weight.find_weight;
+          sum_def_wanted_area_weight += weight.def_wanted_area_weight;
+          sum_maybe_wanted_area_weight += weight.maybe_wanted_area_weight;
+          sum_not_wanted_area_weight += weight.not_wanted_area_weight;
+          sum_def_wanted_area_median_weight += weight.def_wanted_area_median_weight;
+          sum_maybe_wanted_area_median_weight += weight.maybe_wanted_area_median_weight;
+          sum_not_wanted_area_median_weight += weight.not_wanted_area_median_weight;
+
+          if( debug_printout )
+            cout << "For " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name
+            << ", got weight=" << sum_find_weight << endl;
+        } );
+
+        if( (num_posted % 100) == 0 )
+        {
+          pool.join();
+
+          if( (num_posted % 1000) == 0 )
+            cout << "Completed " << num_posted << " spectra of " << input_srcs.size() << endl;
+        }//if( (num_posted % 50) == 0 )
       }//for( const DataSrcInfo &info : input_srcs )
+
+      cout << "Have posted " << num_posted << " jobs - will wait on them to finish." << endl;
+      pool.join();
+
       const double end_wall = SpecUtils::get_wall_time();
       const double end_cpu = SpecUtils::get_cpu_time();
 
-      cout << "Average weight of " << input_srcs.size() << " files is " << (sum_weight/input_srcs.size()) << endl;
-      cout << "\t\teval took " << (end_wall - start_wall) << " s, wall and " << (end_cpu - start_cpu) << " s cpu" << endl;
+      cout << "Average weights of " << input_srcs.size() << " files is:\n"
+      << "\tFindWeight:          " << (sum_find_weight/input_srcs.size())              << endl
+      << "\tDefWantAreaWeight:   " << (sum_def_wanted_area_weight/input_srcs.size())   << endl
+      << "\tDefWantAreaMedian:   " << (sum_def_wanted_area_median_weight/input_srcs.size())   << endl
+      << "\tMaybeWantAreaWeight: " << (sum_maybe_wanted_area_weight/input_srcs.size()) << endl
+      << "\tMaybeWantAreaMedian: " << (sum_maybe_wanted_area_median_weight/input_srcs.size()) << endl
+      << "\tDontWantAreaWeight:  " << (sum_not_wanted_area_weight/input_srcs.size())   << endl
+      << "\tDontWantAreaMedian:  " << (sum_not_wanted_area_median_weight/input_srcs.size())   << endl
+      << "Eval took " << (end_wall - start_wall) << " s, wall and " << (end_cpu - start_cpu) << " s cpu." << endl;
+
       break;
     }//case OptimizationAction::CodeDev:
   }//switch( action )
