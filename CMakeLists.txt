@@ -173,7 +173,7 @@ endif(NOT CMAKE_BUILD_TYPE)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
-    set(TRY_TO_STATIC_LINK ON)
+    set(TRY_TO_STATIC_LINK OFF)
     set(CMAKE_BUILD_TYPE:STRING "Release")
     set(USE_DB_TO_STORE_SPECTRA ON)
     #    set( USE_SQLITE3_DB ON )
@@ -182,7 +182,11 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-    set(USE_TERMINAL_WIDGET OFF)
+     # Default is OFF for web builds, but let the caller override with
+     # -DUSE_TERMINAL_WIDGET=ON
+    if(NOT DEFINED USE_TERMINAL_WIDGET OR (NOT USE_TERMINAL_WIDGET))
+        set(USE_TERMINAL_WIDGET OFF)       # keep old default
+    endif()
 endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 if(BUILD_AS_LOCAL_SERVER)
@@ -435,7 +439,9 @@ set(headers
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
 )
-
+if(BUILD_FOR_WEB_DEPLOYMENT)
+  list(APPEND sources src/InterSpecWritableDir.cpp)
+endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND sources src/DbFileBrowser.cpp)
@@ -619,17 +625,32 @@ add_subdirectory(external_libs/muparserx-4.0.7)
 
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
 
-
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)
   add_executable(InterSpecExe main.cpp)
   target_link_libraries(InterSpecExe PUBLIC InterSpecLib)
   set_target_properties(InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec")
+  # Tell the runtime linker to search ../lib beside the executable
+  if(UNIX AND NOT APPLE)           # $ORIGIN is a Linux/BSD feature
+    set_target_properties(InterSpecExe PROPERTIES
+        BUILD_RPATH  "$ORIGIN/../lib"
+        INSTALL_RPATH "$ORIGIN/../lib")
+    # makes variables such as $ORIGIN legal in BUILD_RPATH
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+  endif()
 endif()
 
 
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
+
+if(UNIX AND NOT APPLE)           # $ORIGIN is a Linux/BSD feature
+  set_target_properties(InterSpecExe PROPERTIES
+      BUILD_RPATH  "$ORIGIN/../lib"
+      INSTALL_RPATH "$ORIGIN/../lib")
+  # makes variables such as $ORIGIN legal in BUILD_RPATH
+  set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+endif()
 
 # Turn off some compiler warnings
 target_compile_options(InterSpecLib PRIVATE
