@@ -1,6 +1,6 @@
 FROM alpine:latest AS build
 WORKDIR /work
-ARG  tag=v1.0.14-alpha1
+ARG  tag=master
 ARG  repo=https://github.com/JStrader-Mirion/InterSpec.git
 # RUN statements are broken up to allow loading cached images for debugging
 RUN  apk add --no-cache \
@@ -39,16 +39,21 @@ LABEL app="InterSpec"
 COPY --from=build /work/InterSpec /interspec/
 WORKDIR /interspec
 EXPOSE 8078
-RUN chmod -R a+r * && \
-     chmod a+x bin/InterSpec &&  \
-     chmod 777 /interspec && \
-     mkdir /data && \
-     chmod 777 /data
+RUN apk --no-cache add \
+        openblas \
+        libstdc++ \
+        libgcc && \
+        chmod -R a+r * && \
+        chmod a+x bin/InterSpec &&  \
+        chmod 777 /interspec && \
+        mkdir /data && \
+        chmod 777 /data
 SHELL ["/bin/sh", "-c"]
 ENTRYPOINT ["./bin/InterSpec", "-c ../wt_config_web.xml", "--userdatadir=/data", "--http-port=8078"]
 
-#Build: docker build -t interspecweb -f alpine_web_container.dockerfile .
-#Run : docker run --rm -v "$PWD":/data -p 127.0.0.1:8078:8078/tcp interspecWeb
+#Build: docker build -t interspec -f alpine_web_container.dockerfile .
+#Run, linux host: docker run --rm -v "$PWD":/data -p 8078:8078/tcp interspec
+#Run, windows host: docker run --rm -v `pwd`:/data -p 8078:8078/tcp interspec
 
 # Then numeric group/user value of 280 was chosen randomly; it doesnt conflict with existing groups/users on dev or public server, and is below 1000 (e.g., a system user without a home directory or default shell)
 #RUN groupadd --gid 280 interspec && useradd --uid 280 --gid interspec interspec
