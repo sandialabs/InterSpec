@@ -3642,7 +3642,8 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   
  
   if( (name.length() > 4)
-     && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
+     && (SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
+         || SpecUtils::iequals_ascii( name.substr(name.length()-4), ".tfa"))
      && handleZippedFile( name, spoolName, type ) )
   {
     return;
