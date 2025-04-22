@@ -162,7 +162,7 @@ int main( int argc, char **argv )
     return -20;
   }
   
-  if( cl_vm.count("http-address") )
+  if( !cl_vm.count("http-address") )
   {
     std::cerr << "You must specify the network adapter address to bind to"
     << " (the 'http-address' option)." << std::endl;
