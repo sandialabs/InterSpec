@@ -332,10 +332,14 @@ int main( int argc, char **argv )
   
   
   // Start the InterSpec server
-  const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),
-                                                 docroot.c_str(),
-                                                 wt_config.c_str(),
-                                                 static_cast<short int>(server_port_num) );
+  const int rval = InterSpecServer::start_server(
+    argv[0],
+    user_data_dir.c_str(),
+    docroot.c_str(),
+    wt_config.c_str(),
+    static_cast<short int>(server_port_num),
+    http_address.c_str() // <-- add this
+);
   if( rval < 0 )
   {
     std::cerr << "Failed to start server, val=" << rval << std::endl;

@@ -49,7 +49,7 @@ RUN apk --no-cache add \
         mkdir /data && \
         chmod 777 /data
 SHELL ["/bin/sh", "-c"]
-ENTRYPOINT ["./bin/InterSpec", "-c ../wt_config_web.xml", "--userdatadir=/data", "--http-port=8078"]
+ENTRYPOINT ["./bin/InterSpec", "-c ../wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0"]
 
 #Build: docker build -t interspec -f alpine_web_container.dockerfile .
 #Run, linux host: docker run --rm -v "$PWD":/data -p 8078:8078/tcp interspec
