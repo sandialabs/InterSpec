@@ -1340,8 +1340,8 @@ void D3TimeChart::setDataToClient()
   bool haveAnyGps = false, plottingNeutrons = false;
   
   map<string,bool> hasGamma, hasNuetron;
-  map<string,vector<double>> gammaCounts, neutronCounts, liveTimes, gammaNormCounts;  //maps from detector name to counts
-  
+  map<string,vector<double>> gammaCounts, neutronCounts, liveTimes, gammaNormCounts, neutronLiveTimes;  //maps from detector name to counts
+
   const set<int> &sample_numbers = m_spec->sample_numbers();
   //const vector<string> &detNames = m_spec->detector_names();
   const vector<string> &detNames = m_detectors_to_display;
@@ -1490,9 +1490,12 @@ void D3TimeChart::setDataToClient()
       {
         gammaCounts[detName].push_back( m->gamma_count_sum() );
       }
-      neutronCounts[detName].push_back( m->neutron_counts_sum() );
+
       liveTimes[detName].push_back( m->live_time() );
-      
+
+      neutronCounts[detName].push_back( hasNuetron[detName] ? m->neutron_counts_sum() : Q_DBL_NaN );
+      neutronLiveTimes[detName].push_back( hasNuetron[detName] ? m->neutron_live_time() : Q_DBL_NaN );
+
       if( m->has_gps_info() )
       {
         haveAnyGps = true;
@@ -1668,7 +1671,7 @@ void D3TimeChart::setDataToClient()
   }//if( haveAnyGps )
   
 
-   //blah blah blah: Now need to add `gammaNormCounts` to JSON and then modify JS so it doesnt divide by LT (if it even does), and insteda if gammaNormCounts exitst, it , and also so that it gets the y - axis title, and mouse - overs right.
+   //Now need to add `gammaNormCounts` to JSON and then modify JS so it doesnt divide by LT (if it even does), and insteda if gammaNormCounts exitst, it , and also so that it gets the y - axis title, and mouse - overs right.
    //   or maybe the denominator should be tracked seperately and divided later(maybe in JS), after summing all detectors(especuaially for plotDetectorsSeparate == false)
    //  Also, maybe change some names of filter ranges, etc....
   
@@ -1827,7 +1830,7 @@ void D3TimeChart::setDataToClient()
          << (m_neutronLineColor.isDefault() ? string("#cfced2") :  m_neutronLineColor.cssText())
          << "\", \"counts\": [";
       
-      vector<double> neutronLiveTimes( numSamples, std::numeric_limits<double>::quiet_NaN() );
+      vector<double> dispNeutronLiveTimes( numSamples, std::numeric_limits<double>::quiet_NaN() );
       for( size_t i = 0; i < numSamples; ++i )
       {
         bool haveNonNan = false;
@@ -1836,13 +1839,25 @@ void D3TimeChart::setDataToClient()
         {
           if( !IsNan(p.second[i]) )
           {
+            assert( neutronLiveTimes.count(p.first) );
+            const vector<double> &neutLiveTimes = neutronLiveTimes[p.first];
+
+            assert( i < neutLiveTimes.size() );
+
             haveNonNan = true;
             sum += p.second[i];
             
-            if( IsNan(neutronLiveTimes[i]) )
-              neutronLiveTimes[i] = 0;
-            if( !IsNan(realTimes[i]) )
-              neutronLiveTimes[i] += realTimes[i];
+            if( IsNan(dispNeutronLiveTimes[i]) )
+              dispNeutronLiveTimes[i] = 0;
+
+            if( neutronLiveTimes.count(p.first) && (i < neutronLiveTimes[p.first].size()) && !IsNan(neutronLiveTimes[p.first][i]) )
+            {
+              dispNeutronLiveTimes[i] += neutronLiveTimes[p.first][i];
+            }else if( !IsNan(realTimes[i]) )
+            {
+              assert( 0 ); //I dont think we should get here
+              dispNeutronLiveTimes[i] += realTimes[i];
+            }
           }//if( we have neutron counts )
         }//for( loop over neutron detectors to sum their counts )
         js << string(i ? "," : "");
@@ -1853,8 +1868,8 @@ void D3TimeChart::setDataToClient()
       }//for( loop over samples )
       
       js << "],\n\t\t\"liveTimes\": ";
-      printNumberArray( js, neutronLiveTimes );
-      
+      printNumberArray( js, dispNeutronLiveTimes );
+
       js << "\n\t}]";
     }//if( haveAnyNeutron )
   }//if( plotDetectorsSeparate ) / else
