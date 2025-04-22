@@ -1,7 +1,8 @@
 FROM alpine:latest AS build
 WORKDIR /work
-ARG  tag=1.0.14-alpha
-ARG  repo=JStrader-Mirion/InterSpec
+ARG  tag=v1.0.14-alpha1
+ARG  repo=https://github.com/JStrader-Mirion/InterSpec.git
+# RUN statements are broken up to allow loading cached images for debugging
 RUN  apk add --no-cache \
      alpine-sdk \
      cmake \
@@ -9,13 +10,11 @@ RUN  apk add --no-cache \
      linux-headers \
      suitesparse-dev patch \
      curl \
-     bash && \
-     curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/devmatteini/dra/refs/heads/main/install.sh | bash -s -- 
-RUN  echo "./dra download -s InterSpec-${tag}-source-code.tar.gz ${repo}" && \
-     ./dra download -s InterSpec-${tag}-source-code.tar.gz ${repo} && \
-     mkdir src build && \
-     tar -xf *.tar.gz -C ./src/ --strip-components=1 && \
-     cmake \
+     uglify-js \
+     uglifycss \
+     git && \
+     git clone --recursive --depth 1 --branch ${tag} ${repo} ./src
+RUN  cmake \
         -B ./build \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_FOR_WEB_DEPLOYMENT=ON \
@@ -28,26 +27,28 @@ RUN  echo "./dra download -s InterSpec-${tag}-source-code.tar.gz ${repo}" && \
         -DUSE_DETECTION_LIMIT_TOOL=ON \
         -DUSE_SPECRUM_FILE_QUERY_WIDGET=ON \
         -DSpecUtils_PYTHON_BINDINGS=ON  \
-        ./src && \
-        mkdir -p /InterSpec && \
-        cmake --build ./build --target install --config Release --prefix ./InterSpec ./src && \
+        ./src
+RUN  mkdir -p /InterSpec && \
+     cmake --build build -j4 
+RUN  cmake --install ./build --prefix ./InterSpec && \
         rm -rf ./InterSpec/lib/cmake
 
 #Web Server
 FROM alpine:latest
 LABEL app="InterSpec"
-COPY --from=build /work/InterSpec/bin /work/InterSpec/lib /work/InterSpec/example_spectra /work/InterSpec/Interspec_resources /work/InterSpec/resources /work/InterSpec/data /var/opt/interspec/
-WORKDIR /var/opt/interspec
-USER guest
+COPY --from=build /work/InterSpec /interspec/
+WORKDIR /interspec
 EXPOSE 8078
+RUN chmod -R a+r * && \
+     chmod a+x bin/InterSpec &&  \
+     chmod 777 /interspec && \
+     mkdir /data && \
+     chmod 777 /data
 SHELL ["/bin/sh", "-c"]
-RUN chmod -R a+r /var/opt/interspec \
-     && chmod a+x /var/opt/interspec/bin/InterSpec \
-     && chmod -R uga-w /var/opt/interspec
-ENTRYPOINT ["./bin/InterSpec", "--userdatadir ../userdata", "-c ../wt_config_web.xml", "--http-port=8078", "--config=/var/opt/interspec/html_root/data/config/wt_config_web.xml","--static-data-dir", "/var/opt/interspec/html_root/data/"]
+ENTRYPOINT ["./bin/InterSpec", "-c ../wt_config_web.xml", "--userdatadir=/data", "--http-port=8078"]
 
-#Build: docker build -t interspecWeb -f alpine_web_container.dockerfile .
-#Run : docker run --rm -it -v "$PWD"/interspec:/var/opt/interspec -p 127.0.0.1:8078:8078/tcp interspecWeb sh
+#Build: docker build -t interspecweb -f alpine_web_container.dockerfile .
+#Run : docker run --rm -v "$PWD":/data -p 127.0.0.1:8078:8078/tcp interspecWeb
 
 # Then numeric group/user value of 280 was chosen randomly; it doesnt conflict with existing groups/users on dev or public server, and is below 1000 (e.g., a system user without a home directory or default shell)
 #RUN groupadd --gid 280 interspec && useradd --uid 280 --gid interspec interspec

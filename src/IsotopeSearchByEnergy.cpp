@@ -1159,14 +1159,17 @@ void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &
   if( append_categories(def_xml) <= 0 )
     throw runtime_error( "Failed to load default NuclideSearchCatagories.xml" );
   
-  // Load user specific category info
-  const string user_data_dir = InterSpec::writableDataDirectory();
-  const std::string user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
-  if( append_categories(user_xml) == 0 )
-  {
-    if( SpecUtils::is_file(user_xml) )
-      throw runtime_error( "Error loading user NuclideSearchCatagories.xml" );
+  if(!BUILD_FOR_WEB_DEPLOYMENT)
+  {  // Load user specific category info
+    const string user_data_dir = InterSpec::writableDataDirectory();
+    const std::string user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
+    if( append_categories(user_xml) == 0 )
+    {
+      if( SpecUtils::is_file(user_xml) )
+        throw runtime_error( "Error loading user NuclideSearchCatagories.xml" );
+    }
   }
+
 }//static void init_category_info( std::vector<NucSearchCategory> &results );
 
 

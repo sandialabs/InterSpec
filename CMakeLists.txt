@@ -439,9 +439,6 @@ set(headers
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
 )
-if(BUILD_FOR_WEB_DEPLOYMENT)
-  list(APPEND sources src/InterSpecWritableDir.cpp)
-endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND sources src/DbFileBrowser.cpp)
@@ -916,6 +913,14 @@ if( WIN32 )
   target_link_libraries( InterSpecLib PUBLIC opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
 endif( WIN32 )
 
+# after the target_link_libraries() for InterSpecLib / InterSpecExe
+if (CMAKE_CXX_STANDARD LESS 17)
+    # GCC < 9 still needs libstdc++fs for <experimental/filesystem>
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_libraries(InterSpecLib PUBLIC stdc++fs)
+    endif()
+endif()
+
 #if( ${PERFORM_DEVELOPER_CHECKS} EQUAL ${SpecUtils_ENABLE_EQUALITY_CHECKS} )
 #  MESSAGE(FATAL_ERROR "PERFORM_DEVELOPER_CHECKS (${PERFORM_DEVELOPER_CHECKS}) must be equal to SpecUtils_ENABLE_EQUALITY_CHECKS (${SpecUtils_ENABLE_EQUALITY_CHECKS})")
 #endif()
@@ -976,6 +981,9 @@ if(NOT WT_RESOURCES_DIRECTORY)
 else(NOT WT_RESOURCES_DIRECTORY)
     MESSAGE("Using Wt resources from ${WT_RESOURCES_DIRECTORY}")
     file(COPY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/)
+    if(BUILD_FOR_WEB_DEPLOYMENT)
+      file(COPY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/resources)
+    endif(BUILD_FOR_WEB_DEPLOYMENT)
 endif(NOT WT_RESOURCES_DIRECTORY)
 
 if(NOT ANDROID)
@@ -1018,5 +1026,12 @@ configure_file(
 if( NOT hasParent )
   INSTALL(TARGETS InterSpecExe DESTINATION bin)
   INSTALL(TARGETS InterSpecLib DESTINATION lib)
-  INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+  install(DIRECTORY ${WT_RESOURCES_DIRECTORY}/
+        DESTINATION share/interspec/resources)
+  if( NOT BUILD_FOR_WEB_DEPLOYMENT)
+    INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+  else(NOT BUILD_FOR_WEB_DEPLOYMENT)
+    INSTALL(DIRECTORY example_spectra InterSpec_resources DESTINATION share/interspec)
+    INSTALL(DIRECTORY data DESTINATION share/interspec)
+  endif( NOT BUILD_FOR_WEB_DEPLOYMENT)
 endif( NOT hasParent )
