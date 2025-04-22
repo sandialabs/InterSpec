@@ -16,7 +16,8 @@
 FROM alpine:latest AS build
 WORKDIR /work
 USER guest
-ENV tag=v1.0.13
+ARG tag=v1.0.14-alpha
+ARG repo=JStrader-Mirion/InterSpec
 RUN apk add --no-cache \
     alpine-sdk \
     cmake \
@@ -25,7 +26,7 @@ RUN apk add --no-cache \
     suitesparse-dev patch \
     curl && \
     curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/devmatteini/dra/refs/heads/main/install.sh | bash -s -- && \
-    ./dra download -s InterSpec-{tag}-source-code.tar.gz sandialabs/InterSpec && \
+    ./dra download -s InterSpec-{tag}-source-code.tar.gz {repo} && \
     mkdir src build && \
     tar -xf *.tar.gz -C ./src/ --strip-components=1 && \
     cmake \
