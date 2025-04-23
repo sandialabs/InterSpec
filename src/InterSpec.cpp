@@ -705,37 +705,15 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_mobileBackButton = new WContainerWidget( wApp->domRoot() );
     m_mobileBackButton->addStyleClass( "MobilePrevSample btn" );
     m_mobileBackButton->setZIndex( 8388635 );
-    /* mobile “back” button */
-    // OLD (fails – functor takes 0 args but signal provides 1):
-    // m_mobileBackButton->clicked().connect(
-    //     boost::bind(&InterSpec::handleUserIncrementSampleNum,
-    //                 this, SpecUtils::SpectrumType::Foreground, false) );
-
-    // NEW
-    m_mobileBackButton->clicked().connect(
-         [this](const Wt::WMouseEvent &)     // ignore the event
-         {
-           handleUserIncrementSampleNum(SpecUtils::SpectrumType::Foreground,
-                                        false);
-         });
+    m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum,
+                     this, SpecUtils::SpectrumType::Foreground, false) );
     m_mobileBackButton->setHidden(true);
       
     m_mobileForwardButton = new WContainerWidget( wApp->domRoot() );
     m_mobileForwardButton->addStyleClass( "MobileNextSample btn" );
     m_mobileForwardButton->setZIndex( 8388635 );
-    /* mobile “forward” button */
-    // OLD
-    // m_mobileForwardButton->clicked().connect(
-    //     boost::bind(&InterSpec::handleUserIncrementSampleNum,
-    //                 this, SpecUtils::SpectrumType::Foreground, true) );
-
-    // NEW
-    m_mobileForwardButton->clicked().connect(
-        [this](const Wt::WMouseEvent &)
-        {
-          handleUserIncrementSampleNum(SpecUtils::SpectrumType::Foreground,
-                                      true);
-        });
+    m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum,
+                     this, SpecUtils::SpectrumType::Foreground, true) );
     m_mobileForwardButton->setHidden(true);
   }else  //if( isMobile() )
   {

@@ -1,7 +1,15 @@
+# Build:
+#  git clone --recursive --depth 1 --branch https://github.com/sandialabs/InterSpec.git master ./InterSpec_code
+#  cd InterSpec_code
+#  docker build -t interspec -v `pwd`:/work/src -p 127.0.0.1:8078:8078/tcp -f alpine_web_container.dockerfile .
+#To run, you can use
+#  docker run -v /path/on/your/fs/to/persist/user/data:/data -p 8078:8078/tcp interspec
+#Or if you dont care about keeping user preferences and stuff around, you can just just map /data to a temp ephemeral dir
+#  docker run --rf -v /data -p 8078:8078/tcp interspec
+
+
 FROM alpine:latest AS build
 WORKDIR /work
-ARG  tag=master
-ARG  repo=https://github.com/JStrader-Mirion/InterSpec.git
 # RUN statements are broken up to allow loading cached images for debugging
 RUN  apk add --no-cache \
      alpine-sdk \
@@ -12,8 +20,7 @@ RUN  apk add --no-cache \
      curl \
      uglify-js \
      uglifycss \
-     git && \
-     git clone --recursive --depth 1 --branch ${tag} ${repo} ./src
+     git 
 RUN  cmake \
         -B ./build \
         -DCMAKE_BUILD_TYPE=Release \
@@ -25,8 +32,6 @@ RUN  cmake \
         -DUSE_SEARCH_MODE_3D_CHART=ON \
         -DUSE_QR_CODES=ON \
         -DUSE_DETECTION_LIMIT_TOOL=ON \
-        -DUSE_SPECRUM_FILE_QUERY_WIDGET=ON \
-        -DSpecUtils_PYTHON_BINDINGS=ON  \
         ./src
 RUN  mkdir -p /InterSpec && \
      cmake --build build -j4
@@ -45,15 +50,10 @@ RUN apk --no-cache add \
         libgcc && \
         chmod -R a+r * && \
         chmod a+x bin/InterSpec &&  \
-        chmod 777 /interspec && \
-        mkdir /data && \
-        chmod 777 /data
+        chmod 777 /interspec
 SHELL ["/bin/sh", "-c"]
-ENTRYPOINT ["./bin/InterSpec", "-c ./share/interspec/data/config/wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0"]
+ENTRYPOINT ["./bin/InterSpec", "-c ./share/interspec/data/config/wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0", "--docroot", "./share/interspec"]
 
-#Build: docker build -t interspec -f alpine_web_container.dockerfile .
-#Run, linux host: docker run --rm -v "$PWD":/data -p 8078:8078/tcp interspec
-#Run, windows host: docker run --rm -v `pwd`:/data -p 8078:8078/tcp interspec
 
 # Then numeric group/user value of 280 was chosen randomly; it doesnt conflict with existing groups/users on dev or public server, and is below 1000 (e.g., a system user without a home directory or default shell)
 #RUN groupadd --gid 280 interspec && useradd --uid 280 --gid interspec interspec
