@@ -163,6 +163,7 @@ int main( int argc, char **argv )
   }
   
   if( !cl_vm.count("http-address") )
+  if( !cl_vm.count("http-address") )
   {
     std::cerr << "You must specify the network adapter address to bind to"
     << " (the 'http-address' option)." << std::endl;
@@ -171,8 +172,21 @@ int main( int argc, char **argv )
   
   if( !cl_vm.count("docroot") )
   {
-    std::cerr << "You must specify the HTTP document root directory to use (the 'docroot' option)" << std::endl;
-    return -22;
+      // directory that holds the executable
+      std::string exe_dir = SpecUtils::parent_path(argv[0]);
+      // …/share/interspec
+      docroot = SpecUtils::append_path(
+                    SpecUtils::append_path(SpecUtils::append_path(exe_dir, ".."),
++                                           "share"),
++                    "interspec");
+      SpecUtils::make_canonical_path(docroot);   // collapse .. / .
+
+      if (!SpecUtils::is_directory(docroot))
+      {
+          std::cerr << "Unable to locate default docroot at '" << docroot
+                    << "'.  Please supply the '--docroot' option.\n";
+          return -22;
+      }
   }
 #endif
   
@@ -241,7 +255,7 @@ int main( int argc, char **argv )
     }//if( !SpecUtils::is_absolute_path(userDir) )
     
     user_data_dir = dev_user_data;
-#else
+#elseif( !BUILD_FOR_WEB_DEPLOYMENT )
     std::cerr << "You must specify the directory to store user data to (the 'userdatadir' option)."
               << std::endl;
     return -25;
@@ -279,6 +293,17 @@ int main( int argc, char **argv )
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   else
   {
+    const std::string datadir = SpecUtils::append_path( docroot, "data" );
+    if( !SpecUtils::is_directory(datadir) )
+    {
+      std::cerr << "No 'data' directory in docroot-'" << docroot << "';"
+                << " please specify the '--static-data-dir' argument." << std::endl;
+      return -26;
+    }
+    InterSpec::setStaticDataDirectory( datadir );
+  }//if( cl_vm.count("static-data-dir") ) / else
+#else
+    {
     const std::string datadir = SpecUtils::append_path( docroot, "data" );
     if( !SpecUtils::is_directory(datadir) )
     {

@@ -447,7 +447,7 @@ int start_server( const char *process_name,
   {
     //ToDo: refactor this userdatadir stuff into function inside InterSpecServer
     //      or InterSpecApp or something.
-    if( !SpecUtils::create_directory(userdatadir) )
+    if( !SpecUtils::create_directory(userdatadir) && !BUILD_FOR_WEB_DEPLOYMENT)
       throw std::runtime_error( "Failed to create directory '" + string(userdatadir) + "' for user data." );
   }catch( std::exception &e )
   {
