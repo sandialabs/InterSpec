@@ -64,6 +64,7 @@
 #include <Wt/WSuggestionPopup>
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
+#include <Wt/WEvent>
 
 #if( USE_CSS_FLEX_LAYOUT )
 #include <Wt/WStackedWidget>
@@ -704,13 +705,15 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_mobileBackButton = new WContainerWidget( wApp->domRoot() );
     m_mobileBackButton->addStyleClass( "MobilePrevSample btn" );
     m_mobileBackButton->setZIndex( 8388635 );
-    m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, false) );
+    m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum,
+                     this, SpecUtils::SpectrumType::Foreground, false) );
     m_mobileBackButton->setHidden(true);
       
     m_mobileForwardButton = new WContainerWidget( wApp->domRoot() );
     m_mobileForwardButton->addStyleClass( "MobileNextSample btn" );
     m_mobileForwardButton->setZIndex( 8388635 );
-    m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, true) );
+    m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum,
+                     this, SpecUtils::SpectrumType::Foreground, true) );
     m_mobileForwardButton->setHidden(true);
   }else  //if( isMobile() )
   {

@@ -163,6 +163,7 @@ int main( int argc, char **argv )
   }
   
   if( !cl_vm.count("http-address") )
+  if( !cl_vm.count("http-address") )
   {
     std::cerr << "You must specify the network adapter address to bind to"
     << " (the 'http-address' option)." << std::endl;
@@ -241,7 +242,7 @@ int main( int argc, char **argv )
     }//if( !SpecUtils::is_absolute_path(userDir) )
     
     user_data_dir = dev_user_data;
-#else
+#elif( BUILD_FOR_WEB_DEPLOYMENT )
     std::cerr << "You must specify the directory to store user data to (the 'userdatadir' option)."
               << std::endl;
     return -25;
@@ -279,6 +280,17 @@ int main( int argc, char **argv )
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   else
   {
+    const std::string datadir = SpecUtils::append_path( docroot, "data" );
+    if( !SpecUtils::is_directory(datadir) )
+    {
+      std::cerr << "No 'data' directory in docroot-'" << docroot << "';"
+                << " please specify the '--static-data-dir' argument." << std::endl;
+      return -26;
+    }
+    InterSpec::setStaticDataDirectory( datadir );
+  }//if( cl_vm.count("static-data-dir") ) / else
+#else
+    {
     const std::string datadir = SpecUtils::append_path( docroot, "data" );
     if( !SpecUtils::is_directory(datadir) )
     {
