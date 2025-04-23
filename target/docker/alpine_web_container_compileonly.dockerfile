@@ -46,7 +46,7 @@ CMD ["/bin/sh", "-c", \
                     chmod 777 /InterSpec &&\
                     mkdir -p data &&\
                     chmod 777 data &&\
-                    ./bin/InterSpec --config ./share/interspec/data/config/wt_config_web.xml --userdatadir=./data --http-port=8078 --http-address=0.0.0.0;\
+                    ./bin/InterSpec --config ./share/interspec/data/config/wt_config_web.xml --userdata=./ --http-port=8078 --http-address=0.0.0.0;\
                 fi" \
             ]
 
