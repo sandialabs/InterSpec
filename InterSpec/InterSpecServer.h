@@ -59,9 +59,9 @@ namespace InterSpecServer
   InterSpec_API void startWebServer( std::string proccessname,
                              std::string basedir,
                              const std::string configpath,
-                             unsigned short int server_port_num = 0
+                             unsigned short int server_port_num
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-                             , std::string http_address = "127.0.0.1"
+                             , std::string http_address
 #endif
                               );
   
@@ -91,9 +91,9 @@ namespace InterSpecServer
    */
   InterSpec_API int start_server( const char *process_name, const char *userdatadir,
                     const char *basedir, const char *xml_config_path,
-                    unsigned short int server_port_num = 0
+                    unsigned short int server_port_num
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-                    , const char *http_address = "127.0.0.1"
+                    , const char *http_address
 #endif
                    );
   
