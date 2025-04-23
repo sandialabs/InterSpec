@@ -110,9 +110,9 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
-if( IOS OR ANDROID )
+if( IOS OR ANDROID OR BUILD_FOR_WEB_DEPLOYMENT )
   set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
-else()
+else( )
   option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
 endif()
 
@@ -1025,13 +1025,11 @@ configure_file(
 # Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc)
 if( NOT hasParent )
   INSTALL(TARGETS InterSpecExe DESTINATION bin)
-  INSTALL(TARGETS InterSpecLib DESTINATION lib)
-  install(DIRECTORY ${WT_RESOURCES_DIRECTORY}/
-        DESTINATION share/interspec/resources)
-  if( NOT BUILD_FOR_WEB_DEPLOYMENT)
-    INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
-  else(NOT BUILD_FOR_WEB_DEPLOYMENT)
-    INSTALL(DIRECTORY example_spectra InterSpec_resources DESTINATION share/interspec)
-    INSTALL(DIRECTORY data DESTINATION share/interspec)
-  endif( NOT BUILD_FOR_WEB_DEPLOYMENT)
+  
+  if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
+    INSTALL(TARGETS InterSpecLib DESTINATION lib)
+  endif()
+  
+  INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+  INSTALL(DIRECTORY ${WT_RESOURCES_DIRECTORY}/ DESTINATION share/interspec/resources)
 endif( NOT hasParent )
