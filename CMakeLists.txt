@@ -641,7 +641,7 @@ endif()
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
 
-if(UNIX AND NOT APPLE)           # $ORIGIN is a Linux/BSD feature
+if((UNIX AND NOT APPLE) AND (BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_LOCAL_SERVER) )           # $ORIGIN is a Linux/BSD feature
   set_target_properties(InterSpecExe PROPERTIES
       BUILD_RPATH  "$ORIGIN/../lib"
       INSTALL_RPATH "$ORIGIN/../lib")
