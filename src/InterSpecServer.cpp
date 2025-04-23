@@ -386,9 +386,17 @@ namespace InterSpecServer
       // See remarks in startServer() on performance and reason for this next call
       ns_server->ioService().boost::asio::io_service::post( [](){
         DecayDataBaseServer::initialize();
+
+        // Load the reaction gammas into memory
+        //  When built for web deployment, using a ALpine container (musl libc), there
+        //  is a segfault if we load the infor from XML during an initial request
+        //  (I'm not totally sure what this is about, but I assume its related to musl
+        //  having a much smaller default thread stack size)
+        ReactionGammaServer::database();
+
         ReferenceLineInfo::load_nuclide_mixtures();
       } );
-      
+
       // Checking for available languages probably doesnt take too long, but lets do it now anyway.
       ns_server->ioService().boost::asio::io_service::post( [](){
         InterSpecApp::languagesAvailable();

@@ -38,3 +38,22 @@ docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -p 8080:8080 -
 # Run the executable
 ./bin/InterSpec.exe -c ./share/interspec/data/config/wt_config_web.xml --userdatadir=/data --http-port=8078 --http-address=0.0.0.0 --docroot=./share/interspec
 ```
+
+
+## Manually building things 
+If you want to manually build the InterSpec executable inside a Docker container, you can do something like:
+```bash
+git clone --recursive --depth 1 --branch https://github.com/sandialabs/InterSpec.git master ./InterSpec_code
+cd InterSpec_code
+docker run -it -v `pwd`:/work/src -p 127.0.0.1:8078:8078/tcp --platform linux/arm64 alpine:latest sh
+apk --no-check-certificate update
+apk --no-check-certificate add --no-cache alpine-sdk cmake patch linux-headers suitesparse-dev patch curl uglify-js uglifycss git
+
+cmake -B ./build -DCMAKE_BUILD_TYPE=Release -DBUILD_FOR_WEB_DEPLOYMENT=ON -DUSE_REL_ACT_TOOL=ON -DBUILD_AS_LOCAL_SERVER=OFF -DInterSpec_FETCH_DEPENDENCIES=ON -DBoost_INCLUDE_DIR=./build/_deps/boost-src/libs -DUSE_SEARCH_MODE_3D_CHART=ON -DUSE_QR_CODES=ON -DUSE_DETECTION_LIMIT_TOOL=ON -DUSE_BATCH_TOOLS=OFF -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" ./src/
+
+cmake --build build -j8
+
+
+cmake --install ./build --prefix ./InterSpec
+./InterSpec/bin/InterSpec --config src/data/config/wt_config_web.xml --http-address 0.0.0.0 --http-port 8078 --docroot InterSpec/share/interspec/ --userdatadir /tmp
+```

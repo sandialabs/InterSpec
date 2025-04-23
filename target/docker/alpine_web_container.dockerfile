@@ -10,8 +10,10 @@
 
 FROM alpine:latest AS build
 WORKDIR /work
+ARG  tag=fix/dockerbuild
+ARG  repo=https://github.com/sandialabs/InterSpec.git
 # RUN statements are broken up to allow loading cached images for debugging
-RUN  apk add --no-cache \
+RUN  apk add --no-cache --no-check-certificate \
      alpine-sdk \
      cmake \
      patch \
@@ -20,7 +22,8 @@ RUN  apk add --no-cache \
      curl \
      uglify-js \
      uglifycss \
-     git 
+     git && \
+     git clone --recursive --depth 1 --branch ${tag} ${repo} ./src
 RUN  cmake \
         -B ./build \
         -DCMAKE_BUILD_TYPE=Release \
@@ -32,13 +35,12 @@ RUN  cmake \
         -DUSE_SEARCH_MODE_3D_CHART=ON \
         -DUSE_QR_CODES=ON \
         -DUSE_DETECTION_LIMIT_TOOL=ON \
-        -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
-        -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
+        -DUSE_BATCH_TOOLS=OFF \
         ./src
 RUN  mkdir -p /InterSpec && \
      cmake --build build -j4
 RUN  cmake --install ./build --prefix ./InterSpec && \
-        rm -rf ./InterSpec/lib/cmake
+        rm -rf ./InterSpec/lib ./InterSpec/include ./InterSpec/share/eigen3/
 
 #Web Server
 FROM alpine:latest
@@ -46,15 +48,11 @@ LABEL app="InterSpec"
 COPY --from=build /work/InterSpec /interspec/
 WORKDIR /interspec
 EXPOSE 8078
-RUN apk --no-cache add \
-        openblas \
-        libstdc++ \
-        libgcc && \
-        chmod -R a+r * && \
-        chmod a+x bin/InterSpec &&  \
-        chmod 777 /interspec
 SHELL ["/bin/sh", "-c"]
 ENTRYPOINT ["./bin/InterSpec", "-c ./share/interspec/data/config/wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0", "--docroot", "./share/interspec"]
+
+
+
 
 
 # Then numeric group/user value of 280 was chosen randomly; it doesnt conflict with existing groups/users on dev or public server, and is below 1000 (e.g., a system user without a home directory or default shell)

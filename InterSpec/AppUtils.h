@@ -68,7 +68,7 @@ namespace AppUtils
   // std::vector<std::pair<std::string,std::string>> query_key_values( const std::string &query );
   
   
-#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
+#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
   /** Returns the terminal character width */
   InterSpec_API unsigned terminal_width();
 #endif
