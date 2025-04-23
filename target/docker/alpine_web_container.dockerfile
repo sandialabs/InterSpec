@@ -32,6 +32,8 @@ RUN  cmake \
         -DUSE_SEARCH_MODE_3D_CHART=ON \
         -DUSE_QR_CODES=ON \
         -DUSE_DETECTION_LIMIT_TOOL=ON \
+        -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+        -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
         ./src
 RUN  mkdir -p /InterSpec && \
      cmake --build build -j4

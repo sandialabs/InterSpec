@@ -176,17 +176,9 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK OFF)
     set(CMAKE_BUILD_TYPE:STRING "Release")
     set(USE_DB_TO_STORE_SPECTRA ON)
-    #    set( USE_SQLITE3_DB ON )
-    #    set( USE_MYSQL_DB OFF )
-    set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml")
     set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-     # Default is OFF for web builds, but let the caller override with
-     # -DUSE_TERMINAL_WIDGET=ON
-    if(NOT DEFINED USE_TERMINAL_WIDGET OR (NOT USE_TERMINAL_WIDGET))
-        set(USE_TERMINAL_WIDGET OFF)       # keep old default
-    endif()
 endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 if(BUILD_AS_LOCAL_SERVER)
