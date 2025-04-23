@@ -566,9 +566,17 @@ int start_server( const char *process_name,
     //  cerr << "Unable to change to directory: '" << basedir << "' :" << e.what() << endl;
     //}
 
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  const string server_http_address = http_address ? http_address : "127.0.0.1";
+#endif
+
   try
   {
-    InterSpecServer::startWebServer( process_name, relbasedir, wt_config_file, server_port );
+    InterSpecServer::startWebServer( process_name, relbasedir, wt_config_file, server_port
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+                             , server_http_address
+#endif
+                                    );
   }catch( std::exception &e )
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"

@@ -1581,8 +1581,10 @@ void InterSpec::layoutSizeChanged( int w, int h )
         if( m_enterUri )
           m_enterUri->accept();
         assert( !m_enterUri );
+#if( USE_TERMINAL_WIDGET )
         if( m_terminalWindow )
           m_terminalWindow->hide();
+#endif
 #if( USE_REMOTE_RID )
         if( m_remoteRidWindow )
           deleteRemoteRidWindow();
@@ -10065,7 +10067,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   extRidTT.arg( "" );
 #endif
   
-  HelpSystem::attachToolTipOn( m_terminalMenuItem, extRidTT, showToolTips );
+  HelpSystem::attachToolTipOn( m_remoteRidMenuItem, extRidTT, showToolTips );
   m_remoteRidMenuItem->triggered().connect( this, &InterSpec::createRemoteRidWindow );
 #endif
 }//void InterSpec::addToolsMenu( Wt::WContainerWidget *menuDiv )
