@@ -254,7 +254,11 @@
   <message id="smm-tab-saved-states">Saved States</message>
   <message id="smm-tab-auto-saved">Auto-saved Spectra</message>
   <message id="smm-auto-check-prev-cb">Automatically check for prev. work.</message>
-  <message id="smm-cant-save">Will not be able to save this file to the database. {1}</message>
+  <message id="smm-cant-save">
+    This spectrum file is too large to save to the internal database.<br />
+    As a result, your work will not be auto-saved to the internal database, and you will not be able to resume from where you left off the next time you load the file.
+    <p>This files size is {1}, while maximum that can be saved is {2}.</p>
+  </message>
   <message id="smm-max-file-to-large">Attempted file is too large; max size is {1} kb, you tried to upload {2} kb.</message>
   <message id="smm-must-specify-name">You must specify a name</message>
   <message id="smm-save-spectype-as-window-title">Save {1} Spectrum As</message>
