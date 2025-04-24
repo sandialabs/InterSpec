@@ -12,7 +12,7 @@ RUN apt update && apt upgrade -y && apt install -y --no-install-recommends \
     libsuitesparse-dev \
     libjs-uglify-js \
     git
-RUN git clone --branch $BRANCH --depth=1 $REPO ./src
+RUN git clone --recursive --branch $BRANCH --depth=1 $REPO ./src
 RUN cmake \
         -B ./build \
         -DCMAKE_BUILD_TYPE=Release \
