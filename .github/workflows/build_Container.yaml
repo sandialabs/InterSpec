@@ -17,9 +17,8 @@ jobs:
       matrix:
         base_image: [debian, alpine]
         arch: [x64]
-    env:
-      runner_label: ${{ matrix.arch }}
-    runs-on: echo "[self-hosted, linux, " + "-" + $runner_label
+
+    runs-on: ubuntu-latest
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
     permissions:
       contents: read
