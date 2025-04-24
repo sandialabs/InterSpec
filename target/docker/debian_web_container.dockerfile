@@ -34,7 +34,6 @@ RUN cmake --build build -j4; \
     cd ./release &&\ 
     chmod -R a+r * &&\
     chmod a+x bin/InterSpec &&\
-    chmod 777 /InterSpec &&\
     mkdir -p data &&\
     chmod 777 data &&\
     echo Build complete. 
