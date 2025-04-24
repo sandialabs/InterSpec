@@ -1,10 +1,12 @@
 # Instructions 20250422 for building InterSpec using FetchContent for serving over the web
 Please note that security is not consided at all (e.g., InterSpec is currently running as root in container), and no testing has been done for the web-deployment build.
 
-The [alpine_build_interspec.dockerfile](alpine_build_interspec.dockerfile) builds and packages the executable, then create a container to run it from.
+The [alpine_build_interspec.dockerfile](alpine_build_interspec.dockerfile) builds and packages a statically linked version of executable and app resources, then creates a very minimal container to run this from.  No testing has been done with this `musl` libc-based build, beyond it seems to work briefly checking a few spectra.
 
 
-## Building the container
+The [debian_web_container.dockerfile](debian_web_container.dockerfile) is likely a more trustworthy build, as it uses `glibc` for the c library, which is what the Electron based Linux builds of InterSpec use.  However, again, these containers have not been tested beyond "it seems to work".
+
+## Building the Alpine container
 ```bash
 docker build -t interspec -f alpine_web_container.dockerfile .
 ```
@@ -27,10 +29,10 @@ You should now be able to point the browser on your host machine to http://local
 
 
 ## Debugging the build
-If you want to manually run the executable to debug, you can:
+Either see [debian_build_debug.dockerfile](debian_build_debug.dockerfile), or if you want to manually run the executable to debug, you can:
 ```bash
 # Start the docker container, with debug permissions:
-docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -p 8080:8080 -i -t -v /Users/wcjohns/rad_ana/InterSpec:/interspec interspec bash
+docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined -p 8078:8078 -i -t -v /Users/wcjohns/rad_ana/InterSpec:/interspec interspec bash
 
 # Run the executable
 ./bin/InterSpec.exe -c ./share/interspec/data/config/wt_config_web.xml --userdatadir=/data --http-port=8078 --http-address=0.0.0.0 --docroot=./share/interspec
