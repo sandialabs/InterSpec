@@ -44,10 +44,11 @@ LABEL app="InterSpec"
 COPY --from=build /work/release /interspec
 WORKDIR /interspec
 EXPOSE 8078
-RUN apt update && apt upgrade -y && apt install -y --no-install-recommends \
+RUN apt update && apt upgrade -y && apt install -y --no-cache --no-install-recommends \
         openblas \
         libstdc++ \
-        libgcc 
+        libgcc && \
+        rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 SHELL ["sh", "-c"]
 ENTRYPOINT ["./bin/InterSpec", "--config ./share/interspec/data/config/wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0", "--docroot", "./share/interspec"]
 
