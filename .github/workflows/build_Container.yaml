@@ -16,8 +16,8 @@ jobs:
     strategy:
       matrix:
         base_image: [debian, alpine]
-        arch: [x64, arm]
-    runs-on: [linux, "{{ matrix.arch }}"]
+        arch: [x64]
+    runs-on: [self-hosted, linux, "{{ matrix.arch }}"]
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
     permissions:
       contents: read
