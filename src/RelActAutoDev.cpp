@@ -590,7 +590,12 @@ void run_u02_example()
 }//void run_u02_example()
   
 
-void run_multi_enrich_u02_ex()
+
+
+
+
+
+void czt_pu_example()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
@@ -599,8 +604,9 @@ void run_multi_enrich_u02_ex()
   const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
   matdb.parseGadrasMaterialFile( materialfile, db, false );
   
-  const string specfilename = "mixed_U02_sample.pcf";
-  SpecUtils::SpecFile specfile;
+  const string specfilename = "czt_600keV__Pu84_60mm_1mmCd_ex.n42";
+  
+  SpecMeas specfile;
   const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
   if( !loaded_spec )
   {
@@ -608,286 +614,12 @@ void run_multi_enrich_u02_ex()
   }
   
   
-  assert( specfile.num_measurements() == 38 );
-  shared_ptr<const SpecUtils::Measurement> background = specfile.measurement(size_t(0));
-  assert( background );
-  assert( background->title() == "Background" );
-  
-  const size_t enrich_choice = 26;
-  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( enrich_choice );
+  assert( specfile.num_measurements() == 1 );
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( size_t(0) );
   assert( foreground );
 
-  string title;
-  double lesser_enrichment = 0.0;
-  double greater_enrichment = 0.0;
-  switch( enrich_choice )
-  {
-    case 1: 
-      title = "U02_0.2%_0.2% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*0.2;
-      break;
-    
-    case 2: 
-      title = "U02_0.72%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*3.3;
-      break;
   
-    case 3: 
-      title = "U02_3.3%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*3.3;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 4: 
-      title = "U02_50%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*50;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 5: 
-      title = "U02_0.2%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 6: 
-      title = "U02_0.72%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 7: 
-      title = "U02_3.3%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*3.3;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 8: 
-      title = "U02_90%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 9: 
-      title = "U02_0.2%_20% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*20;
-      break;
-    
-    case 10: 
-      title = "U02_0.72%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 11: 
-      title = "U02_3.3%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*3.3;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 12: 
-      title = "U02_90%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 13: 
-      title = "U02_0.2%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 14: 
-      title = "U02_20%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 15: 
-      title = "U02_5%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 16: 
-      title = "U02_90%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 17: 
-      title = "U02_0.2%_5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*5;
-      break;
-    
-    case 18: 
-      title = "U02_20%_20% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*20;
-      break;
-    
-    case 19: 
-      title = "U02_5%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 20: 
-      title = "U02_90%_90% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*90;
-      break;
-    
-    case 21: 
-      title = "U02_0.2%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 22: 
-      title = "U02_20%_3.3% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*3.3;
-      break;
-    
-    case 23: 
-      title = "U02_5%_5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*5;
-      break;
-    
-    case 24: 
-      title = "U02_90%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*90;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 25: 
-      title = "U02_0.2%_90% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*90;
-      break;
-    
-    case 26: 
-      title = "U02_20%_5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*5;
-      break;
-    
-    case 27: 
-      title = "U02_5%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 28: 
-      title = "U02_93.5%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*93.5;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 29: 
-      title = "U02_0.2%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.2;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 30: 
-      title = "U02_20%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*50;
-      break;
-    
-    case 31: 
-      title = "U02_5%_90% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*90;
-      break;
-    
-    case 32: 
-      title = "U02_0.72%_0.72% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*0.72;
-      break;
-    
-    case 33: 
-      title = "U02_20%_90% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*90;
-      break;
-    
-    case 34: 
-      title = "U02_5%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*5;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 35: 
-      title = "U02_0.72%_20% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*0.72;
-      greater_enrichment = 0.01*20;
-      break;
-    
-    case 36: 
-      title = "U02_20%_93.5% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*20;
-      greater_enrichment = 0.01*93.5;
-      break;
-    
-    case 37: 
-      title = "U02_50%_50% @ 25 cm H=100 cm";
-      lesser_enrichment = 0.01*50;
-      greater_enrichment = 0.01*50;
-      break;
-  }//switch
-
-  if( lesser_enrichment > greater_enrichment )
-    std::swap( lesser_enrichment, greater_enrichment );
-
-  assert( SpecUtils::istarts_with( foreground->title(), title ) );
-
-/*
-  cout << "  int enrich_choice = 1;" << endl;
-  cout << "  string title;\n";
-  cout << "  double lesser_enrichment = 0.0;\n";
-  cout << "  double greater_enrichment = 0.0;\n";
-  cout << "  switch( enrich_choice )" << endl;
-  cout << "  {" << endl;
-  for( size_t i = 1; i < specfile.num_measurements(); ++i )
-  {
-    const auto &meas = specfile.measurement(i);
-    string title = meas->title();
-    
-    cout << "    case " << i << ": " << endl;
-    cout << "      title = \"" << title << "\";" << endl;
-    // the title is of the form "U02_20%_3.3% @ 25 cm H=100 cm"
-    // we want to extract the 20% and 3.3%
-    std::regex regex("U02_(\\d*\\.?\\d+)%_(\\d*\\.?\\d+)% @ 25 cm H=100 cm");
-    std::smatch match;
-    if( std::regex_search(title, match, regex) ) 
-    { 
-      cout << "      lesser_enrichment = 0.01*" << match[1].str() << ";\n";
-      cout << "      greater_enrichment = 0.01*" << match[2].str() << ";\n";
-    }else 
-    {
-      cerr << "Failed to extract enrichments from title: " << meas->title() << endl;
-      assert( 0 );
-    }
-    cout << "      break;" << endl;
-  }
-  cout << "  }" << endl;
-return;
-*/
-
-
-  //const string mult_name = "single";
-  const string mult_name = "two";
-
-  const string setup_xml_path = "mixed_U02_" + mult_name + "_rel_eff.xml";
+  const string setup_xml_path = "isotopics_by_nuclides_CZT500_Pu84_@60mm_1mmCd_04-2.xml";
   rapidxml::file<char> setup_input_file( setup_xml_path.c_str() );
   
   rapidxml::xml_document<char> setup_doc;
@@ -899,107 +631,56 @@ return;
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( setup_base_node, &matdb );
   
-  assert( ((mult_name == "two") && (state.options.rel_eff_curves.size() == 2)) 
-         || ((mult_name == "single") && (state.options.rel_eff_curves.size() == 1) ) );
+  assert( state.options.rel_eff_curves.size() == 1 );
 
-  const string detector_xml_path = "ORTEC Detective-X_LANL_100cm (59%).drf.xml";
-  rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
   
-  rapidxml::xml_document<char> detector_doc;
-  detector_doc.parse<rapidxml::parse_trim_whitespace>( detector_input_file.data() );
-  
-  const rapidxml::xml_node<char> *detector_base_node = detector_doc.first_node( "DetectorPeakResponse" );
-  assert( detector_base_node );
+  auto det = specfile.detector();
   
   
-  auto det = make_shared<DetectorPeakResponse>();
-  det->fromXml( detector_base_node );
-  
-  vector<shared_ptr<const PeakDef>> all_peaks{};
-
-  const SandiaDecay::Nuclide * const u232 = db->nuclide("U232");
-  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
-  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
-  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
-  assert( u235 && u238 && u232 && u234 );
-
-  double u235_to_u238_mass_ratio = lesser_enrichment/(1.0 - lesser_enrichment);
-  RelActCalcAuto::RelEffCurveInput::ActRatioConstraint constraint 
-    = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, u235_to_u238_mass_ratio );
-
-  cout << "Adding constraint act(" << constraint.constrained_nuclide->symbol << ")/act(" << constraint.controlling_nuclide->symbol << ") = " << constraint.constrained_to_controlled_activity_ratio << endl;
-  state.options.rel_eff_curves[0].act_ratio_constraints.push_back( constraint );
-
-  // We will make the first curve the lower enrichment, so if we expect the lower 
-  // enrichment to be less than 25% we will remove U232 and U234 from this first curve
-  if( lesser_enrichment < 0.25 )
-  {
-    state.options.rel_eff_curves[0].nuclides.erase( 
-    std::remove_if( state.options.rel_eff_curves[0].nuclides.begin(), state.options.rel_eff_curves[0].nuclides.end(),
-      [u232,u234](const RelActCalcAuto::NucInputInfo &nuc) { return (nuc.nuclide == u232) || (nuc.nuclide == u234); } ),
-      state.options.rel_eff_curves[0].nuclides.end() 
-    );
-  }//if( lesser_enrichment < 0.25 )
-
-
   //state.options.rel_eff_curves.resize(1);
-  state.options.rel_eff_curves[0].phys_model_use_hoerl = true;
-  state.options.rel_eff_curves[1].phys_model_use_hoerl = true;
-
-  /*
+  state.options.rel_eff_curves[0].phys_model_use_hoerl = false;
+  
+  
   // We can constrain the RelActivity.
   for( auto &nuc : state.options.rel_eff_curves[0].nuclides )
   {
-    if( nuc.nuclide == u238 )
+    if( nuc.nuclide->symbol == "Pu239" )
     {
-      nuc.min_rel_act = 8000.0;
-      nuc.max_rel_act = 50000.0;
-      nuc.starting_rel_act = 16228.0;
+      nuc.starting_rel_act = 750*16228.0;
+      nuc.min_rel_act = nuc.max_rel_act = nuc.starting_rel_act;
+    }else if( nuc.nuclide->symbol == "Am241" )
+    {
+      nuc.starting_rel_act = 5*96521.1;
+      nuc.min_rel_act = nuc.max_rel_act = nuc.starting_rel_act;
+      
     }
   }
-  */
-  
-  state.options.same_hoerl_for_all_rel_eff_curves = true;
-  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
 
 
-  //det->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
-  state.options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_4;
-  state.options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
-
-  // Check serialization to/from XML
-  {
-    rapidxml::xml_document<char> doc;
-    rapidxml::xml_node<char> *base_node = doc.allocate_node( rapidxml::node_element, "State" );
-    doc.append_node( base_node );
-
-    rapidxml::xml_node<char> *state_node = state.serialize( base_node );
-    assert( state_node );
-
-    RelActCalcAuto::RelActAutoGuiState state_cpy;
-    state_cpy.deSerialize( state_node, &matdb );
-
-    RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state_cpy );
-  } 
-
+  vector<shared_ptr<const PeakDef>> all_peaks{};
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
-                                                                            foreground, background, det, all_peaks, nullptr );
-  ofstream out_html( "U02_" + mult_name + "_rel_eff_result.html" );
+                                                                            foreground, nullptr, det, all_peaks, nullptr );
+  ofstream out_html( "czt_Pu_rel_eff_result.html" );
   solution.print_summary( cout );
   solution.print_html_report( out_html );
   
+  /*
   for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
     const double enrichment = solution.mass_enrichment_fraction( u235, i );
     const double u235_counts = solution.nuclide_counts( u235, i );
-    const double u238_counts = solution.nuclide_counts( u238, i );    
-    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment 
-    << ", counts(u235)=" << setw(11) << u235_counts 
+    const double u238_counts = solution.nuclide_counts( u238, i );
+    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment
+    << ", counts(u235)=" << setw(11) << u235_counts
     << ", counts(u238)=" << setw(11) << u238_counts << endl;
   }
   cout << "For sample: " << title << endl;
-}//void run_multi_enrich_u02_ex()
-  
+  */
+}//void czt_pu_example()
+
+
+
+
 void check_auto_nuclide_constraints_checks()
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -1627,6 +1308,213 @@ void check_auto_hoerl_and_ext_shield_checks()
 }//void check_auto_hoerl_and_ext_shield_checks()
 
 
+void utile_ana()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+  MaterialDB matdb;
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+  
+  const string specfilename = "HEU-025_DU-100_Detective.Chn";
+  SpecUtils::SpecFile specfile;
+  const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
+  if( !loaded_spec )
+  {
+    cerr << "Failed to load '" << specfilename << "', aborting." << endl;
+  }
+  
+  const string backfilename = "bg_Detective.Chn";
+  SpecUtils::SpecFile backfile;
+  const bool loaded_back = backfile.load_file(backfilename, SpecUtils::ParserType::Auto );
+  if( !loaded_back )
+  {
+    cerr << "Failed to load '" << backfilename << "', aborting." << endl;
+  }
+  
+  
+  assert( specfile.num_measurements() == 1 );
+  assert( backfile.num_measurements() == 1 );
+  
+  const shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement(size_t(0));
+  assert( foreground );
+  
+  const shared_ptr<const SpecUtils::Measurement> background = backfile.measurement(size_t(0));
+  assert( background );
+  
+  
+  const string setup_xml_path = "multienrich_u_detective_releff.xml";
+  rapidxml::file<char> setup_input_file( setup_xml_path.c_str() );
+    
+  rapidxml::xml_document<char> setup_doc;
+  setup_doc.parse<rapidxml::parse_trim_whitespace>( setup_input_file.data() );
+    
+  const rapidxml::xml_node<char> *setup_base_node = setup_doc.first_node( "RelActCalcAuto" );
+  assert( setup_base_node );
+    
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( setup_base_node, &matdb );
+    
+  assert( state.options.rel_eff_curves.size() == 2 );
+  
+  const string detector_xml_path = "Detective-DX_LANL_25cm_fwhm.drf.xml";
+  rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
+    
+  rapidxml::xml_document<char> detector_doc;
+  detector_doc.parse<rapidxml::parse_trim_whitespace>( detector_input_file.data() );
+    
+  const rapidxml::xml_node<char> *detector_base_node = detector_doc.first_node( "DetectorPeakResponse" );
+  assert( detector_base_node );
+    
+    
+  auto det = make_shared<DetectorPeakResponse>();
+  det->fromXml( detector_base_node );
+    
+  vector<shared_ptr<const PeakDef>> all_peaks{};
+    
+  const SandiaDecay::Nuclide * const u232 = db->nuclide("U232");
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  assert( u235 && u238 && u232 && u234 );
+    
+        
+  const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint leu_constraint
+    = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.002/0.98 ); //DU - 0.2% enriched
+
+  state.options.rel_eff_curves[0].act_ratio_constraints.push_back( leu_constraint );
+    
+    
+  //const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint heu_constraint
+  //  = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.82467/0.046746 ); //a mas ratio of about 35 give ~90% enrichment
+  //state.options.rel_eff_curves[1].act_ratio_constraints.push_back( heu_constraint );
+    
+  //state.options.rel_eff_curves.resize(1);
+  const bool use_hoerl = false;
+  state.options.rel_eff_curves[0].phys_model_use_hoerl = use_hoerl;
+  state.options.rel_eff_curves[1].phys_model_use_hoerl = use_hoerl;
+  state.options.same_hoerl_for_all_rel_eff_curves = use_hoerl;
+  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
+    
+    
+  const RelActCalcAuto::RelActAutoSolution solution
+                = RelActCalcAuto::solve( state.options, foreground, background, det, all_peaks, nullptr );
+  ofstream out_html( specfilename + "_releff_result.html" );
+    
+  solution.print_summary( cout );
+  solution.print_html_report( out_html );
+    
+  for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
+  {
+    const double enrichment = solution.mass_enrichment_fraction( u235, i );
+    const double u235_counts = solution.nuclide_counts( u235, i );
+    const double u238_counts = solution.nuclide_counts( u238, i );
+    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment
+      << ", counts(u235)=" << setw(11) << u235_counts
+      << ", counts(u238)=" << setw(11) << u238_counts << endl;
+  }
+}//void utile_ana()
+
+
+void leu_heu_ana()
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  assert( db );
+  MaterialDB matdb;
+  const string data_dir = InterSpec::staticDataDirectory();
+  const string materialfile = SpecUtils::append_path( data_dir, "MaterialDataBase.txt" );
+  matdb.parseGadrasMaterialFile( materialfile, db, false );
+
+  const string specfilename = "NBS900+U295_B95Dish_2h_COAX.CNF";  //LEU + HEU
+  //const string specfilename = "NBS900_B95Dish_2h_COAX.CNF"; //HEU
+  //const string specfilename = "U295_B95Dish_2h_COAX.CNF"; //LEU
+  SpecUtils::SpecFile specfile;
+  const bool loaded_spec = specfile.load_file(specfilename, SpecUtils::ParserType::Auto );
+  if( !loaded_spec )
+  {
+    cerr << "Failed to load '" << specfilename << "', aborting." << endl;
+  }
+
+  assert( specfile.num_measurements() == 1 );
+
+  const shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement(size_t(0));
+  assert( foreground );
+
+  const shared_ptr<const SpecUtils::Measurement> background;
+
+  const string setup_xml_path = "isotopics_by_nuclides_jozsef_releff.xml";
+  rapidxml::file<char> setup_input_file( setup_xml_path.c_str() );
+
+  rapidxml::xml_document<char> setup_doc;
+  setup_doc.parse<rapidxml::parse_trim_whitespace>( setup_input_file.data() );
+
+  const rapidxml::xml_node<char> *setup_base_node = setup_doc.first_node( "RelActCalcAuto" );
+  assert( setup_base_node );
+
+  RelActCalcAuto::RelActAutoGuiState state;
+  state.deSerialize( setup_base_node, &matdb );
+
+  assert( state.options.rel_eff_curves.size() == 2 );
+
+  const string detector_xml_path = "LAB14_100cm_ISOCS (39%).drf.xml";
+  rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
+
+  rapidxml::xml_document<char> detector_doc;
+  detector_doc.parse<rapidxml::parse_trim_whitespace>( detector_input_file.data() );
+
+  const rapidxml::xml_node<char> *detector_base_node = detector_doc.first_node( "DetectorPeakResponse" );
+  assert( detector_base_node );
+
+
+  auto det = make_shared<DetectorPeakResponse>();
+  det->fromXml( detector_base_node );
+
+  vector<shared_ptr<const PeakDef>> all_peaks{};
+
+  const SandiaDecay::Nuclide * const u232 = db->nuclide("U232");
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  assert( u235 && u238 && u232 && u234 );
+
+
+  //const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint leu_constraint
+  //  = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.02764 );
+
+  //state.options.rel_eff_curves[0].act_ratio_constraints.push_back( leu_constraint );
+
+
+  //const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint heu_constraint
+  //  = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( u235, u238, 0.82467/0.046746 ); //a mas ratio of about 35 give ~90% enrichment
+  //state.options.rel_eff_curves[1].act_ratio_constraints.push_back( heu_constraint );
+
+  //state.options.rel_eff_curves.resize(1);
+  //const bool use_hoerl = false;
+  //state.options.rel_eff_curves[0].phys_model_use_hoerl = use_hoerl;
+  //state.options.rel_eff_curves[1].phys_model_use_hoerl = use_hoerl;
+  //state.options.same_hoerl_for_all_rel_eff_curves = use_hoerl;
+  //state.options.same_external_shielding_for_all_rel_eff_curves = true;
+
+
+  const RelActCalcAuto::RelActAutoSolution solution
+                = RelActCalcAuto::solve( state.options, foreground, background, det, all_peaks, nullptr );
+  ofstream out_html( specfilename + "_releff_result.html" );
+
+  solution.print_summary( cout );
+  solution.print_html_report( out_html );
+
+  for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
+  {
+    const double enrichment = solution.mass_enrichment_fraction( u235, i );
+    const double u235_counts = solution.nuclide_counts( u235, i );
+    const double u238_counts = solution.nuclide_counts( u238, i );
+    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment
+      << ", counts(u235)=" << setw(11) << u235_counts
+      << ", counts(u238)=" << setw(11) << u238_counts << endl;
+  }
+}//void leu_heu_ana()
+
 
 int dev_code()
 {
@@ -1648,9 +1536,18 @@ int dev_code()
 
   //return RelActCalcAuto::run_test();
   
-  run_multi_enrich_u02_ex();
-  return 1;
+  //czt_pu_example();
+  //return 1;
   
+  //run_multi_enrich_u02_ex();
+  //return 1;
+
+  //run_multi_enrich_sensitivity_study_u02();
+  //return 1;
+
+  //utile_ana();
+  leu_heu_ana();
+  return 1;
 
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
@@ -1752,6 +1649,8 @@ int dev_code()
   
   const vector<RelActCalcAuto::NucInputInfo> nuclides{ {
       db->nuclide("Pu238"),
+      nullptr,
+      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1763,6 +1662,8 @@ int dev_code()
       "rgb(0, 0, 255)",
     }, {
       db->nuclide("Pu239"),
+      nullptr,
+      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1774,6 +1675,8 @@ int dev_code()
       "rgb(255, 69, 0)",
     }, {
       db->nuclide("Pu240"),
+      nullptr,
+      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1785,6 +1688,8 @@ int dev_code()
       "rgb(34, 139, 34)",
     }, {
       db->nuclide("Pu241"),
+      nullptr,
+      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min

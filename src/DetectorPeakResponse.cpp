@@ -123,17 +123,6 @@ namespace
   }//float calcA(...)
   
   
-  template<class T> struct index_compare_descend
-  {
-    index_compare_descend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
-    bool operator()(const size_t a, const size_t b) const
-    {
-      return arr[a] > arr[b];
-    }
-    const T arr;
-  };//struct index_compare_descend
-  
-  
   //removeOutlyingWidthPeaks(...): removes peaks whos width does not agree
   //  well with the functional form passed in.  Returns survining peaks.
   DetectorPeakResponse::PeakInput_t removeOutlyingWidthPeaks( DetectorPeakResponse::PeakInput_t peaks,
@@ -158,7 +147,7 @@ namespace
     vector<size_t> indices( npeaks );
     for( size_t i = 0; i < npeaks; ++i )
       indices[i] = i;
-    std::sort( indices.begin(), indices.end(), index_compare_descend<vector<double>&>(weights) );
+    std::sort( begin(indices), end(indices), []( const double lhs, const double rhs ){ return lhs > rhs; } );
     
     size_t lastInd = 0;
     while( lastInd <= ndel_max && weights[indices[lastInd]] > 2.5*mean_weight )
