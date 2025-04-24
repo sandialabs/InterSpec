@@ -3,27 +3,24 @@ Please note that security is not consided at all (e.g., InterSpec is currently r
 
 The [alpine_build_interspec.dockerfile](alpine_build_interspec.dockerfile) builds and packages the executable, then create a container to run it from.
 
-*** These instructions have not been tested as of 20240423 ***
 
 ## Building the container
 ```bash
-# From your host OS terminal, run the following commands
-git clone --recursive --depth 1 --branch https://github.com/sandialabs/InterSpec.git master ./InterSpec_code
-cd InterSpec_code
-docker build -t interspec -v `pwd`:/work/src -p 127.0.0.1:8078:8078/tcp -f alpine_web_container.dockerfile .
+docker build -t interspec -f alpine_web_container.dockerfile .
 ```
+Inside the container, the InterSpec code will be cloned from github, then it and all its dependencies will be built, and a container made with the results.
 
 ## Running the container
 The default build will assume you have mapped a directory to store user data (preferences, incomplete work, etc)
-into `/data` of the container, so you will need to map this:
+into `/data` in the container, so you will need to map this:
 ```bash
-docker run -v /path/on/your/fs/to/persist/user/data:/data  --rm -v /tmp -p 8078:8078/tcp interspec
+docker run -v /path/to/save/data/on/your/fs:/data  --rm -v /tmp -p 8078:8078/tcp interspec
 
 #Or if you dont care about keeping user preferences and stuff around, you can just just map /data to a temp ephemeral dir
-docker run --rf -v /data  --rm -v /tmp -p 8078:8078/tcp interspec
+docker run --rm -v /data  --rm -v /tmp -p 8078:8078/tcp interspec
 
 #But also, you should probably limit things a little:
-docker run --read-only --cap-drop=all --memory=8g --cpus="4" --security-opt=no-new-privileges --rf -v /data  --rm -v /tmp -p 8078:8078/tcp interspec
+docker run --read-only --cap-drop=all --memory=8g --cpus="4" --security-opt=no-new-privileges --rm -v /data  --rm -v /tmp -p 8078:8078/tcp interspec
 ```
 
 You should now be able to point the browser on your host machine to http://localhost:8078/ and use InterSpec.
@@ -56,4 +53,17 @@ cmake --build build -j8
 
 cmake --install ./build --prefix ./InterSpec
 ./InterSpec/bin/InterSpec --config src/data/config/wt_config_web.xml --http-address 0.0.0.0 --http-port 8078 --docroot InterSpec/share/interspec/ --userdatadir /tmp
+```
+
+## If you want to rebuild from scatch
+```bash
+docker build --no-cache -t interspec -f alpine_web_container.dockerfile .
+
+# or to clean things up
+docker rmi $(docker images -f "dangling=true" -q)
+docker rmi build_interspec
+docker rmi interspec
+
+# or to be really agressive:
+docker system prune
 ```

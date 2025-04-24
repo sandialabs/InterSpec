@@ -179,6 +179,7 @@ if(BUILD_FOR_WEB_DEPLOYMENT)
     set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
     set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
+    set(USE_BATCH_TOOLS OFF)
 endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 if(BUILD_AS_LOCAL_SERVER)
@@ -188,7 +189,7 @@ endif(BUILD_AS_LOCAL_SERVER)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT AND BUILD_AS_LOCAL_SERVER )
-  message( FATAL_ERROR "You can not buildfor both local webserver and web deployment" )
+  message( FATAL_ERROR "You can not build for both local webserver and web deployment" )
 endif()
 
 

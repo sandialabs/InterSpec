@@ -8,9 +8,9 @@
 #  docker run --rf -v /data -p 8078:8078/tcp interspec
 
 
-FROM alpine:latest AS build
+FROM alpine:latest AS build_interspec
 WORKDIR /work
-ARG  tag=fix/dockerbuild
+ARG  tag=master
 ARG  repo=https://github.com/sandialabs/InterSpec.git
 # RUN statements are broken up to allow loading cached images for debugging
 RUN  apk add --no-cache --no-check-certificate \
@@ -18,12 +18,12 @@ RUN  apk add --no-cache --no-check-certificate \
      cmake \
      patch \
      linux-headers \
-     suitesparse-dev patch \
+     suitesparse-dev patch  \
      curl \
      uglify-js \
      uglifycss \
      git && \
-     git clone --recursive --depth 1 --branch ${tag} ${repo} ./src
+     git clone --recursive --depth 2 --branch ${tag} ${repo} ./src
 RUN  cmake \
         -B ./build \
         -DCMAKE_BUILD_TYPE=Release \
@@ -36,6 +36,8 @@ RUN  cmake \
         -DUSE_QR_CODES=ON \
         -DUSE_DETECTION_LIMIT_TOOL=ON \
         -DUSE_BATCH_TOOLS=OFF \
+        -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+        -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
         ./src
 RUN  mkdir -p /InterSpec && \
      cmake --build build -j4
@@ -43,13 +45,13 @@ RUN  cmake --install ./build --prefix ./InterSpec && \
         rm -rf ./InterSpec/lib ./InterSpec/include ./InterSpec/share/eigen3/
 
 #Web Server
-FROM alpine:latest
+FROM scratch
 LABEL app="InterSpec"
-COPY --from=build /work/InterSpec /interspec/
+COPY --from=build_interspec /work/InterSpec /interspec/
 WORKDIR /interspec
 EXPOSE 8078
 SHELL ["/bin/sh", "-c"]
-ENTRYPOINT ["./bin/InterSpec", "-c ./share/interspec/data/config/wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0", "--docroot", "./share/interspec"]
+ENTRYPOINT ["./bin/InterSpec", "--config=./share/interspec/data/config/wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0", "--docroot", "./share/interspec"]
 
 
 
