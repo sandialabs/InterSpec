@@ -13,7 +13,7 @@ WORKDIR /work
 ARG  tag=master
 ARG  repo=https://github.com/sandialabs/InterSpec.git
 # RUN statements are broken up to allow loading cached images for debugging
-RUN  apk add --no-cache --no-check-certificate \
+RUN  apk add --no-cache \
      alpine-sdk \
      cmake \
      patch \

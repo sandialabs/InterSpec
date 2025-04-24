@@ -43,8 +43,9 @@ If you want to manually build the InterSpec executable inside a Docker container
 git clone --recursive --depth 1 --branch https://github.com/sandialabs/InterSpec.git master ./InterSpec_code
 cd InterSpec_code
 docker run -it -v `pwd`:/work/src -p 127.0.0.1:8078:8078/tcp --platform linux/arm64 alpine:latest sh
-apk --no-check-certificate update
-apk --no-check-certificate add --no-cache alpine-sdk cmake patch linux-headers suitesparse-dev patch curl uglify-js uglifycss git
+# if you dont have your proxy certificates setup right, and you're brave, you may need to add '--no-check-certificate' to the next couple lines.
+apk update
+apk add --no-cache alpine-sdk cmake patch linux-headers suitesparse-dev patch curl uglify-js uglifycss git
 
 cmake -B ./build -DCMAKE_BUILD_TYPE=Release -DBUILD_FOR_WEB_DEPLOYMENT=ON -DUSE_REL_ACT_TOOL=ON -DBUILD_AS_LOCAL_SERVER=OFF -DInterSpec_FETCH_DEPENDENCIES=ON -DBoost_INCLUDE_DIR=./build/_deps/boost-src/libs -DUSE_SEARCH_MODE_3D_CHART=ON -DUSE_QR_CODES=ON -DUSE_DETECTION_LIMIT_TOOL=ON -DUSE_BATCH_TOOLS=OFF -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" ./src/
 
