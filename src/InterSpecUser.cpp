@@ -299,11 +299,10 @@ void mapDbClasses( Wt::Dbo::Session *session )
 
 FileToLargeForDbException::FileToLargeForDbException( const size_t saveSize, const size_t limit )
   : std::exception(),
-    m_msg{},
-    m_saveSize( saveSize ), 
+    m_msg{ message().toUTF8() },
+    m_saveSize( saveSize ),
     m_limit( limit )
 {
-  m_msg = message().toUTF8();
 }
 
 Wt::WString FileToLargeForDbException::message() const
