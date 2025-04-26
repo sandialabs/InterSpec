@@ -1,6 +1,22 @@
 find_package(Git)
 include(FetchContent)
 
+# ------------------------------------------------------------------
+# Prefer local copies that CMake has already unpacked to build/_deps
+# ------------------------------------------------------------------
+macro(use_local_dep dep_name)
+  set(_local_dir "${CMAKE_BINARY_DIR}/_deps/${dep_name}-src")
+  if(EXISTS "${_local_dir}/CMakeLists.txt")
+    message(STATUS "Using cached ${dep_name} from ${_local_dir}")
+    set(FETCHCONTENT_SOURCE_DIR_${dep_name} "${_local_dir}" CACHE PATH "" FORCE)
+    set(FETCHCONTENT_UPDATES_DISCONNECTED_${dep_name} ON CACHE BOOL "" FORCE)
+  endif()
+endmacro()
+
+foreach(_dep IN ITEMS boost wt zlib eigen ceres-solver wxWidgets)
+  use_local_dep(${_dep})
+endforeach()
+
 # We'll set the install directory to somewhere not /usr/local or something, so we dont
 #  mess the system filesystem up; Wt and zlib will install 
 #  If you want to install the packages, it looks like doing the following command
