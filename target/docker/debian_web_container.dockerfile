@@ -10,11 +10,12 @@
 #  Optional: reuse existing build and/or source directories: Ensure ./build or ./src directory are populated and uncomment the COPY line
 
 # If build fails, add the --no-cache option to the docker build command to force a fresh build
-#  docker build --no-cache --tag 'interspec_debian' -f alpine_web_container.dockerfile .
+#  docker build --no-cache --build-arg true --tag 'interspec_debian' -f target/docker/debian_web_container.dockerfile .
 
-FROM debian:latest AS build
-ARG REPO=https://github.com/sandialabs/InterSpec.git
-ARG BRANCH="master"
+FROM debian:stable-slim AS build
+ARG repo=https://github.com/sandialabs/InterSpec.git
+ARG tag=master
+ARG savebuild=false
 WORKDIR /work
 
 # Optional uncomment and populate directories
@@ -22,7 +23,8 @@ WORKDIR /work
 # COPY build ./build 
 
 # RUN statements are broken up to allow loading cached images for debugging
-RUN apt update && apt upgrade -y && apt install -y --no-install-recommends \
+RUN if [[ ${savebuild} != "false"  ]]; then --mount type=bind,source="${PWD}",target=/work,rw; fi &&\
+apt update && apt upgrade -y && apt install -y --no-install-recommends \
         ca-certificates \
         build-essential \
         cmake \
@@ -32,38 +34,38 @@ RUN apt update && apt upgrade -y && apt install -y --no-install-recommends \
         zlib1g-dev \
         libssl-dev \
         git && \
-    if [ ! -d ./src ]; then \
-        git clone --recursive --branch $BRANCH --depth=1 $REPO ./src; \
-    fi
-RUN cmake \
+    if [ ! -d ./InterSpec_resources ]; then \ 
+        git clone --recursive --branch $tag --depth=1 $repo .; \
+    elif [[ ${savebuild} != "false"  ]]; then \
+        git clone --recursive --branch $tag --depth=1 $repo .; \
+    else \
+        mkdir -p /tmp/src && \
+        git clone clone --recursive --branch $tag --depth=1 $repo . && \
+        cp -r /tmp/src/* ./ ; \
+    fi && \
+    cmake \
         -B ./build \
         -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_FOR_WEB_DEPLOYMENT=ON \
-        -DUSE_REL_ACT_TOOL=ON \
-        -DBUILD_AS_LOCAL_SERVER=OFF \
-        -DInterSpec_FETCH_DEPENDENCIES=ON \
-        -DBoost_INCLUDE_DIR=./build/_deps/boost-src/libs \
-        -DUSE_SEARCH_MODE_3D_CHART=ON \
-        -DUSE_QR_CODES=ON \
-        -DUSE_DETECTION_LIMIT_TOOL=ON \
-        -DSpecUtils_PYTHON_BINDINGS=ON \
-        -DZLIB_INCLUDE_DIR="_deps/zlib-build" \
-        -S ./src
-RUN cmake --build build -j4; \
+        -DBUILD_FOR_CONTAINER_LIBC=ON \
+        -S . && \
+    cmake --build build -j4; \
     mkdir -p release && \
     cmake --build build -j4 && \
-    cmake --install ./build --prefix release && \
+    cmake --install ./build --prefix /release && \
     rm -rf release/lib/cmake && \
-    cd ./release &&\ 
-    chmod -R a+r * &&\
-    chmod a+x bin/InterSpec &&\
-    mkdir -p data &&\
-    chmod 777 data &&\
+    cd /release && \ 
+    chmod -R a+r * && \
+    chmod a+x bin/InterSpec && \
+    mkdir -p data && \
+    chmod 777 data && \
+    if [[ ${savebuild} != "false"  ]]; then \
+        cp -r /release /work/release; \
+    fi && \
     echo Build complete. 
 #Web Server
 FROM debian:stable-slim
 LABEL app="InterSpec_Debian"
-COPY --from=build /work/release /interspec
+COPY --from=build /release /interspec/
 WORKDIR /interspec
 EXPOSE 8078
 RUN apt update && apt upgrade -y && apt install -y --no-install-recommends \

@@ -15,8 +15,9 @@
 #  docker build --no-cache --tag 'interspec_alpine' -f alpine_web_container.dockerfile .
 
 FROM alpine:3 AS build_interspec
-ARG  repo=https://github.com/sandialabs/InterSpec.git
-ARG  tag=master
+ARG repo=https://github.com/sandialabs/InterSpec.git
+ARG tag=master
+ARG savebuild=false
 WORKDIR /work
 
 # Optional uncomment and populate directories
@@ -26,7 +27,8 @@ WORKDIR /work
 ARG  repo=https://github.com/sandialabs/InterSpec.git
 ARG  tag=master
 # RUN statements are broken up to allow loading cached images for debugging
-RUN  apk add --no-cache \
+RUN  if [[ ${savebuild} != "false"  ]]; then --mount type=bind,source=${PWD},target=/work,rw; fi &&\
+        apk add --no-cache \
         alpine-sdk \
         cmake \
         patch \
@@ -36,34 +38,39 @@ RUN  apk add --no-cache \
         uglify-js \
         uglifycss \
         git && \
-    if [ ! -d ./src ]; then \
-        git clone --recursive --branch $tag --depth=1 $repo ./src; \
-    fi
-RUN  cmake \
+    if [ ! -d ./InterSpec_resources ]; then \ 
+        git clone --recursive --branch $tag --depth=1 $repo .; \
+    elif [[ ${savebuild} != "false"  ]]; then \
+        git clone --recursive --branch $tag --depth=1 $repo .; \
+    else \
+        mkdir -p /tmp/src && \
+        git clone clone --recursive --branch $tag --depth=1 $repo . && \
+        cp -r /tmp/src/* ./ ; \
+    fi && \
+    cmake \
         -B ./build \
         -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_FOR_WEB_DEPLOYMENT=ON \
-        -DUSE_REL_ACT_TOOL=ON \
-        -DBUILD_AS_LOCAL_SERVER=OFF \
-        -DInterSpec_FETCH_DEPENDENCIES=ON \
-        -DBoost_INCLUDE_DIR=./build/_deps/boost-src/libs \
-        -DUSE_SEARCH_MODE_3D_CHART=ON \
-        -DUSE_QR_CODES=ON \
-        -DUSE_DETECTION_LIMIT_TOOL=ON \
-        -DUSE_BATCH_TOOLS=OFF \
-        -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
-        -DCMAKE_FIND_LIBRARY_SUFFIXES=".a" \
-        -DZLIB_INCLUDE_DIR="_deps/zlib-build" \
-        ./src
-RUN  mkdir -p /InterSpec && \
-     cmake --build build -j4
-RUN  cmake --install ./build --prefix ./InterSpec && \
-        rm -rf ./InterSpec/lib ./InterSpec/include ./InterSpec/share/eigen3/
+        -DBUILD_FOR_CONTAINER_LIBC=ON \
+        -S . && \
+    cmake --build build -j4; \
+    mkdir -p release && \
+    cmake --build build -j4 && \
+    cmake --install ./build --prefix /release && \
+    rm -rf release/lib/cmake && \
+    cd /release && \ 
+    chmod -R a+r * && \
+    chmod a+x bin/InterSpec && \
+    mkdir -p data && \
+    chmod 777 data && \
+    if [[ "$savebuild" != "false"  ]]; then \
+        cp -r /release /work/release; \
+    fi && \
+    echo Build complete. 
 
 #Web Server
 FROM scratch
 LABEL app="InterSpec"
-COPY --from=build_interspec /work/InterSpec /interspec/
+COPY --from=build_interspec /release /interspec/
 WORKDIR /interspec
 EXPOSE 8078
 ENTRYPOINT ["./bin/InterSpec", "--config=./share/interspec/data/config/wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0", "--docroot", "./share/interspec"]

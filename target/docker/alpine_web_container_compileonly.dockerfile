@@ -1,4 +1,4 @@
-FROM alpine:latest
+FROM alpine:3
 LABEL app="interspec_alpine_compileonly"
 ENV BUILDONLY=null
 ENV STARTSERVER=null
