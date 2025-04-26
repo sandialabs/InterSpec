@@ -485,9 +485,10 @@ public:
  
 class FileToLargeForDbException : public std::exception
 {
-  std::string m_msg;
-  const size_t m_saveSize, m_limit;
 public:
+  const std::string m_msg;
+  const size_t m_saveSize, m_limit;
+
   FileToLargeForDbException( const size_t saveSize, const size_t limit );
   
   virtual const char* what() const noexcept
