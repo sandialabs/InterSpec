@@ -49,6 +49,15 @@ apt update && apt upgrade -y && apt install -y --no-install-recommends \
         -DBUILD_FOR_CONTAINER_LIBC=ON \
         -S . && \
     cmake --build build -j4; \
+    if [ ! -d ./src ]; then \
+        git clone --recursive --branch $BRANCH --depth=1 $REPO ./src; \
+    fi
+RUN cmake \
+    -B ./build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_FOR_CONTAINER_LIBC=ON \
+        -S ./src
+RUN cmake --build build -j4; \
     mkdir -p release && \
     cmake --build build -j4 && \
     cmake --install ./build --prefix /release && \

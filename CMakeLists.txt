@@ -110,6 +110,32 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
+if( BUILD_FOR_CONTAINER_LIBC OR BUILD_FOR_CONTAINER_MUSL)
+  set( BUILD_AS_LOCAL_SERVER OFF CACHE INTERNAL "" )
+  set( CMAKE_BUILD_TYPE:STRING "Release")
+  set( BUILD_FOR_WEB_DEPLOYMENT ON CACHE INTERNAL "" )
+  set( Boost_INCLUDE_DIR "build/_deps/boost-src/libs")
+  set( ZLIB_INCLUDE_DIR:STRING "build/_deps/zlib-build")
+  set( SpecUtils_PYTHON_BINDINGS ON )
+  set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
+  if( BUILD_FOR_CONTAINER_MUSL )
+    set( CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++" CACHE INTERNAL "")
+    set( CMAKE_FIND_LIBRARY_SUFFIXES ".a" CACHE INTERNAL "")
+  endif()
+endif()
+
+
+if(BUILD_FOR_WEB_DEPLOYMENT)
+    set(TRY_TO_STATIC_LINK OFF)
+    set(CMAKE_BUILD_TYPE:STRING "Release")
+    set(USE_DB_TO_STORE_SPECTRA ON)
+    set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
+    set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
+    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
+    set(USE_BATCH_TOOLS OFF)
+endif(BUILD_FOR_WEB_DEPLOYMENT)
+
+
 if( IOS OR ANDROID OR BUILD_FOR_WEB_DEPLOYMENT )
   set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
 else( )
