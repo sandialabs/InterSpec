@@ -1310,7 +1310,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     // A brief look at a dataset of ~4k HPGe spectra with known truth-value peaks areas shows
     //  that using a loss function doesnt seem improve outcomes, when measured by sucessful
     //  peak fits, and by comparison of fit to truth peak areas.
-    //ceres::LossFunction *lossfcn = nullptr;
+    ceres::LossFunction *lossfcn = nullptr;
 
     problem.AddResidualBlock( cost_function, lossfcn, pars );
 

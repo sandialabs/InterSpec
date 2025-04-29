@@ -8321,9 +8321,10 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
 )
 {
   // A temporary check to see how/if we get here - not to be committed
+#warning "There is a temporary hack that should be removed, to check if we get to search_for_peaks"
   cerr << "Got to search_for_peaks" << endl;
-  assert( 0 );
-  exit(-1);
+  assert( 0  );
+  exit( -1 );
 
   vector<PeakDef> finalpeaks;
   

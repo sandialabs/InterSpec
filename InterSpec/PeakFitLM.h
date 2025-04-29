@@ -127,6 +127,9 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
                                    const double meanSigmaVary );
 
+// Need to implement the equivalent of `search_for_peaks(...)` which uses Minuit2 based `AutoPeakSearchChi2Fcn` class.
+// Also, the `searchForPeakFromUser(...)` 
+
 }//namespace PeakFitLM
 
 

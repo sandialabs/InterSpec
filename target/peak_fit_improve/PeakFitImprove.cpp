@@ -314,14 +314,15 @@ struct FinalPeakFitSettings
   double combine_nsigma_near, combine_ROI_overlap_frac;
   
    
-  /** How many nsigma the peak needs to be to consider modifying the continuum type.
-   
-   Reasonable search range: 5 to 25. ???
+  /** How many nsigma the peak needs to be to consider modifying the continuum type; e.g., how statistically significant
+   the needs to be to have anything other than a linear continuum - applies to the most stat sig peak in a ROI
+
+   Reasonable search range: 5 to 60. ???
    */
   double cont_type_peak_nsigma_threshold;
   
-  /** How many stat higher the left is than the right, where stat is based of side edge area, to consider a stepped continuum.
-   
+  /** How many stat higher the average channel is on the left than the right, where stat is based of side edge area, to consider a stepped continuum.
+
    Reasonable search range: 1 to 20. ???
    */
   double cont_type_left_right_nsigma;
@@ -330,13 +331,20 @@ struct FinalPeakFitSettings
    //Cont P1: -1.6985 on left, -0.3472 on right
    */
   //double cont_type_sum_slopes;
-  
+
+  /** Like above, but for stepped continua.
+   If multiple peaks in ROI, then
+   */
+  double stepped_roi_extent_lower_side_stat_multiple, stepped_roi_extent_upper_side_stat_multiple;
+
+
   /** Refit peak with different steps, and this is the chi2/dof needed to accept solution
-   
+
    Reasonable search range: 0 to 4. ???
    */
   double cont_type_step_improve;
-  
+
+
   /** How much of an improvement quadratic or cubic continuum type needs to be to actually use.
    
    Reasonable search range: 0 to 4. ???
@@ -350,7 +358,16 @@ struct FinalPeakFitSettings
    Reasonable search range: 0 to 10. ???
    */
   double skew_nsigma;
-  
+
+  /** After fitting a gaussian+continuum to data, for channels cooresponding between 1 and 1.5 FWHM, the difference between data and fit,
+   divided by uncert, is summed, then divided by number of channels.  Large values indicate skew - I am guessing - but uncertain.
+
+   This is an "or" to `skew_nsigma`.
+
+   Reasonable range: ???
+   */
+  double left_residual_sum_min_to_try_skew, right_residual_sum_min_to_try_skew;
+
   /** How much adding skew needs to improve the ROI threshold in order to keep it.
    
    Reasonable search range: 0 to 4. ???
@@ -377,17 +394,15 @@ struct FinalPeakFitSettings
   /** The multiple to add/subtract from ROI width
    
    The multiple can be peak-area within +-1 FWHM, and continuum-area in +- 1 FWHM
-   
+
+   This does not apply to stepped continua.
+
    Reasonable search range: 0 to 1. ???
    */
   double roi_extent_lower_side_stat_multiple, roi_extent_upper_side_stat_multiple;
-  
+
   //- Add in upper-bounds on stat uncert for peak (e.g., no differenace above 60 sigma or something)
-  //- Add in a lower-bound for min number of sigma before allowing step continuum
-  //- Add in seperate extent for stepped peaks
-  //- Add in a left vs right height, that is an "or" to just trying to fit a step
   //- Or maybe it should be height mult or divided by stat significance
-  
   
   /** The multiple to add/subtract from multiple-peak ROI widths
    
@@ -396,12 +411,30 @@ struct FinalPeakFitSettings
    Reasonable search range: -1 to 2. ???
    */
   double multi_roi_extent_lower_side_fwhm_mult, multi_roi_extent_upper_side_fwhm_mult;
-  
-  /** A value to see how many times each ROI should be refit for the final fit.
-   
-   Reasonable search range: 1 to 3.
-   */
-  int num_refit_final;
+
+  std::string print( const string &var_name ) const
+  {
+    return var_name + ".combine_nsigma_near = "                    + std::to_string(combine_nsigma_near)                         + ";\n"
+    + var_name + ".combine_ROI_overlap_frac = "                    + std::to_string(combine_ROI_overlap_frac)                    + ";\n"
+    + var_name + ".cont_type_peak_nsigma_threshold = "             + std::to_string(cont_type_peak_nsigma_threshold)             + ";\n"
+    + var_name + ".cont_type_left_right_nsigma = "                 + std::to_string(cont_type_left_right_nsigma)                 + ";\n"
+    + var_name + ".stepped_roi_extent_lower_side_stat_multiple = " + std::to_string(stepped_roi_extent_lower_side_stat_multiple) + ";\n"
+    + var_name + ".stepped_roi_extent_upper_side_stat_multiple = " + std::to_string(stepped_roi_extent_upper_side_stat_multiple) + ";\n"
+    + var_name + ".cont_type_step_improve = "                      + std::to_string(cont_type_step_improve)                      + ";\n"
+    + var_name + ".cont_poly_order_increase_chi2dof_required = "   + std::to_string(cont_poly_order_increase_chi2dof_required)   + ";\n"
+    + var_name + ".skew_nsigma = "                                 + std::to_string(skew_nsigma)                                 + ";\n"
+    + var_name + ".left_residual_sum_min_to_try_skew = "           + std::to_string(left_residual_sum_min_to_try_skew)           + ";\n"
+    + var_name + ".right_residual_sum_min_to_try_skew = "          + std::to_string(right_residual_sum_min_to_try_skew)          + ";\n"
+    + var_name + ".skew_improve_chi2_dof_threshold = "             + std::to_string(skew_improve_chi2_dof_threshold)             + ";\n"
+    + var_name + ".roi_extent_low_num_fwhm_base = "                + std::to_string(roi_extent_low_num_fwhm_base)                + ";\n"
+    + var_name + ".roi_extent_high_num_fwhm_base = "               + std::to_string(roi_extent_high_num_fwhm_base)               + ";\n"
+    + var_name + ".roi_extent_mult_type = "                        + std::string((roi_extent_mult_type == RoiExtentMultType::Linear)
+                                                                                  ? "RoiExtentMultType::Linear" : "RoiExtentMultType::Sqrt") + ";\n"
+    + var_name + ".roi_extent_lower_side_stat_multiple = "         + std::to_string(roi_extent_lower_side_stat_multiple)         + ";\n"
+    + var_name + ".roi_extent_upper_side_stat_multiple = "         + std::to_string(roi_extent_upper_side_stat_multiple)         + ";\n"
+    + var_name + ".multi_roi_extent_lower_side_fwhm_mult = "       + std::to_string(multi_roi_extent_lower_side_fwhm_mult)       + ";\n"
+    + var_name + ".multi_roi_extent_upper_side_fwhm_mult = "       + std::to_string(multi_roi_extent_upper_side_fwhm_mult)       + ";\n";
+  }//std::string print( const string &var_name ) const
 };//struct FinalPeakFitSettings
 
 
@@ -3443,28 +3476,195 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
 }//double eval_initial_peak_find_and_fit(...)
 
 
+/** Takes in peaks in a single ROI, and fits them.
+
+Note: this function assumes you have already delt with `FinalPeakFitSettings::combine_nsigma_near`
+ and `FinalPeakFitSettings::combine_ROI_overlap_frac`.
+ */
+vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
+                               const FinalPeakFitSettings &final_fit_settings,
+                               const DataSrcInfo &src_info )
+{
+#ifndef NDEBUG
+  // Make sure all peaks are from the same ROI - only need to do in debug builds
+  for( size_t i = 1; i < pre_fit_peaks.size(); ++i )
+  {
+    assert( pre_fit_peaks[0].continuum() == pre_fit_peaks[i].continuum() );
+  }
+#endif
+
+  const vector<PeakDef> answer;
+
+
+  //struct FinalPeakFitSettings
+  //{
+  //  double combine_nsigma_near, combine_ROI_overlap_frac;
+  //
+  //  double cont_type_peak_nsigma_threshold;
+  //  double cont_type_left_right_nsigma;
+  //  double cont_type_step_improve;
+  //  double stepped_roi_extent_lower_side_stat_multiple, stepped_roi_extent_upper_side_stat_multiple;
+  //
+  //  double cont_poly_order_increase_chi2dof_required;
+  //  double skew_nsigma;
+  //  double left_residual_sum_min_to_try_skew, right_residual_sum_min_to_try_skew;
+  //  double skew_improve_chi2_dof_threshold;
+  //
+  //  double roi_extent_low_num_fwhm_base, roi_extent_high_num_fwhm_base;
+  //  RoiExtentMultType roi_extent_mult_type;
+  //  double roi_extent_lower_side_stat_multiple, roi_extent_upper_side_stat_multiple;
+  //
+  //  double multi_roi_extent_lower_side_fwhm_mult, multi_roi_extent_upper_side_fwhm_mult;
+  //};//struct FinalPeakFitSettings
+
+
+  return answer;
+}//vector<PeakDef> final_peak_fit_for_roi(...)
+
+
 vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
                                const FinalPeakFitSettings &final_fit_settings,
                                const DataSrcInfo &src_info )
 {
-  // blah blah blah - fit peaks
-  assert( 0 );
-  throw runtime_error( "final_peak_fit not implemented yet" );
-  
-  return {};
+  // This function deals with `FinalPeakFitSettings::combine_nsigma_near` and
+  //  `FinalPeakFitSettings::combine_ROI_overlap_frac`, and then passes the peaks
+  //  off to `final_peak_fit_for_roi(...)`
+  vector<PeakDef> answer;
+
+  // Create a vector of ROIs, sorted by the ROI middle energy.
+  vector<pair<shared_ptr<const PeakContinuum>,vector<PeakDef>>> rois;
+  for( const PeakDef &p : pre_fit_peaks )
+  {
+    const auto comp_eq = [&p]( const pair<shared_ptr<const PeakContinuum>,vector<PeakDef>> &other ){
+      return other.first == p.continuum();
+    };
+    const auto comp_lt = []( const pair<shared_ptr<const PeakContinuum>,vector<PeakDef>> &lhs,
+                       const pair<shared_ptr<const PeakContinuum>,vector<PeakDef>> &rhs ){
+      return (lhs.first->lowerEnergy() + lhs.first->upperEnergy()) < (rhs.first->lowerEnergy() + rhs.first->upperEnergy());
+    };
+
+    vector<pair<shared_ptr<const PeakContinuum>,vector<PeakDef>>>::iterator pos
+                                           = std::find_if( begin(rois), end(rois), comp_eq );
+
+    if( pos == end(rois) )
+    {
+      pair<shared_ptr<const PeakContinuum>,vector<PeakDef>> val{ p.continuum(), {p} };
+      const auto lb_pos = std::lower_bound( begin(rois), end(rois), val, comp_lt );
+      pos = rois.insert( lb_pos, std::move(val) );
+    }else
+    {
+      const auto lb_pos = std::lower_bound( begin(pos->second), end(pos->second), p, &PeakDef::lessThanByMean );
+      pos->second.insert( lb_pos, p );
+      assert( std::is_sorted( begin(pos->second), end(pos->second), &PeakDef::lessThanByMean ) );
+    }
+  }//for( const PeakDef &p : pre_fit_peaks )
+
+
+  vector<pair<shared_ptr<const PeakContinuum>,vector<PeakDef>>> connected_rois;
+  for( size_t roi_index = 1; roi_index < rois.size(); ++roi_index )
+  {
+    const pair<shared_ptr<const PeakContinuum>,vector<PeakDef>> &prev_roi = rois[roi_index-1];
+    const shared_ptr<const PeakContinuum> &prev_cont = prev_roi.first;
+
+    const pair<shared_ptr<const PeakContinuum>,vector<PeakDef>> &this_roi = rois[roi_index];
+    const shared_ptr<const PeakContinuum> &this_cont = this_roi.first;
+    const vector<PeakDef> &this_peaks = this_roi.second;
+
+    bool combine_for_overlap = false, combine_for_nsigma_near = false;
+    const double prev_lower = prev_cont->lowerEnergy();
+    const double prev_upper = prev_cont->upperEnergy();
+
+    const double this_lower = this_cont->lowerEnergy();
+    const double this_upper = this_cont->upperEnergy();
+
+    assert( (prev_lower + prev_upper) <= (this_lower + this_upper) );
+    const double overlap_start = std::max(prev_lower, this_lower); //unnessary step since things are already sorted
+    const double overlap_end = std::min(prev_upper, this_upper);
+    if( overlap_start <= overlap_end )
+    {
+      const double overlap = overlap_end - overlap_start;
+      assert( overlap >= 0.0 );
+      const double lesser_roi_extent = std::min( (prev_upper - prev_lower), (this_upper - this_lower) );
+      combine_for_overlap = ((overlap / lesser_roi_extent) > final_fit_settings.combine_ROI_overlap_frac);
+    }//if( overlap_start <= overlap_end )
+
+    const PeakDef &last_prev_peak = prev_roi.second.back();
+    const PeakDef &first_this_peak = prev_roi.second.front();
+    const double avrg_sigma = 0.5*(last_prev_peak.sigma() + first_this_peak.sigma());
+    const double energy_diff = fabs( last_prev_peak.mean() - first_this_peak.mean() );
+    combine_for_nsigma_near = ((energy_diff / avrg_sigma) < final_fit_settings.combine_nsigma_near);
+
+    if( combine_for_overlap || combine_for_nsigma_near )
+    {
+      //Combine ROIs into a single ROI
+      shared_ptr<PeakContinuum> new_cont = make_shared<PeakContinuum>( *prev_cont );
+      const double new_lower = std::min(prev_lower, this_lower); //just to make sure nothings wonky
+      const double new_upper = std::max(prev_upper, this_upper); //just to make sure nothings wonky
+      new_cont->setRange( new_lower, std::max(prev_upper, new_upper) );
+      const PeakContinuum::OffsetType new_offset_type = std::max( prev_cont->type(), this_cont->type() );
+      if( new_offset_type != new_cont->type() )
+      {
+        assert( !src_info.src_info.src_spectra.empty() );
+        const shared_ptr<const SpecUtils::Measurement> &data = src_info.src_info.src_spectra.front();
+        assert( data );
+
+        const double reference_energy = 0.5*(new_lower + new_upper);
+        new_cont->calc_linear_continuum_eqn( data, reference_energy, new_lower, new_upper, 3, 3 );
+        new_cont->setType( new_offset_type );
+      }//if( new_offset_type != new_cont->type() )
+
+      // Update `rois` to use new continuum
+      rois[roi_index-1].first = new_cont;
+
+      // Add peaks from
+      vector<PeakDef> &prev_peaks = rois[roi_index-1].second;
+      prev_peaks.insert( end(prev_peaks), begin(this_peaks), end(this_peaks) );
+      for( PeakDef &p : prev_peaks )
+        p.setContinuum( new_cont );
+      std::sort( begin(prev_peaks), end(prev_peaks), &PeakDef::lessThanByMean );
+
+      // Erase current peaks, now that we have added them to the previous ROI
+      rois.erase( begin(rois) + roi_index );
+
+      assert( roi_index > 0 );
+
+      // Decrement the loop index, since now the next ROI is one element closer
+      roi_index -= 1;
+    }//if( combine_for_overlap || combine_for_nsigma_near )
+  }//for( size_t size_t roi_index = 1; roi_index < rois.size(); ++i )
+
+
+  for( const auto &cont_peaks : rois )
+  {
+    const vector<PeakDef> &in_peaks = cont_peaks.second;
+
+    const vector<PeakDef> roi_answer = final_peak_fit_for_roi( in_peaks, final_fit_settings, src_info );
+    answer.insert( end(answer), begin(roi_answer), end(roi_answer) );
+  }
+
+  std::sort( begin(answer), end(answer), &PeakDef::lessThanByMean );
+
+  return answer;
 }//vector<PeakDef> final_peak_fit
 
 
-double eval_final_peak_fit( const FindCandidateSettings &candidate_settings,
-                           const InitialPeakFindSettings &initial_fit_settings,
-                           const FinalPeakFitSettings &final_fit_settings,
-                           const DataSrcInfo &src_info )
+struct FinalFitScore
+{
+  double total_weight;
+};//struct FinalFitScore
+
+FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_settings,
+                           const DataSrcInfo &src_info,
+                           const vector<PeakDef> &intial_peaks )
 {
   // blah blah blah - fit peaks
   assert( 0 );
   throw runtime_error( "eval_final_peak_fit not implemented yet" );
-  
-  return 0.0;
+
+  FinalFitScore score;
+  score.total_weight = 99999;
+
+  return score;
 }//double eval_final_peak_fit(...)
 
 
@@ -3510,24 +3710,64 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
   cout << "\n" << endl;
   
   // Now go through and setup genetic algorithm, as well implement final peak fitting code
+  const double start_wall = SpecUtils::get_wall_time();
+  const double start_cpu = SpecUtils::get_cpu_time();
 
-/*
-  std::function<double( const InitialPeakFindSettings &)> ga_eval_fcn
-        = [best_settings, &input_srcs]( const InitialPeakFindSettings &settings ) -> double {
+  const vector<vector<PeakDef>> * const intial_peaks_ptr = &initial_peak_fits;
+  const vector<DataSrcInfo> * const data_srcs_ptr = &input_srcs;
+
+  std::function<double( const FinalPeakFitSettings &)> ga_eval_fcn
+        = [&intial_peaks_ptr, &data_srcs_ptr]( const FinalPeakFitSettings &settings ) -> double {
+
+    assert( intial_peaks_ptr && data_srcs_ptr );
+    const vector<vector<PeakDef>> &intial_peaks_ref = *intial_peaks_ptr;
+    const vector<DataSrcInfo> &data_srcs_ref = *data_srcs_ptr;
+
+   assert( intial_peaks_ref.size() == data_srcs_ref.size() );
+
     double score_sum = 0.0;
-    for( const DataSrcInfo &info : input_srcs )
+    for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
     {
-      const double score = eval_initial_peak_find_and_fit( settings, best_settings, info ).find_weight;
-      score_sum += score;
+      const DataSrcInfo &info = data_srcs_ref[src_index];
+      const vector<PeakDef> &initial_peaks = intial_peaks_ref[src_index];
+
+      const FinalFitScore score = eval_final_peak_fit( settings, info, initial_peaks );
+      score_sum += score.total_weight;
     }
 
     return -score_sum;
   };// set InitialFit_GA::ns_ga_eval_fcn
 
-  const InitialPeakFindSettings best_initial_fit_settings = InitialFit_GA::do_ga_eval( ga_eval_fcn );
-*/
+  const FinalPeakFitSettings best_final_fit_settings = FinalFit_GA::do_ga_eval( ga_eval_fcn );
+
+  //eval_candidate_settings_fcn( best_settings, best_initial_fit_settings, true );
+  //cout << "Wrote N42s with best settings." << endl;
+
+  const double end_wall = SpecUtils::get_wall_time();
+  const double end_cpu = SpecUtils::get_cpu_time();
+  auto now = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
 
 
+  stringstream outmsg;
+  outmsg << "Finish Time: " << SpecUtils::to_iso_string(now) << endl
+  << endl
+  << "Final settings used:\n"
+  << candidate_settings.print("\tcandidate_settings") << endl
+  << endl
+  << initial_fit_settings.print("\tinitial_fit_settings") << endl
+  << endl
+  << best_final_fit_settings.print("\tbest_final_fit_settings")
+  //<< "Best settings had score " << best_sum_score << ", with values:" << endl
+  << endl << endl
+  << "Ran in {wall=" << (end_wall - start_wall)
+  << ", cpu=" << (end_cpu - start_cpu) << "} seconds" << endl;
+
+  {
+    ofstream best_settings_file( "best_final_settings.txt" );
+    best_settings_file << outmsg.str();
+  }
+
+  cout << outmsg.str()<< endl;
 
 
 
