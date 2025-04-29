@@ -4799,7 +4799,7 @@ void RelActAutoGui::startUpdatingCalculation()
   if( !cached_drf )
   {
     auto m = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
-    if( m && m->detector() && m->detector()->isValid() && m->detector()->hasResolutionInfo() )
+    if( m && m->detector() && m->detector()->isValid() )
       cached_drf = m->detector();
   }
   

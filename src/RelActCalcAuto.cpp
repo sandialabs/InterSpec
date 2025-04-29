@@ -4001,7 +4001,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
       const auto pos = m_aged_gammas_cache.find( key );
       if( pos != end(m_aged_gammas_cache) )
+      {
+        assert( pos->second );
         return pos->second;
+      }
     }//end lock on m_aged_gammas_cache_mutex
 
     // We havent cached what we are being asked for, so we will compute it and cache the result
@@ -4010,8 +4013,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //Taking arguments by reference for this next cleanup block because the cleanup variable
     // variable (addToCacheOnExit) will be destructed before any of the ones already defined
     // at this point.
-    DoWorkOnDestruct addToCacheOnExit( [this, &key, &answer]() { 
+    DoWorkOnDestruct addToCacheOnExit( [this, key, answer]() { 
       std::lock_guard<std::mutex> cache_lock( m_aged_gammas_cache_mutex );
+      assert( answer );
       m_aged_gammas_cache[key] = answer;
             
       // TODO: limit size of cache
@@ -4171,6 +4175,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
     }//for( size_t current_index = 1; current_index < all_gamma_transitions.size(); ++current_index )
 
+    assert( answer );
     return answer;
   }//std::shared_ptr<const vector<EnergyYield>> decay_gammas( const SandiaDecay::Nuclide * const parent, ... )
 
@@ -5715,6 +5720,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( fixed_age )
         {
           gammas = nucinfo.nominal_gammas;
+          assert( gammas );
         }else
         {
           // If we are here, we are fitting the age - however, automatic differentiation does
@@ -5773,6 +5779,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             nuc_age_val = nuc_age;
             gammas = this->decay_gammas( nucinfo, nuc_age_val, nucinfo.gammas_to_exclude );
+            assert( gammas );
           }
         }//if( age is fixed ) / else( age may vary )
         
@@ -9648,6 +9655,7 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
   };//is_wanted_element lamda
   
   const size_t nuc_index = nuclide_index( nuclide, rel_eff_index );
+  assert( rel_acts[nuc_index].nuclide == nuclide );
   const double rel_mass = rel_acts[nuc_index].rel_activity / nuclide->activityPerGram();
     
   double el_total_mass = 0.0;
@@ -9675,7 +9683,9 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
     
     assert( 0 );
   }//if( is_pu && pu_corr )
-  
+
+  assert( (rel_mass >= 0.0) && (rel_mass <= el_total_mass) );
+
   return rel_mass / el_total_mass;
 }//mass_enrichment_fraction
 
@@ -9705,14 +9715,14 @@ const NuclideRelAct &RelActAutoSolution::nucinfo( const SrcVariant src, const si
     const bool found = std::visit( [&]( const auto &arg ) -> bool {
       using T = std::decay_t<decltype(arg)>;
       if constexpr( std::is_same_v<T, const SandiaDecay::Nuclide *> )
-        return arg == std::get<const SandiaDecay::Nuclide *>(src);
-      
+        return nucinfo.nuclide == arg;
+
       if constexpr( std::is_same_v<T, const SandiaDecay::Element *> )
-        return arg == std::get<const SandiaDecay::Element *>(src);
-      
+        return nucinfo.element == arg;
+
       if constexpr( std::is_same_v<T, const ReactionGamma::Reaction *> )
-        return arg == std::get<const ReactionGamma::Reaction *>(src);
-      
+        return nucinfo.reaction == arg;
+
       assert( 0 );
       return false;
     }, src);
