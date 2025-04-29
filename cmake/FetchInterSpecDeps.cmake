@@ -94,25 +94,6 @@ FetchContent_Declare(
 )
 
 
-
-# Check for local Ceres Solver
-set(LOCAL_CERES_DIR "${CMAKE_BINARY_DIR}/_deps/ceres-solver-src")
-if(EXISTS "${LOCAL_CERES_DIR}/CMakeLists.txt")
-  message(STATUS "Using local Ceres Solver from ${LOCAL_CERES_DIR}")
-  set(CERES_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_CERES_DIR}")
-else()
-  set(CERES_FETCHCONTENT_SOURCE
-    GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
-    GIT_TAG        f68321e7de8929fbcdb95dd42877531e64f72f66 # release-2.1.0
-    GIT_SHALLOW    TRUE
-  )
-endif()
-
-FetchContent_Declare(
-  ceres-solver
-  ${CERES_FETCHCONTENT_SOURCE}
-)
-
 if( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
   # We will explicitly populate Wt and boost, rather than using this next line, so this way when the user
   #  builds the install target (e.g., for electron build), it wont install stuff to /usr/local
@@ -191,22 +172,27 @@ if( USE_REL_ACT_TOOL )
   set( EIGEN_BUILD_PKGCONFIG OFF )
   #set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
   # Check for local Eigen
-set(LOCAL_EIGEN_DIR "${CMAKE_BINARY_DIR}/_deps/eigen-src")
-if(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
-  message(STATUS "Using local Eigen from ${LOCAL_EIGEN_DIR}")
-  set(EIGEN_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_EIGEN_DIR}")
-else()
-  set(EIGEN_FETCHCONTENT_SOURCE
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 # Updated 3.4 release, to pickup some CMake fixes
-  )
-endif()
-FetchContent_Declare(
-  eigen
-  ${EIGEN_FETCHCONTENT_SOURCE}
-)
+  set(LOCAL_EIGEN_DIR "${CMAKE_BINARY_DIR}/_deps/eigen-src")
+  if(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
+    message(STATUS "Using local Eigen from ${LOCAL_EIGEN_DIR}")
+    set(EIGEN_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_EIGEN_DIR}")
+  else()
+    set(EIGEN_FETCHCONTENT_SOURCE
+      GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+      GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 # Updated 3.4 release, to pickup some CMake fixes
+    )
+  endif(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
+  FetchContent_Declare(
+    eigen
+    ${EIGEN_FETCHCONTENT_SOURCE}
 
+  )
   FetchContent_MakeAvailable( eigen )
+  #FetchContent_GetProperties( eigen )
+  #if(NOT eigen_POPULATED)
+  #  FetchContent_Populate(eigen)
+  #  add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR} EXCLUDE_FROM_ALL)
+  #endif()
   
   # For Android and iOS, we need to force the path information for Eigen, for some reason.
   if( CMAKE_CROSSCOMPILING )
@@ -226,14 +212,29 @@ FetchContent_Declare(
   set( BUILD_TESTING OFF CACHE INTERNAL "" )
   set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
   set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
+  # Check for local Ceres Solver
+  set(LOCAL_CERES_DIR "${CMAKE_BINARY_DIR}/_deps/ceres-solver-src")
+  if(EXISTS "${LOCAL_CERES_DIR}/CMakeLists.txt")
+    message(STATUS "Using local Ceres Solver from ${LOCAL_CERES_DIR}")
+    set(CERES_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_CERES_DIR}")
+  else()
+    set(CERES_FETCHCONTENT_SOURCE
+      GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
+      GIT_TAG         85331393dc0dff09f6fb9903ab0c4bfa3e134b01 # release-2.2.0
+      GIT_SHALLOW    TRUE
+    )
+  endif()
+
   FetchContent_Declare(
     ceres-solver
-    GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
-    #GIT_TAG        f68321e7de8929fbcdb95dd42877531e64f72f66 # release-2.1.0
-    GIT_TAG         85331393dc0dff09f6fb9903ab0c4bfa3e134b01 # release-2.2.0
-    GIT_SHALLOW TRUE
+    ${CERES_FETCHCONTENT_SOURCE}
   )
   FetchContent_MakeAvailable( ceres-solver )
+  #FetchContent_GetProperties( ceres-solver )
+  #if(NOT ceres-solver_POPULATED)
+  #  FetchContent_Populate(ceres-solver)
+  #  add_subdirectory(${ceres-solver_SOURCE_DIR} ${ceres_solver_BINARY_DIR} EXCLUDE_FROM_ALL)
+  #endif()
 endif( USE_REL_ACT_TOOL )
 
 if( BUILD_AS_WX_WIDGETS_APP )
