@@ -6,9 +6,22 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
+if( BUILD_FOR_CONTAINER_LIBC OR BUILD_FOR_CONTAINER_MUSL)
+  set( BUILD_AS_LOCAL_SERVER OFF CACHE INTERNAL "" )
+  set( CMAKE_BUILD_TYPE:STRING "Release")
+  set( BUILD_FOR_WEB_DEPLOYMENT ON CACHE INTERNAL "" )
+  #set( Boost_INCLUDE_DIR "build/_deps/boost-src/libs")
+  set( ZLIB_INCLUDE_DIR:STRING "build/_deps/zlib-build")
+  set( SpecUtils_PYTHON_BINDINGS ON )
+  set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
+  if( BUILD_FOR_CONTAINER_MUSL )
+    set( CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++" CACHE INTERNAL "")
+    set( CMAKE_FIND_LIBRARY_SUFFIXES ".a" CACHE INTERNAL "")
+  endif()
+endif()
 
 if( InterSpec_FETCH_DEPENDENCIES )
-  include( cmake/FetchInterSpecDeps.txt )
+  include( cmake/FetchInterSpecDeps.cmake )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 # If we are the top-level project, we'll build the local-server exe
@@ -110,19 +123,7 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
-if( BUILD_FOR_CONTAINER_LIBC OR BUILD_FOR_CONTAINER_MUSL)
-  set( BUILD_AS_LOCAL_SERVER OFF CACHE INTERNAL "" )
-  set( CMAKE_BUILD_TYPE:STRING "Release")
-  set( BUILD_FOR_WEB_DEPLOYMENT ON CACHE INTERNAL "" )
-  set( Boost_INCLUDE_DIR "build/_deps/boost-src/libs")
-  set( ZLIB_INCLUDE_DIR:STRING "build/_deps/zlib-build")
-  set( SpecUtils_PYTHON_BINDINGS ON )
-  set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
-  if( BUILD_FOR_CONTAINER_MUSL )
-    set( CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++" CACHE INTERNAL "")
-    set( CMAKE_FIND_LIBRARY_SUFFIXES ".a" CACHE INTERNAL "")
-  endif()
-endif()
+
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
@@ -780,7 +781,11 @@ endif(WIN32)
 
 
 if( USE_REL_ACT_TOOL )
-  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres )
+  if(TARGET Eigen3::Eigen)
+    target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres)
+  else(TARGET Eigen3::Eigen)
+    target_link_libraries(InterSpecLib PUBLIC Eigen::Eigen Ceres::ceres)
+  endif(TARGET Eigen3::Eigen)
 endif( USE_REL_ACT_TOOL )
 
 
