@@ -42,7 +42,7 @@ RUN --mount=type=bind,target=/mnt/host,rw    \
         uglify-js \
         uglifycss \
         git && \
-    if [ "$hostbuilddir" = "true" || "$hostdepdir" = "true" ]; then \
+    if [ "$hostbuilddir" = "true" ] || [ "$hostdepdir" = "true" ]; then \
         echo "Using host build directory" && \
         srcdir=/mnt/host && \
         builddir=/mnt/host/build && \
@@ -50,10 +50,8 @@ RUN --mount=type=bind,target=/mnt/host,rw    \
             echo "Using host dependency directory" && \
             mkdir -p /mnt/host/build/_deps && \
             mkdir -p /mnt/host/_deps && \
-            ls -al && \
             mv /mnt/host/build/_deps/*-src /mnt/host/_deps/ 2>/dev/null && \
             rm -rf /mnt/host/build && \
-            ls -al /mnt/host/_deps && \
             mkdir -p /mnt/host/build && \
             mv /mnt/host/_deps /mnt/host/build/; \
         fi; \
@@ -69,14 +67,11 @@ RUN --mount=type=bind,target=/mnt/host,rw    \
     fi && \
     cmake \
         -B "$builddir" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_FOR_CONTAINER_MUSL=ON \
+        -DCONTAINER_MUSL=ON \
+        -DInterSpec_FETCH_DEPENDENCIES=ON \
         -S "$srcdir" && \
     cmake --build "$builddir" -j4 && \
-    mkdir -p release && \
-    cmake --build "$builddir" -j4 && \
     cmake --install "$builddir" --prefix /release && \
-    rm -rf release/lib/cmake && \
     cd /release && \ 
     chmod -R a+r * && \
     chmod a+x bin/InterSpec && \

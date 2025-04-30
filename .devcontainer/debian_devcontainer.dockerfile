@@ -1,4 +1,4 @@
-FROM debian:trixy-slim AS build
+FROM debian:trixie-slim AS build
 ARG repo=https://github.com/sandialabs/InterSpec.git
 ARG tag=master
 ARG savebuild=false

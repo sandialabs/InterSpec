@@ -1,3 +1,4 @@
+# 
 # Build Deployable Image:
 #   docker build --tag 'interspec_debian' -f debian_web_container.containerfile .
 
@@ -26,13 +27,7 @@ ARG tag=master \
 ARG hostdepdir=true \
 ARG hostbuilddir=true \
 WORKDIR /work
-
-#libhpdf-dev \
-#libfcgi-dev \
-#freeglut3-dev \
-#libpango1.0-dev \
-#libglew-dev \
-
+#libhpdf-dev libfcgi-dev freeglut3-dev libpango1.0-dev libglew-dev libopenblas-dev liblapack-dev libgmp-dev libmpfr-dev
 # RUN statements are broken up to allow loading cached images for debugging
 RUN --mount=type=bind,target=/mnt/host,rw    \
     apt update && apt upgrade -y && apt install -y --no-install-recommends \
@@ -45,7 +40,7 @@ RUN --mount=type=bind,target=/mnt/host,rw    \
         cmake \
         patch \
         git  && \
-    if [ "$hostbuilddir" = "true" || "$hostdepdir" = "true" ]; then \
+    if [ "$hostbuilddir" = true ] || [ "$hostdepdir" = true ]; then \
         echo "Using host build directory" && \
         srcdir=/mnt/host && \
         builddir=/mnt/host/build && \
@@ -53,10 +48,8 @@ RUN --mount=type=bind,target=/mnt/host,rw    \
             echo "Using host dependency directory" && \
             mkdir -p /mnt/host/build/_deps && \
             mkdir -p /mnt/host/_deps && \
-            ls -al && \
             mv /mnt/host/build/_deps/*-src /mnt/host/_deps/ 2>/dev/null && \
             rm -rf /mnt/host/build && \
-            ls -al /mnt/host/_deps && \
             mkdir -p /mnt/host/build && \
             mv /mnt/host/_deps /mnt/host/build/; \
         fi; \
@@ -72,7 +65,7 @@ RUN --mount=type=bind,target=/mnt/host,rw    \
     fi && \
     cmake \
     -B "$builddir" \
-    -DBUILD_FOR_CONTAINER_LIBC=ON \
+    -DCONTAINER_LIBC=ON \
     -DInterSpec_FETCH_DEPENDENCIES=ON \
     -S "$srcdir" && \
     cmake --build "$builddir" -j4 && \
