@@ -72,34 +72,41 @@ find_file( ZLIB_PATCH_FILE "zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch"
 
 # set( FETCHCONTENT_QUIET FALSE )
 
+# Check for local Boost
+set(LOCAL_BOOST_DIR "${CMAKE_BINARY_DIR}/_deps/boost-src")
+if(EXISTS "${LOCAL_BOOST_DIR}/CMakeLists.txt")
+  message(STATUS "Using local Boost from ${LOCAL_BOOST_DIR}")
+  set(BOOST_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_BOOST_DIR}")
+else()
+  set(BOOST_FETCHCONTENT_SOURCE
+    GIT_REPOSITORY https://github.com/boostorg/boost.git
+    GIT_TAG        ab7968a0bbcf574a7859240d1d8443f58ed6f6cf # release-1.85.0
+    GIT_SHALLOW    ON
+  )
+endif()
+
 FetchContent_Declare(
   boost
-  #URL /Users/wcjohns/install/wt_fetch_contents/boost-5df8086b733798c8e08e316626a16babe11bd0d2.zip
-  GIT_REPOSITORY https://github.com/boostorg/boost.git
-  GIT_TAG        ab7968a0bbcf574a7859240d1d8443f58ed6f6cf # release-1.85.0
-  GIT_SHALLOW    ON
-  # GIT_PROGRESS TRUE # Also need FETCHCONTENT_QUIET 
+  ${BOOST_FETCHCONTENT_SOURCE}
 )
 
-#FetchContent_GetProperties(boost)
-#if(NOT boost_POPULATED)
-#  FetchContent_Populate(boost)
-#  add_subdirectory(${boost_SOURCE_DIR} ${boost_BINARY_DIR} EXCLUDE_FROM_ALL)
-#endif()
+# Check for local Wt
+set(LOCAL_WT_DIR "${CMAKE_BINARY_DIR}/_deps/wt-src")
+if(EXISTS "${LOCAL_WT_DIR}/CMakeLists.txt")
+  message(STATUS "Using local Wt from ${LOCAL_WT_DIR}")
+  set(WT_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_WT_DIR}")
+else()
+  set(WT_FETCHCONTENT_SOURCE
+    GIT_REPOSITORY https://github.com/emweb/wt.git
+    GIT_TAG        b84925215d2b45879cf20c0cb340c4e7960d0c53 # 3.7.1
+    GIT_SHALLOW    ON
+    PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE}
+  )
+endif()
 
 FetchContent_Declare(
   wt
-  #URL /Users/wcjohns/install/wt_fetch_contents/wt-b84925215d2b45879cf20c0cb340c4e7960d0c53.zip
-  GIT_REPOSITORY https://github.com/emweb/wt.git
-  GIT_TAG        b84925215d2b45879cf20c0cb340c4e7960d0c53 # 3.7.1
-  GIT_SHALLOW    ON
-  # GIT_PROGRESS TRUE # Also need FETCHCONTENT_QUIET 
-
-  # First check if the patch has already been applied, and if not, then do the patch
-  PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${WT_PATCH_FILE}
-
-  #The '|| true' is in next command is due to bug in cmake I think: https://gitlab.kitware.com/cmake/cmake/-/issues/21146
-  #PATCH_COMMAND patch -p1 < ${WT_PATCH_FILE} || true
+  ${WT_FETCHCONTENT_SOURCE}
 )
 
 
@@ -180,15 +187,28 @@ if( USE_REL_ACT_TOOL )
   set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
   set( EIGEN_BUILD_PKGCONFIG OFF )
   #set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
-  
+  # Check for local Eigen
+  set(LOCAL_EIGEN_DIR "${CMAKE_BINARY_DIR}/_deps/eigen-src")
+  if(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
+    message(STATUS "Using local Eigen from ${LOCAL_EIGEN_DIR}")
+    set(EIGEN_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_EIGEN_DIR}")
+  else()
+    set(EIGEN_FETCHCONTENT_SOURCE
+      GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+      GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 # Updated 3.4 release, to pickup some CMake fixes
+    )
+  endif(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
   FetchContent_Declare(
     eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    #GIT_TAG        3147391d946bb4b6c68edd901f2add6ac1f31f8c # release-3.4.0
-    GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 #Updated 3.4 release, to pickup some CMake fixes
-  )
+    ${EIGEN_FETCHCONTENT_SOURCE}
 
+  )
   FetchContent_MakeAvailable( eigen )
+  #FetchContent_GetProperties( eigen )
+  #if(NOT eigen_POPULATED)
+  #  FetchContent_Populate(eigen)
+  #  add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR} EXCLUDE_FROM_ALL)
+  #endif()
   
   # For Android and iOS, we need to force the path information for Eigen, for some reason.
   if( CMAKE_CROSSCOMPILING )
@@ -208,13 +228,29 @@ if( USE_REL_ACT_TOOL )
   set( BUILD_TESTING OFF CACHE INTERNAL "" )
   set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
   set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
+  # Check for local Ceres Solver
+  set(LOCAL_CERES_DIR "${CMAKE_BINARY_DIR}/_deps/ceres-solver-src")
+  if(EXISTS "${LOCAL_CERES_DIR}/CMakeLists.txt")
+    message(STATUS "Using local Ceres Solver from ${LOCAL_CERES_DIR}")
+    set(CERES_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_CERES_DIR}")
+  else()
+    set(CERES_FETCHCONTENT_SOURCE
+      GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
+      GIT_TAG         85331393dc0dff09f6fb9903ab0c4bfa3e134b01 # release-2.2.0
+      GIT_SHALLOW    TRUE
+    )
+  endif()
+
   FetchContent_Declare(
     ceres-solver
-    GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
-    GIT_TAG        f68321e7de8929fbcdb95dd42877531e64f72f66 # release-2.1.0
-    GIT_SHALLOW TRUE
+    ${CERES_FETCHCONTENT_SOURCE}
   )
   FetchContent_MakeAvailable( ceres-solver )
+  #FetchContent_GetProperties( ceres-solver )
+  #if(NOT ceres-solver_POPULATED)
+  #  FetchContent_Populate(ceres-solver)
+  #  add_subdirectory(${ceres-solver_SOURCE_DIR} ${ceres_solver_BINARY_DIR} EXCLUDE_FROM_ALL)
+  #endif()
 endif( USE_REL_ACT_TOOL )
 
 if( BUILD_AS_WX_WIDGETS_APP )
