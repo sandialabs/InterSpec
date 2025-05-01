@@ -337,19 +337,18 @@ struct FinalPeakFitSettings
    */
   //double stepped_roi_extent_lower_side_stat_multiple, stepped_roi_extent_upper_side_stat_multiple;
 
-
-  /** Refit peak with different steps, and this is the chi2/dof needed to accept solution
-
-   Reasonable search range: 0 to 4. ???
-   */
-  double cont_type_step_ncrease_chi2dof_required;
-
-
-  /** How much of an improvement quadratic or cubic continuum type needs to be to actually use.
+  /** How much of an improvement quadratic or cubic continuum type needs on the chi2/dof to be to actually use.
    
    Reasonable search range: 0 to 4. ???
    */
   double cont_poly_order_increase_chi2dof_required;
+
+  /** How much of an improvement to the chi2/dof either moving to a stepped continuum type or increasing the 
+   * type of stepped continuum must give, in order to use the result
+   
+   Reasonable search range: 0 to 4. ???
+   */
+  double cont_step_type_increase_chi2dof_required;
   
   /** Check if we should add skew.
       Right now maybe just just ratio of area between continuum and data for -1 to -4 sigma from mean,
@@ -420,8 +419,8 @@ struct FinalPeakFitSettings
     + var_name + ".cont_type_left_right_nsigma = "                 + std::to_string(cont_type_left_right_nsigma)                 + ";\n"
     //+ var_name + ".stepped_roi_extent_lower_side_stat_multiple = " + std::to_string(stepped_roi_extent_lower_side_stat_multiple) + ";\n"
     //+ var_name + ".stepped_roi_extent_upper_side_stat_multiple = " + std::to_string(stepped_roi_extent_upper_side_stat_multiple) + ";\n"
-    + var_name + ".cont_type_step_ncrease_chi2dof_required = "     + std::to_string(cont_type_step_ncrease_chi2dof_required)     + ";\n"
     + var_name + ".cont_poly_order_increase_chi2dof_required = "   + std::to_string(cont_poly_order_increase_chi2dof_required)   + ";\n"
+    + var_name + ".cont_step_type_increase_chi2dof_required = "    + std::to_string(cont_step_type_increase_chi2dof_required)    + ";\n"
     + var_name + ".skew_nsigma = "                                 + std::to_string(skew_nsigma)                                 + ";\n"
     + var_name + ".left_residual_sum_min_to_try_skew = "           + std::to_string(left_residual_sum_min_to_try_skew)           + ";\n"
     + var_name + ".right_residual_sum_min_to_try_skew = "          + std::to_string(right_residual_sum_min_to_try_skew)          + ";\n"
@@ -1070,8 +1069,8 @@ namespace FinalFit_GA
     double cont_type_left_right_nsigma;
     //double stepped_roi_extent_lower_side_stat_multiple;
     //double stepped_roi_extent_upper_side_stat_multiple;
-    double cont_type_step_ncrease_chi2dof_required;
     double cont_poly_order_increase_chi2dof_required;
+    double cont_step_type_increase_chi2dof_required;
     double skew_nsigma;
     double left_residual_sum_min_to_try_skew;
     double right_residual_sum_min_to_try_skew;
@@ -1093,8 +1092,8 @@ namespace FinalFit_GA
         + separator + "cont_type_left_right_nsigma: " + std::to_string(cont_type_left_right_nsigma)
         //+ separator + "stepped_roi_extent_lower_side_stat_multiple: " + std::to_string(stepped_roi_extent_lower_side_stat_multiple)
         //+ separator + "stepped_roi_extent_upper_side_stat_multiple: " + std::to_string(stepped_roi_extent_upper_side_stat_multiple)
-        + separator + "cont_type_step_ncrease_chi2dof_required: " + std::to_string(cont_type_step_ncrease_chi2dof_required)
         + separator + "cont_poly_order_increase_chi2dof_required: " + std::to_string(cont_poly_order_increase_chi2dof_required)
+        + separator + "cont_step_type_increase_chi2dof_required: " + std::to_string(cont_step_type_increase_chi2dof_required)
         + separator + "skew_nsigma: " + std::to_string(skew_nsigma)
         + separator + "left_residual_sum_min_to_try_skew: " + std::to_string(left_residual_sum_min_to_try_skew)
         + separator + "right_residual_sum_min_to_try_skew: " + std::to_string(right_residual_sum_min_to_try_skew)
@@ -1129,8 +1128,8 @@ namespace FinalFit_GA
     p.cont_type_left_right_nsigma = 1.0 + 19.0*rnd01();  // Range 1-20
     //p.stepped_roi_extent_lower_side_stat_multiple = 0.0 + 2.0*rnd01();  // Range 0-20
     //p.stepped_roi_extent_upper_side_stat_multiple = 0.0 + 2.0*rnd01();  // Range 0-20
-    p.cont_type_step_ncrease_chi2dof_required = 0.0 + 4.0*rnd01();  // Range 0-4
     p.cont_poly_order_increase_chi2dof_required = 0.0 + 4.0*rnd01();  // Range 0-4
+    p.cont_step_type_increase_chi2dof_required = 0.0 + 4.0*rnd01();  // Range 0-4
     p.skew_nsigma = 0.0 + 10.0*rnd01();  // Range 0-10
     p.left_residual_sum_min_to_try_skew = 0.0 + 5.0*rnd01();  // Range 0-5 (estimated)???
     p.right_residual_sum_min_to_try_skew = 0.0 + 5.0*rnd01();  // Range 0-5 (estimated)???
@@ -1154,8 +1153,8 @@ namespace FinalFit_GA
     settings.cont_type_left_right_nsigma = solution.cont_type_left_right_nsigma;
     //settings.stepped_roi_extent_lower_side_stat_multiple = solution.stepped_roi_extent_lower_side_stat_multiple;
     //settings.stepped_roi_extent_upper_side_stat_multiple = solution.stepped_roi_extent_upper_side_stat_multiple;
-    settings.cont_type_step_ncrease_chi2dof_required = solution.cont_type_step_ncrease_chi2dof_required;
     settings.cont_poly_order_increase_chi2dof_required = solution.cont_poly_order_increase_chi2dof_required;
+    settings.cont_step_type_increase_chi2dof_required = solution.cont_step_type_increase_chi2dof_required;
     settings.skew_nsigma = solution.skew_nsigma;
     settings.left_residual_sum_min_to_try_skew = solution.left_residual_sum_min_to_try_skew;
     settings.right_residual_sum_min_to_try_skew = solution.right_residual_sum_min_to_try_skew;
@@ -1202,8 +1201,8 @@ namespace FinalFit_GA
     X_new.cont_type_left_right_nsigma = mutate_value(X_base.cont_type_left_right_nsigma, 1.0, 20.0);
     //X_new.stepped_roi_extent_lower_side_stat_multiple = mutate_value(X_base.stepped_roi_extent_lower_side_stat_multiple, 0.0, 2.0);
     //X_new.stepped_roi_extent_upper_side_stat_multiple = mutate_value(X_base.stepped_roi_extent_upper_side_stat_multiple, 0.0, 2.0);
-    X_new.cont_type_step_ncrease_chi2dof_required = mutate_value(X_base.cont_type_step_ncrease_chi2dof_required, 0.0, 4.0);
     X_new.cont_poly_order_increase_chi2dof_required = mutate_value(X_base.cont_poly_order_increase_chi2dof_required, 0.0, 4.0);
+    X_new.cont_step_type_increase_chi2dof_required = mutate_value(X_base.cont_step_type_increase_chi2dof_required, 0.0, 4.0);
     X_new.skew_nsigma = mutate_value(X_base.skew_nsigma, 0.0, 10.0);
     X_new.left_residual_sum_min_to_try_skew = mutate_value(X_base.left_residual_sum_min_to_try_skew, 0.0, 5.0);
     X_new.right_residual_sum_min_to_try_skew = mutate_value(X_base.right_residual_sum_min_to_try_skew, 0.0, 5.0);
@@ -1237,8 +1236,8 @@ namespace FinalFit_GA
     X_new.cont_type_left_right_nsigma = cross_value(X1.cont_type_left_right_nsigma, X2.cont_type_left_right_nsigma);
     //X_new.stepped_roi_extent_lower_side_stat_multiple = cross_value(X1.stepped_roi_extent_lower_side_stat_multiple, X2.stepped_roi_extent_lower_side_stat_multiple);
     //X_new.stepped_roi_extent_upper_side_stat_multiple = cross_value(X1.stepped_roi_extent_upper_side_stat_multiple, X2.stepped_roi_extent_upper_side_stat_multiple);
-    X_new.cont_type_step_ncrease_chi2dof_required = cross_value(X1.cont_type_step_ncrease_chi2dof_required, X2.cont_type_step_ncrease_chi2dof_required);
     X_new.cont_poly_order_increase_chi2dof_required = cross_value(X1.cont_poly_order_increase_chi2dof_required, X2.cont_poly_order_increase_chi2dof_required);
+    X_new.cont_step_type_increase_chi2dof_required = cross_value(X1.cont_step_type_increase_chi2dof_required, X2.cont_step_type_increase_chi2dof_required);
     X_new.skew_nsigma = cross_value(X1.skew_nsigma, X2.skew_nsigma);
     X_new.left_residual_sum_min_to_try_skew = cross_value(X1.left_residual_sum_min_to_try_skew, X2.left_residual_sum_min_to_try_skew);
     X_new.right_residual_sum_min_to_try_skew = cross_value(X1.right_residual_sum_min_to_try_skew, X2.right_residual_sum_min_to_try_skew);
@@ -3795,12 +3794,12 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
     switch( final_fit_settings.roi_extent_mult_type )
     {
-      case RoiExtentMultType::Linear:
+      case FinalPeakFitSettings::RoiExtentMultType::Linear:
         roi_lower = base_roi_lower - final_fit_settings.roi_extent_lower_side_stat_multiple*central_ratio*first_peak.fwhm();
         roi_upper = base_roi_upper + final_fit_settings.roi_extent_upper_side_stat_multiple*central_ratio*first_peak.fwhm();
         break;
 
-      case RoiExtentMultType::Sqrt:
+      case FinalPeakFitSettings::RoiExtentMultType::Sqrt:
         roi_lower = base_roi_lower - final_fit_settings.roi_extent_lower_side_stat_multiple*sqrt(central_ratio)*first_peak.fwhm();
         roi_upper = base_roi_upper + final_fit_settings.roi_extent_upper_side_stat_multiple*sqrt(central_ratio)*first_peak.fwhm();
         break;
@@ -3818,13 +3817,27 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
   for( PeakDef &p : initial_peaks )
     p.setContinuum( initial_continuum );
 
-  
- //double chi2_for_region( const PeakShrdVec &peaks,
-  //                      const std::shared_ptr<const SpecUtils::Measurement> &data,
- //                       const int lowBin,
-//                        const int highBin );
-Blah blah blah - keep going here so we can get the initial chi2
-  const double intial_chi2 = chi2_for_region( initial_peaks, data, data->find_channel(roi_lower), data->find_channel(roi_upper) );
+  const size_t original_roi_lower_channel = data->find_gamma_channel( orig_continuum->lowerEnergy() );
+  const size_t original_roi_upper_channel = data->find_gamma_channel( orig_continuum->upperEnergy() );
+
+  const size_t updated_roi_lower_channel = data->find_gamma_channel( roi_lower );
+  const size_t updated_roi_upper_channel = data->find_gamma_channel( roi_upper );
+
+  // For Chi2, we will use the intersection of original and updated ROIs...
+  const size_t compare_lower_channel = std::max( original_roi_lower_channel, updated_roi_lower_channel );
+  const size_t compare_upper_channel = std::min( original_roi_upper_channel, updated_roi_upper_channel );
+
+
+ const auto chi2_for_region_wrapper = []( vector<PeakDef> peaks, const std::shared_ptr<const SpecUtils::Measurement> &data, const size_t xlowbin, const size_t xhighbin ) -> double {
+  vector<shared_ptr<const PeakDef>> peaks_tmp;
+  for( const PeakDef &p : peaks )
+    peaks_tmp.push_back( make_shared<PeakDef>(p) );
+  return chi2_for_region( peaks_tmp, data, static_cast<int>(xlowbin), static_cast<int>(xhighbin) );
+ };
+ 
+  const double intial_chi2 = chi2_for_region_wrapper( initial_peaks, data, compare_lower_channel, compare_upper_channel );
+
+
 
   // Do an initial fit
   const double initial_stat_threshold = 0.0;
@@ -3834,9 +3847,9 @@ Blah blah blah - keep going here so we can get the initial chi2
   #warning "final_peak_fit_for_roi: always assuming HPGe right now - for dev"
   
   vector<PeakDef> first_fit_peaks;
-  #if( USE_CERES_PEAK_FITTING )
+#if( USE_CERES_PEAK_FITTING )
   vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
-  for( const shared_ptr<const PeakDef> &p : initial_peaks )
+  for( const PeakDef &p : initial_peaks )
     input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
   PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
                           initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
@@ -3847,26 +3860,58 @@ Blah blah blah - keep going here so we can get the initial chi2
                data, initial_peaks, amplitudeOnly, isHPGe );
 #endif
 
+  assert( !first_fit_peaks.empty() );
+  if( first_fit_peaks.empty() )
+    throw std::runtime_error( "final_peak_fit_for_roi: first_fit_peaks is empty" );
 
-  const vector<PeakDef> answer;
+  const double initial_fit_chi2 = chi2_for_region_wrapper( first_fit_peaks, data, compare_lower_channel, compare_upper_channel );
+  const double approx_dof = (compare_upper_channel - compare_lower_channel); 
+  cout << "Initial fit chi2: " << initial_fit_chi2 << " compared to intial_chi2: " << intial_chi2 << endl;
+
+  // We will actually take the new ROI width, no matter what, since we are optimizing things.
 
   bool explore_cont_type = false;
   for( const PeakDef &p : pre_fit_peaks )
   {
-    if( p.continuum()->type() == PeakContinuum::OffsetType::External )
-      continue;
+    switch( p.continuum()->type() )
+    {
+      case PeakContinuum::OffsetType::External:    // We wont be tuning external continuums, although we shouldnt actually get here
+        assert( false );
 
-    if( p.continuum()->type() == PeakContinuum::OffsetType::Cubic )
-      continue; // We cant go any higher than cubic
+      case PeakContinuum::OffsetType::FlatStep:    // We'll check for stepped continuums later
+      case PeakContinuum::OffsetType::LinearStep:
+      case PeakContinuum::OffsetType::BiLinearStep:
+      case PeakContinuum::OffsetType::Cubic:        // We cant go any higher than cubic
+        continue;
+    
+      // The current continuum types that we will now try other types to check for improvements.
+      case PeakContinuum::OffsetType::NoOffset:
+      case PeakContinuum::OffsetType::Constant:
+      case PeakContinuum::OffsetType::Linear:
+      case PeakContinuum::OffsetType::Quadratic:
+      break;
+    }//switch( p.continuum()->type() )
 
     const double peak_uncert = p.amplitudeUncert() > 0.0 ? p.amplitudeUncert() : sqrt(p.amplitude());
     const double nsigma = p.amplitude() / peak_uncert;
     explore_cont_type |= ( nsigma > final_fit_settings.cont_type_peak_nsigma_threshold );
   }//for( const PeakDef &p : pre_fit_peaks )
 
+  vector<PeakContinuum::OffsetType> cont_types_to_check;
+  if( explore_cont_type )
+  {
+    for( PeakContinuum::OffsetType type = PeakContinuum::OffsetType(orig_continuum->type() + 1);
+         type <= PeakContinuum::OffsetType::Cubic;
+         type = PeakContinuum::OffsetType(type + 1) )
+    {
+      cont_types_to_check.push_back( type );
+    }
+  }//if( explore_cont_type )
   
 
   bool explore_stepped_cont = false;
+  const bool starting_with_step_continuum = PeakContinuum::is_step_continuum( orig_continuum->type() );
+  if( !starting_with_step_continuum )
   {// Begin of check if we should explore stepped cont
     // We will sum data starting 1.5 FWHM below first peak, and 1.5 FWHM above last peak, for 0.5 FWHM each.
     const PeakDef &first_peak = pre_fit_peaks.front();
@@ -3876,10 +3921,10 @@ Blah blah blah - keep going here so we can get the initial chi2
     const double roi_upper = last_peak.mean() + 2.0*last_peak.fwhm();
     const double last_peak_upper = last_peak.mean() + 1.5*last_peak.fwhm();
 
-    const size_t roi_lower_channel = data->find_channel( roi_lower );
-    const size_t roi_upper_channel = data->find_channel( roi_upper );
-    const size_t first_peak_lower_channel = data->find_channel( first_peak_lower );
-    const size_t last_peak_upper_channel = data->find_channel( last_peak_upper );
+    const size_t roi_lower_channel = data->find_gamma_channel( roi_lower );
+    const size_t roi_upper_channel = data->find_gamma_channel( roi_upper );
+    const size_t first_peak_lower_channel = data->find_gamma_channel( first_peak_lower );
+    const size_t last_peak_upper_channel = data->find_gamma_channel( last_peak_upper );
     assert( roi_lower_channel <= first_peak_lower_channel );
     assert( last_peak_upper_channel <= roi_upper_channel );
     const size_t num_channels_to_use = std::max( size_t(2), std::max( first_peak_lower_channel - roi_lower_channel, roi_upper_channel - last_peak_upper_channel ) );
@@ -3902,18 +3947,242 @@ Blah blah blah - keep going here so we can get the initial chi2
     }
   }// End of check if we should explore stepped cont
 
+  if( explore_stepped_cont )
+  {
+    cont_types_to_check.push_back( PeakContinuum::OffsetType::FlatStep );
+    cont_types_to_check.push_back( PeakContinuum::OffsetType::LinearStep );
+    
+    // I dont find bilinear steps to be very good, at least visually, so we will not explore them
+    //cont_types_to_check.push_back( PeakContinuum::OffsetType::BiLinearStep );
+  }else if( starting_with_step_continuum && (orig_continuum->type() != PeakContinuum::OffsetType::BiLinearStep) )
+  {
+    cont_types_to_check.push_back( PeakContinuum::OffsetType(orig_continuum->type() + 1) );
+  }
+
+  vector<tuple<PeakContinuum::OffsetType,vector<PeakDef>,double>> trial_peak_fits;
+  trial_peak_fits.push_back( make_tuple( orig_continuum->type(), pre_fit_peaks, initial_fit_chi2/approx_dof )  );
+
+  for( const PeakContinuum::OffsetType type : cont_types_to_check )
+  {
+    vector<PeakDef> these_input_peaks = first_fit_peaks;
+    shared_ptr<PeakContinuum> cont = make_shared<PeakContinuum>( *orig_continuum );
+    cont->calc_linear_continuum_eqn( data, cont->referenceEnergy(), cont->lowerEnergy(), cont->upperEnergy(), 3, 3 );
+    cont->setType( type );
+    for( PeakDef &p : these_input_peaks )
+      p.setContinuum( cont );
+
+    vector<PeakDef> these_fit_peaks;
+    try
+    {
+#if( USE_CERES_PEAK_FITTING )
+      vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
+      for( const PeakDef &p : these_input_peaks )
+        input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
+      PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
+                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
+    for( const shared_ptr<const PeakDef> &p : results_tmp )
+      these_fit_peaks.push_back( *p );
+#else
+      fitPeaks( these_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
+                data, initial_peaks, amplitudeOnly, isHPGe );
+#endif
+    }catch( const std::exception &e )
+    {
+      cout << "Error fitting peaks: " << e.what() << endl;
+      continue;
+    }//try / catch to fit peaks
+
+    assert( !these_fit_peaks.empty() );
+    if( these_fit_peaks.empty() )
+      continue;
+
+    const double these_fit_chi2 = chi2_for_region_wrapper( these_fit_peaks, data, compare_lower_channel, compare_upper_channel );
+    trial_peak_fits.push_back( make_tuple( type, these_input_peaks, these_fit_chi2/approx_dof ) );
+  }//for( const PeakContinuum::OffsetType type : cont_types_to_check )
+
+  // I'm pretty sure trial_peak_fits is sorted by continuum type, but just to be sure, we will sort it
+  std::sort( begin(trial_peak_fits), end(trial_peak_fits), []( const auto &a, const auto &b ){
+    return static_cast<int>(std::get<0>(a)) < static_cast<int>(std::get<0>(b));
+  } );
+
+  size_t best_index = 0;
+  for( size_t i = 1; i < trial_peak_fits.size(); ++i )
+  {
+    const bool prev_was_step = PeakContinuum::is_step_continuum( std::get<0>(trial_peak_fits[best_index]) );
+    const bool this_is_step = PeakContinuum::is_step_continuum( std::get<0>(trial_peak_fits[i]) );
+
+    const double prev_chi2 = std::get<2>(trial_peak_fits[best_index]);
+    const double this_chi2 = std::get<2>(trial_peak_fits[i]);
+
+    if( !prev_was_step && !this_is_step )
+    {
+      if( (this_chi2 - final_fit_settings.cont_poly_order_increase_chi2dof_required) > prev_chi2 )
+        best_index = i;
+    }else if( prev_was_step && !this_is_step )
+    {
+      assert( 0 );  // We should never get here
+    }else if( (!prev_was_step && this_is_step) || (prev_was_step && this_is_step) )
+    {
+      if( (this_chi2 - final_fit_settings.cont_step_type_increase_chi2dof_required) > prev_chi2 )
+        best_index = i;
+    }
+  }//for( size_t i = 1; i < trial_peak_fits.size(); ++i )
+
+  assert( std::get<0>(trial_peak_fits[0]) == orig_continuum->type() );
+
+  cout << "Post continuum type fit: Best index: " << best_index << " gives Chi2Dof: " << std::get<2>(trial_peak_fits[best_index]) 
+  << " (ContType: " << PeakContinuum::offset_type_str( std::get<0>(trial_peak_fits[best_index]) ) << ")"
+  << ", compared to initial Chi2Dof: " << initial_fit_chi2/approx_dof 
+  << " (ContType: " << PeakContinuum::offset_type_str( std::get<0>(trial_peak_fits[0]) ) << ")" << endl;
+
+  const double after_cont_type_chi2dof = std::get<2>(trial_peak_fits[best_index]);
+  const double after_cont_type_chi2 = after_cont_type_chi2dof * approx_dof;
+  const vector<PeakDef> best_post_cont_type_peaks = std::get<1>(trial_peak_fits[best_index]);
+  vector<PeakDef> answer = best_post_cont_type_peaks;
+  double post_cont_max_nsigma = 0.0;
+  size_t post_cont_most_sig_peak_index = 0;
+  for( size_t i = 0; i < best_post_cont_type_peaks.size(); ++i )
+  {
+    const PeakDef &p = best_post_cont_type_peaks[i];
+    const double peak_uncert = p.amplitudeUncert() > 0.0 ? p.amplitudeUncert() : sqrt(p.amplitude());
+    const double nsigma = p.amplitude() / peak_uncert;
+    if( nsigma > post_cont_max_nsigma )
+    {
+      post_cont_max_nsigma = nsigma;
+      post_cont_most_sig_peak_index = i;
+    }
+  }//for( size_t i = 0; i < best_post_cont_type_peaks.size(); ++i )
+  
+  // Now we'll check if we should try skew; this isnt perfect, but we'll use just the most significant peak
+  //  in the ROI, and check its residual sums.
+  if( post_cont_max_nsigma > final_fit_settings.skew_nsigma )
+  {
+    //Using 1.5 sigma below is arbitrary, but we'll use it for now
+    const PeakDef &most_sig_peak = best_post_cont_type_peaks[post_cont_most_sig_peak_index];
+    const double peak_lower_energy = most_sig_peak.mean() - 1.5*most_sig_peak.sigma();
+    const double left_lower_energy = peak_lower_energy - 1.5*most_sig_peak.sigma();
+    const double peak_upper_energy = most_sig_peak.mean() + 1.5*most_sig_peak.sigma();
+    const double right_upper_energy = peak_upper_energy + 1.5*most_sig_peak.sigma();
+    
+    const size_t left_start_channel = data->find_gamma_channel( left_lower_energy );
+    const size_t left_end_channel = data->find_gamma_channel( peak_lower_energy );
+    
+    const size_t right_start_channel = data->find_gamma_channel( peak_upper_energy );
+    const size_t right_end_channel = data->find_gamma_channel( right_upper_energy );
+
+    const bool too_narrow = (((left_start_channel + 2) >= left_end_channel) || ((right_start_channel + 2) >= right_end_channel));
+    assert( !too_narrow );
+    
+    double left_residual_sum = 0.0, right_residual_sum = 0.0;
+    if( !too_narrow && (most_sig_peak.skewType() == PeakDef::SkewType::NoSkew) ) //We'll only try skew, if we dont currently have a user-preffered skew type
+    {
+      const auto sum_residuals = [&]( const size_t start_channel, const size_t end_channel) -> double {
+        double sum = 0.0;
+        for( size_t i = start_channel; i <= end_channel; ++i )
+        {
+          const double data_counts = data->gamma_channel_content(i);
+          const float lenergy = data->gamma_channel_lower(i);
+          const float uenergy = data->gamma_channel_upper(i);
+          const double expected_continuum_counts = most_sig_peak.continuum()->offset_integral( lenergy, uenergy, data );
+          const double expected_gauss_counts = most_sig_peak.gauss_integral( lenergy, uenergy );
+          const double expected_counts = expected_continuum_counts + expected_gauss_counts;
+          const double residual = (data_counts - expected_counts) / sqrt( std::max( 1.0, data_counts ) );
+          sum += residual;
+        }
+        return sum / (end_channel - start_channel + 1);
+      };//sum_residuals lamda
+
+      left_residual_sum = sum_residuals( left_start_channel, left_end_channel );
+      right_residual_sum = sum_residuals( right_start_channel, right_end_channel );
+
+      const bool try_left_skew = left_residual_sum > final_fit_settings.left_residual_sum_min_to_try_skew;
+      const bool try_right_skew = right_residual_sum > final_fit_settings.right_residual_sum_min_to_try_skew;
+
+      vector<PeakDef::SkewType> skew_types_to_try;
+      if( try_left_skew )
+      {
+        skew_types_to_try.push_back( PeakDef::SkewType::Bortel );
+        skew_types_to_try.push_back( PeakDef::SkewType::GaussExp );
+        skew_types_to_try.push_back( PeakDef::SkewType::CrystalBall );
+      }//if( try left-sided skew )
+      
+      if( try_left_skew && try_right_skew )
+      {
+        skew_types_to_try.push_back( PeakDef::SkewType::ExpGaussExp );
+        skew_types_to_try.push_back( PeakDef::SkewType::DoubleSidedCrystalBall );
+      }//if( try both-sided skews )
+
+      // Don't duplicate fitting the same skew type as the most significant peak
+      skew_types_to_try.erase( std::remove_if(begin(skew_types_to_try), end(skew_types_to_try), [&most_sig_peak](const PeakDef::SkewType &a){
+        return (a == most_sig_peak.skewType());
+      }), end(skew_types_to_try) );
 
 
-  //struct FinalPeakFitSettings
-  //{
-  //  double cont_type_step_ncrease_chi2dof_required;
-  //
-  //  double cont_poly_order_increase_chi2dof_required;
-  //  double skew_nsigma;
-  //  double left_residual_sum_min_to_try_skew, right_residual_sum_min_to_try_skew;
-  //  double skew_improve_chi2_dof_threshold;
-  //};//struct FinalPeakFitSettings
+      vector<tuple<PeakDef::SkewType,vector<PeakDef>,double>> trial_skew_fits;
+      assert( most_sig_peak.skewType() == PeakDef::SkewType::NoSkew );
+      trial_skew_fits.emplace_back( most_sig_peak.skewType(), best_post_cont_type_peaks, after_cont_type_chi2dof );
+      
 
+      for( const PeakDef::SkewType skew_type : skew_types_to_try )
+      {
+        vector<PeakDef> these_input_peaks = best_post_cont_type_peaks;
+        shared_ptr<PeakContinuum> cont = make_shared<PeakContinuum>( *orig_continuum );
+        for( PeakDef &p : these_input_peaks )
+        {
+          p.setSkewType( skew_type );
+          p.setContinuum( cont ); //so we dont mess with the original continuum
+        }
+
+        vector<PeakDef> these_fit_peaks;
+
+        try
+        {
+#if( USE_CERES_PEAK_FITTING )
+          vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
+          for( const PeakDef &p : these_input_peaks )
+            input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
+          PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
+                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
+          for( const shared_ptr<const PeakDef> &p : results_tmp )
+          these_fit_peaks.push_back( *p );
+#else
+          fitPeaks( these_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
+                  data, initial_peaks, amplitudeOnly, isHPGe );
+#endif
+        }catch( const std::exception &e )
+        {
+          cout << "Error adding skew to peaks: " << e.what() << endl;
+          assert( 0 );
+          continue;
+        }//try / catch to fit peaks
+
+        const double these_fit_chi2 = chi2_for_region_wrapper( these_fit_peaks, data, compare_lower_channel, compare_upper_channel );
+        trial_skew_fits.emplace_back( skew_type, these_input_peaks, these_fit_chi2/approx_dof );   
+      }//for( const PeakDef::SkewType skew_type : skew_types_to_try )
+
+      // Sort the skew fits by the skew type (I'm pretty sure they should already be sorted)
+      std::sort( begin(trial_skew_fits), end(trial_skew_fits), []( const auto &a, const auto &b ){
+        return std::get<0>(a) < std::get<0>(b);
+      } );
+      
+      size_t best_skew_index = 0;
+      for( size_t i = 1; i < trial_skew_fits.size(); ++i )
+      {
+        const double prev_chi2 = std::get<2>(trial_skew_fits[best_skew_index]);
+        const double this_chi2 = std::get<2>(trial_skew_fits[i]);
+
+        if( (this_chi2 - final_fit_settings.skew_improve_chi2_dof_threshold) > prev_chi2 )
+          best_skew_index = i; 
+      }//for( size_t i = 1; i < trial_skew_fits.size(); ++i )
+
+      cout << "Post skew fit: Best index: " << best_skew_index << " gives Chi2Dof: " << std::get<2>(trial_skew_fits[best_skew_index]) 
+      << " (SkewType: " << PeakDef::to_string( std::get<0>(trial_skew_fits[best_skew_index]) ) << ")"
+      << ", compared to initial Chi2Dof: " << initial_fit_chi2/approx_dof 
+      << " (SkewType: " << PeakDef::to_string( std::get<0>(trial_skew_fits[0]) ) << ")" << endl;
+
+      answer = std::get<1>(trial_skew_fits[best_skew_index]);  
+    }//if( !too_narrow && (most_sig_peak.skew_type() == PeakDef::SkewType::NoSkew) )
+  }//if( post_cont_type_max_nsigma > final_fit_settings.skew_nsigma )
 
   return answer;
 }//vector<PeakDef> final_peak_fit_for_roi(...)
