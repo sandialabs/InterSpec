@@ -53,6 +53,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/SpecUtilsAsync.h"
+#include "SpecUtils/D3SpectrumExport.h"
 #include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/PeakFit.h"
@@ -65,6 +66,7 @@
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/InterSpecServer.h"
+#include "InterSpec/ReferenceLineInfo.h"
 
 #include "openGA.hpp"
 
@@ -80,6 +82,8 @@ using namespace std;
 
 const bool debug_printout = false;
 
+
+#define WRITE_ALL_SPEC_TO_HTML 1
 
 /** The weights and limits to apply to the various optimizations.
  
@@ -1814,7 +1818,8 @@ struct PeakTruthInfo
            || (label == "EscapeXRay") || (label == "Peak")
            || (label == "EscapeXRay+Peak") || (label == "D.E.+EscapeXRay")
            || (label == "D.E.+Peak") || (label == "D.E.+S.E.")
-           || (label == "Peak+S.E.") );
+           || (label == "Peak+S.E.")
+           || (label == "EscapeXRay+S.E.") );
   }//PeakTruthInfo(...)
 };//struct PeakTruthInfo
 
@@ -3738,7 +3743,9 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
     return -score_sum;
   };// set InitialFit_GA::ns_ga_eval_fcn
 
+#if( !WRITE_ALL_SPEC_TO_HTML ) //quick hack to get to compile
   const FinalPeakFitSettings best_final_fit_settings = FinalFit_GA::do_ga_eval( ga_eval_fcn );
+#endif
 
   //eval_candidate_settings_fcn( best_settings, best_initial_fit_settings, true );
   //cout << "Wrote N42s with best settings." << endl;
@@ -3756,7 +3763,9 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
   << endl
   << initial_fit_settings.print("\tinitial_fit_settings") << endl
   << endl
+#if( !WRITE_ALL_SPEC_TO_HTML ) //quick hack to get to compile
   << best_final_fit_settings.print("\tbest_final_fit_settings")
+#endif
   //<< "Best settings had score " << best_sum_score << ", with values:" << endl
   << endl << endl
   << "Ran in {wall=" << (end_wall - start_wall)
@@ -3782,6 +3791,192 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
 }//void do_final_peak_fit_ga_optimization(...)
 
 
+
+#if( WRITE_ALL_SPEC_TO_HTML )
+void write_html_summary( const vector<DataSrcInfo> &src_infos )
+{
+  ofstream output( "mikes_inject.html" );
+
+  D3SpectrumExport::write_html_page_header( output, "GADRAS Simulations of likely field nuclides" );
+
+  output << "<body>" << endl;
+
+  //Hack putting <style></style> block in HTML body, but wahtever, seems ot work
+  output <<"<style>"
+  << ".TopLinesTable{ margin-top: 25px; margin-left: auto; margin-right: auto; border-collapse: collapse; border: 1px solid black; }" << endl
+  << "table, th, td{ border: 1px solid black; }" << endl
+  << "fieldset{width: 90vw; margin-left: auto; margin-right: auto; margin-top: 20px;}" << endl
+  << "</style>" << endl;
+
+
+  for( size_t i = 0; i < src_infos.size(); ++i )
+  {
+    const DataSrcInfo &info = src_infos[i];
+    const InjectSourceInfo &src_info = info.src_info;
+
+    const string &detector_name = info.detector_name;
+    const string &location_name = info.location_name;
+    const string &live_time_name = info.live_time_name;
+
+
+    const vector<PeakTruthInfo> &source_lines = src_info.source_lines;
+    const vector<PeakTruthInfo> &background_lines = src_info.background_lines;
+    //src_info.spec_file;
+    const vector<shared_ptr<const SpecUtils::Measurement>> &src_spectra = src_info.src_spectra;
+    assert( !src_spectra.empty() );
+    const shared_ptr<const SpecUtils::Measurement> &spectrum = src_spectra.front(); //We'll just plot the first spectrum only
+    const shared_ptr<const SpecUtils::Measurement> &short_background = src_info.short_background;
+    const shared_ptr<const SpecUtils::Measurement> &long_background = src_info.long_background;
+    //src_info.src_no_poisson;
+    //src_info.background_no_poisson;
+
+    const vector<ExpectedPhotopeakInfo> &expected_photopeaks = info.expected_photopeaks;
+
+
+    ReferenceLineInfo ref_line_info;
+    ref_line_info.m_validity = ReferenceLineInfo::InputValidity::Valid;
+    ref_line_info.m_source_type = ReferenceLineInfo::SourceType::OneOffSrcLines;
+    ref_line_info.m_has_coincidences = false;
+
+    double max_peak_area = 0.0;
+    for( const ExpectedPhotopeakInfo &line : expected_photopeaks )
+    {
+      if( line.nsigma_over_background < 1.0 ) //Dont show 1-sigma peaks
+        continue;
+
+      ReferenceLineInfo::RefLine ref_line;
+      ref_line.m_energy = line.effective_energy;
+      ref_line.m_normalized_intensity = line.peak_area;
+      max_peak_area = std::max( max_peak_area, line.peak_area );
+      ref_line.m_drf_factor = 1.0;
+      ref_line.m_shield_atten = 1.0;
+      ref_line.m_particle_sf_applied = 1.0;
+      ref_line.m_color = Wt::WColor( Wt::GlobalColor::darkBlue );
+      ref_line.m_decay_intensity = line.peak_area;
+      ref_line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+      ref_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::Normal;
+      ref_line.m_attenuation_applies = false;
+
+      ref_line_info.m_ref_lines.push_back( ref_line );
+    }//for( const ExpectedPhotopeakInfo &line : expected_photopeaks )
+
+    if( max_peak_area > 1.0 )
+    {
+      for( auto &p : ref_line_info.m_ref_lines )
+        p.m_normalized_intensity /= max_peak_area;
+    }
+
+    string ref_line_json;
+    ref_line_info.toJson( ref_line_json );
+
+    std::string title = "";
+    std::string dataTitle = "";
+    bool useLogYAxis = true, showVerticalGridLines = false, showHorizontalGridLines = false;
+    bool legendEnabled = true, compactXAxis = true;
+    bool showPeakUserLabels = false, showPeakEnergyLabels = false, showPeakNuclideLabels = false, showPeakNuclideEnergyLabels = false;
+    bool showEscapePeakMarker = false, showComptonPeakMarker = false, showComptonEdgeMarker = false, showSumPeakMarker = false;
+    bool backgroundSubtract = false;
+    float xMin = 0, xMax = 3000;
+    std::map<std::string,std::string> refernce_lines_json;
+    refernce_lines_json["TruthPeaks"] = ref_line_json;
+
+    D3SpectrumExport::D3SpectrumChartOptions options( title, "Energy (keV)", "Counts/Channel",
+                                                     dataTitle, useLogYAxis,
+                                                     showVerticalGridLines, showHorizontalGridLines,
+                                                     legendEnabled, compactXAxis,
+                                                     showPeakUserLabels, showPeakEnergyLabels, showPeakNuclideLabels,
+                                                     showPeakNuclideEnergyLabels, showEscapePeakMarker, showComptonPeakMarker,
+                                                     showComptonEdgeMarker, showSumPeakMarker, backgroundSubtract,
+                                                     xMin, xMax, refernce_lines_json );
+
+    D3SpectrumExport::D3SpectrumOptions foreground_opts, background_opts;
+    foreground_opts.line_color = "black";
+    background_opts.line_color = "steelblue";
+    foreground_opts.title = src_info.src_name;
+    background_opts.title = "Background";
+    foreground_opts.display_scale_factor = 1.0;
+    background_opts.display_scale_factor = spectrum->live_time() / long_background->live_time();
+    foreground_opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+    background_opts.spectrum_type = SpecUtils::SpectrumType::Background;
+
+    const string div_id = "chart_" + std::to_string(i);
+
+
+    output << "<fieldset style=\"\">" << endl
+    << "<legend>" << src_info.src_name << "</legend>" << endl;
+
+    output << "<div id=\"" << div_id << "\" class=\"chart\" oncontextmenu=\"return false;\"></div>" << endl;  // Adding the main chart div
+
+
+    output << "<script>" << endl;
+
+    D3SpectrumExport::write_js_for_chart( output, div_id, options.m_dataTitle, options.m_xAxisTitle, options.m_yAxisTitle );
+
+    std::vector< std::pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+    measurements.emplace_back( spectrum.get(), foreground_opts );
+    measurements.emplace_back( long_background.get(), background_opts );
+
+    write_and_set_data_for_chart( output, div_id, measurements );
+
+    
+    output << R"delim(
+    const resizeChart)delim" << i << R"delim( = function(){
+      let height = window.innerHeight;
+      let width = document.documentElement.clientWidth;
+      let el = spec_chart_)delim" << div_id << R"delim(.chart;
+      el.style.width = 0.8*width + "px";
+      el.style.height = Math.min(500,Math.max(250, Math.min(0.4*width,height-175))) + "px";
+      el.style.marginLeft = 0.05*width + "px";
+      el.style.marginRight = 0.05*width + "px";
+      
+    )delim"
+    << "  spec_chart_" << div_id << R"delim(.handleResize();
+    };
+    
+    window.addEventListener('resize', resizeChart)delim" << i << R"delim();
+    )delim" << endl;
+
+    write_set_options_for_chart( output, div_id, options );
+
+    output << "spec_chart_" << div_id << ".setReferenceLines( reference_lines_" << div_id << " );" << endl;
+
+    output << "resizeChart" << i << "();" << endl;
+    output << "</script>" << endl;
+
+    vector<ExpectedPhotopeakInfo> photopeaks = expected_photopeaks;
+    std::sort( begin(photopeaks), end(photopeaks), [](const ExpectedPhotopeakInfo &lhs, const ExpectedPhotopeakInfo &rhs ){
+      return lhs.peak_area > rhs.peak_area;
+    });
+
+    output << "<table class=\"TopLinesTable\" style=\"\">" << endl;
+    output << "<tr><th>Energy (keV)</th><th>Truth Area</th><th>Truth CPS</th><th>ROI Lower</th><th>ROI Upper</th><th>Continuum Area</th></tr>" << endl;
+    output << "<caption>Top gamma lines in spectrum</caption>" << endl;
+    for( size_t i = 0; (i < photopeaks.size()) && (i < 20); ++i )
+    {
+      const ExpectedPhotopeakInfo &p = photopeaks[i];
+      output << "<tr>"
+      << "<td>" << p.effective_energy << "</td>"
+      << "<td>" << p.peak_area << "</td>"
+      << "<td>" << p.peak_area / spectrum->live_time() << "</td>"
+      << "<td>" << p.roi_lower << "</td>"
+      << "<td>" << p.roi_upper << "</td>"
+      << "<td>" << p.continuum_area << "</td>"
+      << "</tr>"
+      << endl;
+    }
+
+    if( photopeaks.size() > 20 )
+      output << "<tr><td colspan=\"6\">Plus " << (photopeaks.size() - 20) << " more peaks</td></tr>" << endl;
+
+    output << "</table>" << endl;
+
+    output << "</fieldset>" << endl;
+  }//for( size_t i = 0; i < src_info.size(); ++i )
+
+  output << "</body>" << endl;
+  output << "</html>" << endl;
+}//void write_html_summary( const vector<DataSrcInfo> &src_info )
+#endif //WRITE_ALL_SPEC_TO_HTML
 
 int main( int argc, char **argv )
 {
@@ -3840,7 +4035,11 @@ int main( int argc, char **argv )
     
     if( debug_printout )
       hpges = vector<string>{ "Detective-X" };
-    
+
+#if( WRITE_ALL_SPEC_TO_HTML )
+    hpges = vector<string>{ "Detective-X", "IdentiFINDER-R500-NaI" };
+#endif
+
     bool is_wanted_det = false;
     for( const string &det : hpges )
       is_wanted_det |= (detector_path.filename() == det);
@@ -3885,7 +4084,11 @@ int main( int argc, char **argv )
             "300_seconds",
             "1800_seconds"
           };
-          
+
+#if( WRITE_ALL_SPEC_TO_HTML )
+          live_times = {"300_seconds"};
+#endif
+
           bool is_wanted_lt = false;
           for( const string &lt : live_times )
             is_wanted_lt |= (livetime_path.filename() == lt);
@@ -4013,11 +4216,13 @@ int main( int argc, char **argv )
       //  10%: Lose  4 out of 223 files
       
 //#if( !RETURN_PeakDef_Candidates )
+#if( !WRITE_ALL_SPEC_TO_HTML )
 #warning "Only using <2% dead-time files"
       if( info.src_no_poisson->live_time() < 0.98*info.src_no_poisson->real_time() )
       {
         continue;
       }
+#endif //#if( !WRITE_ALL_SPEC_TO_HTML )
 //#else
 //#warning "Using all Live-Times for peak search"
 //#endif
@@ -4144,8 +4349,12 @@ int main( int argc, char **argv )
   }//for( const DetectorInjectSet &inject_set : inject_sets )
   
   cout << "Used " << num_accepted_inputs << " of total " << num_inputs << " input files." << endl;
-  
-   
+
+#if( WRITE_ALL_SPEC_TO_HTML )
+  write_html_summary( input_srcs );
+  return 1;
+#endif
+
   auto eval_candidate_settings = [&input_srcs]( const FindCandidateSettings settings,
                                                 const bool write_n42 )
       -> tuple<double,size_t,size_t,size_t,size_t,size_t> //<score, num_peaks_found, num_possibly_accepted_peaks_not_found, num_extra_peaks>
