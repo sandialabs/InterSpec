@@ -447,6 +447,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
                Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
   m_interspec( viewer ),
+  m_currently_searching( false ),
   m_refit_scheduled( false ),
   m_undo_redo_scheduled( false ),
   m_orig_drf( drf ),
@@ -679,6 +680,8 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
   if( !server )
     return;
   
+  m_currently_searching = true;
+  
   const string seshid = wApp->sessionId();
   const shared_ptr<const DetectorPeakResponse> drf = m_orig_drf;
     
@@ -708,9 +711,18 @@ void MakeFwhmForDrf::doRefitWork()
   m_parameters.clear();
   m_uncertainties.clear();
   
+  bool error_because_searching = false;
+  
   try
   {
     vector<shared_ptr<const PeakDef>> peaks = m_model->peaks_to_use();
+    
+    if( m_currently_searching && peaks.empty() )
+    {
+      error_because_searching = true;
+      throw runtime_error( "Still searching" );
+    }
+    
     auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>();
     peaks_deque->insert( end(*peaks_deque), begin(peaks), end(peaks) );
     
@@ -831,7 +843,11 @@ void MakeFwhmForDrf::doRefitWork()
       sb->setText( "" );
     }
     
-    m_error->setText( WString::tr("mffd-err-fail-fit").arg(e.what()) );
+    if( error_because_searching )
+      m_error->setText( WString::tr("mffd-err-waiting-for-search") );
+    else
+      m_error->setText( WString::tr("mffd-err-fail-fit").arg(e.what()) );
+    
     m_validationChanged.emit(false);
   }//try / catch
   
@@ -910,6 +926,8 @@ void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> u
                              shared_ptr<vector<shared_ptr<const PeakDef>>> auto_search_peaks )
 {
   assert( auto_search_peaks );
+  
+  m_currently_searching = false;
   
   // `auto_search_peaks` will contain both the original users peaks, as well as the auto-fit
   //  peaks, but we want to keep them separate to indicate to the user, so we'll just remove

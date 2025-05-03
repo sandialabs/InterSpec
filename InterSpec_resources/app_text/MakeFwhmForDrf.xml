@@ -18,4 +18,5 @@
   <message id="mffd-err-no-foreground">There is no data to search for peaks on.</message>
   <message id="mffd-tt-par">With uncertainty: {1}</message>
   <message id="mffd-err-fail-fit">Failed to fit FWHM equation: {1}</message>
+  <message id="mffd-err-waiting-for-search">Currently searching for peaks - please be patient</message>
 </messages>
