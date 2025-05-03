@@ -2276,7 +2276,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       }//if( we should start from the peaks we last fit while dragging )
       
       vector<shared_ptr<const PeakDef>> refitpeaks
-                  = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, 3.0 );
+                  = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
       
       m_continuum_being_drug = continuum;
       m_last_being_drug_peaks = refitpeaks;
@@ -2472,8 +2472,6 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         findPeaksInUserRange( lower_energy, upper_energy, npeakstry[index], method,
                              foreground, detector, isHPGe, newpeaks, chi2s[index] );
         
-        //findPeaksInUserRange_linsubsolve( lower_energy, upper_energy, npeakstry[index], method,
-        //                     foreground, detector, isHpge, newpeaks, chi2s[index] );
         
         //Note: InterSpec::findPeakFromControlDrag(...) adjusts Chi2 as:
         //const size_t nbin = end_channel - start_channel;

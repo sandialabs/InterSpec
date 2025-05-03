@@ -1071,7 +1071,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     const double uppper_energy = starting_peaks.back().mean() + 0.1;
     
     // We are not refitting peaks, because the areas may be wildly different.
-    const bool isRefit = false;
+    const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+
     
     const double ncausalitysigma = 0.0;
     const double stat_threshold = options.peak_stat_threshold;
@@ -1143,7 +1144,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         
         vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                 stat_threshold, hypothesis_threshold,
-                                                energy_cal_peaks, spec, isRefit, isHPGe );
+                                                energy_cal_peaks, spec, fit_options, isHPGe );
         try
         {
           fit_energy_cal_from_fit_peaks( spec, peaks );
@@ -1178,15 +1179,19 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     
     vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                 stat_threshold, hypothesis_threshold,
-                                                candidate_peaks, spec, isRefit, isHPGe );
-    
+                                                candidate_peaks, spec, fit_options, isHPGe );
+#if( !USE_LM_PEAK_FIT )
     // Re-fit the peaks again a few more times
     for( size_t i = 0; i < 3; ++i )
     {
+      Wt::WFlags<PeakFitLM::PeakFitLMOptions> re_fit_options;
+      re_fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
+      
       fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                   stat_threshold, hypothesis_threshold,
-                                  fit_peaks, spec, true, isHPGe );
+                                  fit_peaks, spec, re_fit_options, isHPGe );
     }
+#endif
     
     //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
     //<< starting_peaks.size() <<  ") from the raw spectrum:"

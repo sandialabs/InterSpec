@@ -178,11 +178,42 @@ std::vector<std::shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const st
                                    const bool setColor,
                                    const bool showingEscapePeakFeature,
                                    const bool only_peaks_with_no_src );
+
+
+/** Enum to tell #refit_peaks_from_right_click what type of refit to do.
+ */
+enum class RefitPeakType : int
+{
+  /** Standard peak fit where amplitude, FWHM, and continuum coefficients are unconstrained by previous values. 
+   If multiple peaks are in the ROI, all will be refitted, and the FWHM will be linearly tied together.
+
+  No #PeakFitLM::PeakFitLMOptions options are applied.
+  */
+  Standard,
   
+  /** Delicate peak fit where amplitude, FWHM, and continuum coefficients are constrained by previous values. 
+   
+   #PeakFitLM::PeakFitLMOptions::DoNotPunishForBeingToClose is applied.
+  */
+  Delicate,
+
+  /** Sets the peak FWHM to what the detector response function predicts, and then refits the peak. 
+   
+   The FWHM from DRF is used, with the FWHM fixed to that - then no further #PeakFitLM::PeakFitLMOptions are applied.
+  */
+  WithDrfFwhm,
+  
+  /** Refits the ROI, including the peak, to the data. 
+   
+   #PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent is applied.
+  */
+  RoiAgressive,
+};
+
 /** Refits the peaks from a right-click refit request.
  Assumes you are in the Wt app primary thread.
  */
-void refit_peaks_from_right_click( InterSpec * const interspec, const double rightClickEnergy );
+void refit_peaks_from_right_click( InterSpec * const interspec, const double rightClickEnergy, const RefitPeakType type );
 
 /** Sets all peaks in the ROI pointed to by the passed in energy, to the FWHM specified by the DRF, then refits the peaks.
  
@@ -300,7 +331,14 @@ void prepare_and_add_gadras_peaks(
                         std::vector<PeakDef> original_peaks,
                         const std::string sessionid );
 
-
+/** Adds a new peak to an existing ROI based on right-click energy.
+ * This function handles splitting an existing peak into two peaks at the right-click energy,
+ * and refitting the peaks in the ROI.
+ * 
+ * @param interspec The InterSpec instance to operate on
+ * @param rightClickEnergy The energy where the user right-clicked
+ */
+void add_peak_from_right_click( InterSpec * const interspec, const double rightClickEnergy );
 
 }//namespace PeakSearchGuiUtils
 #endif //AssignPeaksToRefLine_h

@@ -1210,7 +1210,8 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
           const bool isHPGe = (fabs(fwhm - hpge_fwhm) < fabs(fwhm - nai_fwhm));
           
           std::vector<PeakDef> fit_peak;
-          fitPeaks( {worker_peak}, -1.0, -1.0, input.measurement, fit_peak, false, isHPGe );
+          Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+          fitPeaks( {worker_peak}, -1.0, -1.0, input.measurement, fit_peak, fit_options, isHPGe );
           
           assert( fit_peak.size() == 1 );
           if( fit_peak.size() == 1 )

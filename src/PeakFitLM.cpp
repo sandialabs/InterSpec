@@ -1714,13 +1714,13 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
   }catch( std::exception &e )
   {
     cerr << "fit_peaks_LM: caught exception '" << e.what() << "'" << endl;
-    results.clear();
   }//try / catch
 
 
-  //We will only reach here if there was no exception, so since never expect
-  //  this to actually happen, just assign the results to be same as the input
-  results = input_peaks;
+  //We will only reach here if there was an exception, so since we dont
+  //  expect this to normally happen, we'll just return empty results...
+  //results = input_peaks;
+  results.clear();
 }//vector<PeakDef> fit_peaks_LM(...);
 
 
@@ -1818,7 +1818,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
-                                   const double meanSigmaVary )
+                                   const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options )
 {
   vector<shared_ptr<const PeakDef>> answer;
 
@@ -1838,7 +1838,6 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
     const auto resType = PeakFitUtils::coarse_resolution_from_peaks(inpeaks);
     const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High);
 
-    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( 0 );
     answer = fit_peaks_in_roi_LM( inpeaks, data, isHPGe, fit_options );
 
 

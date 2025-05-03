@@ -53,6 +53,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
@@ -2928,8 +2929,14 @@ vector<shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const std::shared_
 }//void assign_srcs_from_ref_lines(...)
   
   
-void refit_peaks_from_right_click( InterSpec * const interspec, const double rightClickEnergy )
+void refit_peaks_from_right_click( InterSpec * const interspec, const double rightClickEnergy, const RefitPeakType type )
 {
+  if( type == RefitPeakType::WithDrfFwhm )
+  {
+    PeakSearchGuiUtils::refit_peaks_with_drf_fwhm( interspec, rightClickEnergy );
+    return;
+  }
+  
   try
   {
     PeakModel * const model = interspec->peakModel();
@@ -2965,7 +2972,15 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
     if( inputPeak.size() > 1 )
     {
       const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
-      vector<shared_ptr<const PeakDef>> result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+      
+      vector<shared_ptr<const PeakDef>> result;
+      WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+      
+      if( type == RefitPeakType::RoiAgressive )
+        fit_options |= PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent;
+
+      result = refitPeaksThatShareROI( data, detector, peaksInRoi, fit_options );
+      
 
       if( result.size() == inputPeak.size() )
       {
@@ -2993,8 +3008,34 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
     const bool isRefit = true;
     const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
     
+    
+    WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+    
+    switch( type )
+    {
+      case RefitPeakType::Standard:
+        // No options to add
+        break;
+        
+      case RefitPeakType::Delicate:
+        fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly;
+        break;
+        
+      case RefitPeakType::WithDrfFwhm:
+        assert( 0 );
+        break;
+        
+      case RefitPeakType::RoiAgressive:
+        assert( inputPeak.size() > 1 );
+        fit_options |= PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent;
+        break;
+    }//switch( type )
+    
+    if( type == RefitPeakType::RoiAgressive )
+      fit_options |= PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent;
+    
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                                 hypothesis_threshold, inputPeak, data, isRefit, isHPGe );
+                                 hypothesis_threshold, inputPeak, data, fit_options, isHPGe );
     if( outputPeak.size() != inputPeak.size() )
     {
       WStringStream msg;
@@ -3153,7 +3194,10 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
     if( inputPeak.size() > 1 )
     {
       const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
-      vector<shared_ptr<const PeakDef>> result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+      WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+      //fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
+      
+      vector<shared_ptr<const PeakDef>> result = refitPeaksThatShareROI( data, detector, peaksInRoi, fit_options );
 
       if( result.size() == inputPeak.size() )
       {
@@ -3177,10 +3221,10 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
     const double stat_threshold  = -1000.0;
     const double hypothesis_threshold = -1000.0;
     
-    const bool isRefit = false;
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
     const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                                 hypothesis_threshold, inputPeak, data, isRefit, isHPGe );
+                                 hypothesis_threshold, inputPeak, data, fit_options, isHPGe );
     if( outputPeak.size() != inputPeak.size() )
     {
       const WString msg = WString::tr("psgu-fwhm-fit-fail")
@@ -3512,7 +3556,9 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double r
     if( inputPeak.size() > 1 )
     {
       const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
-      vector<shared_ptr<const PeakDef>> result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+      WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+      fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //not sure if this matters - or maybe its better to not have this option
+      vector<shared_ptr<const PeakDef>> result = refitPeaksThatShareROI( data, detector, peaksInRoi, fit_options );
 
       if( result.size() == inputPeak.size() )
       {
@@ -3536,10 +3582,10 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double r
     const double stat_threshold  = 0;
     const double hypothesis_threshold = 0;
   
-    const bool isRefit = false;
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
     const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
     vector<PeakDef> outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                               hypothesis_threshold, inputPeak, data, isRefit, isHPGe );
+                               hypothesis_threshold, inputPeak, data, fit_options, isHPGe );
     if( outputPeak.size() != inputPeak.size() )
     {
       WString msg = WString::tr("psgu-failed-refit-after-fixing-mean")
@@ -3684,7 +3730,7 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
     {
       const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
       const vector<shared_ptr<const PeakDef>> result
-                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, 0.25 );
+                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, WFlags<PeakFitLM::PeakFitLMOptions>(0) );
       
       if( result.size() == newCandidatePeaks.size() )
       {
@@ -3720,9 +3766,12 @@ void change_continuum_type_from_right_click( InterSpec * const interspec,
       
       // Classifying this as a re-fit will keep the means and widths, from wandering too much.
       const bool isRefit = true;
+      Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+      //fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; Not sure what makes sense here, so we'll just go with default options
+      
       const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
       outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                                   hypothesis_threshold, inputPeak, data, isRefit, isHPGe );
+                                   hypothesis_threshold, inputPeak, data, fit_options, isHPGe );
 
       if( outputPeak.empty() )
       {
@@ -3910,7 +3959,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
     {
       const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
       const vector<shared_ptr<const PeakDef>> result
-                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, 0.5 );
+                                = refitPeaksThatShareROI( data, detector, newCandidatePeaks, WFlags<PeakFitLM::PeakFitLMOptions>(0) );
       
       if( result.size() == newCandidatePeaks.size() )
       {
@@ -3945,10 +3994,10 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       const double hypothesis_threshold = 0.0;
       
       // We'll let the means and widths change significantly
-      const bool isRefit = false;
+      Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
       const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec); //Only used if peak range is defined, so shouldnt be needed
       outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                                   hypothesis_threshold, inputPeak, data, isRefit, isHPGe );
+                                   hypothesis_threshold, inputPeak, data, fit_options, isHPGe );
 
       if( outputPeak.empty() )
       {
@@ -4049,7 +4098,9 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
   }// End block to see if HPGe
   
   
-  const bool isRefit = true;
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+  //fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly; Not sure what makes sense here, so we'll just go with default options
+  
   const double x0 = data->gamma_energy_min();
   const double x1 = data->gamma_energy_max();
   const double ncausalitysigma = 0.0;
@@ -4058,7 +4109,7 @@ void fit_template_peaks( InterSpec *interspec, std::shared_ptr<const SpecUtils::
   
   vector<PeakDef> fitpeaks = fitPeaksInRange( x0, x1, ncausalitysigma,
                                              stat_threshold, hypothesis_threshold,
-                                             candidate_peaks, data, isRefit, isHPGe );
+                                             candidate_peaks, data, fit_options, isHPGe );
   
   //Add back in data_def_peaks and orig_peaks.
   fitpeaks.insert( end(fitpeaks), begin(data_def_peaks), end(data_def_peaks) );
@@ -4205,16 +4256,16 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
     isHPGe = (type == PeakFitUtils::CoarseResolutionType::High);
   }// End block to see if HPGe
   
-  const bool isRefit = false;
   const double x0 = data->gamma_energy_min();
   const double x1 = data->gamma_energy_max();
   const double ncausalitysigma = 3.0;
   const double stat_threshold  = 0.0;
   const double hypothesis_threshold = 0.0;
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
   
   vector<PeakDef> fitpeaks = fitPeaksInRange( x0, x1, ncausalitysigma,
                                              stat_threshold, hypothesis_threshold,
-                                             candidate_peaks, data, isRefit, isHPGe );
+                                             candidate_peaks, data, fit_options, isHPGe );
   
   //Add back in data_def_peaks and orig_peaks.
   fitpeaks.insert( end(fitpeaks), begin(data_def_peaks), end(data_def_peaks) );
@@ -4257,5 +4308,197 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
     wApp->triggerUpdate();
   } );
 }//void prepare_and_add_gadras_peaks(...)
+
+void add_peak_from_right_click( InterSpec * const interspec, const double rightClickEnergy )
+{
+  if( !interspec )
+    return;
+
+  std::shared_ptr<const SpecUtils::Measurement> dataH = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  std::shared_ptr<const PeakDef> peak = interspec->nearestPeak( rightClickEnergy );
+  if( !peak
+      || rightClickEnergy < peak->lowerX()
+      || rightClickEnergy > peak->upperX()
+      || !interspec->measurment(SpecUtils::SpectrumType::Foreground)
+      || !dataH )
+  {
+    passMessage( WString::tr("err-no-roi-to-add-peak"), WarningWidget::WarningMsgInfo );
+    return;
+  }
+
+  //get all the peaks that belong to this ROI
+  typedef std::shared_ptr<const PeakContinuum> ContPtr;
+  typedef map<ContPtr, std::vector<PeakDef > > ContToPeakMap;
+
+  const auto origContinumm = peak->continuum();
+  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaksDeque = interspec->peakModel()->peaks();
+  
+  // We need to make a copy of all the shared pointers because we modify the deque that
+  //  allOrigPeaksDeque points at.
+  const deque<PeakModel::PeakShrdPtr> allOrigPeaks( begin(*allOrigPeaksDeque), end(*allOrigPeaksDeque) );
+  
+  ContToPeakMap contToPeaks;
+  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
+  {
+    if( thispeak )
+      contToPeaks[thispeak->continuum()].push_back( *thispeak );
+  }
+  
+  std::vector<PeakDef> origRoiPeaks = contToPeaks[peak->continuum()];
+  vector<shared_ptr<const PeakDef>> origRoiPeaksPtr;
+  
+  //Make sure we dont try to mix data defined and gaussian defined peaks
+  for( const PeakDef &p : origRoiPeaks )
+  {
+    if( !p.gausPeak() )
+    {
+      passMessage( WString::tr("err-no-add-peak-to-data-roi"), WarningWidget::WarningMsgInfo );
+      return;
+    }
+
+    origRoiPeaksPtr.push_back( make_shared<const PeakDef>( p ) );
+  }
+
+  if( origRoiPeaks.empty() )
+    throw runtime_error( "Logic error in add_peak_from_right_click()" );
+  
+  const double x0 = peak->lowerX();
+  const double x1 = peak->upperX();
+  const size_t lower_channel = dataH->find_gamma_channel( x0 );
+  const size_t upper_channel = dataH->find_gamma_channel( x1 );
+  const size_t nbin = ((upper_channel > lower_channel) ? (upper_channel-lower_channel) : size_t(0));
+  
+  const double startingChi2 = chi2_for_region( origRoiPeaksPtr, dataH, static_cast<int>(lower_channel), static_cast<int>(upper_channel) );
+
+
+  bool inserted = false;
+  vector< std::shared_ptr<PeakDef> > answer;
+  for( PeakDef p : origRoiPeaks )
+  {
+    if( fabs(p.mean() - peak->mean()) < 0.01 )
+    {
+      inserted = true;
+      PeakDef newpeak = p;
+      newpeak.setMean( rightClickEnergy );
+      newpeak.setSigma( newpeak.sigma() / sqrt(2.0) );
+      newpeak.setAmplitude( 0.25*p.amplitude() );
+      p.setAmplitude( 0.75*p.amplitude() );
+      p.setSigma( p.sigma() / sqrt(2.0) );
+      
+      if( newpeak.mean() < p.mean() )
+      {
+        answer.push_back( std::make_shared<PeakDef>( newpeak ) );
+        answer.push_back( std::make_shared<PeakDef>( p ) );
+      }else
+      {
+        answer.push_back( std::make_shared<PeakDef>(p)  );
+        answer.push_back( std::make_shared<PeakDef>(newpeak) );
+      }
+    }else
+    {
+      answer.push_back( std::make_shared<PeakDef>( p ) );
+    }
+  }
+
+  if( !inserted )
+    throw runtime_error( "Logic error 2 in add_peak_from_right_click()" );
+
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
+  
+  const MultiPeakInitialGuessMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
+  
+  bool found_better_fit = false;
+  double fitChi2 = startingChi2;
+  const vector<shared_ptr<PeakDef>> orig_answer = answer;
+  for( const MultiPeakInitialGuessMethod method : methods )
+  { 
+    try
+    {  
+      vector<shared_ptr<PeakDef>> this_answer = orig_answer;
+      
+      double this_fitChi2;
+      findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
+                           interspec->measurment(SpecUtils::SpectrumType::Foreground)->detector(), isHPGe, this_answer, this_fitChi2 );
+      
+      if( this_answer.empty() )
+      {
+        cerr << "Failed to fit " << answer.size() << " peaks in range [" << x0 << ", " << x1 << "] for method "
+        << static_cast<int>(method) << " -- will skip." << endl;
+        continue; //We failed to fit the peaks
+      }
+      
+      vector<std::shared_ptr<const PeakDef> > this_answer_const;
+      for( const std::shared_ptr<PeakDef> &p : this_answer )
+        this_answer_const.push_back( p );
+
+      this_fitChi2 = chi2_for_region( this_answer_const, dataH,
+                                          static_cast<int>(lower_channel), static_cast<int>(upper_channel) );
+
+      if( !IsNan(this_fitChi2) && !IsInf(this_fitChi2) && (this_fitChi2 <= fitChi2) )
+      {
+        fitChi2 = this_fitChi2;
+        answer = this_answer;
+        found_better_fit = true;
+      }
+    }catch( std::exception & )
+    {
+      //Do nothing
+    }
+  }//for( const MultiPeakInitialGuessMethod method : methods )
+
+  const double dof = (nbin + 3*origRoiPeaks.size() + peak->continuum()->type());
+  const double chi2Dof = fitChi2 / dof;
+  
+  cerr << "rightClickEnergy=" << rightClickEnergy << endl;
+  cerr << "PreChi2=" << startingChi2 << ", PostChi2=" << fitChi2 << endl;
+  cerr << "Got chi2Dof=" << chi2Dof << " when fitting for new peak - did " 
+        << (found_better_fit ? "" : "not ") << "improve fit" << endl;
+  
+  for( size_t i = 0; i < answer.size(); ++i )
+  {
+    cerr << "Peak " << i << " at " << answer[i]->mean() << " w/ width="
+         << answer[i]->sigma() << ", and amp=" << answer[i]->amplitude() << endl;
+  }
+  
+  //Remove old ROI peaks
+  if( !found_better_fit )
+  {
+    passMessage( WString::tr("err-add-peak-no-improve"), WarningWidget::WarningMsgInfo );
+    return;
+  }
+  
+  std::map<std::shared_ptr<PeakDef>,PeakModel::PeakShrdPtr> new_to_orig_peaks;
+  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
+  {
+    if( !thispeak || (thispeak->continuum() != origContinumm) )
+      continue;
+    
+    interspec->peakModel()->removePeak( thispeak );
+    
+    //Associate new peak 
+    double dist = 99999.9;
+    std::shared_ptr<PeakDef> nearest_new;
+    for( std::shared_ptr<PeakDef> newpeak : answer )
+    {
+      const double d = fabs( newpeak->mean() - thispeak->mean() );
+      if( d < dist && !new_to_orig_peaks.count(newpeak) )
+      {
+        dist = d;
+        nearest_new = newpeak;
+      }
+    }
+    if( nearest_new )
+    {
+      nearest_new->inheritUserSelectedOptions( *thispeak, true );
+      new_to_orig_peaks[nearest_new] = thispeak;
+    }
+  }
+
+  for( size_t i = 0; i < answer.size(); ++i )
+  {
+    const bool isNew = !new_to_orig_peaks.count(answer[i]);
+    interspec->addPeak( *answer[i], isNew );
+  }
+}//void add_peak_from_right_click()
 
 }//namespace PeakSearchGuiUtils

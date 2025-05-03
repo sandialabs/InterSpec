@@ -50,6 +50,8 @@ namespace PeakFitLM
  - If there are multiple peaks, their FWHM is a linear function of thier mean; the FWHM can vary by +-15% over the ROI
 
  However, these choices can be overridden
+ 
+ Note: this must be an enum, and not a `enum class` because it doesnt look like Wt 3.x WFlags doent play nicely with enum classes.
  */
 enum PeakFitLMOptions
 {
@@ -100,6 +102,12 @@ void fit_peak_for_user_click_LM( std::vector< std::shared_ptr<const PeakDef> > &
 
  Note different order of funciton arguments, as compared to `fitPeaks(...)`.
  All input peaks must be in the same ROI (e.g., share the same PeakContinuum).
+ 
+ Uses default `PeakFitLMOptions` options (e.g., none of them), unless you specify `is_refit = true`,
+ then `PeakFitLMOptions::MediumRefinementOnly` option is specified.
+ 
+ May return fewer peaks than passed in if a peak doesnt pass the `stat_threshold` or `hypothesis_threshold`
+ (if these are above 0.0), or if two peaks fit within 1 sigma of each other.
  */
 void fit_peaks_LM( std::vector<std::shared_ptr<const PeakDef>> &results,
                   const std::vector<std::shared_ptr<const PeakDef>> input_peaks,
@@ -120,12 +128,21 @@ std::vector<std::shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double 
                                       const bool isRefit,
                                       const bool isHPGe );
 
-
+/** Refit peaks that share an ROI.
+ * @param data The data to fit
+ * @param detector Currently unused
+ * @param inpeaks The peaks to refit - the widths and means of these peaks will serve as initial guesses; they
+ *        also dictate which quantities are fit for each peak, the skew and continuum types used, etc.
+ * @param fit_options The options to use for the fit.
+ * @return The refitted peaks, if fitting was sucessful.
+ * 
+ * On failure, returns an empty vector.
+ */
 std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
-                                   const double meanSigmaVary );
+                                   const Wt::WFlags<PeakFitLMOptions> fit_options = 0 );
 
 // Need to implement the equivalent of `search_for_peaks(...)` which uses Minuit2 based `AutoPeakSearchChi2Fcn` class.
 // Also, the `searchForPeakFromUser(...)` 
