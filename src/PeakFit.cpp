@@ -59,6 +59,7 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/SpecUtilsAsync.h"
+//#include "SpecUtils/DateTime.h" //on for debug SpecUtils::get_cpu_time() / SpecUtils::get_wall_time();
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
@@ -477,17 +478,53 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     
     vector< pair< PeakShrdVec, PeakShrdVec > > results( candidatesBeingFitFor.size() );
     
+    // CPU usuage doesnt *look* pegged for this function because we are doing a
+    //  `while( !candidates.empty() ){...}`, which leads to fewer and fewer peaks
+    //  each iteration.  For the example Ba133 HPGe spectrum, it looks like 2 cores
+    //  are being used, because this loop is actually doing 5 iterations.
+    //std::atomic<double> sum_cpu_time( 0.0 ), sum_wall_time( 0.0 );
+    //const double start_cpu_time = SpecUtils::get_cpu_time();
+    //const double start_wall_time = SpecUtils::get_wall_time();
+    
     for( size_t i = 0; i < candidatesBeingFitFor.size(); ++i )
     {
       const double mean = candidatesBeingFitFor[i]->mean();
-      pool.post( boost::bind( &do_peak_automated_searchfit, mean,
-                             boost::cref(meas), boost::cref(drf),
-                             boost::cref(fitpeakvec), 
-                             isHPGe,
-                             boost::ref(results[i]) ));
+      pair<PeakShrdVec, PeakShrdVec> &res = results[i];
+      
+      pool.post(
+        [mean, isHPGe, &res,
+         //&sum_cpu_time, &sum_wall_time,
+         meas_cref = std::as_const(meas),
+         drf_cref = std::as_const(drf),
+         fitpeakvec_cref = std::as_const(fitpeakvec)
+        ](){
+          
+          //const double this_start_cpu_time = SpecUtils::get_cpu_time();
+          //const double this_start_wall_time = SpecUtils::get_wall_time();
+          
+          do_peak_automated_searchfit( mean, meas_cref, drf_cref, fitpeakvec_cref, isHPGe, res );
+          
+          //const double this_end_cpu_time = SpecUtils::get_cpu_time();
+          //const double this_end_wall_time = SpecUtils::get_wall_time();
+          //sum_cpu_time += (this_end_cpu_time - this_start_cpu_time);
+          //sum_wall_time += (this_end_wall_time - this_start_wall_time);
+        }
+      );
+      
+      //pool.post( boost::bind( &do_peak_automated_searchfit, mean,
+      //                       boost::cref(meas), boost::cref(drf),
+      //                       boost::cref(fitpeakvec),
+      //                       isHPGe,
+      //                       boost::ref(results[i]) ));
     }//for( size_t i = 0; i < peaksToTryIndices.size(); ++i )
     
     pool.join();
+    
+    //const double end_cpu_time = SpecUtils::get_cpu_time();
+    //const double end_wall_time = SpecUtils::get_wall_time();
+    
+    //cout << "Cpu  time: " << (end_cpu_time - start_cpu_time) << "s, vs sum " << sum_cpu_time.load() << "s" << endl;
+    //cout << "Wall time: " << (end_wall_time - start_wall_time) << "s, vs sum " << sum_wall_time.load() << "s" << endl;
     
     bool was_collision = false;
     
@@ -1983,7 +2020,7 @@ vector<shared_ptr<const PeakDef>> refitPeaksThatShareROI( const std::shared_ptr<
 #ifdef NDEBUG
   // For release builds we'll just return the L-M based results.
   //  For debug builds we'll print out some comparisons, for the moment
-  return PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, meanSigmaVary );
+  return PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, fit_options );
 #endif
 
   double mean_sigma_vary = -1.0;
