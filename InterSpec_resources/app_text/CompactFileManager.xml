@@ -18,7 +18,7 @@
   <message id='cfm-show-image-btn'>embedded image</message>
 
   <message id='cfm-db-spec'>Prev. Saved Spectra</message>
-
+  <message id='cfm-ref-spectra-btn'>Reference Spectra</message>
   <message id='cfm-err-invalid-sample-num'>Sample number requested doesn't exist.</message>
   <message id='cfm-err-no-meas'>Cant change sample numbers, there is no current measurement.</message>
   <message id='cfm-err-missing-sample-num'>One of the sample number requested doesn't exist.</message>

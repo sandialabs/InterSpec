@@ -1,0 +1,43 @@
+.RefSpectraDialog
+{
+
+}
+
+.RefSpectraWidget
+{
+    
+}
+
+
+.RefSpectraWidget .AddDirBtn, .RefSpectraWidget .DeleteDirBtn
+{
+  opacity: 0.6;
+  cursor:pointer;
+  background-repeat: no-repeat;
+  height: 21px;
+  width: 21px;
+  display: inline-block;
+}
+
+.RefSpectraWidget .AddDirBtn
+{
+  background-image: url('../InterSpec_resources/images/plus_min_black.svg');
+  background-position: center center;
+}
+
+.RefSpectraWidget .DeleteDirBtn
+{
+  margin-left: 8px;
+  background-image: url('../InterSpec_resources/images/minus_min_black.svg');
+  background-position: center center;
+}
+
+.RefSpectraWidget .AddDirBtn:hover, .RefSpectraWidget .DeleteDirBtn:hover
+{
+  opacity: 1;
+}
+
+div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.Wt-disabled
+{
+  background: none;
+}

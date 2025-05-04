@@ -66,6 +66,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/RefSpectraWidget.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/CompactFileManager.h"
@@ -361,6 +362,10 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       WPushButton *button2 = new WPushButton( WString::tr("app-mi-file-prev"), buttons );
       button2->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
 #endif
+      WContainerWidget *refSpectraContainer = new WContainerWidget( this );
+      refSpectraContainer->addStyleClass( "SecondForegroundBtns" );
+      WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), refSpectraContainer );
+      refSpectraBtn->clicked().connect( boost::bind( &RefSpectraDialog::createDialog, SpecUtils::SpectrumType::SecondForeground ) );
     break;
     }//case LeftToRight:
       

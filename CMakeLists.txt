@@ -327,6 +327,8 @@ set(sources
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
+    src/RefSpectraWidget.cpp
+    src/RefSpectraModel.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -431,6 +433,8 @@ set(headers
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
+    InterSpec/RefSpectraWidget.h
+    InterSpec/RefSpectraModel.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -613,7 +617,7 @@ add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
 
-add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
+add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers} )
 
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)

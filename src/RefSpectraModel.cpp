@@ -1,0 +1,198 @@
+#include "InterSpec/RefSpectraModel.h"
+#include <Wt/WModelIndex>
+
+#include <algorithm>
+#include <iostream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
+RefSpectraModel::RefSpectraModel( Wt::WObject *parent )
+  : Wt::WAbstractItemModel( parent )
+{
+}
+
+RefSpectraModel::~RefSpectraModel()
+{
+}
+
+int RefSpectraModel::columnCount( const Wt::WModelIndex &parent ) const
+{
+  return 1;  // We only need one column for the file/directory name
+}
+
+int RefSpectraModel::rowCount( const Wt::WModelIndex &parent ) const
+{
+  if( !parent.isValid() ) {
+    return m_rootNodes.size();
+  }
+  
+  Node *node = getNode( parent );
+  if( !node ) {
+    return 0;
+  }
+  
+  return node->children.size();
+}
+
+Wt::WModelIndex RefSpectraModel::parent( const Wt::WModelIndex &index ) const
+{
+  if( !index.isValid() ) {
+    return Wt::WModelIndex();
+  }
+  
+  Node *node = getNode( index );
+  if( !node || !node->parent ) {
+    return Wt::WModelIndex();
+  }
+  
+  // Find the row of this node in its parent's children
+  const auto &siblings = node->parent->parent ? node->parent->parent->children : m_rootNodes;
+  auto it = std::find_if( siblings.begin(), siblings.end(),
+                         [node]( const auto &n ) { return n.get() == node->parent; } );
+  
+  if( it == siblings.end() ) {
+    return Wt::WModelIndex();
+  }
+  
+  return createIndex( std::distance( siblings.begin(), it ), 0, node->parent );
+}
+
+Wt::WModelIndex RefSpectraModel::index( int row, int column, const Wt::WModelIndex &parent ) const
+{
+  if( row < 0 || column != 0 ) {
+    return Wt::WModelIndex();
+  }
+  
+  if( !parent.isValid() ) {
+    if( row >= static_cast<int>(m_rootNodes.size()) ) {
+      return Wt::WModelIndex();
+    }
+    return createIndex( row, column, m_rootNodes[row].get() );
+  }
+  
+  Node *parentNode = getNode( parent );
+  if( !parentNode || row >= static_cast<int>(parentNode->children.size()) ) {
+    return Wt::WModelIndex();
+  }
+  
+  return createIndex( row, column, parentNode->children[row].get() );
+}
+
+boost::any RefSpectraModel::data( const Wt::WModelIndex &index, int role ) const
+{
+  if( !index.isValid() ) {
+    return boost::any();
+  }
+  
+  Node *node = getNode( index );
+  if( !node ) {
+    return boost::any();
+  }
+  
+  if( role == Wt::DisplayRole ) {
+    return boost::any( node->name );
+  }
+  
+  return boost::any();
+}
+
+boost::any RefSpectraModel::headerData( int section, Wt::Orientation orientation, int role ) const
+{
+  if( orientation == Wt::Orientation::Horizontal && role == Wt::DisplayRole ) {
+    return boost::any( "Reference Spectra" );
+  }
+  
+  return boost::any();
+}
+
+void RefSpectraModel::addBaseDirectory( const std::string &path )
+{
+  try {
+    fs::path fsPath( path );
+    if( !fs::exists( fsPath ) || !fs::is_directory( fsPath ) ) {
+      return;
+    }
+    
+    auto node = std::make_unique<Node>( fsPath.filename().string(), path, true );
+    populateNode( node.get() );
+    m_rootNodes.push_back( std::move(node) );
+    
+    // Notify that we've added a new root node
+    beginInsertRows( Wt::WModelIndex(), m_rootNodes.size() - 1, m_rootNodes.size() - 1 );
+    endInsertRows();
+  } catch( const std::exception &e ) {
+    std::cerr << "Error adding base directory " << path << ": " << e.what() << std::endl;
+  }
+}
+
+void RefSpectraModel::removeBaseDirectory( const std::string &path )
+{
+  auto it = std::find_if( m_rootNodes.begin(), m_rootNodes.end(),
+                         [&path]( const auto &node ) { return node->fullPath == path; } );
+  
+  if( it != m_rootNodes.end() ) {
+    int row = std::distance( m_rootNodes.begin(), it );
+    beginRemoveRows( Wt::WModelIndex(), row, row );
+    m_rootNodes.erase( it );
+    endRemoveRows();
+  }
+}
+
+void RefSpectraModel::refresh()
+{
+  // Store the current paths
+  std::vector<std::string> paths;
+  for( const auto &node : m_rootNodes ) {
+    paths.push_back( node->fullPath );
+  }
+  
+  // Clear the model
+  const bool nonEmpty = !m_rootNodes.empty(); 
+  if( nonEmpty ) {
+    beginRemoveRows( Wt::WModelIndex(), 0, m_rootNodes.size() - 1 );
+    m_rootNodes.clear();
+    endRemoveRows();
+  }
+  
+  // Re-add all directories
+  for( const auto &path : paths ) {
+    addBaseDirectory( path );
+  }
+}
+
+std::string RefSpectraModel::getFilePath( const Wt::WModelIndex &index ) const
+{
+  Node *node = getNode( index );
+  return node ? node->fullPath : "";
+}
+
+void RefSpectraModel::populateNode( Node *node )
+{
+  try {
+    for( const auto &entry : fs::directory_iterator(node->fullPath) ) {
+      auto child = std::make_unique<Node>( entry.path().filename().string(),
+                                         entry.path().string(),
+                                         entry.is_directory(),
+                                         node );
+      
+      if( entry.is_directory() ) {
+        populateNode( child.get() );
+      }
+      
+      node->children.push_back( std::move(child) );
+    }
+  } catch( const std::exception &e ) {
+    std::cerr << "Error reading directory " << node->fullPath << ": " << e.what() << std::endl;
+  }
+}
+
+RefSpectraModel::Node* RefSpectraModel::getNode( const Wt::WModelIndex &index ) const
+{
+  return static_cast<Node*>(index.internalPointer());
+}
+
+Wt::WModelIndex RefSpectraModel::createIndex( int row, int column, Node *node ) const
+{
+  return WAbstractItemModel::createIndex( row, column, (void *)node );
+} 

@@ -42,12 +42,12 @@
 
 .CompactFileManager.LeftToRight div.DispType.Background {
   grid-column: 2;
-  grid-row: 1 / 3;
+  grid-row: 1;
 }
 
 .CompactFileManager.LeftToRight div.DispType.Secondary {
   grid-column: 3;
-  grid-row: 1 / 3;
+  grid-row: 1;
 }
 
 div.DispType > div {
@@ -70,6 +70,11 @@ div.DispType > div {
 
 .CompactFileManager.LeftToRight .CompactManagerButtons {
   grid-column: 1;
+  grid-row: 2;
+}
+
+.SecondForegroundBtns {
+  grid-column: 3;
   grid-row: 2;
 }
 
