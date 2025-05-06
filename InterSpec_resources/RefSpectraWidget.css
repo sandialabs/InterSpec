@@ -8,6 +8,40 @@
     
 }
 
+.RefSpectraStack
+{
+
+}
+
+.RefSpectraWidget .RefSpectraOptions,
+.RefSpectraWidget .ShowAsContainer
+{
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.RefSpectraWidget .RefSpectraOptionsSpacer
+{
+  flex-grow: 1;
+}
+
+.RefSpectraWidget .ShowInExplorerBtn
+{
+  margin-left: 8px;
+}
+
+
+
+.RefSpectraWidget .RefSpectraOptions .ShowAsContainer .ShowAsContainerSpacer
+{
+  flex-grow: 1;
+}
+.RefSpectraStack > div
+{
+  width: 100%;
+  height: 100%;
+}
 
 .RefSpectraWidget .AddDirBtn, .RefSpectraWidget .DeleteDirBtn
 {
@@ -40,4 +74,36 @@
 div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.Wt-disabled
 {
   background: none;
+}
+
+
+.RefSpectraAddDirDialog
+{
+  width: 300px;
+}
+
+.RefSpectraAddDirDialogContents
+{
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.DirInfoTitle
+{
+  margin-bottom: 10px;
+  font-size: 14px;
+  display: block;
+}
+
+.DirReadmeText
+{
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.ErrorLoadingText
+{
+  color: red;
 }

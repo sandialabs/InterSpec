@@ -365,7 +365,7 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       WContainerWidget *refSpectraContainer = new WContainerWidget( this );
       refSpectraContainer->addStyleClass( "SecondForegroundBtns" );
       WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), refSpectraContainer );
-      refSpectraBtn->clicked().connect( boost::bind( &RefSpectraDialog::createDialog, SpecUtils::SpectrumType::SecondForeground ) );
+      refSpectraBtn->clicked().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::Default, SpecUtils::SpectrumType::SecondForeground ) );
     break;
     }//case LeftToRight:
       

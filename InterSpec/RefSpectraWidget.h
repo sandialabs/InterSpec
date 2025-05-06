@@ -36,16 +36,33 @@
 
 namespace Wt 
 {
+  class WComboBox;
   class WTreeView;
   class WCheckBox;
   class WPushButton;
+  class WStackedWidget;
 }
 
 namespace SpecUtils{ enum class SpectrumType : int; }
 
 class RefSpectraModel;
 class RefSpectraWidget;
+class D3SpectrumDisplayDiv;
 
+/** An enum to describe the initial behaviour of the RefSpectraWidget.
+*/
+enum class RefSpectraInitialBehaviour
+{
+  /** All ref spectra directories will be shown collapsed, for the user to expand. */
+  Default,
+
+  /** The tool will attempt to guess a built-in reference spectrum that most closely
+      matches the current foreground spectrum, and open with that spectrum selected. 
+
+      Not implemented yet.
+  */
+  GuessMatchToForeground
+};
 
 class RefSpectraDialog : public SimpleDialog
 {
@@ -55,7 +72,14 @@ public:
 
   RefSpectraWidget *widget() { return m_widget; }
 
-  static RefSpectraDialog *createDialog( SpecUtils::SpectrumType type );
+  /** Create a new RefSpectraDialog with the given initial behaviour and spectrum type.
+   * 
+   *  @param initialBehaviour How to configure the initial view of the tool.
+   *  @param type The default spectrum type to load selected file as.
+   *  @return A new RefSpectraDialog.
+   */
+  static RefSpectraDialog *createDialog( const RefSpectraInitialBehaviour initialBehaviour, 
+                                         const SpecUtils::SpectrumType type );
 private:
   RefSpectraWidget *m_widget;
 };//class RefSpectraDialog
@@ -65,32 +89,43 @@ private:
 class RefSpectraWidget : public Wt::WContainerWidget
 {
 public:
+
   RefSpectraWidget( Wt::WContainerWidget *parent = nullptr );
   virtual ~RefSpectraWidget();
 
   void setLoadSpectrumType( SpecUtils::SpectrumType type );
-
+  void selectSimilarToForeground();
 
 protected:
-  void handleFileSelection( const Wt::WModelIndex &index );
-  void addDirectory();
-  void removeDirectory();
+  void handleSelectionChanged();
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
+  void startAddDirectory();
+  void removeCurrentlySelectedDirectory();
+  void addDirectory( const std::string &path );
+#endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
   void updatePreview();
   void updateTreeView();
   
 private:
   RefSpectraModel *m_treeModel;
   Wt::WTreeView *m_treeView;
-  Wt::WContainerWidget *m_previewContainer;
-  Wt::WCheckBox *m_overlayCurrentDoc;
-  Wt::WCheckBox *m_overlayOtherDoc;
+  Wt::WStackedWidget *m_stack;
+  D3SpectrumDisplayDiv *m_spectrum;
+  Wt::WContainerWidget *m_dirInfoContainer;
+  Wt::WCheckBox *m_showCurrentForeground;
+  Wt::WCheckBox *m_refBackground;
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   Wt::WContainerWidget *m_addDirButton;
   Wt::WContainerWidget *m_deleteDirButton;
-  SpecUtils::SpectrumType m_loadSpectrumType;
+  Wt::WPushButton *m_showInExplorerButton;
+#endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
+  Wt::WComboBox *m_showAsComboBox;
   std::vector<std::string> m_baseDirectories;
   
   void setupUI();
   void createTreeModel();
+  void initBaseDirs();
+  void showInExplorer();
 };
 
 #endif // RefSpectraWidget_h 

@@ -5,6 +5,8 @@
 #include <iostream>
 #include <filesystem>
 
+#include "SpecUtils/Filesystem.h"
+
 namespace fs = std::filesystem;
 
 RefSpectraModel::RefSpectraModel( Wt::WObject *parent )
@@ -116,10 +118,10 @@ void RefSpectraModel::addBaseDirectory( const std::string &path )
     
     auto node = std::make_unique<Node>( fsPath.filename().string(), path, true );
     populateNode( node.get() );
-    m_rootNodes.push_back( std::move(node) );
     
     // Notify that we've added a new root node
     beginInsertRows( Wt::WModelIndex(), m_rootNodes.size() - 1, m_rootNodes.size() - 1 );
+    m_rootNodes.push_back( std::move(node) );
     endInsertRows();
   } catch( const std::exception &e ) {
     std::cerr << "Error adding base directory " << path << ": " << e.what() << std::endl;
@@ -129,7 +131,18 @@ void RefSpectraModel::addBaseDirectory( const std::string &path )
 void RefSpectraModel::removeBaseDirectory( const std::string &path )
 {
   auto it = std::find_if( m_rootNodes.begin(), m_rootNodes.end(),
-                         [&path]( const auto &node ) { return node->fullPath == path; } );
+                         [&path]( const auto &node ) -> bool { 
+    try
+    { 
+      const std::string normed_node_path = SpecUtils::lexically_normalize_path( node->fullPath );
+      const std::string normed_path = SpecUtils::lexically_normalize_path( path );
+      return normed_node_path == normed_path; 
+    }catch( const std::exception &e )
+    {
+      std::cerr << "RefSpectraModel::removeBaseDirectory() - Invalid directory: '" << path << "'" << std::endl;
+      return node->fullPath == path; 
+    }
+  } );
   
   if( it != m_rootNodes.end() ) {
     int row = std::distance( m_rootNodes.begin(), it );
@@ -165,6 +178,12 @@ std::string RefSpectraModel::getFilePath( const Wt::WModelIndex &index ) const
 {
   Node *node = getNode( index );
   return node ? node->fullPath : "";
+}
+
+bool RefSpectraModel::isDirectory( const Wt::WModelIndex &index ) const
+{
+  Node *node = getNode( index );
+  return node ? node->isDirectory : false;
 }
 
 void RefSpectraModel::populateNode( Node *node )

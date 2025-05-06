@@ -46,4 +46,5 @@
  <pref name="ShowMapDataWarning" type="Boolean">true</pref>
  <pref name="AutoDarkFromOs" type="Boolean">true</pref>
  <pref name="Language" type="String"></pref>
+ <pref name="RefSpectraDirs" type="String"></pref>
 </preferences>

@@ -31,7 +31,7 @@ public:
   void removeBaseDirectory( const std::string &path );
   void refresh();
   std::string getFilePath( const Wt::WModelIndex &index ) const;
-
+  bool isDirectory( const Wt::WModelIndex &index ) const;
 private:
   struct Node {
     std::string name;
