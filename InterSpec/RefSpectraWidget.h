@@ -47,6 +47,7 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 
 class RefSpectraModel;
 class RefSpectraWidget;
+class RowStretchTreeView;
 class D3SpectrumDisplayDiv;
 
 /** An enum to describe the initial behaviour of the RefSpectraWidget.
@@ -62,6 +63,11 @@ enum class RefSpectraInitialBehaviour
       Not implemented yet.
   */
   GuessMatchToForeground
+};
+
+enum class RefSpectraWidgetSelectionType
+{
+    None, Directory, File
 };
 
 class RefSpectraDialog : public SimpleDialog
@@ -80,8 +86,13 @@ public:
    */
   static RefSpectraDialog *createDialog( const RefSpectraInitialBehaviour initialBehaviour, 
                                          const SpecUtils::SpectrumType type );
+
+protected:
+  void handleSelectionChanged( RefSpectraWidgetSelectionType type );
+
 private:
   RefSpectraWidget *m_widget;
+  Wt::WPushButton *m_loadBtn;
 };//class RefSpectraDialog
 
 
@@ -89,15 +100,21 @@ private:
 class RefSpectraWidget : public Wt::WContainerWidget
 {
 public:
-
   RefSpectraWidget( Wt::WContainerWidget *parent = nullptr );
   virtual ~RefSpectraWidget();
 
   void setLoadSpectrumType( SpecUtils::SpectrumType type );
   void selectSimilarToForeground();
+  void loadSelectedSpectrum();
 
+  Wt::Signal<RefSpectraWidgetSelectionType> &fileSelectionChangedSignal();
 protected:
   void handleSelectionChanged();
+  void handleCollapsed( const Wt::WModelIndex &index );
+  void tryExpandNode( const Wt::WModelIndex &index );
+  void handleLayoutAboutToBeChanged();
+  void handleLayoutChanged();
+
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   void startAddDirectory();
   void removeCurrentlySelectedDirectory();
@@ -121,7 +138,13 @@ private:
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
   Wt::WComboBox *m_showAsComboBox;
   std::vector<std::string> m_baseDirectories;
+  Wt::Signal<RefSpectraWidgetSelectionType> m_fileSelectionChangedSignal;
   
+  /** We need to track last collapsed node so we can auto-expand nodes when they get selected,
+   * but avoid expanding nodes that *just* got collapsed (colapsing them causes them to be selected).
+   */
+  Wt::WModelIndex m_lastCollapsedIndex;
+
   void setupUI();
   void createTreeModel();
   void initBaseDirs();

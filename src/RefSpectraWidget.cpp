@@ -29,6 +29,7 @@
 
 #include <Wt/WText>
 #include <Wt/WLabel>
+#include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WComboBox>
 #include <Wt/WTreeView>
@@ -44,14 +45,18 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RefSpectraModel.h"
-#include "InterSpec/RefSpectraWidget.h"
+#include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/RefSpectraWidget.h"
+#include "InterSpec/SpectraFileModel.h"
+#include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
 
@@ -62,6 +67,13 @@ namespace fs = std::filesystem;
 
 namespace 
 {
+  const SpecUtils::SpectrumType ns_spectrum_types[] = {
+    SpecUtils::SpectrumType::Foreground,
+    SpecUtils::SpectrumType::Background,
+    SpecUtils::SpectrumType::SecondForeground
+  };
+  const size_t ns_spectrum_types_size = sizeof( ns_spectrum_types ) / sizeof( ns_spectrum_types[0] );
+
   bool has_spectra_files( const fs::path &path )
   {
     for( const auto &entry : fs::directory_iterator( path ) )
@@ -78,14 +90,27 @@ namespace
 
 RefSpectraDialog::RefSpectraDialog( const Wt::WString &title )
   : SimpleDialog( title ),
-    m_widget( nullptr )
+    m_widget( nullptr ),
+    m_loadBtn( nullptr )
 {
   addStyleClass( "RefSpectraDialog" );
 
-  m_widget = new RefSpectraWidget( contents() );
-  m_widget->setHeight( 500 );
-  
-  addButton( WString::tr("Close") );
+  WGridLayout *layout = new WGridLayout();
+  layout->setVerticalSpacing( 0 );
+  layout->setHorizontalSpacing( 0 );
+  layout->setContentsMargins( 0, 0, 0, 0 );
+
+  contents()->setLayout( layout );
+
+  m_widget = new RefSpectraWidget();
+  layout->addWidget( m_widget, 0, 0 );
+
+  m_loadBtn = addButton( WString::tr("Load") );
+  m_loadBtn->clicked().connect( m_widget, &RefSpectraWidget::loadSelectedSpectrum );
+  m_loadBtn->setDisabled( true );
+  m_widget->fileSelectionChangedSignal().connect( boost::bind( &RefSpectraDialog::handleSelectionChanged, this, boost::placeholders::_1 ) );
+
+  addButton( WString::tr("Cancel") );
   
   // Set dialog size based on screen size
   InterSpec *interspec = InterSpec::instance();
@@ -93,20 +118,42 @@ RefSpectraDialog::RefSpectraDialog( const Wt::WString &title )
   if( !interspec )
     return;
 
+  if( interspec && interspec->isPhone() )
+  {
+    addStyleClass( "RefSpectraDialog-phone" );
+#if( IOS )
+    addStyleClass( "RefSpectraDialog-iphone" );
+#endif
+  }
+
+  // We want to target 750px x 500px for normal - portrait phones, we'll take what we can get.
+  //  (note: typical, old 7" tablets are at least 600x1024)
   const bool portrait = ((interspec->renderedWidth() > 100) 
                          && (interspec->renderedHeight() > 100)
                          && (interspec->renderedWidth() < 480));
-  if( interspec && (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 50) )
+  if( portrait )
   {
-    double dialogWidth = std::min(800.0, 0.5*interspec->renderedWidth());
-    double dialogHeight = std::min(600.0, 0.8*interspec->renderedHeight());
+    addStyleClass( "RefSpectraDialog-portrait" );
+    m_widget->setWidth( 0.95*interspec->renderedWidth() - 30 );
+    m_widget->setHeight( 0.95*interspec->renderedHeight() - 90 );
+    m_widget->setMinimumSize( 0.95*interspec->renderedWidth() - 30, 0.95*interspec->renderedHeight() - 90 );
+    m_widget->setMaximumSize( 0.95*interspec->renderedWidth() - 30, 0.95*interspec->renderedHeight() - 90 );
+  }else if( (interspec->renderedWidth() > 100) && (interspec->renderedHeight() > 50) )
+  {
+    double dialogWidth = std::min(750.0, 0.95*interspec->renderedWidth());
+    double dialogHeight = std::min(500.0, 0.95*interspec->renderedHeight());
     
-    resize( dialogWidth, dialogHeight );
-  }
-  else
+    m_widget->setWidth( dialogWidth - 30 );
+    m_widget->setHeight( dialogHeight - 90 );
+    m_widget->setMinimumSize( dialogWidth - 30, dialogHeight - 90 );
+    m_widget->setMaximumSize( dialogWidth - 30, dialogHeight - 90 );
+  }else
   {
     // Default size for when screen dimensions aren't available
-    resize( 640, 480 );
+    m_widget->setWidth( 750 - 30 );
+    m_widget->setHeight( 500 - 90 );
+    m_widget->setMinimumSize( 750 - 30, 500 - 90 );
+    m_widget->setMaximumSize( 750 - 30, 500 - 90 );
   }
   
   rejectWhenEscapePressed();
@@ -116,6 +163,12 @@ RefSpectraDialog::~RefSpectraDialog()
 {
   // The widget will be automatically deleted by Wt
 } 
+
+void RefSpectraDialog::handleSelectionChanged( RefSpectraWidgetSelectionType type )
+{
+  m_loadBtn->setDisabled( type != RefSpectraWidgetSelectionType::File );
+}//void handleSelectionChanged( RefSpectraWidgetSelectionType type );
+
 
 RefSpectraDialog *RefSpectraDialog::createDialog( const RefSpectraInitialBehaviour initialBehaviour, 
                                                   const SpecUtils::SpectrumType type )
@@ -150,10 +203,12 @@ RefSpectraWidget::RefSpectraWidget( Wt::WContainerWidget *parent )
   m_deleteDirButton( nullptr ),
   m_showInExplorerButton( nullptr ),
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
-  m_showAsComboBox( nullptr )
+  m_showAsComboBox( nullptr ),
+  m_baseDirectories{},
+  m_fileSelectionChangedSignal( this ),
+  m_lastCollapsedIndex{}
 {
   setupUI();
-
   initBaseDirs();
 }
 
@@ -182,14 +237,32 @@ void RefSpectraWidget::setupUI()
                          && (interspec->renderedWidth() < 480));
 
   WGridLayout *mainLayout = new WGridLayout();
+  mainLayout->setContentsMargins( 0, 0, 0, 0 );
+  mainLayout->setVerticalSpacing( 0 );
+  mainLayout->setHorizontalSpacing( 0 );
+  mainLayout->setRowStretch( 0, 1 );
+  mainLayout->setColumnStretch( 1, 1 );
+
   setLayout( mainLayout );
   
   // Tree view
   m_treeModel = new RefSpectraModel( this );
-  m_treeView = new WTreeView();
+  m_treeView = new Wt::WTreeView();
+  m_treeView->addStyleClass( "RefSpectraTreeView" );
+  //m_treeView->setMinimumSize( WLength(250), WLength::Auto );
   m_treeView->setModel( m_treeModel );
   m_treeView->selectionChanged().connect( this, &RefSpectraWidget::handleSelectionChanged );
-  
+  m_treeView->collapsed().connect( boost::bind( &RefSpectraWidget::handleCollapsed, this, boost::placeholders::_1 ) );
+  m_treeView->setSelectable( true );
+  m_treeView->setSelectionMode( Wt::SelectionMode::SingleSelection );
+  m_treeView->setColumnWidth( 0, WLength(250, WLength::Pixel) );
+  m_treeView->setWidth( WLength(256, WLength::Pixel) ); 
+  m_treeView->setColumnResizeEnabled( false );
+  m_treeView->setSortingEnabled( false );
+
+  m_treeModel->layoutAboutToBeChanged().connect( this, &RefSpectraWidget::handleLayoutAboutToBeChanged );
+  m_treeModel->layoutChanged().connect( this, &RefSpectraWidget::handleLayoutChanged );
+
   mainLayout->addWidget( m_treeView, 0, 0 );
 
   // Stack that will either show intro txt, the spectrum of selected file, or a text box with the readme.txt or readme.xml
@@ -198,6 +271,7 @@ void RefSpectraWidget::setupUI()
 
   const char *directions_key = interspec->isMobile() ? "rs-no-dir-selected-mobile" : "rs-no-dir-selected-desktop";
   WText *noDirSelected = new WText( WString::tr(directions_key) );
+  noDirSelected->addStyleClass( "RefSpectraNoDirSelected" );
   m_stack->addWidget( noDirSelected );
 
   m_dirInfoContainer = new WContainerWidget();
@@ -302,17 +376,31 @@ void RefSpectraWidget::setupUI()
   WContainerWidget *showAsContainerSpacer = new WContainerWidget( showAsContainer );
   showAsContainerSpacer->addStyleClass( "RefSpectraOptionsSpacer" );
 
-  WContainerWidget *showAsGroup = new WContainerWidget(showAsContainerSpacer);
+  WContainerWidget *showAsGroup = new WContainerWidget(showAsContainer);
+  showAsGroup->addStyleClass( "RefSpectraShowAsGroup" );
   WLabel *showAsLabel = new WLabel( WString::tr("rs-show-as"), showAsGroup );
   showAsLabel->addStyleClass( "RefSpectraShowAsLabel" );
   m_showAsComboBox = new WComboBox( showAsGroup );
   m_showAsComboBox->addStyleClass( "RefSpectraShowAsComboBox" );
-  m_showAsComboBox->addItem( WString::tr("Foreground") );
-  m_showAsComboBox->addItem( WString::tr("Background") );
-  m_showAsComboBox->addItem( WString::tr("Secondary") );
-  m_showAsComboBox->setCurrentIndex( 2 );
 
-  m_treeView->setSelectionMode( Wt::SelectionMode::SingleSelection );
+  for( const SpecUtils::SpectrumType type : ns_spectrum_types )
+  {
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        m_showAsComboBox->addItem( WString::tr("Foreground") );
+        break;
+      case SpecUtils::SpectrumType::Background:
+        m_showAsComboBox->addItem( WString::tr("Background") );
+        break;
+      case SpecUtils::SpectrumType::SecondForeground:
+        m_showAsComboBox->addItem( WString::tr("Secondary") );
+        break;
+    }//switch( type )
+  }//for( const SpecUtils::SpectrumType type : types )
+  
+  static_assert( ns_spectrum_types_size == 3, "ns_spectrum_types must have 3 elements" );
+  m_showAsComboBox->setCurrentIndex( 2 );
 }//void setupUI();
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -329,7 +417,9 @@ void RefSpectraWidget::startAddDirectory()
 
   new WLabel( WString::tr("rs-add-dir-dialog-path"), contents );
   
-  
+  okBtn->disable();
+
+
 #if( BUILD_AS_ELECTRON_APP )
   WContainerWidget *pathDiv = new WContainerWidget();
   linelayout->addWidget( pathDiv, 0, 1 );
@@ -346,8 +436,9 @@ void RefSpectraWidget::startAddDirectory()
     
     // Now we need to convert the boost bound thing, to a std::function, so we'll use a lamda as an
     //  intermediary to also capture the bound_function
-    auto callback = [bound_callback]( string value ){
+    auto callback = [bound_callback, okBtn]( string value ){
       bound_callback( value );
+      okBtn->setEnabled( SpecUtils::is_directory(value) );
     };
     
     ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory of reference spectra.", callback );
@@ -381,11 +472,22 @@ static_assert( 0, "Need to implement and check" );
     okBtn->setEnabled( valid_dir );
   };
   baseLocation->keyPressed().connect( std::bind(callback) );
+  baseLocation->enterPressed().connect( std::bind(callback) );
+  baseLocation->blurred().connect( std::bind(callback) );
+  baseLocation->changed().connect( std::bind(callback) );
+
+  //It would be nice to validate the "Save" button on paste, but it's not working
+  //baseLocation->doJavaScript( "$(" + baseLocation->jsRef() + ").on('paste', function(){"
+  //    "const enterEvent = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', which: 13, keyCode: 13, charCode: 13, bubbles: true, cancelable: true});"
+  //    + baseLocation->jsRef() + ".dispatchEvent(enterEvent);"
+  //"} );"
+  //);
+
   baseLocation->setEmptyText( "Path to base directory to search" );
 
-  okBtn->clicked().connect( std::bind([baseLocation, dialog](){
+  okBtn->clicked().connect( std::bind([baseLocation, this](){
     std::string path = baseLocation->text().toUTF8();
-    dialog->accept();
+    this->addDirectory( path );
   }) );
 #endif
 }//
@@ -464,7 +566,7 @@ void RefSpectraWidget::addDirectory( const std::string &path )
     passMessage( WString::tr("rs-invalid-dir-path").arg( path ), WarningWidget::WarningMsgHigh );
     std::cerr << "RefSpectraWidget::addDirectory() - Invalid directory: " << path << std::endl;
   }
-}
+}//void RefSpectraWidget::addDirectory( const std::string &path )
 
 void RefSpectraWidget::removeCurrentlySelectedDirectory()
 {
@@ -522,7 +624,7 @@ void RefSpectraWidget::removeCurrentlySelectedDirectory()
       normed_dir = dir;
     } 
 
-    if( normed_dir != normed_path )
+    if( (normed_dir != normed_path) || found_path_to_exclude ) //User may have added the same path multiple times, so only remove first instance
       new_base_dirs.push_back( dir );
     else
       found_path_to_exclude = true;
@@ -569,16 +671,18 @@ void RefSpectraWidget::handleSelectionChanged()
   
   if( selectedIndexes.empty() )
   {
+    m_lastCollapsedIndex = WModelIndex();
     m_deleteDirButton->setHidden( true );
     m_showInExplorerButton->setHidden( true );
     m_refBackground->setHidden( true );
-    //m_showCurrentForeground->setHidden( true );
+    m_showCurrentForeground->setHidden( true );
     //m_showAsComboBox->setHidden( true );
     m_stack->setCurrentIndex( 0 );
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
     m_showInExplorerButton->hide();
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
+    m_fileSelectionChangedSignal.emit( RefSpectraWidgetSelectionType::None );
     return;
   }//if( selectedIndexes.empty() )
 
@@ -586,7 +690,10 @@ void RefSpectraWidget::handleSelectionChanged()
   const WModelIndex index = *selectedIndexes.begin();
   assert( index.isValid() );
   if( !index.isValid() )
+  {
+    m_fileSelectionChangedSignal.emit( RefSpectraWidgetSelectionType::None );
     return;
+  }
 
   const bool isDir = m_treeModel->isDirectory( index );
   const std::string filePath = m_treeModel->getFilePath( index );
@@ -595,27 +702,57 @@ void RefSpectraWidget::handleSelectionChanged()
 
   if( isDir )
   {
-    m_treeView->expand( index );
+    // We'll auto-expand directories when selected, but we'll do it after the current
+    //  event loop iteration, incase the user is collapsing the node (in which case we dont want to expand it)
+    boost::function<void()> do_expand = wApp->bind( boost::bind(&RefSpectraWidget::tryExpandNode, this, index) );
+    const auto doExpand = [do_expand](){ do_expand(); wApp->triggerUpdate(); };
+    WServer::instance()->post( wApp->sessionId(), doExpand );
     
-    m_deleteDirButton->setHidden( index.parent().parent().isValid() );
-    m_showInExplorerButton->setHidden( false );
-    m_refBackground->setHidden( true );
-    //m_showCurrentForeground->setHidden( true );
-    //m_showAsComboBox->setHidden( true );
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
-    m_showInExplorerButton->show();
+    int parent_levels = 0;
+    WModelIndex parent_index = index;
+    while( parent_index.parent().isValid() && (parent_levels < 11) )
+    {
+      parent_index = parent_index.parent();
+      parent_levels += 1;
+      assert( parent_levels < 10 );
+    }//while( parent_index.parent().isValid() )
+
+    if( parent_index.isValid() )
+    {
+      const std::string parent_path = m_treeModel->getFilePath( parent_index );
+      const std::string parent_path_normed = SpecUtils::lexically_normalize_path( parent_path );
+      
+      bool is_pref_dir = false;
+      const string static_data_dir = SpecUtils::lexically_normalize_path( InterSpec::staticDataDirectory() );
+      if( SpecUtils::starts_with( parent_path_normed, static_data_dir.c_str() ) )
+        is_pref_dir = true;
+  
+  #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
+      const std::string user_dir = SpecUtils::lexically_normalize_path( InterSpec::writableDataDirectory() );
+      if( SpecUtils::starts_with( parent_path_normed, user_dir.c_str() ) )
+        is_pref_dir = true;
+  #endif
+      m_deleteDirButton->setHidden( is_pref_dir );
+    }//if( parent_index.isValid() )
+
+    m_showInExplorerButton->setHidden( false );
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
+
+    m_refBackground->setHidden( true );
+    m_showCurrentForeground->setHidden( true );
+    //m_showAsComboBox->setHidden( true );
 
     m_stack->setCurrentIndex( 1 );
     
     Wt::WText *title_text = new Wt::WText( m_dirInfoContainer );
     title_text->addStyleClass( "DirInfoTitle" );
 
-    size_t num_spectra_files = 0, num_dirs = 0;
-    const std::vector<std::string> files = SpecUtils::ls_files_in_directory( filePath );
-    for( const auto &file : files )
+    int num_spectra_files = 0, num_dirs = 0;
+    for( fs::directory_iterator itr( filePath ); itr != fs::directory_iterator(); ++itr )
     {
-      if( SpecUtils::is_directory( file ) )
+      const std::string file = itr->path().string();
+      if( fs::is_directory( itr->path() ) )
       {
         num_dirs += 1;
         continue;
@@ -631,32 +768,40 @@ void RefSpectraWidget::handleSelectionChanged()
           {
             std::vector<char> data;
             SpecUtils::load_file_data( file.c_str(), data );
-            file_data = std::string( data.data(), data.size() );
+            file_data = std::string( data.data(), data.size() ? data.size() - 1 : 0 );
           }catch( const std::exception &e )
           {
             std::cerr << "RefSpectraWidget::handleSelectionChanged() - Error loading file: " << file << std::endl;
           }
         }//if( SpecUtils::file_size( file ) < 10*1024 )
 
-        Wt::WText *text = new Wt::WText( file_data, m_dirInfoContainer );
+        Wt::WText *text = new Wt::WText( file_data, Wt::XHTMLText, m_dirInfoContainer );
         text->addStyleClass( "DirReadmeText" );
       }else
       {
-        num_spectra_files += SpecUtils::likely_not_spec_file( file );
+        num_spectra_files += !SpecUtils::likely_not_spec_file( file );
       }
     }
 
-    WString title_txt = WString::tr("rs-dir-info")
-                          .arg( static_cast<int>( num_spectra_files ) )
-                          .arg( static_cast<int>( num_dirs ) );
+    WString title_txt;
+    if( num_dirs == 0 )
+      title_txt = WString::tr("rs-dir-info-only-spectra").arg( num_spectra_files );
+    else if( num_spectra_files == 0 )
+      title_txt = WString::tr("rs-dir-info-only-subdir").arg( num_dirs );
+    else
+      title_txt = WString::tr("rs-dir-info-with-subdir-spectra").arg( num_spectra_files ).arg( num_dirs );
     title_text->setText( title_txt );
 
     m_spectrum->setData( nullptr, false );
     m_spectrum->setSecondData( nullptr );
     m_spectrum->setBackground( nullptr );
       
+    m_fileSelectionChangedSignal.emit( RefSpectraWidgetSelectionType::Directory );
+
     return;
   }//if( isDir )
+
+  m_lastCollapsedIndex = WModelIndex();
 
   m_refBackground->setHidden( true );
   m_deleteDirButton->setHidden( true );
@@ -672,7 +817,57 @@ void RefSpectraWidget::handleSelectionChanged()
   m_stack->setCurrentIndex( 2 );
 
   updatePreview();
+
+  m_fileSelectionChangedSignal.emit( RefSpectraWidgetSelectionType::File );
 }//void RefSpectraWidget::handleSelectionChanged()
+
+
+void RefSpectraWidget::handleCollapsed( const Wt::WModelIndex &index )
+{
+  m_lastCollapsedIndex = index;
+}
+
+
+void RefSpectraWidget::tryExpandNode( const Wt::WModelIndex &index )
+{
+  if( m_lastCollapsedIndex != index )
+  {
+    m_treeView->expand( index );
+    m_lastCollapsedIndex = WModelIndex();
+  }
+}
+
+
+void RefSpectraWidget::handleLayoutAboutToBeChanged()
+{
+  // Nothing to do here?
+}
+
+
+void RefSpectraWidget::handleLayoutChanged()
+{
+  const WModelIndexSet selectedIndexes = m_treeView->selectedIndexes();
+  if( selectedIndexes.size() != 1 )
+    return;
+
+  int parent_levels = 0;
+  WModelIndex index = *selectedIndexes.begin();
+  std::vector<WModelIndex> nodes_to_expand;
+
+  while( index.isValid() && (parent_levels < 12) )
+  {
+    nodes_to_expand.push_back( index );
+    index = index.parent();
+    parent_levels += 1;
+    assert( parent_levels < 10 );
+  }//while( parent_index.parent().isValid() )
+
+  std::reverse( nodes_to_expand.begin(), nodes_to_expand.end() );
+  for( const WModelIndex &node : nodes_to_expand )
+    m_treeView->expand( node );
+
+  cout << "handleLayoutChanged() - expanded " << nodes_to_expand.size() << " nodes" << endl;
+}
 
 
 void RefSpectraWidget::updatePreview()
@@ -681,6 +876,9 @@ void RefSpectraWidget::updatePreview()
   assert( interspec );
   if( !interspec )
     return;
+
+  shared_ptr<const SpecUtils::Measurement> user_foreground = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  m_showCurrentForeground->setHidden( !user_foreground );
 
   const WModelIndexSet selectedIndexes = m_treeView->selectedIndexes();
   assert( selectedIndexes.empty() || (selectedIndexes.size() == 1) );
@@ -703,8 +901,8 @@ void RefSpectraWidget::updatePreview()
   const string filename = SpecUtils::filename( filePath );
   const string extension = SpecUtils::file_extension( filename );
   const vector<string> background_files = SpecUtils::ls_files_in_directory( parent_path,
-    []( const std::string &filename, void *userdata ) -> bool{
-      return SpecUtils::starts_with( filename, "background." );
+    []( const std::string &fname, void *userdata ) -> bool{
+      return SpecUtils::starts_with( SpecUtils::filename(fname), "background." );
   }, nullptr );
 
   SpecMeas infile;
@@ -712,7 +910,7 @@ void RefSpectraWidget::updatePreview()
   if( !loaded )
   {
     m_stack->setCurrentIndex( 1 );
-    WString error_text = WString::tr("rs-error-loading-file").arg( filePath );
+    WString error_text = WString::tr("rs-error-invalid-file").arg( filename );
     Wt::WText *text = new Wt::WText( error_text, m_dirInfoContainer );
     text->addStyleClass( "ErrorLoadingText" );
 
@@ -734,16 +932,17 @@ void RefSpectraWidget::updatePreview()
   if( !background_meas && !background_files.empty() )
   {
     const string background_file = background_files.front();
+    const string background_extension = SpecUtils::file_extension( background_file );
     SpecMeas background_infile;
-    const bool background_loaded = background_infile.load_file( background_file, SpecUtils::ParserType::Auto, extension );
+    const bool background_loaded = background_infile.load_file( background_file, SpecUtils::ParserType::Auto, background_extension );
 
     // TODO: properly check for background records...
     if( background_loaded )
       background_meas = background_infile.measurement( size_t(0) );
   }//if( !background_meas && !background_files.empty() )
   
-  m_refBackground->setHidden( background_files.empty() && !background_meas );
-  
+  m_refBackground->setHidden( !background_meas );
+
   if( !m_refBackground->isChecked() )
     background_meas = nullptr;
 
@@ -763,8 +962,17 @@ void RefSpectraWidget::updatePreview()
 
 void RefSpectraWidget::setLoadSpectrumType( SpecUtils::SpectrumType type )
 {
-  m_showAsComboBox->setCurrentIndex( static_cast<int>( type ) );
-}
+  for( size_t i = 0; i < ns_spectrum_types_size; ++i )
+  {
+    if( ns_spectrum_types[i] == type )
+    {
+      m_showAsComboBox->setCurrentIndex( static_cast<int>( i ) );
+      return;
+    }
+  }//for( size_t i = 0; i < ns_spectrum_types_size; ++i )
+
+  assert( 0 ); //shouldnt ever happen
+}//void setLoadSpectrumType( SpecUtils::SpectrumType type )
 
 
 void RefSpectraWidget::selectSimilarToForeground()
@@ -773,12 +981,103 @@ void RefSpectraWidget::selectSimilarToForeground()
 }//void selectSimilarToForeground();
 
 
+void RefSpectraWidget::loadSelectedSpectrum()
+{
+  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
+  if( !interspec )
+    return;
+
+  const WModelIndexSet selectedIndexes = m_treeView->selectedIndexes();
+  assert( selectedIndexes.empty() || (selectedIndexes.size() == 1) );
+  if( selectedIndexes.empty() )
+  {
+    assert( 0 );
+    return;
+  }
+
+  const WModelIndex index = *selectedIndexes.begin();
+  assert( index.isValid() );
+  if( !index.isValid() )
+  {
+    assert( 0 );
+    return;
+  }
+
+  const bool isDir = m_treeModel->isDirectory( index );
+  assert( !isDir );
+  if( isDir )
+  {
+    assert( 0 );
+    return;
+  }
+
+  const std::string filePath = m_treeModel->getFilePath( index );
+  const std::string displayName = m_treeModel->getDisplayName( index );
+  
+  auto meas = make_shared<SpecMeas>();
+  const bool success = meas->load_file( filePath, SpecUtils::ParserType::Auto, displayName );
+    
+  if( !success )
+  {
+    assert( 0 );
+    passMessage( WString::tr("rs-error-loading-file").arg(displayName), WarningWidget::WarningMsgHigh );
+    return;
+  }
+
+
+  const int current_index = m_showAsComboBox->currentIndex();
+  assert( (current_index >= 0) && (current_index < static_cast<int>( ns_spectrum_types_size )) );
+  
+  SpecUtils::SpectrumType type = SpecUtils::SpectrumType::SecondForeground;
+  if( (current_index >= 0) && (current_index < static_cast<int>( ns_spectrum_types_size )) )
+    type = ns_spectrum_types[current_index];
+  else
+    passMessage( WString::tr("rs-error-invalid-type-selected"), WarningWidget::WarningMsgHigh );
+  
+ 
+  auto header = std::make_shared<SpectraFileHeader>( true, interspec );
+  header->setFile( displayName, meas );
+  SpecMeasManager *fileManager = interspec->fileManager();
+  fileManager->addFile( displayName, meas );
+  SpectraFileModel *fileModel = fileManager->model();
+  const int row = fileModel->addRow( header );
+
+  const bool checkIfPreviouslyOpened = false;
+  const bool doPreviousEnergyRangeCheck = false;
+  interspec->fileManager()->displayFile( row, meas, type, 
+               checkIfPreviouslyOpened, doPreviousEnergyRangeCheck,
+               SpecMeasManager::VariantChecksToDo::None );
+}//void loadSelectedSpectrum()
+
+
+Wt::Signal<RefSpectraWidgetSelectionType> &RefSpectraWidget::fileSelectionChangedSignal() 
+{ 
+  return m_fileSelectionChangedSignal; 
+}
+
+
 void RefSpectraWidget::initBaseDirs()
 {
-const std::string static_data_dir = InterSpec::staticDataDirectory();
+  const std::string static_data_dir = InterSpec::staticDataDirectory();
   const std::string ref_spectra_dir = SpecUtils::append_path( static_data_dir, "reference_spectra" );
-  if( SpecUtils::is_directory( ref_spectra_dir ) )
-    m_treeModel->addBaseDirectory( ref_spectra_dir );
+
+  const std::string common_nucs_dir = SpecUtils::append_path( ref_spectra_dir, "Common_Field_Nuclides" );
+
+  if( SpecUtils::is_directory( common_nucs_dir ) )
+  {
+    const WModelIndex index = m_treeModel->addBaseDirectory( common_nucs_dir );
+    assert( index.isValid() );
+    if( index.isValid() )
+    {
+      cout << "Expanded common_nucs_dir" << endl;
+      m_treeView->expand( index );
+    }else
+    {
+      cout << "Failed to expand base directory: " << common_nucs_dir << endl;
+    }
+  }//if( SpecUtils::is_directory( common_nucs_dir ) )
+
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   // Check for directories under reference_spectra in the "user_data" directory
@@ -834,9 +1133,39 @@ const std::string static_data_dir = InterSpec::staticDataDirectory();
   }
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
+  // Sort it so things are in alphabetical order
+  m_treeView->sortByColumn( 0, Wt::SortOrder::AscendingOrder );
+
+
+  // Expand the "Common Field Nuclides" node
+  for( int row = 0; row < m_treeModel->rowCount(); ++row )
+  {
+    const WModelIndex index = m_treeModel->index( row, 0 );
+    std::string name = m_treeModel->getDisplayName( index );
+    cout << "name: " << name << endl;
+    if( name == "Common Field Nuclides" )
+    {
+      m_treeView->expand( index );
+      m_treeView->setSelectedIndexes( {index} );
+      cout << "Expanded and selected Common Field Nuclides" << endl;
+      break;
+    }
+  }//for( int row = 0; row < m_treeModel->rowCount(); ++row )
 }//void initBaseDirs();
+
 
 void RefSpectraWidget::showInExplorer()
 {
-  // TODO: Implement show in explorer logic
-}
+  const WModelIndexSet selectedIndexes = m_treeView->selectedIndexes();
+  assert( selectedIndexes.empty() || (selectedIndexes.size() == 1) );
+  if( selectedIndexes.empty() )
+    return;
+
+  const WModelIndex index = *selectedIndexes.begin();
+  assert( index.isValid() );
+  if( !index.isValid() )
+    return;
+    
+  const std::string filePath = m_treeModel->getFilePath( index );
+  AppUtils::showFileInOsFileBrowser(filePath);
+}//void showInExplorer()

@@ -1,3 +1,53 @@
+
+
+/* We need to override some of the SimpleDialog CSS so we can be wider than 50% of screen width */
+.simple-dialog.RefSpectraDialog
+{
+  max-width: 95vw;
+  max-height: 95vh;
+}
+
+.simple-dialog.RefSpectraDialog .body
+{
+  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
+  max-height: calc( 95vh - 90px );
+  overflow-y: hidden;
+}
+
+@media screen and (max-width: 1000px) {
+  .simple-dialog.RefSpectraDialog {
+    max-width: calc(99vw);
+  }
+  
+  .simple-dialog.RefSpectraDialog .body {
+    max-width: calc(99vw - 30px );
+  }
+}
+
+@media screen and (min-width: 1000px) {
+  .simple-dialog.RefSpectraDialog {
+    max-width: calc(99vw)
+  }
+  .simple-dialog.RefSpectraDialog .body {
+    max-width: calc( 99vw - 30px );
+  }
+}
+
+.simple-dialog.RefSpectraDialog.RefSpectraDialog-phone
+{
+}
+
+.simple-dialog.RefSpectraDialog.RefSpectraDialog-portrait
+{
+}
+
+.simple-dialog.RefSpectraDialog.RefSpectraDialog-phone.RefSpectraDialog-iphone .body
+{
+  /* Not sure why the extra 10 px are needed on iPhone, but seems to be (havent tested on Android phone - just Chrome device sim.)*/
+  /* padding-bottom: 20px; */
+}
+
+
 .RefSpectraDialog
 {
 
@@ -8,9 +58,15 @@
     
 }
 
+.RefSpectraWidget .RefSpectraTreeView
+{
+  border: 1px solid #e1e1e1;
+}
+
 .RefSpectraStack
 {
-
+  border: 1px solid #e1e1e1;
+  border-left: none;
 }
 
 .RefSpectraWidget .RefSpectraOptions,
@@ -19,6 +75,7 @@
   display: flex;
   flex-direction: row;
   gap: 8px;
+  align-items: center;
 }
 
 .RefSpectraWidget .RefSpectraOptionsSpacer
@@ -31,12 +88,11 @@
   margin-left: 8px;
 }
 
-
-
 .RefSpectraWidget .RefSpectraOptions .ShowAsContainer .ShowAsContainerSpacer
 {
   flex-grow: 1;
 }
+
 .RefSpectraStack > div
 {
   width: 100%;
@@ -86,24 +142,49 @@ div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.
 {
   display: flex;
   flex-direction: row;
-  gap: 10px;
+  gap: 8px;
+  align-items: center;
+  height: 40px;
+}
+
+.RefSpectraAddDirDialogContents input
+{
+  flex-grow: 1;
+}
+
+.RefSpectraAddDirDialog .title
+{
+  text-wrap: nowrap;
 }
 
 .DirInfoTitle
 {
-  margin-bottom: 10px;
-  font-size: 14px;
+  margin: 5px;
+  margin-left: 10px;
+  margin-right: 10px;
+  /* font-size: 14px; */
   display: block;
 }
 
-.DirReadmeText
+.DirReadmeText, .RefSpectraNoDirSelected
 {
-  margin: 0;
+  margin: 5px;
+  margin-left: 10px;
+  margin-right: 10px;
   padding: 0;
-  font-size: 12px;
+  overflow-y: auto;
+  display: block;
 }
 
 .ErrorLoadingText
 {
   color: red;
+}
+
+.RefSpectraShowAsGroup
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }

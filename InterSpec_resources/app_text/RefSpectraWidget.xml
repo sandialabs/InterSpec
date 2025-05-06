@@ -9,9 +9,9 @@
   <message id="rs-no-dir-selected-desktop">
     Select a reference spectrum to load. <br />
     <br />
-    You can also add your own reference spectra directory by clicking on
-    <img src="images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/>.
-  </message>
+    Add reference spectra directories using the
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/> icon.
+    </message>
   <message id="rs-no-dir-selected-mobile">
     Select a reference spectrum to load. <br /> 
     <div style="font-size: smaller;">
@@ -26,11 +26,15 @@
   <message id="rs-invalid-dir-path">Invalid directory path: '{1}'</message>
   <message id="rs-duplicate-dir-path">Directory already in selected: '{1}'</message>
   <message id="rs-dir-not-found">Directory not found, so not removed from preferences: '{1}'</message>
-  <message id="rs-dir-info">Directory contains {1} spectra files in {2} sub-directories<br /></message>
+  <message id="rs-dir-info-only-spectra">Directory contains {1} spectra files<br /></message>
+  <message id="rs-dir-info-only-subdir">Directory contains {1} sub-directories<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">Directory contains {1} spectra files and {2} sub-directories<br /></message>
   <message id="rs-error-loading-file">Error loading file: '{1}'</message>
   <message id="rs-show-in-explorer">Show in Explorer</message>
   <message id="rs-show-in-finder">Show in Finder</message>
   <message id="rs-show-in-linux-file-manager">Show in File Manager</message>
+  <message id="rs-error-invalid-file">Invalid spectrum file: '{1}'.</message>
+  <message id="rs-error-invalid-type-selected">Invalid spectrum type selected.</message>
   </messages>
 
 

@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 
 namespace fs = std::filesystem;
 
@@ -108,24 +109,58 @@ boost::any RefSpectraModel::headerData( int section, Wt::Orientation orientation
   return boost::any();
 }
 
-void RefSpectraModel::addBaseDirectory( const std::string &path )
+void RefSpectraModel::Node::sort_children( Wt::SortOrder order )
 {
-  try {
+  std::sort( begin(children), end(children), [order]( const std::unique_ptr<Node> &a, const std::unique_ptr<Node> &b ) {
+    return (order == Wt::SortOrder::AscendingOrder) ? (a->name < b->name) : (b->name < a->name);
+  } );
+
+  for( const std::unique_ptr<Node> &child : children )
+    child->sort_children( order );
+}//void sort( Wt::SortOrder order );
+
+
+
+void RefSpectraModel::sort(int column, Wt::SortOrder order )
+{
+  layoutAboutToBeChanged().emit();
+
+  std::sort( m_rootNodes.begin(), m_rootNodes.end(), [order]( const std::unique_ptr<Node> &a, const std::unique_ptr<Node> &b ) {
+    return (order == Wt::SortOrder::AscendingOrder) ? (a->name < b->name) : (b->name < a->name);
+  } );
+
+  for( const std::unique_ptr<Node> &node : m_rootNodes )
+    node->sort_children( order );
+
+  layoutChanged().emit();
+}
+
+Wt::WModelIndex RefSpectraModel::addBaseDirectory( const std::string &path )
+{
+  try 
+  {
     fs::path fsPath( path );
     if( !fs::exists( fsPath ) || !fs::is_directory( fsPath ) ) {
-      return;
+      return Wt::WModelIndex();
     }
+
+    std::string name = fsPath.filename().string();  
+    SpecUtils::ireplace_all( name, "_", " " ); // Replace underscores with spaces
     
-    auto node = std::make_unique<Node>( fsPath.filename().string(), path, true );
+    std::unique_ptr<Node> node = std::make_unique<Node>( name, path, true );
     populateNode( node.get() );
     
     // Notify that we've added a new root node
-    beginInsertRows( Wt::WModelIndex(), m_rootNodes.size() - 1, m_rootNodes.size() - 1 );
+    beginInsertRows( Wt::WModelIndex(), m_rootNodes.size(), m_rootNodes.size() );
     m_rootNodes.push_back( std::move(node) );
     endInsertRows();
+
+    return createIndex( m_rootNodes.size() - 1, 0, m_rootNodes.back().get() );
   } catch( const std::exception &e ) {
     std::cerr << "Error adding base directory " << path << ": " << e.what() << std::endl;
   }
+
+  return Wt::WModelIndex();
 }
 
 void RefSpectraModel::removeBaseDirectory( const std::string &path )
@@ -180,6 +215,12 @@ std::string RefSpectraModel::getFilePath( const Wt::WModelIndex &index ) const
   return node ? node->fullPath : "";
 }
 
+std::string RefSpectraModel::getDisplayName( const Wt::WModelIndex &index ) const
+{
+  Node *node = getNode( index );
+  return node ? node->name : "";
+}
+
 bool RefSpectraModel::isDirectory( const Wt::WModelIndex &index ) const
 {
   Node *node = getNode( index );
@@ -190,14 +231,31 @@ void RefSpectraModel::populateNode( Node *node )
 {
   try {
     for( const auto &entry : fs::directory_iterator(node->fullPath) ) {
-      auto child = std::make_unique<Node>( entry.path().filename().string(),
-                                         entry.path().string(),
-                                         entry.is_directory(),
-                                         node );
+      const fs::path entryPath = entry.path();
+      std::string entryName = entryPath.filename().string();
+      const std::string entryPathStr = entryPath.string();
+      const bool isDir = entry.is_directory();
       
-      if( entry.is_directory() ) {
-        populateNode( child.get() );
+      if( !isDir && (SpecUtils::iequals_ascii( entryName, "readme.txt" ) 
+                     || SpecUtils::iequals_ascii( entryName, "readme.xml" ) ) )
+      {
+        continue;
       }
+
+      // If not a directory, remove extension and replace all underscores with spaces.
+      if( !isDir )
+      {
+        const std::string ext = SpecUtils::file_extension( entryName );
+        if( !ext.empty() )
+          entryName = entryName.substr( 0, entryName.size() - ext.size() );
+      }//if( !isDir )
+
+      SpecUtils::ireplace_all( entryName, "_", " " ); // Replace underscores with spaces
+
+      std::unique_ptr<Node> child = std::make_unique<Node>( entryName, entryPathStr, isDir, node );
+      
+      if( isDir )
+        populateNode( child.get() );
       
       node->children.push_back( std::move(child) );
     }
