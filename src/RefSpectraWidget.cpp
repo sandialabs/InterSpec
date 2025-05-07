@@ -60,6 +60,10 @@
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 
 
+#if( BUILD_AS_ELECTRON_APP )
+#include "target/electron/ElectronUtils.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -525,16 +529,13 @@ void RefSpectraWidget::startAddDirectory()
 
 
 #if( BUILD_AS_ELECTRON_APP )
-  WContainerWidget *pathDiv = new WContainerWidget();
-  linelayout->addWidget( pathDiv, 0, 1 );
-
   //ToDo: make a proper path selecting widget for Electron
   WPushButton *pickPath = new WPushButton( "Select Path", contents );
   WText *baseLocation = new WText( "(No Path Selected)", contents );
   baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
   
   
-  pickPath->clicked().connect( std::bind( [baseLocation](){
+  pickPath->clicked().connect( std::bind( [baseLocation, okBtn](){
     // We need to use the lifetime management of WObject to safely bind the callback:
     auto bound_callback = boost::bind( &WText::setText, baseLocation, boost::placeholders::_1 );
     
@@ -548,19 +549,10 @@ void RefSpectraWidget::startAddDirectory()
     ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory of reference spectra.", callback );
   }) );
 
-  /*
-  const string uploadname = dialog->id() + "PathPicker";
-  const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
-  
-  WText *baseLocation = new WText( uploadhtml, XHTMLUnsafeText, contents );
-  
-  //TODO: put in error handling!
-  wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
-                         "var outputDir = document.getElementById('" + uploadname + "').files[0].path;"
-                         "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
-                     "};"
-                     );
-  */
+  okBtn->clicked().connect( std::bind( [baseLocation, this](){
+    std::string path = baseLocation->text().toUTF8();
+    this->addDirectory( path );
+    } ) );
 #elif( BUILD_AS_OSX_APP )
 static_assert( 0, "Need to implement and check" );
   WFileUpload *baseLocation = new WFileUpload( contents );
@@ -866,7 +858,7 @@ void RefSpectraWidget::handleSelectionChanged()
       if( SpecUtils::iequals_ascii( fname, "readme.txt" ) || SpecUtils::iequals_ascii( fname, "readme.xml" ) )
       {
         string file_data;
-        if( SpecUtils::file_size( file ) < 10*1024 )
+        if( SpecUtils::file_size( file ) < 10240 )
         {
           try
           {
@@ -1031,8 +1023,10 @@ void RefSpectraWidget::updatePreview()
 
   // TODO: properly check for foreground/background records...
   if( infile.num_measurements() >= 1 )
-    foreground_meas = infile.measurement( size_t(0) );
-  
+  {
+    foreground_meas = infile.measurements().front();
+  }
+
   if( !background_meas && !background_files.empty() )
   {
     const string background_file = background_files.front();
@@ -1042,7 +1036,7 @@ void RefSpectraWidget::updatePreview()
 
     // TODO: properly check for background records...
     if( background_loaded )
-      background_meas = background_infile.measurement( size_t(0) );
+      background_meas = background_infile.measurements().front();
   }//if( !background_meas && !background_files.empty() )
   
   m_refBackground->setHidden( !background_meas );

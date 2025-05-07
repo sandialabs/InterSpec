@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
 project(InterSpec VERSION 1.0.13)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
