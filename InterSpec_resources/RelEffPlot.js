@@ -174,8 +174,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
 
   if( !Array.isArray(data_vals) || (data_vals.length === 0) )
     data_vals = null;
-    
-    console.log( 'chi2_txt:', chi2_txt );
+  
   this.chi2Txt = chi2_txt;
   if( (typeof this.chi2Txt !== "string") || (this.chi2Txt.length === 0) )
     this.chi2Txt = null;
@@ -189,7 +188,7 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
     
   const yaxistitleBB = this.yaxistitle ? this.yaxistitle.node().getBBox() : null;
   const ytitleh = yaxistitleBB ? yaxistitleBB.height + titlePad : 0;
-    
+  
   if( this.chi2Txt )
   {
     if( !this.chartInfoTitle ){
@@ -391,6 +390,11 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
         .attr('opacity', '.85')
         .attr("r", 6);
 
+      let sum_contrib = 0;
+      for( const el of d.nuc_info ) {
+        sum_contrib += el.rel_act * el.br;
+      }
+
       let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
         + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
         + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>"
@@ -399,6 +403,8 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
         txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4);
         if( el.rel_act )
           txt += ", RelAct=" + el.rel_act.toPrecision(4);
+        if( el.rel_act && (d.nuc_info.length > 1) )
+          txt += ", " + (100*el.rel_act*el.br/sum_contrib).toFixed(1) + "% of counts";
         txt += "</div>";
       }
             
@@ -430,5 +436,5 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt) {
 
 
 RelEffPlot.prototype.handleResize = function () {
-  this.setRelEffData(this.data_vals, this.fit_eqn, this.chi2_txt );
+  this.setRelEffData(this.data_vals, this.fit_eqn, this.chi2Txt );
 };//RelEffPlot.prototype.handleResize

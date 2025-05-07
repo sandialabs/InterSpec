@@ -35,7 +35,7 @@ public:
   
   /** Set data from an "manual" relative efficiency fit. */
   void setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
-               const std::map<std::string,std::pair<double,std::string>> &relActsColors,
+               const std::map<std::string,std::pair<double,std::string>> &nuc_to_act_and_color,
                std::string relEffEqn,
                const Wt::WString &chi2_title_str );
   

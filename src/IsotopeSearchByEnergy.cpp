@@ -1158,7 +1158,8 @@ void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &
   
   if( append_categories(def_xml) <= 0 )
     throw runtime_error( "Failed to load default NuclideSearchCatagories.xml" );
-  
+
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
   // Load user specific category info
   const string user_data_dir = InterSpec::writableDataDirectory();
   const std::string user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
@@ -1167,6 +1168,7 @@ void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &
     if( SpecUtils::is_file(user_xml) )
       throw runtime_error( "Error loading user NuclideSearchCatagories.xml" );
   }
+#endif
 }//static void init_category_info( std::vector<NucSearchCategory> &results );
 
 
@@ -2185,43 +2187,47 @@ void IsotopeSearchByEnergy::NucSearchCategory::deSerialize( const rapidxml::xml_
   if( reactions_el )
   {
     const ReactionGamma *reactionDb = nullptr;
-    try
-    {
-      reactionDb = ReactionGammaServer::database();
-    }catch(...)
-    {
-      cerr << "NucSearchCategory::deSerialize(): Failed to open gamma reactions XML file" << endl;
-    }
-    
-    if( reactionDb )
-    {
-      set<const ReactionGamma::Reaction *> reactions_seen;
+   
+    set<const ReactionGamma::Reaction *> reactions_seen;
       
-      XML_FOREACH_CHILD( reaction, reactions_el, "Reaction" )
+    XML_FOREACH_CHILD( reaction, reactions_el, "Reaction" )
+    {
+      if( !reactionDb )
       {
-        const string rectn_str = SpecUtils::xml_value_str(reaction);
-        
         try
         {
-          vector<ReactionGamma::ReactionPhotopeak> photopeaks;
-          reactionDb->gammas( rectn_str, photopeaks);
+          reactionDb = ReactionGammaServer::database();
+        }catch(...)
+        {
+          cerr << "NucSearchCategory::deSerialize(): Failed to open gamma reactions XML file" << endl;
+        }
+
+        if( !reactionDb )
+          break;
+      }//if( !reactionDb )
+
+      const string rectn_str = SpecUtils::xml_value_str(reaction);
+        
+      try
+      {
+        vector<ReactionGamma::ReactionPhotopeak> photopeaks;
+        reactionDb->gammas( rectn_str, photopeaks);
           
-          for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
+        for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
+        {
+          if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
           {
-            if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
-            {
-              reactions_seen.insert( gamma.reaction );
-              m_specific_reactions.push_back( gamma.reaction );
+            reactions_seen.insert( gamma.reaction );
+            m_specific_reactions.push_back( gamma.reaction );
               // We're not exiting the loop here, because some of the element reactions
               // may be composed of specific nuclide reactions
-            }//if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
-          }//for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
-        }catch( std::exception &e )
-        {
-          cerr << "NucSearchCategory::deSerialize(): Failed to get reaction '" << rectn_str << "'" << endl;
-        }
-      }//for( loop over <Reactions> )
-    }//if( reactionDb )
+          }//if( gamma.reaction && !reactions_seen.count(gamma.reaction) )
+        }//for( const ReactionGamma::ReactionPhotopeak &gamma : photopeaks )
+      }catch( std::exception &e )
+      {
+        cerr << "NucSearchCategory::deSerialize(): Failed to get reaction '" << rectn_str << "'" << endl;
+      }
+    }//for( loop over <Reactions> )
   }//if( reactions_el )
   
   if( !m_specific_nuclides.empty() && !m_nuclides && !m_alphas && !m_beta_endpoint )

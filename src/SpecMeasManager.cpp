@@ -3642,7 +3642,8 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   
  
   if( (name.length() > 4)
-     && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
+     && (SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
+         || SpecUtils::iequals_ascii( name.substr(name.length()-4), ".tfa"))
      && handleZippedFile( name, spoolName, type ) )
   {
     return;
@@ -6094,10 +6095,15 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         }//if( header->shouldSaveToDb() )
       }catch( FileToLargeForDbException &e )
       {
-        WString msg = WString::tr("smm-cant-save").arg( e.message() );
-        
+        const string save_size = SpecUtils::printCompact(e.m_saveSize/(1024.0*1024.0), 3) + " MB";
+        const string limit_size = SpecUtils::printCompact(e.m_limit/(1024.0*1024.0), 3) + " MB";
+
+        WString msg = WString::tr("smm-cant-save")
+          .arg( save_size )
+          .arg( limit_size );
+
         WServer::instance()->post( sessionID,
-                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgHigh ) );
+                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgMedium ) );
       }
       return;
     }//if( this is a new-to-us file )

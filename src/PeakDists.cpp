@@ -640,21 +640,30 @@ namespace PeakDists
     const double norm = DSCB_norm( left_skew, left_n, right_skew, right_n );
     const double exp_lower_aa = std::exp(-0.5*left_skew*left_skew);
     const double exp_upper_aa = std::exp(-0.5*right_skew*right_skew);
-    const double right_tail_indef_at_rskew = norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew));
-    
+
+    const double right_tail_indef_at_rskew = norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew)); //this is the indefinete integral evaluation at `right_skew`.
+
     auto left_tail_indefinite_t = [left_skew, left_n, norm, exp_lower_aa]( const double t ) -> double {
       const double t_1 = (t == -left_skew) ? 1.0 : 1.0 - (left_skew / (left_n / (left_skew + t)));
       return -norm * exp_lower_aa * (t_1 / std::pow(t_1, left_n)) / ((left_skew / left_n) - left_skew); //slightly more stable
     };
     
     
-    auto right_tail_indefinite_t = [right_skew, right_n, norm, exp_upper_aa, right_tail_indef_at_rskew]( const double t ) -> double {
+    auto right_tail_area_t = [right_skew, right_n, norm, exp_upper_aa, right_tail_indef_at_rskew]( const double t ) -> double {
       const double t_1 = (t == right_skew) ? 1.0 : (1.0 + ((right_skew * (t - right_skew)) / right_n));
-      return norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew)) * std::pow(t_1, (1.0 - right_n)) - right_tail_indef_at_rskew;
+      const double answer = norm * exp_upper_aa*(1.0 / ((right_skew / right_n) - right_skew)) * std::pow(t_1, (1.0 - right_n)) - right_tail_indef_at_rskew;
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      //Not quite as stable version
+      const double indef = (norm*(right_n * exp(-0.5*right_skew*right_skew) * pow((right_skew * (t - right_skew) + right_n) / right_n,1 - right_n)) / ((1 - right_n) * right_skew));
+      assert( fabs((indef - right_tail_indef_at_rskew) - answer) < 1.0E-5*norm );
+#endif
+
+      return answer;
     };
     
-    assert( right_tail_indefinite_t(right_skew) == 0 );
-    
+    assert( fabs(right_tail_area_t(right_skew)) < 1.E-8 );
+
     const double gaus_indef_at_left_skew = norm * root_half_pi * boost_erf_imp( -left_skew * one_div_root_two );
     auto gauss_indefinite_t = [norm, gaus_indef_at_left_skew, one_div_root_two, root_half_pi]( const double t ) -> double {
       return norm * root_half_pi * boost_erf_imp( one_div_root_two * t ) - gaus_indef_at_left_skew;
@@ -662,9 +671,33 @@ namespace PeakDists
     
     const double indef_at_left_skew = left_tail_indefinite_t( -left_skew );
     const double indef_at_right_skew = indef_at_left_skew + gauss_indefinite_t( right_skew );
-    
+
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+    const auto rindef_t = [=]( const double t ){
+      return norm*(right_n * exp(-0.5*right_skew*right_skew) * pow((right_skew * (t - right_skew) + right_n) / right_n,1 - right_n)) / ((1 - right_n) * right_skew);
+    };
+    const double check_indef_right = rindef_t( right_skew );
+    assert( fabs(check_indef_right - right_tail_indef_at_rskew) < 1.E-12 );
+
+    const double check_indef_right_2 = norm*DSCB_right_tail_indefinite_non_norm_t( right_skew, right_n, right_skew );
+    assert( fabs(check_indef_right_2 - right_tail_indef_at_rskew) < 1.E-6*norm );
+
+    const double expected_left_indef = norm*(left_n * exp(-0.5*left_skew*left_skew)) / ((left_n - 1) * left_skew);
+    assert( fabs(indef_at_left_skew - expected_left_indef) < 1.0E-6 );
+    const double expected_gaus_area = norm*root_half_pi * (std::erf(left_skew*one_div_root_two) + std::erf(right_skew*one_div_root_two));
+    const double expected_right_indef = expected_left_indef + expected_gaus_area;
+    assert( fabs(expected_right_indef - indef_at_right_skew) < 1.0E-6 );
+
+    const double rtail_area = right_tail_area_t( 1.0E32 );
+
+
+    const double rtail_area_exp = norm*(DSCB_right_tail_indefinite_non_norm_t( right_skew, right_n, 1.0E32 ) - DSCB_right_tail_indefinite_non_norm_t( right_skew, right_n, right_skew ));
+    assert( fabs(rtail_area - rtail_area_exp) < 1.0E-3 );
+#endif
+
     auto indefinite_x = [mean, sigma, left_skew, right_skew,
-                       left_tail_indefinite_t, right_tail_indefinite_t, gauss_indefinite_t,
+                       left_tail_indefinite_t, right_tail_area_t, gauss_indefinite_t,
                        indef_at_left_skew, indef_at_right_skew]( const double x ) {
       const double t = (x - mean) / sigma;
       if( t <= -left_skew )
@@ -672,8 +705,10 @@ namespace PeakDists
       
       if( t <= right_skew )
         return indef_at_left_skew + gauss_indefinite_t( t );
-      
-      return indef_at_right_skew + right_tail_indefinite_t( t );
+
+      const double right_frac = right_tail_area_t( t );
+
+      return indef_at_right_skew + right_frac;
     };
     
     
@@ -705,16 +740,28 @@ namespace PeakDists
         const double t_eqn = root_two * boost::math::erf_inv( (prob - indef_at_left_skew + gaus_indef_at_left_skew) / (norm * root_half_pi) );
         return t_eqn*sigma + mean;
       }
-  
-      // TODO: Fix these not working
-      const double pow_arg = right_tail_indef_at_rskew + ((right_skew / right_n) - right_skew)*(prob - indef_at_right_skew)/(norm * exp_upper_aa);
-      const double tmp = std::pow( pow_arg, 1.0/(1.0-right_n) );
-      const double t_eqn = right_skew + (right_n/right_skew) *(tmp - 1.0);
-      
-      // TODO: for some reason inverting the right tail doesnt work (`pow_arg` is negative); math must be wrong
-      throw runtime_error( "Inverting right tail doesnt work yet" );
-      
-      return t_eqn*sigma + mean;
+
+
+      const double remaining_prob = prob - indef_at_right_skew;
+      //remaining_prob == (right_tail_indef(t) - right_tail_indef(right_skew))
+      //remaining_prob = right_tail_indef(t) - right_tail_indef(right_skew)
+      //remaining_prob = right_tail_indef(t) - right_tail_indef_at_rskew
+      //remaining_prob + right_tail_indef_at_rskew = right_tail_indef(t)
+      //remaining_prob + right_tail_indef_at_rskew
+      //        = norm*(exp_upper_aa*right_n*std::pow((right_skew*(t + right_n/right_skew - right_skew))/right_n,1-right_n))/(right_skew*(1-right_n))
+      //(right_skew*(1-right_n)*(remaining_prob + right_tail_indef_at_rskew)/(norm*exp_upper_aa*right_n)
+      //              = (std::pow((right_skew*(t + right_n/right_skew - right_skew))/right_n,1-right_n)))
+      // Set left side equal to A
+      // A = std::pow((right_skew*(t + right_n/right_skew - right_skew))/right_n,1-right_n)))
+      //... put int chatGPT ...
+      const double A = (right_skew*(1-right_n))*(remaining_prob + right_tail_indef_at_rskew)/(norm*exp_upper_aa*right_n);
+      const double t_eqn = (right_n*pow(A,1.0/(1-right_n))/right_skew) - (right_n/right_skew) + right_skew;
+      const double x = t_eqn*sigma + mean;
+
+      if( IsInf(x) || IsNan(x) )
+        throw runtime_error("failed to symbolically solve");
+
+      return x;
     };//auto x_from_eqn
     
     
