@@ -43,4 +43,11 @@
   <message id='cfm-model'>Model</message>
   <message id='cfm-meas-type'>Rec. Type</message>
   <message id='cfm-tt-meas-type'>The records recorded type within the spectrum file.</message>
+
+  <message id='cfm-tt-clear-spectrum'>Clears the current spectrum.</message>
+  
+  <message id='cfm-swap-back-with-foreground-btn'>foreground↔background</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>Swap the foreground and background spectra</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>foreground↔secondary</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>Swap the foreground and secondary spectra</message>
 </messages>

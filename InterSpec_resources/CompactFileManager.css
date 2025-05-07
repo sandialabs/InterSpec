@@ -57,6 +57,7 @@ div.DispType > div {
 }
 
 .CompactFileManager .CompactManagerButtons,
+.CompactFileManager .BackgroundBtns,
 .CompactFileManager .SecondForegroundBtns {
   display: flex;
   flex-direction: row;
@@ -65,6 +66,7 @@ div.DispType > div {
 }
 
 .CompactFileManager .CompactManagerButtons button.LinkBtn,
+.CompactFileManager .BackgroundBtns button.LinkBtn,
 .CompactFileManager .SecondForegroundBtns button.LinkBtn {
   float: none;
   font-weight: normal;
@@ -85,7 +87,12 @@ div.DispType > div {
   grid-row: 2;
 }
 
-.SecondForegroundBtns {
+.CompactFileManager .BackgroundBtns {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.CompactFileManager .SecondForegroundBtns {
   grid-column: 3;
   grid-row: 2;
 }
@@ -132,7 +139,7 @@ div.DispType .SpecTitle {
   overflow: hidden;
 }
 
-div.DispType .StretcherRow {
+.CompactFileManager .StretcherRow {
   flex-grow: 10;
   flex-shrink: 10;
 }
@@ -240,6 +247,23 @@ div.DispType div.ScaleFactorRow{
   flex-direction: row;
   /* justify-content: space-between; */
   column-gap: 8px;
+}
+
+.CompactFileManager .SpecFileSelectRow {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: 4px;
+}
+
+.CompactFileManager .SpecFileSelectRow > select {
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.CompactFileManager .SpecFileSelectClearBtn {
+  
 }
 
 .CompactFileManager .SpecLeg {

@@ -109,6 +109,10 @@ protected:
   
   void handleRenormalizeByLIveTime( const SpecUtils::SpectrumType type );
   
+  void handleSwapWithForeground( const SpecUtils::SpectrumType type );
+
+  void handleClearFileSelection( const SpecUtils::SpectrumType type );
+
 private:
   /** A little SVG square in upper row that indicates the spectrum line color. */
   Wt::WText *m_spectrumLineLegend[3];
@@ -122,7 +126,8 @@ private:
   Wt::WContainerWidget *m_scaleValueRow[3];
   NativeFloatSpinBox *m_scaleValueTxt[3];  //could use a WInPlaceEdit
   Wt::WPushButton *m_rescaleByLiveTime[3];
-  
+  Wt::WPushButton *m_clearFileSelection[3];
+
   //We want to avoid un-necassarily re-loading the data on blur of the sample
   //  number edit, but we do wnat to re-load the data if the text shows
   //  something different than the spectrum, therefore we'll track the sample
@@ -154,6 +159,9 @@ private:
    "File Parameters" dialog for this file
    */
   Wt::WPushButton *m_moreInfoBtn[3];
+
+  Wt::WPushButton *m_swapBackgroundWithForegroundBtn;
+  Wt::WPushButton *m_swapSecondaryWithForegroundBtn;
   
   // A link to the file manager, as that's where everything's stored
   SpectraFileModel *m_files;

@@ -1140,10 +1140,9 @@ void RefSpectraWidget::loadSelectedSpectrum()
     passMessage( WString::tr("rs-error-invalid-type-selected"), WarningWidget::WarningMsgHigh );
   
  
-  auto header = std::make_shared<SpectraFileHeader>( true, interspec );
+  shared_ptr<SpectraFileHeader> header = std::make_shared<SpectraFileHeader>( true, interspec );
   header->setFile( displayName, meas );
   SpecMeasManager *fileManager = interspec->fileManager();
-  fileManager->addFile( displayName, meas );
   SpectraFileModel *fileModel = fileManager->model();
   const int row = fileModel->addRow( header );
 
