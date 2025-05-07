@@ -173,7 +173,9 @@ void RefSpectraDialog::handleSelectionChanged( RefSpectraWidgetSelectionType typ
 RefSpectraDialog *RefSpectraDialog::createDialog( const RefSpectraInitialBehaviour initialBehaviour, 
                                                   const SpecUtils::SpectrumType type )
 {
-  RefSpectraDialog *dialog = new RefSpectraDialog( WString::tr("rs-dialog-title") );
+  //WString title = WString::tr("rs-dialog-title");
+  WString title;
+  RefSpectraDialog *dialog = new RefSpectraDialog( title );
   dialog->m_widget->setLoadSpectrumType( type );
 
   switch( initialBehaviour )
@@ -181,9 +183,13 @@ RefSpectraDialog *RefSpectraDialog::createDialog( const RefSpectraInitialBehavio
     case RefSpectraInitialBehaviour::Default:
       break;
 
-    case RefSpectraInitialBehaviour::GuessMatchToForeground:
-      dialog->m_widget->selectSimilarToForeground();
+    case RefSpectraInitialBehaviour::LastUserSelectedSpectra:
+      dialog->m_widget->selectLastSelectedPath();
       break;
+
+    //case RefSpectraInitialBehaviour::GuessMatchToForeground:
+    //  dialog->m_widget->selectSimilarToForeground();
+    //  break;
   }//switch( initialBehaviour )
 
   return dialog;
@@ -212,10 +218,90 @@ RefSpectraWidget::RefSpectraWidget( Wt::WContainerWidget *parent )
   initBaseDirs();
 }
 
+void RefSpectraWidget::storeLastSelectedPath() noexcept
+{
+  try
+  {
+    const std::set<WModelIndex> selectedIndexes = m_treeView->selectedIndexes();
+    if( selectedIndexes.size() != 1 )
+      return;
+
+    WModelIndex index = *selectedIndexes.begin();
+    
+    vector<string> selected_paths;
+    while( index.isValid() )
+    {
+      selected_paths.push_back( m_treeModel->getDisplayName( index ) );
+      index = m_treeModel->parent( index );
+    }
+    
+    std::reverse( begin(selected_paths), end(selected_paths) );
+    string selected_path;
+    for( const auto &path : selected_paths )
+    {
+      if( !selected_path.empty() )
+        selected_path += ";";
+      selected_path += path;
+    }
+
+    InterSpec *interspec = InterSpec::instance();
+    if( interspec && !selected_path.empty() )
+      UserPreferences::setPreferenceValue( "RefSpectraLastSelection", selected_path, interspec );
+  }catch( const std::exception &e )
+  {
+    std::cerr << "Error setting last selected path: " << e.what() << std::endl;
+  }
+}//void storeLastSelectedPath()
+  
+  
+void RefSpectraWidget::selectLastSelectedPath()
+{
+  try
+  {
+    InterSpec *interspec = InterSpec::instance();
+    assert( interspec );
+    if( !interspec )
+      return;
+
+    const std::string last_selection = UserPreferences::preferenceValue<std::string>( "RefSpectraLastSelection", interspec );
+    if( last_selection.empty() )
+      return;
+
+    vector<string> selected_paths;
+    SpecUtils::split( selected_paths, last_selection, ";" );
+    
+    WModelIndex index;
+    bool changed_selection = false, current_selection_is_dir = false;
+    
+    for( const string &display_name : selected_paths )
+    {
+      index = m_treeModel->indexForDisplayName( display_name, index );
+      if( !index.isValid() )
+        break;
+      m_treeView->expand( index );
+      m_treeView->setSelectedIndexes( {index} );
+      changed_selection = true;
+      current_selection_is_dir = m_treeModel->isDirectory( index );
+    }
+
+    if( changed_selection )
+    {
+      if( current_selection_is_dir )
+        m_fileSelectionChangedSignal.emit( RefSpectraWidgetSelectionType::Directory );
+      else
+        m_fileSelectionChangedSignal.emit( RefSpectraWidgetSelectionType::File );
+    }//if( changed_selection )
+  }catch(const std::exception& e)
+  {
+    std::cerr << "Error selecting last selected path: " << e.what() << std::endl;
+  }
+}//void selectLastSelectedPath()
+
 
 RefSpectraWidget::~RefSpectraWidget()
 {
-}
+  storeLastSelectedPath();
+}//~RefSpectraWidget()
 
 
 void RefSpectraWidget::setupUI()
@@ -243,6 +329,11 @@ void RefSpectraWidget::setupUI()
   mainLayout->setRowStretch( 0, 1 );
   mainLayout->setColumnStretch( 1, 1 );
 
+  if( portrait )
+    addStyleClass( "RefSpectraWidget-portrait" );
+  else
+    addStyleClass( "RefSpectraWidget-landscape" );
+
   setLayout( mainLayout );
   
   // Tree view
@@ -263,7 +354,21 @@ void RefSpectraWidget::setupUI()
   m_treeModel->layoutAboutToBeChanged().connect( this, &RefSpectraWidget::handleLayoutAboutToBeChanged );
   m_treeModel->layoutChanged().connect( this, &RefSpectraWidget::handleLayoutChanged );
 
-  mainLayout->addWidget( m_treeView, 0, 0 );
+  WContainerWidget *treeViewWrapper = new WContainerWidget();
+  treeViewWrapper->addStyleClass( "RefSpectraTreeViewWrapper" );
+  WGridLayout *treeViewLayout = new WGridLayout();
+  treeViewLayout->setContentsMargins( 0, 0, 0, 0 );
+  treeViewLayout->setVerticalSpacing( 0 );
+  treeViewLayout->setHorizontalSpacing( 0 );
+  treeViewWrapper->setLayout( treeViewLayout );
+  treeViewLayout->addWidget( m_treeView, 0, 0 );
+  WContainerWidget *treeViewOptions = new WContainerWidget();
+  treeViewOptions->addStyleClass( "RefSpectraOptions" );
+  treeViewLayout->addWidget( treeViewOptions, 1, 0 );
+  treeViewLayout->setRowStretch( 0, 1 );
+
+
+  mainLayout->addWidget( treeViewWrapper, 0, 0 );
 
   // Stack that will either show intro txt, the spectrum of selected file, or a text box with the readme.txt or readme.xml
   m_stack = new WStackedWidget();
@@ -294,30 +399,36 @@ void RefSpectraWidget::setupUI()
 
   m_stack->addWidget( m_spectrum );
   
-  if( portrait )
-    mainLayout->addWidget( m_stack, 1, 0 );
-  else
-    mainLayout->addWidget( m_stack, 0, 1 );
+  WContainerWidget *stackWrapper = new WContainerWidget();
+  stackWrapper->addStyleClass( "RefSpectraStackWrapper" );
+  WGridLayout *stackLayout = new WGridLayout();
+  stackLayout->setContentsMargins( 0, 0, 0, 0 );
+  stackLayout->setVerticalSpacing( 0 );
+  stackLayout->setHorizontalSpacing( 0 );
+  stackWrapper->setLayout( stackLayout ); 
+  stackLayout->addWidget( m_stack, 0, 0 );
+
+  WContainerWidget *stackOptions = new WContainerWidget();
+  stackOptions->addStyleClass( "RefSpectraOptions RefSpecDispOptions" );
+  stackLayout->addWidget( stackOptions, 1, 0 );
+  stackLayout->setRowStretch( 0, 1 );
 
 
-  // Options
-  WContainerWidget *optionsContainer = new WContainerWidget();
-  optionsContainer->addStyleClass( "RefSpectraOptions" );
   if( portrait )
-    mainLayout->addWidget( optionsContainer, 2, 0 );
+    mainLayout->addWidget( stackWrapper, 1, 0 );
   else
-    mainLayout->addWidget( optionsContainer, 1, 0, 1, 2 );
+    mainLayout->addWidget( stackWrapper, 0, 1 );
   
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   // Add directory button
-  m_addDirButton = new Wt::WContainerWidget( optionsContainer );
+  m_addDirButton = new Wt::WContainerWidget( treeViewOptions );
   m_addDirButton->clicked().connect( this, &RefSpectraWidget::startAddDirectory );
   m_addDirButton->addStyleClass( "AddDirBtn" );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
   HelpSystem::attachToolTipOn( m_addDirButton, WString::tr("rs-tt-add-dir-btn"), showToolTips );
 
-  m_deleteDirButton = new Wt::WContainerWidget( optionsContainer );
+  m_deleteDirButton = new Wt::WContainerWidget( treeViewOptions );
   m_deleteDirButton->clicked().connect( this, &RefSpectraWidget::removeCurrentlySelectedDirectory );
   m_deleteDirButton->addStyleClass( "DeleteDirBtn" );
   m_deleteDirButton->setHiddenKeepsGeometry( true );
@@ -325,15 +436,13 @@ void RefSpectraWidget::setupUI()
   HelpSystem::attachToolTipOn( m_deleteDirButton, WString::tr("rs-tt-delete-dir-btn"), showToolTips );
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
-  WContainerWidget *optionsSpacer = new WContainerWidget( optionsContainer );
-  optionsSpacer->addStyleClass( "RefSpectraOptionsSpacer" );
-  
 
-  m_showCurrentForeground = new Wt::WCheckBox( WString::tr("rs-show-foreground"), optionsContainer );
+  m_showCurrentForeground = new Wt::WCheckBox( WString::tr("rs-show-foreground"), stackOptions );
   m_showCurrentForeground->addStyleClass( "CbNoLineBreak" );
   m_showCurrentForeground->changed().connect( this, &RefSpectraWidget::updatePreview );
   
-  m_refBackground = new Wt::WCheckBox( WString::tr("rs-show-background"), optionsContainer );
+
+  m_refBackground = new Wt::WCheckBox( WString::tr("rs-show-background"), stackOptions );
   m_refBackground->addStyleClass( "CbNoLineBreak" );
   m_refBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
   m_refBackground->setHiddenKeepsGeometry( true );
@@ -348,14 +457,8 @@ void RefSpectraWidget::setupUI()
     mainLayout->setRowStretch( 0, 1 );
   }
 
-  WContainerWidget *showAsContainer = new WContainerWidget();
-  showAsContainer->addStyleClass( "ShowAsContainer" );
-
-  if( portrait )
-    mainLayout->addWidget( showAsContainer, 3, 0 );
-  else 
-    mainLayout->addWidget( showAsContainer, 2, 0, 1, 2 );
-
+  WContainerWidget *optionsSpacer = new WContainerWidget( treeViewOptions ); 
+  optionsSpacer->addStyleClass( "RefSpectraOptionsSpacer" );
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   #ifdef _WIN32
@@ -365,7 +468,7 @@ void RefSpectraWidget::setupUI()
   #else
   const char *show_exlorer_key = "rs-show-in-linux-file-manager";
   #endif
-  m_showInExplorerButton = new Wt::WPushButton( WString::tr(show_exlorer_key), showAsContainer );
+  m_showInExplorerButton = new Wt::WPushButton( WString::tr(show_exlorer_key), treeViewOptions );
 
   m_showInExplorerButton->addStyleClass( "LinkBtn ShowInExplorerBtn" );
   m_showInExplorerButton->clicked().connect( this, &RefSpectraWidget::showInExplorer );
@@ -373,10 +476,11 @@ void RefSpectraWidget::setupUI()
   m_showInExplorerButton->setHidden( true );
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
-  WContainerWidget *showAsContainerSpacer = new WContainerWidget( showAsContainer );
-  showAsContainerSpacer->addStyleClass( "RefSpectraOptionsSpacer" );
 
-  WContainerWidget *showAsGroup = new WContainerWidget(showAsContainer);
+  optionsSpacer = new WContainerWidget( stackOptions ); 
+  optionsSpacer->addStyleClass( "RefSpectraOptionsSpacer" );
+
+  WContainerWidget *showAsGroup = new WContainerWidget(stackOptions);
   showAsGroup->addStyleClass( "RefSpectraShowAsGroup" );
   WLabel *showAsLabel = new WLabel( WString::tr("rs-show-as"), showAsGroup );
   showAsLabel->addStyleClass( "RefSpectraShowAsLabel" );
@@ -975,10 +1079,10 @@ void RefSpectraWidget::setLoadSpectrumType( SpecUtils::SpectrumType type )
 }//void setLoadSpectrumType( SpecUtils::SpectrumType type )
 
 
-void RefSpectraWidget::selectSimilarToForeground()
-{
-  // TODO: Implement ...
-}//void selectSimilarToForeground();
+//void RefSpectraWidget::selectSimilarToForeground()
+//{
+//  // TODO: Implement ...
+//}//void selectSimilarToForeground();
 
 
 void RefSpectraWidget::loadSelectedSpectrum()
@@ -1089,6 +1193,10 @@ void RefSpectraWidget::initBaseDirs()
     vector<string> dirs_to_add;
     for( const auto &entry : fs::directory_iterator( user_ref_spectra_dir ) )
     {
+      const std::string entry_name = entry.path().filename().string();
+      if( entry_name.empty() || entry_name.front() == '.' )
+        continue;
+
       if( fs::is_directory( entry.path() ) )
       {
         // Only add the directory if it has spectra files, or children directories that have spectra files

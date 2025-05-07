@@ -286,19 +286,21 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_summaryTables[typeindex]->addStyleClass( "SummaryTable" );
     m_summaryTables[typeindex]->hide();
     
+    stretcher = new WContainerWidget( wrapper );
+    stretcher->addStyleClass( "StretcherRow" );
+
     WContainerWidget *bottomrow = new WContainerWidget( wrapper );
     bottomrow->addStyleClass( "BottomRow" );
     
+    m_scaleValueRow[typeindex] = new WContainerWidget( bottomrow ); 
+    m_scaleValueRow[typeindex]->addStyleClass( "ScaleFactorRow" );
+
     if( type == SpecUtils::SpectrumType::Foreground )
     {
-      m_scaleValueRow[typeindex] = nullptr;
       m_scaleValueTxt[typeindex] = nullptr;
       m_rescaleByLiveTime[typeindex] = nullptr;
     }else
     {
-      m_scaleValueRow[typeindex] = new WContainerWidget( bottomrow );
-      m_scaleValueRow[typeindex]->addStyleClass( "ScaleFactorRow" );
-      
       WLabel *label = new WLabel( WString::tr("cfm-scale-factor-label"), m_scaleValueRow[typeindex] );
       m_scaleValueTxt[typeindex] = new NativeFloatSpinBox( m_scaleValueRow[typeindex] );
       label->setBuddy( m_scaleValueTxt[typeindex] );
@@ -358,14 +360,17 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       WPushButton *button = new WPushButton( WString::tr("app-mi-file-manager"), buttons );
       //button->setIcon(Wt::WLink("InterSpec_resources/images/computer.png" ));
       button->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
+      button->addStyleClass( "LinkBtn" );
 #if( USE_DB_TO_STORE_SPECTRA )
       WPushButton *button2 = new WPushButton( WString::tr("app-mi-file-prev"), buttons );
       button2->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
+      button2->addStyleClass( "LinkBtn" );
 #endif
       WContainerWidget *refSpectraContainer = new WContainerWidget( this );
       refSpectraContainer->addStyleClass( "SecondForegroundBtns" );
       WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), refSpectraContainer );
-      refSpectraBtn->clicked().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::Default, SpecUtils::SpectrumType::SecondForeground ) );
+      refSpectraBtn->clicked().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::LastUserSelectedSpectra, SpecUtils::SpectrumType::SecondForeground ) );
+      refSpectraBtn->addStyleClass( "LinkBtn" );
     break;
     }//case LeftToRight:
       
@@ -376,6 +381,11 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       WContainerWidget *buttons = new WContainerWidget();
       WPushButton *button = new WPushButton( WString::tr("cfm-db-spec"), buttons );
       button->clicked().connect( fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
+
+      WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), buttons );
+      refSpectraBtn->clicked().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::LastUserSelectedSpectra, SpecUtils::SpectrumType::SecondForeground ) );
+      refSpectraBtn->addStyleClass( "LinkBtn" );
+
       tabbedLayout->addWidget( buttons, 1, 0 );
 #endif
       break;

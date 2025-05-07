@@ -57,12 +57,14 @@ enum class RefSpectraInitialBehaviour
   /** All ref spectra directories will be shown collapsed, for the user to expand. */
   Default,
 
+  LastUserSelectedSpectra,
+
   /** The tool will attempt to guess a built-in reference spectrum that most closely
       matches the current foreground spectrum, and open with that spectrum selected. 
 
       Not implemented yet.
   */
-  GuessMatchToForeground
+  //GuessMatchToForeground
 };
 
 enum class RefSpectraWidgetSelectionType
@@ -104,8 +106,16 @@ public:
   virtual ~RefSpectraWidget();
 
   void setLoadSpectrumType( SpecUtils::SpectrumType type );
-  void selectSimilarToForeground();
   void loadSelectedSpectrum();
+
+  /** Select the last selected path from the user preference name "RefSpectraLastSelection". */
+  void selectLastSelectedPath();
+
+  /** Select a spectrum similar to the current foreground spectrum. 
+   * 
+   *  Not implemented yet.
+  */
+  //void selectSimilarToForeground();
 
   Wt::Signal<RefSpectraWidgetSelectionType> &fileSelectionChangedSignal();
 protected:
@@ -114,6 +124,12 @@ protected:
   void tryExpandNode( const Wt::WModelIndex &index );
   void handleLayoutAboutToBeChanged();
   void handleLayoutChanged();
+
+  /** Store the last selected path into the user preference name "RefSpectraLastSelection". 
+   
+   This function is called from the destructor of this widget.
+  */
+  void storeLastSelectedPath() noexcept;
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   void startAddDirectory();

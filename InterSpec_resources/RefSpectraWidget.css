@@ -12,6 +12,8 @@
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
   max-height: calc( 95vh - 90px );
   overflow-y: hidden;
+  padding-top: 16px;
+  padding-bottom: 5px;
 }
 
 @media screen and (max-width: 1000px) {
@@ -74,8 +76,22 @@
 {
   display: flex;
   flex-direction: row;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
+}
+
+.RefSpectraWidget .RefSpectraOptions
+{
+  padding-left: 5px;
+  height: 23px;
+  font-size: 13px;
+  border: 1px solid #e1e1e1;
+  border-top: none;
+}
+
+.RefSpectraWidget.RefSpectraWidget-landscape .RefSpectraOptions.RefSpectraOptions.RefSpecDispOptions
+{
+  border-left: none;
 }
 
 .RefSpectraWidget .RefSpectraOptionsSpacer
@@ -83,14 +99,9 @@
   flex-grow: 1;
 }
 
-.RefSpectraWidget .ShowInExplorerBtn
+.RefSpectraWidget .RefSpectraOptions .LinkBtn.ShowInExplorerBtn
 {
-  margin-left: 8px;
-}
-
-.RefSpectraWidget .RefSpectraOptions .ShowAsContainer .ShowAsContainerSpacer
-{
-  flex-grow: 1;
+  font-weight: normal
 }
 
 .RefSpectraStack > div
@@ -186,5 +197,5 @@ div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
 }

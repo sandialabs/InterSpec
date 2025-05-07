@@ -38,6 +38,8 @@ public:
   std::string getFilePath( const Wt::WModelIndex &index ) const;
   std::string getDisplayName( const Wt::WModelIndex &index ) const;
   bool isDirectory( const Wt::WModelIndex &index ) const;
+
+  Wt::WModelIndex indexForDisplayName( const std::string &displayName, const Wt::WModelIndex &parent ) const;
 private:
   struct Node {
     std::string name;

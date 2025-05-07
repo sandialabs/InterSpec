@@ -103,7 +103,7 @@ boost::any RefSpectraModel::data( const Wt::WModelIndex &index, int role ) const
 boost::any RefSpectraModel::headerData( int section, Wt::Orientation orientation, int role ) const
 {
   if( orientation == Wt::Orientation::Horizontal && role == Wt::DisplayRole ) {
-    return boost::any( "Reference Spectra" );
+    return boost::any( Wt::WString::tr("rs-dialog-title") );
   }
   
   return boost::any();
@@ -227,15 +227,45 @@ bool RefSpectraModel::isDirectory( const Wt::WModelIndex &index ) const
   return node ? node->isDirectory : false;
 }
 
+Wt::WModelIndex RefSpectraModel::indexForDisplayName( const std::string &displayName, const Wt::WModelIndex &parent ) const
+{
+  if( !parent.isValid() )
+  {
+    for( size_t i = 0; i < m_rootNodes.size(); ++i )
+    {
+      if( m_rootNodes[i]->name == displayName )
+        return createIndex( static_cast<int>(i), 0, m_rootNodes[i].get() );
+    }
+
+    return Wt::WModelIndex();
+  }//if( !parent.isValid() )
+
+  Node *node = getNode( parent );
+  if( !node )
+    return Wt::WModelIndex();
+
+  for( size_t i = 0; i < node->children.size(); ++i )
+  {
+    if( node->children[i]->name == displayName )
+      return createIndex( static_cast<int>(i), 0, node->children[i].get() );
+  }
+
+  return Wt::WModelIndex();
+}
+
 void RefSpectraModel::populateNode( Node *node )
 {
-  try {
+  try 
+  {
     for( const auto &entry : fs::directory_iterator(node->fullPath) ) {
       const fs::path entryPath = entry.path();
       std::string entryName = entryPath.filename().string();
       const std::string entryPathStr = entryPath.string();
       const bool isDir = entry.is_directory();
       
+      if( entryName.empty() || entryName.front() == '.' )
+        continue;
+
       if( !isDir && (SpecUtils::iequals_ascii( entryName, "readme.txt" ) 
                      || SpecUtils::iequals_ascii( entryName, "readme.xml" ) ) )
       {
