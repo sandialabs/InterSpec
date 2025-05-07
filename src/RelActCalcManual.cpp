@@ -1313,8 +1313,8 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const SandiaDecay::Nuclide *wanted_nuc = db->nuclide( nuclide );
-  assert( wanted_nuc );
-  if( !wanted_nuc )
+  
+  if( !wanted_nuc ) //Will be nullptr for reactions and x-rays
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): invalid nuclide" );
   
   //assert( !m_rel_act_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
@@ -1599,7 +1599,7 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
       << "%";
     }catch( std::exception & )
     {
-      
+      // We will get here for reactions and x-rays.
     }
     
     results_html << "</td>"

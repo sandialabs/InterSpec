@@ -1471,6 +1471,12 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
       m_detector.reset();
       parse_warnings_.push_back( "Could not decode InterSpec specific detector response function in N42 file: "
                                  + std::string(e.what()) );
+      
+      string drf_xml;
+      rapidxml::print( std::back_inserter(drf_xml), *node, 2 );
+      cerr << "Failed to decode DRF:\n" << drf_xml << endl;
+      
+      cerr << endl;
     }// try / catch
   }else
   {
