@@ -151,11 +151,11 @@ Wt::WModelIndex RefSpectraModel::addBaseDirectory( const std::string &path )
     populateNode( node.get() );
     
     // Notify that we've added a new root node
-    beginInsertRows( Wt::WModelIndex(), m_rootNodes.size(), m_rootNodes.size() );
+    beginInsertRows( Wt::WModelIndex(), static_cast<int>(m_rootNodes.size()), m_rootNodes.size() );
     m_rootNodes.push_back( std::move(node) );
     endInsertRows();
 
-    return createIndex( m_rootNodes.size() - 1, 0, m_rootNodes.back().get() );
+    return createIndex( static_cast<int>(m_rootNodes.size() - 1), 0, m_rootNodes.back().get() );
   } catch( const std::exception &e ) {
     std::cerr << "Error adding base directory " << path << ": " << e.what() << std::endl;
   }

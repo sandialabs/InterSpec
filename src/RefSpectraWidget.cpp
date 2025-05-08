@@ -64,6 +64,10 @@
 #include "target/electron/ElectronUtils.h"
 #endif
 
+#if( BUILD_AS_OSX_APP )
+#include "target/osx/macOsUtils.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -527,66 +531,104 @@ void RefSpectraWidget::startAddDirectory()
   
   okBtn->disable();
 
-
+  bool useTextPathFallback = true;
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
 #if( BUILD_AS_ELECTRON_APP )
-  //ToDo: make a proper path selecting widget for Electron
-  WPushButton *pickPath = new WPushButton( "Select Path", contents );
-  WText *baseLocation = new WText( "(No Path Selected)", contents );
-  baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
-  
-  
-  pickPath->clicked().connect( std::bind( [baseLocation, okBtn](){
-    // We need to use the lifetime management of WObject to safely bind the callback:
-    auto bound_callback = boost::bind( &WText::setText, baseLocation, boost::placeholders::_1 );
+    //ToDo: make a proper path selecting widget for Electron
+    WPushButton *pickPath = new WPushButton( "Select Path", contents );
+    WText *baseLocation = new WText( "(No Path Selected)", contents );
+    baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
     
-    // Now we need to convert the boost bound thing, to a std::function, so we'll use a lamda as an
-    //  intermediary to also capture the bound_function
-    auto callback = [bound_callback, okBtn]( string value ){
-      bound_callback( value );
-      okBtn->setEnabled( SpecUtils::is_directory(value) );
-    };
+    pickPath->clicked().connect( std::bind( [baseLocation, okBtn](){
+      // We need to use the lifetime management of WObject to safely bind the callback:
+      auto bound_callback = boost::bind( &WText::setText, baseLocation, boost::placeholders::_1 );
+      
+      // Now we need to convert the boost bound thing, to a std::function, so we'll use a lamda as an
+      //  intermediary to also capture the bound_function
+      auto callback = [bound_callback, okBtn]( string value ){
+        bound_callback( value );
+        okBtn->setEnabled( SpecUtils::is_directory(value) );
+      };
+      
+      ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory of reference spectra.", callback );
+    }) );
     
-    ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory of reference spectra.", callback );
-  }) );
-
-  okBtn->clicked().connect( std::bind( [baseLocation, this](){
-    std::string path = baseLocation->text().toUTF8();
-    this->addDirectory( path );
+    okBtn->clicked().connect( std::bind( [baseLocation, this](){
+      std::string path = baseLocation->text().toUTF8();
+      this->addDirectory( path );
     } ) );
-#elif( BUILD_AS_OSX_APP )
-static_assert( 0, "Need to implement and check" );
-  WFileUpload *baseLocation = new WFileUpload( contents );
-  baseLocation->changed().connect( std::bind([](){
     
-  }) );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
+    useTextPathFallback = false;
+#elif( BUILD_AS_OSX_APP )
+    WPushButton *pickPath = new WPushButton( "Select Path", contents );
+    WText *baseLocation = new WText( "(No Path Selected)", contents );
+    baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
+    
+    pickPath->clicked().connect( std::bind( [baseLocation, okBtn](){
+      // We need to use the lifetime management of WObject to safely bind the callback:
+      auto set_text_cb = boost::bind( &WText::setText, baseLocation, boost::placeholders::_1 );
+      auto enable_ok_cb = boost::bind( &WPushButton::setEnabled, okBtn, boost::placeholders::_1 );
+      
+      auto on_select_callback = [set_text_cb, enable_ok_cb]( const std::vector<std::string> &paths ){
+        assert( paths.empty() || (paths.size() == 1) );
+        set_text_cb( paths.empty() ? string("(No Path Selected)") : paths[0] );
+        enable_ok_cb( !paths.empty() );
+      };
+      
+      const bool canChooseFiles = false;
+      const bool canChooseDirectories = true;
+      const bool allowsMultipleSelection = false;
+      
+      macOsUtils::showFilePicker( "Select Directory", "Select base-directory of reference spectra.",
+                                 canChooseFiles, canChooseDirectories, allowsMultipleSelection,
+                                 on_select_callback );
+    }) );
+    
+    okBtn->clicked().connect( std::bind( [baseLocation, this](){
+      std::string path = baseLocation->text().toUTF8();
+      this->addDirectory( path );
+    } ) );
+    
+    useTextPathFallback = false;
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
 #else
-  WLineEdit *baseLocation = new WLineEdit( contents );
-  auto callback = [baseLocation, okBtn](){
-    std::string path = baseLocation->text().toUTF8();
-    const bool valid_dir = SpecUtils::is_directory( path );
-    okBtn->setEnabled( valid_dir );
-  };
-  baseLocation->keyPressed().connect( std::bind(callback) );
-  baseLocation->enterPressed().connect( std::bind(callback) );
-  baseLocation->blurred().connect( std::bind(callback) );
-  baseLocation->changed().connect( std::bind(callback) );
-
-  //It would be nice to validate the "Save" button on paste, but it's not working
-  //baseLocation->doJavaScript( "$(" + baseLocation->jsRef() + ").on('paste', function(){"
-  //    "const enterEvent = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', which: 13, keyCode: 13, charCode: 13, bubbles: true, cancelable: true});"
-  //    + baseLocation->jsRef() + ".dispatchEvent(enterEvent);"
-  //"} );"
-  //);
-
-  baseLocation->setEmptyText( "Path to base directory to search" );
-
-  okBtn->clicked().connect( std::bind([baseLocation, this](){
-    std::string path = baseLocation->text().toUTF8();
-    this->addDirectory( path );
-  }) );
+  useTextPathFallback = true;
 #endif
-}//
+  
+#endif //BUILD_FOR_WEB_DEPLOYMENT
+  
+  if( useTextPathFallback )
+  {
+    WLineEdit *baseLocation = new WLineEdit( contents );
+    auto callback = [baseLocation, okBtn](){
+      std::string path = baseLocation->text().toUTF8();
+      const bool valid_dir = SpecUtils::is_directory( path );
+      okBtn->setEnabled( valid_dir );
+    };
+    baseLocation->keyPressed().connect( std::bind(callback) );
+    baseLocation->enterPressed().connect( std::bind(callback) );
+    baseLocation->blurred().connect( std::bind(callback) );
+    baseLocation->changed().connect( std::bind(callback) );
+
+    //It would be nice to validate the "Save" button on paste, but it's not working
+    //baseLocation->doJavaScript( "$(" + baseLocation->jsRef() + ").on('paste', function(){"
+    //    "const enterEvent = new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', which: 13, keyCode: 13, charCode: 13, bubbles: true, cancelable: true});"
+    //    + baseLocation->jsRef() + ".dispatchEvent(enterEvent);"
+    //"} );"
+    //);
+
+    baseLocation->setEmptyText( "Path to base directory to search" );
+
+    okBtn->clicked().connect( std::bind([baseLocation, this](){
+      std::string path = baseLocation->text().toUTF8();
+      this->addDirectory( path );
+    }) );
+  }//if( useTextPathFallback )
+  
+}//void startAddDirectory()
 
 
 void RefSpectraWidget::addDirectory( const std::string &path )
