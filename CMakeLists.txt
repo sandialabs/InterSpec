@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
 project(InterSpec VERSION 1.0.13)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
@@ -327,6 +327,8 @@ set(sources
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
+    src/RefSpectraWidget.cpp
+    src/RefSpectraModel.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -431,6 +433,8 @@ set(headers
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
+    InterSpec/RefSpectraWidget.h
+    InterSpec/RefSpectraModel.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -613,7 +617,7 @@ add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
 
-add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
+add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers} )
 
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)

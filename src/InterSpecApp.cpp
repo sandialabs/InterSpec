@@ -455,6 +455,7 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
     wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/RefSpectraWidget.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
     // anything else relevant?
