@@ -534,9 +534,6 @@ void RefSpectraWidget::startAddDirectory()
 
   WContainerWidget *contents = dialog->contents();
   contents->addStyleClass( "RefSpectraAddDirDialogContents" );
-
-  new WLabel( WString::tr("rs-add-dir-dialog-path"), contents );
-  
   okBtn->disable();
 
   bool useTextPathFallback = true;
@@ -544,36 +541,17 @@ void RefSpectraWidget::startAddDirectory()
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
-#if( BUILD_AS_ELECTRON_APP )
-    //ToDo: make a proper path selecting widget for Electron
-    WPushButton *pickPath = new WPushButton( "Select Path", contents );
-    WText *baseLocation = new WText( "(No Path Selected)", contents );
-    baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
+    // TODO: for Electron and macOS (and maybe wxWidgets), make a dedicated directory select widget, and then also use Spectrum File Query tool.
+#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
+    WContainerWidget *container = new WContainerWidget( contents );
+    container->addStyleClass( "RefSpectraNativePathArea" );
     
-    pickPath->clicked().connect( std::bind( [baseLocation, okBtn](){
-      // We need to use the lifetime management of WObject to safely bind the callback:
-      auto bound_callback = boost::bind( &WText::setText, baseLocation, boost::placeholders::_1 );
-      
-      // Now we need to convert the boost bound thing, to a std::function, so we'll use a lamda as an
-      //  intermediary to also capture the bound_function
-      auto callback = [bound_callback, okBtn]( string value ){
-        bound_callback( value );
-        okBtn->setEnabled( SpecUtils::is_directory(value) );
-      };
-      
-      ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory of reference spectra.", callback );
-    }) );
+    new WLabel( WString::tr("rs-add-dir-dialog-path"), container );
     
-    okBtn->clicked().connect( std::bind( [baseLocation, this](){
-      std::string path = baseLocation->text().toUTF8();
-      this->addDirectory( path );
-    } ) );
+    WText *baseLocation = new WText( "(No Path Selected)", container );
+    baseLocation->addStyleClass( "RefSpectraNativePathTxt" );
     
-    useTextPathFallback = false;
-#elif( BUILD_AS_OSX_APP )
-    WPushButton *pickPath = new WPushButton( "Select Path", contents );
-    WText *baseLocation = new WText( "(No Path Selected)", contents );
-    baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
+    WPushButton *pickPath = new WPushButton( "Select Path", container );
     
     pickPath->clicked().connect( std::bind( [baseLocation, okBtn](){
       // We need to use the lifetime management of WObject to safely bind the callback:
@@ -586,6 +564,17 @@ void RefSpectraWidget::startAddDirectory()
         enable_ok_cb( !paths.empty() );
       };
       
+#if( BUILD_AS_ELECTRON_APP )
+      auto electron_callback = [on_select_callback]( string value ){
+        vector<string> paths;
+        if( !value.empty() )
+          paths.push_back( value );
+        on_select_callback( paths );
+      };
+      
+      ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory of reference spectra.", electron_callback );
+#else
+      static_assert( BUILD_AS_OSX_APP, "Need to update preprocessor ifs" );
       const bool canChooseFiles = false;
       const bool canChooseDirectories = true;
       const bool allowsMultipleSelection = false;
@@ -593,6 +582,7 @@ void RefSpectraWidget::startAddDirectory()
       macOsUtils::showFilePicker( "Select Directory", "Select base-directory of reference spectra.",
                                  canChooseFiles, canChooseDirectories, allowsMultipleSelection,
                                  on_select_callback );
+#endif
     }) );
     
     okBtn->clicked().connect( std::bind( [baseLocation, this](){
@@ -601,15 +591,16 @@ void RefSpectraWidget::startAddDirectory()
     } ) );
     
     useTextPathFallback = false;
-  }//if( InterSpecApp::isPrimaryWindowInstance() )
 #else
   useTextPathFallback = true;
 #endif
-  
+  }//if( InterSpecApp::isPrimaryWindowInstance() )
 #endif //BUILD_FOR_WEB_DEPLOYMENT
   
   if( useTextPathFallback )
   {
+    new WLabel( WString::tr("rs-add-dir-dialog-path"), contents );
+    
     WLineEdit *baseLocation = new WLineEdit( contents );
     auto callback = [baseLocation, okBtn](){
       std::string path = baseLocation->text().toUTF8();
