@@ -56,7 +56,7 @@ private:
 
   std::vector<std::unique_ptr<Node>> m_rootNodes;
   
-  void populateNode( Node *node );
+  void populateNode( Node *node ) const;
   Node* getNode( const Wt::WModelIndex &index ) const;
   Wt::WModelIndex createIndex( int row, int column, Node *node ) const;
 };

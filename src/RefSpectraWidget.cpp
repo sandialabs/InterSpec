@@ -84,15 +84,22 @@ namespace
 
   bool has_spectra_files( const fs::path &path )
   {
-    for( const auto &entry : fs::directory_iterator( path ) )
+    try
     {
-      if( !SpecUtils::likely_not_spec_file( entry.path().string() ) )
-        return true;
-      if( fs::is_directory( entry.path() ) && has_spectra_files( entry.path() ) )
-        return true;
+      for( const auto &entry : fs::directory_iterator( path ) )
+      {
+        if( !SpecUtils::likely_not_spec_file( entry.path().string() ) )
+          return true;
+        if( fs::is_directory( entry.path() ) && has_spectra_files( entry.path() ) )
+          return true;
+      }
+    }catch( std::exception &e )
+    {
+      cerr << "has_spectra_files: caught exception iterating directories: " << e.what() << endl;
     }
+    
     return false;
-  }
+  }//bool has_spectra_files( const fs::path &path )
 }// anonymous namespace
 
 
@@ -355,7 +362,7 @@ void RefSpectraWidget::setupUI()
   m_treeView->setSelectable( true );
   m_treeView->setSelectionMode( Wt::SelectionMode::SingleSelection );
   m_treeView->setColumnWidth( 0, WLength(250, WLength::Pixel) );
-  m_treeView->setWidth( WLength(256, WLength::Pixel) ); 
+  m_treeView->setWidth( WLength(275, WLength::Pixel) ); 
   m_treeView->setColumnResizeEnabled( false );
   m_treeView->setSortingEnabled( false );
 
@@ -513,6 +520,7 @@ void RefSpectraWidget::setupUI()
   
   static_assert( ns_spectrum_types_size == 3, "ns_spectrum_types must have 3 elements" );
   m_showAsComboBox->setCurrentIndex( 2 );
+  m_showAsComboBox->setFocus( true );
 }//void setupUI();
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
@@ -887,39 +895,47 @@ void RefSpectraWidget::handleSelectionChanged()
     title_text->addStyleClass( "DirInfoTitle" );
 
     int num_spectra_files = 0, num_dirs = 0;
-    for( fs::directory_iterator itr( filePath ); itr != fs::directory_iterator(); ++itr )
+    
+    try
     {
-      const std::string file = itr->path().string();
-      if( fs::is_directory( itr->path() ) )
+      // We can get an exception if file path isnt allowed
+      for( fs::directory_iterator itr( filePath ); itr != fs::directory_iterator(); ++itr )
       {
-        num_dirs += 1;
-        continue;
-      }
-
-      const string fname = SpecUtils::filename( file );
-      if( SpecUtils::iequals_ascii( fname, "readme.txt" ) || SpecUtils::iequals_ascii( fname, "readme.xml" ) )
-      {
-        string file_data;
-        if( SpecUtils::file_size( file ) < 10240 )
+        const std::string file = itr->path().string();
+        if( fs::is_directory( itr->path() ) )
         {
-          try
+          num_dirs += 1;
+          continue;
+        }
+        
+        const string fname = SpecUtils::filename( file );
+        if( SpecUtils::iequals_ascii( fname, "readme.txt" ) || SpecUtils::iequals_ascii( fname, "readme.xml" ) )
+        {
+          string file_data;
+          if( SpecUtils::file_size( file ) < 10240 )
           {
-            std::vector<char> data;
-            SpecUtils::load_file_data( file.c_str(), data );
-            file_data = std::string( data.data(), data.size() ? data.size() - 1 : 0 );
-          }catch( const std::exception &e )
-          {
-            std::cerr << "RefSpectraWidget::handleSelectionChanged() - Error loading file: " << file << std::endl;
-          }
-        }//if( SpecUtils::file_size( file ) < 10*1024 )
-
-        Wt::WText *text = new Wt::WText( file_data, Wt::XHTMLText, m_dirInfoContainer );
-        text->addStyleClass( "DirReadmeText" );
-      }else
-      {
-        num_spectra_files += !SpecUtils::likely_not_spec_file( file );
+            try
+            {
+              std::vector<char> data;
+              SpecUtils::load_file_data( file.c_str(), data );
+              file_data = std::string( data.data(), data.size() ? data.size() - 1 : 0 );
+            }catch( const std::exception &e )
+            {
+              std::cerr << "RefSpectraWidget::handleSelectionChanged() - Error loading file: " << file << std::endl;
+            }
+          }//if( SpecUtils::file_size( file ) < 10*1024 )
+          
+          Wt::WText *text = new Wt::WText( file_data, Wt::XHTMLText, m_dirInfoContainer );
+          text->addStyleClass( "DirReadmeText" );
+        }else
+        {
+          num_spectra_files += !SpecUtils::likely_not_spec_file( file );
+        }
       }
-    }
+    }catch( std::exception &e )
+    {
+      cerr << "RefSpectraWidget: caught exception iterating directories: " << e.what() << endl;
+    }//try / catch
 
     WString title_txt;
     if( num_dirs == 0 )
@@ -1226,22 +1242,28 @@ void RefSpectraWidget::initBaseDirs()
   {
     bool has_spectra_files_in_base = false;
     vector<string> dirs_to_add;
-    for( const auto &entry : fs::directory_iterator( user_ref_spectra_dir ) )
+    try
     {
-      const std::string entry_name = entry.path().filename().string();
-      if( entry_name.empty() || entry_name.front() == '.' )
-        continue;
-
-      if( fs::is_directory( entry.path() ) )
+      for( const auto &entry : fs::directory_iterator( user_ref_spectra_dir ) )
       {
-        // Only add the directory if it has spectra files, or children directories that have spectra files
-        if( has_spectra_files( entry.path() ) )
-          dirs_to_add.push_back( entry.path().string() );
-      }else{
-        if( !SpecUtils::likely_not_spec_file( entry.path().string() ) )
-          has_spectra_files_in_base = true;
+        const std::string entry_name = entry.path().filename().string();
+        if( entry_name.empty() || entry_name.front() == '.' )
+          continue;
+        
+        if( fs::is_directory( entry.path() ) )
+        {
+          // Only add the directory if it has spectra files, or children directories that have spectra files
+          if( has_spectra_files( entry.path() ) )
+            dirs_to_add.push_back( entry.path().string() );
+        }else{
+          if( !SpecUtils::likely_not_spec_file( entry.path().string() ) )
+            has_spectra_files_in_base = true;
+        }
       }
-    }
+    }catch( std::exception &e )
+    {
+      cerr << "RefSpectraWidget::initBaseDirs(): caught exception iterating directories: " << e.what() << endl;
+    }//try / catc
 
     // If base dir has spectra files in it, we'll just add base directory.
     // Otherwise, we'll add the sub-directories that do have spectra files in them.

@@ -400,7 +400,8 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
       stretcher->addStyleClass( "StretcherRow" );      
 
       WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), secondaryBtns );
-      refSpectraBtn->clicked().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::LastUserSelectedSpectra, SpecUtils::SpectrumType::SecondForeground ) );
+      refSpectraBtn->clicked().connect( this, &CompactFileManager::handleCreateReferenceSpectrumDialog );
+      
       refSpectraBtn->addStyleClass( "LinkBtn" );
     break;
     }//case LeftToRight:
@@ -1384,3 +1385,18 @@ void CompactFileManager::handleClearFileSelection( const SpecUtils::SpectrumType
 }//void handleClearFileSelection( const SpecUtils::SpectrumType type )
 
 
+void CompactFileManager::handleCreateReferenceSpectrumDialog()
+{
+  InterSpec *interspec = InterSpec::instance();
+  assert( interspec );
+  if( !interspec )
+    return;
+  
+  const shared_ptr<const SpecUtils::Measurement> fore
+                 = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  const SpecUtils::SpectrumType type = fore ? SpecUtils::SpectrumType::SecondForeground
+                                            : SpecUtils::SpectrumType::Foreground;
+  
+  RefSpectraDialog::createDialog( RefSpectraInitialBehaviour::LastUserSelectedSpectra, type );
+}//void handleCreateReferenceSpectrumDialog()

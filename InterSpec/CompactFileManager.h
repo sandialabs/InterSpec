@@ -112,6 +112,8 @@ protected:
   void handleSwapWithForeground( const SpecUtils::SpectrumType type );
 
   void handleClearFileSelection( const SpecUtils::SpectrumType type );
+  
+  void handleCreateReferenceSpectrumDialog();
 
 private:
   /** A little SVG square in upper row that indicates the spectrum line color. */

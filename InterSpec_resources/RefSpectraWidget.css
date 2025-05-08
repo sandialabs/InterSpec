@@ -199,3 +199,9 @@ div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.
   align-items: center;
   gap: 5px;
 }
+
+
+.RefSpectraWidget .Wt-header.headerrh.cwidth
+{
+  background-color: #EEEEEE;
+}
