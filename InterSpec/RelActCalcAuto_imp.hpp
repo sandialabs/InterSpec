@@ -16,14 +16,17 @@ namespace RelActCalcAuto
  * then some of the derivative values may become NaN during the `svd.solve(y)` step
  */
 template<typename PeakType, typename ScalarType>
-void fit_continuum( const float *x, const float *data, const size_t nbin,
-                                  const int num_polynomial_terms,
-                                  const bool step_continuum,
-                                  const ScalarType ref_energy,
-                                  const std::vector<PeakType> &fixedAmpPeaks,
-                                  const bool multithread,
-                                  ScalarType *continuum_coeffs,
-                                  ScalarType *peak_counts )
+void fit_continuum( const float * const x, 
+                    const float * const data, 
+                    const float * const data_uncert,
+                    const size_t nbin,
+                    const int num_polynomial_terms,
+                    const bool step_continuum,
+                    const ScalarType ref_energy,
+                    const std::vector<PeakType> &fixedAmpPeaks,
+                    const bool multithread,
+                    ScalarType *continuum_coeffs,
+                    ScalarType *peak_counts )
 {
   using namespace std;
   
@@ -119,12 +122,13 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
   for( size_t row = 0; row < nbin; ++row )
   {
     const double data_counts = data[row];
+    const double data_counts_uncert = data_uncert[row];
     const double x0 = x[row];
     const double x1 = x[row+1];
     const ScalarType x0_rel = x0 - ref_energy;
     const ScalarType x1_rel = x1 - ref_energy;
     
-    const double uncert = (data_counts > MIN_CHANNEL_UNCERT) ? sqrt(data_counts) : 1.0;
+    const double uncert = (data_counts_uncert > MIN_CHANNEL_UNCERT) ? data_counts_uncert : 1.0;
 
     uncerts(row) = ScalarType(uncert);
   
