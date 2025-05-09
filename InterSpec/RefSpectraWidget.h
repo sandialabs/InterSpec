@@ -138,7 +138,9 @@ protected:
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
   void updatePreview();
   void updateTreeView();
-  
+
+  //Some commented out code to help prepair the default ref spectra from the source directory.
+  //static void dev_code();
 private:
   RefSpectraModel *m_treeModel;
   Wt::WTreeView *m_treeView;

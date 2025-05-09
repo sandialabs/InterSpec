@@ -1325,3 +1325,160 @@ void RefSpectraWidget::showInExplorer()
   const std::string filePath = m_treeModel->getFilePath( index );
   AppUtils::showFileInOsFileBrowser(filePath);
 }//void showInExplorer()
+
+
+/*
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+
+
+void RefSpectraWidget::dev_code()
+{
+  const string output_path = "/path/to/output/RefSpectra";
+  const string base_path = "/path/to/input/peak_area_optimization/peak_fit_accuracy_inject/";
+  const string city_time = "Livermore/1800_seconds";
+
+  const vector<pair<string,string>> replacements{
+    { "_ShHeavy", "_HeavyShielding" },
+    { "_Unsh", "_Unshielded" },
+    { "_Sh", "_Shielded" },
+  };
+
+  const vector<pair<SpecUtils::DetectorType,string>> det_type_replacements{
+    { SpecUtils::DetectorType::DetectiveEx, "Detective-EX" },
+    { SpecUtils::DetectorType::DetectiveX, "Detective-X" },
+    { SpecUtils::DetectorType::IdentiFinderR500NaI, "IdentiFINDER-R500-NaI" },
+    { SpecUtils::DetectorType::RadSeekerLaBr, "Radseeker-LaBr3" },
+    { SpecUtils::DetectorType::IdentiFinderNG, "IdentiFINDER-NGH" },
+    { SpecUtils::DetectorType::OrtecRadEagleNai, "RadEagle" },
+    { SpecUtils::DetectorType::RadiaCode, "Kromek-GR1-CZT" },
+    { SpecUtils::DetectorType::Fulcrum40h, "Fulcrum40h" },
+    { SpecUtils::DetectorType::Unknown, "CZT_H3D_M400_ORNL_25cm" },
+    { SpecUtils::DetectorType::Unknown, "1cm-1cm-1cm" },
+    { SpecUtils::DetectorType::Unknown, "LaBr3_1.5x1.5_SNL" },
+    { SpecUtils::DetectorType::RadiaCode, "Radiacode-102" },
+    { SpecUtils::DetectorType::AvidRsi, "Rack" },
+    { SpecUtils::DetectorType::VerifinderNaI, "Verifinder-SN23N" }
+  };
+
+  for( const auto &dettype_dirname : det_type_replacements )
+  {
+    const SpecUtils::DetectorType &det_type = dettype_dirname.first;
+    std::string det_type_name = SpecUtils::detectorTypeToString( det_type );
+    if( det_type == SpecUtils::DetectorType::Unknown )
+      det_type_name = dettype_dirname.second;
+
+    const std::string &dirname = dettype_dirname.second;
+    const string in_file_dir = SpecUtils::append_path( SpecUtils::append_path( base_path, dirname ), city_time );
+    const string det_out_dir = SpecUtils::append_path( output_path, det_type_name );
+
+    if( !SpecUtils::is_directory(in_file_dir) )
+    {
+      cerr << "Failed to find directory '" << in_file_dir << "' :(" << endl;
+      return;
+    }
+
+    if( SpecUtils::create_directory(det_out_dir) == 0 )
+    {
+      cerr << "Failed to create directory '" << det_out_dir << "' :(" << endl;
+      return;
+    }
+
+
+    // loop over all .pcf files in the directory
+    bool wrote_back = false;
+    vector<string> pcf_files = SpecUtils::ls_files_in_directory(in_file_dir, ".pcf");
+    for( const string &filename : pcf_files )
+    {
+      SpecUtils::SpecFile spec;
+      const bool success = spec.load_file( filename, SpecUtils::ParserType::Auto, filename );
+      if( !success )
+      {
+        cerr << "Failed to load file '" << filename << "' :(" << endl;
+        return;
+      }
+
+      if( spec.num_measurements() < 3 )
+      {
+        cerr << "File '" << filename << "' has less than 3 measurements :(" << endl;
+        return;
+      }
+
+      if( det_type == SpecUtils::DetectorType::Unknown )
+      {
+        spec.set_instrument_model( det_type_name );
+      }else
+      {
+        spec.set_detector_type( det_type );
+        spec.set_instrument_model( det_type_name );
+      }
+
+      std::shared_ptr<const SpecUtils::Measurement> foreground = spec.measurement( size_t(0) );
+      std::shared_ptr<const SpecUtils::Measurement> background = spec.measurement( size_t(1) );
+      assert( background && foreground );
+
+      SpecUtils::SpecFile out_foreground = spec, out_background = spec;
+      out_foreground.remove_measurements( out_foreground.measurements() );
+      out_background.remove_measurements( out_background.measurements() );
+
+      auto fore = std::make_shared<SpecUtils::Measurement>(*foreground);
+      auto back = std::make_shared<SpecUtils::Measurement>(*background);
+
+      out_foreground.add_measurement( fore, true );
+      out_background.add_measurement( back, true );
+
+
+      string outname = SpecUtils::filename(filename);
+      const string orig_extension = SpecUtils::file_extension(outname);
+      outname = outname.substr( 0, outname.size() - orig_extension.size() );
+      for( const auto &from_to : replacements )
+        SpecUtils::ireplace_all( outname, from_to.first.c_str(), from_to.second.c_str() );
+
+      string title = outname;
+      SpecUtils::ireplace_all( title, "_", " " );
+
+      outname += ".txt";
+      outname = SpecUtils::append_path( det_out_dir, outname );
+
+      back->set_title( "Background" );
+      fore->set_title( title );
+
+
+      ofstream out_stream( outname.c_str(), ios::out | ios::binary );
+      if( !out_stream )
+      {
+        cerr << "Could not open file " << outname << " for writing" << endl;
+        return;
+      }
+
+      const bool wrote_fore = out_foreground.write_uri( out_stream, 1, 0 );
+      if( !wrote_fore )
+      {
+        cerr << "Could not write foreground spectrum to file " << outname << endl;
+        return;
+      }
+      cout << "Wrote '" << outname << "'" << endl;
+
+      if( !wrote_back )
+      {
+        string backname = SpecUtils::append_path( det_out_dir, "background.txt" );
+        ofstream back_stream( backname.c_str(), ios::out | ios::binary );
+        if( !back_stream )
+        {
+          cerr << "Could not open file " << backname << " for writing" << endl;
+          return;
+        }
+        const bool wrote_background = out_background.write_uri( back_stream, 1, 0 );
+        if( !wrote_background )
+        {
+          cerr << "Could not write background spectrum to file " << outname << endl;
+          return;
+        }
+
+        cout << "Wrote '" << backname << "'" << endl;
+        wrote_back = true;
+      }//if( !wrote_back
+    }//for( const string &filename : pcf_files )
+  }//for( const auto &dettype_dirname : det_type_replacements )
+}//class RefSpectraWidget
+*/
