@@ -788,7 +788,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       filtered_peaks->push_back( distances[index].second );
     }//for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
 
-    assert( (max_remove + filtered_peaks->size()) >= all_peaks.size() );
+    assert( (max_remove + filtered_peaks->size()) <= all_peaks.size() );
 
     if( filtered_peaks->size() != all_peaks.size() )
     {
@@ -6037,6 +6037,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( num_channels == ((1 + last_channel) - first_channel) );
     assert( first_channel < m_channel_counts.size() );
     assert( last_channel < m_channel_counts.size() );
+    assert( m_channel_count_uncerts.size() == m_channel_counts.size() );
     assert( m_energy_cal && m_energy_cal->channel_energies() );
     assert( m_energy_cal->channel_energies()->size() >= m_channel_counts.size() );
     
@@ -6044,6 +6045,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const T ref_energy = answer.continuum.m_reference_energy;
     const float * const data = &(m_channel_counts[first_channel]);
+    const float * const data_uncerts = &(m_channel_count_uncerts[first_channel]);
     const float * const energies = &((*m_energy_cal->channel_energies())[first_channel]);
 
     std::vector<T> &peak_counts = answer.peak_counts;
@@ -6051,7 +6053,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     T *continuum_coeffs = answer.continuum.m_values.data();
 
     vector<PeakDefImp<T>> dummy;
-    RelActCalcAuto::fit_continuum( energies, data, num_channels, num_polynomial_terms,
+
+
+    RelActCalcAuto::fit_continuum( energies, data, data_uncerts, num_channels, num_polynomial_terms,
                                   is_step_continuum, ref_energy, peaks, multithread,
                                   continuum_coeffs,
                                   peak_counts.data() );
@@ -8951,8 +8955,11 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
     double sum_rel_mass = 0.0;
     for( const auto &act : rel_activities )
-      sum_rel_mass += act.rel_activity / act.nuclide->activityPerGram();
-    
+    {
+      if( act.nuclide )
+        sum_rel_mass += act.rel_activity / act.nuclide->activityPerGram();
+    }
+
     
     results_html << "<table class=\"nuctable resulttable\">\n"
     "  <caption>Relative activities and mass fractions"
