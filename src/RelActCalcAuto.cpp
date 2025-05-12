@@ -1652,19 +1652,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                         std::shared_ptr<std::atomic_bool> cancel_calc
                                                         )
   {
-    /*
-    {//begin hack
-      cerr << "\n\n\nHACK to add in constraint\n\n\n" << endl;
-#warning "Hacking in Isotope constraint"
-      assert( options.rel_eff_curves.size() == 1 );
-      
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      RelActCalcAuto::RelEffCurveInput::ActRatioConstraint constraint
-        = RelActCalcAuto::RelEffCurveInput::ActRatioConstraint::from_mass_ratio( db->nuclide("Pu240"), db->nuclide("Pu239"), 0.1/0.9 );
-      options.rel_eff_curves[0].act_ratio_constraints.push_back( constraint );
-    }//end hack
-    */
-    
     const vector<RelActCalcAuto::RoiRange> &energy_ranges = options.rois;
     const vector<RelActCalcAuto::FloatingPeak> &extra_peaks = options.floating_peaks;
 
@@ -2386,6 +2373,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             //       way to contrain the Hoerl parameters yet).
           }//if( use_first_hoerl )
 
+          for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+          {
+            // Manual mass fraction constraints only accept a single fixed mass fraction for an isotope.
+            RelActCalcManual::MassFractionConstraint manual_constraint;
+            manual_constraint.m_nuclide = constraint.nuclide->symbol;
+            manual_constraint.m_mass_fraction = 0.5*(constraint.lower_mass_fraction + constraint.upper_mass_fraction);
+
+            for( const auto &nuc : rel_eff_curve.nuclides )
+            {
+              if( nuc.nuclide && nuc.nuclide->atomicNumber == constraint.nuclide->atomicNumber )
+                manual_constraint.m_specific_activities[nuc.nuclide->symbol] = nuc.nuclide->activityPerGram();
+            }
+
+            manual_input.mass_fraction_constraints.push_back( manual_constraint );
+          }//for( const MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+
           RelActCalcManual::RelEffSolution manual_solution
                                = RelActCalcManual::solve_relative_efficiency( manual_input );
           
@@ -2544,7 +2547,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             bool is_constrained = false;
             for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
             {
-              is_constrained = nuc.nuclide && (nuc_constraint.constrained_nuclide == nuc.nuclide); //right now we are only consrtaining nuclides
+              if( !nuc.nuclide )
+                break;
+
+              is_constrained = (nuc_constraint.constrained_nuclide == nuc.nuclide); //right now we are only consrtaining nuclides
               if( is_constrained )
               {
                 parameters[act_index] = -1.0;
@@ -2554,6 +2560,39 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 break;
               }
             }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+
+            for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+            {
+              if( !nuc.nuclide || is_constrained )
+                break;
+
+              assert( constraint.nuclide );
+              is_constrained = (constraint.nuclide == nuc.nuclide);
+              if( is_constrained )
+              {
+                //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper values
+                //  If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
+                //  solution gives the sum of all the mass fractions to be greater than 1.0, we will just return a say
+                //  that particular set of parameters is invalid, even though we could maybe do something more intelligent.
+                
+                parameters[act_index] = 1.0;
+                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+                
+                //If the lower and upper mass fractions are the same, we can just fix the rel act to 1.0
+                if( fabs(constraint.lower_mass_fraction - constraint.upper_mass_fraction) 
+                    <= 1.0E-6*std::max(constraint.lower_mass_fraction, constraint.upper_mass_fraction) )
+                {
+                  assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
+                  constant_parameters.push_back( static_cast<int>(act_index) );
+                }else
+                {
+                  lower_bounds[act_index] = 0.5;
+                  upper_bounds[act_index] = 1.5;
+                }
+                break;
+              }//if( is_constrained )
+            }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+
 
             if( is_constrained )
               continue;
@@ -2805,7 +2844,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             bool is_constrained = false;
             for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
             {
-              is_constrained = (nuc.nuclide && (nuc_constraint.constrained_nuclide == nuc.nuclide));
+              if( !nuc.nuclide )
+                break;
+
+              is_constrained = (nuc_constraint.constrained_nuclide == nuc.nuclide);
               if( is_constrained )
               {
                 parameters[act_index] = -1.0;
@@ -2817,6 +2859,32 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 break;
               }
             }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+
+            for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints ) 
+            {
+              if( !nuc.nuclide || is_constrained )
+                break;
+
+              assert( constraint.nuclide );
+              is_constrained = (constraint.nuclide == nuc.nuclide);
+              if( is_constrained )
+              {
+                parameters[act_index] = 1.0;
+                cout << "Setting par " << act_index << " to 1.0 for " << nuc.name() << endl;
+
+                if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
+                {
+                  cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+                  assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
+                  constant_parameters.push_back( static_cast<int>(act_index) );
+                }else
+                {
+                  lower_bounds[act_index] = 0.5;
+                  upper_bounds[act_index] = 1.5;
+                }
+                break;
+              }//if( is_constrained ) 
+            }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
 
             if( is_constrained )
               continue;
@@ -3626,8 +3694,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         nuc_output.rel_activity = cost_functor->relative_activity( nuc_input, rel_eff_index, parameters );
       
         nuc_output.age_uncertainty = cost_functor->age( nuc_input, rel_eff_index, uncertainties );
-        nuc_output.rel_activity_uncertainty = cost_functor->relative_activity( nuc_input, rel_eff_index, uncertainties );
-      
+        
+        bool is_mass_constrained = false;
+        for( const auto mass_cons : rel_eff_curve.mass_fraction_constraints )
+          is_mass_constrained |= (mass_cons.nuclide == nuc_input.nuclide);
+        
+        if( is_mass_constrained )
+        {
+          // TODO: properly calculate relative activity for mass-constrained nuclides...
+#ifdef _MSC_VER
+#pragma message( "TODO: properly calculate relative activity for mass-constrained nuclides..." )
+#else
+#warning "TODO: properly calculate relative activity for mass-constrained nuclides..."
+#endif
+          nuc_output.rel_activity_uncertainty = -1.0;
+        }else
+        {
+          nuc_output.rel_activity_uncertainty = cost_functor->relative_activity( nuc_input, rel_eff_index, uncertainties );
+        }
         vector<SandiaDecay::EnergyRatePair> gammas;
         if( nuc_input.nuclide )
         {
@@ -4685,7 +4769,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( src.nuclide )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
-      for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+      for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
       {
         if( nuc_constraint.constrained_nuclide == src.nuclide )
         {
@@ -4710,6 +4794,80 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           return act_ratio * controlled_act;
         }
       }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+
+
+      for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : rel_eff_curve.mass_fraction_constraints )
+      {
+        if( mass_fraction_constraint.nuclide != src.nuclide )
+          continue;
+        
+        // If we are here, `src.nuclide` is a mass-constrained nuclide.
+
+        // Sum the relative masses of the other nuclides of this element
+        // and sum the mass-constrained portion of this element.
+        T sum_unconstrained_rel_mass_of_el( 0.0 ); //Note this is rel act divide by specific activity, and does not add up to one
+        T sum_constrained_frac_rel_mass_of_el( 0.0 ); // This will include `src.nuclide`, and be less than 1.0
+        for( const RelActCalcAuto::NucInputInfo &nuclide : rel_eff_curve.nuclides )
+        {
+          if( !nuclide.nuclide || (nuclide.nuclide->atomicNumber != src.nuclide->atomicNumber) )
+            continue;
+          
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *mass_constraint = nullptr;  
+          for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &other_constraint : rel_eff_curve.mass_fraction_constraints )
+          {
+            if( other_constraint.nuclide == nuclide.nuclide )
+            {
+              mass_constraint = &other_constraint;
+              break;
+            }
+          }
+              
+          if( mass_constraint )
+          {
+            const size_t nuc_x_index = nuclide_parameter_index( nuclide, rel_eff_index );
+            const T rel_dist = (x[nuc_x_index] - 0.5); //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper
+            assert( rel_dist >= (0.0 - 1.0E-6) );
+            assert( rel_dist <= (1.0 + 1.0E-6) );
+            
+            const T rel_mass = (1.0 - rel_dist)*mass_constraint->lower_mass_fraction + rel_dist*mass_constraint->upper_mass_fraction;
+            sum_constrained_frac_rel_mass_of_el += rel_mass;
+          }else
+          {
+            const T rel_act = relative_activity( nuclide, rel_eff_index, x );
+            const double specific_activity = nuclide.nuclide->activityPerGram();
+            sum_unconstrained_rel_mass_of_el += (rel_act / specific_activity);
+          }//if( is_mass_constrained ) / else
+        }//for( const NucInputInfo &nuclide : rel_eff_curve.nuclides )
+
+        // If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
+        //  solution gives the sum of all the mass fractions to be greater than 1.0, we throw an exception, causing
+        //  this particular set of parameters to be rejected.
+        //  Also, right now we are requiring at least one nuclide for the element to not have a mass-fraction constraint,
+        //  which we may relax in the future (its just a little easier to implement this way, because otherwise we would
+        //  have to scale the rel_act of them all, which we could do...)
+        if( sum_constrained_frac_rel_mass_of_el > 1.0 )
+          throw runtime_error( "Sum of constrained mass fractions of element is greater than 1.0." );
+
+        if( sum_constrained_frac_rel_mass_of_el < 0.0 )
+          throw runtime_error( "Sum of constrained mass fractions of element is less than 0.0." );
+
+        const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
+        
+
+        const size_t this_nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
+        const T rel_dist = x[this_nuc_x_index] - 0.5;
+        assert( (rel_dist >= (0.0 - 1.0E-6)) || (x[this_nuc_x_index] == 0.0) );
+        assert( rel_dist <= (1.0 + 1.0E-6) || (x[this_nuc_x_index] == 0.0) );
+        const T this_rel_mass_frac = mass_fraction_constraint.lower_mass_fraction + rel_dist*(mass_fraction_constraint.upper_mass_fraction - mass_fraction_constraint.lower_mass_fraction);
+        assert( this_rel_mass_frac >= (0.0 - 1.0E-6) );
+        assert( this_rel_mass_frac <= (1.0 + 1.0E-6) );
+
+        const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;
+        const T this_rel_mass = total_rel_mass * this_rel_mass_frac;
+        const T this_rel_act = this_rel_mass * mass_fraction_constraint.nuclide->activityPerGram();
+
+        return this_rel_act;
+      }//for( const auto &mass_fraction_constraint : rel_eff_curve.mass_fraction_constraints )
     }//if( src.nuclide )
     
     // No nuclide constraint, so we can just use the normal logic
@@ -6238,7 +6396,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return answer;
   }//PeaksForEnergyRange peaks_for_energy_range( const double lower_energy, const double upper_energy ) const
   
-  
+
   template<typename T>
   void eval( const std::vector<T> &x, T *residuals ) const
   {
@@ -6278,7 +6436,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       memset( residuals, 0, sizeof(double) * num_residuals );
     }
-    
     // We'll do the simplest parallelization we can by computing peaks in multiple threads; this
     //  actually seems to be reasonably effective in filling up the CPU cores during fitting.
     //  (setting ceres_options.num_threads >1 doesnt seem to do much (any?) good)
@@ -7797,6 +7954,21 @@ void RelEffCurveInput::check_nuclide_constraints() const
 
     if( !is_controlling_nuclide_in_curve )
       throw logic_error( "Controlling nuclide is not in the relative efficiency curve." );
+
+    for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
+    {
+      if( mass_fraction_constraint.nuclide == nuc_constraint.constrained_nuclide )
+        throw logic_error( "Constrained nuclide " + nuc_constraint.constrained_nuclide->symbol + " is also a mass fraction constraint." );
+
+      if( mass_fraction_constraint.nuclide == nuc_constraint.controlling_nuclide )
+      {
+        // We'll let a mass fraction constrained nuclide constroll the activity for a nuclide of another element
+        // but not of the same element.
+        if( nuc_constraint.constrained_nuclide->atomicNumber == nuc_constraint.controlling_nuclide->atomicNumber )
+          throw logic_error( "Constrained nuclide " + nuc_constraint.constrained_nuclide->symbol 
+                             + " is controlled by a mass fraction constrained nuclide of the same element (not currently supported)." );
+      }//if( mass_fraction_constraint.nuclide == nuc_constraint.controlling_nuclide )
+    }//for( const RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
   }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : act_ratio_constraints )
 
   // Check that the constrained nuclide is only controlled by one nuclide
@@ -7862,6 +8034,95 @@ void RelEffCurveInput::check_nuclide_constraints() const
   }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
 
 
+  //Now check the mass fraction constraints (we have already checked that the nuclide is not constrained by an act ratio constraint)
+  std::map<short int, size_t> num_constrained_nucs_of_el;
+  std::map<short int, double> lower_mass_fraction_sums_of_el;
+  for( size_t index = 0; index < mass_fraction_constraints.size(); ++index )
+  {
+    const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = mass_fraction_constraints[index];
+    if( !constraint.nuclide )
+      throw logic_error( "Mass fraction constraint nuclide is nullptr." );
+
+    if( constraint.lower_mass_fraction < 0.0 || constraint.lower_mass_fraction > 1.0 )
+      throw logic_error( "Mass fraction constraint (" + constraint.nuclide->symbol 
+                            + ") has lower mass fraction (" + std::to_string(constraint.lower_mass_fraction) 
+                            + ") which is not in [0.0, 1.0." );
+
+    if( constraint.lower_mass_fraction > constraint.upper_mass_fraction )
+      throw logic_error( "Mass fraction constraint (" + constraint.nuclide->symbol 
+                            + ") has lower mass fraction (" + std::to_string(constraint.lower_mass_fraction) 
+                            + ") which is greater than the upper mass fraction (" + std::to_string(constraint.upper_mass_fraction) + ")." );
+
+    if( constraint.upper_mass_fraction < 0.0 || constraint.upper_mass_fraction > 1.0 )
+      throw logic_error( "Mass fraction constraint (" + constraint.nuclide->symbol 
+                            + ") has upper mass fraction (" + std::to_string(constraint.upper_mass_fraction) 
+                            + ") which is not in (0.0, 1.0)." );
+
+    if( (constraint.upper_mass_fraction == constraint.lower_mass_fraction)
+        && ((constraint.lower_mass_fraction <= 0.0) || (constraint.lower_mass_fraction >= 1.0)) )
+    {
+      throw logic_error( "Mass fraction constraint (" + constraint.nuclide->symbol 
+                            + ") has upper and lower mass fractions set to the same value (" 
+                            + std::to_string(constraint.upper_mass_fraction) + "), which must be in (0, 1)." );
+    }
+
+    lower_mass_fraction_sums_of_el[constraint.nuclide->atomicNumber] += constraint.lower_mass_fraction;
+
+    // Check that the constrained nuclide is a nuclide in this RelEffCurve
+    size_t num_src_nucs_for_element = 0;
+    bool is_constrained_nuclide_in_curve = false;
+    
+    num_constrained_nucs_of_el[constraint.nuclide->atomicNumber] += 1;
+
+    for( const NucInputInfo &nuclide : nuclides )
+    {
+      if( constraint.nuclide == nuclide.nuclide )
+        is_constrained_nuclide_in_curve = true;
+
+      if( nuclide.nuclide && (nuclide.nuclide->atomicNumber == constraint.nuclide->atomicNumber) )
+        ++num_src_nucs_for_element;
+    }//for( const NucInputInfo &nuclide : nuclides )
+
+    if( !is_constrained_nuclide_in_curve )
+      throw logic_error( "Mass fraction constraint nuclide (" + constraint.nuclide->symbol 
+                            + ") is not in the relative efficiency curve." );
+
+    if( num_src_nucs_for_element < 2  )
+      throw logic_error( "Constrained nuclide (" + constraint.nuclide->symbol 
+                            + ") must have at least 2 nuclides of the same element in the relative efficiency curve." );
+
+    for( size_t i = index + 1; i < mass_fraction_constraints.size(); ++i )
+    {
+      const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &other_constraint = mass_fraction_constraints[i];
+      if( other_constraint.nuclide == constraint.nuclide )
+        throw logic_error( "Multiple mass fraction constraints for the same nuclide (" + constraint.nuclide->symbol + ")." );
+    }//for( size_t i = index + 1; i < mass_fraction_constraints.size(); ++i )
+  }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
+
+  // Check that the mass fraction sum of each element is 1.0
+  for( const auto &[el, lower_mass_fraction_sum] : lower_mass_fraction_sums_of_el )
+  {
+    if( lower_mass_fraction_sum >= 1.0 )
+      throw logic_error( "The lower mass fraction sum of element (AN=" + std::to_string(el) 
+                          + ") is above 1.0 (sum=" + std::to_string(lower_mass_fraction_sum) + ")." );
+  }//for( const [const short int &el, const double &lower_mass_fraction_sum] : lower_mass_fraction_sums_of_el )
+
+  // Check that there is at least one nuclide of each element that is not constrained; to do
+  // this we need to count the number of nuclides of each element total, and compare that to the
+  // number of constrained nuclides of that element (num_constrained_nucs_of_el).
+  std::map<short int, size_t> num_nucs_of_el;
+  for( const NucInputInfo &nuclide : nuclides )
+    num_nucs_of_el[nuclide.nuclide->atomicNumber] += 1;
+  
+  for( const auto &[el, num_constrained_nucs] : num_constrained_nucs_of_el )
+  {
+    assert( num_nucs_of_el[el] > 0 );
+
+    if( num_nucs_of_el[el] <= num_constrained_nucs )
+      throw logic_error( "For each element with a mass fraction constraint, you must have at least one nuclide which is not constrained." );
+  }//for( const [const short int &el, const size_t &num_nucs] : num_constrained_nucs_of_el )
+
+
   // Check that if rel act min/max/starting values are set, then nuclide is not constrained to another nuclide
   for( const NucInputInfo &nuc : nuclides )
   {
@@ -7877,6 +8138,13 @@ void RelEffCurveInput::check_nuclide_constraints() const
           throw runtime_error( "Nuclide " + nuc.name() + " is constrained to another nuclide"
                                " - you can not specify its min, max, or starting activity." );
       }//for( const ActRatioConstraint &constraint : act_ratio_constraints )
+
+      for( const MassFractionConstraint &constraint : mass_fraction_constraints )
+      {
+        if( constraint.nuclide == nuc.nuclide )
+          throw runtime_error( "Nuclide " + nuc.name() + " is a mass fraction constraint."
+                               " - you can not specify its min, max, or starting activity." );
+      }//for( const MassFractionConstraint &constraint : mass_fraction_constraints )
     }//if( nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value() || nuc.starting_rel_act.has_value() )
     
     if( nuc.min_rel_act.has_value() && (nuc.min_rel_act.value() < 0.0) )
@@ -8097,6 +8365,97 @@ void RelEffCurveInput::ActRatioConstraint::equalEnough( const ActRatioConstraint
 #endif
 
 
+void RelEffCurveInput::MassFractionConstraint::toXml( ::rapidxml::xml_node<char> *parent ) const
+{
+  using namespace rapidxml;
+  
+  assert( parent );
+  if( !parent || !parent->document() )
+    throw runtime_error( "RoiRange::toXml: invalid parent." );
+
+  xml_document<char> *doc = parent->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "MassFractionConstraint", nullptr, 22, 0 );
+  parent->append_node( base_node );
+  append_version_attrib( base_node, MassFractionConstraint::sm_xmlSerializationVersion );
+
+  append_string_node( base_node, "Nuclide", nuclide->symbol );
+  if( lower_mass_fraction == upper_mass_fraction )
+  {
+    append_float_node( base_node, "MassFraction", lower_mass_fraction );  
+  }else
+  {
+    append_float_node( base_node, "LowerMassFraction", lower_mass_fraction );
+    append_float_node( base_node, "UpperMassFraction", upper_mass_fraction );
+  }
+}//void MassFractionConstraint::toXml( ::rapidxml::xml_node<char> *parent ) const
+
+
+void RelEffCurveInput::MassFractionConstraint::fromXml( const ::rapidxml::xml_node<char> *parent )
+{
+  using namespace rapidxml;
+  
+  if( !parent )
+    throw runtime_error( "invalid input" ); 
+    
+  if( !rapidxml::internal::compare( parent->name(), parent->name_size(), "MassFractionConstraint", 22, false ) )
+    throw std::logic_error( "invalid input node name" );
+    
+  // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+  static_assert( MassFractionConstraint::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+                  
+  const rapidxml::xml_node<char> *nuclide_node = XmlUtils::get_required_node( parent, "Nuclide" );
+  const string nuclide_name = SpecUtils::xml_value_str( nuclide_node );
+
+  double lower_mass_fraction_value = 0.0, upper_mass_fraction_value = 0.0;
+  const rapidxml::xml_node<char> *mass_fraction_node = XML_FIRST_NODE( parent, "MassFraction" );
+  
+  if( mass_fraction_node )
+  {
+    if( !SpecUtils::parse_double(mass_fraction_node->value(), mass_fraction_node->value_size(), lower_mass_fraction_value) )
+      throw std::runtime_error( "Invalid MassFraction XML value ('" + SpecUtils::xml_value_str(mass_fraction_node) + "')." );
+    upper_mass_fraction_value = lower_mass_fraction_value;
+  }else
+  {
+    lower_mass_fraction_value = XmlUtils::get_float_node_value( parent, "LowerMassFraction" );
+    upper_mass_fraction_value = XmlUtils::get_float_node_value( parent, "UpperMassFraction" );
+  }
+  
+  if( lower_mass_fraction_value <= 0.0 || lower_mass_fraction_value > 1.0 )
+    throw runtime_error( "Lower mass fraction must be greater than 0.0 and less than or equal to 1.0." );
+
+  if( upper_mass_fraction_value <= 0.0 || upper_mass_fraction_value > 1.0 )
+    throw runtime_error( "Upper mass fraction must be greater than 0.0 and less than or equal to 1.0." );
+
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "No decay database found." );  
+
+  const SandiaDecay::Nuclide *nuclide_ptr = db->nuclide( nuclide_name );
+  if( !nuclide_ptr )
+    throw runtime_error( "Nuclide '" + nuclide_name + "' not found in decay database." );
+
+  nuclide = nuclide_ptr;
+  lower_mass_fraction = lower_mass_fraction_value;
+  upper_mass_fraction = upper_mass_fraction_value;
+}//void MassFractionConstraint::fromXml( const ::rapidxml::xml_node<char> *parent )
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+void RelEffCurveInput::MassFractionConstraint::equalEnough( const MassFractionConstraint &lhs, const MassFractionConstraint &rhs )
+{
+  if( lhs.nuclide != rhs.nuclide )
+    throw logic_error( "Nuclide is not equal." );
+
+  if( fabs(lhs.lower_mass_fraction - rhs.lower_mass_fraction) > 1e-7 )
+    throw logic_error( "Lower mass fraction is not equal." );
+
+  if( fabs(lhs.upper_mass_fraction - rhs.upper_mass_fraction) > 1e-7 )
+    throw logic_error( "Upper mass fraction is not equal." );
+}//void MassFractionConstraint::equalEnough(...)
+#endif
+
+
 rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
@@ -8168,6 +8527,14 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
     for( const auto &constraint : act_ratio_constraints )
       constraint.toXml( act_ratio_constraints_node );
   }//if( !act_ratio_constraints.empty() )
+
+  if( !mass_fraction_constraints.empty() )
+  {
+    xml_node<char> *mass_fraction_constraints_node = doc->allocate_node( node_element, "MassFractionConstraints" );
+    base_node->append_node( mass_fraction_constraints_node );
+    for( const auto &constraint : mass_fraction_constraints )
+      constraint.toXml( mass_fraction_constraints_node );
+  }//if( !mass_fraction_constraints.empty() ) 
 
   return base_node;
 }//RelEffCurveInput::toXml(...)
@@ -8317,6 +8684,35 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
       act_ratio_constraints.push_back( constraint );
     }//for( each ActRatioConstraint )
   }//if( act_ratio_constraints_node )
+
+  // Get the MassFractionConstraints
+  const rapidxml::xml_node<char> *mass_fraction_constraints_node = XML_FIRST_NODE( parent, "MassFractionConstraints" );
+  if( mass_fraction_constraints_node )
+  {
+    XML_FOREACH_CHILD( constraint_node, mass_fraction_constraints_node, "MassFractionConstraint" )
+    {
+      MassFractionConstraint constraint;
+      constraint.fromXml( constraint_node );
+
+      bool has_nuclide = false;
+      size_t num_nucs_of_el = 0;
+      for( const auto &nuc : nuclides )
+      {
+        has_nuclide |= (nuc.nuclide == constraint.nuclide);
+        if( nuc.nuclide->atomicNumber == constraint.nuclide->atomicNumber )
+          ++num_nucs_of_el;
+      }   
+
+      if( !has_nuclide )
+        throw runtime_error( "MassFractionConstraint nuclide '" + constraint.nuclide->symbol + "' not found in problems nuclides." );
+
+      if( num_nucs_of_el < 2 )
+        throw runtime_error( "MassFractionConstraint for " + constraint.nuclide->symbol 
+                                + " can only be used when there is two or more nuclides for an element." );
+
+      mass_fraction_constraints.push_back( constraint );
+    }//for( each MassFractionConstraint )
+  }//if( mass_fraction_constraints_node )
 }//void RelEffCurveInput::fromXml(...)
   
   
@@ -10674,6 +11070,12 @@ void RelEffCurveInput::equalEnough( const RelEffCurveInput &lhs, const RelEffCur
   
   for( size_t i = 0; i < lhs.act_ratio_constraints.size(); ++i )
     ActRatioConstraint::equalEnough( lhs.act_ratio_constraints[i], rhs.act_ratio_constraints[i] );
+
+  if( lhs.mass_fraction_constraints.size() != rhs.mass_fraction_constraints.size() )
+    throw std::runtime_error( "Number of mass fraction constraints in lhs and rhs are not the same" );
+  
+  for( size_t i = 0; i < lhs.mass_fraction_constraints.size(); ++i )
+    MassFractionConstraint::equalEnough( lhs.mass_fraction_constraints[i], rhs.mass_fraction_constraints[i] );
 }//RelEffCurveInput::equalEnough
 
 

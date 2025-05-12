@@ -450,6 +450,42 @@ struct RelEffCurveInput
   */
   std::vector<ActRatioConstraint> act_ratio_constraints;
 
+
+  /** A constraint on the mass fraction of an nuclide within an element. */
+  struct MassFractionConstraint
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    double lower_mass_fraction = 0.0;
+    double upper_mass_fraction = 0.0;
+
+    static const int sm_xmlSerializationVersion = 0;
+    void toXml( ::rapidxml::xml_node<char> *parent ) const;
+    void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const MassFractionConstraint &lhs, const MassFractionConstraint &rhs );
+#endif
+  };//struct MassFractionConstraint
+
+  /** Constraints on nuclide mass fractions. 
+    
+    All input nuclides must be valid, and be found in `nuclides`.
+
+    The constrained nuclides must not be a controlled nuclide by ActRatioConstraint,
+    or have the min or max relative activity specified.
+
+    If the constrained nuclide controlls the activity of another nuclide, then that other nuclide
+    must be of a different element.
+    (this could be changed in the future, but for the initial implementation, we'll enforce this)
+
+    The lower mass fractions, for a particular element, must sum to less than 1.0.
+
+    There must be at least one nuclide for the element that does not have a mass fraction constraint.
+    (this _could_ be relaxed in the future, but for the initial implementation, this is required)
+  */
+  std::vector<MassFractionConstraint> mass_fraction_constraints;
+
+
   /** Checks that the nuclide constraints are valid.
 
    Checks for cyclical constraints, and that all constrained nuclides are found in #nuclides.
