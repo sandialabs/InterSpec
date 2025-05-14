@@ -1799,7 +1799,6 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
       
       bool is_in_all_curves = true;
       set<size_t> curves_with_nuc;
-      curves_with_nuc.insert( curve_index );  // We know this curve has the nuc
       for( size_t other_curve_index = curve_index+1; other_curve_index < num_rel_eff_curves; ++other_curve_index )
       {
         const vector<RelActCalcAuto::NucInputInfo> &other_nuclides = all_nuclides[other_curve_index];
@@ -1819,6 +1818,10 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
         if( pos != end(other_nuclides) )
           other_nuclides.erase( pos );
       }
+      
+      // We know this curve has the nuc - note we didnt add this index until after the above steps, because
+      //  we dont want to remove the nuclide from this curves nuclides
+      curves_with_nuc.insert( curve_index );
       
       RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( m_nuclides );
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
