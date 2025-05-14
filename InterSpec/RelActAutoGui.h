@@ -205,9 +205,9 @@ protected:
   
   void handleToggleForceFullRange( Wt::WWidget *w );
   
-  /** Combines the two RelActAutoEnergyRange's into a single range, and returns the resulting RelActAutoEnergyRange.
+  /** Combines the two RelActAutoGuiEnergyRange's into a single range, and returns the resulting RelActAutoGuiEnergyRange.
    
-   Will only return nullptr if one/both of the inputs is not a RelActAutoEnergyRange, or not in #m_energy_ranges.
+   Will only return nullptr if one/both of the inputs is not a RelActAutoGuiEnergyRange, or not in #m_energy_ranges.
    */
   Wt::WWidget *handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
   

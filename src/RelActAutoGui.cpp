@@ -88,8 +88,11 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/RelActAutoGuiNuclide.h"
+#include "InterSpec/RelActAutoGuiFreePeak.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+#include "InterSpec/RelActAutoGuiEnergyRange.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/RelActAutoGuiRelEffOptions.h"
 
@@ -269,935 +272,6 @@ namespace
       }//try / catch
     }//void handleRequest(...)
   };//class RelActAutoReportResource
-
-
-  class RelActAutoEnergyRange : public WContainerWidget
-  {
-    RelActAutoGui *m_gui;
-    Wt::Signal<> m_updated;
-    Wt::Signal<> m_remove_energy_range;
-    
-    NativeFloatSpinBox *m_lower_energy;
-    NativeFloatSpinBox *m_upper_energy;
-    WComboBox *m_continuum_type;
-    WCheckBox *m_force_full_range;
-    WPushButton *m_to_individual_rois;
-    
-    /// Used to track the Highlight region this energy region corresponds to in D3SpectrumDisplayDiv
-    size_t m_highlight_region_id;
-    
-  public:
-    RelActAutoEnergyRange( RelActAutoGui *gui, WContainerWidget *parent = nullptr )
-    : WContainerWidget( parent ),
-      m_gui( gui ),
-      m_updated( this ),
-      m_remove_energy_range( this ),
-      m_lower_energy( nullptr ),
-      m_upper_energy( nullptr ),
-      m_continuum_type( nullptr ),
-      m_force_full_range( nullptr ),
-      m_to_individual_rois( nullptr ),
-      m_highlight_region_id( 0 )
-    {
-      addStyleClass( "RelActAutoEnergyRange" );
-      
-      wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
-      
-      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-      
-      WLabel *label = new WLabel( "Lower Energy", this );
-      label->addStyleClass( "GridFirstCol GridFirstRow" );
-      
-      m_lower_energy = new NativeFloatSpinBox( this );
-      m_lower_energy->addStyleClass( "GridSecondCol GridFirstRow" );
-      m_lower_energy->setSpinnerHidden( true );
-      label->setBuddy( m_lower_energy );
-      
-      label = new WLabel( "keV", this );
-      label->addStyleClass( "GridThirdCol GridFirstRow" );
-      
-      label = new WLabel( "Upper Energy", this );
-      label->addStyleClass( "GridFirstCol GridSecondRow" );
-      
-      m_upper_energy = new NativeFloatSpinBox( this );
-      m_upper_energy->addStyleClass( "GridSecondCol GridSecondRow" );
-      m_upper_energy->setSpinnerHidden( true );
-      label->setBuddy( m_upper_energy );
-      
-      label = new WLabel( "keV", this );
-      label->addStyleClass( "GridThirdCol GridSecondRow" );
-      
-      m_lower_energy->valueChanged().connect( this, &RelActAutoEnergyRange::handleEnergyChange );
-      m_upper_energy->valueChanged().connect( this, &RelActAutoEnergyRange::handleEnergyChange );
-      
-      label = new WLabel( "Continuum Type:", this );
-      label->addStyleClass( "GridFourthCol GridFirstRow" );
-      m_continuum_type = new WComboBox( this );
-      m_continuum_type->addStyleClass( "GridFifthCol GridFirstRow" );
-      label->setBuddy( m_continuum_type );
-      
-      // We wont allow "External" here
-      for( int i = 0; i < static_cast<int>(PeakContinuum::OffsetType::External); ++i )
-      {
-        const char *key = PeakContinuum::offset_type_label_tr( PeakContinuum::OffsetType(i) );
-        m_continuum_type->addItem( WString::tr(key) );
-      }//for( loop over PeakContinuum::OffsetType )
-      
-      m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
-      m_continuum_type->changed().connect( this, &RelActAutoEnergyRange::handleContinuumTypeChange );
-
-      m_force_full_range = new WCheckBox( "Force full-range", this );
-      m_force_full_range->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
-      m_force_full_range->checked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
-      m_force_full_range->unChecked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
-      
-      WPushButton *removeEnergyRange = new WPushButton( this );
-      removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc GridSixthCol GridFirstRow Wt-icon" );
-      removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
-      removeEnergyRange->clicked().connect( this, &RelActAutoEnergyRange::handleRemoveSelf );
-      
-      m_to_individual_rois = new WPushButton( this );
-      m_to_individual_rois->setStyleClass( "ToIndividualRois GridSixthCol GridSecondRow Wt-icon" );
-      m_to_individual_rois->setIcon( "InterSpec_resources/images/expand_list.svg" );
-      m_to_individual_rois->clicked().connect( boost::bind( &RelActAutoGui::handleConvertEnergyRangeToIndividuals,
-                                                           m_gui, static_cast<WWidget *>(this) ) );
-      m_to_individual_rois->setHidden( m_force_full_range->isChecked() );
-      
-      const char *tooltip = "Converts this energy range into individual ROIs, based on which gammas should be"
-      " grouped together vs apart (e.g., leaves gammas with overlapping peaks in a single ROI, while if two gammas"
-      " are far apart, they will be split into seperate ROIs.";
-      HelpSystem::attachToolTipOn( m_to_individual_rois, tooltip, showToolTips );
-    }//RelActAutoEnergyRange constructor
-    
-    
-    bool isEmpty() const
-    {
-      return ((fabs(m_lower_energy->value() - m_upper_energy->value() ) < 1.0)
-              || (m_upper_energy->value() <= 0.0));
-    }
-    
-    
-    void handleRemoveSelf()
-    {
-      m_remove_energy_range.emit();
-    }//void handleRemoveSelf()
-    
-    
-    void handleContinuumTypeChange()
-    {
-      m_updated.emit();
-    }
-    
-    void handleForceFullRangeChange()
-    {
-      m_to_individual_rois->setHidden( m_to_individual_rois->isDisabled() || m_force_full_range->isChecked() );
-      
-      m_updated.emit();
-    }
-    
-    
-    void enableSplitToIndividualRanges( const bool enable )
-    {
-      m_to_individual_rois->setHidden( !enable || m_force_full_range->isChecked() );
-      m_to_individual_rois->setEnabled( enable );
-    }
-    
-    
-    void handleEnergyChange()
-    {
-      float lower = m_lower_energy->value();
-      float upper = m_upper_energy->value();
-      if( lower > upper )
-      {
-        m_lower_energy->setValue( upper );
-        m_upper_energy->setValue( lower );
-        
-        std::swap( lower, upper );
-      }//if( lower > upper )
-      
-      m_updated.emit();
-    }//void handleEnergyChange()
-    
-    
-    void setEnergyRange( float lower, float upper )
-    {
-      if( lower > upper )
-        std::swap( lower, upper );
-      
-      m_lower_energy->setValue( lower );
-      m_upper_energy->setValue( upper );
-      
-      m_updated.emit();
-    }//void setEnergyRange( float lower, float upper )
-    
-    
-    bool forceFullRange() const
-    {
-      return m_force_full_range->isChecked();
-    }
-    
-    
-    void setForceFullRange( const bool force_full )
-    {
-      if( force_full == m_force_full_range->isChecked() )
-        return;
-      
-      m_force_full_range->setChecked( force_full );
-      m_updated.emit();
-    }
-    
-    
-    void setContinuumType( const PeakContinuum::OffsetType type )
-    {
-      const int type_index = static_cast<int>( type );
-      if( (type_index < 0)
-         || (type_index >= static_cast<int>(PeakContinuum::OffsetType::External)) )
-      {
-        assert( 0 );
-        return;
-      }
-      
-      if( type_index == m_continuum_type->currentIndex() )
-        return;
-      
-      m_continuum_type->setCurrentIndex( type_index );
-      m_updated.emit();
-    }//void setContinuumType( PeakContinuum::OffsetType type )
-    
-    
-    void setHighlightRegionId( const size_t chart_id )
-    {
-      m_highlight_region_id = chart_id;
-    }
-    
-    
-    size_t highlightRegionId() const
-    {
-      return m_highlight_region_id;
-    }
-  
-    float lowerEnergy() const
-    {
-      return m_lower_energy->value();
-    }
-    
-    
-    float upperEnergy() const
-    {
-      return m_upper_energy->value();
-    }
-    
-    
-    void setFromRoiRange( const RelActCalcAuto::RoiRange &roi )
-    {
-      if( roi.continuum_type == PeakContinuum::OffsetType::External )
-        throw runtime_error( "setFromRoiRange: External continuum type not supported" );
-      
-      if( roi.allow_expand_for_peak_width )
-        throw runtime_error( "setFromRoiRange: allow_expand_for_peak_width set to true not supported" );
-      
-      m_lower_energy->setValue( roi.lower_energy );
-      m_upper_energy->setValue( roi.upper_energy );
-      m_continuum_type->setCurrentIndex( static_cast<int>(roi.continuum_type) );
-      m_force_full_range->setChecked( roi.force_full_range );
-      
-      enableSplitToIndividualRanges( !roi.force_full_range );
-    }//setFromRoiRange(...)
-    
-    
-    RelActCalcAuto::RoiRange toRoiRange() const
-    {
-      RelActCalcAuto::RoiRange roi;
-      
-      roi.lower_energy = m_lower_energy->value();
-      roi.upper_energy = m_upper_energy->value();
-      roi.continuum_type = PeakContinuum::OffsetType( m_continuum_type->currentIndex() );
-      roi.force_full_range = m_force_full_range->isChecked();
-      roi.allow_expand_for_peak_width = false; //not currently supported to the GUI, or tested in the calculation code
-      
-      return roi;
-    }//RelActCalcAuto::RoiRange toRoiRange() const
-    
-    
-    Wt::Signal<> &updated()
-    {
-      return m_updated;
-    }
-    
-    
-    Wt::Signal<> &remove()
-    {
-      return m_remove_energy_range;
-    }
-  };//class RelActAutoEnergyRange
-
-
-  class RelActAutoNuclide : public WContainerWidget
-  {
-    RelActAutoGui *m_gui;
-    
-    WLineEdit *m_nuclide_edit;
-    WLabel *m_age_label;
-    WLineEdit *m_age_edit;
-    WCheckBox *m_fit_age;
-    ColorSelect *m_color_select;
-    
-    Wt::Signal<> m_updated;
-    Wt::Signal<> m_remove;
-    
-  public:
-    RelActAutoNuclide( RelActAutoGui *gui, WContainerWidget *parent = nullptr )
-    : WContainerWidget( parent ),
-    m_gui( gui ),
-    m_nuclide_edit( nullptr ),
-    m_age_label( nullptr ),
-    m_age_edit( nullptr ),
-    m_fit_age( nullptr ),
-    m_color_select( nullptr ),
-    m_updated( this ),
-    m_remove( this )
-    {
-      addStyleClass( "RelActAutoNuclide" );
-      
-      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-      
-      WLabel *label = new WLabel( "Nuclide:", this );
-      m_nuclide_edit = new WLineEdit( "", this );
-      
-      m_nuclide_edit->setAutoComplete( false );
-      m_nuclide_edit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-      m_nuclide_edit->setAttributeValue( "autocorrect", "off" );
-      m_nuclide_edit->setAttributeValue( "spellcheck", "off" );
-#endif
-      label->setBuddy( m_nuclide_edit );
-      
-      m_nuclide_edit->changed().connect( this, &RelActAutoNuclide::handleIsotopeChange );
-      
-      // If we are typing in this box, we want to let app-hotkeys propagate up, but not arrow keys and
-      //  stuff
-      const string jsAppKeyDownFcn = wApp->javaScriptClass() + ".appKeyDown";
-      const string keyDownJs = "function(s1,e1){"
-      "if(e1 && e1.ctrlKey && e1.key && " + jsAppKeyDownFcn + ")"
-      + jsAppKeyDownFcn + "(e1);"
-      "}";
-      m_nuclide_edit->keyWentDown().connect( keyDownJs );
-      
-      const char *tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>"
-      ", <b>U-235m</b> (meta stable state)"
-      ", <b>Cs137</b>, Pb, Fe(n,n), etc.";
-      HelpSystem::attachToolTipOn( m_nuclide_edit, tooltip, showToolTips );
-      
-      string replacerJs, matcherJs;
-      IsotopeNameFilterModel::replacerJs( replacerJs );
-      IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
-      IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
-      isoSuggestModel->excludeXrays( false );
-      isoSuggestModel->excludeEscapes( false );
-      isoSuggestModel->excludeReactions( false );
-      
-      WSuggestionPopup *nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
-#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
-      nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
-#endif
-      nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-      nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
-      
-      IsotopeNameFilterModel::setQuickTypeFixHackjs( nuclideSuggest );
-      
-      isoSuggestModel->filter( "" );
-      nuclideSuggest->setFilterLength( -1 );
-      nuclideSuggest->setModel( isoSuggestModel );
-      nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
-      nuclideSuggest->forEdit( m_nuclide_edit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
-      
-      m_age_label = new WLabel( "Age:", this );
-      m_age_edit = new WLineEdit( "", this );
-      m_age_label->setBuddy( m_age_edit );
-      
-      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
-      validator->setFlags(Wt::MatchCaseInsensitive);
-      m_age_edit->setValidator(validator);
-      m_age_edit->setAutoComplete( false );
-      m_age_edit->setAttributeValue( "ondragstart", "return false" );
-      m_age_edit->changed().connect( this, &RelActAutoNuclide::handleAgeChange );
-      
-      m_fit_age = new WCheckBox( "Fit Age", this );
-      m_fit_age->setWordWrap( false );
-      m_fit_age->checked().connect( this, &RelActAutoNuclide::handleFitAgeChange );
-      m_fit_age->unChecked().connect( this, &RelActAutoNuclide::handleFitAgeChange );
-      
-      WContainerWidget *spacer = new WContainerWidget( this );
-      spacer->addStyleClass( "RelActAutoNuclideSpacer" );
-      
-      
-      m_color_select = new ColorSelect( ColorSelect::PrefferNative, this );
-      m_color_select->setColor( WColor("#FF6633") );
-      
-      m_color_select->cssColorChanged().connect( this, &RelActAutoNuclide::handleColorChange );
-      
-      
-      WPushButton *removeEnergyRange = new WPushButton( this );
-      removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
-      removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
-      removeEnergyRange->clicked().connect( this, &RelActAutoNuclide::handleRemoveSelf );
-    }//RelActAutoNuclide
-    
-    
-    void handleIsotopeChange()
-    {
-      const auto nuc_input = nuclide();
-
-      const auto hide_age_stuff = [this,&nuc_input](){
-        m_age_label->hide();
-        m_age_edit->hide();
-        m_fit_age->setUnChecked();
-        m_fit_age->hide();
-
-        const string nucstr = m_nuclide_edit->text().toUTF8();
-        if( !nucstr.empty() && std::holds_alternative<std::monostate>(nuc_input) )
-          passMessage( nucstr + " is not a valid nuclide, x-ray, or reaction.", WarningWidget::WarningMsgHigh );
-      };//hide_age_stuff
-
-      if( std::holds_alternative<std::monostate>(nuc_input) )
-      {
-        hide_age_stuff();
-        m_updated.emit();
-        return;
-      }
-
-      std::string src_name;
-      const SandiaDecay::Nuclide *nuc = nullptr;
-      const SandiaDecay::Element *el = nullptr;
-      const ReactionGamma::Reaction * reaction = nullptr;
-
-      if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
-      {
-        nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
-
-        assert( nuc );
-        if( !nuc )
-          throw runtime_error( "No valid nuclide" );
-
-        src_name = nuc->symbol;
-      
-        if( IsInf(nuc->halfLife) )
-        {
-          const string nucstr = m_nuclide_edit->text().toUTF8();
-          passMessage( nucstr + " is a stable nuclide.", WarningWidget::WarningMsgHigh );
-        
-          m_nuclide_edit->setText( "" );
-          m_nuclide_edit->validate();
-          m_fit_age->setUnChecked();
-          m_fit_age->hide();
-        
-          m_updated.emit();
-          return;
-        }//if( IsInf(nuc->halfLife) )
-      
-        const bool age_is_fittable = !PeakDef::ageFitNotAllowed( nuc );
-      
-        if( nuc->decaysToStableChildren() )
-        {
-          m_age_edit->setText( "0y" );
-        }else
-        {
-          string agestr;
-          PeakDef::defaultDecayTime( nuc, &agestr );
-          m_age_edit->setText( agestr );
-        }
-      
-        m_age_label->setHidden( !age_is_fittable );
-        m_age_edit->setHidden( !age_is_fittable );
-        m_fit_age->setHidden( !age_is_fittable );
-        m_fit_age->setChecked( false );
-      }
-      
-      if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
-      {
-        el = std::get<const SandiaDecay::Element *>(nuc_input);
-        assert( el );
-        src_name = el->symbol;
-        hide_age_stuff();
-      }
-
-      if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
-      {
-        reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
-        assert( reaction );
-        src_name = reaction->name();
-        hide_age_stuff();
-      }
-      
-      bool haveFoundColor = false;
-      
-      // Check user is showing reference lines, displayed peaks, and previous user-selected colors
-      if( !haveFoundColor )
-      {
-        const ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
-        if( refdisp )
-        {
-          const Wt::WColor c = refdisp->suggestColorForSource( src_name );
-          if( !c.isDefault() )
-          {
-            haveFoundColor = true;
-            m_color_select->setColor( c );
-          }
-        }//if( refdisp )
-      }//if( !haveFoundColor )
-      
-      // Check if the theme explicitly specifies a color for this nuclide
-      if( !haveFoundColor )
-      {
-        shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
-        if( theme )
-        {
-          const map<string,WColor> &defcolors = theme->referenceLineColorForSources;
-          const auto pos = defcolors.find( src_name );
-          if( pos != end(defcolors) )
-            m_color_select->setColor( pos->second );
-        }//if( theme )
-      }//if( !haveFoundColor )
-      
-      if( !haveFoundColor )
-      {
-        // TODO: create a cache of previous user-selected colors
-      }//if( !haveFoundColor )
-      
-      m_updated.emit();
-    }//void handleIsotopeChange()
-    
-    
-    void setFitAgeVisible( bool visible, bool do_fit )
-    {
-      if( visible )
-      {
-        m_fit_age->setHidden( false );
-        m_fit_age->setChecked( do_fit );
-      }else
-      {
-        m_fit_age->setHidden( true );
-        m_fit_age->setChecked( false );
-      }
-    }//setFitAgeVisible(...)
-    
-    
-    void setAgeDisabled( bool disabled )
-    {
-      m_fit_age->setDisabled( disabled );
-      m_age_edit->setDisabled( disabled );
-    }//void setAgeDisabled( bool disabled )
-    
-    
-    void setAge( const string &age )
-    {
-      m_age_edit->setValueText( WString::fromUTF8(age) );
-    }
-    
-    void setNuclideEditFocus()
-    {
-      m_nuclide_edit->setFocus();
-    }
-    
-    void handleAgeChange()
-    {
-      m_updated.emit();
-    }//void handleAgeChange()
-    
-    
-    void handleFitAgeChange()
-    {
-      
-      m_updated.emit();
-    }
-    
-    
-    void handleColorChange()
-    {
-      m_updated.emit();
-    }
-    
-    /** Will return std::monostate if invalid text entered. */
-    std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> nuclide() const
-    {
-      const string nucstr = m_nuclide_edit->text().toUTF8();
-      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-      assert( db );
-      if( !db )
-        throw runtime_error( "Couldnt load decay DB" );
-      
-      const SandiaDecay::Nuclide *nuc = db->nuclide( nucstr );
-      if( nuc )
-        return nuc;
-      
-      const SandiaDecay::Element *el = db->element( nucstr );
-      if( el )
-        return el;
-      
-      const ReactionGamma * const reaction_db = ReactionGammaServer::database();
-      assert( reaction_db );
-      if( !reaction_db )
-        throw runtime_error( "Couldnt load reaction DB" );
-      
-      try
-      {
-        const ReactionGamma::Reaction *reaction = nullptr;
-        vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-        reaction_db->gammas( nucstr, possible_rctns );
-        
-        // TODO: we are currently taking the first reaction; however, in principle there could be multiple - however, `ReactionGamma` doesnt have an interface to just return a reaction by name, I guess because
-        for( size_t i = 0; !reaction && (i < possible_rctns.size()); ++i )
-          reaction = possible_rctns[i].reaction;
-        
-        if( reaction )
-          return reaction;
-      }catch( std::exception & )
-      {
-        //ReactionGamma::gammas(...) throws if not a valid reaction
-      }//try / catch
-      
-      return std::monostate{};
-    }
-    
-    WColor color() const
-    {
-      return m_color_select->color();
-    }
-    
-    void setColor( const WColor &color )
-    {
-      m_color_select->setColor( color );
-    }
-    
-    double age() const
-    {
-      const auto nuc_input = nuclide();
-      if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
-        return 0.0;
-      
-      const SandiaDecay::Nuclide * const nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
-      if( !nuc )
-        return 0.0;
-    
-      if( m_age_edit->isHidden() || m_age_edit->text().empty() )
-        return PeakDef::defaultDecayTime( nuc );
-      
-      double age = 0.0;
-      try
-      {
-        const string agestr = m_age_edit->text().toUTF8();
-        age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
-      }catch( std::exception & )
-      {
-        age = PeakDef::defaultDecayTime( nuc );
-      }//try / catch
-      
-      return age;
-    }//double age() const
-    
-    
-    RelActCalcAuto::NucInputInfo toNucInputInfo() const
-    {
-      const auto nuc_input = nuclide();
-      
-   
-      RelActCalcAuto::NucInputInfo nuc_info;
-
-      if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
-      {
-        nuc_info.nuclide = std::get<const SandiaDecay::Nuclide *>(nuc_input);
-        nuc_info.age = age(); // Must not be negative.
-        nuc_info.fit_age = m_fit_age->isChecked();
-      }else if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
-      {
-        nuc_info.element = std::get<const SandiaDecay::Element *>(nuc_input);
-      }else if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
-      {
-        nuc_info.reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
-      }else
-      {
-        throw runtime_error( "No valid nuclide" );
-      }
-      
-      // TODO: Not implemented: vector<double> gammas_to_exclude;
-      //nuc_info.gammas_to_exclude = ;
-      
-      nuc_info.peak_color_css = m_color_select->color().cssText();
-
-      return nuc_info;
-    }//RelActCalcAuto::RoiRange toRoiRange() const
-    
-    
-    void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
-    {
-      if( !info.nuclide && !info.element && !info.reaction )
-      {
-        m_nuclide_edit->setText( "" );
-        if( !info.peak_color_css.empty() )
-          m_color_select->setColor( WColor(info.peak_color_css) );
-        
-        m_age_label->hide();
-        m_age_edit->hide();
-        m_age_edit->setText( "0s" );
-        m_fit_age->setUnChecked();
-        m_fit_age->hide();
-        
-        m_updated.emit();
-        
-        return;
-      }//if( !info.nuclide && !info.element && !info.reaction )
-      
-      if( info.nuclide )
-        m_nuclide_edit->setText( WString::fromUTF8(info.nuclide->symbol) );
-      else if( info.element )
-        m_nuclide_edit->setText( WString::fromUTF8(info.element->symbol) );
-      else if( info.reaction )
-        m_nuclide_edit->setText( WString::fromUTF8(info.reaction->name()) );
-      
-      if( !info.peak_color_css.empty() )
-        m_color_select->setColor( WColor(info.peak_color_css) );
-      
-      if( info.nuclide )
-      {
-        const SandiaDecay::Nuclide * const nuc = info.nuclide;
-        
-        const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
-        m_age_label->setHidden( !age_is_fittable );
-        m_age_edit->setHidden( !age_is_fittable );
-        m_fit_age->setHidden( !age_is_fittable );
-        m_fit_age->setChecked( age_is_fittable && info.fit_age );
-      
-        if( !age_is_fittable || (info.age < 0.0) )
-        {
-          string agestr = "0s";
-          if( nuc )
-            PeakDef::defaultDecayTime( nuc, &agestr );
-          m_age_edit->setText( WString::fromUTF8(agestr) );
-        }else
-        {
-          const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
-          m_age_edit->setText( WString::fromUTF8(agestr) );
-        }
-
-         // TODO: blah blah blah - implement the below
-         //std::optional<double> info.fit_age_min;  
-         //std::optional<double> info.fit_age_max;
-      }else 
-      {
-        m_age_label->hide();
-        m_age_edit->hide();
-        m_fit_age->setUnChecked();
-        m_fit_age->hide();
-      }//if( info.nuclide )
-      
-      // Not currently supported: info.gammas_to_exclude -> vector<double>;
-
-      // TODO: blah blah blah - implement the below
-      //std::optional<double> info.min_rel_act;
-      //std::optional<double> info.max_rel_act;
-      //std::optional<double> info.starting_rel_act;
-      //std::vector<double> info.gammas_to_exclude;
-
-      handleIsotopeChange();
-    }//void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
-    
-    
-    void handleRemoveSelf()
-    {
-      m_remove.emit();
-    }
-    
-    
-    Wt::Signal<> &updated()
-    {
-      return m_updated;
-    }
-    
-    
-    Wt::Signal<> &remove()
-    {
-      return m_remove;
-    }
-
-    void addActRatioConstraint( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint )
-    {
-      // TODO: blah blah blah - implement this
-    }
-
-    void addMassFractionConstraint( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint )
-    {
-      // TODO: blah blah blah - implement this
-    }
-
-    void setIsInCurves( const std::set<size_t> &curves_with_nuc, size_t num_rel_eff_curves )
-    {
-      // TODO: blah blah blah - implement this
-    }
-  };//class RelActAutoNuclide
-
-  
-  
-  
-  class RelActFreePeak : public WContainerWidget
-  {
-    RelActAutoGui *m_gui;
-    NativeFloatSpinBox *m_energy;
-    WCheckBox *m_fwhm_constrained;
-    WCheckBox *m_apply_energy_cal;
-    WText *m_invalid;
-    
-    Wt::Signal<> m_updated;
-    Wt::Signal<> m_remove;
-    
-  public:
-    RelActFreePeak( RelActAutoGui *gui, WContainerWidget *parent = nullptr )
-    : WContainerWidget( parent ),
-    m_gui( gui ),
-    m_energy( nullptr ),
-    m_fwhm_constrained( nullptr ),
-    m_apply_energy_cal( nullptr ),
-    m_updated( this ),
-    m_remove( this )
-    {
-      addStyleClass( "RelActFreePeak" );
-      
-      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-      
-      WLabel *label = new WLabel( "Energy", this );
-      label->addStyleClass( "GridFirstCol GridFirstRow" );
-      
-      m_energy = new NativeFloatSpinBox( this );
-      label->setBuddy( m_energy );
-      m_energy->valueChanged().connect( this, &RelActFreePeak::handleEnergyChange );
-      m_energy->addStyleClass( "GridSecondCol GridFirstRow" );
-      
-      // Things are a little cramped if we include the keV
-      //label = new WLabel( "keV", this );
-      //label->addStyleClass( "GridThirdCol GridFirstRow" );
-      
-      WPushButton *removeFreePeak = new WPushButton( this );
-      removeFreePeak->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
-      removeFreePeak->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
-      removeFreePeak->clicked().connect( this, &RelActFreePeak::handleRemoveSelf );
-      removeFreePeak->addStyleClass( "GridThirdCol GridFirstRow" );
-      
-      m_fwhm_constrained = new WCheckBox( "Constrain FWHM", this );
-      m_fwhm_constrained->setChecked( true );
-      m_fwhm_constrained->checked().connect( this, &RelActFreePeak::handleFwhmConstrainChanged );
-      m_fwhm_constrained->unChecked().connect( this, &RelActFreePeak::handleFwhmConstrainChanged );
-      m_fwhm_constrained->addStyleClass( "FreePeakConstrain GridFirstCol GridSecondRow GridSpanThreeCol" );
-      
-      const char *tooltip = "When checked, this peak will be constrained to the FWHM functional form gamma and x-ray"
-      "peaks are normally constrained to.<br />"
-      "When un-checked, the FWHM for this peak will be fit from the data, independent of all other peak widths.<br />"
-      "Un-checking this option is useful for annihilation and reaction photopeaks.";
-      HelpSystem::attachToolTipOn( m_fwhm_constrained, tooltip, showToolTips );
-      
-      
-      m_apply_energy_cal = new WCheckBox( "True Energy", this );
-      m_apply_energy_cal->setStyleClass( "CbNoLineBreak" );
-      m_apply_energy_cal->setChecked( true );
-      m_apply_energy_cal->checked().connect( this, &RelActFreePeak::handleApplyEnergyCalChanged );
-      m_apply_energy_cal->unChecked().connect( this, &RelActFreePeak::handleApplyEnergyCalChanged );
-      m_apply_energy_cal->addStyleClass( "FreePeakConstrain GridFirstCol GridThirdRow GridSpanThreeCol" );
-      tooltip = "Check this option if the peak is for a gamma of known energy.<br />"
-      "Un-check this option if this peak is an observed peak in the spectrum with unknown true energy.";
-      HelpSystem::attachToolTipOn( m_apply_energy_cal, tooltip, showToolTips );
-      
-      
-      m_invalid = new WText( "Not in a ROI.", this );
-      m_invalid->addStyleClass( "InvalidFreePeakEnergy GridFirstCol GridFourthRow GridSpanThreeCol" );
-      m_invalid->hide();
-    }//RelActFreePeak constructor
-    
-    
-    float energy() const
-    {
-      return m_energy->value();
-    }
-    
-    
-    void setEnergy( const float energy )
-    {
-      m_energy->setValue( energy );
-      m_updated.emit();
-    }
-    
-    
-    bool fwhmConstrained() const
-    {
-      return m_fwhm_constrained->isChecked();
-    }
-    
-    
-    void setFwhmConstrained( const bool constrained )
-    {
-      m_fwhm_constrained->setChecked( constrained );
-      m_updated.emit();
-    }
-    
-    
-    bool applyEnergyCal() const
-    {
-      return (m_apply_energy_cal->isVisible() && m_apply_energy_cal->isChecked());
-    }
-    
-    
-    void setApplyEnergyCal( const bool apply )
-    {
-      m_apply_energy_cal->setChecked( apply );
-    }
-    
-    
-    void setInvalidEnergy( const bool invalid )
-    {
-      if( invalid != m_invalid->isVisible() )
-        m_invalid->setHidden( !invalid );
-    }
-    
-    
-    void handleRemoveSelf()
-    {
-      m_remove.emit();
-    }
-    
-    
-    void handleEnergyChange()
-    {
-      m_updated.emit();
-    }//
-    
-    
-    void handleFwhmConstrainChanged()
-    {
-      m_updated.emit();
-    }
-    
-    
-    void handleApplyEnergyCalChanged()
-    {
-      m_updated.emit();
-    }
-    
-    
-    void setApplyEnergyCalVisible( const bool visible )
-    {
-      if( m_apply_energy_cal->isVisible() != visible )
-        m_apply_energy_cal->setHidden( !visible );
-    }
-    
-    
-    Wt::Signal<> &updated()
-    {
-      return m_updated;
-    }
-    
-    
-    Wt::Signal<> &remove()
-    {
-      return m_remove;
-    }
-  };//RelActFreePeak
 }//namespace
 
 
@@ -2057,7 +1131,7 @@ vector<RelActCalcAuto::NucInputInfo> RelActAutoGui::getNucInputInfo( const int r
   const vector<WWidget *> &kids = m_nuclides->children();
   for( WWidget *w : kids )
   {
-    const RelActAutoNuclide *nuc = dynamic_cast<const RelActAutoNuclide *>( w );
+    const RelActAutoGuiNuclide *nuc = dynamic_cast<const RelActAutoGuiNuclide *>( w );
     assert( nuc );
     if( nuc && !std::holds_alternative<std::monostate>(nuc->nuclide()) )
       answer.push_back( nuc->toNucInputInfo() );
@@ -2092,7 +1166,7 @@ vector<RelActCalcAuto::RoiRange> RelActAutoGui::getRoiRanges() const
   const vector<WWidget *> &kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
-    const RelActAutoEnergyRange *roi = dynamic_cast<const RelActAutoEnergyRange *>( w );
+    const RelActAutoGuiEnergyRange *roi = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi && !roi->isEmpty() )
       answer.push_back( roi->toRoiRange() );
@@ -2109,7 +1183,7 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
   const vector<WWidget *> &roi_widgets = m_energy_ranges->children();
   for( WWidget *w : roi_widgets )
   {
-    const RelActAutoEnergyRange *roi = dynamic_cast<const RelActAutoEnergyRange *>( w );
+    const RelActAutoGuiEnergyRange *roi = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi && !roi->isEmpty() )
       rois.emplace_back( roi->lowerEnergy(), roi->upperEnergy() );
@@ -2120,7 +1194,7 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
   const std::vector<WWidget *> &kids = m_free_peaks->children();
   for( WWidget *w : kids )
   {
-    RelActFreePeak *free_peak = dynamic_cast<RelActFreePeak *>(w);
+    RelActAutoGuiFreePeak *free_peak = dynamic_cast<RelActAutoGuiFreePeak *>(w);
     assert( free_peak );
     if( !free_peak )
       continue;
@@ -2139,7 +1213,7 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
     peak.apply_energy_cal_correction = free_peak->applyEnergyCal();
     
     answer.push_back( peak );
-  }//for( loop over RelActFreePeak widgets )
+  }//for( loop over RelActAutoGuiFreePeak widgets )
   
   return answer;
 }//RelActCalcAuto::FloatingPeak getFloatingPeaks() const
@@ -2163,12 +1237,12 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
   //<< ", is_final_range=" << is_final_range << endl;
   
   double min_de = 999999.9;
-  RelActAutoEnergyRange *range = nullptr;
+  RelActAutoGuiEnergyRange *range = nullptr;
   
   const vector<WWidget *> &kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( !roi || roi->isEmpty() )
       continue;
@@ -2183,7 +1257,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     }
   }//for( WWidget *w : kids )
 
-  if( !range || (min_de > 2.5) )  // Sometimes the ROI might say its original lower energy is like 603 keV, but the RelActAutoEnergyRange might say 604.2.
+  if( !range || (min_de > 2.5) )  // Sometimes the ROI might say its original lower energy is like 603 keV, but the RelActAutoGuiEnergyRange might say 604.2.
   {
     cerr << "Unexpectedly couldnt find ROI in getRoiRanges()!" << endl;
     cout << "\t\toriginal_roi_lower_energy=" << original_roi_lower_energy
@@ -2191,7 +1265,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     << ", is_final_range=" << is_final_range << endl;
     for( WWidget *w : kids )
     {
-      RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
       assert( roi );
       if( !roi || roi->isEmpty() )
         continue;
@@ -2210,7 +1284,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     return;
   }//if( the user
   
-  // We will only set RelActAutoEnergyRange energies when its final, otherwise the lower energy wont
+  // We will only set RelActAutoGuiEnergyRange energies when its final, otherwise the lower energy wont
   //  match on later updates
   if( is_final_range )
   {
@@ -2293,12 +1367,13 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
   {
     m_spectrum->updateRoiBeingDragged( {} );
     
-    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+    RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
     
     energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     
     energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                                 this, static_cast<WWidget *>(energy_range) ) );
+    energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1 ) );
     
     energy_range->setEnergyRange( roi_lower, roi_upper );
     energy_range->setForceFullRange( true );
@@ -2337,7 +1412,7 @@ void RelActAutoGui::handleShiftDrag( const double lower_energy, const double upp
   const vector<WWidget *> kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( !roi || roi->isEmpty() )
       continue;
@@ -2441,15 +1516,16 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     
     const vector<WWidget *> prev_roi_widgets = m_energy_ranges->children();
     
-    RelActAutoEnergyRange *new_roi_w = new RelActAutoEnergyRange( this, m_energy_ranges );
+    RelActAutoGuiEnergyRange *new_roi_w = new RelActAutoGuiEnergyRange( m_energy_ranges );
     new_roi_w->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     new_roi_w->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(new_roi_w) ) );
+    new_roi_w->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     new_roi_w->setFromRoiRange( new_roi );
     
-    vector<RelActAutoEnergyRange *> overlapping_rois;
+    vector<RelActAutoGuiEnergyRange *> overlapping_rois;
     for( WWidget *w : prev_roi_widgets )
     {
-      RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
       assert( roi );
       if( !roi )
         continue;
@@ -2458,10 +1534,10 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     }
     
     bool combined_an_roi = false;
-    for( RelActAutoEnergyRange *roi : overlapping_rois )
+    for( RelActAutoGuiEnergyRange *roi : overlapping_rois )
     {
       WWidget *w = handleCombineRoi( roi, new_roi_w );
-      RelActAutoEnergyRange *combined_roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      RelActAutoGuiEnergyRange *combined_roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
       
       assert( combined_roi );
       if( !combined_roi )
@@ -2502,26 +1578,26 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
 void RelActAutoGui::handleRightClick( const double energy, const double counts,
                       const int page_x_px, const int page_y_px )
 {
-  vector<RelActAutoEnergyRange *> ranges;
+  vector<RelActAutoGuiEnergyRange *> ranges;
   const vector<WWidget *> &kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi && !roi->isEmpty() )
        ranges.push_back( roi );
   }//for( WWidget *w : kids )
   
   std::sort( begin(ranges), end(ranges),
-             []( const RelActAutoEnergyRange *lhs, const RelActAutoEnergyRange *rhs) -> bool{
+             []( const RelActAutoGuiEnergyRange *lhs, const RelActAutoGuiEnergyRange *rhs) -> bool{
     return lhs->lowerEnergy() < rhs->lowerEnergy();
   } );
   
   
-  RelActAutoEnergyRange *range = nullptr, *range_to_left = nullptr, *range_to_right = nullptr;
+  RelActAutoGuiEnergyRange *range = nullptr, *range_to_left = nullptr, *range_to_right = nullptr;
   for( size_t i = 0; i < ranges.size(); ++i )
   {
-    RelActAutoEnergyRange *roi = ranges[i];
+    RelActAutoGuiEnergyRange *roi = ranges[i];
     RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
   
     if( (energy >= roi_range.lower_energy) && (energy < roi_range.upper_energy) )
@@ -2534,7 +1610,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
       
       break;
     }//
-  }//for( RelActAutoEnergyRange *roi : ranges )
+  }//for( RelActAutoGuiEnergyRange *roi : ranges )
   
   if( !range )
   {
@@ -2565,7 +1641,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
       type < PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
   {
     WMenuItem *item = continuum_menu->addItem( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
-    item->triggered().connect( boost::bind( &RelActAutoEnergyRange::setContinuumType, range, type ) );
+    item->triggered().connect( boost::bind( &RelActAutoGuiEnergyRange::setContinuumType, range, type ) );
     if( type == roi.continuum_type )
       item->setDisabled( true );
   }//for( loop over PeakContinuum::OffsetTypes )
@@ -2744,7 +1820,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
           other_nuclides.erase( pos );
       }
       
-      RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
+      RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( m_nuclides );
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
       nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
@@ -2775,12 +1851,13 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_energy_ranges->clear();
   for( const RelActCalcAuto::RoiRange &roi : options.rois )
   {
-    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+    RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
     
     energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     
     energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                                 this, static_cast<WWidget *>(energy_range) ) );
+    energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     
     energy_range->setFromRoiRange( roi );
   }//for( const RelActCalcAuto::RoiRange &roi : rois )
@@ -2813,14 +1890,14 @@ void RelActAutoGui::handleToggleForceFullRange( Wt::WWidget *w )
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges!" << endl;
+    cerr << "Failed to find a RelActAutoGuiEnergyRange in m_energy_ranges!" << endl;
     assert( 0 );
     return;
   }
   
-  assert( dynamic_cast<RelActAutoEnergyRange *>(w) );
+  assert( dynamic_cast<RelActAutoGuiEnergyRange *>(w) );
   
-  RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>(w);
+  RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>(w);
   assert( roi );
   if( !roi )
     return;
@@ -2842,13 +1919,13 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
   const auto right_pos = std::find( begin(kids), end(kids), right_roi );
   if( (left_pos == end(kids)) || (right_pos == end(kids)) )
   {
-    cerr << "Failed to find left or right RelActAutoEnergyRange in m_energy_ranges!" << endl;
+    cerr << "Failed to find left or right RelActAutoGuiEnergyRange in m_energy_ranges!" << endl;
     assert( 0 );
     return nullptr;
   }
   
-  RelActAutoEnergyRange *left_range = dynamic_cast<RelActAutoEnergyRange *>(left_roi);
-  RelActAutoEnergyRange *right_range = dynamic_cast<RelActAutoEnergyRange *>(right_roi);
+  RelActAutoGuiEnergyRange *left_range = dynamic_cast<RelActAutoGuiEnergyRange *>(left_roi);
+  RelActAutoGuiEnergyRange *right_range = dynamic_cast<RelActAutoGuiEnergyRange *>(right_roi);
   
   assert( left_range && right_range );
   if( !left_range || !right_range )
@@ -3218,7 +2295,7 @@ void RelActAutoGui::setOptionsForNoSolution()
 
   for( WWidget *w : m_energy_ranges->children() )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi )
       roi->enableSplitToIndividualRanges( false );
@@ -3240,7 +2317,7 @@ void RelActAutoGui::setOptionsForValidSolution()
   
   for( WWidget *w : m_energy_ranges->children() )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( !roi )
       continue;
@@ -3301,7 +2378,7 @@ void RelActAutoGui::handleAddNuclide()
 {
   const vector<WWidget *> prev_kids = m_nuclides->children();
   
-  RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
+  RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( m_nuclides );
   nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
   nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
@@ -3314,7 +2391,7 @@ void RelActAutoGui::handleAddNuclide()
     
     for( WWidget *w : prev_kids )
     {
-      RelActAutoNuclide *nuc = dynamic_cast<RelActAutoNuclide *>( w );
+      RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( w );
       assert( nuc );
       if( !nuc )
         continue;
@@ -3341,13 +2418,13 @@ void RelActAutoGui::handleAddEnergy()
 {
   const int nprev = m_energy_ranges->count();
   
-  RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+  RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
   
   energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
   
   energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                       this, static_cast<WWidget *>(energy_range) ) );
-  
+  energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
   if( nprev == 0 )
   {
     const auto cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
@@ -3418,12 +2495,12 @@ void RelActAutoGui::handleRemoveFreePeak( Wt::WWidget *w )
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActFreePeak in m_free_peaks!" << endl;
+    cerr << "Failed to find a RelActAutoGuiFreePeak in m_free_peaks!" << endl;
     assert( 0 );
     return;
   }
   
-  assert( dynamic_cast<RelActFreePeak *>(w) );
+  assert( dynamic_cast<RelActAutoGuiFreePeak *>(w) );
   
   delete w;
   
@@ -3443,12 +2520,12 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges!" << endl;
+    cerr << "Failed to find a RelActAutoGuiEnergyRange in m_energy_ranges!" << endl;
     assert( 0 );
     return;
   }
   
-  assert( dynamic_cast<RelActAutoEnergyRange *>(w) );
+  assert( dynamic_cast<RelActAutoGuiEnergyRange *>(w) );
   
   delete w;
   
@@ -3467,7 +2544,7 @@ void RelActAutoGui::handleSplitEnergyRange( Wt::WWidget *w, const double energy 
 
 void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
 {
-  RelActAutoEnergyRange *energy_range = dynamic_cast<RelActAutoEnergyRange *>(w);
+  RelActAutoGuiEnergyRange *energy_range = dynamic_cast<RelActAutoGuiEnergyRange *>(w);
   assert( energy_range );
   
   const shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_solution;
@@ -3559,9 +2636,10 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     
     for( const RelActCalcAuto::RoiRange &range : to_ranges )
     {
-      RelActAutoEnergyRange *roi = new RelActAutoEnergyRange( this );
+      RelActAutoGuiEnergyRange *roi = new RelActAutoGuiEnergyRange();
       roi->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
       roi->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(roi) ) );
+      roi->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
       
       roi->setFromRoiRange( range );
       roi->setForceFullRange( true );
@@ -3585,7 +2663,7 @@ void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain
   if( m_free_peaks_container->isHidden() )
     handleShowFreePeaks();
   
-  RelActFreePeak *peak = new RelActFreePeak( this, m_free_peaks );
+  RelActAutoGuiFreePeak *peak = new RelActAutoGuiFreePeak( m_free_peaks );
   peak->updated().connect( this, &RelActAutoGui::handleFreePeakChange );
   peak->remove().connect( boost::bind( &RelActAutoGui::handleRemoveFreePeak, this, static_cast<WWidget *>(peak) ) );
   peak->setEnergy( static_cast<float>(energy) );
@@ -3612,13 +2690,13 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges (handleRemovePartOfEnergyRange)!" << endl;
+    cerr << "Failed to find a RelActAutoGuiEnergyRange in m_energy_ranges (handleRemovePartOfEnergyRange)!" << endl;
     assert( 0 );
     return;
   }
   
   const int orig_w_index = pos - begin( kids );
-  RelActAutoEnergyRange *range = dynamic_cast<RelActAutoEnergyRange *>( w );
+  RelActAutoGuiEnergyRange *range = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
   assert( range );
   if( !range )
     return;
@@ -3650,15 +2728,17 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
   
   if( is_in_middle )
   {
-    RelActAutoEnergyRange *left_range = new RelActAutoEnergyRange( this );
+    RelActAutoGuiEnergyRange *left_range = new RelActAutoGuiEnergyRange();
     left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                               this, static_cast<WWidget *>(left_range) ) );
+    left_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     
-    RelActAutoEnergyRange *right_range = new RelActAutoEnergyRange( this );
+    RelActAutoGuiEnergyRange *right_range = new RelActAutoGuiEnergyRange();
     right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                                this, static_cast<WWidget *>(right_range) ) );
+    right_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     
     left_range->setFromRoiRange( roi );
     right_range->setFromRoiRange( roi );
@@ -3671,10 +2751,11 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     // TODO: we could split PeakModels ROI peaks here and set them to provide instant feedback during computation
   }else if( is_left )
   {
-    RelActAutoEnergyRange *right_range = new RelActAutoEnergyRange( this );
+    RelActAutoGuiEnergyRange *right_range = new RelActAutoGuiEnergyRange();
     right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                                this, static_cast<WWidget *>(right_range) ) );
+    right_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     right_range->setEnergyRange( upper_energy, roi.upper_energy );
     right_range->setFromRoiRange( roi );
     m_energy_ranges->insertWidget( orig_w_index, right_range );
@@ -3682,10 +2763,11 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     // TODO: we could update PeakModels peaks/range here and set them to provide instant feedback during computation
   }else if( is_right )
   {
-    RelActAutoEnergyRange *left_range = new RelActAutoEnergyRange( this );
+    RelActAutoGuiEnergyRange *left_range = new RelActAutoGuiEnergyRange();
     left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                               this, static_cast<WWidget *>(left_range) ) );
+    left_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     left_range->setFromRoiRange( roi );
     left_range->setEnergyRange( roi.lower_energy, lower_energy );
     m_energy_ranges->insertWidget( orig_w_index, left_range );
@@ -3702,13 +2784,13 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
   if( !w )
     return;
   
-  assert( dynamic_cast<RelActAutoNuclide *>(w) );
+  assert( dynamic_cast<RelActAutoGuiNuclide *>(w) );
   
   const std::vector<WWidget *> &kids = m_nuclides->children();
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActAutoNuclide in m_nuclides!" << endl;
+    cerr << "Failed to find a RelActAutoGuiNuclide in m_nuclides!" << endl;
     assert( 0 );
     return;
   }
@@ -4697,7 +3779,7 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
   const vector<WWidget *> &roi_widgets = m_energy_ranges->children();
   for( WWidget *w : roi_widgets )
   {
-    const RelActAutoEnergyRange *roi = dynamic_cast<const RelActAutoEnergyRange *>( w );
+    const RelActAutoGuiEnergyRange *roi = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi && !roi->isEmpty() )
       rois.emplace_back( roi->lowerEnergy(), roi->upperEnergy() );
@@ -4709,7 +3791,7 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
   const std::vector<WWidget *> &kids = m_free_peaks->children();
   for( WWidget *w : kids )
   {
-    RelActFreePeak *free_peak = dynamic_cast<RelActFreePeak *>(w);
+    RelActAutoGuiFreePeak *free_peak = dynamic_cast<RelActAutoGuiFreePeak *>(w);
     assert( free_peak );
     if( !free_peak )
       continue;
@@ -4721,7 +3803,7 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
     
     free_peak->setInvalidEnergy( !in_roi );
     free_peak->setApplyEnergyCalVisible( fit_energy_cal );
-  }//for( loop over RelActFreePeak widgets )
+  }//for( loop over RelActAutoGuiFreePeak widgets )
 }//void updateDuringRenderForFreePeakChange()
 
 
@@ -5033,7 +4115,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     any_nucs_updated = true;
     for( WWidget *w : m_nuclides->children() )
     {
-      RelActAutoNuclide *nuc = dynamic_cast<RelActAutoNuclide *>( w );
+      RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( w );
       assert( nuc );
       
       if( !nuc || std::holds_alternative<std::monostate>(nuc->nuclide()) )

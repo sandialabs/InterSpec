@@ -518,6 +518,9 @@ if( USE_REL_ACT_TOOL )
         src/RelEffChart.cpp
         src/RelEffShieldWidget.cpp
         src/RelActAutoGuiRelEffOptions.cpp
+        src/RelActAutoGuiEnergyRange.cpp
+        src/RelActAutoGuiNuclide.cpp
+        src/RelActAutoGuiFreePeak.cpp
         src/RelActAutoDev.cpp
   )
   
@@ -534,6 +537,9 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelEffChart.h
         InterSpec/RelEffShieldWidget.h
         InterSpec/RelActAutoGuiRelEffOptions.h
+        InterSpec/RelActAutoGuiEnergyRange.h
+        InterSpec/RelActAutoGuiNuclide.h
+        InterSpec/RelActAutoGuiFreePeak.h
         InterSpec/RelActAutoDev.h
   )
 endif( USE_REL_ACT_TOOL )

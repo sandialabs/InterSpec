@@ -498,28 +498,28 @@
   
 }
 
-.RelActAutoEnergyRange > label
+.RelActAutoGuiEnergyRange > label
 {
   justify-self: end;
 }
 
 
-.RelActAutoGui .RelActAutoEnergyRange,
-.RelActAutoGui .RelActAutoNuclide,
-.RelActAutoGui .RelActFreePeak
+.RelActAutoGui .RelActAutoGuiEnergyRange,
+.RelActAutoGui .RelActAutoGuiNuclide,
+.RelActAutoGui .RelActAutoGuiFreePeak
 {
   border: 1px solid #e1e1e1;
   margin: 5px;
   padding: 5px;
 }
 
-.RelActAutoGui .RelActFreePeak > input
+.RelActAutoGui .RelActAutoGuiFreePeak > input
 {
   width: 55px;
   /* justify-self: stretch; */
 }
 
-.RelActAutoGui .RelActAutoEnergyRange
+.RelActAutoGui .RelActAutoGuiEnergyRange
 {
   display: grid;
   
@@ -532,13 +532,13 @@
 }
 
 
-.RelActAutoEnergyRange > input
+.RelActAutoGuiEnergyRange > input
 {
   width: 9ex;
 }
 
 
-.RelActAutoGui .RelActAutoNuclide
+.RelActAutoGui .RelActAutoGuiNuclide
 {
   padding-left: 0px;
   
@@ -549,13 +549,13 @@
 }
 
 
-.RelActAutoGui .RelActAutoNuclide > label
+.RelActAutoGui .RelActAutoGuiNuclide > label
 {
   margin-left: 10px;
 }
 
 
-.RelActAutoGui .RelActAutoNuclide > input[type="text"]
+.RelActAutoGui .RelActAutoGuiNuclide > input[type="text"]
 {
   margin-right: 5px;
   margin-left: 5px;
@@ -563,20 +563,20 @@
 }
 
 
-.RelActAutoGui .RelActAutoNuclide > input[type="color"]
+.RelActAutoGui .RelActAutoGuiNuclide > input[type="color"]
 {
   margin-right: 5px;
 }
 
 
-.RelActAutoNuclide .RelActAutoNuclideSpacer
+.RelActAutoGuiNuclide .RelActAutoGuiNuclideSpacer
 {
   flex: 1 1 auto;
   align-items: center;
 }
 
 
-.RelActAutoGui .RelActFreePeak
+.RelActAutoGui .RelActAutoGuiFreePeak
 {
   display: grid;
   
@@ -587,7 +587,7 @@
   justify-content: start;
 }
 
-.RelActAutoGui RelActFreePeak .FreePeakConstrain
+.RelActAutoGui RelActAutoGuiFreePeak .FreePeakConstrain
 {
   /* justify-self: end; */
   margin-left: 10px;
