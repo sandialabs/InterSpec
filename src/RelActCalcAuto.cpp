@@ -773,9 +773,9 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       return lhs.first > rhs.first;
     } );
 
-    // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if the deviate
-    // more than 17.5% from the fit (again, arbitrarily chosen).
-    const size_t max_remove = distances.size() < 8 ? size_t(0) : static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
+    // Limit to un-selecting max of 20% of peaks (arbitrarily chosen), if they deviate
+    // more than 17.5% (again, arbitrarily chosen) from the fit.
+    const size_t max_remove = (distances.size() < 8) ? size_t(0) : static_cast<size_t>( std::ceil( 0.2*distances.size() ) );
     auto filtered_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
     for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
     {
@@ -788,7 +788,12 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       filtered_peaks->push_back( distances[index].second );
     }//for( size_t index = 0, num_removed = 0; index < distances.size(); ++index )
 
-    assert( (max_remove + filtered_peaks->size()) <= all_peaks.size() );
+    if( (max_remove + filtered_peaks->size()) < distances.size() )
+      cerr << "RelActCalcAuto - failed logic: max_remove=" << max_remove 
+      << ", filtered_peaks->size()=" << filtered_peaks->size() 
+      << ", distances.size()=" << distances.size() << endl;
+
+    assert( (max_remove + filtered_peaks->size()) >= distances.size() );
 
     if( filtered_peaks->size() != all_peaks.size() )
     {
@@ -10711,8 +10716,7 @@ RelActAutoSolution solve( const Options options,
         
         optional<RelActAutoCostFcn::PhysModelRelEqnDef<double>> &phys_model_input = phys_model_inputs[rel_eff_index];
         if( (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel) && !phys_model_input.has_value() )
-          *phys_model_input = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, current_sol.m_drf, rel_eff_coefs, 0 );
-        
+          phys_model_input = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, current_sol.m_drf, rel_eff_coefs, 0 );
         
         for( const NuclideRelAct &rel_act : rel_acts )
         {

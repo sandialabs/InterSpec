@@ -45,6 +45,7 @@ class RelActTxtResults;
 class RelEffShieldWidget;
 class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
+class RelActAutoGuiRelEffOptions;
 
 namespace SpecUtils
 {
@@ -216,16 +217,17 @@ protected:
   void handleShowRefLines( const bool show );
   void setPeaksToForeground();
   
-  void handlePhysModelUseHoerlChange();
-  void handlePhysModelShieldChange();
-  void showAndHideOptionsForEqnType();
+  void handleRelEffModelOptionsChanged();
   void handleDetectorChange();
 
   void handleAddRelEffCurve();
 
-  class RelEffCurveOptionsDiv;
-  void handleDelRelEffCurve( RelEffCurveOptionsDiv *curve );
-  void handleRelEffCurveNameChanged( RelEffCurveOptionsDiv *curve, const Wt::WString &name );
+  void handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve );
+  void handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name );
+
+  protected:
+  RelActAutoGuiRelEffOptions *getRelEffCurveOptions( const int index );
+  const RelActAutoGuiRelEffOptions *getRelEffCurveOptions( const int index ) const;
 
   /** Calculation has been started. */
   Wt::Signal<> &calculationStarted();
@@ -317,71 +319,6 @@ protected:
   Wt::WCheckBox *m_background_subtract;
   Wt::WCheckBox *m_same_z_age;
   
-
-  class RelEffCurveOptionsDiv : public Wt::WContainerWidget
-  {
-  public:
-    RelEffCurveOptionsDiv( RelActAutoGui *gui, Wt::WString name, Wt::WContainerWidget *parent = nullptr ); 
-    ~RelEffCurveOptionsDiv(){ std::cout <<"\n\n\n~RelEffCurveOptionsDiv\n\n\n"; }
-    void showAndHideOptionsForEqnType();
-    void initPhysModelShields();
-    void setIsOnlyRelEffCurve( const bool is_only_rel_eff_curve );
-    Wt::WString name() const;
-    void setName( const Wt::WString &name );
-    void setRelEffCurveInput( const RelActCalcAuto::RelEffCurveInput &rel_eff );
-
-    void updatePuCorrelationOptions( const std::vector<RelActCalcAuto::NucInputInfo> &nuclides );
-
-    Wt::Signal<RelEffCurveOptionsDiv *> &addRelEffCurve();
-    Wt::Signal<RelEffCurveOptionsDiv *> &delRelEffCurve();
-    Wt::Signal<RelEffCurveOptionsDiv *,Wt::WString> &nameChanged();
-
-    RelActCalc::RelEffEqnForm rel_eff_eqn_form() const;
-    size_t rel_eff_eqn_order() const;
-    std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> phys_model_self_atten() const;
-    std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten() const;
-    bool phys_model_use_hoerl() const;
-    RelActCalc::PuCorrMethod pu242_correlation_method() const;
-
-
-
-
-    RelActAutoGui * const m_gui;
-
-    Wt::WComboBox *m_rel_eff_eqn_form;
-    Wt::WContainerWidget *m_eqn_order_div;
-    Wt::WLabel *m_rel_eff_eqn_order_label;
-    Wt::WComboBox *m_rel_eff_eqn_order;
-
-    Wt::WInPlaceEdit *m_rel_eff_curve_name;
-  
-    Wt::WContainerWidget *m_pu_corr_div;
-    Wt::WComboBox *m_pu_corr_method;
-
-    Wt::WContainerWidget *m_phys_model_opts;
-    Wt::WContainerWidget *m_phys_model_shields;
-    RelEffShieldWidget *m_phys_model_self_atten;
-    Wt::WContainerWidget *m_phys_ext_attens;
-    Wt::WCheckBox *m_phys_model_use_hoerl;
-
-
-    Wt::WContainerWidget *m_add_del_rel_eff_div;
-    Wt::WPushButton *m_add_rel_eff_btn;
-    Wt::WPushButton *m_del_rel_eff_btn;
-
-    Wt::Signal<RelEffCurveOptionsDiv *> m_add_rel_eff_curve_signal;
-    Wt::Signal<RelEffCurveOptionsDiv *> m_del_rel_eff_curve_signal;
-    Wt::Signal<RelEffCurveOptionsDiv *,Wt::WString> m_name_changed_signal;
-
-    void emitAddRelEffCurve();
-    void emitDelRelEffCurve();
-    void emitNameChanged();
-  };//class RelEffCurveOptionsDiv
-
-  RelEffCurveOptionsDiv *getRelEffCurveOptions( const int index );
-  const RelEffCurveOptionsDiv *getRelEffCurveOptions( const int index ) const;
-
-
   
   Wt::WComboBox *m_skew_type;
   Wt::WComboBox *m_add_uncert;

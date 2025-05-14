@@ -517,6 +517,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActTxtResults.cpp
         src/RelEffChart.cpp
         src/RelEffShieldWidget.cpp
+        src/RelActAutoGuiRelEffOptions.cpp
         src/RelActAutoDev.cpp
   )
   
@@ -532,6 +533,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
         InterSpec/RelEffShieldWidget.h
+        InterSpec/RelActAutoGuiRelEffOptions.h
         InterSpec/RelActAutoDev.h
   )
 endif( USE_REL_ACT_TOOL )
