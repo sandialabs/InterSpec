@@ -65,9 +65,6 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
 
-#if( USE_CSS_FLEX_LAYOUT )
-#include <Wt/WStackedWidget>
-#endif
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include <Wt/Json/Array>

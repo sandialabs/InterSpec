@@ -7343,6 +7343,22 @@ const std::string NucInputInfo::name() const
   return "";
 }//NucInputInfo::name()
 
+bool NucInputInfo::operator==( const NucInputInfo &rhs ) const
+{
+  return ((this->nuclide == rhs.nuclide) &&
+         (this->element == rhs.element) &&
+         (this->reaction == rhs.reaction) &&
+         (this->age == rhs.age) &&
+         (this->fit_age == rhs.fit_age) &&
+         (this->fit_age_min == rhs.fit_age_min) &&
+         (this->fit_age_max == rhs.fit_age_max) &&
+         (this->min_rel_act == rhs.min_rel_act) &&
+         (this->max_rel_act == rhs.max_rel_act) &&
+         (this->starting_rel_act == rhs.starting_rel_act) &&
+         (this->gammas_to_exclude == rhs.gammas_to_exclude) &&
+         (this->peak_color_css == rhs.peak_color_css));
+}
+
 void NucInputInfo::toXml( ::rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
@@ -8112,7 +8128,10 @@ void RelEffCurveInput::check_nuclide_constraints() const
   // number of constrained nuclides of that element (num_constrained_nucs_of_el).
   std::map<short int, size_t> num_nucs_of_el;
   for( const NucInputInfo &nuclide : nuclides )
-    num_nucs_of_el[nuclide.nuclide->atomicNumber] += 1;
+  {
+    if( nuclide.nuclide )
+      num_nucs_of_el[nuclide.nuclide->atomicNumber] += 1;
+  }
   
   for( const auto &[el, num_constrained_nucs] : num_constrained_nucs_of_el )
   {
@@ -8469,6 +8488,8 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
   parent->append_node( base_node );
   append_version_attrib( base_node, RelEffCurveInput::sm_xmlSerializationVersion );
 
+  append_string_node( base_node, "Name", name );
+
   if( !nuclides.empty() )
   {
     xml_node<char> *nuc_node = doc->allocate_node( node_element, "NucInputInfoList" );
@@ -8557,6 +8578,8 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
   
   check_xml_version( parent, is_rel_eff_curve_input ? RelEffCurveInput::sm_xmlSerializationVersion : 1 );
   
+  const rapidxml::xml_node<char> *name_node = XML_FIRST_NODE(parent, "Name");
+  name = SpecUtils::xml_value_str( name_node );
 
   const rapidxml::xml_node<char> *node = XML_FIRST_NODE(parent, "NucInputInfoList");
   if( !node && parent->parent() && is_options )  //Compatibility with Options::sm_xmlSerializationVersion versions 0 and 1

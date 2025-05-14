@@ -63,6 +63,7 @@ namespace Wt
   class WText;
   class WCheckBox;
   class WComboBox;
+  class WInPlaceEdit;
 }//namespace Wt
 
 namespace rapidxml
@@ -78,8 +79,8 @@ class RelActAutoGui : public Wt::WContainerWidget
 public:
   enum class AddUncert : int
   {
-    StatOnly, OnePercent, FivePercent, TenPercent, TwentyFivePercent,
-    FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
+    StatOnly, OneHundrethPercent, OneTenthPercent, OnePercent, FivePercent, TenPercent, 
+    TwentyFivePercent, FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
   };//enum class AddUncert
   
   static const char *to_str( const AddUncert val );
@@ -171,9 +172,12 @@ public:
   
   void setCalcOptionsGui( const RelActCalcAuto::Options &options );
   
-  
+
   RelActCalcAuto::Options getCalcOptions() const;
-  std::vector<RelActCalcAuto::NucInputInfo> getNucInputInfo() const;
+  std::vector<RelActCalcAuto::NucInputInfo> getNucInputInfo( const int rel_eff_curve_index ) const;
+  std::vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> getActRatioConstraints( const int rel_eff_curve_index ) const;
+  std::vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> getMassFractionConstraints( const int rel_eff_curve_index ) const;
+
   std::vector<RelActCalcAuto::RoiRange> getRoiRanges() const;
   std::vector<RelActCalcAuto::FloatingPeak> getFloatingPeaks() const;
   
@@ -212,11 +216,16 @@ protected:
   void handleShowRefLines( const bool show );
   void setPeaksToForeground();
   
-  void initPhysModelShields();
   void handlePhysModelUseHoerlChange();
   void handlePhysModelShieldChange();
   void showAndHideOptionsForEqnType();
   void handleDetectorChange();
+
+  void handleAddRelEffCurve();
+
+  class RelEffCurveOptionsDiv;
+  void handleDelRelEffCurve( RelEffCurveOptionsDiv *curve );
+  void handleRelEffCurveNameChanged( RelEffCurveOptionsDiv *curve, const Wt::WString &name );
 
   /** Calculation has been started. */
   Wt::Signal<> &calculationStarted();
@@ -298,29 +307,84 @@ protected:
   /* The place to give a summary of the fit, so like "chi2 = 123", or "Chi2 = 123, Uranium Enrichment 23.2%" */
   Wt::WText *m_fit_chi2_msg;
 
-  Wt::WComboBox *m_rel_eff_eqn_form;
-  Wt::WLabel *m_rel_eff_eqn_order_label;
-  Wt::WComboBox *m_rel_eff_eqn_order;
-  
+  Wt::WMenu *m_rel_eff_opts_menu;
+  Wt::WStackedWidget *m_rel_eff_opts_stack;
+
   Wt::WComboBox *m_fwhm_eqn_form;
   Wt::WComboBox *m_fwhm_estimation_method;
   
   Wt::WCheckBox *m_fit_energy_cal;
   Wt::WCheckBox *m_background_subtract;
-  
   Wt::WCheckBox *m_same_z_age;
   
-  Wt::WComboBox *m_pu_corr_method;
+
+  class RelEffCurveOptionsDiv : public Wt::WContainerWidget
+  {
+  public:
+    RelEffCurveOptionsDiv( RelActAutoGui *gui, Wt::WString name, Wt::WContainerWidget *parent = nullptr ); 
+    ~RelEffCurveOptionsDiv(){ std::cout <<"\n\n\n~RelEffCurveOptionsDiv\n\n\n"; }
+    void showAndHideOptionsForEqnType();
+    void initPhysModelShields();
+    void setIsOnlyRelEffCurve( const bool is_only_rel_eff_curve );
+    Wt::WString name() const;
+    void setName( const Wt::WString &name );
+    void setRelEffCurveInput( const RelActCalcAuto::RelEffCurveInput &rel_eff );
+
+    void updatePuCorrelationOptions( const std::vector<RelActCalcAuto::NucInputInfo> &nuclides );
+
+    Wt::Signal<RelEffCurveOptionsDiv *> &addRelEffCurve();
+    Wt::Signal<RelEffCurveOptionsDiv *> &delRelEffCurve();
+    Wt::Signal<RelEffCurveOptionsDiv *,Wt::WString> &nameChanged();
+
+    RelActCalc::RelEffEqnForm rel_eff_eqn_form() const;
+    size_t rel_eff_eqn_order() const;
+    std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> phys_model_self_atten() const;
+    std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten() const;
+    bool phys_model_use_hoerl() const;
+    RelActCalc::PuCorrMethod pu242_correlation_method() const;
+
+
+
+
+    RelActAutoGui * const m_gui;
+
+    Wt::WComboBox *m_rel_eff_eqn_form;
+    Wt::WContainerWidget *m_eqn_order_div;
+    Wt::WLabel *m_rel_eff_eqn_order_label;
+    Wt::WComboBox *m_rel_eff_eqn_order;
+
+    Wt::WInPlaceEdit *m_rel_eff_curve_name;
+  
+    Wt::WContainerWidget *m_pu_corr_div;
+    Wt::WComboBox *m_pu_corr_method;
+
+    Wt::WContainerWidget *m_phys_model_opts;
+    Wt::WContainerWidget *m_phys_model_shields;
+    RelEffShieldWidget *m_phys_model_self_atten;
+    Wt::WContainerWidget *m_phys_ext_attens;
+    Wt::WCheckBox *m_phys_model_use_hoerl;
+
+
+    Wt::WContainerWidget *m_add_del_rel_eff_div;
+    Wt::WPushButton *m_add_rel_eff_btn;
+    Wt::WPushButton *m_del_rel_eff_btn;
+
+    Wt::Signal<RelEffCurveOptionsDiv *> m_add_rel_eff_curve_signal;
+    Wt::Signal<RelEffCurveOptionsDiv *> m_del_rel_eff_curve_signal;
+    Wt::Signal<RelEffCurveOptionsDiv *,Wt::WString> m_name_changed_signal;
+
+    void emitAddRelEffCurve();
+    void emitDelRelEffCurve();
+    void emitNameChanged();
+  };//class RelEffCurveOptionsDiv
+
+  RelEffCurveOptionsDiv *getRelEffCurveOptions( const int index );
+  const RelEffCurveOptionsDiv *getRelEffCurveOptions( const int index ) const;
+
+
   
   Wt::WComboBox *m_skew_type;
-  
   Wt::WComboBox *m_add_uncert;
-  
-  Wt::WContainerWidget *m_phys_model_opts;
-  Wt::WContainerWidget *m_phys_model_shields;
-  RelEffShieldWidget *m_phys_model_self_atten;
-  Wt::WContainerWidget *m_phys_ext_attens;
-  Wt::WCheckBox *m_phys_model_use_hoerl;
   
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;

@@ -16,7 +16,65 @@
   flex-wrap: nowrap;
 }
 
-.RelActAutoGui .UpperStack
+.RelActAutoGui .RelActAutoOptions
+{
+  margin-top: 5px;
+  margin-bottom: 5px;
+  margin-left: 5px;
+  margin-right: 5px;
+  
+  border: 1px solid #e1e1e1;
+  padding: 2px;
+
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+}
+
+.RelActAutoGui .RelEffCurveOptions
+{
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  /*
+  align-items: center;
+  justify-content: space-between;
+  */
+}
+
+.RelActAutoGui .RelEffCurveOptions .RelEffCurveName
+{
+  margin-left: 5px;
+  font-style: italic;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  width: 60px;
+}
+
+.RelActAutoGui .RelEffCurveOptions .RelEffCurveName input
+{
+  width: 55px;
+}
+
+
+.RelActAutoGui .EqnTypeDiv,
+.RelActAutoGui .EqnOrderDiv,
+.RelActAutoGui .PuCorrDiv
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+}
+
+
+.RelActAutoGui .UpperStack,
+.RelActAutoGui .RelEffCurveOptsStack
 {
   flex: 1 1 auto;
   height: 100%;
@@ -27,7 +85,8 @@
   height: 100%;
 }
 
-.RelActAutoGui .UpperMenu
+.RelActAutoGui .UpperMenu,
+.RelActAutoGui .RelEffCurveOptsMenu
 {
   padding-left: 2px;
   padding-right:2px;
@@ -39,7 +98,8 @@
 
 
 
-.RelActAutoGui .UpperMenu a
+.RelActAutoGui .UpperMenu a,
+.RelActAutoGui .RelEffCurveOptsMenu a
 {
   /*
    padding-left: 10px;
@@ -48,14 +108,16 @@
 }
 
 
-.RelActAutoGui ul.UpperMenu
+.RelActAutoGui ul.UpperMenu,
+.RelActAutoGui ul.RelEffCurveOptsMenu
 {
   padding-inline-start: 0px;
   list-style-type: none;
   max-width: 40px;
 }
 
-.RelActAutoGui ul.UpperMenu li
+.RelActAutoGui ul.UpperMenu li,
+.RelActAutoGui ul.RelEffCurveOptsMenu li
 {
   display: inline-block;
   -webkit-writing-mode: vertical-lr;
@@ -79,18 +141,40 @@
   text-align: center;
 }
 
+.RelActAutoGui ul.RelEffCurveOptsMenu
+{
+  max-width: 60px;
+  margin-block-start: 5px;
+  margin-block-end: 5px;
+}
+.RelActAutoGui ul.RelEffCurveOptsMenu li
+{
+  width: 15px;
+  height: 35px;
+  font-weight: normal;
+  font-size: 10px;
+  padding-left: 0px;
+  padding-right: 1px;
+}
 
 .RelActAutoGui .PresetsRow
 {
-  margin-top: 10px;
+  margin-top: 5px;
   margin-bottom: 5px;
   margin-left: 5px;
   padding-left: 3px;
+
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  padding-left: 5px;
 }
 
-.RelActAutoGui .PresetsRow > label
+.RelActAutoGui .RelActAutoSpacer
 {
-  margin-right: 5px;
+  flex: 1 1 auto;
 }
 
 
@@ -98,8 +182,9 @@
 .RelActAutoGui .RelActAutoStatusMsg,
 .RelActAutoGui .RelActAutoChi2Msg
 {
-  float: right;
-  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .RelActAutoGui .RelActAutoErrMsg
@@ -133,38 +218,59 @@
 }
 
 
-
-.RelActAutoGui .RelActAutoOptions
+.RelActAutoGui .RelActAutoGeneralOptionsRow
 {
-  margin-top: 5px;
-  margin-bottom: 5px;
-  margin-left: 5px;
-  margin-right: 5px;
+  display: flex;
+  flex-direction: row;
   
   border: 1px solid #e1e1e1;
   padding: 2px;
-  
-  display: grid;
-  
-  column-gap: 5px;
-  row-gap: 5px;
-  justify-items: start;
+
+  gap: 5px;
   align-items: center;
-  justify-content: start;
-  
-  position: relative;
+  justify-content: space-between;
+
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+
+  flex-wrap: wrap;
 }
 
-.RelActAutoGui .RelActAutoOptions > label
+
+.RelActAutoGui .RelActAutoFwhmEstDiv, 
+.RelActAutoGui .RelActAutoFwhmFormDiv,
+.RelActAutoGui .RelActAutoSkewDiv,
+.RelActAutoGui .RelActAutoAddUncertDiv
 {
-  margin-left: 10px;
-  justify-self: end;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 5px;
+  align-items: center;
 }
+
+
+.RelActAutoGui .RelEffCurveOptsStack
+{ 
+}
+
+.RelActAutoGui .RelEffCurveOptions .AddDelRelEffDiv
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: bottom;
+  gap: 2px;
+}
+
+
 
 .RelActAutoGui .PhysicalModelOpts
 {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex-wrap: nowrap;
   
   /* flex: 1 1 auto; */
@@ -184,19 +290,21 @@
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow
 {
   display: flex;
-  flex-direction: row;
-  gap: 10px;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > .DetectorDisplay
 {
-  transform: scale(0.66);
+  transform: scale(0.75);
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .UseCorrFcnCb
 {
-  font-size: x-small;
+  /* font-size: x-small; */
 }
+
 
 .RelActAutoGui .MoreMenuIcon,
 .RelActAutoGui .MoreMenuIcon:hover
@@ -248,8 +356,27 @@
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
+
+  border: 1px solid #e1e1e1;
 }
 
+.RelActAutoGui .NuclidesHolder legend
+{
+  width: 8ex;
+  white-space: nowrap;
+}
+
+.RelActAutoGui .EnergiesHolder legend
+{
+  width: 14ex;
+  white-space: nowrap;
+}
+
+.RelActAutoGui .FreePeaksHolder legend
+{
+  width: 10ex;
+  white-space: nowrap;
+}
 
 .RelActAutoGui .FreePeaksHolder
 {
@@ -280,12 +407,22 @@
   border-left: 1px solid #e1e1e1;
   border-right: 1px solid #e1e1e1;
   border-bottom: 1px solid #e1e1e1;
+  display: flex;
+  padding-right: 5px;
+  align-items: center;
+  gap: 5px;
 }
 
+.RelActAutoGui .EnergyNucFooter .SameZAgeCb
+{
+  
+}
 
 .RelActAutoGui .AddEnergyRangeOrNuc, .RelActAutoGui .AddEnergyRangeOrNuc:hover,
 .RelActAutoGui .DeleteEnergyRangeOrNuc, .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
-.RelActAutoGui .ToIndividualRois, .RelActAutoGui .ToIndividualRois:hover
+.RelActAutoGui .ToIndividualRois, .RelActAutoGui .ToIndividualRois:hover,
+.RelActAutoGui .AddRelEffCurve, .RelActAutoGui .AddRelEffCurve:hover,
+.RelActAutoGui .DelRelEffCurve, .RelActAutoGui .DelRelEffCurve:hover
 {
   opacity: 0.6;
   
@@ -301,10 +438,20 @@
 
 .RelActAutoGui .AddEnergyRangeOrNuc:hover,
 .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
-.RelActAutoGui .ToIndividualRois:hover
+.RelActAutoGui .ToIndividualRois:hover,
+.RelActAutoGui .AddRelEffCurve:hover,
+.RelActAutoGui .DelRelEffCurve:hover
 {
   opacity: 1.0;
 }
+
+
+.RelActAutoGui .AddRelEffCurve,
+.RelActAutoGui .DelRelEffCurve
+{
+  align-self: flex-end;
+}
+
 
 .RelActAutoGui .ToIndividualRois,
 .RelActAutoGui .ToIndividualRois:hover
@@ -337,9 +484,6 @@
 {
   font-size: 80%;
   height: 21px;
-  float: right;
-  margin-right: 5px;
-  margin-top: 2px;
 }
 
 .RelActAutoGui .DeleteEnergyRangeOrNuc,

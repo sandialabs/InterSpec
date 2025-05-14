@@ -193,6 +193,8 @@ struct NucInputInfo
   
   const std::string name() const;
 
+  bool operator==( const NucInputInfo &rhs ) const;
+
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -363,6 +365,13 @@ size_t num_parameters( const FwhmForm eqn_form );
 struct RelEffCurveInput
 {
   RelEffCurveInput();
+
+  /** The name of the relative efficiency curve. 
+   
+   This value is not used within calculations, but is used for the reporting and 
+   display of results.
+  */
+  std::string name;
 
   /** The nuclides that apply to this relative efficiency curve.
    * You may specify the same nuclide for multiple different RelEffCurveInput inputs,
