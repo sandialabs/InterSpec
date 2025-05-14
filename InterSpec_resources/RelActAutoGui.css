@@ -540,39 +540,30 @@
 
 .RelActAutoGui .RelActAutoGuiNuclide
 {
-  padding-left: 0px;
+  padding-left: 5px;
+  padding-right: 5px;
   
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
+  gap: 5px;
 }
 
-
-.RelActAutoGui .RelActAutoGuiNuclide > label
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideAgeContainer
 {
-  margin-left: 10px;
-}
-
-
-.RelActAutoGui .RelActAutoGuiNuclide > input[type="text"]
-{
-  margin-right: 5px;
-  margin-left: 5px;
-  width: 8ex;
-}
-
-
-.RelActAutoGui .RelActAutoGuiNuclide > input[type="color"]
-{
-  margin-right: 5px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  padding-left: 5px;
+  gap: 5px;
 }
 
 
 .RelActAutoGuiNuclide .RelActAutoGuiNuclideSpacer
 {
   flex: 1 1 auto;
-  align-items: center;
 }
 
 

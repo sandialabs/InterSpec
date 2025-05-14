@@ -31,6 +31,8 @@
 #include <Wt/WColor>
 #include <Wt/WContainerWidget>
 
+#include "InterSpec/RelActCalcAuto.h"
+
 //Forward declerations
 namespace Wt
 {
@@ -47,25 +49,17 @@ class RelActAutoGuiNuclide : public Wt::WContainerWidget
 public:
   RelActAutoGuiNuclide( Wt::WContainerWidget *parent = nullptr );
   
-  
   void handleIsotopeChange();
   
-  
-  void setFitAgeVisible( bool visible, bool do_fit );
-  
-  
-  void setAgeDisabled( bool disabled );
-  
+  void setFitAge( const bool do_fit );
   
   void setAge( const std::string &age );
-  
+  void setAge( const Wt::WString &age );
   void setNuclideEditFocus();
   
   void handleAgeChange();
   
-  
   void handleFitAgeChange();
-  
   
   void handleColorChange();
   
@@ -77,6 +71,7 @@ public:
   void setColor( const Wt::WColor &color );
   
   double age() const;
+  Wt::WString ageStr() const;
   
   RelActCalcAuto::NucInputInfo toNucInputInfo() const;
   
@@ -87,6 +82,10 @@ public:
   Wt::Signal<> &updated();
   
   Wt::Signal<> &remove();
+
+  Wt::Signal<RelActAutoGuiNuclide *,bool> &fit_age_changed();
+  
+  Wt::Signal<RelActAutoGuiNuclide *> &age_changed();
   
   void addActRatioConstraint( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint );
   void addMassFractionConstraint( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint );
@@ -94,13 +93,15 @@ public:
   
 protected:
   Wt::WLineEdit *m_nuclide_edit;
-  Wt::WLabel *m_age_label;
+  Wt::WContainerWidget *m_age_container;
   Wt::WLineEdit *m_age_edit;
   Wt::WCheckBox *m_fit_age;
   ColorSelect *m_color_select;
   
   Wt::Signal<> m_updated;
   Wt::Signal<> m_remove;
+  Wt::Signal<RelActAutoGuiNuclide *,bool> m_fit_age_changed;
+  Wt::Signal<RelActAutoGuiNuclide *> m_age_changed;
 };//class RelActAutoGuiNuclide
 
 

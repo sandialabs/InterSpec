@@ -45,6 +45,7 @@ class RelActTxtResults;
 class RelEffShieldWidget;
 class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
+class RelActAutoGuiNuclide;
 class RelActAutoGuiRelEffOptions;
 
 namespace SpecUtils
@@ -136,11 +137,14 @@ public:
   
   void handleConvertEnergyRangeToIndividuals( Wt::WWidget *energy_range );
   
+
   /** Called when a nuclide is added or removed (or changed from one to another) */
   void handleNuclidesChanged();
-  
-  /** Called when a nuclides information (such as age) is changed. */
-  void handleNuclidesInfoEdited();
+
+  /** Called when a nuclide's fit age is changed. */
+  void handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool fit_age );
+
+  void handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc );
   
   /** Called when energy ranges are added, removed, or edited. */
   void handleEnergyRangeChange();

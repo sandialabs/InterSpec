@@ -63,12 +63,14 @@ using namespace Wt;
 RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   : WContainerWidget( parent ),
   m_nuclide_edit( nullptr ),
-  m_age_label( nullptr ),
+  m_age_container( nullptr ),
   m_age_edit( nullptr ),
   m_fit_age( nullptr ),
   m_color_select( nullptr ),
   m_updated( this ),
-  m_remove( this )
+  m_remove( this ),
+  m_fit_age_changed( this ),
+  m_age_changed( this )
 {
   addStyleClass( "RelActAutoGuiNuclide" );
   
@@ -84,6 +86,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   m_nuclide_edit->setAttributeValue( "spellcheck", "off" );
 #endif
   label->setBuddy( m_nuclide_edit );
+  m_nuclide_edit->setWidth( WLength(75.0, WLength::Pixel) );
   
   m_nuclide_edit->changed().connect( this, &RelActAutoGuiNuclide::handleIsotopeChange );
   
@@ -124,9 +127,13 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
   nuclideSuggest->forEdit( m_nuclide_edit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
   
-  m_age_label = new WLabel( "Age:", this );
-  m_age_edit = new WLineEdit( "", this );
-  m_age_label->setBuddy( m_age_edit );
+  m_age_container = new WContainerWidget( this );
+  m_age_container->setStyleClass( "RelActAutoGuiNuclideAgeContainer" );
+  
+  label = new WLabel( "Age:", m_age_container );
+  m_age_edit = new WLineEdit( "", m_age_container );
+  m_age_edit->setWidth( WLength(70.0, WLength::Pixel) );
+  label->setBuddy( m_age_edit );
   
   WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
   validator->setFlags(Wt::MatchCaseInsensitive);
@@ -134,8 +141,9 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   m_age_edit->setAutoComplete( false );
   m_age_edit->setAttributeValue( "ondragstart", "return false" );
   m_age_edit->changed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
+  m_age_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
   
-  m_fit_age = new WCheckBox( "Fit Age", this );
+  m_fit_age = new WCheckBox( "Fit Age", m_age_container );
   m_fit_age->setWordWrap( false );
   m_fit_age->checked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
   m_fit_age->unChecked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
@@ -154,6 +162,9 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
   removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
   removeEnergyRange->clicked().connect( this, &RelActAutoGuiNuclide::handleRemoveSelf );
+
+  // Hide the age stuff by default, until a nuclide is selected
+  m_age_container->hide();
 }//RelActAutoGuiNuclide
   
   
@@ -162,10 +173,8 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
   const auto nuc_input = nuclide();
   
   const auto hide_age_stuff = [this,&nuc_input](){
-    m_age_label->hide();
-    m_age_edit->hide();
+    m_age_container->hide();
     m_fit_age->setUnChecked();
-    m_fit_age->hide();
     
     const string nucstr = m_nuclide_edit->text().toUTF8();
     if( !nucstr.empty() && std::holds_alternative<std::monostate>(nuc_input) )
@@ -220,9 +229,7 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
       m_age_edit->setText( agestr );
     }
     
-    m_age_label->setHidden( !age_is_fittable );
-    m_age_edit->setHidden( !age_is_fittable );
-    m_fit_age->setHidden( !age_is_fittable );
+    m_age_container->setHidden( !age_is_fittable );
     m_fit_age->setChecked( false );
   }
   
@@ -281,30 +288,21 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
 }//void handleIsotopeChange()
   
   
-void RelActAutoGuiNuclide::setFitAgeVisible( bool visible, bool do_fit )
+void RelActAutoGuiNuclide::setFitAge( const bool do_fit )
 {
-  if( visible )
-  {
-    m_fit_age->setHidden( false );
-    m_fit_age->setChecked( do_fit );
-  }else
-  {
-    m_fit_age->setHidden( true );
-    m_fit_age->setChecked( false );
-  }
-}//setFitAgeVisible(...)
-  
-
-void RelActAutoGuiNuclide::setAgeDisabled( bool disabled )
-{
-  m_fit_age->setDisabled( disabled );
-  m_age_edit->setDisabled( disabled );
-}//void setAgeDisabled( bool disabled )
+  m_fit_age->setChecked( do_fit );
+}//setFitAge(...)
 
 
 void RelActAutoGuiNuclide::setAge( const string &age )
 {
   m_age_edit->setValueText( WString::fromUTF8(age) );
+}
+
+
+void RelActAutoGuiNuclide::setAge( const Wt::WString &age )
+{
+  m_age_edit->setValueText( age );
 }
 
 
@@ -316,13 +314,14 @@ void RelActAutoGuiNuclide::setNuclideEditFocus()
 
 void RelActAutoGuiNuclide::handleAgeChange()
 {
+  m_age_changed.emit( this );
   m_updated.emit();
 }//void handleAgeChange()
 
 
 void RelActAutoGuiNuclide::handleFitAgeChange()
 {
-  
+  m_fit_age_changed.emit( this, m_fit_age->isChecked() );
   m_updated.emit();
 }
 
@@ -398,7 +397,7 @@ double RelActAutoGuiNuclide::age() const
   if( !nuc )
     return 0.0;
   
-  if( m_age_edit->isHidden() || m_age_edit->text().empty() )
+  if( m_age_container->isHidden() || m_age_edit->text().empty() )
     return PeakDef::defaultDecayTime( nuc );
   
   double age = 0.0;
@@ -413,6 +412,12 @@ double RelActAutoGuiNuclide::age() const
   
   return age;
 }//double age() const
+
+
+WString RelActAutoGuiNuclide::ageStr() const
+{
+  return m_age_edit->text();
+}
 
 
 RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
@@ -455,11 +460,9 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     if( !info.peak_color_css.empty() )
       m_color_select->setColor( WColor(info.peak_color_css) );
     
-    m_age_label->hide();
-    m_age_edit->hide();
+    m_age_container->hide();
     m_age_edit->setText( "0s" );
     m_fit_age->setUnChecked();
-    m_fit_age->hide();
     
     m_updated.emit();
     
@@ -481,9 +484,7 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     const SandiaDecay::Nuclide * const nuc = info.nuclide;
     
     const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
-    m_age_label->setHidden( !age_is_fittable );
-    m_age_edit->setHidden( !age_is_fittable );
-    m_fit_age->setHidden( !age_is_fittable );
+    m_age_container->setHidden( !age_is_fittable );
     m_fit_age->setChecked( age_is_fittable && info.fit_age );
     
     if( !age_is_fittable || (info.age < 0.0) )
@@ -503,10 +504,8 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     //std::optional<double> info.fit_age_max;
   }else
   {
-    m_age_label->hide();
-    m_age_edit->hide();
+    m_age_container->hide();
     m_fit_age->setUnChecked();
-    m_fit_age->hide();
   }//if( info.nuclide )
   
   // Not currently supported: info.gammas_to_exclude -> vector<double>;
@@ -536,6 +535,18 @@ Wt::Signal<> &RelActAutoGuiNuclide::updated()
 Wt::Signal<> &RelActAutoGuiNuclide::remove()
 {
   return m_remove;
+}
+
+
+Wt::Signal<RelActAutoGuiNuclide *,bool> &RelActAutoGuiNuclide::fit_age_changed()
+{
+  return m_fit_age_changed;
+}
+
+
+Wt::Signal<RelActAutoGuiNuclide *> &RelActAutoGuiNuclide::age_changed()
+{
+  return m_age_changed;
 }
 
 

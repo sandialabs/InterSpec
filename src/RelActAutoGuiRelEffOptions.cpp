@@ -401,12 +401,17 @@ void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelE
     {
       RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( m_phys_ext_attens->children()[i] );
       assert( sw );
-      assert( rel_eff.phys_model_external_atten[i] );
-      if( sw && rel_eff.phys_model_external_atten[i])
+      if( !sw )
+        continue;
+      
+      if( (i < rel_eff.phys_model_external_atten.size()) && rel_eff.phys_model_external_atten[i] )
       {
         RelEffShieldState state;
         state.setStateFromFitInput( *rel_eff.phys_model_external_atten[i] );
         sw->setState( state );
+      }else
+      {
+        sw->resetState();
       }
     }//for( size_t i = 0; i < std::min(num_ext_atten, m_phys_ext_attens->children().size()); ++i )
   }else

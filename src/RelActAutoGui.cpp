@@ -107,6 +107,13 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 
 namespace
 {
+  struct DoWorkOnDestruct
+  {
+    std::function<void()> m_worker;
+    DoWorkOnDestruct( std::function<void()> &&worker ) : m_worker( std::move(worker) ){}
+    ~DoWorkOnDestruct(){ if(m_worker) m_worker(); }
+  };//struct DoWorkOnDestruct
+
   //DeleteOnClosePopupMenu - same class as from D3SpectrumDisplayDiv... should refactor
   class DeleteOnClosePopupMenu : public PopupDivMenu
   {
@@ -1109,7 +1116,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     rel_eff_curve.nuclides = getNucInputInfo( rel_eff_curve_index );
     rel_eff_curve.act_ratio_constraints = getActRatioConstraints( rel_eff_curve_index );
     rel_eff_curve.mass_fraction_constraints = getMassFractionConstraints( rel_eff_curve_index );
-    rel_eff_curve.nucs_of_el_same_age = m_same_z_age->isChecked();
+    rel_eff_curve.nucs_of_el_same_age = (m_same_z_age->isVisible() && m_same_z_age->isChecked());
     rel_eff_curve.rel_eff_eqn_type = opts->rel_eff_eqn_form();
     rel_eff_curve.rel_eff_eqn_order = opts->rel_eff_eqn_order();
     rel_eff_curve.phys_model_self_atten = opts->phys_model_self_atten();
@@ -1827,6 +1834,8 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
       nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
+      nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
+      nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
       nuc_widget->fromNucInputInfo( nuc );
 
       if( nuc.nuclide )
@@ -2214,10 +2223,54 @@ void RelActAutoGui::handleBackgroundSubtractChanged()
 
 void RelActAutoGui::handleSameAgeChanged()
 {
-  checkIfInUserConfigOrCreateOne( false );
-  m_render_flags |= RenderActions::UpdateCalculations;
-  scheduleRender();
-}
+  DoWorkOnDestruct do_work( [&](){
+    checkIfInUserConfigOrCreateOne( false );
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  } );
+
+
+  if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+    return;
+
+  // Go through and set the the ages of all nuclides of each element to the same value.
+  //  We will just use the age of the first nuclide of each element.
+  std::map<short int, WString> z_to_age;
+  for( WWidget *w : m_nuclides->children() )
+  {
+    RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
+    assert( nuc_widget );
+    if( !nuc_widget )
+      continue;
+
+    const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
+        src_info = nuc_widget->nuclide(); 
+
+    if( !std::holds_alternative<const SandiaDecay::Nuclide *>(src_info) )
+      continue;
+
+    const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
+    assert( nuclide );
+    if( !nuclide )
+      continue;
+
+    const short int atomicNumber = nuclide->atomicNumber;
+    
+    const WString orig_age_str = nuc_widget->ageStr();
+    
+    if( !z_to_age.count(atomicNumber) )
+    {
+      // We are on first nuclide of this element, so we dont need to update its age.
+      z_to_age[atomicNumber] = orig_age_str;
+    }else
+    {
+      const WString &age_str = z_to_age[atomicNumber];
+      if( orig_age_str != age_str )
+        nuc_widget->setAge( age_str );
+    }
+  }//for( WWidget *w : m_nuclides->children() )
+}//void RelActAutoGui::handleSameAgeChanged()
+
 
 void RelActAutoGui::handlePuByCorrelationChanged()
 {
@@ -2250,12 +2303,102 @@ void RelActAutoGui::handleNuclidesChanged()
 }//void handleNuclidesChanged()
 
 
-void RelActAutoGui::handleNuclidesInfoEdited()
+void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool fit_age )
 {
-  checkIfInUserConfigOrCreateOne( false );
-  m_render_flags |= RenderActions::UpdateCalculations;
-  scheduleRender();
-}//void handleNuclidesInfoEdited()
+  DoWorkOnDestruct do_work( [&](){
+    checkIfInUserConfigOrCreateOne( false );
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  } );
+    
+  if( !nuc )
+    return;
+
+  if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+    return;
+  
+  const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
+      src_info = nuc->nuclide();
+
+  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc->nuclide()) )
+    return;
+
+  const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
+  assert( nuclide );
+  if( !nuclide )
+    return;
+
+  const short int atomicNumber = nuclide->atomicNumber;
+
+  for( WWidget *w : m_nuclides->children() )
+  {
+    RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
+    assert( nuc_widget );
+    if( !nuc_widget )
+      continue;
+
+    variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
+        this_src_info = nuc_widget->nuclide();
+
+    if( !std::holds_alternative<const SandiaDecay::Nuclide *>(this_src_info) )
+      continue;
+
+    const SandiaDecay::Nuclide *this_nuclide = std::get<const SandiaDecay::Nuclide *>(this_src_info);
+    if( !this_nuclide || (this_nuclide->atomicNumber != atomicNumber) )
+      continue;
+        
+    nuc_widget->setFitAge( fit_age );
+  }//for( WWidget *w : m_nuclides->children() )
+}//void handleNuclideFitAgeChanged()
+
+
+void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
+{
+  DoWorkOnDestruct do_work( [&](){
+    checkIfInUserConfigOrCreateOne( false );
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  } );
+
+  
+  if( !nuc || !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+    return;
+
+  const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
+      src_info = nuc->nuclide();
+
+  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc->nuclide()) )
+    return;
+
+  const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
+  assert( nuclide );
+  if( !nuclide )
+    return;
+
+  const WString age_str = nuc->ageStr();
+
+  const short int atomicNumber = nuclide->atomicNumber;
+  
+  for( WWidget *w : m_nuclides->children() )
+  {
+    RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
+    assert( nuc_widget );
+    if( !nuc_widget || (nuc == nuc_widget) )
+      continue;
+
+    const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
+        this_src_info = nuc_widget->nuclide();  
+
+    if( !std::holds_alternative<const SandiaDecay::Nuclide *>(this_src_info) )
+      continue;
+
+    const SandiaDecay::Nuclide * const this_nuclide = std::get<const SandiaDecay::Nuclide *>(this_src_info);
+    if( !this_nuclide || (this_nuclide->atomicNumber != atomicNumber) )
+      continue;
+
+    nuc_widget->setAge( age_str );
+  }//for( WWidget *w : m_nuclides->children() )
+}//void handleNuclideAgeChanged()
 
 
 void RelActAutoGui::handleEnergyRangeChange()
@@ -2385,6 +2528,8 @@ void RelActAutoGui::handleAddNuclide()
   nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
   nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
+  nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
+  nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
   nuc_widget->setNuclideEditFocus();
   
   shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
@@ -3687,7 +3832,11 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
   if( m_same_z_age->isVisible() != has_multiple_nucs_of_z )
+  {
     m_same_z_age->setHidden( !has_multiple_nucs_of_z );
+    if( !has_multiple_nucs_of_z )
+      m_same_z_age->setChecked( false );
+  }
 }//void updateDuringRenderForNuclideChange()
 
 

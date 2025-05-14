@@ -1924,7 +1924,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   assert( !m_nonSpecFileDialog );
   
   m_nonSpecFileDialog = dialog;
-  cout << "Assigning m_nonSpecFileDialog to " << dialog << endl;
   
   // The dialog may get deleted, and never accepted, so we will hook up to the
   //  `destroyed()` signal to keep track of `m_nonSpecFileDialog`
