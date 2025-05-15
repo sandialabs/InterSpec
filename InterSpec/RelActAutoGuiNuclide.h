@@ -42,6 +42,7 @@ namespace Wt
 }
 
 class ColorSelect;
+class RelActAutoGuiNuclideConstraint;
 
 
 class RelActAutoGuiNuclide : public Wt::WContainerWidget
@@ -52,12 +53,25 @@ public:
   void handleIsotopeChange();
   
   void setFitAge( const bool do_fit );
+  bool fitAge() const;
   
   void setAge( const std::string &age );
   void setAge( const Wt::WString &age );
+
+
+  /** Sets the min and max age range.  
+    If fit age is checked, and the nominal age is outside this range, it will be changed as well. 
+
+    Does not emit the `updated()` or `age_changed()` signals.
+   */
+  void setAgeRange( Wt::WString min_age, Wt::WString max_age );
+  
+  
   void setNuclideEditFocus();
   
   void handleAgeChange();
+  void handleAgeRangeChange();
+  void validateAndCorrectAgeRange();
   
   void handleFitAgeChange();
   
@@ -72,6 +86,9 @@ public:
   
   double age() const;
   Wt::WString ageStr() const;
+  
+  std::pair<Wt::WString,Wt::WString> ageRangeStr() const;
+  std::pair<std::optional<double>,std::optional<double>> ageRange() const;
   
   RelActCalcAuto::NucInputInfo toNucInputInfo() const;
   
@@ -91,13 +108,25 @@ public:
   void addMassFractionConstraint( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint );
   void setIsInCurves( const std::set<size_t> &curves_with_nuc, size_t num_rel_eff_curves );
   
+  void handleAddConstraint();
+  void handleRemoveConstraint();
+  void handleConstraintChanged();
+
+  void updateAllowedConstraints();
 protected:
   Wt::WLineEdit *m_nuclide_edit;
   Wt::WContainerWidget *m_age_container;
-  Wt::WLineEdit *m_age_edit;
+  Wt::WLineEdit *m_age_edit;  
   Wt::WCheckBox *m_fit_age;
   ColorSelect *m_color_select;
-  
+
+  Wt::WContainerWidget *m_lower_container;
+  Wt::WPushButton *m_add_constraint_btn;
+  RelActAutoGuiNuclideConstraint *m_constraint;
+  Wt::WContainerWidget *m_age_range_container;
+  Wt::WLineEdit *m_fit_age_min_edit;
+  Wt::WLineEdit *m_fit_age_max_edit;
+
   Wt::Signal<> m_updated;
   Wt::Signal<> m_remove;
   Wt::Signal<RelActAutoGuiNuclide *,bool> m_fit_age_changed;

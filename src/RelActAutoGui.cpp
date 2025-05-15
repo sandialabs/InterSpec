@@ -2236,6 +2236,8 @@ void RelActAutoGui::handleSameAgeChanged()
   // Go through and set the the ages of all nuclides of each element to the same value.
   //  We will just use the age of the first nuclide of each element.
   std::map<short int, WString> z_to_age;
+  std::map<short int, bool> z_to_fit_age;
+  vector<pair<const SandiaDecay::Nuclide *, RelActAutoGuiNuclide *>> srcs_with_nuclides;
   for( WWidget *w : m_nuclides->children() )
   {
     RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
@@ -2254,9 +2256,15 @@ void RelActAutoGui::handleSameAgeChanged()
     if( !nuclide )
       continue;
 
+    srcs_with_nuclides.push_back( std::make_pair( nuclide, nuc_widget ) );
+
     const short int atomicNumber = nuclide->atomicNumber;
     
     const WString orig_age_str = nuc_widget->ageStr();
+
+    if( !z_to_fit_age.count(atomicNumber) )
+      z_to_fit_age[atomicNumber] = false;
+    z_to_fit_age[atomicNumber] |= nuc_widget->fitAge();
     
     if( !z_to_age.count(atomicNumber) )
     {
@@ -2269,6 +2277,21 @@ void RelActAutoGui::handleSameAgeChanged()
         nuc_widget->setAge( age_str );
     }
   }//for( WWidget *w : m_nuclides->children() )
+
+  // If any nuclides age is being fit, then all nuclides of that element should be fit. 
+  for( const pair<const SandiaDecay::Nuclide *, RelActAutoGuiNuclide *> &nuc_pair : srcs_with_nuclides )
+  {
+    const SandiaDecay::Nuclide * const nuclide = nuc_pair.first;
+    RelActAutoGuiNuclide * const nuc_widget = nuc_pair.second;
+    const short int atomicNumber = nuclide->atomicNumber;
+    assert( z_to_fit_age.count(atomicNumber) );
+    if( !z_to_fit_age.count(atomicNumber) )
+      continue;
+
+    const bool fit_age = z_to_fit_age[atomicNumber];
+    if( fit_age )
+      nuc_widget->setFitAge( fit_age );
+  }//for( loop over srcs_with_nuclides )
 }//void RelActAutoGui::handleSameAgeChanged()
 
 
@@ -2375,7 +2398,9 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
   if( !nuclide )
     return;
 
+  const bool fit_age = nuc->fitAge();
   const WString age_str = nuc->ageStr();
+  const auto age_range = nuc->ageRangeStr();
 
   const short int atomicNumber = nuclide->atomicNumber;
   
@@ -2397,6 +2422,8 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
       continue;
 
     nuc_widget->setAge( age_str );
+    if( fit_age )
+      nuc_widget->setAgeRange( age_range.first, age_range.second );
   }//for( WWidget *w : m_nuclides->children() )
 }//void handleNuclideAgeChanged()
 

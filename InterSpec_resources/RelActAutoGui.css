@@ -544,9 +544,8 @@
   padding-right: 5px;
   
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   flex-wrap: nowrap;
-  align-items: center;
   gap: 5px;
 }
 
@@ -560,10 +559,44 @@
   gap: 5px;
 }
 
-
-.RelActAutoGuiNuclide .RelActAutoGuiNuclideSpacer
+.RelActAutoGui .RelActAutoGuiNuclide .UpperRow,
+.RelActAutoGui .RelActAutoGuiNuclide .LowerRow
 {
-  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  height: 25px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .AddConstraintBtn
+{
+  width: 200px;
+  font-weight: normal;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideConstraint
+{
+  display: flex;
+  flex-direction: row;
+  width: 200px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .NucAgeRangeContainer
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  padding-left: 5px;
+  gap: 5px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .NucAgeRangeContainer > input
+{
+  width: 55px;
+  margin-right: 5px;
 }
 
 
