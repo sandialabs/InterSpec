@@ -31,9 +31,11 @@
 #include <Wt/WSignal>
 #include <Wt/WString>
 #include <Wt/WCheckBox>
+#include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
+#include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
@@ -46,9 +48,11 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/RelActAutoGuiNuclide.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
@@ -60,27 +64,147 @@ using namespace std;
 using namespace Wt;
 
 
-enum class NucConstraintType
+enum class NucConstraintType : int
 {
-  None, RelActRange, MassFraction, ActRatio
+  None, RelActRange, MassFraction, ActRatio, NumTypes
 };//enum class NucConstraintType
 
 class RelActAutoGuiNuclideConstraint : public WContainerWidget
 {
+  RelActAutoGui *m_gui;
   RelActAutoGuiNuclide *m_nuc;
+  Wt::WComboBox *m_constraint_type;
+  Wt::WStackedWidget *m_stacked_widget;
+
+  NativeFloatSpinBox *m_min_rel_act_edit;
+  NativeFloatSpinBox *m_max_rel_act_edit;
+
+  NativeFloatSpinBox *m_min_mass_frac_edit;
+  NativeFloatSpinBox *m_max_mass_frac_edit;
+
+  Wt::WComboBox *m_act_control_nuc_combo;
+  NativeFloatSpinBox *m_activity_ratio_edit;
+
   Wt::Signal<> m_remove;
   Wt::Signal<> m_changed;
   
 
 public:
-  RelActAutoGuiNuclideConstraint( RelActAutoGuiNuclide *nuc,WContainerWidget *parent )
+  RelActAutoGuiNuclideConstraint( RelActAutoGui *gui, RelActAutoGuiNuclide *nuc, WContainerWidget *parent )
     : WContainerWidget( parent ),
+    m_gui( gui ),
+    m_nuc( nuc ),
+    m_constraint_type( nullptr ),
+    m_stacked_widget( nullptr ),
+    m_min_rel_act_edit( nullptr ),
+    m_max_rel_act_edit( nullptr ),
+    m_min_mass_frac_edit( nullptr ),
+    m_max_mass_frac_edit( nullptr ),
+    m_act_control_nuc_combo( nullptr ),
+    m_activity_ratio_edit( nullptr ),
     m_remove( this ),
-    m_nuc( nuc )
+    m_changed( this )
   {
     addStyleClass( "RelActAutoGuiNuclideConstraint" );
 
     const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+
+    m_constraint_type = new WComboBox( this );
+    m_constraint_type->setNoSelectionEnabled( false );
+    m_constraint_type->changed().connect( this, &RelActAutoGuiNuclideConstraint::handleConstraintTypeChange );
+    m_stacked_widget = new WStackedWidget( this );
+
+   
+    for( NucConstraintType type = NucConstraintType::None; 
+        type < NucConstraintType::NumTypes; 
+        type = NucConstraintType(static_cast<int>(type) + 1) )
+    {
+      WContainerWidget *container = new WContainerWidget( m_stacked_widget );
+      container->addStyleClass( "ConstraintInputDiv" );
+      m_stacked_widget->addWidget( container );
+      const int model_row = m_constraint_type->count();
+
+      switch( type )
+      {
+        case NucConstraintType::None:
+        {
+          //m_constraint_type->addItem( "None" );
+          WLabel *label = new WLabel( "Select a constraint type.", container );
+          label->setInline( false );
+          break;
+        }
+        
+        case NucConstraintType::RelActRange:
+        {
+          //m_constraint_type->addItem( "Rel. Act" );
+          WLabel *label = new WLabel( "min:", container );
+          m_min_rel_act_edit = new NativeFloatSpinBox( container );
+          label->setBuddy( m_min_rel_act_edit );
+          m_min_rel_act_edit->setSpinnerHidden( true );
+          m_min_rel_act_edit->setMinimum( std::numeric_limits<float>::min() );
+          m_min_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_min_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
+
+          label = new WLabel( "max:", container );
+          m_max_rel_act_edit = new NativeFloatSpinBox( container );
+          label->setBuddy( m_max_rel_act_edit );
+          m_max_rel_act_edit->setSpinnerHidden( true );
+          m_max_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_max_rel_act_edit->setMinimum( std::numeric_limits<float>::min() );
+          m_max_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
+          break;
+        }//case NucConstraintType::RelActRange
+        
+        case NucConstraintType::MassFraction:
+        {
+          //m_constraint_type->addItem( "Mass Frac." );
+          WLabel *label = new WLabel( "min:", container );
+          m_min_mass_frac_edit = new NativeFloatSpinBox( container );
+          label->setBuddy( m_min_mass_frac_edit );
+          m_min_mass_frac_edit->setSpinnerHidden( true );
+          m_min_mass_frac_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_min_mass_frac_edit->setRange( 0.0, 1.0 );
+          m_min_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
+
+          label = new WLabel( "max:", container );
+          m_max_mass_frac_edit = new NativeFloatSpinBox( container );
+          label->setBuddy( m_max_mass_frac_edit );
+          m_max_mass_frac_edit->setSpinnerHidden( true );
+          m_max_mass_frac_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_max_mass_frac_edit->setRange( 0.0, 1.0 );
+          m_max_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
+          break;
+        }//case NucConstraintType::MassFraction
+        
+        case NucConstraintType::ActRatio:
+        {
+          //m_constraint_type->addItem( "Act Ratio" );
+          WLabel *label = new WLabel( "src:", container );
+          m_act_control_nuc_combo = new WComboBox( container );
+          label->setBuddy( m_act_control_nuc_combo );
+          m_act_control_nuc_combo->setMaximumSize( WLength(60, WLength::Pixel), WLength::Auto );
+          m_act_control_nuc_combo->changed().connect( this, &RelActAutoGuiNuclideConstraint::handleActivityRatioChange );
+          
+          label = new WLabel( "val:", container );
+          m_activity_ratio_edit = new NativeFloatSpinBox( container );
+          label->setBuddy( m_activity_ratio_edit );
+          m_activity_ratio_edit->setSpinnerHidden( true );
+          m_activity_ratio_edit->setWidth( WLength(35.0, WLength::Pixel) );
+          m_activity_ratio_edit->setMinimum( std::numeric_limits<float>::min() );
+          m_activity_ratio_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleActivityRatioChange );
+          break;
+        }//case NucConstraintType::ActRatio
+        
+        case NucConstraintType::NumTypes:
+          assert( 0 );
+          break;
+      }//switch( type )
+    }//for( loop over NucConstraintType )
+
+
+    m_constraint_type->setCurrentIndex( static_cast<int>(NucConstraintType::None) );
+
+    m_constraint_type->changed().connect( this, &RelActAutoGuiNuclideConstraint::handleConstraintTypeChange );
 
     WContainerWidget *spacer = new WContainerWidget( this );
     spacer->setStyleClass( "RelActAutoSpacer" );
@@ -92,14 +216,133 @@ public:
 
     HelpSystem::attachToolTipOn( removeBtn, "Remove this constraint", showToolTips );
 
-
-
+    updateAllowedConstraints();
   }//RelActAutoGuiNuclideConstraint
+
+
+  void setAvailableConstraintTypes( set<NucConstraintType> types )
+  {
+    if( !types.count(NucConstraintType::None) )
+      types.insert( NucConstraintType::None );
+
+    const NucConstraintType current_type = constraintType();
+
+    m_constraint_type->clear();
+    WAbstractItemModel *constraint_type_model = m_constraint_type->model();
+    assert( constraint_type_model );
+    if( !constraint_type_model )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::RelActAutoGuiNuclideConstraint() called when no constraint type model is present" );
+
+
+    for( const NucConstraintType &type : types )
+    {
+      const int model_row = m_constraint_type->count();
+
+      const char *title = nullptr;
+      switch( type )
+      {
+        case NucConstraintType::None:
+        {
+          title = "None";
+          break;
+        }
+        
+        case NucConstraintType::RelActRange:
+        {
+          title = "Rel. Act";
+          break;
+        }//case NucConstraintType::MassFraction
+        
+        case NucConstraintType::ActRatio:
+        {
+          title = "Act Ratio";
+          break;
+        }//case NucConstraintType::ActRatio
+        
+        case NucConstraintType::MassFraction:
+        {
+          title = "Mass Frac.";
+          break;
+        }//case NucConstraintType::MassFraction
+        
+        case NucConstraintType::NumTypes:
+          assert( 0 );
+          break;
+      }//switch( type )
+
+      assert( title );
+      if( !title )
+        throw runtime_error( "RelActAutoGuiNuclideConstraint::setAvailableConstraintTypes() called when no title is available" );
+
+      m_constraint_type->addItem( WString::fromUTF8(title) );
+      
+      if( type == current_type )
+        m_constraint_type->setCurrentIndex( model_row );
+      
+      const WModelIndex index = m_constraint_type->model()->index( model_row, 0 );
+
+      assert( index.isValid() );
+      if( !index.isValid() )
+        throw runtime_error( "RelActAutoGuiNuclideConstraint::RelActAutoGuiNuclideConstraint() called when no constraint type model index is valid" );
+
+      constraint_type_model->setData( index, boost::any(type), Wt::ItemDataRole::UserRole );
+    }//for( const NucConstraintType &type : types )
+  }//void setAvaiableConstraintTypes( const std::set<NucConstraintType> &types )
+
+
+  void handleConstraintTypeChange()
+  {
+    m_stacked_widget->setCurrentIndex( static_cast<int>(constraintType()) );
+
+    m_changed.emit();
+  }
+
+  void handleRelActRangeChange()
+  {
+    m_changed.emit();
+  }
+
+  void handleMassFractionChange()
+  {
+    m_changed.emit();
+  }
+
+  void handleActivityRatioChange()
+  {
+    m_changed.emit();
+  }
 
   NucConstraintType constraintType() const
   {
-    return NucConstraintType::None;
-  }
+    if( m_constraint_type->count() == 0 )
+      return NucConstraintType::None;
+
+    const std::string current_text = m_constraint_type->currentText().toUTF8();
+
+    const int row = m_constraint_type->currentIndex();
+    assert( (row >= 0) && (row < static_cast<int>(NucConstraintType::NumTypes)) );
+    if( row < 0 )
+      return NucConstraintType::None;
+
+    WAbstractItemModel *model = m_constraint_type->model();
+    assert( model );
+    if( !model )
+      return NucConstraintType::None;
+
+    const WModelIndex index = model->index( row, 0 );
+    assert( index.isValid() );
+    if( !index.isValid() )
+      return NucConstraintType::None;
+
+    const boost::any any_data = model->data( index, Wt::ItemDataRole::UserRole);
+    assert( !any_data.empty() );
+    if( any_data.empty() )
+      return NucConstraintType::None;
+
+    const NucConstraintType type = boost::any_cast<NucConstraintType>(any_data);
+    return type;
+  }//NucConstraintType constraintType() const
+
   
   Wt::Signal<> &remove()
   {
@@ -116,30 +359,245 @@ public:
     m_remove.emit();
   }
 
+
   void setRelActRange( std::optional<double> min_rel_act, std::optional<double> max_rel_act )
   {
-    //m_min_rel_act_edit->setText( WString::fromUTF8(PhysicalUnitsLocalized::printToBestTimeUnits(min_rel_act)) );
-    //m_max_rel_act_edit->setText( WString::fromUTF8(PhysicalUnitsLocalized::printToBestTimeUnits(max_rel_act)) );
+    if( min_rel_act.has_value() )
+      m_min_rel_act_edit->setText( WString::fromUTF8(PhysicalUnitsLocalized::printToBestTimeUnits(min_rel_act.value(), 6)) );
+    else
+      m_min_rel_act_edit->setText( "" );
+
+    if( max_rel_act.has_value() )
+      m_max_rel_act_edit->setText( WString::fromUTF8(PhysicalUnitsLocalized::printToBestTimeUnits(max_rel_act.value(), 6)) );
+    else
+      m_max_rel_act_edit->setText( "" );
   }
 
   std::optional<double> minRelAct() const
   {
-    //return m_min_rel_act;
-    return std::nullopt;
+    if( constraintType() != NucConstraintType::RelActRange )
+      return std::nullopt;
+
+    if( m_min_rel_act_edit->text().empty() )
+      return std::nullopt;
+    return static_cast<double>(m_min_rel_act_edit->value());
   }
 
   std::optional<double> maxRelAct() const
   {
-    //return m_max_rel_act;
-    return std::nullopt;
+    if( constraintType() != NucConstraintType::RelActRange )
+      return std::nullopt;
+
+    if( m_max_rel_act_edit->text().empty() )
+      return std::nullopt;
+    return static_cast<double>(m_max_rel_act_edit->value());
   }
-  
+
+  void setActRatio( const SandiaDecay::Nuclide *controlling_nuclide, double constrained_to_controlled_activity_ratio )
+  {
+    if( !controlling_nuclide )
+      throw runtime_error( "Invalid ActRatioConstraint - controlling nuclide must be specified" );
+
+    if( constrained_to_controlled_activity_ratio <= 0.0 )
+      throw runtime_error( "Invalid ActRatioConstraint - constrained to controlled activity ratio must be > 0.0" );
+
+    m_constraint_type->setCurrentIndex( static_cast<int>(NucConstraintType::ActRatio) );
+    m_stacked_widget->setCurrentIndex( static_cast<int>(NucConstraintType::ActRatio) );
+
+    const std::set<size_t> rel_eff_curves = m_nuc->relEffCurves();
+    assert( !rel_eff_curves.empty() );
+    const size_t rel_eff_curve_index = *rel_eff_curves.begin();
+    
+    //m_act_control_nuc_combo should already be up to date, but just in case, we'll update it
+    const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
+    m_act_control_nuc_combo->clear();
+    int src_index = -1;
+    for( int index = 0; index < static_cast<int>(nucs.size()); ++index )
+    {
+      const RelActCalcAuto::NucInputInfo &nuc = nucs[index];
+      if( nuc.nuclide == controlling_nuclide )
+        src_index = index;
+
+      if( nuc.nuclide )
+        m_act_control_nuc_combo->addItem( WString::fromUTF8(nuc.nuclide->symbol) );
+      else if( nuc.element )
+        m_act_control_nuc_combo->addItem( WString::fromUTF8(nuc.element->symbol) );
+      else if( nuc.reaction )
+        m_act_control_nuc_combo->addItem( WString::fromUTF8(nuc.reaction->name()) );
+    }//for( const RelActCalcAuto::NucInputInfo &nuc : nucs )
+
+    if( src_index == -1 )
+      throw runtime_error( "Invalid ActRatioConstraint - controlling nuclide not found" );
+
+    m_act_control_nuc_combo->setCurrentIndex( src_index ); 
+    m_activity_ratio_edit->setValue( constrained_to_controlled_activity_ratio );
+  }//setActRatio
+
+
+  RelActCalcAuto::RelEffCurveInput::ActRatioConstraint actRatioConstraint() const 
+  {
+    if( constraintType() != NucConstraintType::ActRatio )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::actRatioConstraint() called when no constraint is present" );
+
+    if( m_act_control_nuc_combo->currentIndex() < 0 )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::actRatioConstraint() called when no controlling nuclide is selected" );
+
+    const float ratio = static_cast<float>(m_activity_ratio_edit->value());
+    if( ratio <= 0.0 )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::actRatioConstraint() called when ratio is <= 0.0" );
+
+    RelActCalcAuto::RelEffCurveInput::ActRatioConstraint constraint;
+    constraint.controlling_nuclide = nullptr;
+    constraint.constrained_nuclide = m_nuc->nuclide();
+    constraint.constrained_to_controlled_activity_ratio = ratio;
+
+    const string src_name = m_act_control_nuc_combo->currentText().toUTF8();
+
+    const set<size_t> rel_eff_curves = m_nuc->relEffCurves();
+    assert( !rel_eff_curves.empty() );
+    const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( *begin(rel_eff_curves) );
+    for( const RelActCalcAuto::NucInputInfo &src : nucs )
+    {
+      if( src.nuclide && (src.nuclide->symbol == src_name) )
+        constraint.controlling_nuclide = src.nuclide;
+      //else if( src.element && (src.element->symbol == src_name) )
+      //  constraint.controlling_nuclide = src.element;
+      //else if( src.reaction && (src.reaction->name() == src_name) )
+      //  constraint.controlling_nuclide = src.reaction;
+    }
+    
+    if( !constraint.controlling_nuclide )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::actRatioConstraint() called when no controlling nuclide is found" );
+
+    return constraint;
+  }//RelActCalcAuto::RelEffCurveInput::ActRatioConstraint actRatioConstraint() const
+
+
+  void setMassFraction( const double lower_mass_fraction, const double upper_mass_fraction )
+  {
+    m_constraint_type->setCurrentIndex( static_cast<int>(NucConstraintType::MassFraction) );
+    m_stacked_widget->setCurrentIndex( static_cast<int>(NucConstraintType::MassFraction) );
+    
+    const SandiaDecay::Nuclide *nuc = m_nuc->nuclide();
+    assert( nuc );
+    if( !nuc )
+      throw runtime_error( "Invalid MassFractionConstraint - nuclide must be specified" );
+
+    m_min_mass_frac_edit->setValue( static_cast<float>(lower_mass_fraction) );
+    m_max_mass_frac_edit->setValue( static_cast<float>(upper_mass_fraction) );
+  }//void setMassFraction( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint )
+
+
+  RelActCalcAuto::RelEffCurveInput::MassFractionConstraint massFractionConstraint() const
+  {
+    if( constraintType() != NucConstraintType::MassFraction )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::massFractionConstraint() called when no constraint is present" );
+
+
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = m_nuc->nuclide();
+    constraint.lower_mass_fraction = static_cast<float>(m_min_mass_frac_edit->value());
+    constraint.upper_mass_fraction = static_cast<float>(m_max_mass_frac_edit->value());
+
+    if( !constraint.nuclide )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::massFractionConstraint() called when no nuclide is specified" );
+
+    if( constraint.lower_mass_fraction > constraint.upper_mass_fraction )
+      std::swap( constraint.lower_mass_fraction, constraint.upper_mass_fraction );
+
+    if( constraint.lower_mass_fraction < 0.0 )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::massFractionConstraint() called when lower mass fraction is < 0.0" );
+
+    if( constraint.upper_mass_fraction > 1.0 )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::massFractionConstraint() called when upper mass fraction is <= 0.0" );
+
+    if( (constraint.lower_mass_fraction == constraint.upper_mass_fraction) 
+        && ((constraint.lower_mass_fraction == 1.0) || (constraint.lower_mass_fraction == 0.0)) )
+      throw runtime_error( "RelActAutoGuiNuclideConstraint::massFractionConstraint() called when lower and upper mass fractions are the same and not 0.0 or 1.0" );
+
+    return constraint;
+  }//RelActCalcAuto::RelEffCurveInput::MassFractionConstraint massFractionConstraint() const
+
+
+  void updateAllowedConstraints()
+  {
+    const set<size_t> rel_eff_curves = m_nuc->relEffCurves();
+    assert( !rel_eff_curves.empty() );
+    const size_t rel_eff_curve_index = *rel_eff_curves.begin();
+
+    const vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
+    const SandiaDecay::Nuclide * const nuc = m_nuc->nuclide();
+    const SandiaDecay::Element * const el = m_nuc->element();
+    const ReactionGamma::Reaction * const rctn = m_nuc->reaction();
+
+    const string current_text = m_act_control_nuc_combo->currentText().toUTF8();
+
+    //None, RelActRange, MassFraction, ActRatio, 
+    set<NucConstraintType> types;
+
+    if( m_nuc->nuclide() || m_nuc->element() || m_nuc->reaction() )
+    {
+      size_t same_an_nucs = 0, num_valid_sources = 0;
+
+      for( const RelActCalcAuto::NucInputInfo &other_src : nucs )
+      {
+        if( !other_src.nuclide && !other_src.element && !other_src.reaction )
+          continue;
+
+        if( nuc && other_src.nuclide && (nuc->atomicNumber == other_src.nuclide->atomicNumber) )
+          ++same_an_nucs;
+
+        ++num_valid_sources;
+      }//
+
+      if( num_valid_sources > 1 )
+      {
+        types.insert( NucConstraintType::ActRatio );
+        types.insert( NucConstraintType::RelActRange );
+
+        if( m_nuc->nuclide() && (same_an_nucs > 1) )
+          types.insert( NucConstraintType::MassFraction );
+      }
+    }//if( m_nuc->nuclide() || m_nuc->element() || m_nuc->reaction() )
+    
+    setAvailableConstraintTypes( types );
+    
+    m_act_control_nuc_combo->clear();
+    int src_index = -1;
+    for( int index = 0; index < static_cast<int>(nucs.size()); ++index )
+    {
+      const RelActCalcAuto::NucInputInfo &src = nucs[index];
+
+      if( (src.nuclide == nuc) && (src.element == el) && (src.reaction == rctn) )
+        continue;
+
+      if( !src.nuclide && !src.element && !src.reaction )
+        continue;
+
+      string src_txt;
+      if( src.nuclide )
+        src_txt = src.nuclide->symbol;
+      else if( src.element )
+        src_txt = src.element->symbol;
+      else if( src.reaction )
+        src_txt = src.reaction->name();
+
+      if( src_txt == current_text )
+        src_index = index;
+
+      m_act_control_nuc_combo->addItem( WString::fromUTF8(src_txt) );
+    }//for( const RelActCalcAuto::NucInputInfo &nuc : nucs )
+
+    if( src_index != -1 )
+      m_act_control_nuc_combo->setCurrentIndex( src_index );
+  }//void updateAllowedConstraints()
 };//class RelActAutoGuiNuclideConstraint
 
 
 
-RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
+RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget *parent )
   : WContainerWidget( parent ),
+  m_gui( gui ),
   m_nuclide_edit( nullptr ),
   m_age_container( nullptr ),
   m_age_edit( nullptr ),
@@ -154,7 +612,8 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   m_updated( this ),
   m_remove( this ),
   m_fit_age_changed( this ),
-  m_age_changed( this )
+  m_age_changed( this ),
+  m_src_info( std::monostate() )
 {
   addStyleClass( "RelActAutoGuiNuclide" );
   
@@ -261,7 +720,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   HelpSystem::attachToolTipOn( m_add_constraint_btn, "Add a constraint to this nuclide", showToolTips );
   
   
-  m_constraint = new RelActAutoGuiNuclideConstraint( this, m_lower_container );
+  m_constraint = new RelActAutoGuiNuclideConstraint( m_gui, this, m_lower_container );
   m_constraint->remove().connect( this, &RelActAutoGuiNuclide::handleRemoveConstraint );
   m_constraint->changed().connect( this, &RelActAutoGuiNuclide::handleConstraintChanged );
   m_constraint->hide();
@@ -276,7 +735,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   label = new WLabel( "Min Age:", m_age_range_container );
   m_fit_age_min_edit = new WLineEdit( m_age_range_container );
   label->setBuddy( m_fit_age_min_edit );
-  m_fit_age_min_edit->setWidth( WLength(50.0, WLength::Pixel) );
+  m_fit_age_min_edit->setWidth( WLength(40.0, WLength::Pixel) );
   m_fit_age_min_edit->setValidator(min_max_validator);
   m_fit_age_min_edit->setAutoComplete( false );
   m_fit_age_min_edit->setAttributeValue( "ondragstart", "return false" );
@@ -287,7 +746,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   label = new WLabel( "Max Age:", m_age_range_container );
   m_fit_age_max_edit = new WLineEdit( m_age_range_container );
   label->setBuddy( m_fit_age_max_edit );
-  m_fit_age_max_edit->setWidth( WLength(50.0, WLength::Pixel) );
+  m_fit_age_max_edit->setWidth( WLength(40.0, WLength::Pixel) );
   m_fit_age_max_edit->setValidator(min_max_validator);
   m_fit_age_max_edit->setAutoComplete( false );
   m_fit_age_max_edit->setAttributeValue( "ondragstart", "return false" );
@@ -304,10 +763,65 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( WContainerWidget *parent )
   m_age_range_container->hide();
 }//RelActAutoGuiNuclide
   
-  
+
+std::set<size_t> RelActAutoGuiNuclide::relEffCurves() const
+{
+  #pragma message("RelActAutoGuiNuclide::relEffCurves() is not implemented")
+
+  return { size_t(0) };
+}//std::set<size_t> relEffCurves() const
+
+
+bool RelActAutoGuiNuclide::hasActRatioConstraint() const
+{
+  try
+  {
+    actRatioConstraint();
+    return true;
+  }catch( std::exception & )
+  {
+  }
+
+  return false;
+}
+
+RelActCalcAuto::RelEffCurveInput::ActRatioConstraint RelActAutoGuiNuclide::actRatioConstraint() const
+{
+  if( !m_constraint || m_constraint->isHidden()  )
+    throw runtime_error( "RelActAutoGuiNuclide::actRatioConstraint() called when no constraint is present" );
+
+  return m_constraint->actRatioConstraint();
+}
+
+bool RelActAutoGuiNuclide::hasMassFractionConstraint() const
+{
+  try
+  {
+    massFractionConstraint();
+    return true;
+  }catch( std::exception & )
+  {
+  }
+
+  return false;
+}//bool RelActAutoGuiNuclide::hasMassFractionConstraint() const
+
+
+RelActCalcAuto::RelEffCurveInput::MassFractionConstraint RelActAutoGuiNuclide::massFractionConstraint() const
+{
+  if( !m_constraint || m_constraint->isHidden() )
+    throw runtime_error( "RelActAutoGuiNuclide::massFractionConstraint() called when no constraint is present" );
+
+  return m_constraint->massFractionConstraint();
+}//RelActCalcAuto::RelEffCurveInput::MassFractionConstraint massFractionConstraint() const
+
+
 void RelActAutoGuiNuclide::handleIsotopeChange()
 {
-  const auto nuc_input = nuclide();
+  const auto prev_src_info = m_src_info;
+
+  const auto nuc_input = source();
+  m_src_info = nuc_input;
   
   const auto hide_age_stuff = [this,&nuc_input](){
     m_age_container->hide();
@@ -319,30 +833,31 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
       passMessage( nucstr + " is not a valid nuclide, x-ray, or reaction.", WarningWidget::WarningMsgHigh );
   };//hide_age_stuff
   
-  updateAllowedConstraints();
-
-  if( std::holds_alternative<std::monostate>(nuc_input) )
+  if( nuc_input != prev_src_info )
+  {
+    updateAllowedConstraints();
+    handleRemoveConstraint();
+  }
+  
+  
+  const string src_name = source_name();
+  const SandiaDecay::Nuclide * const nuc = nuclide();
+  const SandiaDecay::Element * const el = element();
+  const ReactionGamma::Reaction * const rctn = reaction();
+  
+  if( !nuc && !el && !rctn )
   {
     hide_age_stuff();
+    handleRemoveConstraint();
     m_updated.emit();
     return;
   }
-  
-  std::string src_name;
-  const SandiaDecay::Nuclide *nuc = nullptr;
-  const SandiaDecay::Element *el = nullptr;
-  const ReactionGamma::Reaction * reaction = nullptr;
-  
-  if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
+
+  // We should only have at most, one of the source pointers be non-null
+  assert( static_cast<int>(!!nuc) + static_cast<int>(!!el) + static_cast<int>(!!rctn) <= 1 );
+
+  if( nuc )
   {
-    nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
-    
-    assert( nuc );
-    if( !nuc )
-      throw runtime_error( "No valid nuclide" );
-    
-    src_name = nuc->symbol;
-    
     if( IsInf(nuc->halfLife) )
     {
       const string nucstr = m_nuclide_edit->text().toUTF8();
@@ -372,23 +887,10 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
     m_age_container->setHidden( !age_is_fittable );
     m_fit_age->setChecked( false );
     m_age_range_container->setHidden( !age_is_fittable || !m_fit_age->isChecked() );
-  }
+  }//if( nuc )
   
-  if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
-  {
-    el = std::get<const SandiaDecay::Element *>(nuc_input);
-    assert( el );
-    src_name = el->symbol;
+  if( el|| rctn )
     hide_age_stuff();
-  }
-  
-  if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
-  {
-    reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
-    assert( reaction );
-    src_name = reaction->name();
-    hide_age_stuff();
-  }
   
   bool haveFoundColor = false;
   
@@ -422,8 +924,10 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
   
   if( !haveFoundColor )
   {
-    // TODO: create a cache of previous user-selected colors
+    // TODO: create a cache of previous user-selected colors - or maybe tap into Ref Line Widget's color cache
   }//if( !haveFoundColor )
+
+  updateAllowedConstraints();
   
   m_updated.emit();
 }//void handleIsotopeChange()
@@ -474,12 +978,9 @@ std::pair<std::optional<double>,std::optional<double>> RelActAutoGuiNuclide::age
   if( !m_fit_age->isChecked() )
     return std::make_pair( std::nullopt, std::nullopt );
 
-  const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-    src_info = nuclide();
-
-  const SandiaDecay::Nuclide * const nuc = std::holds_alternative<const SandiaDecay::Nuclide *>(src_info) 
-                                             ? std::get<const SandiaDecay::Nuclide *>(src_info) 
-                                             : nullptr;
+  const SandiaDecay::Nuclide * const nuc = nuclide();
+  if( !nuc )
+    return std::make_pair( std::nullopt, std::nullopt );
       
   const auto str_to_age = [nuc]( const string &str ) -> double {
     if( nuc )
@@ -512,7 +1013,7 @@ std::pair<std::optional<double>,std::optional<double>> RelActAutoGuiNuclide::age
 void RelActAutoGuiNuclide::setNuclideEditFocus()
 {
   m_nuclide_edit->setFocus();
-}
+}//void setNuclideEditFocus()
 
 
 void RelActAutoGuiNuclide::handleAgeChange()
@@ -526,24 +1027,36 @@ void RelActAutoGuiNuclide::handleAgeChange()
 }//void handleAgeChange()
 
 
-
 void RelActAutoGuiNuclide::handleAgeRangeChange()
 {
   validateAndCorrectAgeRange();
 
   m_age_changed.emit( this );
   m_updated.emit();
-}
+}//void handleAgeRangeChange()
 
 
 void RelActAutoGuiNuclide::validateAndCorrectAgeRange()
 {
-  const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-    src_info = nuclide();
+  const SandiaDecay::Nuclide * const nuc = nuclide();
 
-  const SandiaDecay::Nuclide * const nuc = std::holds_alternative<const SandiaDecay::Nuclide *>(src_info) 
-                                             ? std::get<const SandiaDecay::Nuclide *>(src_info) 
-                                             : nullptr;
+  if( !nuc )
+  {
+    // We'll just make sure things are consistent - we probably don't need to do this
+    assert( m_age_container->isHidden() );
+    assert( m_age_range_container->isHidden() );
+    assert( !m_fit_age->isChecked() );
+
+    m_age_edit->setText( "" );
+    m_fit_age_min_edit->setText( "" );
+    m_fit_age_max_edit->setText( "" );
+
+    m_age_container->hide();
+    m_age_range_container->hide();
+    m_fit_age->setUnChecked();
+    return;
+  }//if( !nuc )
+  
       
   const auto str_to_age = [nuc]( const string &str ) -> double {
     if( nuc )
@@ -609,17 +1122,26 @@ void RelActAutoGuiNuclide::handleFitAgeChange()
 
   m_fit_age_changed.emit( this, m_fit_age->isChecked() );
   m_updated.emit();
-}
+}//void handleFitAgeChange()
 
 
 void RelActAutoGuiNuclide::handleColorChange()
 {
+  const Wt::WColor c = m_color_select->color();
+  const string src_name = source_name();
+  if( !c.isDefault() && !src_name.empty() )
+  {
+    ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
+    if( refdisp )
+      refdisp->updateColorCacheForSource( src_name, c );
+  }//if( !c.isDefault() )
+
   m_updated.emit();
-}
+}//void handleColorChange()
 
 
 // Will return std::monostate if invalid text entered.
-std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> RelActAutoGuiNuclide::nuclide() const
+std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> RelActAutoGuiNuclide::source() const
 {
   const string nucstr = m_nuclide_edit->text().toUTF8();
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
@@ -658,7 +1180,52 @@ std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::El
   }//try / catch
   
   return std::monostate{};
+}//variant<...> source() const
+
+
+const SandiaDecay::Nuclide *RelActAutoGuiNuclide::nuclide() const
+{
+  const auto src = source();
+  if( std::holds_alternative<const SandiaDecay::Nuclide *>(src) )
+    return std::get<const SandiaDecay::Nuclide *>(src);
+  return nullptr;
 }
+
+
+const SandiaDecay::Element *RelActAutoGuiNuclide::element() const
+{
+  const auto src = source();
+  if( std::holds_alternative<const SandiaDecay::Element *>(src) )
+    return std::get<const SandiaDecay::Element *>(src);
+  return nullptr;
+}
+
+
+const ReactionGamma::Reaction *RelActAutoGuiNuclide::reaction() const
+{
+  const auto src = source();
+  if( std::holds_alternative<const ReactionGamma::Reaction *>(src) )
+    return std::get<const ReactionGamma::Reaction *>(src);
+  return nullptr;
+}
+
+
+string RelActAutoGuiNuclide::source_name() const
+{
+  const SandiaDecay::Nuclide * const nuc = nuclide();
+  if( nuc )
+    return nuc->symbol;
+
+  const SandiaDecay::Element * const el = element();
+  if( el )
+    return el->symbol;
+  
+  const ReactionGamma::Reaction * const rctn = reaction();
+  if( rctn )
+    return rctn->name();
+
+  return "";
+}//string source_name() const
 
 
 WColor RelActAutoGuiNuclide::color() const
@@ -670,16 +1237,20 @@ WColor RelActAutoGuiNuclide::color() const
 void RelActAutoGuiNuclide::setColor( const WColor &color )
 {
   m_color_select->setColor( color );
-}
+
+  const string src_name = source_name();
+  if( color.isDefault() || src_name.empty() )
+    return;
+
+  ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
+  if( refdisp )
+    refdisp->updateColorCacheForSource( src_name, color );
+}//void setColor( const WColor &color )
 
 
 double RelActAutoGuiNuclide::age() const
-{
-  const auto nuc_input = nuclide();
-  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
-    return 0.0;
-  
-  const SandiaDecay::Nuclide * const nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
+{ 
+  const SandiaDecay::Nuclide * const nuc = nuclide();
   if( !nuc )
     return 0.0;
   
@@ -708,8 +1279,7 @@ WString RelActAutoGuiNuclide::ageStr() const
 
 RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
 {
-  const auto nuc_input = nuclide();
-  
+  const auto nuc_input = source();
   
   RelActCalcAuto::NucInputInfo nuc_info;
   
@@ -740,6 +1310,7 @@ RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
   switch(  m_constraint->constraintType() )
   {
     case NucConstraintType::None:
+    case NucConstraintType::NumTypes:
     case NucConstraintType::MassFraction:
     case NucConstraintType::ActRatio:
       //These are given as constraints, not as input
@@ -909,20 +1480,48 @@ void RelActAutoGuiNuclide::handleConstraintChanged()
 
 void RelActAutoGuiNuclide::updateAllowedConstraints()
 {
-  // TODO: blah blah blah - implement this
+  m_constraint->updateAllowedConstraints();
 }
 
 
 void RelActAutoGuiNuclide::addActRatioConstraint( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint )
 {
-  // TODO: blah blah blah - implement this
-}
+  m_constraint->show();
+  m_add_constraint_btn->show();
+
+  const SandiaDecay::Nuclide *nuc = nuclide();  
+  assert( constraint.constrained_nuclide == nuc );
+  
+  assert( nuc );
+  if( !nuc )
+    throw runtime_error( "Invalid ActRatioConstraint - not allowed for not a nuclide." );
+  
+  assert( constraint.constrained_nuclide == nuc );
+  if( constraint.constrained_nuclide != nuc )
+    throw runtime_error( "Invalid ActRatioConstraint - not not intended for this nuclide." );
+
+  m_constraint->setActRatio( constraint.controlling_nuclide, constraint.constrained_to_controlled_activity_ratio );
+}//void addActRatioConstraint( const ActRatioConstraint & )
 
 
 void RelActAutoGuiNuclide::addMassFractionConstraint( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint )
 {
-  // TODO: blah blah blah - implement this
-}
+  m_constraint->show();
+  m_add_constraint_btn->show();
+
+  const SandiaDecay::Nuclide *nuc = nuclide();  
+  assert( constraint.nuclide == nuc );
+  
+  assert( nuc );
+  if( !nuc )
+    throw runtime_error( "Invalid MassFractionConstraint - not allowed for not a nuclide." );
+  
+  assert( constraint.nuclide == nuc );
+  if( constraint.nuclide != nuc )
+    throw runtime_error( "Invalid MassFractionConstraint - meant for another nuclide." );
+
+  m_constraint->setMassFraction( constraint.lower_mass_fraction, constraint.upper_mass_fraction );
+}//void addMassFractionConstraint( const MassFractionConstraint & )
 
 
 void RelActAutoGuiNuclide::setIsInCurves( const std::set<size_t> &curves_with_nuc, size_t num_rel_eff_curves )

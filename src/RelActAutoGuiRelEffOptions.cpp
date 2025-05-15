@@ -631,7 +631,7 @@ std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> RelActAutoGuiRelEffO
   if( form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     return nullptr;
 
-  if( !m_phys_model_self_atten || m_phys_model_self_atten->nonEmpty() )
+  if( !m_phys_model_self_atten || !m_phys_model_self_atten->nonEmpty() )
     return nullptr;
 
   return m_phys_model_self_atten->fitInput();

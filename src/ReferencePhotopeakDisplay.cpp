@@ -3421,10 +3421,20 @@ void ReferencePhotopeakDisplay::userColorSelectCallback( const WColor &color )
   {
     m_userHasPickedColor = true;
     m_currentlyShowingNuclide.m_input.m_color = color;
-    m_previouslyPickedSourceColors[m_currentlyShowingNuclide.m_input.m_input_txt] = color;
+    const string &src = m_currentlyShowingNuclide.m_input.m_input_txt;
+    updateColorCacheForSource( src, color );
     refreshLinesDisplayedToGui();
   }
 }//void userColorSelectCallback( const std::string &color )
 
 
-
+void ReferencePhotopeakDisplay::updateColorCacheForSource( const std::string &source, const Wt::WColor &color )
+{
+  if( source.empty() )
+    return;
+  
+  if( color.isDefault() )
+    m_previouslyPickedSourceColors.erase(source);
+  else
+    m_previouslyPickedSourceColors[source] = color;
+}//void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );

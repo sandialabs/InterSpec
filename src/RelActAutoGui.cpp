@@ -1140,8 +1140,10 @@ vector<RelActCalcAuto::NucInputInfo> RelActAutoGui::getNucInputInfo( const int r
   {
     const RelActAutoGuiNuclide *nuc = dynamic_cast<const RelActAutoGuiNuclide *>( w );
     assert( nuc );
-    if( nuc && !std::holds_alternative<std::monostate>(nuc->nuclide()) )
-      answer.push_back( nuc->toNucInputInfo() );
+    if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
+      continue;
+      
+    answer.push_back( nuc->toNucInputInfo() );
   }//for( WWidget *w : kids )
   
   return answer;
@@ -1152,7 +1154,17 @@ vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> RelActAutoGui::getA
 {
   vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> answer;
   
-  // blah blah blah - need to implement this
+  for( WWidget *w : m_nuclides->children() )
+  {
+    const RelActAutoGuiNuclide *src = dynamic_cast<const RelActAutoGuiNuclide *>( w );
+    assert( src );
+    if( !src || std::holds_alternative<std::monostate>(src->source()) )
+      continue;
+    
+    if( src->hasActRatioConstraint() )
+      answer.push_back( src->actRatioConstraint() );
+  }//for( WWidget *w : m_nuclides->children() )
+
   return answer;
 }//vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> getActRatioConstraints() const
 
@@ -1161,7 +1173,16 @@ vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> RelActAutoGui::
 {
   vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> answer;
   
-  // blah blah blah - need to implement this
+  for( WWidget *w : m_nuclides->children() )
+  {
+    const RelActAutoGuiNuclide *src = dynamic_cast<const RelActAutoGuiNuclide *>( w );
+    assert( src );
+    if( !src || std::holds_alternative<std::monostate>(src->source()) )
+      continue;
+    
+    if( src->hasMassFractionConstraint() )
+      answer.push_back( src->massFractionConstraint() );
+  }//for( WWidget *w : m_nuclides->children() )
 
   return answer;
 }//vector<RelActCalcAuto::MassFractionConstraint> getMassFractionConstraints() const
@@ -1830,7 +1851,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
       //  we dont want to remove the nuclide from this curves nuclides
       curves_with_nuc.insert( curve_index );
       
-      RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( m_nuclides );
+      RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, m_nuclides );
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
       nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
@@ -1886,6 +1907,8 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   for( const RelActCalcAuto::FloatingPeak &peak : options.floating_peaks )
     handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
   
+  handleNuclidesChanged();
+
   // options.spectrum_title
   m_render_flags |= RenderActions::UpdateNuclidesPresent;  //To trigger calling `updateDuringRenderForNuclideChange()`
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -2246,7 +2269,7 @@ void RelActAutoGui::handleSameAgeChanged()
       continue;
 
     const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-        src_info = nuc_widget->nuclide(); 
+        src_info = nuc_widget->source(); 
 
     if( !std::holds_alternative<const SandiaDecay::Nuclide *>(src_info) )
       continue;
@@ -2320,6 +2343,15 @@ void RelActAutoGui::handleNucDataSrcChanged()
 void RelActAutoGui::handleNuclidesChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
+
+  for( WWidget *w : m_nuclides->children() )
+  {
+    RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
+    assert( nuc_widget );
+    if( nuc_widget )
+      nuc_widget->updateAllowedConstraints();
+  }//for( WWidget *w : m_nuclides->children() )
+
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -2341,9 +2373,9 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
     return;
   
   const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-      src_info = nuc->nuclide();
+      src_info = nuc->source();
 
-  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc->nuclide()) )
+  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(src_info) )
     return;
 
   const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
@@ -2361,7 +2393,7 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
       continue;
 
     variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-        this_src_info = nuc_widget->nuclide();
+        this_src_info = nuc_widget->source();
 
     if( !std::holds_alternative<const SandiaDecay::Nuclide *>(this_src_info) )
       continue;
@@ -2388,9 +2420,9 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
     return;
 
   const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-      src_info = nuc->nuclide();
+      src_info = nuc->source();
 
-  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc->nuclide()) )
+  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc->source()) )
     return;
 
   const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
@@ -2412,7 +2444,7 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
       continue;
 
     const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-        this_src_info = nuc_widget->nuclide();  
+        this_src_info = nuc_widget->source();  
 
     if( !std::holds_alternative<const SandiaDecay::Nuclide *>(this_src_info) )
       continue;
@@ -2551,7 +2583,7 @@ void RelActAutoGui::handleAddNuclide()
 {
   const vector<WWidget *> prev_kids = m_nuclides->children();
   
-  RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( m_nuclides );
+  RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, m_nuclides );
   nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
   nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
@@ -2971,6 +3003,17 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
   }
   
   delete w;
+
+  for( WWidget *child : m_nuclides->children() )
+  {
+    RelActAutoGuiNuclide *nuclide = dynamic_cast<RelActAutoGuiNuclide *>( child );
+    assert( nuclide );
+    if( !nuclide )
+      continue;
+
+    nuclide->updateAllowedConstraints();
+  }//for( WWidget *child : m_nuclides->children() )
+
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
@@ -4297,11 +4340,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( w );
       assert( nuc );
       
-      if( !nuc || std::holds_alternative<std::monostate>(nuc->nuclide()) )
+      if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
         continue;
       
       const std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>
-           src_info = nuc->nuclide();
+           src_info = nuc->source();
       const SandiaDecay::Nuclide *nuclide = nullptr;
       const SandiaDecay::Element *element = nullptr;
       const ReactionGamma::Reaction * reaction = nullptr;

@@ -127,11 +127,12 @@ struct RoiRange
 
 
 /** Struct to specify a nuclide to use for doing relative-efficiency/activity calc.
+ 
+ TODO: min/max rel act to be a constraint
  */
 struct NucInputInfo
 {
   const SandiaDecay::Nuclide *nuclide = nullptr;
-  
   const SandiaDecay::Element *element = nullptr;
   const ReactionGamma::Reaction *reaction = nullptr;
   
@@ -427,7 +428,12 @@ struct RelEffCurveInput
    */
   RelActCalc::PuCorrMethod pu242_correlation_method;
 
-  /** A constraint on the activity of a nuclide, relative to another nuclide. */
+  /** A constraint on the activity of a nuclide, relative to another nuclide. 
+   
+   TODO: move controlled/constrained nuclide to be `SrcVariant` (i.e., `std::variant<Nuc,El,Rctn>`)
+   TODO: currently this constraint only applies to a single Rel. Eff. curve; see TODO note in
+        MassFractionConstraint, and do similar for this.
+  */
   struct ActRatioConstraint
   {
     const SandiaDecay::Nuclide *controlling_nuclide = nullptr;
@@ -460,7 +466,15 @@ struct RelEffCurveInput
   std::vector<ActRatioConstraint> act_ratio_constraints;
 
 
-  /** A constraint on the mass fraction of an nuclide within an element. */
+  /** A constraint on the mass fraction of an nuclide within an element. 
+   
+
+   TODO: currently this constraint only applies to a single Rel. Eff. curve; if you have multiple
+          curves with same constraint/nuclide, then each constraint will be applied seperately.
+          We should add in a `set<size_t>` that specifies the indexes of all the Rel. Eff. curves
+          that this constraint applies to (if only single curve, then allow it to be empty), and 
+          then move the constraint up a level to the `Options` struct.
+  */
   struct MassFractionConstraint
   {
     const SandiaDecay::Nuclide *nuclide = nullptr;
@@ -527,12 +541,7 @@ struct RelEffCurveInput
 struct Options
 {
   Options();
- 
-  // TODO: 
-  // - Fix RelEff to flat 1.0 - dont fit
-  //  - Do not fit FWHM - use DRF, or if that doesnt have it, use FWHM eqn fit from all peaks in spectrum
-  //    This should allow getting a rough idea of which gamma lines _could_ be statistically significant, and hence be used.  And also, for generic nuclides, it will allow fitting small numbers of peaks; so like we could still use the "auto" rel act stuff to fit peaks, even for Cs137
-  
+   
   /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
    
    Which coefficients are fit will be determined based on energy ranges used.

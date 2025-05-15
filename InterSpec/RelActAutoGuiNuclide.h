@@ -42,13 +42,14 @@ namespace Wt
 }
 
 class ColorSelect;
+class RelActAutoGui;
 class RelActAutoGuiNuclideConstraint;
 
 
 class RelActAutoGuiNuclide : public Wt::WContainerWidget
 {
 public:
-  RelActAutoGuiNuclide( Wt::WContainerWidget *parent = nullptr );
+  RelActAutoGuiNuclide( RelActAutoGui *gui, Wt::WContainerWidget *parent = nullptr );
   
   void handleIsotopeChange();
   
@@ -78,8 +79,26 @@ public:
   void handleColorChange();
   
   /** Will return std::monostate if invalid text entered. */
-  std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> nuclide() const;
+  std::variant<std::monostate, 
+               const SandiaDecay::Nuclide *, 
+               const SandiaDecay::Element *, 
+               const ReactionGamma::Reaction *> 
+    source() const;
   
+  const SandiaDecay::Nuclide *nuclide() const;
+  const SandiaDecay::Element *element() const;
+  const ReactionGamma::Reaction * reaction() const;
+  std::string source_name() const;
+
+  std::set<size_t> relEffCurves() const;
+
+  bool hasActRatioConstraint() const;
+  RelActCalcAuto::RelEffCurveInput::ActRatioConstraint actRatioConstraint() const;
+
+  bool hasMassFractionConstraint() const;
+  RelActCalcAuto::RelEffCurveInput::MassFractionConstraint massFractionConstraint() const;
+
+
   Wt::WColor color() const;
   
   void setColor( const Wt::WColor &color );
@@ -114,6 +133,8 @@ public:
 
   void updateAllowedConstraints();
 protected:
+  RelActAutoGui *m_gui;
+
   Wt::WLineEdit *m_nuclide_edit;
   Wt::WContainerWidget *m_age_container;
   Wt::WLineEdit *m_age_edit;  
@@ -131,6 +152,8 @@ protected:
   Wt::Signal<> m_remove;
   Wt::Signal<RelActAutoGuiNuclide *,bool> m_fit_age_changed;
   Wt::Signal<RelActAutoGuiNuclide *> m_age_changed;
+
+  std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> m_src_info;
 };//class RelActAutoGuiNuclide
 
 

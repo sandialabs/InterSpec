@@ -570,17 +570,35 @@
   height: 25px;
 }
 
+.RelActAutoGui .RelActAutoGuiNuclide .LowerRow
+{
+  font-size: 11px;
+  height: 20px;
+}
+
 .RelActAutoGui .RelActAutoGuiNuclide .AddConstraintBtn
 {
-  width: 200px;
+  width: 285px;
   font-weight: normal;
+  text-align: left;
 }
 
 .RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideConstraint
 {
   display: flex;
   flex-direction: row;
-  width: 200px;
+  width: 285px;
+  align-items: center;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideConstraint .DeleteEnergyRangeOrNuc.Wt-icon
+{
+  height: 20px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideConstraint .DeleteEnergyRangeOrNuc.Wt-icon img
+{
+  height: 12px;
 }
 
 .RelActAutoGui .RelActAutoGuiNuclide .NucAgeRangeContainer
@@ -597,6 +615,22 @@
 {
   width: 55px;
   margin-right: 5px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclideConstraint .ConstraintInputDiv
+{
+  margin-left: 5px;
+
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclideConstraint .ConstraintInputDiv > label
+{
+  margin-left: 5px;
 }
 
 

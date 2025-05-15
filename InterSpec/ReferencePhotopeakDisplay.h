@@ -317,6 +317,13 @@ public:
    */
   Wt::WColor suggestColorForSource( const std::string &src ) const;
   
+  /** Updates `m_previouslyPickedSourceColors` for the specified source.
+   
+   If source string is empty, no action is taken.
+   If color is default, then the source in the cache is removed.
+   */
+  void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
