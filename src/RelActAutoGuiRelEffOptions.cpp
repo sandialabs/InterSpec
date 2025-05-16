@@ -441,11 +441,12 @@ void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelE
 void RelActAutoGuiRelEffOptions::updatePuCorrelationOptions( const vector<RelActCalcAuto::NucInputInfo> &nuclides )
 {
   set<string> nuc_names;
-  for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+  for( const RelActCalcAuto::NucInputInfo &src : nuclides )
   {
-    if( nuc.nuclide )
-      nuc_names.insert( nuc.nuclide->symbol );
-  }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+    const SandiaDecay::Nuclide *src_nuc = RelActCalcAuto::nuclide(src.source);
+    if( src_nuc )
+      nuc_names.insert( src_nuc->symbol );
+  }//for( const RelActCalcAuto::NucInputInfo &src : nuclides )
 
 
   // We need Pu238, Pu239, and Pu240 for Bignan95_PWR and Bignan95_BWR.

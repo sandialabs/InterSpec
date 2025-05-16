@@ -36,8 +36,9 @@
 //Forward declerations
 namespace Wt
 {
-  class WLineEdit;
+  class WText;
   class WLabel;
+  class WLineEdit;
   class WCheckBox;
 }
 
@@ -132,6 +133,8 @@ public:
   void handleConstraintChanged();
 
   void updateAllowedConstraints();
+
+  void setSummaryText( const Wt::WString &text );
 protected:
   RelActAutoGui *m_gui;
 
@@ -147,6 +150,8 @@ protected:
   Wt::WContainerWidget *m_age_range_container;
   Wt::WLineEdit *m_fit_age_min_edit;
   Wt::WLineEdit *m_fit_age_max_edit;
+
+  Wt::WText *m_summary_text;
 
   Wt::Signal<> m_updated;
   Wt::Signal<> m_remove;

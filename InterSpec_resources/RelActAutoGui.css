@@ -559,6 +559,14 @@
   gap: 5px;
 }
 
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText
+{
+  font-size: 10px;
+  overflow: hidden;
+  margin-left: 5px;
+  flex: 1 1 auto;
+}
+
 .RelActAutoGui .RelActAutoGuiNuclide .UpperRow,
 .RelActAutoGui .RelActAutoGuiNuclide .LowerRow
 {

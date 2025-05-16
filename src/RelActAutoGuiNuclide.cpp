@@ -420,19 +420,16 @@ public:
     for( int index = 0; index < static_cast<int>(nucs.size()); ++index )
     {
       const RelActCalcAuto::NucInputInfo &nuc = nucs[index];
-      const RelActCalcAuto::SrcVariant src = nuc.nuclide ? RelActCalcAuto::SrcVariant(nuc.nuclide) 
-                                                         : nuc.element ? RelActCalcAuto::SrcVariant(nuc.element) 
-                                                                       : nuc.reaction ? RelActCalcAuto::SrcVariant(nuc.reaction) 
-                                                                                      : RelActCalcAuto::SrcVariant(std::monostate());
-      assert( !RelActCalcAuto::is_null(src) );
-      if( RelActCalcAuto::is_null(src) )
+
+      assert( !RelActCalcAuto::is_null(nuc.source) );
+      if( RelActCalcAuto::is_null(nuc.source) )
         continue;
 
-      if( src == controlling_src )
+      if( nuc.source == controlling_src )
         src_index = index;
 
       // TODO: there are some restrictions on which sources can be used for an act ratio constraint - so we should check that here
-      m_act_control_nuc_combo->addItem( WString::fromUTF8(RelActCalcAuto::to_name(src)) );
+      m_act_control_nuc_combo->addItem( WString::fromUTF8(RelActCalcAuto::to_name(nuc.source)) );
     }//for( const RelActCalcAuto::NucInputInfo &nuc : nucs )
 
     if( src_index == -1 )
@@ -467,13 +464,18 @@ public:
     const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( *begin(rel_eff_curves) );
     for( const RelActCalcAuto::NucInputInfo &src : nucs )
     {
-      if( src.nuclide && (src.nuclide->symbol == src_name) )
-        constraint.controlling_source = src.nuclide;
-      else if( src.element && (src.element->symbol == src_name) )
-        constraint.controlling_source = src.element;
-      else if( src.reaction && (src.reaction->name() == src_name) )
-        constraint.controlling_source = src.reaction;
-    }
+      const RelActCalcAuto::SrcVariant &src_variant = src.source;
+      assert( !RelActCalcAuto::is_null(src_variant) );
+      if( RelActCalcAuto::is_null(src_variant) )
+        continue;
+
+      const string nuc_name = RelActCalcAuto::to_name(src_variant);
+      if( nuc_name == src_name )
+      {
+        constraint.controlling_source = src_variant;
+        break;
+      }
+    }//for( const RelActCalcAuto::NucInputInfo &src : nucs )
     
     if( RelActCalcAuto::is_null(constraint.controlling_source) )
       throw runtime_error( "RelActAutoGuiNuclideConstraint::actRatioConstraint() called when no controlling nuclide is found" );
@@ -535,6 +537,7 @@ public:
     const size_t rel_eff_curve_index = *rel_eff_curves.begin();
 
     const vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
+    const RelActCalcAuto::SrcVariant src_variant = m_nuc->source();
     const SandiaDecay::Nuclide * const nuc = m_nuc->nuclide();
     const SandiaDecay::Element * const el = m_nuc->element();
     const ReactionGamma::Reaction * const rctn = m_nuc->reaction();
@@ -544,16 +547,16 @@ public:
     //None, RelActRange, MassFraction, ActRatio, 
     set<NucConstraintType> types;
 
-    if( m_nuc->nuclide() || m_nuc->element() || m_nuc->reaction() )
+    if( !RelActCalcAuto::is_null(src_variant) )
     {
       size_t same_an_nucs = 0, num_valid_sources = 0;
 
       for( const RelActCalcAuto::NucInputInfo &other_src : nucs )
       {
-        if( !other_src.nuclide && !other_src.element && !other_src.reaction )
+        if( RelActCalcAuto::is_null(other_src.source) )
           continue;
-
-        if( nuc && other_src.nuclide && (nuc->atomicNumber == other_src.nuclide->atomicNumber) )
+        const SandiaDecay::Nuclide *other_nuc = RelActCalcAuto::nuclide(other_src.source);
+        if( nuc && other_nuc && (nuc->atomicNumber == other_nuc->atomicNumber) )
           ++same_an_nucs;
 
         ++num_valid_sources;
@@ -577,19 +580,13 @@ public:
     {
       const RelActCalcAuto::NucInputInfo &src = nucs[index];
 
-      if( (src.nuclide == nuc) && (src.element == el) && (src.reaction == rctn) )
+      if( src.source == src_variant )
         continue;
 
-      if( !src.nuclide && !src.element && !src.reaction )
+      if( RelActCalcAuto::is_null(src.source) )
         continue;
 
-      string src_txt;
-      if( src.nuclide )
-        src_txt = src.nuclide->symbol;
-      else if( src.element )
-        src_txt = src.element->symbol;
-      else if( src.reaction )
-        src_txt = src.reaction->name();
+      const string src_txt = RelActCalcAuto::to_name(src.source);
 
       if( src_txt == current_text )
         src_index = index;
@@ -1367,11 +1364,14 @@ RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
 {
   const auto nuc_input = source();
   
+  if( RelActCalcAuto::is_null(nuc_input) )
+    throw runtime_error( "No valid nuclide" );
+
   RelActCalcAuto::NucInputInfo nuc_info;
-  
+  nuc_info.source = nuc_input;
+
   if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
   {
-    nuc_info.nuclide = std::get<const SandiaDecay::Nuclide *>(nuc_input);
     nuc_info.age = age(); // Must not be negative.
     nuc_info.fit_age = m_fit_age->isChecked();
 
@@ -1381,16 +1381,7 @@ RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
       nuc_info.fit_age_min = age_range.first;
       nuc_info.fit_age_max = age_range.second;
     }
-  }else if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
-  {
-    nuc_info.element = std::get<const SandiaDecay::Element *>(nuc_input);
-  }else if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
-  {
-    nuc_info.reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
-  }else
-  {
-    throw runtime_error( "No valid nuclide" );
-  }
+  }//if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
   
 
   switch(  m_constraint->constraintType() )
@@ -1419,7 +1410,7 @@ RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
 
 void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
 {
-  if( !info.nuclide && !info.element && !info.reaction )
+  if( RelActCalcAuto::is_null(info.source) )
   {
     m_nuclide_edit->setText( "" );
     if( !info.peak_color_css.empty() )
@@ -1437,20 +1428,14 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     return;
   }//if( !info.nuclide && !info.element && !info.reaction )
   
-  if( info.nuclide )
-    m_nuclide_edit->setText( WString::fromUTF8(info.nuclide->symbol) );
-  else if( info.element )
-    m_nuclide_edit->setText( WString::fromUTF8(info.element->symbol) );
-  else if( info.reaction )
-    m_nuclide_edit->setText( WString::fromUTF8(info.reaction->name()) );
+  m_nuclide_edit->setText( WString::fromUTF8( RelActCalcAuto::to_name(info.source) ) );
   
   if( !info.peak_color_css.empty() )
     m_color_select->setColor( WColor(info.peak_color_css) );
   
-  if( info.nuclide )
+  const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(info.source);
+  if( nuc )
   {
-    const SandiaDecay::Nuclide * const nuc = info.nuclide;
-    
     const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
     m_age_container->setHidden( !age_is_fittable );
     m_fit_age->setChecked( age_is_fittable && info.fit_age );

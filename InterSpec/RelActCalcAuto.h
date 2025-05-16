@@ -92,9 +92,40 @@ namespace RelActCalcAuto
 
 int run_test();
 
-/** A typdef for passing either Nuclide, Element, or Reaction to functions. */
-typedef std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> SrcVariant;
-  
+/** A typdef for passing either Nuclide, Element, or Reaction to functions. 
+ 
+ Note that it also includes using a monostate, because we would like to semi-enforse that if a pointer is
+ used, then it is valid; if we didnt include the monostate, then default construction of the variant would
+ use a nullptr for the first pointer type.
+*/
+typedef std::variant<std::monostate,const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> SrcVariant;
+
+/** Returns the #SandiaDecay::Nuclide from the #SrcVariant, returning nullptr if not a #SandiaDecay::Nuclide. */
+const SandiaDecay::Nuclide *nuclide( const SrcVariant &src );
+
+/** Returns the #SandiaDecay::Element from the #SrcVariant, returning nullptr if not a #SandiaDecay::Element. */
+const SandiaDecay::Element *element( const SrcVariant &src );
+
+/** Returns the #ReactionGamma::Reaction from the #SrcVariant, returning nullptr if not a #ReactionGamma::Reaction. */
+const ReactionGamma::Reaction *reaction( const SrcVariant &src );
+
+/** Returns true if the pointer in the #SrcVariant is a nullptr. */
+bool is_null( const SrcVariant &src );
+
+/** Returns a string name for the #SrcVariant. 
+   Either SandiaDecay::Nuclide::symbol, SandiaDecay::Element::symbol, or ReactionGamma::Reaction::name(). 
+   
+   Throws exception if monostate applicable pointer is nullptr.
+*/
+std::string to_name( const SrcVariant &src );
+
+/** Returns a #SrcVariant from a string name.
+ * 
+   If a Nuclide, Element, or Reaction can not be found for name, return monostate.
+*/
+SrcVariant source_from_string( const std::string &name );
+
+
 /** Struct to specify an energy range to consider for doing relative-efficiency/activity calc.
  */
 struct RoiRange
@@ -132,9 +163,7 @@ struct RoiRange
  */
 struct NucInputInfo
 {
-  const SandiaDecay::Nuclide *nuclide = nullptr;
-  const SandiaDecay::Element *element = nullptr;
-  const ReactionGamma::Reaction *reaction = nullptr;
+  SrcVariant source;
   
   /** Age in units of PhysicalUnits (i.e., 1.0 == second), for the nuclide.
    
@@ -436,8 +465,16 @@ struct RelEffCurveInput
   */
   struct ActRatioConstraint
   {
-    const SandiaDecay::Nuclide *controlling_nuclide = nullptr;
-    const SandiaDecay::Nuclide *constrained_nuclide = nullptr;
+    /** The source whose relative activity is varied in the fit. */
+    SrcVariant controlling_source;
+
+    /** The source that is fixed to the `controlling_source`. */
+    SrcVariant constrained_source;
+
+    /** The ratio of the activity of the `constrained_source` to the `controlling_source`. 
+     
+     e.g., `act(constrained_source) = constrained_to_controlled_activity_ratio * act(controlling_source)`
+    */
     double constrained_to_controlled_activity_ratio = 0.0;
     
     static ActRatioConstraint from_mass_ratio( const SandiaDecay::Nuclide *constrained, 

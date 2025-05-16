@@ -1824,11 +1824,6 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
     {
       const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
-
-      const RelActCalcAuto::SrcVariant src_variant = nuc.nuclide ? RelActCalcAuto::SrcVariant(nuc.nuclide) 
-                                                                  : nuc.element ? RelActCalcAuto::SrcVariant(nuc.element) 
-                                                                                : nuc.reaction ? RelActCalcAuto::SrcVariant(nuc.reaction) 
-                                                                                              : RelActCalcAuto::SrcVariant(std::monostate());
       
       bool is_in_all_curves = true;
       set<size_t> curves_with_nuc;
@@ -1868,18 +1863,19 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
       const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[curve_index];
       for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint : rel_eff.act_ratio_constraints )
       {
-        if( constraint.constrained_source == src_variant )
+        if( constraint.constrained_source == nuc.source )
           nuc_widget->addActRatioConstraint( constraint );
       }//for( const auto &constraint : nuc.act_ratio_constraints )
 
-      if( nuc.nuclide )
+      const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
+      if( nuc_nuclide )
       {
         for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff.mass_fraction_constraints )
         {
-          if( constraint.nuclide == nuc.nuclide )
+          if( constraint.nuclide == nuc_nuclide )
             nuc_widget->addMassFractionConstraint( constraint );
         }//for( const auto &constraint : nuc.mass_fraction_constraints )  
-      }//if( nuc.nuclide )
+      }//if( nuc_nuclide )
 
       nuc_widget->setIsInCurves( curves_with_nuc, num_rel_eff_curves );
     }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
@@ -3890,12 +3886,13 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
     
     opts->updatePuCorrelationOptions( nuclides );
 
-    for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+    for( const RelActCalcAuto::NucInputInfo &src : nuclides )
     {
-      if( !nuc.nuclide )
+      const SandiaDecay::Nuclide *src_nuc = RelActCalcAuto::nuclide(src.source);
+      if( !src_nuc )
         continue;
     
-      const short z = nuc.nuclide->atomicNumber;
+      const short z = src_nuc->atomicNumber;
       if( !z_to_num_isotopes.count(z) )
         z_to_num_isotopes[z] = 0;
     
@@ -3929,7 +3926,7 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     {
       const auto pos = std::find_if( begin(nuclides), end(nuclides),
         [&nuc]( const RelActCalcAuto::NucInputInfo &nuc2 ){
-          return (nuc.nuclide == nuc2.nuclide) && (nuc.element == nuc2.element) && (nuc.reaction == nuc2.reaction);
+          return (nuc.source == nuc2.source);
       } );
 
       if( pos == end(nuclides) )
@@ -3962,10 +3959,10 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     m_photopeak_widget->clearAllLines();
     
     map<std::string,Wt::WColor> nuclide_colors;
-    for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+    for( const RelActCalcAuto::NucInputInfo &src : nuclides )
     {
-      if( (nuc.nuclide || nuc.element || nuc.reaction) && !nuc.peak_color_css.empty() )
-        nuclide_colors[nuc.name()] = WColor( nuc.peak_color_css );
+      if( !RelActCalcAuto::is_null(src.source) && !src.peak_color_css.empty() )
+        nuclide_colors[RelActCalcAuto::to_name(src.source)] = WColor( src.peak_color_css );
     }
     
     // If the user has a ColorTheme preference to assign a specific color to a nuclide, that
@@ -3975,22 +3972,23 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     
     for( size_t i = 0; i < nuclides.size(); ++i )
     {
-      const RelActCalcAuto::NucInputInfo &nuc = nuclides[i];
+      const RelActCalcAuto::NucInputInfo &src = nuclides[i];
       
       if( i )
         m_photopeak_widget->persistCurentLines();
       
-      if( nuc.nuclide )
-      {
-        m_photopeak_widget->setIsotope( nuc.nuclide, nuc.age );
-      }else if( nuc.element )
-      {
-        m_photopeak_widget->setElement( nuc.element );
-      }else if( nuc.reaction )
-      {
-        m_photopeak_widget->setReaction( nuc.reaction );
-      }
-    }//
+      const SandiaDecay::Nuclide *src_nuc = RelActCalcAuto::nuclide(src.source);
+      const SandiaDecay::Element *src_elem = RelActCalcAuto::element(src.source);
+      const ReactionGamma::Reaction *src_rxn = RelActCalcAuto::reaction(src.source);
+
+      if( src_nuc )
+        m_photopeak_widget->setIsotope( src_nuc, src.age );
+      else if( src_elem )
+        m_photopeak_widget->setElement( src_elem );
+      else if( src_rxn )
+        m_photopeak_widget->setReaction( src_rxn );
+      else { assert( 0 ); }
+    }//for( size_t i = 0; i < nuclides.size(); ++i )
   }//if( !show_ref_lines ) / else
 }//void updateDuringRenderForRefGammaLineChange()
 
