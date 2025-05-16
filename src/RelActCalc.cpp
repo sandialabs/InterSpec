@@ -49,8 +49,16 @@ using namespace std;
 namespace 
 {
   /** Make "Pu (plutonium)" into "Pu", for printing PhysicalModelShieldInput materials. */
-  string cleanup_mat_name( string text )
+  string cleanup_mat_name( const std::shared_ptr<const Material> &material )
   {
+    assert( material );
+    if( !material )
+      return "null";
+    
+    string text = material->name;
+    if( !material->description.empty() && (material->description.size() < material->name.size()) )
+      text = material->description;
+    
     size_t first = text.find('(');
     if( first != std::string::npos )
     {
@@ -1089,7 +1097,7 @@ string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<doub
     const double sa_an = self_atten->atomic_number;
     const double sa_ad = self_atten->areal_density / PhysicalUnits::g_per_cm2;
     const string sa_ad_str = SpecUtils::printCompact(sa_ad, 3);
-    const string mu_name = self_atten->material ? cleanup_mat_name(self_atten->material->name) : SpecUtils::printCompact(sa_an, 3);
+    const string mu_name = self_atten->material ? cleanup_mat_name(self_atten->material) : SpecUtils::printCompact(sa_an, 3);
     if( html_format )
     {
       eqn +=
@@ -1119,7 +1127,7 @@ string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<doub
         
       eqn += (i ? " * " : "");
       const shared_ptr<const Material> &mat = atten.material;
-      const string mu_name = mat ? cleanup_mat_name(mat->name) : SpecUtils::printCompact(atten.atomic_number, 3);
+      const string mu_name = mat ? cleanup_mat_name(mat) : SpecUtils::printCompact(atten.atomic_number, 3);
       const string ad_str = SpecUtils::printCompact(atten.areal_density/PhysicalUnits::g_per_cm2, 3);
       if( html_format )
       { 
