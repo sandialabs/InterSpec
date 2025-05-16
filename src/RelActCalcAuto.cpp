@@ -2796,7 +2796,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             {
               SandiaDecay::NuclideMixture mix;
               mix.addAgedNuclideByActivity( nuc_nuclide, ns_decay_act_mult, nuc.age );
-              gammas = mix.photons(0.0);
+              gammas = mix.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
             }else if( nuc_element )
             {
               gammas.reserve( nuc_element->xrays.size() );
@@ -3741,7 +3741,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           SandiaDecay::NuclideMixture mix;
           mix.addAgedNuclideByActivity( nuc_output.nuclide, ns_decay_act_mult, nuc_output.age );
-          gammas = mix.gammas( 0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy, true );
+          gammas = mix.photons( 0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
         }else if( nuc_output.element )
         {
           for( const SandiaDecay::EnergyIntensityPair &xray : nuc_output.element->xrays )
@@ -4193,7 +4193,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t productNum = 0; productNum < n_products; ++productNum )
         {
           const SandiaDecay::RadParticle &particle = transition->products[productNum];
-          if( particle.type == SandiaDecay::ProductType::GammaParticle )
+          if( (particle.type == SandiaDecay::ProductType::GammaParticle)
+              || (particle.type == SandiaDecay::ProductType::XrayParticle) )
           {
             bool exclude = false;
             for( const double exclude_energy : gammas_to_exclude )
@@ -4209,7 +4210,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             info.transition_index = productNum;
             info.transition = transition;
-            info.gamma_type = PeakDef::SourceGammaType::NormalGamma;
+            info.gamma_type = (particle.type == SandiaDecay::ProductType::GammaParticle) 
+                              ? PeakDef::SourceGammaType::NormalGamma
+                              : PeakDef::SourceGammaType::XrayGamma;
           }else if( particle.type == SandiaDecay::ProductType::PositronParticle )
           {
             has_annihilation = true;
