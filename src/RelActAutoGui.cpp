@@ -1824,6 +1824,11 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
     {
       const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
+
+      const RelActCalcAuto::SrcVariant src_variant = nuc.nuclide ? RelActCalcAuto::SrcVariant(nuc.nuclide) 
+                                                                  : nuc.element ? RelActCalcAuto::SrcVariant(nuc.element) 
+                                                                                : nuc.reaction ? RelActCalcAuto::SrcVariant(nuc.reaction) 
+                                                                                              : RelActCalcAuto::SrcVariant(std::monostate());
       
       bool is_in_all_curves = true;
       set<size_t> curves_with_nuc;
@@ -1859,16 +1864,16 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
       nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
       nuc_widget->fromNucInputInfo( nuc );
 
+      assert( curve_index < options.rel_eff_curves.size() );
+      const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[curve_index];
+      for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint : rel_eff.act_ratio_constraints )
+      {
+        if( constraint.constrained_source == src_variant )
+          nuc_widget->addActRatioConstraint( constraint );
+      }//for( const auto &constraint : nuc.act_ratio_constraints )
+
       if( nuc.nuclide )
       {
-        assert( curve_index < options.rel_eff_curves.size() );
-        const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[curve_index];
-        for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint : rel_eff.act_ratio_constraints )
-        {
-          if( constraint.constrained_nuclide == nuc.nuclide )
-            nuc_widget->addActRatioConstraint( constraint );
-        }//for( const auto &constraint : nuc.act_ratio_constraints )
-
         for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff.mass_fraction_constraints )
         {
           if( constraint.nuclide == nuc.nuclide )
@@ -4056,6 +4061,15 @@ void RelActAutoGui::startUpdatingCalculation()
   if( !m_apply_energy_cal_item->isDisabled() )
     m_apply_energy_cal_item->disable();
   
+
+  for( WWidget *child : m_nuclides->children() )
+  {
+    RelActAutoGuiNuclide *nuclide = dynamic_cast<RelActAutoGuiNuclide *>( child );
+    if( nuclide )
+      nuclide->setSummaryText( "" );
+  }//for( WWidget *child : m_nuclides->children() )
+
+
   shared_ptr<const SpecUtils::Measurement> foreground = m_foreground;
   shared_ptr<const SpecUtils::Measurement> background = m_background;
   RelActCalcAuto::Options options;
@@ -4343,33 +4357,10 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
         continue;
       
-      const std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>
-           src_info = nuc->source();
-      const SandiaDecay::Nuclide *nuclide = nullptr;
-      const SandiaDecay::Element *element = nullptr;
-      const ReactionGamma::Reaction * reaction = nullptr;
-      
-      std::visit( [&]( auto &&arg ) {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr( std::is_same_v<T,std::monostate> )
-        {
-          
-        }if constexpr( std::is_same_v<T, const SandiaDecay::Nuclide *> )
-        {
-          nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
-        }else if constexpr( std::is_same_v<T, const SandiaDecay::Element *> )
-        {
-          element = std::get<const SandiaDecay::Element *>(src_info);
-        }else if constexpr( std::is_same_v<T, const ReactionGamma::Reaction *> )
-        {
-          reaction = std::get<const ReactionGamma::Reaction *>(src_info);
-        }else
-        {
-          assert( 0 );
-          //static_assert( false, "Non-exhaustive visitor.");
-        }
-      }, src_info );
-
+      const SandiaDecay::Nuclide *nuclide = nuc->nuclide();
+      const SandiaDecay::Element *element = nuc->element();
+      const ReactionGamma::Reaction * reaction = nuc->reaction();
+    
       if( (fit_nuc.nuclide == nuclide)
           && (fit_nuc.element == element)
           && (fit_nuc.reaction == reaction) )
@@ -4378,6 +4369,61 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
         nuc->setAge( agestr );
         break;
       }//if( this is the widget for this nuclide )
+    }//for( WWidget *w : kids )
+  }//for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
+
+
+  // Update the rel. act., and if applicable, mass fraction for the nuclide displays
+  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities.at(0) )
+  {
+    for( WWidget *w : m_nuclides->children() )
+    {
+      RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( w );
+      assert( nuc );
+      
+      if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
+        continue;
+      
+      const SandiaDecay::Nuclide * const nuclide = nuc->nuclide();
+      const SandiaDecay::Element * const element = nuc->element();
+      const ReactionGamma::Reaction * const reaction = nuc->reaction();
+      
+      if( (fit_nuc.nuclide != nuclide) || (fit_nuc.element != element) || (fit_nuc.reaction != reaction) )
+        continue;
+
+      const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
+      nuc->setAge( agestr );
+
+      const string rel_act = SpecUtils::printCompact(fit_nuc.rel_activity, 4);
+      string summary_text = "Rel. Act=" + rel_act;
+
+      if( fit_nuc.nuclide )
+      {
+        size_t num_same_z = 0;
+        double total_rel_mass = 0.0;
+        for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities.at(0) )
+        {
+          if( other_nuc.nuclide && (fit_nuc.nuclide->atomicNumber == other_nuc.nuclide->atomicNumber) )
+          {
+            ++num_same_z;
+            total_rel_mass += (other_nuc.rel_activity / other_nuc.nuclide->activityPerGram());
+          }
+        }//for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities )
+          
+        if( num_same_z > 1 )
+        {
+          const double this_rel_mass = (fit_nuc.rel_activity / fit_nuc.nuclide->activityPerGram());
+          const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
+          const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+          const SandiaDecay::Element *el = db->element( nuclide->atomicNumber );
+          const string el_symbol = el ? el->symbol : "?";
+          summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+        }
+      }//if( fit_nuc.nuclide )
+
+      nuc->setSummaryText( summary_text );
+
+      break;
     }//for( WWidget *w : kids )
   }//for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
   

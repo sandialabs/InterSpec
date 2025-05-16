@@ -811,8 +811,8 @@ void check_auto_nuclide_constraints_checks()
   {
     RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
     RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
-    nuc_constraint.constrained_nuclide = u235;
-    nuc_constraint.controlling_nuclide = u238;
+    nuc_constraint.constrained_source = u235;
+    nuc_constraint.controlling_source = u238;
     nuc_constraint.constrained_to_controlled_activity_ratio = -1.0;
     
     rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
@@ -1025,8 +1025,8 @@ void check_auto_nuclide_constraints_checks()
     rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
 
     RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
-    nuc_constraint.constrained_nuclide = u235;
-    nuc_constraint.controlling_nuclide = u238;
+    nuc_constraint.constrained_source = u235;
+    nuc_constraint.controlling_source = u238;
     nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
     rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
 
@@ -1067,13 +1067,13 @@ void check_auto_nuclide_constraints_checks()
     rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
 
     RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
-    nuc_constraint.constrained_nuclide = co60_input.nuclide;
-    nuc_constraint.controlling_nuclide = u238;
+    nuc_constraint.constrained_source = co60_input.nuclide;
+    nuc_constraint.controlling_source = u238;
     nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
     rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
 
-    nuc_constraint.constrained_nuclide = cs137_input.nuclide;
-    nuc_constraint.controlling_nuclide = u235;
+    nuc_constraint.constrained_source = cs137_input.nuclide;
+    nuc_constraint.controlling_source = u235;
     nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
     rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
 

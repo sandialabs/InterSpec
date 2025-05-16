@@ -2206,9 +2206,6 @@ Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src 
   
   if( m_peaksGetAssignedRefLineColor )
   {
-#ifndef _MSC_VER
-#warning "Need to test string comparison for sources always work.  E.g., need case-insensitive, etc."
-#endif
     const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
     
     auto hasBeenUsed = [&usedColors](const WColor &color)->bool{

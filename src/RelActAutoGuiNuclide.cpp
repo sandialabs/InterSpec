@@ -25,7 +25,7 @@
 
 #include <string>
 #include <limits>
-
+#include <random>
 
 #include <Wt/WLabel>
 #include <Wt/WSignal>
@@ -44,6 +44,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
@@ -63,6 +64,10 @@
 using namespace std;
 using namespace Wt;
 
+namespace
+{
+  const WColor ns_default_color = WColor("#FF6633");
+}//namespace
 
 enum class NucConstraintType : int
 {
@@ -393,10 +398,10 @@ public:
     return static_cast<double>(m_max_rel_act_edit->value());
   }
 
-  void setActRatio( const SandiaDecay::Nuclide *controlling_nuclide, double constrained_to_controlled_activity_ratio )
+  void setActRatio( const RelActCalcAuto::SrcVariant &controlling_src, double constrained_to_controlled_activity_ratio )
   {
-    if( !controlling_nuclide )
-      throw runtime_error( "Invalid ActRatioConstraint - controlling nuclide must be specified" );
+    if( RelActCalcAuto::is_null(controlling_src) )
+      throw runtime_error( "Invalid ActRatioConstraint - controlling source must be specified" );
 
     if( constrained_to_controlled_activity_ratio <= 0.0 )
       throw runtime_error( "Invalid ActRatioConstraint - constrained to controlled activity ratio must be > 0.0" );
@@ -415,15 +420,19 @@ public:
     for( int index = 0; index < static_cast<int>(nucs.size()); ++index )
     {
       const RelActCalcAuto::NucInputInfo &nuc = nucs[index];
-      if( nuc.nuclide == controlling_nuclide )
+      const RelActCalcAuto::SrcVariant src = nuc.nuclide ? RelActCalcAuto::SrcVariant(nuc.nuclide) 
+                                                         : nuc.element ? RelActCalcAuto::SrcVariant(nuc.element) 
+                                                                       : nuc.reaction ? RelActCalcAuto::SrcVariant(nuc.reaction) 
+                                                                                      : RelActCalcAuto::SrcVariant(std::monostate());
+      assert( !RelActCalcAuto::is_null(src) );
+      if( RelActCalcAuto::is_null(src) )
+        continue;
+
+      if( src == controlling_src )
         src_index = index;
 
-      if( nuc.nuclide )
-        m_act_control_nuc_combo->addItem( WString::fromUTF8(nuc.nuclide->symbol) );
-      else if( nuc.element )
-        m_act_control_nuc_combo->addItem( WString::fromUTF8(nuc.element->symbol) );
-      else if( nuc.reaction )
-        m_act_control_nuc_combo->addItem( WString::fromUTF8(nuc.reaction->name()) );
+      // TODO: there are some restrictions on which sources can be used for an act ratio constraint - so we should check that here
+      m_act_control_nuc_combo->addItem( WString::fromUTF8(RelActCalcAuto::to_name(src)) );
     }//for( const RelActCalcAuto::NucInputInfo &nuc : nucs )
 
     if( src_index == -1 )
@@ -447,8 +456,8 @@ public:
       throw runtime_error( "RelActAutoGuiNuclideConstraint::actRatioConstraint() called when ratio is <= 0.0" );
 
     RelActCalcAuto::RelEffCurveInput::ActRatioConstraint constraint;
-    constraint.controlling_nuclide = nullptr;
-    constraint.constrained_nuclide = m_nuc->nuclide();
+    constraint.controlling_source = std::monostate();
+    constraint.constrained_source = m_nuc->source();
     constraint.constrained_to_controlled_activity_ratio = ratio;
 
     const string src_name = m_act_control_nuc_combo->currentText().toUTF8();
@@ -459,14 +468,14 @@ public:
     for( const RelActCalcAuto::NucInputInfo &src : nucs )
     {
       if( src.nuclide && (src.nuclide->symbol == src_name) )
-        constraint.controlling_nuclide = src.nuclide;
-      //else if( src.element && (src.element->symbol == src_name) )
-      //  constraint.controlling_nuclide = src.element;
-      //else if( src.reaction && (src.reaction->name() == src_name) )
-      //  constraint.controlling_nuclide = src.reaction;
+        constraint.controlling_source = src.nuclide;
+      else if( src.element && (src.element->symbol == src_name) )
+        constraint.controlling_source = src.element;
+      else if( src.reaction && (src.reaction->name() == src_name) )
+        constraint.controlling_source = src.reaction;
     }
     
-    if( !constraint.controlling_nuclide )
+    if( RelActCalcAuto::is_null(constraint.controlling_source) )
       throw runtime_error( "RelActAutoGuiNuclideConstraint::actRatioConstraint() called when no controlling nuclide is found" );
 
     return constraint;
@@ -585,6 +594,7 @@ public:
       if( src_txt == current_text )
         src_index = index;
 
+      // TODO: there are some restrictions on which sources can be used for an act ratio constraint - so we should check that here
       m_act_control_nuc_combo->addItem( WString::fromUTF8(src_txt) );
     }//for( const RelActCalcAuto::NucInputInfo &nuc : nucs )
 
@@ -609,6 +619,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_age_range_container( nullptr ),
   m_fit_age_min_edit( nullptr ),
   m_fit_age_max_edit( nullptr ),
+  m_summary_text( nullptr ),
   m_updated( this ),
   m_remove( this ),
   m_fit_age_changed( this ),
@@ -691,16 +702,20 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_age_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeChange );
   
   m_fit_age = new WCheckBox( "Fit Age", m_age_container );
+  m_fit_age->addStyleClass( "CbNoLineBreak" );
   m_fit_age->setWordWrap( false );
   m_fit_age->checked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
   m_fit_age->unChecked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
   
-  WContainerWidget *spacer = new WContainerWidget( upper_container );
-  spacer->addStyleClass( "RelActAutoSpacer" );
+  m_summary_text = new WText( upper_container );
+  m_summary_text->setStyleClass( "RelActAutoGuiNuclideSummaryText" );
+
+  //WContainerWidget *spacer = new WContainerWidget( upper_container );
+  //spacer->addStyleClass( "RelActAutoSpacer" );
   
   
   m_color_select = new ColorSelect( ColorSelect::PrefferNative, upper_container );
-  m_color_select->setColor( WColor("#FF6633") );
+  m_color_select->setColor( ns_default_color );
   
   m_color_select->cssColorChanged().connect( this, &RelActAutoGuiNuclide::handleColorChange );
   
@@ -754,7 +769,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   m_fit_age_max_edit->enterPressed().connect( this, &RelActAutoGuiNuclide::handleAgeRangeChange );
 
 
-  spacer = new WContainerWidget( m_lower_container );
+  WContainerWidget *spacer = new WContainerWidget( m_lower_container );
   spacer->addStyleClass( "RelActAutoSpacer" );
   
 
@@ -839,7 +854,6 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
     handleRemoveConstraint();
   }
   
-  
   const string src_name = source_name();
   const SandiaDecay::Nuclide * const nuc = nuclide();
   const SandiaDecay::Element * const el = element();
@@ -918,13 +932,85 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
       const map<string,WColor> &defcolors = theme->referenceLineColorForSources;
       const auto pos = defcolors.find( src_name );
       if( pos != end(defcolors) )
+      {
         m_color_select->setColor( pos->second );
+        haveFoundColor = true;
+      }
     }//if( theme )
   }//if( !haveFoundColor )
   
   if( !haveFoundColor )
   {
-    // TODO: create a cache of previous user-selected colors - or maybe tap into Ref Line Widget's color cache
+    // Check peaks for the same source, and if so, use that color
+    InterSpec * const interspec = InterSpec::instance();
+    const PeakModel * const pmodel = interspec->peakModel();
+    assert( pmodel );
+    
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = pmodel->peaks();
+    assert( peaks );
+    if( peaks )
+    {
+      for( const PeakModel::PeakShrdPtr &peak : *peaks )
+      {
+        assert( peak );
+        if( !peak || peak->lineColor().isDefault() )
+          continue;
+
+        const SandiaDecay::Nuclide * const peak_nuc = peak->parentNuclide();
+        const SandiaDecay::Element * const peak_el = peak->xrayElement();
+        const ReactionGamma::Reaction * const peak_rctn = peak->reaction();
+        if( (peak_nuc == nuc) && (peak_el == el) && (peak_rctn == rctn) )
+        {
+          m_color_select->setColor( peak->lineColor() );
+          haveFoundColor = true;
+          break;
+        }//if( (peak_nuc == nuc) && (peak_el == el) && (peak_rctn == rctn) )
+      }//for( const PeakModel::PeakShrdPtr &peak : *peaks )
+    }//if( peaks )
+  }//if( !haveFoundColor )
+
+  // If we still havent found a color for this source, and the color picker is the default color,
+  //  We'll use the first avaiable color of a predifined set of colors (the same one reference lines widget uses).
+  if( !haveFoundColor && (m_color_select->color() == ns_default_color) )
+  {
+    //Use the same pre-defined colors as the reference lines widget, and use the first one that is not already used
+    vector<Wt::WColor> def_line_colors{
+      {"#0000FF"}, {"#006600"}, {"#0099FF"}, {"#9933FF"},
+      {"#FF66FF"}, {"#CC3333"}, {"#FF6633"}, {"#FFFF99"},
+      {"#CCFFCC"}, {"#0000CC"}, {"#666666"}, {"#003333"}
+    };
+
+    const std::set<size_t> rel_eff_curves = relEffCurves();
+    assert( !rel_eff_curves.empty() );
+    const size_t rel_eff_curve_index = *rel_eff_curves.begin();
+    const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
+
+    for( const RelActCalcAuto::NucInputInfo &other_nuc : nucs )
+    {
+      const Wt::WColor c = WColor( other_nuc.peak_color_css );
+      const auto pos = std::find( begin(def_line_colors), end(def_line_colors), c );
+      if( pos != end(def_line_colors) )
+        def_line_colors.erase( pos );
+    }
+
+    if( !def_line_colors.empty() )
+    {
+      m_color_select->setColor( def_line_colors[0] );
+      haveFoundColor = true;
+    }
+  }//if( !haveFoundColor && (m_color_select->color() == ns_default_color) )
+
+  if( !haveFoundColor )
+  {
+    // We've failed at everything else, so generate a random color... 
+    //  (we could use some better scheme to get a better color than random, but whatever at this point)
+    const char letters[] = "0123456789ABCDEF";
+
+    string hex = "#";
+    for( size_t i = 0; i < 6; ++i )
+      hex += letters[std::rand() % 16];
+    m_color_select->setColor( WColor( hex ) );
+    haveFoundColor = true;
   }//if( !haveFoundColor )
 
   updateAllowedConstraints();
@@ -1343,6 +1429,9 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     m_age_edit->setText( "0s" );
     m_fit_age->setUnChecked();
     m_age_range_container->hide();
+
+    handleIsotopeChange();
+
     m_updated.emit();
     
     return;
@@ -1484,23 +1573,31 @@ void RelActAutoGuiNuclide::updateAllowedConstraints()
 }
 
 
+void RelActAutoGuiNuclide::setSummaryText( const Wt::WString &text )
+{
+  m_summary_text->setText( text );
+}
+
+
 void RelActAutoGuiNuclide::addActRatioConstraint( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint )
 {
   m_constraint->show();
   m_add_constraint_btn->show();
 
-  const SandiaDecay::Nuclide *nuc = nuclide();  
-  assert( constraint.constrained_nuclide == nuc );
-  
-  assert( nuc );
-  if( !nuc )
-    throw runtime_error( "Invalid ActRatioConstraint - not allowed for not a nuclide." );
-  
-  assert( constraint.constrained_nuclide == nuc );
-  if( constraint.constrained_nuclide != nuc )
-    throw runtime_error( "Invalid ActRatioConstraint - not not intended for this nuclide." );
+  assert( !RelActCalcAuto::is_null(constraint.constrained_source) );
+  assert( !RelActCalcAuto::is_null(constraint.controlling_source) );
 
-  m_constraint->setActRatio( constraint.controlling_nuclide, constraint.constrained_to_controlled_activity_ratio );
+  const RelActCalcAuto::SrcVariant src = source();
+
+  assert( !RelActCalcAuto::is_null(src) );
+  if( RelActCalcAuto::is_null(src) )
+    throw runtime_error( "Invalid ActRatioConstraint - not allowed when a source isnt defined." );
+
+  assert( constraint.constrained_source == src );  
+  if( constraint.constrained_source != src )
+    throw runtime_error( "Invalid ActRatioConstraint - not not intended for this source." );
+  
+  m_constraint->setActRatio( constraint.controlling_source, constraint.constrained_to_controlled_activity_ratio );
 }//void addActRatioConstraint( const ActRatioConstraint & )
 
 
