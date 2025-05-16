@@ -62,6 +62,7 @@ public:
   void setName(const Wt::WString &name);
   void setRelEffCurveInput(const RelActCalcAuto::RelEffCurveInput &rel_eff);
   void updatePuCorrelationOptions(const std::vector<RelActCalcAuto::NucInputInfo> &nuclides);
+  void setEqnTxt( const Wt::WString &txt );
 
   Wt::Signal<RelActAutoGuiRelEffOptions *> &addRelEffCurve();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &delRelEffCurve();
@@ -98,6 +99,7 @@ protected:
   RelEffShieldWidget *m_phys_model_self_atten;
   Wt::WContainerWidget *m_phys_ext_attens;
   Wt::WCheckBox *m_phys_model_use_hoerl;
+  Wt::WText *m_eqn_txt;
   Wt::WContainerWidget *m_add_del_rel_eff_div;
   Wt::WPushButton *m_add_rel_eff_btn;
   Wt::WPushButton *m_del_rel_eff_btn;

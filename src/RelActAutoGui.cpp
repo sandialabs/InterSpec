@@ -4067,6 +4067,15 @@ void RelActAutoGui::startUpdatingCalculation()
       nuclide->setSummaryText( "" );
   }//for( WWidget *child : m_nuclides->children() )
 
+  for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+  {
+    WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+    RelActAutoGuiRelEffOptions *this_curve = dynamic_cast<RelActAutoGuiRelEffOptions *>( this_item->contents() );
+    assert( this_curve );
+    if( this_curve )
+      this_curve->setEqnTxt( "" );
+  }
+
 
   shared_ptr<const SpecUtils::Measurement> foreground = m_foreground;
   shared_ptr<const SpecUtils::Measurement> background = m_background;
@@ -4462,6 +4471,19 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
 
     const RelActCalcAuto::RelEffCurveInput &rel_eff = m_solution->m_options.rel_eff_curves[rel_eff_index];
     
+    bool correct_curve = true;
+    if( rel_eff.rel_eff_eqn_type != opts->rel_eff_eqn_form() )
+      correct_curve = false;
+    
+    if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+        && (rel_eff.rel_eff_eqn_order != opts->rel_eff_eqn_order()) )
+      correct_curve = false;
+    if( rel_eff.name != opts->name() )
+      correct_curve = false;
+
+    if( !correct_curve )
+      opts->setRelEffCurveInput( rel_eff );
+
     std::optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo> phys_info;
     if( rel_eff_index < m_solution->m_phys_model_results.size() )
       phys_info = m_solution->m_phys_model_results[rel_eff_index];
@@ -4478,6 +4500,17 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       if( phys_info_ref.hoerl_b.has_value() != opts->phys_model_use_hoerl() )
         opts->setPhysModelUseHoerl( phys_info_ref.hoerl_b.has_value() );
     }//if( Physical model fit info is available )
+
+
+    try
+    {
+      const string rel_eff_eqn_txt = "y = " + answer->rel_eff_txt( true, rel_eff_index );
+      opts->setEqnTxt( rel_eff_eqn_txt );
+    }catch( std::exception & )
+    {
+      assert( 0 ); // we shouldnt get here, I dont think
+      opts->setEqnTxt( "Error getting equation text" );
+    }
   }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
 
   

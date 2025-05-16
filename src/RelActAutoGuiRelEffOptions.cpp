@@ -69,6 +69,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_phys_model_self_atten(nullptr),
       m_phys_ext_attens(nullptr),
       m_phys_model_use_hoerl(nullptr),
+      m_eqn_txt(nullptr),
       m_add_del_rel_eff_div(nullptr),
       m_add_rel_eff_btn(nullptr),
       m_del_rel_eff_btn(nullptr),
@@ -214,8 +215,11 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   m_phys_ext_attens = new WContainerWidget( m_phys_model_shields );
   m_phys_model_opts->hide();
 
-  WContainerWidget *spacer = new WContainerWidget( this );
-  spacer->addStyleClass( "RelActAutoSpacer" );
+  //WContainerWidget *spacer = new WContainerWidget( this );
+  //spacer->addStyleClass( "RelActAutoSpacer" );
+
+  m_eqn_txt = new WText( this );
+  m_eqn_txt->addStyleClass( "RelEffEqnTxt" );
 
   m_add_del_rel_eff_div = new WContainerWidget( this );
   m_add_del_rel_eff_div->addStyleClass( "AddDelRelEffDiv" );
@@ -503,6 +507,13 @@ void RelActAutoGuiRelEffOptions::updatePuCorrelationOptions( const vector<RelAct
     m_pu_corr_method->setCurrentIndex( next_index );
   }//if( nentries != nentries_needed )
 }
+
+
+void RelActAutoGuiRelEffOptions::setEqnTxt( const Wt::WString &txt )
+{
+  m_eqn_txt->setText( txt );
+}//setEqnTxt
+
 
 void RelActAutoGuiRelEffOptions::update_shield_widget( 
           const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo &shield,

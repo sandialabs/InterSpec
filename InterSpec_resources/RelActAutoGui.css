@@ -38,10 +38,9 @@
   flex-direction: row;
   flex-wrap: wrap;
   gap: 8px;
-  /*
+  
   align-items: center;
-  justify-content: space-between;
-  */
+  /* justify-content: space-between; */
 }
 
 .RelActAutoGui .RelEffCurveOptions .RelEffCurveName
@@ -285,6 +284,15 @@
   
   /* flex: 1 1 auto; */
   gap: 10px;
+}
+
+.RelActAutoGui .RelEffCurveOptions .RelEffEqnTxt
+{
+  font-size: 12px;
+  font-style: italic;
+  text-align: center;
+  
+  flex: 1 1 auto;
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow
