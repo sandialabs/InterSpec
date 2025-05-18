@@ -678,12 +678,10 @@ struct Options
 #endif
 };//struct Options
 
-
+/** Struct to a sources fit relative activity.*/
 struct NuclideRelAct
 {
-  const SandiaDecay::Nuclide *nuclide = nullptr;
-  const SandiaDecay::Element *element = nullptr;
-  const ReactionGamma::Reaction *reaction = nullptr;
+  SrcVariant source;
   
   std::string name() const;
 
@@ -788,7 +786,6 @@ struct RelActAutoSolution
    */
   double activity_ratio( const SrcVariant &numerator, const SrcVariant &denominator, const size_t rel_eff_index ) const;
 
-  double activity_ratio( const NuclideRelAct &numerator, const NuclideRelAct &denominator, const size_t rel_eff_index ) const;
   
   /** Returns the relative activity of a nuclide.
   
@@ -800,17 +797,13 @@ struct RelActAutoSolution
   */
   double rel_activity( const SrcVariant &src, const size_t rel_eff_index ) const;
 
-  double rel_activity( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
 
   /** Returns the counts in all peaks for a source in the relative efficency curve.
 
   Note: it actually returns the sum of peak amplitudes, for all gammas within `m_final_roi_ranges`.
 
-  Throws exception if \c nuclide is nullptr, or was not in the problem, or any counts were inf or NaN.
+  Throws exception if \c src is nullptr, or was not in the problem, or any counts were inf or NaN.
   */
-  double nuclide_counts( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
-
-  /** A convience function for calling the above for a specific nuclide. */
   double nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const;
 
   /**  Gives the relative efficiency for a given energy. 
@@ -818,8 +811,6 @@ struct RelActAutoSolution
   double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
-  size_t nuclide_index( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
-
   size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
   
   /** Returns result of `RelActCalc::rel_eff_eqn_js_function(...)` or

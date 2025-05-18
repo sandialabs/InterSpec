@@ -1867,8 +1867,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
           nuc_widget->addActRatioConstraint( constraint );
       }//for( const auto &constraint : nuc.act_ratio_constraints )
 
-      const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
-      if( nuc_nuclide )
+      if( const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source) )
       {
         for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff.mass_fraction_constraints )
         {
@@ -4270,8 +4269,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   set<const SandiaDecay::Nuclide *> isotopes;
   for( const auto &relact : answer->m_rel_activities[0] )
   {
-    if( relact.nuclide )
-      isotopes.insert( relact.nuclide );
+    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(relact.source);
+    if( nuc )
+      isotopes.insert( nuc );
   }
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -4292,13 +4292,14 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
                         // + "±" + SpecUtils::printCompact(100.0*error, 4)
                          + "% " + iso->symbol;
     chi2_title.arg( enrich );
-  }else if( isotopes.size() == 2 )
+  }else if( isotopes.size() == 2 ) // We are only considering nuclides here, not elements or reactions - not sure why
   {
     const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities.at(0);
     const RelActCalcAuto::NuclideRelAct *num_rel_act = nullptr, *denom_rel_act = nullptr;
     for( size_t i = 0; i < rel_acts.size(); ++i )
     {
-      if( rel_acts[i].nuclide )
+      // We only want nuclides here
+      if( RelActCalcAuto::nuclide(rel_acts[i].source) )
       {
         if( !num_rel_act )
           num_rel_act = &(rel_acts[i]);
@@ -4314,13 +4315,12 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       if( num_rel_act->rel_activity > denom_rel_act->rel_activity )
         std::swap( num_rel_act, denom_rel_act );
       
-      const SandiaDecay::Nuclide * const num_nuc = num_rel_act->nuclide;
-      const SandiaDecay::Nuclide * const den_nuc = denom_rel_act->nuclide;
-      assert( num_nuc && den_nuc );
+      const string num_name = RelActCalcAuto::to_name(num_rel_act->source);
+      const string den_name = RelActCalcAuto::to_name(denom_rel_act->source);
       
-      const double ratio = answer->activity_ratio( num_nuc, den_nuc, 0 );
+      const double ratio = answer->activity_ratio( num_rel_act->source, denom_rel_act->source, 0 );
       // TODO: add errors
-      string ratio_txt = ", act(" + num_nuc->symbol + "/" + den_nuc->symbol + ")="
+      string ratio_txt = ", act(" + num_name + "/" + den_name + ")="
       + SpecUtils::printCompact(ratio, 4);
       
       chi2_title.arg( ratio_txt );
@@ -4364,13 +4364,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
         continue;
       
-      const SandiaDecay::Nuclide *nuclide = nuc->nuclide();
-      const SandiaDecay::Element *element = nuc->element();
-      const ReactionGamma::Reaction * reaction = nuc->reaction();
+      const RelActCalcAuto::SrcVariant src = nuc->source();
     
-      if( (fit_nuc.nuclide == nuclide)
-          && (fit_nuc.element == element)
-          && (fit_nuc.reaction == reaction) )
+      if( fit_nuc.source == src )
       {
         const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
         nuc->setAge( agestr );
@@ -4391,11 +4387,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
         continue;
       
-      const SandiaDecay::Nuclide * const nuclide = nuc->nuclide();
-      const SandiaDecay::Element * const element = nuc->element();
-      const ReactionGamma::Reaction * const reaction = nuc->reaction();
+      const RelActCalcAuto::SrcVariant src = nuc->source();
       
-      if( (fit_nuc.nuclide != nuclide) || (fit_nuc.element != element) || (fit_nuc.reaction != reaction) )
+      if( fit_nuc.source != src )
         continue;
 
       const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
@@ -4404,25 +4398,27 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       const string rel_act = SpecUtils::printCompact(fit_nuc.rel_activity, 4);
       string summary_text = "Rel. Act=" + rel_act;
 
-      if( fit_nuc.nuclide )
+      
+      if( const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(src) )
       {
         size_t num_same_z = 0;
         double total_rel_mass = 0.0;
         for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities.at(0) )
         {
-          if( other_nuc.nuclide && (fit_nuc.nuclide->atomicNumber == other_nuc.nuclide->atomicNumber) )
+          const SandiaDecay::Nuclide * const other_nuc_nuclide = RelActCalcAuto::nuclide(other_nuc.source);
+          if( other_nuc_nuclide && (nuc_nuclide->atomicNumber == other_nuc_nuclide->atomicNumber) )
           {
             ++num_same_z;
-            total_rel_mass += (other_nuc.rel_activity / other_nuc.nuclide->activityPerGram());
+            total_rel_mass += (other_nuc.rel_activity / other_nuc_nuclide->activityPerGram());
           }
         }//for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities )
           
         if( num_same_z > 1 )
         {
-          const double this_rel_mass = (fit_nuc.rel_activity / fit_nuc.nuclide->activityPerGram());
+          const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
           const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
           const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-          const SandiaDecay::Element *el = db->element( nuclide->atomicNumber );
+          const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
           const string el_symbol = el ? el->symbol : "?";
           summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
         }

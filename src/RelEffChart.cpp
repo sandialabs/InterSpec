@@ -144,12 +144,23 @@ void RelEffChart::setData( const double live_time,
   
   for( const PeakDef &p : fit_peaks )
   {
-    const SandiaDecay::Nuclide *nuc = p.parentNuclide();
-  
-    // A free-floating peak wont have a nuclide associated
-    if( !nuc )
-      continue;
+    RelActCalcAuto::SrcVariant peak_src;
     
+    {//Begin block to set peak_src
+      const SandiaDecay::Nuclide *nuc = p.parentNuclide();
+      const SandiaDecay::Element *el = p.xrayElement();
+      const ReactionGamma::Reaction *rctn = p.reaction();
+      
+      if( nuc )
+        peak_src = nuc;
+      else if( el )
+        peak_src = el;
+      else if( rctn )
+        peak_src = rctn;
+      else
+        continue; // A free-floating peak wont have a nuclide associated, so we skip it
+    }//End block to set peak_src
+  
     RelActCalcManual::GenericPeakInfo peak;
     peak.m_energy = p.mean();
     peak.m_mean = peak.m_energy;
@@ -161,12 +172,12 @@ void RelEffChart::setData( const double live_time,
     //peak.m_base_rel_eff_uncert = ...;
     
     RelActCalcManual::GenericLineInfo line;
-    line.m_isotope = nuc->symbol;
+    line.m_isotope = RelActCalcAuto::to_name(peak_src);
     line.m_yield = 0.0;
     
     const RelActCalcAuto::NuclideRelAct *nuc_info = nullptr;
-    for( const auto &rel_act : rel_acts )
-      nuc_info = (rel_act.nuclide == nuc) ? &rel_act : nuc_info;
+    for( const RelActCalcAuto::NuclideRelAct &rel_act : rel_acts )
+      nuc_info = (rel_act.source == peak_src) ? &rel_act : nuc_info;
     
     assert( nuc_info );
     if( !nuc_info )
@@ -180,11 +191,12 @@ void RelEffChart::setData( const double live_time,
     
     peak.m_source_gammas.push_back( line );
     
-    const auto pos = relActsColors.find(nuc->symbol);
+    const string src_name = RelActCalcAuto::to_name(peak_src);
+    const auto pos = relActsColors.find( src_name );
     if( pos == std::end(relActsColors) )
     {
       const string css_color = p.lineColor().isDefault() ? string() : p.lineColor().cssText();
-      relActsColors[nuc->symbol] = std::make_pair(nuc_info->rel_activity, css_color);
+      relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, css_color);
     }
       
     peaks.push_back( peak );

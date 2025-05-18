@@ -393,8 +393,21 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit
           max_nuc = el.nuc;
         }
       }
-          
-      return (max_nuc && (max_contrib > 0.5*sum_contrib)) ? max_nuc : "multiiso";
+      
+      if( max_nuc && (max_contrib > 0.5*sum_contrib) ){
+        //remove problematic characters from max_nuc to create a valid CSS class name
+        max_nuc = max_nuc.replace(/[^a-zA-Z0-9_-]/g, '');
+        if( max_nuc.length === 0 )
+          return "multiiso";
+        
+        const first_char = max_nuc.charAt(0);
+        if( (first_char >= '0' && first_char <= '9') || ( first_char === '-' ) )
+          max_nuc = 'nuc-' + max_nuc;
+        
+        return max_nuc;
+      }//if( max_nuc && (max_contrib > 0.5*sum_contrib) )
+      
+      return "multiiso";
     })
     .on("mouseover", function (d, i) {
       self.tooltip.transition()
