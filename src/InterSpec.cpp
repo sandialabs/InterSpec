@@ -128,6 +128,7 @@
 #include "InterSpec/AddNewPeakDialog.h"
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
+#include "InterSpec/RefSpectraWidget.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/EnterAppUrlWindow.h"
 #include "InterSpec/LocalTimeDelegate.h"
@@ -6388,28 +6389,9 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/background_20100317.n42"),
                                          SpecUtils::SpectrumType::Background, SpecUtils::ParserType::N42_2006 ) );
-  //If its a mobile device, we'll give a few more spectra to play with
-  if( mobile )
-  {
-    item = subPopup->addMenuItem( WString::tr("app-mi-samples-ba133-lowres") );
-    item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           SpecUtils::append_path(docroot, "example_spectra/Ba133LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-    
-    item = subPopup->addMenuItem( WString::tr("app-mi-samples-co60-lowres") );
-    item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           SpecUtils::append_path(docroot, "example_spectra/Co60LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-    
-    item = subPopup->addMenuItem( WString::tr("app-mi-samples-cs137-lowres") );
-    item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           SpecUtils::append_path(docroot, "example_spectra/Cs137LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-    item = subPopup->addMenuItem( WString::tr("app-mi-samples-th232-lowres") );
-    item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           SpecUtils::append_path(docroot, "example_spectra/Th232LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-  }//if( mobile )
+  
+  item = subPopup->addMenuItem( WString::tr("app-mi-samples-reference") );
+  item->triggered().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::LastUserSelectedSpectra, SpecUtils::SpectrumType::Foreground ) );
   
   
   if( !mobile )

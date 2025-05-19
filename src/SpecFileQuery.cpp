@@ -102,38 +102,6 @@ namespace SpecFileQuery
 
 namespace SpecFileQuery
 {
-#if( BUILD_AS_OSX_APP )
-  static std::atomic<bool> sm_selecting_directory( false );
-  static std::mutex sm_search_directory_mutex;
-  static std::string sm_search_directory;
-
-  bool isSelectingDirectory()
-  {
-    return sm_selecting_directory.load();
-  }
-  
-  void setIsSelectingDirectory( bool isDir )
-  {
-    sm_selecting_directory = isDir;
-  }
-  
-  void setSearchDirectory( std::string path )
-  {
-    std::lock_guard<std::mutex> lock( sm_search_directory_mutex );
-    sm_search_directory = path;
-  }
-  
-  std::string getSearchDirectory()
-  {
-    std::lock_guard<std::mutex> lock( sm_search_directory_mutex );
-    return sm_search_directory;
-  }
-#endif
-  
-    
-    
-    
-  
   SpecTest::SpecTest()
   : m_searchField( NumFileDataFields )
   {
