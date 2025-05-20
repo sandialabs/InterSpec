@@ -85,7 +85,8 @@
 }
 
 .RelActAutoGui .UpperMenu,
-.RelActAutoGui .RelEffCurveOptsMenu
+.RelActAutoGui .RelEffCurveOptsMenu,
+.RelActAutoGui .RelEffNuclidesMenu
 {
   padding-left: 2px;
   padding-right:2px;
@@ -98,7 +99,8 @@
 
 
 .RelActAutoGui .UpperMenu a,
-.RelActAutoGui .RelEffCurveOptsMenu a
+.RelActAutoGui .RelEffCurveOptsMenu a,
+.RelActAutoGui .RelEffNuclidesMenu a
 {
   /*
    padding-left: 10px;
@@ -108,12 +110,14 @@
 
 
 .RelActAutoGui ul.UpperMenu,
-.RelActAutoGui ul.RelEffCurveOptsMenu
+.RelActAutoGui ul.RelEffCurveOptsMenu,
+.RelActAutoGui ul.RelEffNuclidesMenu
 {
   padding-inline-start: 0px;
   list-style-type: none;
   max-width: 40px;
 }
+
 
 .RelActAutoGui ul.UpperMenu li,
 .RelActAutoGui ul.RelEffCurveOptsMenu li
@@ -125,8 +129,15 @@
   transform: scale(-1, -1);
   white-space: nowrap;
   height: 50px;
-  
+
   font-weight: bold;
+}
+
+
+.RelActAutoGui ul.UpperMenu li,
+.RelActAutoGui ul.RelEffCurveOptsMenu li,
+.RelActAutoGui ul.RelEffNuclidesMenu li
+{
   padding-top: 4px;
   padding-bottom: 4px;
   padding-left: 4px;
@@ -155,6 +166,35 @@
   padding-left: 0px;
   padding-right: 1px;
 }
+
+
+.RelActAutoGui ul.RelEffNuclidesMenu
+{
+  margin-block-start: 5px;
+  margin-block-end: 5px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 5px;
+  align-items: center;
+
+  padding-top: 0px;
+  padding-bottom: 0px;
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+
+.RelActAutoGui ul.RelEffNuclidesMenu li
+{
+  padding-top: 1px;
+  width: 50px;
+  font-weight: normal;
+  font-size: 10px;
+  font-weight: normal;
+  padding-top: 1px;
+padding-bottom: 1px;
+}
+
 
 .RelActAutoGui .PresetsRow
 {
@@ -253,6 +293,7 @@
 
 .RelActAutoGui .RelEffCurveOptsStack
 { 
+  height: 70px;
 }
 
 .RelActAutoGui .RelEffCurveOptions .AddDelRelEffDiv
@@ -301,6 +342,7 @@
   flex-direction: column;
   gap: 5px;
   align-items: center;
+  justify-content: space-evenly;
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > .DetectorDisplay
@@ -365,6 +407,8 @@
   flex-direction: column;
   flex-wrap: nowrap;
 
+  padding-top: 0px; /* The legend takes care of top padding */
+
   border: 1px solid #e1e1e1;
 }
 
@@ -401,11 +445,22 @@
 }
 
 
-.RelActAutoGui .EnergyNucContent
+.RelActAutoGui .RelEffNuclidesStack
 {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  overflow-y: auto;
+  
   flex: 1 1 auto;
   
   border: 1px solid #e1e1e1;
+}
+
+.RelActAutoGui .EnergyNucContent
+{
+  flex: 1 1 auto;
+
   overflow-x: auto;
   overflow-y: auto;
 }

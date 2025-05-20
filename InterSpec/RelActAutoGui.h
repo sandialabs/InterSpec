@@ -102,7 +102,8 @@ public:
   void updateDuringRenderForFreePeakChange();
   void startUpdatingCalculation();
   void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
-                      std::shared_ptr<std::atomic_bool> cancel_flag );
+                      std::shared_ptr<std::atomic_bool> cancel_flag,
+                      const size_t calc_number );
   void handleCalcException( std::shared_ptr<std::string> message,
                            std::shared_ptr<std::atomic_bool> cancel_flag );
   
@@ -119,7 +120,7 @@ public:
   void handlePuByCorrelationChanged();
   void handleSkewTypeChanged();
   void handleNucDataSrcChanged();
-  void handleAddNuclide();
+  void handleAddNuclideForCurrentRelEffCurve();
   void handleAddEnergy();
   void handleClearAllEnergyRanges();
   void handleShowFreePeaks();
@@ -229,9 +230,14 @@ protected:
   void handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve );
   void handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name );
 
+  void handleRelEffCurveOptionsSelected();
+  void handleRelEffNuclidesSelected();
+
   protected:
   RelActAutoGuiRelEffOptions *getRelEffCurveOptions( const int index );
   const RelActAutoGuiRelEffOptions *getRelEffCurveOptions( const int index ) const;
+  std::vector<RelActAutoGuiNuclide *> getNuclideDisplays( const int rel_eff_curve_index );
+  std::vector<const RelActAutoGuiNuclide *> getNuclideDisplays( const int rel_eff_curve_index ) const;
 
   /** Calculation has been started. */
   Wt::Signal<> &calculationStarted();
@@ -347,7 +353,9 @@ protected:
   Wt::WPushButton *m_show_free_peak;
   Wt::WContainerWidget *m_free_peaks_container;
   
-  Wt::WContainerWidget *m_nuclides;
+  Wt::WMenu *m_rel_eff_nuclides_menu;
+  Wt::WStackedWidget *m_rel_eff_nuclides_stack;
+  
   Wt::WContainerWidget *m_energy_ranges;
   Wt::WContainerWidget *m_free_peaks;
   
@@ -360,7 +368,16 @@ protected:
   
   
   bool m_is_calculating;
+  
+  /** Incremented each time analysis is posted to update things; */
+  size_t m_calc_number;
+  
+  /** If currently posted analysis should fill out the GUI.  Will be set to false if a new analysis was posted - which indicates whouldnt update
+   the GUI with the associated results.  A new object is allocated for each new analysis, and then this variable is set, so things can be canceled
+   if a new analysis is posted.
+   */
   std::shared_ptr<std::atomic_bool> m_cancel_calc;
+  
   std::shared_ptr<RelActCalcAuto::RelActAutoSolution> m_solution;
   
   /** A good amount of calculation time is spent determining all the "auto-searched" peaks

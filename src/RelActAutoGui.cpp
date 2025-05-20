@@ -436,11 +436,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_clear_energy_ranges( nullptr ),
   m_show_free_peak( nullptr ),
   m_free_peaks_container( nullptr ),
+  m_rel_eff_nuclides_menu( nullptr ),
+  m_rel_eff_nuclides_stack( nullptr ),
 //  m_u_pu_data_source( nullptr ),
-  m_nuclides( nullptr ),
   m_energy_ranges( nullptr ),
   m_free_peaks( nullptr ),
   m_is_calculating( false ),
+  m_calc_number( 0 ),
   m_cancel_calc{},
   m_solution{},
   m_calc_started( this ),
@@ -758,8 +760,6 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_rel_eff_opts_menu->addStyleClass( "RelEffCurveOptsMenu LightNavMenu" );
   optionsDiv->addWidget( m_rel_eff_opts_stack );
 
-  handleAddRelEffCurve();
-
 /*
   label = new WLabel( "Yield Info", optionsDiv );
   label->addStyleClass( "GridSeventhCol GridFirstRow" );
@@ -836,8 +836,17 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   //WText *nuc_header = new WText( "Nuclides", nuclidesHolder );
   //nuc_header->addStyleClass( "EnergyNucHeader" );
   
-  m_nuclides = new WContainerWidget( nuclidesHolder );
-  m_nuclides->addStyleClass( "EnergyNucContent" );
+  m_rel_eff_nuclides_stack = new WStackedWidget();
+  m_rel_eff_nuclides_stack->addStyleClass( "RelEffNuclidesStack" );
+  m_rel_eff_nuclides_menu = new WMenu( m_rel_eff_nuclides_stack, nuclidesHolder );
+  m_rel_eff_nuclides_menu->addStyleClass( "RelEffNuclidesMenu LightNavMenu" ); 
+  nuclidesHolder->addWidget( m_rel_eff_nuclides_stack );
+  WContainerWidget *nuclides_content = new WContainerWidget( nuclidesHolder );
+  
+  m_rel_eff_opts_menu->itemSelected().connect( this, &RelActAutoGui::handleRelEffCurveOptionsSelected );
+  m_rel_eff_nuclides_menu->itemSelected().connect( this, &RelActAutoGui::handleRelEffNuclidesSelected );
+
+  handleAddRelEffCurve();
   
   WContainerWidget *nuc_footer = new WContainerWidget( nuclidesHolder );
   nuc_footer->addStyleClass( "EnergyNucFooter" );
@@ -845,7 +854,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   WPushButton *add_nuc_icon = new WPushButton( nuc_footer );
   add_nuc_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_nuc_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
-  add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclide );
+  add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclideForCurrentRelEffCurve );
   tooltip = "Add a nuclide.";
   HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
 
@@ -1135,16 +1144,15 @@ vector<RelActCalcAuto::NucInputInfo> RelActAutoGui::getNucInputInfo( const int r
 {
   vector<RelActCalcAuto::NucInputInfo> answer;
   
-  const vector<WWidget *> &kids = m_nuclides->children();
-  for( WWidget *w : kids )
+  const vector<const RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_curve_index );
+  for( const RelActAutoGuiNuclide *nuc : nuc_displays )
   {
-    const RelActAutoGuiNuclide *nuc = dynamic_cast<const RelActAutoGuiNuclide *>( w );
     assert( nuc );
-    if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
+    if( !nuc || RelActCalcAuto::is_null(nuc->source()) )
       continue;
-      
+    
     answer.push_back( nuc->toNucInputInfo() );
-  }//for( WWidget *w : kids )
+  }//for( RelActAutoGuiNuclide *nuc : nuc_displays )
   
   return answer;
 }//RelActCalcAuto::NucInputInfo getNucInputInfo() const
@@ -1154,16 +1162,16 @@ vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> RelActAutoGui::getA
 {
   vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> answer;
   
-  for( WWidget *w : m_nuclides->children() )
+  const vector<const RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_curve_index );
+  for( const RelActAutoGuiNuclide *src : nuc_displays )
   {
-    const RelActAutoGuiNuclide *src = dynamic_cast<const RelActAutoGuiNuclide *>( w );
     assert( src );
-    if( !src || std::holds_alternative<std::monostate>(src->source()) )
+    if( !src || RelActCalcAuto::is_null(src->source()) )
       continue;
     
     if( src->hasActRatioConstraint() )
       answer.push_back( src->actRatioConstraint() );
-  }//for( WWidget *w : m_nuclides->children() )
+  }//for( RelActAutoGuiNuclide *src : nuc_displays )
 
   return answer;
 }//vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> getActRatioConstraints() const
@@ -1173,16 +1181,16 @@ vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> RelActAutoGui::
 {
   vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> answer;
   
-  for( WWidget *w : m_nuclides->children() )
+  const vector<const RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_curve_index );
+  for( const RelActAutoGuiNuclide *src : nuc_displays )
   {
-    const RelActAutoGuiNuclide *src = dynamic_cast<const RelActAutoGuiNuclide *>( w );
     assert( src );
-    if( !src || std::holds_alternative<std::monostate>(src->source()) )
+    if( !src || RelActCalcAuto::is_null(src->source()) )
       continue;
     
     if( src->hasMassFractionConstraint() )
       answer.push_back( src->massFractionConstraint() );
-  }//for( WWidget *w : m_nuclides->children() )
+  }//for( RelActAutoGuiNuclide *src : nuc_displays )
 
   return answer;
 }//vector<RelActCalcAuto::MassFractionConstraint> getMassFractionConstraints() const
@@ -1771,8 +1779,6 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( add_uncert == AddUncert::NumAddUncert )
     add_uncert = AddUncert::StatOnly;
   m_add_uncert->setCurrentIndex( static_cast<int>(add_uncert) );
-  
-  m_nuclides->clear();
 
   // First, remove any extra Rel Eff curve GUIs
   const size_t num_rel_eff_curves = options.rel_eff_curves.size();
@@ -1790,12 +1796,14 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   }
 
   assert( m_rel_eff_opts_menu->count() == static_cast<int>(num_rel_eff_curves) );
+  assert( m_rel_eff_nuclides_menu->count() == static_cast<int>(num_rel_eff_curves) );
+
 
   // Now, set the values for each Rel Eff curve
   for( size_t i = 0; i < num_rel_eff_curves; ++i )
   {
     const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[i];
-    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( i );
+    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( static_cast<int>(i) );
     assert( opts );
     opts->setRelEffCurveInput( rel_eff );
   }
@@ -1809,49 +1817,23 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
 
   
   // Update the nuclide widgets
-  //  If there are multiple Rel Eff curves, they may share identical nuclides, 
-  //  in which case we will only show the nuclide once in the GUI.
-  //  So we'll start off by making a copy of the nuclides, for each Rel Eff curve,
-  //  and then we'll remove duplicates.
-  vector<vector<RelActCalcAuto::NucInputInfo>> all_nuclides( num_rel_eff_curves );
-  for( size_t i = 0; i < num_rel_eff_curves; ++i )
-    all_nuclides[i] = options.rel_eff_curves[i].nuclides;
-
-  // Now, remove duplicates
   for( size_t curve_index = 0; curve_index < num_rel_eff_curves; ++curve_index )
   {
-    const vector<RelActCalcAuto::NucInputInfo> &nuclides = all_nuclides[curve_index];
+    // Clear the nuclides from the GUI for this Rel Eff curve
+    WMenuItem *item = m_rel_eff_nuclides_menu->itemAt( curve_index );
+    assert( item );
+    WContainerWidget *content = dynamic_cast<WContainerWidget *>( item->contents() );
+    assert( content );
+    if( content )
+      content->clear();
+
+    // Add the nuclides to the GUI for this Rel Eff curve
+    const vector<RelActCalcAuto::NucInputInfo> &nuclides = options.rel_eff_curves[curve_index].nuclides;
     for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
     {
       const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
       
-      bool is_in_all_curves = true;
-      set<size_t> curves_with_nuc;
-      for( size_t other_curve_index = curve_index+1; other_curve_index < num_rel_eff_curves; ++other_curve_index )
-      {
-        const vector<RelActCalcAuto::NucInputInfo> &other_nuclides = all_nuclides[other_curve_index];
-        const auto pos = std::find( begin(other_nuclides), end(other_nuclides), nuc );
-        if( pos == end(other_nuclides) )
-          is_in_all_curves = false;
-        else  
-         curves_with_nuc.insert( other_curve_index );
-      }//for( size_t other_curve_index = curve_index+1; other_curve_index < num_rel_eff_curves; ++other_curve_index )
-      
-      // If the exact nuclide is in other curves, we'll delete it from all other ones, so we will only add it to the GUI once
-      for( size_t other_curve_index : curves_with_nuc )
-      {
-        vector<RelActCalcAuto::NucInputInfo> &other_nuclides = all_nuclides[other_curve_index];
-        auto pos = std::find( begin(other_nuclides), end(other_nuclides), nuc );
-        assert( pos != end(other_nuclides) );
-        if( pos != end(other_nuclides) )
-          other_nuclides.erase( pos );
-      }
-      
-      // We know this curve has the nuc - note we didnt add this index until after the above steps, because
-      //  we dont want to remove the nuclide from this curves nuclides
-      curves_with_nuc.insert( curve_index );
-      
-      RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, m_nuclides );
+      RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, content );
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
       nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
@@ -1875,8 +1857,6 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
             nuc_widget->addMassFractionConstraint( constraint );
         }//for( const auto &constraint : nuc.mass_fraction_constraints )  
       }//if( nuc_nuclide )
-
-      nuc_widget->setIsInCurves( curves_with_nuc, num_rel_eff_curves );
     }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
   }//for( loop over curve_index )
 
@@ -2096,7 +2076,6 @@ void RelActAutoGui::handlePresetChange()
   
   m_current_preset_index = index;
   
-  m_nuclides->clear();
   m_energy_ranges->clear();
   
   while( m_rel_eff_opts_menu->count() > 1 )
@@ -2105,6 +2084,18 @@ void RelActAutoGui::handlePresetChange()
     assert( opts );
     handleDelRelEffCurve( opts );
   } 
+
+  assert( m_rel_eff_opts_menu->count() == 1 );
+  assert( m_rel_eff_nuclides_menu->count() == 1 );
+  for( int i = 0; i < m_rel_eff_nuclides_menu->count(); ++i )
+  {
+    WMenuItem *item = m_rel_eff_nuclides_menu->itemAt( i );
+    assert( item );
+    WContainerWidget *content = dynamic_cast<WContainerWidget *>( item->contents() );
+    assert( content );
+    if( content )
+      content->clear();
+  }
 
   if( index <= 0 )
   {
@@ -2261,45 +2252,42 @@ void RelActAutoGui::handleSameAgeChanged()
   std::map<short int, WString> z_to_age;
   std::map<short int, bool> z_to_fit_age;
   vector<pair<const SandiaDecay::Nuclide *, RelActAutoGuiNuclide *>> srcs_with_nuclides;
-  for( WWidget *w : m_nuclides->children() )
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
   {
-    RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
-    assert( nuc_widget );
-    if( !nuc_widget )
-      continue;
-
-    const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-        src_info = nuc_widget->source(); 
-
-    if( !std::holds_alternative<const SandiaDecay::Nuclide *>(src_info) )
-      continue;
-
-    const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
-    assert( nuclide );
-    if( !nuclide )
-      continue;
-
-    srcs_with_nuclides.push_back( std::make_pair( nuclide, nuc_widget ) );
-
-    const short int atomicNumber = nuclide->atomicNumber;
-    
-    const WString orig_age_str = nuc_widget->ageStr();
-
-    if( !z_to_fit_age.count(atomicNumber) )
-      z_to_fit_age[atomicNumber] = false;
-    z_to_fit_age[atomicNumber] |= nuc_widget->fitAge();
-    
-    if( !z_to_age.count(atomicNumber) )
+    const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src_widget : nuc_displays )
     {
-      // We are on first nuclide of this element, so we dont need to update its age.
-      z_to_age[atomicNumber] = orig_age_str;
-    }else
-    {
-      const WString &age_str = z_to_age[atomicNumber];
-      if( orig_age_str != age_str )
-        nuc_widget->setAge( age_str );
-    }
-  }//for( WWidget *w : m_nuclides->children() )
+      assert( src_widget );
+      if( !src_widget )
+        continue;
+
+      const RelActCalcAuto::SrcVariant src_info = src_widget->source(); 
+      const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
+      if( !nuclide )
+        continue;
+
+      srcs_with_nuclides.push_back( std::make_pair( nuclide, src_widget ) );
+
+      const short int atomicNumber = nuclide->atomicNumber;
+    
+      const WString orig_age_str = src_widget->ageStr();
+
+      if( !z_to_fit_age.count(atomicNumber) )
+        z_to_fit_age[atomicNumber] = false;
+      z_to_fit_age[atomicNumber] |= src_widget->fitAge();
+    
+      if( !z_to_age.count(atomicNumber) )
+      {
+        // We are on first nuclide of this element, so we dont need to update its age.
+        z_to_age[atomicNumber] = orig_age_str;
+      }else
+      {
+        const WString &age_str = z_to_age[atomicNumber];
+        if( orig_age_str != age_str )
+          src_widget->setAge( age_str );
+      }
+    }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
 
   // If any nuclides age is being fit, then all nuclides of that element should be fit. 
   for( const pair<const SandiaDecay::Nuclide *, RelActAutoGuiNuclide *> &nuc_pair : srcs_with_nuclides )
@@ -2344,13 +2332,18 @@ void RelActAutoGui::handleNuclidesChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
 
-  for( WWidget *w : m_nuclides->children() )
+  // We could pick out just the Rel Eff curve that changed, and update those sources, but its
+  //  cheap enough that we'll just update everything so we dont miss a corner case somewhere or something.
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
   {
-    RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
-    assert( nuc_widget );
-    if( nuc_widget )
-      nuc_widget->updateAllowedConstraints();
-  }//for( WWidget *w : m_nuclides->children() )
+    const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+    {
+      assert( src_widget );
+      if( src_widget )
+        src_widget->updateAllowedConstraints();
+    }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
 
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -2372,38 +2365,28 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
   if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
     return;
   
-  const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-      src_info = nuc->source();
-
-  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(src_info) )
-    return;
-
-  const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
-  assert( nuclide );
+  const RelActCalcAuto::SrcVariant src_info = nuc->source();
+  const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(src_info);
   if( !nuclide )
     return;
 
   const short int atomicNumber = nuclide->atomicNumber;
 
-  for( WWidget *w : m_nuclides->children() )
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
   {
-    RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
-    assert( nuc_widget );
-    if( !nuc_widget )
-      continue;
+    const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+    {
+      assert( src_widget );
+      if( !src_widget )
+        continue;
 
-    variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-        this_src_info = nuc_widget->source();
-
-    if( !std::holds_alternative<const SandiaDecay::Nuclide *>(this_src_info) )
-      continue;
-
-    const SandiaDecay::Nuclide *this_nuclide = std::get<const SandiaDecay::Nuclide *>(this_src_info);
-    if( !this_nuclide || (this_nuclide->atomicNumber != atomicNumber) )
-      continue;
-        
-    nuc_widget->setFitAge( fit_age );
-  }//for( WWidget *w : m_nuclides->children() )
+      const RelActCalcAuto::SrcVariant this_src_info = src_widget->source();
+      const SandiaDecay::Nuclide * const this_nuclide = RelActCalcAuto::nuclide(this_src_info);
+      if( this_nuclide && (this_nuclide->atomicNumber == atomicNumber) )
+        src_widget->setFitAge( fit_age );
+    }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
 }//void handleNuclideFitAgeChanged()
 
 
@@ -2419,44 +2402,36 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
   if( !nuc || !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
     return;
 
-  const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-      src_info = nuc->source();
-
-  if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc->source()) )
-    return;
-
-  const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
-  assert( nuclide );
+  const RelActCalcAuto::SrcVariant src_info = nuc->source();
+  const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(src_info);
   if( !nuclide )
     return;
 
   const bool fit_age = nuc->fitAge();
   const WString age_str = nuc->ageStr();
-  const auto age_range = nuc->ageRangeStr();
+  const pair<WString,WString> age_range = nuc->ageRangeStr();
 
   const short int atomicNumber = nuclide->atomicNumber;
   
-  for( WWidget *w : m_nuclides->children() )
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
   {
-    RelActAutoGuiNuclide *nuc_widget = dynamic_cast<RelActAutoGuiNuclide *>( w );
-    assert( nuc_widget );
-    if( !nuc_widget || (nuc == nuc_widget) )
-      continue;
+    const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+    {
+      assert( src_widget );
+      if( !src_widget )
+        continue;
 
-    const variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> 
-        this_src_info = nuc_widget->source();  
+      const RelActCalcAuto::SrcVariant this_src_info = src_widget->source();
+      const SandiaDecay::Nuclide * const this_nuclide = RelActCalcAuto::nuclide(this_src_info);
+      if( !this_nuclide || (this_nuclide->atomicNumber != atomicNumber) )
+        continue;
 
-    if( !std::holds_alternative<const SandiaDecay::Nuclide *>(this_src_info) )
-      continue;
-
-    const SandiaDecay::Nuclide * const this_nuclide = std::get<const SandiaDecay::Nuclide *>(this_src_info);
-    if( !this_nuclide || (this_nuclide->atomicNumber != atomicNumber) )
-      continue;
-
-    nuc_widget->setAge( age_str );
-    if( fit_age )
-      nuc_widget->setAgeRange( age_range.first, age_range.second );
-  }//for( WWidget *w : m_nuclides->children() )
+      src_widget->setAge( age_str );
+      if( fit_age )
+        src_widget->setAgeRange( age_range.first, age_range.second );
+    }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
 }//void handleNuclideAgeChanged()
 
 
@@ -2495,8 +2470,8 @@ void RelActAutoGui::setOptionsForNoSolution()
 
   makeZeroAmplitudeRoisToChart();
   m_set_peaks_foreground->setDisabled( true );
-
-  m_rel_eff_chart->setData( 0.0, {}, {}, "", "" );
+  
+  m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
 
   for( WWidget *w : m_energy_ranges->children() )
   {
@@ -2579,11 +2554,20 @@ void RelActAutoGui::makeZeroAmplitudeRoisToChart()
 }//void RelActAutoGui::makeZeroAmplitudeRoisToChart()
 
 
-void RelActAutoGui::handleAddNuclide()
+void RelActAutoGui::handleAddNuclideForCurrentRelEffCurve()
 {
-  const vector<WWidget *> prev_kids = m_nuclides->children();
+  const int rel_eff_index = m_rel_eff_nuclides_menu->currentIndex();
+  const vector<RelActAutoGuiNuclide *> prev_nuc_widgets = getNuclideDisplays( rel_eff_index );
+  WMenuItem *rel_eff_item = m_rel_eff_nuclides_menu->itemAt( rel_eff_index );
+  assert( rel_eff_item );
+  WContainerWidget *nuc_container = rel_eff_item ? dynamic_cast<WContainerWidget *>( rel_eff_item->contents() ) : nullptr;
+  assert( nuc_container );
+  if( !nuc_container )
+    return;
+
   
-  RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, m_nuclides );
+  
+  RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, nuc_container );
   nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
   nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
@@ -2595,18 +2579,18 @@ void RelActAutoGui::handleAddNuclide()
   if( theme )
   {
     vector<WColor> colors = theme->referenceLineColor;
-    
-    for( WWidget *w : prev_kids )
+    if( colors.empty() )
+      colors = ReferencePhotopeakDisplay::sm_def_line_colors;
+
+    for( int i = 0; i < m_rel_eff_nuclides_menu->count(); ++i )
     {
-      RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( w );
-      assert( nuc );
-      if( !nuc )
-        continue;
-      
-      const WColor color = nuc->color();
-      const auto pos = std::find( begin(colors), end(colors), color );
-      if( pos != end(colors) )
-        colors.erase( pos );
+      const vector<RelActAutoGuiNuclide *> src_widgets = getNuclideDisplays( i );
+      for( RelActAutoGuiNuclide *src_widget : src_widgets )
+      {
+        const WColor color = src_widget->color();
+        if( std::find( begin(colors), end(colors), color ) != end(colors) )
+          colors.erase( std::find( begin(colors), end(colors), color ) );
+      }
     }
     
     if( colors.size() )
@@ -2618,7 +2602,7 @@ void RelActAutoGui::handleAddNuclide()
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
-}//void handleAddNuclide()
+}//void handleAddNuclideForCurrentRelEffCurve()
 
 
 void RelActAutoGui::handleAddEnergy()
@@ -2991,28 +2975,48 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
   if( !w )
     return;
   
-  assert( dynamic_cast<RelActAutoGuiNuclide *>(w) );
-  
-  const std::vector<WWidget *> &kids = m_nuclides->children();
-  const auto pos = std::find( begin(kids), end(kids), w );
-  if( pos == end(kids) )
+  RelActAutoGuiNuclide *src_widget = dynamic_cast<RelActAutoGuiNuclide *>(w);
+  assert( src_widget );
+
+  if( !src_widget )
   {
-    cerr << "Failed to find a RelActAutoGuiNuclide in m_nuclides!" << endl;
+    cerr << "Failed to cast WWidget to RelActAutoGuiNuclide!" << endl;
+    assert( 0 );
+    return;
+  }
+  
+  bool found_widget = false;
+  const int num_rel_effs = m_rel_eff_nuclides_menu->count();
+  for( int rel_eff_index = 0; !found_widget && (rel_eff_index < num_rel_effs); ++rel_eff_index )
+  {
+    const vector<RelActAutoGuiNuclide *> src_widgets = getNuclideDisplays( rel_eff_index );
+    const auto pos = std::find( begin(src_widgets), end(src_widgets), src_widget );
+    if( pos != end(src_widgets) )
+    {
+      found_widget = true;
+      break;
+    }
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+  
+  if( !found_widget )
+  {
+    cerr << "Failed to find a RelActAutoGuiNuclide Widget to remove!" << endl;
     assert( 0 );
     return;
   }
   
   delete w;
 
-  for( WWidget *child : m_nuclides->children() )
+  for( int rel_eff_index = 0; rel_eff_index < num_rel_effs; ++rel_eff_index )
   {
-    RelActAutoGuiNuclide *nuclide = dynamic_cast<RelActAutoGuiNuclide *>( child );
-    assert( nuclide );
-    if( !nuclide )
-      continue;
-
-    nuclide->updateAllowedConstraints();
-  }//for( WWidget *child : m_nuclides->children() )
+    const vector<RelActAutoGuiNuclide *> src_widgets = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src : src_widgets )
+    {
+      assert( src );
+      if( src )
+         src->updateAllowedConstraints();
+    }//for( RelActAutoGuiNuclide * src : src_widgets )
+  }//for( int rel_eff_index = 0; rel_eff_index < num_rel_effs; ++rel_eff_index )
 
   
   checkIfInUserConfigOrCreateOne( false );
@@ -3419,6 +3423,9 @@ void RelActAutoGui::handleDetectorChange()
 
 void RelActAutoGui::handleAddRelEffCurve()
 { 
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+
   set<string> existing_curve_names;
   for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
   {
@@ -3430,10 +3437,11 @@ void RelActAutoGui::handleAddRelEffCurve()
   for( int index = 0; index < 10; ++index )
   {
     name = "Curve " + std::to_string(index);
-    if( existing_curve_names.count(name) == 0 )
+    if( !existing_curve_names.count(name) )
       break;
   }
 
+  // First we'll add the curve to the RelEffCurveOptsMenu/Stack
   RelActAutoGuiRelEffOptions *rel_eff_curve = new RelActAutoGuiRelEffOptions( this, name, nullptr );  
   WMenuItem *item = new WMenuItem( name, rel_eff_curve, WMenuItem::LoadPolicy::PreLoading );
   m_rel_eff_opts_menu->addItem( item );
@@ -3453,6 +3461,7 @@ void RelActAutoGui::handleAddRelEffCurve()
   const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
 
   m_rel_eff_opts_menu->setHidden( single_curve );
+  m_rel_eff_nuclides_menu->setHidden( single_curve );
 
   for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
   {
@@ -3463,7 +3472,30 @@ void RelActAutoGui::handleAddRelEffCurve()
       this_curve->setIsOnlyOneRelEffCurve( single_curve );
   }
 
+
+  // Now we'll add the nuclides to the RelEffNuclidesMenu/Stack
+  WContainerWidget *nuclides_content = new WContainerWidget();
+  nuclides_content->addStyleClass( "EnergyNucContent" );
+  
+  WMenuItem *nuc_item = new WMenuItem( name, nuclides_content, WMenuItem::LoadPolicy::PreLoading );
+  m_rel_eff_nuclides_menu->addItem( nuc_item );
+  assert( nuc_item->contents() == static_cast<WWidget *>(nuclides_content) );
+
+
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  
+  //const bool was_blocked = m_rel_eff_opts_menu->itemSelected().isBlocked();
+  //m_rel_eff_opts_menu->itemSelected().setBlocked( true );
+  //m_rel_eff_nuclides_menu->itemSelected().setBlocked( true );
+  
   m_rel_eff_opts_menu->select( item );
+  m_rel_eff_nuclides_menu->select( nuc_item );
+  
+  //m_rel_eff_opts_menu->itemSelected().setBlocked( was_blocked );
+  //m_rel_eff_nuclides_menu->itemSelected().setBlocked( was_blocked );
+  
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+
 
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3472,6 +3504,9 @@ void RelActAutoGui::handleAddRelEffCurve()
 
 void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
 {
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+
   assert( curve );
   if( !curve )
     return;
@@ -3480,12 +3515,16 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   if( m_rel_eff_opts_menu->count() <= 1 )
     return;
 
+  int index_to_remove = 0;
   WMenuItem *item = nullptr;
   for( int index = 0; !item && (index < m_rel_eff_opts_menu->count()); ++index )
   {
     WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
     if( this_item->contents() == curve )
+    {
       item = this_item;
+      index_to_remove = index;
+    }
   }
   
   assert( item );
@@ -3496,9 +3535,28 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   delete curve;
   delete item;
 
+  WMenuItem *nuc_item = m_rel_eff_nuclides_menu->itemAt( index_to_remove );
+  assert( nuc_item );
+  if( nuc_item )
+  {
+    WContainerWidget *nuc_content = dynamic_cast<WContainerWidget *>( nuc_item->contents() );
+    assert( nuc_content );
+
+    m_rel_eff_nuclides_menu->removeItem( nuc_item );
+    delete nuc_content;
+    delete nuc_item;
+    nuc_item = nullptr;
+  }
+
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+  if( m_rel_eff_opts_menu->count() != m_rel_eff_nuclides_menu->count() )
+    throw logic_error( "Different number of Rel. Eff. curves options, and groups of nuclides." );
   
   const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
   m_rel_eff_opts_menu->setHidden( single_curve );
+  m_rel_eff_nuclides_menu->setHidden( single_curve );
+  
   for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
   {
     WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
@@ -3509,7 +3567,10 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   }
 
   m_rel_eff_opts_menu->select( -1 );
+  m_rel_eff_nuclides_menu->select( -1 );
+  
   m_rel_eff_opts_menu->select( m_rel_eff_opts_menu->count() - 1 );
+  m_rel_eff_nuclides_menu->select( m_rel_eff_nuclides_menu->count() - 1 );
   
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3518,16 +3579,25 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
 
 void RelActAutoGui::handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name )
 {
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+
   assert( curve );
   if( !curve )
     return;
+
+  assert( curve->name() == name );
   
+  int changed_index = 0;
   WMenuItem *item = nullptr;
   for( int index = 0; !item && (index < m_rel_eff_opts_menu->count()); ++index )
   {
     WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
     if( this_item->contents() == curve )
+    {
       item = this_item;
+      changed_index = index;
+    }
   }
   
   assert( item );
@@ -3536,9 +3606,47 @@ void RelActAutoGui::handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *cu
 
   item->setText( name );
 
+  WMenuItem *nuc_changed_item = m_rel_eff_nuclides_menu->itemAt( changed_index );
+  assert( nuc_changed_item );
+  if( nuc_changed_item )
+    nuc_changed_item->setText( name );
+
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name )
+
+
+void RelActAutoGui::handleRelEffCurveOptionsSelected()
+{
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+
+  if( m_rel_eff_opts_menu->count() != m_rel_eff_nuclides_menu->count() )
+    throw logic_error( "Different number of Rel. Eff. curves options, and groups of nuclides." );
+  
+  int index = m_rel_eff_opts_menu->currentIndex();
+  assert( index >= 0 );
+  if( index < 0 )
+    index = 0;
+
+  m_rel_eff_nuclides_menu->select( index );
+}//void handleRelEffCurveOptionsSelected()
+
+
+void RelActAutoGui::handleRelEffNuclidesSelected()
+{
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+
+  if( m_rel_eff_opts_menu->count() != m_rel_eff_nuclides_menu->count() )
+    throw logic_error( "Different number of Rel. Eff. curves options, and groups of nuclides." );
+  
+  int index = m_rel_eff_nuclides_menu->currentIndex();
+  assert( index >= 0 );
+  if( index < 0 )
+    index = 0;
+
+  m_rel_eff_opts_menu->select( index );
+}//void handleRelEffNuclidesSelected()
+
 
 
 Wt::Signal<> &RelActAutoGui::calculationStarted()
@@ -3777,6 +3885,58 @@ const RelActAutoGuiRelEffOptions *RelActAutoGui::getRelEffCurveOptions( const in
 
   return ptr;
 }//RelActAutoGuiRelEffOptions *RelActAutoGui::getRelEffCurveOptions( const size_t index )
+
+
+std::vector<RelActAutoGuiNuclide *> RelActAutoGui::getNuclideDisplays( const int rel_eff_curve_index )
+{
+  assert( rel_eff_curve_index >= 0 );
+  assert( rel_eff_curve_index < m_rel_eff_nuclides_menu->count() );
+  if( (rel_eff_curve_index < 0) || (rel_eff_curve_index >= m_rel_eff_nuclides_menu->count()) )
+    return {};
+
+  WMenuItem *this_item = m_rel_eff_nuclides_menu->itemAt( rel_eff_curve_index );
+  WContainerWidget *this_content = dynamic_cast<WContainerWidget *>( this_item->contents() );
+  assert( this_content );
+  if( !this_content )
+    return {};
+    
+  vector<RelActAutoGuiNuclide *> nuc_displays;
+  for( WWidget *child : this_content->children() )
+  {
+    RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( child );
+    assert( nuc );
+    if( nuc )
+      nuc_displays.push_back( nuc );
+  }
+
+  return nuc_displays;
+}//std::vector<RelActAutoGuiNuclide *> RelActAutoGui::getNuclideDisplays( const int rel_eff_curve_index )
+
+
+std::vector<const RelActAutoGuiNuclide *> RelActAutoGui::getNuclideDisplays( const int rel_eff_curve_index ) const
+{
+  assert( rel_eff_curve_index >= 0 );
+  assert( rel_eff_curve_index < m_rel_eff_nuclides_menu->count() );
+  if( (rel_eff_curve_index < 0) || (rel_eff_curve_index >= m_rel_eff_nuclides_menu->count()) )
+    return {};
+
+  const WMenuItem * const this_item = m_rel_eff_nuclides_menu->itemAt( rel_eff_curve_index );
+  const WContainerWidget * const this_content = dynamic_cast<const WContainerWidget *>( this_item->contents() );
+  assert( this_content );
+  if( !this_content )
+    return {};
+    
+  vector<const RelActAutoGuiNuclide *> nuc_displays;
+  for( const WWidget *child : this_content->children() )
+  {
+    const RelActAutoGuiNuclide *src = dynamic_cast<const RelActAutoGuiNuclide *>( child );
+    assert( src );
+    if( src )
+      nuc_displays.push_back( src );
+  }
+
+  return nuc_displays;
+}//std::vector<const RelActAutoGuiNuclide *> RelActAutoGui::getNuclideDisplays( const int rel_eff_curve_index ) const
 
 
 void RelActAutoGui::updateDuringRenderForSpectrumChange()
@@ -4058,13 +4218,25 @@ void RelActAutoGui::startUpdatingCalculation()
   if( !m_apply_energy_cal_item->isDisabled() )
     m_apply_energy_cal_item->disable();
   
+  assert( m_rel_eff_nuclides_menu->count() == m_rel_eff_opts_menu->count() );
 
-  for( WWidget *child : m_nuclides->children() )
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
   {
-    RelActAutoGuiNuclide *nuclide = dynamic_cast<RelActAutoGuiNuclide *>( child );
-    if( nuclide )
-      nuclide->setSummaryText( "" );
-  }//for( WWidget *child : m_nuclides->children() )
+    WMenuItem *this_item = m_rel_eff_nuclides_menu->itemAt( rel_eff_index );
+    WContainerWidget *this_content = dynamic_cast<WContainerWidget *>( this_item->contents() );
+    assert( this_content );
+    if( !this_content )
+      continue;
+    
+    for( WWidget *child : this_content->children() )
+    {
+      RelActAutoGuiNuclide *nuclide = dynamic_cast<RelActAutoGuiNuclide *>( child );
+      assert( nuclide );
+      if( nuclide )
+        nuclide->setSummaryText( "" );
+    }//for( WWidget *child : this_content->children() )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+
 
   for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
   {
@@ -4106,6 +4278,9 @@ void RelActAutoGui::startUpdatingCalculation()
       throw runtime_error( "No energy ranges defined." );
   }catch( std::exception &e )
   {
+    if( m_cancel_calc )
+      m_cancel_calc->store( true );
+   
     m_is_calculating = false;
     m_error_msg->setText( e.what() );
     m_error_msg->show();
@@ -4123,9 +4298,9 @@ void RelActAutoGui::startUpdatingCalculation()
   
   const string sessionid = wApp->sessionId();
   m_is_calculating = true;
-  m_cancel_calc = make_shared<std::atomic_bool>();
-  m_cancel_calc->store( false );
-  shared_ptr<atomic_bool> cancel_calc = m_cancel_calc;
+  m_calc_number += 1;
+  shared_ptr<atomic_bool> cancel_calc = make_shared<std::atomic_bool>(false);
+  m_cancel_calc = cancel_calc;
   
   shared_ptr<const DetectorPeakResponse> cached_drf = m_cached_drf;
   if( !cached_drf )
@@ -4143,7 +4318,7 @@ void RelActAutoGui::startUpdatingCalculation()
   auto solution = make_shared<RelActCalcAuto::RelActAutoSolution>();
   auto error_msg = make_shared<string>();
   
-  auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc) );
+  auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc, m_calc_number ) );
   auto error_callback = wApp->bind( boost::bind( &RelActAutoGui::handleCalcException, this, error_msg, cancel_calc) );
   
   
@@ -4197,7 +4372,8 @@ void RelActAutoGui::startUpdatingCalculation()
 
 
 void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
-                                    std::shared_ptr<std::atomic_bool> cancel_flag )
+                                    std::shared_ptr<std::atomic_bool> cancel_flag,
+                                    const size_t calc_number )
 {
   assert( answer );
   if( !answer )
@@ -4209,6 +4385,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     return;
   
   if( cancel_flag && (*cancel_flag) )
+    return;
+  
+  // Check to see if a new calculation was launched; the `cancel_flag` should have caught things,
+  //  but this is just a backup, that I dont think we need.
+  if( calc_number != m_calc_number )
     return;
   
   m_is_calculating = false;
@@ -4254,8 +4435,6 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   cout << "\n\n\nCalc finished: \n";
   answer->print_summary( std::cout );
   cout << "\n\n\n";
-  
-  const string rel_eff_eqn_js = answer->rel_eff_eqn_js_function(0);
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
@@ -4343,97 +4522,25 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     assert( 0 );
   }
 
-  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities.at(0),
-                           rel_eff_eqn_js, rel_eff_eqn_txt );
+  assert( answer->m_fit_peaks_for_each_curve.size() == answer->m_rel_activities.size() );
+  
+  const string rel_eff_eqn_js = answer->rel_eff_eqn_js_function(0);
+  
+  RelEffChart::ReCurveInfo info;
+  info.live_time = live_time;
+  info.fit_peaks = answer->m_fit_peaks_for_each_curve.back();
+  info.rel_acts = answer->m_rel_activities.back();
+  info.js_rel_eff_eqn = rel_eff_eqn_js;
+  info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves.back().name );
+  info.re_curve_eqn_txt = rel_eff_eqn_txt;
+  
+  m_rel_eff_chart->setData( info );
 
   m_fit_chi2_msg->setText( chi2_title );
   m_fit_chi2_msg->show();
 
-  bool any_nucs_updated = false;
-  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities.at(0) )
-  {
-    if( !fit_nuc.age_was_fit || (fit_nuc.age < 0.0) )
-      continue;
-    
-    any_nucs_updated = true;
-    for( WWidget *w : m_nuclides->children() )
-    {
-      RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( w );
-      assert( nuc );
-      
-      if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
-        continue;
-      
-      const RelActCalcAuto::SrcVariant src = nuc->source();
-    
-      if( fit_nuc.source == src )
-      {
-        const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
-        nuc->setAge( agestr );
-        break;
-      }//if( this is the widget for this nuclide )
-    }//for( WWidget *w : kids )
-  }//for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
 
-
-  // Update the rel. act., and if applicable, mass fraction for the nuclide displays
-  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities.at(0) )
-  {
-    for( WWidget *w : m_nuclides->children() )
-    {
-      RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( w );
-      assert( nuc );
-      
-      if( !nuc || std::holds_alternative<std::monostate>(nuc->source()) )
-        continue;
-      
-      const RelActCalcAuto::SrcVariant src = nuc->source();
-      
-      if( fit_nuc.source != src )
-        continue;
-
-      const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
-      nuc->setAge( agestr );
-
-      const string rel_act = SpecUtils::printCompact(fit_nuc.rel_activity, 4);
-      string summary_text = "Rel. Act=" + rel_act;
-
-      
-      if( const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(src) )
-      {
-        size_t num_same_z = 0;
-        double total_rel_mass = 0.0;
-        for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities.at(0) )
-        {
-          const SandiaDecay::Nuclide * const other_nuc_nuclide = RelActCalcAuto::nuclide(other_nuc.source);
-          if( other_nuc_nuclide && (nuc_nuclide->atomicNumber == other_nuc_nuclide->atomicNumber) )
-          {
-            ++num_same_z;
-            total_rel_mass += (other_nuc.rel_activity / other_nuc_nuclide->activityPerGram());
-          }
-        }//for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities )
-          
-        if( num_same_z > 1 )
-        {
-          const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
-          const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
-          const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-          const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
-          const string el_symbol = el ? el->symbol : "?";
-          summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
-        }
-      }//if( fit_nuc.nuclide )
-
-      nuc->setSummaryText( summary_text );
-
-      break;
-    }//for( WWidget *w : kids )
-  }//for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
-  
-  
-  setOptionsForValidSolution();
-  
-  // Check if we need to update Physical model shieldings
+  // Check if we need to update number of Rel Eff curves
   assert( m_solution->m_options.rel_eff_curves.size() >= 1 );
   const size_t num_rel_eff_curves = std::max( size_t(1), m_solution->m_options.rel_eff_curves.size() );
   assert( m_rel_eff_opts_menu->count() == static_cast<int>(num_rel_eff_curves) );
@@ -4452,15 +4559,134 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     handleAddRelEffCurve();
   }
 
+  assert( m_rel_eff_opts_menu->count() == static_cast<int>(num_rel_eff_curves) );
+  assert( m_rel_eff_nuclides_menu->count() == static_cast<int>(num_rel_eff_curves) );
+
+  // Update the nuclide displays
+  bool any_nucs_updated = false;
+  for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+  {
+    if( rel_eff_index >= m_solution->m_rel_activities.size() )
+      continue; //We would have asserted above (on debug builds) - things are whack - shouldnt be here, so just ignore this...
+      
+    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = m_solution->m_rel_activities[rel_eff_index];
+
+    vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( static_cast<int>(rel_eff_index) );
+    assert( nuc_displays.size() == rel_acts.size() );
+    
+    set<RelActAutoGuiNuclide *> updated_nuc_displays, empty_nuc_displays;
+    vector<bool> use_rel_acts( rel_acts.size(), false );
+
+     // Update the rel. act., and if applicable, mass fraction for the nuclide displays
+    for( size_t fit_nuc_index = 0; fit_nuc_index < rel_acts.size(); ++fit_nuc_index )
+    {
+      bool found_nuc = false;
+      const RelActCalcAuto::NuclideRelAct &fit_nuc = rel_acts[fit_nuc_index];
+
+      for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+      {
+        assert( src_widget );
+        const RelActCalcAuto::SrcVariant src = src_widget ? src_widget->source() : RelActCalcAuto::SrcVariant();
+      
+        if( RelActCalcAuto::is_null(src) )
+        {
+          if( src_widget )
+            empty_nuc_displays.insert( src_widget );
+          continue;
+        }
+        
+        if( fit_nuc.source != src )
+          continue;
+
+        found_nuc = true;
+        any_nucs_updated = true;
+        updated_nuc_displays.insert( src_widget );
+        use_rel_acts[fit_nuc_index] = true;
+
+        const string rel_act_str = SpecUtils::printCompact(fit_nuc.rel_activity, 4);
+        string summary_text = "Rel. Act=" + rel_act_str;
+
+
+        if( fit_nuc.age_was_fit )
+        {
+          const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
+          src_widget->setAge( agestr );
+        }
+
+        if( const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(src) )
+        {
+          size_t num_same_z = 0;
+          double total_rel_mass = 0.0;
+          for( const RelActCalcAuto::NuclideRelAct &other_nuc : rel_acts )
+          {
+            const SandiaDecay::Nuclide * const other_nuc_nuclide = RelActCalcAuto::nuclide(other_nuc.source);
+            if( other_nuc_nuclide && (nuc_nuclide->atomicNumber == other_nuc_nuclide->atomicNumber) )
+            {
+              ++num_same_z;
+              total_rel_mass += (other_nuc.rel_activity / other_nuc_nuclide->activityPerGram());
+            }
+          }//for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities )
+          
+          if( num_same_z > 1 )
+          {
+            const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
+            const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
+            const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+            const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
+            const string el_symbol = el ? el->symbol : "?";
+            summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+          }//if( num_same_z > 1 )
+        }//if( RelActCalcAuto::nuclide(src) )
+
+        src_widget->setSummaryText( summary_text );
+
+        break;
+      }//for( WWidget *w : nuclide_content->children() )
+
+      assert( found_nuc );
+      if( !found_nuc )
+        cerr << "No nuclide found for rel. eff. curve " << rel_eff_index << " should fix this!" << endl;
+    }//for( const RelActCalcAuto::NuclideRelAct &fit_nuc : rel_acts )
+
+
+    // TODO: handle the possibility that some of the returned sources in the solution are not in the GUI.
+    //       (which shouldnt happen, but just in case things get out of whack with the user editing while computing)
+    for( size_t rel_act_index = 0; rel_act_index < use_rel_acts.size(); ++rel_act_index )
+    {
+      if( !use_rel_acts[rel_act_index] )
+      {
+        assert( 0 ); // we shouldnt get here
+        // maybe add a GUI component for this nuclide? - first checking if there are any in `empty_nuc_displays`, before adding a new one
+      }
+    }//for( size_t rel_act_index = 0; rel_act_index < use_rel_acts.size(); ++rel_act_index )
+
+    // TODO: handle the possibility that some of the GUI nuclides are not in the solution
+    //       (which shouldnt happen, but just in case things get out of whack with the user editing while computing)
+    for( RelActAutoGuiNuclide *nuc : nuc_displays )
+    {
+      if( !updated_nuc_displays.count(nuc) )
+      {
+        assert( 0 ); // we shouldnt get here
+        //Maybe remove the GUI component for this source.
+        nuc->setSummaryText( "Not in computed solution" );
+      }
+    }//for( RelActAutoGuiNuclide *nuc : nuc_displays )
+  }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+  
+
+  
+  setOptionsForValidSolution();
+  
+
   for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
   {
     if( rel_eff_index >= m_solution->m_options.rel_eff_curves.size() )
     {
-      continue; // I guess do nothing...
+      continue; // solution didnt have any rel eff curves... which probably shouldnt happen.
     }
 
     RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( rel_eff_index );
-    assert( opts );
+    assert( opts ); //shouldnt happen, we adjusted the number of rel eff curve options above
     if( !opts )
       throw std::runtime_error( "Failed to get RelActAutoGuiRelEffOptions" );
 
@@ -4474,7 +4700,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
         && (rel_eff.rel_eff_eqn_order != opts->rel_eff_eqn_order()) )
       correct_curve = false;
-    if( rel_eff.name != opts->name() )
+    if( rel_eff.name != opts->name().toUTF8() )
       correct_curve = false;
 
     if( !correct_curve )
@@ -4492,9 +4718,14 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
    
       //phys_info_ref.hoerl_b/hoerl_c will have (double) values iff the correction function was used
       assert( phys_info_ref.hoerl_b.has_value() == phys_info_ref.hoerl_c.has_value() );
-      assert( phys_info_ref.hoerl_b.has_value() == opts->phys_model_use_hoerl() );
+      //assert( phys_info_ref.hoerl_b.has_value() == opts->phys_model_use_hoerl() );
       if( phys_info_ref.hoerl_b.has_value() != opts->phys_model_use_hoerl() )
+      {
+        cerr << "Warning: mismatch between solution using Hoerl, and GUI saying thier using Hoerl"
+        << " {solution: " << phys_info_ref.hoerl_b.has_value() << ", GUI: " << opts->phys_model_use_hoerl() << "}";
+        cerr << endl;
         opts->setPhysModelUseHoerl( phys_info_ref.hoerl_b.has_value() );
+      }
     }//if( Physical model fit info is available )
 
 

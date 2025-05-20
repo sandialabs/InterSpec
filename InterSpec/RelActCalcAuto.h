@@ -922,12 +922,20 @@ struct RelActAutoSolution
    */
   std::vector<PeakDef> m_fit_peaks;
   
+  /** Same as `m_fit_peaks`, but with the peaks seperated by relative efficiency curve (they will share peak continua between curves).
+   Will not include free-floating peaks.
+   */
+  std::vector<std::vector<PeakDef>> m_fit_peaks_for_each_curve;
+  
   /** The fit peaks, in the energy calibration of the spectrum (i.e., what you would display,
    if you are not updating the displayed spectrum for the adjusted energy cal).
    
    You would use these peaks for `m_foreground`.
    */
   std::vector<PeakDef> m_fit_peaks_in_spectrums_cal;
+  
+  /** Same as `m_fit_peaks_in_spectrums_cal`, but seperated by rel eff curve, and not including free-floating peaks. */
+  std::vector<std::vector<PeakDef>> m_fit_peaks_in_spectrums_cal_for_each_curve;
   
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
    be assessed based on peak localities and expected counts; this variable holds the ROI

@@ -971,11 +971,14 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
   if( !haveFoundColor && (m_color_select->color() == ns_default_color) )
   {
     //Use the same pre-defined colors as the reference lines widget, and use the first one that is not already used
-    vector<Wt::WColor> def_line_colors{
-      {"#0000FF"}, {"#006600"}, {"#0099FF"}, {"#9933FF"},
-      {"#FF66FF"}, {"#CC3333"}, {"#FF6633"}, {"#FFFF99"},
-      {"#CCFFCC"}, {"#0000CC"}, {"#666666"}, {"#003333"}
-    };
+    vector<Wt::WColor> def_line_colors;
+
+    std::shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
+    if( theme )
+      def_line_colors = theme->referenceLineColor;
+
+    if( def_line_colors.empty() )
+      def_line_colors = ReferencePhotopeakDisplay::sm_def_line_colors;
 
     const std::set<size_t> rel_eff_curves = relEffCurves();
     assert( !rel_eff_curves.empty() );
@@ -1605,9 +1608,4 @@ void RelActAutoGuiNuclide::addMassFractionConstraint( const RelActCalcAuto::RelE
   m_constraint->setMassFraction( constraint.lower_mass_fraction, constraint.upper_mass_fraction );
 }//void addMassFractionConstraint( const MassFractionConstraint & )
 
-
-void RelActAutoGuiNuclide::setIsInCurves( const std::set<size_t> &curves_with_nuc, size_t num_rel_eff_curves )
-{
-  // TODO: blah blah blah - implement this
-}
 

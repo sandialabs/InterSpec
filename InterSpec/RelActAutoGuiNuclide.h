@@ -126,7 +126,6 @@ public:
   
   void addActRatioConstraint( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint );
   void addMassFractionConstraint( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint );
-  void setIsInCurves( const std::set<size_t> &curves_with_nuc, size_t num_rel_eff_curves );
   
   void handleAddConstraint();
   void handleRemoveConstraint();

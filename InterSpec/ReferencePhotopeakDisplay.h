@@ -480,6 +480,9 @@ protected:
   FeatureMarkerWidget *m_featureMarkers;
   
   static const int sm_xmlSerializationVersion;
+
+  public:
+    static const std::vector<Wt::WColor> sm_def_line_colors;
 };//class ReferencePhotopeakDisplay
 
 

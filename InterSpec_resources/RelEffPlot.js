@@ -173,7 +173,14 @@ RelEffPlot.prototype.setYAxisTitle = function( title, dontCallResize ){
     this.handleResize();
 }//RelEffPlot.prototype.setYAxisTitle
 
-
+/** Sets the data that will be plotted.
+ 
+ @param data_vals Data values to plot as markers, of the form [{ "energy": 79.84, "mean": 79.84, "counts": 4.522705, "counts_uncert": 0, "eff": 0.0880221, "eff_uncert": 0, "nuc_info": [{"nuc": "U238", "br": 0.0016335, "rel_act": 31454.9 },{...}]}, {...}]
+ @param fit_eqn A function that dakes a number as an argument (the x-valu in the plot), and returns a y-value; this function is used to draw the solid line on the chart.
+ @param chi2_txt A string that gets displayed on the chart.
+ @param fit_uncert_fcn Function that gives the uncertainty on the solid line
+ 
+ */
 RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit_uncert_fcn) {
   const self = this;
 

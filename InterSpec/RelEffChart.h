@@ -26,12 +26,18 @@ public:
   RelEffChart( Wt::WContainerWidget *parent = 0 );
   virtual ~RelEffChart();
   
+  struct ReCurveInfo
+  {
+    double live_time = 0.0;
+    std::vector<PeakDef> fit_peaks;
+    std::vector<RelActCalcAuto::NuclideRelAct> rel_acts;
+    std::string js_rel_eff_eqn;
+    Wt::WString re_curve_name;
+    Wt::WString re_curve_eqn_txt;
+  };//struct ReCurveInfo
+  
   /** Set data from an "auto" relative efficiency fit. */
-  void setData( const double live_time,
-               const std::vector<PeakDef> &fit_peaks,
-               const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts,
-               const std::string &jsRelEffEqn,
-               const Wt::WString &chi2_title_str );
+  void setData( const ReCurveInfo &info );
   
   /** Set data from an "manual" relative efficiency fit. */
   void setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,

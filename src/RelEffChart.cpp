@@ -133,12 +133,15 @@ void RelEffChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 }
 
 
-void RelEffChart::setData( const double live_time,
-                          const vector<PeakDef> &fit_peaks,
-                          const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts,
-                          const std::string &relEffEqn,
-                          const Wt::WString &chi2_title_str )
+void RelEffChart::setData( const RelEffChart::ReCurveInfo &info )
 {
+  const double live_time = info.live_time;
+  const vector<PeakDef> &fit_peaks = info.fit_peaks;
+  const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts = info.rel_acts;
+  const std::string &relEffEqn = info.js_rel_eff_eqn;
+  const WString &re_name = info.re_curve_name;
+  const WString &chi2_title_str = info.re_curve_eqn_txt;
+  
   std::vector<RelActCalcManual::GenericPeakInfo> peaks;
   map<string,pair<double,string>> relActsColors;
   
@@ -185,8 +188,13 @@ void RelEffChart::setData( const double live_time,
     
     for( const pair<double,double> &energy_br : nuc_info->gamma_energy_br )
     {
-      if( fabs(energy_br.first - p.gammaParticleEnergy()) < 1.0E-6 )
-        line.m_yield += live_time * energy_br.second; 
+      if( fabs(energy_br.first - p.gammaParticleEnergy()) < 1.0E-3 )
+        line.m_yield += live_time * energy_br.second;
+    }
+    
+    if( line.m_yield < std::numeric_limits<double>::epsilon() )
+    {
+      cerr << "Warning: line at " << p.gammaParticleEnergy() << " for " << line.m_isotope << " has yeild=" << line.m_yield << endl;
     }
     
     peak.m_source_gammas.push_back( line );
