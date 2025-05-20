@@ -121,6 +121,8 @@ public:
   void handleSkewTypeChanged();
   void handleNucDataSrcChanged();
   void handleAddNuclideForCurrentRelEffCurve();
+  /** Will return nullptr of invalid `rel_eff_index` passed in; otherwise retuns created widget. */
+  RelActAutoGuiNuclide *addNuclideForRelEffCurve( const int rel_eff_index );
   void handleAddEnergy();
   void handleClearAllEnergyRanges();
   void handleShowFreePeaks();

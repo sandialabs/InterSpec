@@ -157,11 +157,10 @@
     </div>
 
     <script>
-        const data_vals = ${REL_EFF_DATA_VALS};
-        const fit_eqn = ${FIT_REL_EFF_EQUATION};
+        const rel_eff_data = ${REL_EFF_JSON};
 
         let chart = new RelEffPlot("releffchart");
-        chart.setRelEffData(data_vals, fit_eqn);
+        chart.setRelEffData(rel_eff_data);
 
         var olddivhight = 0;
         let divobserver = new ResizeObserver(entries => {

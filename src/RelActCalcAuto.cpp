@@ -80,6 +80,7 @@
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/XmlUtils.hpp"
+#include "InterSpec/RelEffChart.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReactionGamma.h"
@@ -9735,7 +9736,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     else if( reaction )
       peak_src = reaction;
     assert( !is_null(peak_src) );
-    if( !is_null(peak_src) )
+    if( is_null(peak_src) )
       throw logic_error( "Peak with null src not in solution?" );
 
     int rel_eff_index = 0;
@@ -10020,37 +10021,51 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     results_html << "<div class=\"anatime\">Analysis performed " << local_time << " (" << utc_time
     << " UTC), with code compiled " __TIMESTAMP__ "</div>\n";
     
-  const size_t num_rel_eff = std::min( m_options.rel_eff_curves.size(), m_rel_activities.size() );
-  for( size_t rel_eff_index = 0; (rel_eff_index < 1) && (rel_eff_index < num_rel_eff); ++rel_eff_index )
+  vector<RelEffChart::ReCurveInfo> rel_eff_info_sets;
+  
+  assert( m_fit_peaks_for_each_curve.size() == m_rel_eff_forms.size() );
+  
+  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
   {
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
-
-    stringstream rel_eff_plot_values, add_rel_eff_plot_css;
-    rel_eff_json_data( rel_eff_plot_values, add_rel_eff_plot_css, rel_eff_index );
-
-    SpecUtils::ireplace_all( html, "${REL_EFF_DATA_VALS}", rel_eff_plot_values.str().c_str() );
-    SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", add_rel_eff_plot_css.str().c_str() );
   
-    string rel_eff_eqn_js;
-    
-    if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    RelEffChart::ReCurveInfo info;
+
+    info.live_time = m_spectrum ? m_spectrum->live_time() : 1.0;
+    info.fit_peaks = m_fit_peaks_for_each_curve[rel_eff_index];
+    info.rel_acts = m_rel_activities[rel_eff_index];
+    info.re_curve_name = Wt::WString::fromUTF8(rel_eff.name);
+
+    try
     {
-      rel_eff_eqn_js = RelActCalc::rel_eff_eqn_js_function( rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
-    }else
-    {
-      const RelActAutoCostFcn::PhysModelRelEqnDef input
+      info.re_curve_eqn_txt = Wt::WString::fromUTF8( "y = " + rel_eff_txt( false, rel_eff_index ) ); 
+
+      if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        info.js_rel_eff_eqn = RelActCalc::rel_eff_eqn_js_function( rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
+      }else
+      {
+        const RelActAutoCostFcn::PhysModelRelEqnDef input
                    = RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, m_rel_eff_coefficients[rel_eff_index], 0 );
       
-      rel_eff_eqn_js = RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
+        info.js_rel_eff_eqn = RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
                                                                           input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
-    }//if( not FramPhysicalModel ) / else
-    
-    SpecUtils::ireplace_all( html, "${FIT_REL_EFF_EQUATION}", rel_eff_eqn_js.c_str() );
-    
-    SpecUtils::ireplace_all( html, "${RESULTS_TXT}", results_html.str().c_str() );
+      }//if( not FramPhysicalModel ) / else
+    }catch( std::exception &e )
+    {
+      cerr << "Error creating RelEffChart::ReCurveInfo: " << e.what() << endl;
+    }
+
+    rel_eff_info_sets.push_back( info );
   }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+
   
+  const string rel_eff_json = RelEffChart::jsonForData( rel_eff_info_sets );
+
+  SpecUtils::ireplace_all( html, "${REL_EFF_JSON}", rel_eff_json.c_str() );
   
+  SpecUtils::ireplace_all( html, "${RESULTS_TXT}", results_html.str().c_str() );
+
   if( m_spectrum )
   {
     stringstream set_js_str;

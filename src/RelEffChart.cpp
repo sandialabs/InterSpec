@@ -133,7 +133,20 @@ void RelEffChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 }
 
 
-void RelEffChart::setData( const std::vector<RelEffChart::ReCurveInfo> &infoSets )
+void RelEffChart::setData(const std::vector<RelEffChart::ReCurveInfo> &infoSets)
+{
+  std::string jsonData = jsonForData(infoSets);
+  sendDataToJavaScript(jsonData);
+}
+
+// For backward compatibility
+void RelEffChart::setData(const RelEffChart::ReCurveInfo &info)
+{
+  std::vector<RelEffChart::ReCurveInfo> infoSets = {info};
+  setData(infoSets);
+}
+
+std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
 {
   std::vector<RelEffChartDataset> datasets;
   
@@ -154,7 +167,7 @@ void RelEffChart::setData( const std::vector<RelEffChart::ReCurveInfo> &infoSets
     std::vector<RelActCalcManual::GenericPeakInfo> peaks;
     map<string,pair<double,string>> relActsColors;
     
-    for( const PeakDef &p : fit_peaks )
+    for(const PeakDef &p : fit_peaks)
     {
       RelActCalcAuto::SrcVariant peak_src;
       
@@ -163,11 +176,11 @@ void RelEffChart::setData( const std::vector<RelEffChart::ReCurveInfo> &infoSets
         const SandiaDecay::Element *el = p.xrayElement();
         const ReactionGamma::Reaction *rctn = p.reaction();
         
-        if( nuc )
+        if(nuc)
           peak_src = nuc;
-        else if( el )
+        else if(el)
           peak_src = el;
-        else if( rctn )
+        else if(rctn)
           peak_src = rctn;
         else
           continue; // A free-floating peak wont have a nuclide associated, so we skip it
@@ -188,36 +201,55 @@ void RelEffChart::setData( const std::vector<RelEffChart::ReCurveInfo> &infoSets
       line.m_yield = 0.0;
       
       const RelActCalcAuto::NuclideRelAct *nuc_info = nullptr;
-      for( const RelActCalcAuto::NuclideRelAct &rel_act : rel_acts )
+      for(const RelActCalcAuto::NuclideRelAct &rel_act : rel_acts)
         nuc_info = (rel_act.source == peak_src) ? &rel_act : nuc_info;
       
-      assert( nuc_info );
-      if( !nuc_info )
+      assert(nuc_info);
+      if(!nuc_info)
         continue;
-      
-      for( const pair<double,double> &energy_br : nuc_info->gamma_energy_br )
+        
+      const RelActCalcAuto::SrcVariant &src = nuc_info->source;
+      const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide(src);
+      const SandiaDecay::Element * const src_ele = RelActCalcAuto::element(src);
+      const ReactionGamma::Reaction * const src_rct = RelActCalcAuto::reaction(src);
+       
+      for(const pair<double,double> &energy_br : nuc_info->gamma_energy_br)
       {
-        if( fabs(energy_br.first - p.gammaParticleEnergy()) < 1.0E-6 )
+        // We need to match the fit peak, to the source gamma/x-ray; to do this we'll
+        //  match in energy - we need the energy difference to be small enough to uniquely
+        //  match, but not too small so we hit rounding error, or wahtever.  1E-6 is too small
+        //  (we fail to match U-xrays), but 1E5 seems to work, but we dont know gamma energies
+        //  better than about 1E-3, so we'll just fo with 1E-4.
+        const double match_distance = 1.0E-4;
+         
+        if((p.parentNuclide() != src_nuc)
+           || (p.xrayElement() != src_ele)
+           || (p.reaction() != src_rct))
+        {
+          continue;
+        }
+         
+        if(fabs(energy_br.first - p.gammaParticleEnergy()) < match_distance)
           line.m_yield += live_time * energy_br.second;
       }
       
-      if( line.m_yield < std::numeric_limits<double>::epsilon() )
+      if(line.m_yield < std::numeric_limits<double>::epsilon())
       {
         cerr << "Warning: line at " << p.gammaParticleEnergy() << " for " << line.m_isotope << " has yeild=" << line.m_yield << endl;
       }
       
-      peak.m_source_gammas.push_back( line );
+      peak.m_source_gammas.push_back(line);
       
       const string src_name = RelActCalcAuto::to_name(peak_src);
-      const auto pos = relActsColors.find( src_name );
-      if( pos == std::end(relActsColors) )
+      const auto pos = relActsColors.find(src_name);
+      if(pos == std::end(relActsColors))
       {
         const string css_color = p.lineColor().isDefault() ? string() : p.lineColor().cssText();
         relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, css_color);
       }
         
-      peaks.push_back( peak );
-    }//for( const PeakDef &p : fit_peaks )
+      peaks.push_back(peak);
+    }//for(const PeakDef &p : fit_peaks)
     
     dataset.peaks = peaks;
     dataset.relActsColors = relActsColors;
@@ -225,44 +257,41 @@ void RelEffChart::setData( const std::vector<RelEffChart::ReCurveInfo> &infoSets
     datasets.push_back(dataset);
   }
   
-  setData(datasets);
-}
-
-// For backward compatibility
-void RelEffChart::setData( const RelEffChart::ReCurveInfo &info )
-{
-  std::vector<RelEffChart::ReCurveInfo> infoSets = {info};
-  setData(infoSets);
+  return jsonForData(datasets);
 }
 
 // Implementation of the setData method that handles multiple datasets
-void RelEffChart::setData( const std::vector<RelEffChartDataset> &datasets )
+void RelEffChart::setData(const std::vector<RelEffChartDataset> &datasets)
 {
-  char buffer[512] = { '\0' };
-  
-  assert( wApp );
-  WCssStyleSheet &style = wApp->styleSheet();
+  std::string jsonData = jsonForData(datasets);
+  sendDataToJavaScript(jsonData);
   
   // Handle CSS rules for all datasets
+  assert(wApp);
+  WCssStyleSheet &style = wApp->styleSheet();
+  
   set<string> nucs_with_colors;
-  for( const auto &dataset : datasets ) {
-    for( const auto &nuc_act_color : dataset.relActsColors )
+  for(const auto &dataset : datasets) {
+    for(const auto &nuc_act_color : dataset.relActsColors)
     {
       const string &nuc = nuc_act_color.first;
       const string &color = nuc_act_color.second.second;
       
-      if( nuc.empty() || color.empty() || nucs_with_colors.count(nuc) )
+      if(nuc.empty() || color.empty() || nucs_with_colors.count(nuc))
         continue;
       
       const string rulename = "#" + id() + " .RelEffPlot circle." + nuc;
-      if( m_cssRules.count(rulename) )
-        style.removeRule( m_cssRules[rulename] );
+      if(m_cssRules.count(rulename))
+        style.removeRule(m_cssRules[rulename]);
       
-      m_cssRules[rulename] = style.addRule( rulename, "fill: " + color + ";" );
-      nucs_with_colors.insert( nuc );
+      m_cssRules[rulename] = style.addRule(rulename, "fill: " + color + ";");
+      nucs_with_colors.insert(nuc);
     }
   }
-  
+}
+
+std::string RelEffChart::jsonForData(const std::vector<RelEffChartDataset> &datasets)
+{
   // Build the JSON array of dataset objects for JavaScript
   stringstream datasetsJson;
   datasetsJson << "[";
@@ -274,105 +303,120 @@ void RelEffChart::setData( const std::vector<RelEffChartDataset> &datasets )
       datasetsJson << ", ";
     }
     
-    // Start dataset object
-    datasetsJson << "{";
-    
-    // Add the data values JSON
-    stringstream rel_eff_plot_values;
-    size_t njson_entries = 0;
-    rel_eff_plot_values << "\"data_vals\": [";
-    for( size_t index = 0; index < dataset.peaks.size(); ++index )
-    {
-      const RelActCalcManual::GenericPeakInfo &peak = dataset.peaks[index];
-      
-      string isotopes_json;
-      double src_counts = 0.0;
-      for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
-      {
-        const auto pos = dataset.relActsColors.find( line.m_isotope );
-        if( pos == end(dataset.relActsColors) )
-        {
-          snprintf( buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G}",
-                   (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield );
-        }else
-        {
-          const double rel_act = pos->second.first;
-          src_counts += rel_act * line.m_yield;
-          snprintf( buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G}",
-                   (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act );
-        }
-        
-        isotopes_json += buffer;
-      }//for( const RelEff::GammaLineInfo &line : peak.m_source_gammas )
-      
-      const double eff = peak.m_counts / src_counts;
-      double eff_uncert = peak.m_counts_uncert / src_counts;
-      
-      if( IsNan(eff) || IsInf(eff) )
-      {
-        cerr << "RelEffChart::setData: Got invalid eff at " << peak.m_energy << ", peak.m_counts="
-             << peak.m_counts << ", src_counts=" << src_counts << endl;
-        
-        continue;
-      }
-      
-      if( IsNan(eff_uncert) || IsInf(eff_uncert) )
-      {
-        cerr << "RelEffChart::setData: Got invalid eff_uncert at " << peak.m_energy
-             << ", peak.m_counts=" << peak.m_counts_uncert << ", src_counts=" << src_counts << endl;
-        
-        eff_uncert = 0.0;
-      }
-      
-      snprintf( buffer, sizeof(buffer),
-               "%s{\"energy\": %.2f, \"mean\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
-               " \"eff\": %1.6g, \"eff_uncert\": %1.6g, \"nuc_info\": ",
-               (njson_entries ? ", " : ""), peak.m_energy, peak.m_mean, peak.m_counts, peak.m_counts_uncert,
-               eff, eff_uncert );
-      
-      rel_eff_plot_values << buffer;
-      rel_eff_plot_values << "[" << isotopes_json.c_str() << "]}";
-  
-      njson_entries += 1;
-    }//for( size_t index = 0; index < input_peaks.size(); ++index )
-    
-    rel_eff_plot_values << "]";
-    
-    // Add data_vals to the dataset
-    if( njson_entries < 1 )
-      datasetsJson << "\"data_vals\": null";
-    else
-      datasetsJson << rel_eff_plot_values.str();
-    
-    // Add fit_eqn to the dataset
-    datasetsJson << ", \"fit_eqn\": " << (dataset.relEffEqn.empty() ? "null" : dataset.relEffEqn);
-    
-    // Add chi2_txt to the dataset
-    datasetsJson << ", \"chi2_txt\": " << (dataset.chi2_title_str.empty() ? "null" : dataset.chi2_title_str.jsStringLiteral());
-    
-    // Add fit_uncert_fcn to the dataset
-    datasetsJson << ", \"fit_uncert_fcn\": " << (dataset.relEffEqnUncert.empty() ? "null" : dataset.relEffEqnUncert);
-    
-    // Close dataset object
-    datasetsJson << "}";
+    datasetsJson << jsonForDataset(dataset, datasetIndex == 0);
   }
   
   datasetsJson << "]";
   
-  const string js = m_jsgraph + ".setRelEffData(" + datasetsJson.str() + ");";
+  return datasetsJson.str();
+}
+
+std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool isFirstDataset)
+{
+  char buffer[512] = { '\0' };
   
-  if( isRendered() )
-    doJavaScript( js );
+  // Start dataset object
+  stringstream datasetJson;
+  datasetJson << "{";
+  
+  // Add the data values JSON
+  stringstream rel_eff_plot_values;
+  size_t njson_entries = 0;
+  rel_eff_plot_values << "\"data_vals\": [";
+  for(size_t index = 0; index < dataset.peaks.size(); ++index)
+  {
+    const RelActCalcManual::GenericPeakInfo &peak = dataset.peaks[index];
+    
+    string isotopes_json;
+    double src_counts = 0.0;
+    for(const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas)
+    {
+      const auto pos = dataset.relActsColors.find(line.m_isotope);
+      if(pos == end(dataset.relActsColors))
+      {
+        snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G}",
+                (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield);
+      }else
+      {
+        const double rel_act = pos->second.first;
+        src_counts += rel_act * line.m_yield;
+        snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G}",
+                (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act);
+      }
+      
+      isotopes_json += buffer;
+    }//for(const RelEff::GammaLineInfo &line : peak.m_source_gammas)
+    
+    const double eff = peak.m_counts / src_counts;
+    double eff_uncert = peak.m_counts_uncert / src_counts;
+    
+    if(IsNan(eff) || IsInf(eff))
+    {
+      cerr << "RelEffChart::jsonForDataset: Got invalid eff at " << peak.m_energy << ", peak.m_counts="
+          << peak.m_counts << ", src_counts=" << src_counts << endl;
+      
+      continue;
+    }
+    
+    if(IsNan(eff_uncert) || IsInf(eff_uncert))
+    {
+      cerr << "RelEffChart::jsonForDataset: Got invalid eff_uncert at " << peak.m_energy
+          << ", peak.m_counts=" << peak.m_counts_uncert << ", src_counts=" << src_counts << endl;
+      
+      eff_uncert = 0.0;
+    }
+    
+    snprintf(buffer, sizeof(buffer),
+            "%s{\"energy\": %.2f, \"mean\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
+            " \"eff\": %1.6g, \"eff_uncert\": %1.6g, \"nuc_info\": ",
+            (njson_entries ? ", " : ""), peak.m_energy, peak.m_mean, peak.m_counts, peak.m_counts_uncert,
+            eff, eff_uncert);
+    
+    rel_eff_plot_values << buffer;
+    rel_eff_plot_values << "[" << isotopes_json.c_str() << "]}";
+
+    njson_entries += 1;
+  }//for(size_t index = 0; index < input_peaks.size(); ++index)
+  
+  rel_eff_plot_values << "]";
+  
+  // Add data_vals to the dataset
+  if(njson_entries < 1)
+    datasetJson << "\"data_vals\": null";
   else
-    m_pendingJs.push_back( js );
+    datasetJson << rel_eff_plot_values.str();
+  
+  // Add fit_eqn to the dataset
+  datasetJson << ", \"fit_eqn\": " << (dataset.relEffEqn.empty() ? "null" : dataset.relEffEqn);
+  
+  // Add chi2_txt to the dataset
+  datasetJson << ", \"chi2_txt\": " << (dataset.chi2_title_str.empty() ? "null" : dataset.chi2_title_str.jsStringLiteral());
+  
+  // Add fit_uncert_fcn to the dataset
+  datasetJson << ", \"fit_uncert_fcn\": " << (dataset.relEffEqnUncert.empty() ? "null" : dataset.relEffEqnUncert);
+  
+  // Close dataset object
+  datasetJson << "}";
+  
+  return datasetJson.str();
+}
+
+void RelEffChart::sendDataToJavaScript(const std::string &jsonData)
+{
+  const string js = m_jsgraph + ".setRelEffData(" + jsonData + ");";
+  
+  if(isRendered())
+    doJavaScript(js);
+  else
+    m_pendingJs.push_back(js);
 }
 
 // Backwards compatibility method
-void RelEffChart::setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
+void RelEffChart::setData(const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
                           const map<string,pair<double,string>> &relActsColors,
                           string relEffEqn,
                           const Wt::WString &chi2_title_str,
-                          const string &relEffEqnUncert )
+                          const string &relEffEqnUncert)
 {
   RelEffChartDataset dataset;
   dataset.peaks = peaks;

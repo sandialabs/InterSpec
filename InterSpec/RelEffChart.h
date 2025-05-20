@@ -49,6 +49,9 @@ public:
                const Wt::WString &chi2_title_str,
                const std::string &jsRelEffEqnUncert );
   
+  /** Generate JSON from ReCurveInfo objects */
+  static std::string jsonForData(const std::vector<ReCurveInfo> &infoSets);
+  
   void setLineColor( const Wt::WColor &color );
   void setTextColor( const Wt::WColor &color );
   void setAxisLineColor( const Wt::WColor &color );
@@ -80,8 +83,17 @@ private:
     std::string relEffEqnUncert;
   };
   
+  /** Generate JSON for multiple datasets */
+  static std::string jsonForData(const std::vector<RelEffChartDataset> &datasets);
+  
+  /** Generate JSON for a single dataset */
+  static std::string jsonForDataset(const RelEffChartDataset &dataset, bool isFirstDataset);
+  
+  /** Send JavaScript to set the datasets data */
+  void sendDataToJavaScript(const std::string &jsonData);
+  
   /** Private implementation for multiple datasets */
-  void setData( const std::vector<RelEffChartDataset> &datasets );
+  void setData(const std::vector<RelEffChartDataset> &datasets);
   
   /** The javascript variable name used to refer to the RelEffChart object.
    Currently is `jsRef() + ".chart"`.
