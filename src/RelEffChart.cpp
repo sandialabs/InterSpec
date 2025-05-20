@@ -115,6 +115,9 @@ void RelEffChart::defineJavaScript()
   
   callJavaScriptMember( "resizeObserver.observe", jsRef() );
   
+  // Set dataset colors after chart is initialized
+  setRelEffCurveColors();
+  
   for( const string &js : m_pendingJs )
     doJavaScript( js );
   m_pendingJs.clear();
@@ -266,15 +269,25 @@ void RelEffChart::setData(const std::vector<RelEffChartDataset> &datasets)
   std::string jsonData = jsonForData(datasets);
   sendDataToJavaScript(jsonData);
   
-  // Handle CSS rules for all datasets
+  // Previous to 20250520, we used to use CSS to color data markers.
+  //  Then we switched to just doing it in the JSON/JS directly, to make it
+  //  easier to keep things in sync acros doing HTML reports and within interactive
+  //  InterSpec - leaving the code in, but commented out for for the moment incase we
+  //  want to go back
+  /*
   assert(wApp);
   WCssStyleSheet &style = wApp->styleSheet();
   
   set<string> nucs_with_colors;
-  for(const auto &dataset : datasets) {
+  for( size_t i = 0; i < datasets.size(); ++i )
+  {
+    const auto &dataset = datasets[i];
+    
     for(const auto &nuc_act_color : dataset.relActsColors)
     {
-      const string &nuc = nuc_act_color.first;
+      string nuc = nuc_act_color.first;
+      
+      
       const string &color = nuc_act_color.second.second;
       
       if(nuc.empty() || color.empty() || nucs_with_colors.count(nuc))
@@ -288,6 +301,7 @@ void RelEffChart::setData(const std::vector<RelEffChartDataset> &datasets)
       nucs_with_colors.insert(nuc);
     }
   }
+  */
 }
 
 std::string RelEffChart::jsonForData(const std::vector<RelEffChartDataset> &datasets)
@@ -340,8 +354,8 @@ std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool 
       {
         const double rel_act = pos->second.first;
         src_counts += rel_act * line.m_yield;
-        snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G}",
-                (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act);
+        snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G, \"color\": \"%s\"}",
+                 (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act, pos->second.second.c_str() );
       }
       
       isotopes_json += buffer;
@@ -463,6 +477,9 @@ void RelEffChart::setCssRules()
   setChartBackgroundColor( theme->spectrumChartBackground );
   setAxisLineColor( theme->spectrumAxisLines );
   setTextColor( theme->spectrumChartText );
+  
+  // Update dataset colors when theme changes
+  setRelEffCurveColors();
 }//void setCssRules()
 
 
@@ -618,5 +635,55 @@ RelEffChart::~RelEffChart()
     m_cssRules.clear();
   }//if( app )
 }//~RelEffChart()
+
+void RelEffChart::setRelEffCurveColors()
+{
+  InterSpec *interspec = InterSpec::instance();
+  if(!interspec)
+    return;
+    
+  std::shared_ptr<const ColorTheme> theme = interspec->getColorTheme();
+  if(!theme)
+    return;
+    
+  // Get colors from theme
+  WColor foregroundColor = theme->foregroundLine;
+  WColor backgroundColor = theme->backgroundLine;
+  WColor secondaryColor = theme->secondaryLine;
+  
+  // Convert to javascript array of colors
+  std::vector<std::string> colors;
+  
+  // Add colors to array if not default
+  if(!foregroundColor.isDefault())
+    colors.push_back(foregroundColor.cssText());
+      
+  if(!secondaryColor.isDefault())
+    colors.push_back(secondaryColor.cssText());
+    
+  if(!backgroundColor.isDefault())
+    colors.push_back(backgroundColor.cssText());
+  
+  if(colors.empty())
+    return;
+    
+  // Build JSON array of colors
+  std::stringstream colorsJson;
+  colorsJson << "[";
+  for(size_t i = 0; i < colors.size(); ++i) {
+    if(i > 0)
+      colorsJson << ", ";
+    colorsJson << "\"" << colors[i] << "\"";
+  }
+  colorsJson << "]";
+  
+  // Send to JavaScript
+  const string js = m_jsgraph + ".setRelEffCurveColors(" + colorsJson.str() + ");";
+  
+  if(isRendered())
+    doJavaScript(js);
+  else
+    m_pendingJs.push_back(js);
+}//void RelEffChart::setRelEffCurveColors()
 
 

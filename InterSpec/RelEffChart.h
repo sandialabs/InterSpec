@@ -58,6 +58,9 @@ public:
   void setChartBackgroundColor( const Wt::WColor &color );
   void setDefaultMarkerColor( const Wt::WColor &color );
   
+  /** Set custom colors for datasets based on ColorTheme */
+  void setRelEffCurveColors();
+  
   void setXAxisTitle( const std::string &title );
   void setYAxisTitle( const std::string &title );
   

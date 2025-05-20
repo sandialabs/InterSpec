@@ -19,6 +19,8 @@ RelEffPlot = function (elem,options) {
   if( (typeof this.options.yAxisTitle !== "string") || (this.options.yAxisTitle.length === 0) )
     this.options.yAxisTitle = null;
       
+  // Initialize custom colors with defaults
+  this.customColors = ["#cfced2", "#a9ebdd", "#fd8273"];
       
   // Set the dimensions of the canvas / graph
   const parentWidth = this.chart.clientWidth;
@@ -482,7 +484,31 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         const val = self.yScale(d.eff - d.eff_uncert);
         return isNaN(val) ? 0 : val;
       })
-      .style("stroke", self.getDatasetColor(datasetIndex));
+      .style("stroke", function(d) {
+        // Check if there's a dominant nuclide with color
+        if (d.nuc_info && d.nuc_info.length > 0) {
+          let max_contrib = 0, dominant_color = null;
+          let sum_contrib = 0;
+          
+          for (const el of d.nuc_info) {
+            const contrib = el.rel_act * el.br;
+            sum_contrib += contrib;
+            if (contrib > max_contrib) {
+              max_contrib = contrib;
+              dominant_color = el.color;
+            }
+          }
+          
+          // Use the dominant nuclide's color if it's valid and contributes >50%
+          if (dominant_color && typeof dominant_color === 'string' && 
+              dominant_color.length > 0 && (max_contrib > 0.5 * sum_contrib)) {
+            return dominant_color;
+          }
+        }
+        
+        // Fall back to dataset color if no valid color from nuc_info
+        return self.getDatasetColor(datasetIndex);
+      });
     
     // Add the data points
     self.chartArea
@@ -506,13 +532,14 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
 
         //Return the dominant nuclide, if no nuclide is over 50%, we'll use "multiiso"
         //  TODO: use a gradient to indicate relative components
-        let max_contrib = 0, sum_contrib = 0, max_nuc = null;
+        let max_contrib = 0, sum_contrib = 0, max_nuc = null, dominant_color = null;
         for (const el of d.nuc_info) {
           const contrib = el.rel_act * el.br;
           sum_contrib += contrib;
           if (contrib > max_contrib) {
             max_contrib = contrib;
             max_nuc = el.nuc;
+            dominant_color = el.color; // Get color from dominant nuclide
           }
         }
         
@@ -531,7 +558,31 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         
         return baseClass + "multiiso";
       })
-      .style("fill", self.getDatasetColor(datasetIndex))
+      .style("fill", function(d) {
+        // Check if there's a dominant nuclide with color
+        if (d.nuc_info && d.nuc_info.length > 0) {
+          let max_contrib = 0, dominant_color = null;
+          let sum_contrib = 0;
+          
+          for (const el of d.nuc_info) {
+            const contrib = el.rel_act * el.br;
+            sum_contrib += contrib;
+            if (contrib > max_contrib) {
+              max_contrib = contrib;
+              dominant_color = el.color;
+            }
+          }
+          
+          // Use the dominant nuclide's color if it's valid and contributes >50%
+          if (dominant_color && typeof dominant_color === 'string' && 
+              dominant_color.length > 0 && (max_contrib > 0.5 * sum_contrib)) {
+            return dominant_color;
+          }
+        }
+        
+        // Fall back to dataset color if no valid color from nuc_info
+        return self.getDatasetColor(datasetIndex);
+      })
       .on("mouseover", function (d, i) {
         self.tooltip.transition()
           .duration(200)
@@ -587,9 +638,30 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
 
 // Helper function to get colors for different datasets
 RelEffPlot.prototype.getDatasetColor = function (index, alpha) {
-  // Default color palette
+  // If custom colors are provided for the first three datasets, use them
+  if (index < this.customColors.length && this.customColors[index]) {
+    const color = this.customColors[index];
+    
+    // If alpha is provided, return color with transparency
+    if (alpha !== undefined) {
+      // Handle both rgb and hex formats
+      if (color.startsWith("rgb")) {
+        const rgb = color.match(/\d+/g);
+        return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+      } else {
+        // Convert hex to rgb
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+    }
+    
+    return color;
+  }
+  
+  // Default color palette for additional datasets
   const colors = [
-    "rgb(31, 119, 180)",  // blue
     "rgb(255, 127, 14)",  // orange
     "rgb(44, 160, 44)",   // green
     "rgb(214, 39, 40)",   // red
@@ -602,7 +674,9 @@ RelEffPlot.prototype.getDatasetColor = function (index, alpha) {
   ];
   
   // Use modulo to cycle through colors if we have more datasets than colors
-  const color = colors[index % colors.length];
+  // Adjust index to start from 0 for our fallback colors
+  const adjustedIndex = index - this.customColors.length;
+  const color = colors[adjustedIndex % colors.length];
   
   // If alpha is provided, return color with transparency
   if (alpha !== undefined) {
@@ -612,6 +686,23 @@ RelEffPlot.prototype.getDatasetColor = function (index, alpha) {
   }
   
   return color;
+};
+
+// Function to set custom colors from C++
+RelEffPlot.prototype.setRelEffCurveColors = function (colors) {
+  if (Array.isArray(colors) && colors.length > 0) {
+    // Replace the first N colors where N is the minimum of colors.length and this.customColors.length
+    for (let i = 0; i < Math.min(colors.length, this.customColors.length); i++) {
+      if (colors[i] && typeof colors[i] === 'string') {
+        this.customColors[i] = colors[i];
+      }
+    }
+  }
+  
+  // If we have active datasets, redraw the chart to apply new colors
+  if (this.datasets) {
+    this.setRelEffData(this.datasets);
+  }
 };
 
 RelEffPlot.prototype.handleResize = function () {

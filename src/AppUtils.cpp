@@ -199,6 +199,34 @@ namespace AppUtils
   }//vector<pair<string,string>> query_key_values( const string &query );
    */
   
+  /** Sanatizes a string so it can be a CSS class name. */
+  /*
+  string sanitize_css_class_name( const string &src_name )
+  {
+    //We need to sanitize the name, so it will be a valid CSS class name
+    auto valid_css_char = []( char c ) -> bool {
+      return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+      || (c >= '0' && c <= '9') || (c == '_') || (c == '-');
+    };
+    
+    string sanitized_name;
+    sanitized_name.reserve( src_name.length() );
+    for( const char c : src_name )
+    {
+      if( valid_css_char(c) )
+        sanitized_name.push_back(c);
+    }
+    
+    if( sanitized_name.empty() )
+      return sanitized_name;
+    
+    unsigned char first_char = static_cast<unsigned char>(sanitized_name.front());
+    if( std::isdigit(first_char) || first_char == '-' )
+      sanitized_name.insert(0, "nuc-"); // prepend
+    
+    return sanitized_name;
+  }//string sanitize_css_class_name( const string &src_name )
+   */
   
 #if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
 #if defined(__APPLE__) || defined(unix) || defined(__unix) || defined(__unix__)

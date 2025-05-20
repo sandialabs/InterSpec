@@ -4106,8 +4106,16 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   << "</div>\n";
   
   
-  //Write out the data JSON
-  stringstream rel_eff_plot_values, add_rel_eff_plot_css;
+  //Write out the data JSON and CSS data
+  stringstream rel_eff_plot_values;
+  
+  // Previous to 20250520, we used to use CSS to color data markers.
+  //  Then we switched to just doing it in the JSON/JS directly, to make it
+  //  easier to keep things in sync acros doing HTML reports and within interactive
+  //  InterSpec - leaving the code in, but commented out for for the moment incase we
+  //  want to go back
+  //stringstream add_rel_eff_plot_css;
+  
   rel_eff_plot_values << "[";
   for( size_t index = 0; index < m_input.peaks.size(); ++index )
   {
@@ -4155,8 +4163,8 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     const SandiaDecay::Nuclide * const nuc = p ? p->parentNuclide() : nullptr;
     if( nuc && !nuclides_with_colors.count(nuc) && !p->lineColor().isDefault() )
     {
-      add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol
-                           << "{ fill: " << p->lineColor().cssText() << "; }\n";
+      //add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol
+      //                     << "{ fill: " << p->lineColor().cssText() << "; }\n";
       nuclides_with_colors.insert( nuc );
     }
   }//for( const shared_ptr<const PeakDef> &p : display_peaks )
@@ -4175,9 +4183,9 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       for( size_t i = 0; i < nucstr.size(); ++i )
         nucstr[i] = std::isalpha( static_cast<unsigned char>(nucstr[i]) ) ? nucstr[i] : '_';
       
-      add_rel_eff_plot_css << "        .RelEffPlot circle." << nucstr << "{ fill: "
-      << default_nuc_colors[unseen_nuc_index % default_nuc_colors.size()]
-      << "; }\n";
+      //add_rel_eff_plot_css << "        .RelEffPlot circle." << nucstr << "{ fill: "
+      //<< default_nuc_colors[unseen_nuc_index % default_nuc_colors.size()]
+      //<< "; }\n";
       
       unseen_nuc_index += 1;
     }
@@ -4241,7 +4249,8 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   const string rel_eff_plot_css = load_file_contents( "RelEffPlot.css" );
   SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_JS}", rel_eff_plot_js.c_str() );
   SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_CSS}", rel_eff_plot_css.c_str() );
-  SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", add_rel_eff_plot_css.str().c_str() );
+  //SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", add_rel_eff_plot_css.str().c_str() );
+  SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", "" );
   
   
   if( spectrum )

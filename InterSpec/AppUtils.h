@@ -67,6 +67,8 @@ namespace AppUtils
   /** Similar to #query_str_key_values, but keeps key-value pairs in original order, allows duplicates, and empty values. */
   // std::vector<std::pair<std::string,std::string>> query_key_values( const std::string &query );
   
+  /** Sanatizes a string so it can be a CSS class name. */
+  //std::string sanitize_css_class_name( const std::string &src_name );
   
 #if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
   /** Returns the terminal character width */

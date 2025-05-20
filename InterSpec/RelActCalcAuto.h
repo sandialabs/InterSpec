@@ -743,12 +743,6 @@ struct RelActAutoSolution
   
   void print_html_report( std::ostream &strm ) const;
   
-  /** Prints out the JSON data the JS the RelEff chart accepts.
-   
-   Note: currently this code largely duplicates #RelEffChart::setData, so need to refactor.
-   */
-  void rel_eff_json_data( std::ostream &json, std::ostream &css, const size_t rel_eff_index ) const;
-  
   /** Prints the txt version of relative eff eqn. */
   std::string rel_eff_txt( const bool html_format, const size_t rel_eff_index ) const;
   
