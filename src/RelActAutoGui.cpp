@@ -329,8 +329,8 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     {
       if( !viewer->isPhone() )
       {
-        // A size of 1050px by 555px is about the smallest that renders everything nicely.
-        if( (windowWidth > (1050.0/0.8)) && (windowHeight > (555.0/0.8)) )
+        // A size of 1050px by 650px is about the smallest that renders everything okay-ish.
+        if( (windowWidth > (1050.0/0.8)) && (windowHeight > (650.0/0.8)) )
         {
           windowWidth = 0.8*windowWidth;
           windowHeight = 0.8*windowHeight;
@@ -338,7 +338,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
         }else
         {
           windowWidth = 0.9*windowWidth;
-          windowHeight = 0.9*windowHeight;
+          windowHeight = 0.99*windowHeight;
           window->resizeWindow( windowWidth, windowHeight );
         }
       }//if( !viewer->isPhone() )
@@ -4512,29 +4512,31 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     chi2_title.arg( "" );
   }
 
-  string rel_eff_eqn_txt;
-  try
-  {
-    rel_eff_eqn_txt = "y = " + answer->rel_eff_txt( false, 0);
-  }catch( std::exception & )
-  {
-    // Oh well
-    assert( 0 );
-  }
 
   assert( answer->m_fit_peaks_for_each_curve.size() == answer->m_rel_activities.size() );
   
-  const string rel_eff_eqn_js = answer->rel_eff_eqn_js_function(0);
+  vector<RelEffChart::ReCurveInfo> info_sets;
+  for( size_t i = 0; i < answer->m_rel_activities.size(); ++i )
+  {
+    RelEffChart::ReCurveInfo info;
+    info.live_time = live_time;
+    info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
+    info.rel_acts = answer->m_rel_activities[i];
+    info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
+    info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves[i].name );
+
+    try
+    { 
+      info.re_curve_eqn_txt = "y = " + answer->rel_eff_txt( false, i ); 
+    }catch( std::exception & ) 
+    { 
+      assert( 0 ); 
+    }
+    
+    info_sets.push_back( info );
+  }//for( size_t i = 0; i < answer->m_rel_activities.size(); ++i )
   
-  RelEffChart::ReCurveInfo info;
-  info.live_time = live_time;
-  info.fit_peaks = answer->m_fit_peaks_for_each_curve.back();
-  info.rel_acts = answer->m_rel_activities.back();
-  info.js_rel_eff_eqn = rel_eff_eqn_js;
-  info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves.back().name );
-  info.re_curve_eqn_txt = rel_eff_eqn_txt;
-  
-  m_rel_eff_chart->setData( info );
+  m_rel_eff_chart->setData( info_sets );
 
   m_fit_chi2_msg->setText( chi2_title );
   m_fit_chi2_msg->show();
@@ -4677,7 +4679,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   setOptionsForValidSolution();
   
-
+  
   for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
   {
     if( rel_eff_index >= m_solution->m_options.rel_eff_curves.size() )
@@ -4685,7 +4687,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       continue; // solution didnt have any rel eff curves... which probably shouldnt happen.
     }
 
-    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( rel_eff_index );
+    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( static_cast<int>(rel_eff_index) );
     assert( opts ); //shouldnt happen, we adjusted the number of rel eff curve options above
     if( !opts )
       throw std::runtime_error( "Failed to get RelActAutoGuiRelEffOptions" );

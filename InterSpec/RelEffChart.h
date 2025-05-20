@@ -39,6 +39,9 @@ public:
   /** Set data from an "auto" relative efficiency fit. */
   void setData( const ReCurveInfo &info );
   
+  /** Set data from multiple "auto" relative efficiency fits. */
+  void setData( const std::vector<ReCurveInfo> &infoSets );
+  
   /** Set data from an "manual" relative efficiency fit. */
   void setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
                const std::map<std::string,std::pair<double,std::string>> &relActsColors,
@@ -65,6 +68,20 @@ protected:
   void setCssRules();
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+  
+private:
+  /** Helper struct for dataset information */
+  struct RelEffChartDataset
+  {
+    std::vector<RelActCalcManual::GenericPeakInfo> peaks;
+    std::map<std::string, std::pair<double, std::string>> relActsColors;
+    std::string relEffEqn;
+    Wt::WString chi2_title_str;
+    std::string relEffEqnUncert;
+  };
+  
+  /** Private implementation for multiple datasets */
+  void setData( const std::vector<RelEffChartDataset> &datasets );
   
   /** The javascript variable name used to refer to the RelEffChart object.
    Currently is `jsRef() + ".chart"`.

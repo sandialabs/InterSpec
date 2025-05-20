@@ -175,103 +175,201 @@ RelEffPlot.prototype.setYAxisTitle = function( title, dontCallResize ){
 
 /** Sets the data that will be plotted.
  
- @param data_vals Data values to plot as markers, of the form [{ "energy": 79.84, "mean": 79.84, "counts": 4.522705, "counts_uncert": 0, "eff": 0.0880221, "eff_uncert": 0, "nuc_info": [{"nuc": "U238", "br": 0.0016335, "rel_act": 31454.9 },{...}]}, {...}]
- @param fit_eqn A function that dakes a number as an argument (the x-valu in the plot), and returns a y-value; this function is used to draw the solid line on the chart.
- @param chi2_txt A string that gets displayed on the chart.
- @param fit_uncert_fcn Function that gives the uncertainty on the solid line
+ @param datasets An array of datasets, each of which is an object with the following properties:
+   - data_vals: An array of data points, each of which is an object with properties "energy", "mean", "counts", "counts_uncert", "eff", "eff_uncert", and "nuc_info".
+   - fit_eqn: A function that takes a number as an argument (the x-value in the plot) and returns a y-value.
+   - chi2_txt: A string that gets displayed on the chart.
+   - fit_uncert_fcn: A function that gives the uncertainty on the solid line.
  
  */
-RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit_uncert_fcn) {
+RelEffPlot.prototype.setRelEffData = function (datasets) {
   const self = this;
 
-  if( !Array.isArray(data_vals) || (data_vals.length === 0) )
-    data_vals = null;
+  // If not an array of dataset objects, convert to array format for backward compatibility
+  if (!Array.isArray(datasets) || datasets.length === 0 || 
+      (datasets.length > 0 && (!datasets[0].hasOwnProperty('data_vals') && !datasets[0].hasOwnProperty('fit_eqn')))) {
+    // Handle backward compatibility - convert single dataset to array of datasets
+    if (arguments.length >= 2) {
+      const data_vals = arguments[0];
+      const fit_eqn = arguments[1];
+      const chi2_txt = arguments[2];
+      const fit_uncert_fcn = arguments[3];
+      
+      datasets = [{ data_vals, fit_eqn, chi2_txt, fit_uncert_fcn }];
+    } else {
+      datasets = [];
+    }
+  }
+
+  // Store the datasets
+  this.datasets = datasets;
+
+  // Extract chi2_txt values from all datasets into an array
+  this.chi2TxtArray = datasets.map(dataset => 
+    (typeof dataset.chi2_txt === "string" && dataset.chi2_txt.length > 0) ? dataset.chi2_txt : null
+  ).filter(txt => txt !== null);
   
-  this.chi2Txt = chi2_txt;
-  if( (typeof this.chi2Txt !== "string") || (this.chi2Txt.length === 0) )
-    this.chi2Txt = null;
-    
+  // For backward compatibility
+  this.chi2Txt = this.chi2TxtArray.length > 0 ? this.chi2TxtArray[0] : null;
+
   const parentWidth = this.chart.clientWidth;
   const parentHeight = this.chart.clientHeight;
-    
+
   const titlePad = this.options.titleToAxisPadding;
   const xaxistitleBB = this.xaxistitle ? this.xaxistitle.node().getBBox() : null;
   const xtitleh = xaxistitleBB ? xaxistitleBB.height + titlePad : 0;
-    
+
   const yaxistitleBB = this.yaxistitle ? this.yaxistitle.node().getBBox() : null;
   const ytitleh = yaxistitleBB ? yaxistitleBB.height + titlePad : 0;
-  
-  if( this.chi2Txt )
-  {
-    if( !this.chartInfoTitle ){
-      this.chartInfoTitle = this.svg.append("text")
-        .attr("class", "ChartInfoTitle")
-        .attr("y",0)                    // right at the top
-        .style("text-anchor", "end")     // Align text to the end (right)
-        .attr("dominant-baseline", "hanging") // Align text to the top of the text box
-        ;
-    }
-    
-    this.chartInfoTitle.attr("x", parentWidth - 10)
-      .text(this.chi2Txt);
-  }else if( this.chartInfoTitle )
-  {
-    this.chartInfoTitle.remove();
-    this.chartInfoTitle = null;
+
+  // Remove any existing chart info titles
+  if (this.chartInfoTitles) {
+    this.chartInfoTitles.forEach(title => {
+      if (title) title.remove();
+    });
   }
-  const chi2_txt_pad = this.chartInfoTitle ? 0.5*this.chartInfoTitle.node().getBBox().height : 0;
+  
+  // Initialize array for chart titles
+  this.chartInfoTitles = [];
+  let chi2_txt_height = 0;
+  
+  // Create and position text elements if we have any chi2_txt values
+  if (this.chi2TxtArray.length > 0) {
+    // First create temporary text elements to measure their widths
+    const tempTexts = this.chi2TxtArray.map(txt => {
+      return this.svg.append("text")
+        .attr("class", "ChartInfoTitle temp")
+        .text(txt)
+        .style("visibility", "hidden"); // Hide it while measuring
+    });
     
+    // Measure all text elements to find the longest one
+    const textWidths = tempTexts.map(txt => txt.node().getBBox().width);
+    const maxTextWidth = Math.max(...textWidths) + 20; // Add 20px padding
+    
+    // Remove temporary elements
+    tempTexts.forEach(txt => txt.remove());
+    
+    // Calculate starting position for the x-coordinate of all texts
+    const startX = parentWidth - maxTextWidth;
+    
+    // Create the actual text elements stacked vertically
+    let currentY = 0;
+    this.chi2TxtArray.forEach((txt, index) => {
+      const textElem = this.svg.append("text")
+        .attr("class", "ChartInfoTitle dataset-" + index)
+        .attr("y", currentY)
+        .attr("x", startX)
+        .style("text-anchor", "start")  // Align text to start for consistent left edge
+        .attr("dominant-baseline", "hanging") // Align text to the top of the text box
+        .text(txt)
+        .style("fill", this.getDatasetColor(index));
+      
+      this.chartInfoTitles.push(textElem);
+      
+      // Update Y position for next text element
+      const textHeight = textElem.node().getBBox().height;
+      currentY += textHeight + 2; // Add small spacing between lines
+      
+      // Track total height for layout calculations
+      chi2_txt_height = currentY;
+    });
+  }
+  
+  // Use half the height for padding if there are any titles
+  const chi2_txt_pad = chi2_txt_height > 0 ? chi2_txt_height + 5 : 0;
+
   // We will perform an initial estimate of the chart are - using the axis we have.
   //  Later on we will put current values into the axis, and then get the size, and
   //  update things
   let xticks = this.chartArea.selectAll('.xAxis');
-  let xtickh = xticks.empty() ? 24.5 : d3.max(xticks[0], function(t){ return d3.select(t).node().getBBox().height; });
-    
+  let xtickh = xticks.empty() ? 24.5 : d3.max(xticks[0], function (t) { return d3.select(t).node().getBBox().height; });
+
   let yticks = this.chartArea.selectAll('.yAxis');
-  let ytickw = yticks.empty() ? 37 : Math.max( 37, d3.max(yticks[0], function(t){ return d3.select(t).node().getBBox().width; }) ); //If we have no labels, we'll get like 7 px, so will require at least 37 px, which is the nominal value we should get
-    
+  let ytickw = yticks.empty() ? 37 : Math.max(37, d3.max(yticks[0], function (t) { return d3.select(t).node().getBBox().width; })); //If we have no labels, we'll get like 7 px, so will require at least 37 px, which is the nominal value we should get
+
   let chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right - ytitleh - ytickw;
   let chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom - xtitleh - xtickh - chi2_txt_pad;
 
-  this.data_vals = data_vals;
-  this.fit_eqn = fit_eqn;
-  this.fit_uncert_fcn = fit_uncert_fcn;
   const num_eqn_points = chartAreaWidth / 4;
 
-  // Scale the range of the data
-  let min_x = data_vals ? d3.min(data_vals, function (d) { return d.energy; }) : 0;
-  let max_x = data_vals ? d3.max(data_vals, function (d) { return d.energy; }) : 3000;
+  // Find min/max values across all datasets
+  let min_x = Number.MAX_VALUE;
+  let max_x = Number.MIN_VALUE;
+  let min_y = Number.MAX_VALUE;
+  let max_y = Number.MIN_VALUE;
+  
+  // We'll collect all fit equation points here
+  let all_fit_eqn_points = [];
+
+  // Process all datasets to find limits and collect fit data
+  datasets.forEach(function(dataset) {
+    const data_vals = dataset.data_vals;
+    const fit_eqn = dataset.fit_eqn;
+    const fit_uncert_fcn = dataset.fit_uncert_fcn;
+    
+    if (data_vals && data_vals.length > 0) {
+      min_x = Math.min(min_x, d3.min(data_vals, function (d) { return d.energy; }));
+      max_x = Math.max(max_x, d3.max(data_vals, function (d) { return d.energy; }));
+      min_y = Math.min(min_y, d3.min(data_vals, function (d) { return d.eff; }));
+      max_y = Math.max(max_y, d3.max(data_vals, function (d) { return d.eff; }));
+    }
+    
+    // Prepare fit equation points if available
+    if (fit_eqn) {
+      let fit_eqn_points = [];
+      
+      // We'll compute these later when we have the final min/max x values
+      dataset.fit_eqn_points = []; // Store to use later
+      all_fit_eqn_points.push({
+        fit_eqn: fit_eqn,
+        fit_uncert_fcn: fit_uncert_fcn,
+        points: dataset.fit_eqn_points // Reference to array we'll fill later
+      });
+    }
+  });
+  
+  // Handle edge case of no data
+  if (min_x === Number.MAX_VALUE) min_x = 0;
+  if (max_x === Number.MIN_VALUE) max_x = 3000;
+  if (min_y === Number.MAX_VALUE) min_y = 0;
+  if (max_y === Number.MIN_VALUE) max_y = 1;
+
+  // Compute padding for axes
   const initial_x_range = max_x - min_x;
     
-  let lower_padding = 0.025*initial_x_range;
-  if( Math.abs(initial_x_range) < 1.0 )
+  let lower_padding = 0.025 * initial_x_range;
+  if (Math.abs(initial_x_range) < 1.0) {
     lower_padding = 1.0;
-  else if( ((min_x - lower_padding) < 50.0) || (lower_padding > 0.2*min_x) )
+  } else if (((min_x - lower_padding) < 50.0) || (lower_padding > 0.2 * min_x)) {
     lower_padding = 0.2 * min_x;
-    
-  if( data_vals ){
-    min_x -= lower_padding;
-    max_x += 0.025 * initial_x_range;
   }
-
-  let min_y = data_vals ? d3.min(data_vals, function (d) { return d.eff; }) : 0;
-  let max_y = data_vals ? d3.max(data_vals, function (d) { return d.eff; }) : 1;
     
-  let fit_eqn_points = [];
-  if( fit_eqn ){
+  min_x -= lower_padding;
+  max_x += 0.025 * initial_x_range;
+
+  const initial_y_range = max_y - min_y;
+  min_y -= 0.1 * initial_y_range;
+  max_y += 0.2 * initial_y_range;
+
+  // Now compute all fit equation points using final min/max x values
+  all_fit_eqn_points.forEach(function(fit_data) {
     for (let i = 0; i < num_eqn_points; ++i) {
       const ene = min_x + i * (max_x - min_x) / num_eqn_points;
-      fit_eqn_points.push({ energy: ene, eff: fit_eqn(ene), eff_uncert: (fit_uncert_fcn ? fit_uncert_fcn(ene) : null) });
+      const eff = fit_data.fit_eqn(ene);
+      const eff_uncert = fit_data.fit_uncert_fcn ? fit_data.fit_uncert_fcn(ene) : null;
+      
+      fit_data.points.push({ 
+        energy: ene, 
+        eff: eff, 
+        eff_uncert: eff_uncert 
+      });
+      
+      // Update min/max y based on fit equations
+      min_y = Math.min(min_y, eff - (eff_uncert ? 2 * eff_uncert : 0));
+      max_y = Math.max(max_y, eff + (eff_uncert ? 2 * eff_uncert : 0));
     }
-    min_y = Math.min(min_y, d3.min(fit_eqn_points, function (d) { return d.eff; }));
-    max_y = Math.max(max_y, d3.max(fit_eqn_points, function (d) { return d.eff; }));
-  }//if( fit_eqn )
-
-  if( data_vals ){
-    const initial_y_range = max_y - min_y;
-    min_y -= 0.1 * initial_y_range;
-    max_y += 0.2 * initial_y_range;
-  }
+  });
 
   // Put initial estimate of areas into d3, so we can then get final sizes of axis and titles
   this.xScale.range([0, chartAreaWidth]);
@@ -307,15 +405,15 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit
   this.chartArea.selectAll('.yAxis')
     .call(this.yAxis);
                
-  if( this.xaxistitle )
+  if (this.xaxistitle)
     this.xaxistitle
-      .attr("x", this.options.margins.left + ytitleh + ytickw + 0.5*chartAreaWidth )
-      .attr("y", parentHeight - this.options.margins.bottom );
+      .attr("x", this.options.margins.left + ytitleh + ytickw + 0.5*chartAreaWidth)
+      .attr("y", parentHeight - this.options.margins.bottom);
          
-  if( this.yaxistitle )
+  if (this.yaxistitle)
     this.yaxistitle
-      .attr("y", this.options.margins.left )
-      .attr("x",this.options.margins.top + chi2_txt_pad - 0.5*chartAreaHeight );
+      .attr("y", this.options.margins.left)
+      .attr("x", this.options.margins.top + chi2_txt_pad - 0.5*chartAreaHeight);
          
   this.chartArea.selectAll('.xAxis')
     .attr("transform", "translate(0," + chartAreaHeight + ")");
@@ -323,147 +421,207 @@ RelEffPlot.prototype.setRelEffData = function (data_vals, fit_eqn, chi2_txt, fit
     .attr("transform", "translate(" + (this.options.margins.left + ytickw + ytitleh)
                        + "," + (this.options.margins.top + chi2_txt_pad) + ")");
     
-  if( fit_eqn ){
-    // Define the line
+  // Remove existing paths and create a group for each dataset
+  this.chartArea.selectAll("path.line").remove();
+  this.chartArea.selectAll("path.RelEffPlotErrorBounds").remove();
+  
+  // For each dataset with fit equation, create the fit line and uncertainty bounds
+  all_fit_eqn_points.forEach(function(fit_data, index) {
+    // Create path for fit line
     const valueline = d3.svg.line()
-      .x(function (d) { return self.xScale(d.energy); })
-      .y(function (d) { return self.yScale(d.eff); });
-    this.path
-      .attr("d", valueline(fit_eqn_points));
-
-    if( fit_uncert_fcn ){
-      let area = d3.svg.area()
+      .x(function(d) { return self.xScale(d.energy); })
+      .y(function(d) { return self.yScale(d.eff); });
+      
+    const path = self.chartArea.append("path")
+      .attr("class", "line dataset-" + index)
+      .attr("d", valueline(fit_data.points))
+      .style("stroke", self.getDatasetColor(index));
+      
+    // Create path for uncertainty bounds if available
+    if (fit_data.fit_uncert_fcn) {
+      const area = d3.svg.area()
         .x(function(d) { return self.xScale(d.energy); })
         .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
         .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
-      this.path_uncert.attr("d", area(fit_eqn_points));
-    }else{
-      this.path_uncert.attr("d", null);
+        
+      const path_uncert = self.chartArea.append("path")
+        .attr("class", "RelEffPlotErrorBounds dataset-" + index)
+        .attr("d", area(fit_data.points))
+        .style("fill", self.getDatasetColor(index, 0.1))
+        .style("stroke", "none");
     }
-  }else{
-    this.path.attr("d", null);
-    this.path_uncert.attr("d", null);
-  }
+  });
 
   // For some reason the circles position arent being updated on resize, so we'll just remove them first
   //  With later versions of D3 there is a .merge() function that is maybe relevant
   this.chartArea.selectAll("circle").remove();
   this.chartArea.selectAll("line.errorbar").remove();
     
-  // Everything below here requires data points, so if we dont have any, we can skip this
-  if( !data_vals )
-    return;
+  // Plot all data points across all datasets
+  datasets.forEach(function(dataset, datasetIndex) {
+    const data_vals = dataset.data_vals;
+    
+    // Everything below here requires data points, so if we dont have any, we can skip this
+    if (!data_vals || data_vals.length === 0)
+      return;
       
-  let lines = this.chartArea.selectAll("line.errorbar")
+    // Add error bars
+    let lines = self.chartArea.selectAll("line.errorbar.dataset-" + datasetIndex)
       .data(data_vals);
     
-  lines.enter()
-    .append('line')
-    .attr("class", "errorbar")
-    .attr('x1', function(d) { return self.xScale(d.energy); })
-    .attr('x2', function(d) { return self.xScale(d.energy); })
-    .attr('y1', function(d) {
-      const val = self.yScale(d.eff + d.eff_uncert);
-      return isNaN(val) ? 0 : val;
-  })
-    .attr('y2', function(d) {
-      const val = self.yScale(d.eff - d.eff_uncert);
-      return isNaN(val) ? 0 : val;
-  });
+    lines.enter()
+      .append('line')
+      .attr("class", "errorbar dataset-" + datasetIndex)
+      .attr('x1', function(d) { return self.xScale(d.energy); })
+      .attr('x2', function(d) { return self.xScale(d.energy); })
+      .attr('y1', function(d) {
+        const val = self.yScale(d.eff + d.eff_uncert);
+        return isNaN(val) ? 0 : val;
+      })
+      .attr('y2', function(d) {
+        const val = self.yScale(d.eff - d.eff_uncert);
+        return isNaN(val) ? 0 : val;
+      })
+      .style("stroke", self.getDatasetColor(datasetIndex));
     
-  // Add the data points
-  this.chartArea
-    .selectAll("circle")
-    .data(data_vals)
-    .enter()
-    .append("circle")
-    .attr("r", 3)
-    .attr("cx", function (d) {
-      return self.xScale(d.energy)
-    })
-    .attr("cy", function (d) {
-      const val = self.yScale(d.eff);
-      return isNaN(val) ? 0 : val;
-    })
-    .attr("class", function (d) {
-      if( d.nuc_info.length === 0 )
-        return "noiso";
+    // Add the data points
+    self.chartArea
+      .selectAll("circle.dataset-" + datasetIndex)
+      .data(data_vals)
+      .enter()
+      .append("circle")
+      .attr("r", 3)
+      .attr("cx", function (d) {
+        return self.xScale(d.energy)
+      })
+      .attr("cy", function (d) {
+        const val = self.yScale(d.eff);
+        return isNaN(val) ? 0 : val;
+      })
+      .attr("class", function (d) {
+        let baseClass = "dataset-" + datasetIndex + " ";
+        
+        if (d.nuc_info.length === 0)
+          return baseClass + "noiso";
 
-      //Return the dominant nuclide, if no nuclide is over 50%, we'll use "multiiso"
-      //  TODO: use a gradient to indicate relative components
-      let max_contrib = 0, sum_contrib = 0, max_nuc = null;
-      for( const el of d.nuc_info ) {
-        const contrib = el.rel_act * el.br;
-        sum_contrib += contrib;
-        if( contrib > max_contrib ){
-          max_contrib = contrib;
-          max_nuc = el.nuc;
+        //Return the dominant nuclide, if no nuclide is over 50%, we'll use "multiiso"
+        //  TODO: use a gradient to indicate relative components
+        let max_contrib = 0, sum_contrib = 0, max_nuc = null;
+        for (const el of d.nuc_info) {
+          const contrib = el.rel_act * el.br;
+          sum_contrib += contrib;
+          if (contrib > max_contrib) {
+            max_contrib = contrib;
+            max_nuc = el.nuc;
+          }
         }
-      }
-      
-      if( max_nuc && (max_contrib > 0.5*sum_contrib) ){
-        //remove problematic characters from max_nuc to create a valid CSS class name
-        max_nuc = max_nuc.replace(/[^a-zA-Z0-9_-]/g, '');
-        if( max_nuc.length === 0 )
-          return "multiiso";
         
-        const first_char = max_nuc.charAt(0);
-        if( (first_char >= '0' && first_char <= '9') || ( first_char === '-' ) )
-          max_nuc = 'nuc-' + max_nuc;
+        if (max_nuc && (max_contrib > 0.5*sum_contrib)) {
+          //remove problematic characters from max_nuc to create a valid CSS class name
+          max_nuc = max_nuc.replace(/[^a-zA-Z0-9_-]/g, '');
+          if (max_nuc.length === 0)
+            return baseClass + "multiiso";
+          
+          const first_char = max_nuc.charAt(0);
+          if ((first_char >= '0' && first_char <= '9') || (first_char === '-'))
+            max_nuc = 'nuc-' + max_nuc;
+          
+          return baseClass + max_nuc;
+        }
         
-        return max_nuc;
-      }//if( max_nuc && (max_contrib > 0.5*sum_contrib) )
-      
-      return "multiiso";
-    })
-    .on("mouseover", function (d, i) {
-      self.tooltip.transition()
-        .duration(200)
-        .style("opacity", .9);
+        return baseClass + "multiiso";
+      })
+      .style("fill", self.getDatasetColor(datasetIndex))
+      .on("mouseover", function (d, i) {
+        self.tooltip.transition()
+          .duration(200)
+          .style("opacity", .9);
 
-      d3.select(this).transition()
-        .duration('50')
-        .attr('opacity', '.85')
-        .attr("r", 6);
+        d3.select(this).transition()
+          .duration('50')
+          .attr('opacity', '.85')
+          .attr("r", 6);
 
-      let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
-        + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
-        + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>"
-        + (fit_eqn ? "<div>RelEff Curve: " + fit_eqn(d.energy).toPrecision(5) + "</div>" : "");
-      for (const el of d.nuc_info) {
-        txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4);
-        if( el.rel_act )
-          txt += ", RelAct=" + el.rel_act.toPrecision(4);
-        txt += "</div>";
-      }
-            
-      self.tooltip.html(txt);
-
-      // Make it so tooltip doesnt extend above/below/left/right of chart area
-      const svg_location = d3.mouse( self.chartArea.node() );
-      const svg_bb = self.chartArea.node().getBoundingClientRect();
-      const tt_bb = self.tooltip.node().getBoundingClientRect();
-      const render_right = ((svg_location[0] + tt_bb.width + 10 + 15) < svg_bb.width);
-      const render_top = (svg_location[1] + tt_bb.height + 4 + 15 > svg_bb.height)
-      const x_offset = render_right ? d3.event.pageX + 10 : d3.event.pageX - 10 - tt_bb.width;
-      const y_offset = render_top ? d3.event.pageY - 10 - tt_bb.height : d3.event.pageY + 4;
+        let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
+          + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
+          + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>";
+          
+        // Add fit equation value if available for this dataset
+        if (dataset.fit_eqn) {
+          txt += "<div>RelEff Curve: " + dataset.fit_eqn(d.energy).toPrecision(5) + "</div>";
+        }
         
-      self.tooltip
-        .style("left", x_offset + "px")
-        .style("top", y_offset + "px");
-    })
-    .on('mouseout', function (d, i) {
-      d3.select(this).transition()
-        .duration('50')
-        .attr('opacity', '1')
-        .attr("r", 3);
-      self.tooltip.transition()
-        .duration(500)
-        .style("opacity", 0);
-    });
+        for (const el of d.nuc_info) {
+          txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4);
+          if (el.rel_act)
+            txt += ", RelAct=" + el.rel_act.toPrecision(4);
+          txt += "</div>";
+        }
+              
+        self.tooltip.html(txt);
+
+        // Make it so tooltip doesnt extend above/below/left/right of chart area
+        const svg_location = d3.mouse(self.chartArea.node());
+        const svg_bb = self.chartArea.node().getBoundingClientRect();
+        const tt_bb = self.tooltip.node().getBoundingClientRect();
+        const render_right = ((svg_location[0] + tt_bb.width + 10 + 15) < svg_bb.width);
+        const render_top = (svg_location[1] + tt_bb.height + 4 + 15 > svg_bb.height);
+        const x_offset = render_right ? d3.event.pageX + 10 : d3.event.pageX - 10 - tt_bb.width;
+        const y_offset = render_top ? d3.event.pageY - 10 - tt_bb.height : d3.event.pageY + 4;
+          
+        self.tooltip
+          .style("left", x_offset + "px")
+          .style("top", y_offset + "px");
+      })
+      .on('mouseout', function (d, i) {
+        d3.select(this).transition()
+          .duration('50')
+          .attr('opacity', '1')
+          .attr("r", 3);
+        self.tooltip.transition()
+          .duration(500)
+          .style("opacity", 0);
+      });
+  });
 };//RelEffPlot.prototype.setRelEffData
 
+// Helper function to get colors for different datasets
+RelEffPlot.prototype.getDatasetColor = function (index, alpha) {
+  // Default color palette
+  const colors = [
+    "rgb(31, 119, 180)",  // blue
+    "rgb(255, 127, 14)",  // orange
+    "rgb(44, 160, 44)",   // green
+    "rgb(214, 39, 40)",   // red
+    "rgb(148, 103, 189)", // purple
+    "rgb(140, 86, 75)",   // brown
+    "rgb(227, 119, 194)", // pink
+    "rgb(127, 127, 127)", // gray
+    "rgb(188, 189, 34)",  // olive
+    "rgb(23, 190, 207)"   // teal
+  ];
+  
+  // Use modulo to cycle through colors if we have more datasets than colors
+  const color = colors[index % colors.length];
+  
+  // If alpha is provided, return color with transparency
+  if (alpha !== undefined) {
+    // Extract RGB values and add alpha
+    const rgb = color.match(/\d+/g);
+    return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
+  }
+  
+  return color;
+};
 
 RelEffPlot.prototype.handleResize = function () {
-  this.setRelEffData(this.data_vals, this.fit_eqn, this.chi2Txt, this.fit_uncert_fcn);
+  if (this.datasets) {
+    this.setRelEffData(this.datasets);
+  } else if (this.data_vals) {
+    // Extract chi2_txt from the array for backward compatibility
+    const chi2_txt = this.chi2TxtArray && this.chi2TxtArray.length > 0 ? this.chi2TxtArray[0] : this.chi2Txt;
+    
+    // Backward compatibility for older code
+    this.setRelEffData(this.data_vals, this.fit_eqn, chi2_txt, this.fit_uncert_fcn);
+  }
 };//RelEffPlot.prototype.handleResize

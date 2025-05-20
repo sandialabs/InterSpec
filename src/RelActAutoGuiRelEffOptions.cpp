@@ -543,40 +543,37 @@ void RelActAutoGuiRelEffOptions::update_shield_widget(
       w->setFitAtomicNumber( shield.atomic_number_was_fit );
   }//if( shield.atomic_number )
       
-      
-  if( shield.areal_density )
+  
+  if( shield.material )
   {
-    if( shield.material )
+    assert( shield.areal_density_was_fit == w->fitThickness() );
+    const double thick = shield.areal_density / shield.material->density;
+    
+    if( !shield.areal_density_was_fit && (thick != w->thickness()) )
     {
-      assert( shield.areal_density_was_fit == w->fitThickness() );
-      const double thick = shield.areal_density / shield.material->density;
-          
-      if( !shield.areal_density_was_fit && (thick != w->thickness()) )
-      {
-        cerr << "Found fixed shielding thickness has changed for '" << shield.material->name << "'; was "
-            << PhysicalUnits::printToBestLengthUnits(w->thickness()) << " but returned answer is "
-            << PhysicalUnits::printToBestLengthUnits(thick) << endl;
-            cerr << endl;
-      }
-      assert( shield.areal_density_was_fit || (thick == w->thickness()));
-          
-      w->setThickness( thick );
-      if( shield.areal_density_was_fit != w->fitThickness() )
-        w->setFitThickness( shield.areal_density_was_fit );
-    }else
-    {
-      const double ad_g_cm2 = shield.areal_density / PhysicalUnits::g_per_cm2;
-          
-      assert( shield.areal_density_was_fit == w->fitArealDensity() );
-      assert( shield.areal_density_was_fit || (ad_g_cm2 == w->arealDensity()));
-          
-      if( ad_g_cm2 != w->arealDensity() )
-        w->setArealDensity( ad_g_cm2 );
-          
-      if( shield.areal_density_was_fit != w->fitArealDensity() )
-        w->setFitArealDensity( shield.areal_density_was_fit );
-    }//if( shield.material ) / else
-  }//if( shield.areal_density )
+      cerr << "Found fixed shielding thickness has changed for '" << shield.material->name << "'; was "
+      << PhysicalUnits::printToBestLengthUnits(w->thickness()) << " but returned answer is "
+      << PhysicalUnits::printToBestLengthUnits(thick) << endl;
+      cerr << endl;
+    }
+    assert( shield.areal_density_was_fit || (thick == w->thickness()));
+    
+    w->setThickness( thick );
+    if( shield.areal_density_was_fit != w->fitThickness() )
+      w->setFitThickness( shield.areal_density_was_fit );
+  }else
+  {
+    const double ad_g_cm2 = shield.areal_density / PhysicalUnits::g_per_cm2;
+    
+    assert( shield.areal_density_was_fit == w->fitArealDensity() );
+    assert( shield.areal_density_was_fit || (ad_g_cm2 == w->arealDensity()));
+    
+    if( ad_g_cm2 != w->arealDensity() )
+      w->setArealDensity( ad_g_cm2 );
+    
+    if( shield.areal_density_was_fit != w->fitArealDensity() )
+      w->setFitArealDensity( shield.areal_density_was_fit );
+  }//if( shield.material ) / else
 }
 
 void RelActAutoGuiRelEffOptions::update_shield_widgets( const optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &self_atten,
