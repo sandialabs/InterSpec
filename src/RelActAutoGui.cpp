@@ -1111,7 +1111,11 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   
   options.floating_peaks = getFloatingPeaks();
   options.rois = getRoiRanges();
-
+  
+  int num_phys_model_curves = 0;
+  bool any_using_hoerl = false, same_hoerl_all_curves = false, same_ext_shieldings = false;
+  vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
+  
   const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
   assert( num_rel_eff_curves > 0 );
   for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
@@ -1133,9 +1137,45 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     rel_eff_curve.phys_model_use_hoerl = opts->phys_model_use_hoerl();
     rel_eff_curve.pu242_correlation_method = opts->pu242_correlation_method();
 
+    if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      num_phys_model_curves += 1;
+      any_using_hoerl = (any_using_hoerl || rel_eff_curve.phys_model_use_hoerl);
+      if( phys_model_external_attens.empty() )
+        phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
+      same_ext_shieldings = (same_ext_shieldings || opts->physModelSameExtShieldAllCurves());
+      same_hoerl_all_curves = (same_hoerl_all_curves || opts->physModelSameHoerlOnAllCurves());
+    }
+    
     options.rel_eff_curves.push_back( rel_eff_curve );
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
+  options.same_hoerl_for_all_rel_eff_curves = false;
+  options.same_external_shielding_for_all_rel_eff_curves = false;
+  if( (num_phys_model_curves > 1) && (same_ext_shieldings || same_hoerl_all_curves) )
+  {
+    if( any_using_hoerl && same_hoerl_all_curves )
+    {
+      options.same_hoerl_for_all_rel_eff_curves = true;
+      for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+      {
+        assert( curve.phys_model_use_hoerl );
+        curve.phys_model_use_hoerl = true;
+      }
+    }//if( any_using_hoerl and all should share a Hoerl)
+    
+    if( same_ext_shieldings && !phys_model_external_attens.empty() )
+    {
+      options.same_external_shielding_for_all_rel_eff_curves = true;
+      
+      for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+      {
+        assert( curve.phys_model_external_atten.size() == phys_model_external_attens.size() );
+        curve.phys_model_external_atten = phys_model_external_attens;
+      }
+    }//if( all should share ext atten and there are some defined )
+  }//if( num_phys_model_curves > 1 )
+  
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
 
