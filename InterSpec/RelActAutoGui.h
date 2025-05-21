@@ -110,7 +110,9 @@ public:
   
   void handleDisplayedSpectrumChange( SpecUtils::SpectrumType );
   void handlePresetChange();
-  void handleRelEffEqnFormChanged();
+  void handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleRelEffEqnOrderChanged();
   void handleFwhmFormChanged();
   void handleFwhmEstimationMethodChanged();
@@ -192,6 +194,9 @@ public:
   
   std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> getCurrentSolution() const;
   
+  /** Update the UI to show/hide shared settings controls based on the number of physical model curves */
+  void updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *changed_opts, RelActAutoGuiRelEffOptions *added_opts );
+
 protected:
   void handleRoiDrag( double new_roi_lower_energy,
                      double new_roi_upper_energy,
@@ -224,7 +229,7 @@ protected:
   void handleShowRefLines( const bool show );
   void setPeaksToForeground();
   
-  void handleRelEffModelOptionsChanged();
+  void handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions *curve );
   void handleDetectorChange();
 
   void handleAddRelEffCurve();

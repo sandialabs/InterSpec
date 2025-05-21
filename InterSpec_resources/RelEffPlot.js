@@ -530,7 +530,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         if (d.nuc_info.length === 0)
           return baseClass + "noiso";
 
-        //Return the dominant nuclide, if no nuclide is over 50%, we'll use "multiiso"
+        //Return the dominant nuclide, if no nuclide is over 50%, we'll use color defined by CSS "multiiso"
         //  TODO: use a gradient to indicate relative components
         let max_contrib = 0, sum_contrib = 0, max_nuc = null, dominant_color = null;
         for (const el of d.nuc_info) {
@@ -542,6 +542,12 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
             dominant_color = el.color; // Get color from dominant nuclide
           }
         }
+
+        if( !dominant_color )
+          return baseClass + "noiso";
+
+        if( max_contrib < 0.5*sum_contrib )
+          return baseClass + "multiiso";
         
         if (max_nuc && (max_contrib > 0.5*sum_contrib)) {
           //remove problematic characters from max_nuc to create a valid CSS class name
@@ -572,6 +578,12 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
               dominant_color = el.color;
             }
           }
+
+          if( !dominant_color )
+            return null;  //We will rely on CSS of ".RelEffPlot circle.noiso" to handle this
+          
+          if( max_contrib < 0.5*sum_contrib )
+            return null;  // We will rely on CSS of ".RelEffPlot circle.multiiso" to handle this
           
           // Use the dominant nuclide's color if it's valid and contributes >50%
           if (dominant_color && typeof dominant_color === 'string' && 

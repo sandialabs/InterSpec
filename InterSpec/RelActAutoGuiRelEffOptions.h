@@ -58,6 +58,7 @@ public:
   void showAndHideOptionsForEqnType();
   void initPhysModelShields();
   void setIsOnlyOneRelEffCurve(const bool is_only_rel_eff_curve);
+  void setHasMultiplePhysicalModels(const bool has_multiple_phys_models);
   Wt::WString name() const;
   void setName(const Wt::WString &name);
   void setRelEffCurveInput(const RelActCalcAuto::RelEffCurveInput &rel_eff);
@@ -67,7 +68,10 @@ public:
   Wt::Signal<RelActAutoGuiRelEffOptions *> &addRelEffCurve();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &delRelEffCurve();
   Wt::Signal<RelActAutoGuiRelEffOptions *, Wt::WString> &nameChanged();
-  Wt::Signal<> &optionsChanged();
+  Wt::Signal<RelActAutoGuiRelEffOptions *> &equationTypeChanged();
+  Wt::Signal<RelActAutoGuiRelEffOptions *> &sameHoerlOnAllCurvesChanged();
+  Wt::Signal<RelActAutoGuiRelEffOptions *> &sameExternalShieldingChanged();
+  Wt::Signal<RelActAutoGuiRelEffOptions *> &optionsChanged();
 
   RelActCalc::RelEffEqnForm rel_eff_eqn_form() const;
   size_t rel_eff_eqn_order() const;
@@ -75,15 +79,29 @@ public:
   std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten() const;
   bool phys_model_use_hoerl() const;
   void setPhysModelUseHoerl(const bool use_hoerl);
+  bool physModelSameHoerlOnAllCurves() const;
+  void setPhysModelSameHoerlOnAllCurves(const bool same_hoerl_all_curves);
+  bool physModelSameExtShieldAllCurves() const;
+  void setPhysModelSameExtShieldAllCurves(const bool same_ext_shield_all_curves);
   RelActCalc::PuCorrMethod pu242_correlation_method() const;
 
-  void update_shield_widgets(const std::optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &self_atten,
-                               const std::vector<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &ext_shields);
+  void update_self_atten_shield_widget( const std::optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &self_atten );
+  void update_external_atten_shield_widget( const std::vector<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &ext_shields);
 
+  void update_self_atten_shield_widget( const RelEffShieldWidget *shield );
+  void update_external_atten_shield_widget( const std::vector<const RelEffShieldWidget *> &ext_shields );
+  
+  const RelEffShieldWidget *selfAttenWidget() const;
+  std::vector<const RelEffShieldWidget *> externalAttenWidgets() const;
+  
 protected:
   void update_shield_widget(const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo &shield,
                               RelEffShieldWidget *w);
-
+  
+  void handleRelEffEqnTypeChanged();
+  void handleSameHoerlOnAllCurvesChanged();
+  void handleSameExternalShieldingChanged();
+  
 protected:
   RelActAutoGui *const m_gui;
 
@@ -99,6 +117,8 @@ protected:
   RelEffShieldWidget *m_phys_model_self_atten;
   Wt::WContainerWidget *m_phys_ext_attens;
   Wt::WCheckBox *m_phys_model_use_hoerl;
+  Wt::WCheckBox *m_phys_model_same_hoerl_on_all_curves;
+  Wt::WCheckBox *m_phys_model_same_ext_shield_all_curves;
   Wt::WText *m_eqn_txt;
   Wt::WContainerWidget *m_add_del_rel_eff_div;
   Wt::WPushButton *m_add_rel_eff_btn;
@@ -106,8 +126,14 @@ protected:
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_add_rel_eff_curve_signal;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_del_rel_eff_curve_signal;
   Wt::Signal<RelActAutoGuiRelEffOptions *, Wt::WString> m_name_changed_signal;
+  Wt::Signal<RelActAutoGuiRelEffOptions *> m_eqn_form_changed;
+  Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_hoerl_on_all_curves;
+  Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_ext_shield_on_all_curves;
+  
 
-  Wt::Signal<> m_options_changed_signal;
+  Wt::Signal<RelActAutoGuiRelEffOptions *> m_options_changed_signal;
+  
+  bool m_has_multiple_phys_models;
 
   void emitAddRelEffCurve();
   void emitDelRelEffCurve();

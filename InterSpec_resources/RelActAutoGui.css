@@ -340,21 +340,32 @@ padding-bottom: 1px;
 {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  align-items: center;
   justify-content: space-evenly;
+  transform: scale(0.85);
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > .DetectorDisplay
 {
-  transform: scale(0.75);
 }
 
-.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .UseCorrFcnCb
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysHoerlOptionDiv
 {
-  /* font-size: x-small; */
+  display: flex;
+  flex-direction: row;
+  justify-content: start;
+  align-items: center;
 }
 
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCb
+{
+  font-size: small;
+  /*padding-left: 40px;*/
+  transform: scale(0.80);
+}
+
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow > label
+{
+}
 
 .RelActAutoGui .MoreMenuIcon,
 .RelActAutoGui .MoreMenuIcon:hover

@@ -1261,6 +1261,36 @@ shared_ptr<const RelActCalcAuto::RelActAutoSolution> RelActAutoGui::getCurrentSo
 }
 
 
+
+void RelActAutoGui::updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *changed_opts,
+                                               RelActAutoGuiRelEffOptions *added_opts )
+{
+  // Get the number of rel eff curve options we have
+  const size_t num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  
+  // Track the number of physical models
+  int num_phys_models = 0;
+  
+  // Loop through and count physical models
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    assert( options );
+    if( options )
+      num_phys_models += (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+  }
+  
+  // Update each physical model curve to show/hide shared settings controls
+  const bool multiple_phys_models = (num_phys_models > 1);
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    if( options )
+      options->setHasMultiplePhysicalModels( multiple_phys_models );
+  }
+}//void updateMultiPhysicalModelUI()
+
+
 void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
                    double new_roi_upper_energy,
                    double new_roi_lower_px,
@@ -1820,7 +1850,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   for( size_t curve_index = 0; curve_index < num_rel_eff_curves; ++curve_index )
   {
     // Clear the nuclides from the GUI for this Rel Eff curve
-    WMenuItem *item = m_rel_eff_nuclides_menu->itemAt( curve_index );
+    WMenuItem *item = m_rel_eff_nuclides_menu->itemAt( static_cast<int>(curve_index) );
     assert( item );
     WContainerWidget *content = dynamic_cast<WContainerWidget *>( item->contents() );
     assert( content );
@@ -1888,6 +1918,40 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
   
   handleNuclidesChanged();
+  
+  // Make sure all
+  updateMultiPhysicalModelUI( nullptr, nullptr );
+  
+  // Just to make sure if we have multie Phys Model curves, and they should all have the same
+  //  external shieldings, we will enforce that, even though its probably already true.
+  vector<const RelEffShieldWidget *> phys_model_ext_attens;
+  if( options.same_external_shielding_for_all_rel_eff_curves )
+  {
+    for( int i = 0; i < num_rel_eff_curves; ++i )
+    {
+      RelActAutoGuiRelEffOptions *rel_eff_opts = getRelEffCurveOptions(i);
+      if( rel_eff_opts && (rel_eff_opts->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      {
+        phys_model_ext_attens = rel_eff_opts->externalAttenWidgets();
+        break;
+      }
+    }//for( int i = 0; i < num_rel_eff_curves; ++i )
+  }//if( options.same_external_shielding_for_all_rel_eff_curves )
+  
+  
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *rel_eff_opts = getRelEffCurveOptions(i);
+    assert( rel_eff_opts );
+    if( !rel_eff_opts || (rel_eff_opts->rel_eff_eqn_form() != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      continue;
+    
+    rel_eff_opts->setPhysModelSameHoerlOnAllCurves( options.same_hoerl_for_all_rel_eff_curves );
+    rel_eff_opts->setPhysModelSameExtShieldAllCurves( options.same_external_shielding_for_all_rel_eff_curves );
+    
+    if( options.same_external_shielding_for_all_rel_eff_curves )
+      rel_eff_opts->update_external_atten_shield_widget( phys_model_ext_attens );
+  }//for( int i = 0; i < num_rel_eff_curves; ++i )
 
   // options.spectrum_title
   m_render_flags |= RenderActions::UpdateNuclidesPresent;  //To trigger calling `updateDuringRenderForNuclideChange()`
@@ -2171,19 +2235,115 @@ void RelActAutoGui::handlePresetChange()
 }//void RelActAutoGui::handlePresetChange()
 
 
-void RelActAutoGui::handleRelEffEqnFormChanged()
+void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 {
-  for( int i = 0; i < m_rel_eff_opts_stack->count(); ++i )
+  //for( int i = 0; i < m_rel_eff_opts_stack->count(); ++i )
+ // {
+ //   RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( i );
+ //   assert( opts );
+ //   opts->showAndHideOptionsForEqnType();
+ // }
+  
+  // Update the UI based on the number of physical model curves
+  updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
+  
+  if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
-    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( i );
-    assert( opts );
-    opts->showAndHideOptionsForEqnType();
-  }
+    vector<const RelEffShieldWidget *> ext_shields;
+    bool same_hoerl = false, same_ext_shield = false, use_hoerl = false;
+  
+    const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+    for( int i = 0; i < num_rel_eff_curves; ++i )
+    {
+      RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+      assert( options );
+      if( options && (options != rel_eff_curve_gui) && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      {
+        same_hoerl = options->physModelSameHoerlOnAllCurves();
+        same_ext_shield = options->physModelSameExtShieldAllCurves();
+        if( same_ext_shield )
+          ext_shields = options->externalAttenWidgets();
+        break; //
+      }
+    }//for( int i = 0; i < num_rel_eff_curves; ++i )
+    
+    rel_eff_curve_gui->setPhysModelSameHoerlOnAllCurves( same_hoerl );
+    rel_eff_curve_gui->setPhysModelSameExtShieldAllCurves( same_ext_shield );
+    
+    if( same_hoerl )
+      rel_eff_curve_gui->setPhysModelUseHoerl( use_hoerl );
+    if( same_ext_shield )
+      rel_eff_curve_gui->update_external_atten_shield_widget( ext_shields );
+  }//if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
-}//void handleRelEffEqnFormChanged();
+}//void handleRelEffEqnTypeChanged();
+
+
+void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+{
+  assert( rel_eff_curve_gui );
+  if( !rel_eff_curve_gui )
+    return;
+  
+  // Show/hide physical model elements
+  updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
+  
+  const bool same_hoerl = rel_eff_curve_gui->physModelSameHoerlOnAllCurves();
+  const bool use_hoerl = rel_eff_curve_gui->phys_model_use_hoerl();
+  
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    assert( options );
+    if( !options )
+      continue;
+    
+    options->setPhysModelSameHoerlOnAllCurves( same_hoerl );
+    if( same_hoerl )
+      options->setPhysModelUseHoerl( use_hoerl );
+  }//for( int i = 0; i < num_rel_eff_curves; ++i )
+  
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+
+
+void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+{
+  assert( rel_eff_curve_gui );
+  if( !rel_eff_curve_gui )
+    return;
+  
+  updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
+  
+  const bool same_shield = rel_eff_curve_gui->physModelSameExtShieldAllCurves();
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    assert( options );
+    if( !options || (options == rel_eff_curve_gui) )
+      continue;
+    
+    options->setPhysModelSameExtShieldAllCurves( same_shield );
+    if( same_shield && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+    {
+      const vector<const RelEffShieldWidget *> ext_atten_widgets = rel_eff_curve_gui->externalAttenWidgets();
+      options->update_external_atten_shield_widget( ext_atten_widgets );
+    }
+  }//for( int i = 0; i < num_rel_eff_curves; ++i )
+  
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
 
 void RelActAutoGui::handleRelEffEqnOrderChanged()
@@ -3410,8 +3570,28 @@ void RelActAutoGui::setPeaksToForeground()
 }//void setPeaksToForeground()
 
 
-void RelActAutoGui::handleRelEffModelOptionsChanged()
+void RelActAutoGui::handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions *curve )
 {
+  // Check if we need to keep the Physical Models external shieldings in sync.
+  if( curve && (curve->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+  {
+    const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+    
+    for( int i = 0; i < num_rel_eff_curves; ++i )
+    {
+      RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+      assert( options );
+      if( options && (options != curve)
+         && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      {
+        if( curve->physModelSameExtShieldAllCurves() )
+          options->update_external_atten_shield_widget( curve->externalAttenWidgets() );
+        if( curve->physModelSameHoerlOnAllCurves() )
+          options->setPhysModelUseHoerl( curve->phys_model_use_hoerl() );
+      }
+    }//for( int i = 0; i < num_rel_eff_curves; ++i )
+  }//if( we need to make sure to keep external shieldings in sync )
+  
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3468,7 +3648,10 @@ void RelActAutoGui::handleAddRelEffCurve()
   rel_eff_curve->addRelEffCurve().connect( this, &RelActAutoGui::handleAddRelEffCurve );
   rel_eff_curve->delRelEffCurve().connect( boost::bind( &RelActAutoGui::handleDelRelEffCurve, this, boost::placeholders::_1 ) );
   rel_eff_curve->nameChanged().connect( this, &RelActAutoGui::handleRelEffCurveNameChanged );
-  rel_eff_curve->optionsChanged().connect( this, &RelActAutoGui::handleRelEffModelOptionsChanged );
+  rel_eff_curve->optionsChanged().connect( boost::bind( &RelActAutoGui::handleRelEffModelOptionsChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->equationTypeChanged().connect( boost::bind( &RelActAutoGui::handleRelEffEqnTypeChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameHoerlOnAllCurvesChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->sameExternalShieldingChanged().connect( boost::bind( &RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged, this, boost::placeholders::_1 ) );
 
   const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
 
@@ -3508,6 +3691,8 @@ void RelActAutoGui::handleAddRelEffCurve()
   
   assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
 
+  // Update the UI based on the number of physical model curves
+  updateMultiPhysicalModelUI( nullptr, rel_eff_curve );
 
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3583,6 +3768,9 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   
   m_rel_eff_opts_menu->select( m_rel_eff_opts_menu->count() - 1 );
   m_rel_eff_nuclides_menu->select( m_rel_eff_nuclides_menu->count() - 1 );
+  
+  // Update the UI based on the number of physical model curves
+  updateMultiPhysicalModelUI( nullptr, nullptr );
   
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -4768,7 +4956,8 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) && phys_info.has_value() )
     {
       const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &phys_info_ref = *phys_info;
-      opts->update_shield_widgets( phys_info_ref.self_atten, phys_info_ref.ext_shields );
+      opts->update_self_atten_shield_widget( phys_info_ref.self_atten );
+      opts->update_external_atten_shield_widget( phys_info_ref.ext_shields );
    
       //phys_info_ref.hoerl_b/hoerl_c will have (double) values iff the correction function was used
       assert( phys_info_ref.hoerl_b.has_value() == phys_info_ref.hoerl_c.has_value() );

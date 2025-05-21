@@ -69,6 +69,8 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_phys_model_self_atten(nullptr),
       m_phys_ext_attens(nullptr),
       m_phys_model_use_hoerl(nullptr),
+      m_phys_model_same_hoerl_on_all_curves(nullptr),
+      m_phys_model_same_ext_shield_all_curves(nullptr),
       m_eqn_txt(nullptr),
       m_add_del_rel_eff_div(nullptr),
       m_add_rel_eff_btn(nullptr),
@@ -76,7 +78,11 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_add_rel_eff_curve_signal(this),
       m_del_rel_eff_curve_signal(this),
       m_name_changed_signal(this),
-      m_options_changed_signal(this)
+      m_eqn_form_changed(this),
+      m_same_hoerl_on_all_curves(this),
+      m_same_ext_shield_on_all_curves(this),
+      m_options_changed_signal(this),
+      m_has_multiple_phys_models(false)
 {
   addStyleClass( "RelEffCurveOptions" );
 
@@ -99,7 +105,8 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   m_rel_eff_eqn_form = new WComboBox( eqnTypeDiv );
   m_rel_eff_eqn_form->addStyleClass( "GridSecondCol GridFirstRow" );
   label->setBuddy( m_rel_eff_eqn_form );
-  m_rel_eff_eqn_form->activated().connect( m_gui, &RelActAutoGui::handleRelEffEqnFormChanged );
+  m_rel_eff_eqn_form->activated().connect( this, &RelActAutoGuiRelEffOptions::handleRelEffEqnTypeChanged );
+  
   
   const char *tooltip = "The functional form to use for the relative efficiciency curve.<br />"
   "Options are:"
@@ -202,13 +209,35 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   SpectraFileModel *spec_model = spec_manager ? spec_manager->model() : nullptr;
   DetectorDisplay *det_disp = new DetectorDisplay( viewer, spec_model, phys_opt_row );
 
-  m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", phys_opt_row );
-  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb CbNoLineBreak" );
+  WContainerWidget *hoerl_row = new WContainerWidget( phys_opt_row );
+  hoerl_row->addStyleClass( "PhysHoerlOptionDiv" );
+  m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", hoerl_row );
+  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb CbNoLineBreak PhysOptionCb" );
   m_phys_model_use_hoerl->setChecked( true );
   m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
 
+  // Add the new checkboxes for shared settings
+  m_phys_model_same_hoerl_on_all_curves = new WCheckBox( "Same Corr. Fcn all curves", hoerl_row );
+  m_phys_model_same_hoerl_on_all_curves->addStyleClass( "SameHoerlAllCurvesCb CbNoLineBreak PhysOptionCb" );
+  m_phys_model_same_hoerl_on_all_curves->setChecked( false );
+  m_phys_model_same_hoerl_on_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
+  m_phys_model_same_hoerl_on_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
+  m_phys_model_same_hoerl_on_all_curves->hide();
   
+  tooltip = "When checked, the Correlation Function setting will be synchronized across all Physical model curves.";
+  HelpSystem::attachToolTipOn( {m_phys_model_same_hoerl_on_all_curves}, tooltip, showToolTips );
+
+  m_phys_model_same_ext_shield_all_curves = new WCheckBox( "Same ext. atten. all curves", phys_opt_row );
+  m_phys_model_same_ext_shield_all_curves->addStyleClass( "SameExtShieldAllCurvesCb PhysOptionCb" );
+  m_phys_model_same_ext_shield_all_curves->setChecked( false );
+  m_phys_model_same_ext_shield_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
+  m_phys_model_same_ext_shield_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
+  m_phys_model_same_ext_shield_all_curves->hide();
+  
+  tooltip = "When checked, the external shielding configuration will be synchronized across all Physical model curves.";
+  HelpSystem::attachToolTipOn( {m_phys_model_same_ext_shield_all_curves}, tooltip, showToolTips );
+
   m_phys_model_shields = new WContainerWidget( m_phys_model_opts );
   m_phys_model_shields->addStyleClass( "PhysicalModelShields" );
     
@@ -254,9 +283,75 @@ void RelActAutoGuiRelEffOptions::showAndHideOptionsForEqnType()
   
   m_eqn_order_div->setHidden( is_physical );
   m_phys_model_opts->setHidden( !is_physical );
+  
+  // Hide multi-curve options if not a physical model
+  if (!is_physical) {
+    m_phys_model_same_hoerl_on_all_curves->hide();
+    m_phys_model_same_ext_shield_all_curves->hide();
+  } else {
+    // Show multi-curve options only if there are multiple physical models
+    const bool show_shared_options = m_has_multiple_phys_models && is_physical;
+    m_phys_model_same_hoerl_on_all_curves->setHidden(!show_shared_options);
+    m_phys_model_same_ext_shield_all_curves->setHidden(!show_shared_options);
+  }
+  
   if( is_physical && !m_phys_model_self_atten )
     initPhysModelShields();
 }
+
+void RelActAutoGuiRelEffOptions::setHasMultiplePhysicalModels(const bool has_multiple_phys_models)
+{
+  if( m_has_multiple_phys_models != has_multiple_phys_models )
+  {
+    m_has_multiple_phys_models = has_multiple_phys_models;
+    
+    // Only show shared options if this is a physical model and there are multiple physical models
+    const bool is_physical = (rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+    const bool show_shared_options = m_has_multiple_phys_models && is_physical;
+    
+    m_phys_model_same_hoerl_on_all_curves->setHidden(!show_shared_options);
+    m_phys_model_same_ext_shield_all_curves->setHidden(!show_shared_options);
+  }
+}
+
+bool RelActAutoGuiRelEffOptions::physModelSameHoerlOnAllCurves() const
+{
+  return m_phys_model_same_hoerl_on_all_curves->isChecked();
+}
+
+void RelActAutoGuiRelEffOptions::setPhysModelSameHoerlOnAllCurves(const bool same_hoerl_all_curves)
+{
+  m_phys_model_same_hoerl_on_all_curves->setChecked(same_hoerl_all_curves);
+}
+
+bool RelActAutoGuiRelEffOptions::physModelSameExtShieldAllCurves() const
+{
+  return m_phys_model_same_ext_shield_all_curves->isChecked();
+}
+
+void RelActAutoGuiRelEffOptions::setPhysModelSameExtShieldAllCurves(const bool same_ext_shield_all_curves)
+{
+  m_phys_model_same_ext_shield_all_curves->setChecked(same_ext_shield_all_curves);
+}
+
+
+void RelActAutoGuiRelEffOptions::handleRelEffEqnTypeChanged()
+{
+  showAndHideOptionsForEqnType();
+  m_eqn_form_changed.emit( this );
+}//void handleRelEffEqnTypeChanged()
+
+void RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged()
+{
+  m_same_hoerl_on_all_curves.emit(this);
+}
+
+
+void RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged()
+{
+  m_same_ext_shield_on_all_curves.emit(this);
+}
+
 
 void RelActAutoGuiRelEffOptions::initPhysModelShields()
 {
@@ -308,7 +403,22 @@ Wt::Signal<RelActAutoGuiRelEffOptions *,Wt::WString> &RelActAutoGuiRelEffOptions
   return m_name_changed_signal;
 }
 
-Wt::Signal<> &RelActAutoGuiRelEffOptions::optionsChanged()
+Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::equationTypeChanged()
+{
+  return m_eqn_form_changed;
+}
+
+Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::sameHoerlOnAllCurvesChanged()
+{
+  return m_same_hoerl_on_all_curves;
+}
+
+Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::sameExternalShieldingChanged()
+{
+  return m_same_ext_shield_on_all_curves;
+}
+
+Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::optionsChanged()
 {
   return m_options_changed_signal;
 }
@@ -330,7 +440,7 @@ void RelActAutoGuiRelEffOptions::emitNameChanged()
 
 void RelActAutoGuiRelEffOptions::emitOptionsChanged()
 {
-  m_options_changed_signal.emit();
+  m_options_changed_signal.emit( this );
 }
 
 
@@ -354,7 +464,11 @@ void RelActAutoGuiRelEffOptions::setName( const Wt::WString &name )
 
 void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelEffCurveInput &rel_eff )
 {
-  m_rel_eff_curve_name->setText( WString::fromUTF8(rel_eff.name) );
+  if( !rel_eff.name.empty() && (rel_eff.name != m_rel_eff_curve_name->text().toUTF8()) )
+  {
+    m_rel_eff_curve_name->setText( WString::fromUTF8(rel_eff.name) );
+    m_name_changed_signal.emit( this, m_rel_eff_curve_name->text() );
+  }
 
   m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(rel_eff.rel_eff_eqn_type) );
   showAndHideOptionsForEqnType();
@@ -576,8 +690,8 @@ void RelActAutoGuiRelEffOptions::update_shield_widget(
   }//if( shield.material ) / else
 }
 
-void RelActAutoGuiRelEffOptions::update_shield_widgets( const optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &self_atten,
-                               const vector<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &ext_shields )
+void RelActAutoGuiRelEffOptions::update_self_atten_shield_widget(
+                    const optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &self_atten )
 {
   if( !m_phys_model_self_atten )
     initPhysModelShields();
@@ -586,6 +700,14 @@ void RelActAutoGuiRelEffOptions::update_shield_widgets( const optional<RelActCal
     update_shield_widget( *self_atten, m_phys_model_self_atten );
   else
     m_phys_model_self_atten->resetState();
+}
+
+
+void RelActAutoGuiRelEffOptions::update_external_atten_shield_widget(
+                     const vector<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &ext_shields )
+{
+  if( !m_phys_model_self_atten )
+    initPhysModelShields();
 
   const size_t num_ext_atten = std::max( size_t(1), ext_shields.size() );
   while( m_phys_ext_attens->children().size() > num_ext_atten )
@@ -609,16 +731,113 @@ void RelActAutoGuiRelEffOptions::update_shield_widgets( const optional<RelActCal
       sw->resetState();
   }else
   {
+    const vector<WWidget *> kids = m_phys_ext_attens->children();
+    assert( kids.size() == num_ext_atten );
+    for( size_t i = 0; i < kids.size(); ++i )
+    {
+      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( kids[i] );
+      assert( sw );
+      if( sw && (i < ext_shields.size()) )
+        update_shield_widget( ext_shields[i], sw );
+      else if( sw )
+        sw->resetState();
+    }//for( size_t i = 0; i < num_ext_atten; ++i )
+  }//if( ext_shields.empty() ) / else
+}//update_external_atten_shield_widget(...)
+
+
+void RelActAutoGuiRelEffOptions::update_self_atten_shield_widget( const RelEffShieldWidget *shield )
+{
+  if( !m_phys_model_self_atten )
+    initPhysModelShields();
+  
+  assert( m_phys_model_self_atten );
+  if( !m_phys_model_self_atten )
+    return;
+  
+  if( shield )
+  {
+    std::unique_ptr<RelEffShieldState> state = shield->state();
+    if( state )
+      m_phys_model_self_atten->setState( *state );
+  }else
+  {
+    m_phys_model_self_atten->resetState();
+  }
+}//void update_self_atten_shield_widget(...)
+
+
+void RelActAutoGuiRelEffOptions::update_external_atten_shield_widget( const std::vector<const RelEffShieldWidget *> &ext_shields )
+{
+  if( !m_phys_model_self_atten )
+    initPhysModelShields();
+  
+  const size_t num_ext_atten = std::max( size_t(1), ext_shields.size() );
+  while( m_phys_ext_attens->children().size() > num_ext_atten )
+  {
+    delete m_phys_ext_attens->children().back();
+  }
+  
+  while( m_phys_ext_attens->children().size() < num_ext_atten )
+  {
+    RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
+                                                    m_phys_ext_attens );
+    sw->changed().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
+  }
+  
+  if( ext_shields.empty() )
+  {
+    assert( m_phys_ext_attens->children().size() == 1 );
+    RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( m_phys_ext_attens->children()[0] );
+    assert( sw );
+    if( sw )
+      sw->resetState();
+  }else
+  {
     assert( m_phys_ext_attens->children().size() == num_ext_atten );
-    for( size_t i = 0; i < num_ext_atten; ++i )
+    const vector<WWidget *> childs = m_phys_ext_attens->children();
+    
+    for( size_t i = 0; i < childs.size(); ++i )
     {
       RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( m_phys_ext_attens->children()[i] );
       assert( sw );
-      if( sw )
-        update_shield_widget( ext_shields[i], sw );
+
+      if( sw && (i < ext_shields.size()) && ext_shields[i] )
+      {
+        unique_ptr<RelEffShieldState> state = ext_shields[i]->state();
+        if( state )
+          sw->setState( *state );
+      }else if( sw )
+      {
+        sw->resetState();
+      }
     }//for( size_t i = 0; i < num_ext_atten; ++i )
   }//if( ext_shields.empty() ) / else
+}//void update_external_atten_shield_widget(...)
+
+
+const RelEffShieldWidget *RelActAutoGuiRelEffOptions::selfAttenWidget() const
+{
+  return m_phys_model_self_atten;
 }
+
+
+vector<const RelEffShieldWidget *> RelActAutoGuiRelEffOptions::externalAttenWidgets() const
+{
+  vector<const RelEffShieldWidget *> answer;
+  const vector<WWidget *> childs = m_phys_ext_attens->children();
+  
+  for( size_t i = 0; i < childs.size(); ++i )
+  {
+    RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( m_phys_ext_attens->children()[i] );
+    assert( sw );
+    if( sw )
+      answer.push_back( sw );
+  }
+  
+  return answer;
+}//externalAttenWidgets()
+
 
 RelActCalc::RelEffEqnForm RelActAutoGuiRelEffOptions::rel_eff_eqn_form() const
 {
