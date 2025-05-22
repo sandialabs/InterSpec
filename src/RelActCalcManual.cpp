@@ -3990,10 +3990,10 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   get_mass_fraction_table( results_html );
   get_mass_ratio_table( results_html );
   
-  const bool has_decay_corr = !m_input_peaks_before_decay_corr.empty();
+  const bool has_decay_corr = !m_input.peaks_before_decay_correction.empty();
 
   bool any_peak_has_multiple_srcs = false;
-  for( const GenericPeakInfo &info : m_input_peak )
+  for( const GenericPeakInfo &info : m_input.peaks )
     any_peak_has_multiple_srcs |= (info.m_source_gammas.size() > 1);
 
   // Make table giving info on each of the _used_ peaks
