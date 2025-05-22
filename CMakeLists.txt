@@ -18,6 +18,10 @@ if( CONTAINER_LIBC OR CONTAINER_MUSL)
   set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
   set ( USE_REL_ACT_TOOL ON ON CACHE INTERNAL "" )
   if( CONTAINER_MUSL )
+    # In Alpine, the hardening and link-time-optimization clash for `vsnprintf`, so we need to disable one
+    # of these - and for serving to web, lto seems like the better one to disable.
+    #set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -U_FORTIFY_SOURCE" ) # or  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_FORTIFY_SOURCE=0")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
     set( CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++" CACHE INTERNAL "")
     set( CMAKE_FIND_LIBRARY_SUFFIXES ".a" CACHE INTERNAL "")
   endif()

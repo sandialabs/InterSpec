@@ -28,7 +28,7 @@ set( CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/prefix" CACHE INTERNAL "" )
 set(BOOST_ENABLE_CMAKE ON CACHE INTERNAL "" )
 
 
-# Currently installing dependancies to "prefix" of the buiuld directory is a work in progress, 
+# Currently installing dependencies to "prefix" of the build directory is a work in progress, 
 #  so just doing it for iOS build, at the moment.... Boost and Wt seem to be not working - not sure if this is something I did, or not
 if( InterSpec_IOS )
   set( INSTALL_DEPENDENCIES_IN_BUILD_DIR ON )
@@ -46,6 +46,9 @@ set( BOOST_IOSTREAMS_ENABLE_ZSTD OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_ZLIB OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_LZMA OFF CACHE INTERNAL ""  )
 set( BOOST_IOSTREAMS_ENABLE_BZIP2 OFF CACHE INTERNAL ""  )
+set( Boost_NOWIDE_WERROR OFF CACHE INTERNAL ""  )
+#set( BOOST_EXCLUDE_LIBRARIES nowide log CACHE INTERNAL ""  )
+
 set( BUILD_SHARED_LIBS OFF CACHE INTERNAL "Build SHARED libraries" )
 
 # TODO: set BOOST libraries to not build, like wave, beast, wserialization, etc
@@ -70,6 +73,15 @@ find_file( ZLIB_PATCH_FILE "zlib/1.2.12/FetchContent/zlib_1.2.12.git.patch"
   NO_CMAKE_FIND_ROOT_PATH
 )
 
+find_file( CERES_PATCH_FILE "ceres/2.2.0/ceres.patch"  
+  PATHS "${CMAKE_CURRENT_SOURCE_DIR}/target/patches"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../target/patches"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../target/patches"
+  REQUIRED
+  NO_DEFAULT_PATH
+  NO_CMAKE_FIND_ROOT_PATH
+)
+
 # set( FETCHCONTENT_QUIET FALSE )
 
 # Check for local Boost
@@ -77,18 +89,25 @@ set(LOCAL_BOOST_DIR "${CMAKE_BINARY_DIR}/_deps/boost-src")
 if(EXISTS "${LOCAL_BOOST_DIR}/CMakeLists.txt")
   message(STATUS "Using local Boost from ${LOCAL_BOOST_DIR}")
   set(BOOST_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_BOOST_DIR}")
+  FetchContent_Declare( boost ${BOOST_FETCHCONTENT_SOURCE} )
 else()
   set(BOOST_FETCHCONTENT_SOURCE
+    #URL https://github.com/boostorg/boost/releases/download/boost-1.85.0/boost-1.85.0-cmake.zip
+    #URL_HASH MD5=0f0d58e89e08f8b5f6a01656e19b8535
+    #DOWNLOAD_EXTRACT_TIMESTAMP true
     GIT_REPOSITORY https://github.com/boostorg/boost.git
     GIT_TAG        ab7968a0bbcf574a7859240d1d8443f58ed6f6cf # release-1.85.0
     GIT_SHALLOW    ON
   )
+  #set(BOOST_ENABLE_LIBRARIES regex thread date_time system filesystem program_options random CACHE STRING "Boost libraries to build")
+  #set(Boost_USE_STATIC_LIBS ON CACHE BOOL "Use shared Boost libraries")
+  #set(Boost_USE_MULTITHREADED ON CACHE BOOL "Use multithreaded Boost libraries")
+  #set(Boost_USE_STATIC_RUNTIME ON CACHE BOOL "Use static runtime for Boost")
+  FetchContent_Declare( boost ${BOOST_FETCHCONTENT_SOURCE} )
 endif()
 
-FetchContent_Declare(
-  boost
-  ${BOOST_FETCHCONTENT_SOURCE}
-)
+FetchContent_MakeAvailable( boost )
+FetchContent_GetProperties( boost )
 
 # Check for local Wt
 set(LOCAL_WT_DIR "${CMAKE_BINARY_DIR}/_deps/wt-src")
@@ -121,11 +140,11 @@ else( INSTALL_DEPENDENCIES_IN_BUILD_DIR )
     add_subdirectory(${wt_SOURCE_DIR} ${wt_BINARY_DIR} EXCLUDE_FROM_ALL)
   endif()
 
-  FetchContent_GetProperties(boost)
-  if(NOT boost_POPULATED)
-    FetchContent_Populate(boost)
-    add_subdirectory(${boost_SOURCE_DIR} ${boost_BINARY_DIR} EXCLUDE_FROM_ALL)
-  endif()
+  #FetchContent_GetProperties(boost)
+  #if(NOT boost_POPULATED)
+  #  FetchContent_Populate(boost)
+  #  add_subdirectory(${boost_SOURCE_DIR} ${boost_BINARY_DIR} EXCLUDE_FROM_ALL)
+  #endif()
 
   # Since we arent installing Wt, the InterSpec CMakeLists.txt wont find Wt resources,
   #  so we'll hard code this directory.
@@ -211,10 +230,10 @@ if( USE_REL_ACT_TOOL )
   #endif()
   
   # For Android and iOS, we need to force the path information for Eigen, for some reason.
-  if( CMAKE_CROSSCOMPILING )
+  #if( CMAKE_CROSSCOMPILING OR APPLE )
     set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
     set( Eigen3_DIR "${eigen_BINARY_DIR}" CACHE PATH "" FORCE )  #${eigen_SOURCE_DIR}
-  endif( CMAKE_CROSSCOMPILING )
+  #endif( CMAKE_CROSSCOMPILING OR APPLE )
 
   
   # Set some Google Ceres options; both to allow compiling without further dependancies, and
@@ -238,6 +257,7 @@ if( USE_REL_ACT_TOOL )
       GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
       GIT_TAG         85331393dc0dff09f6fb9903ab0c4bfa3e134b01 # release-2.2.0
       GIT_SHALLOW    TRUE
+      PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${CERES_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${CERES_PATCH_FILE}
     )
   endif()
 

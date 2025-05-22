@@ -23,7 +23,7 @@
 FROM alpine:3 AS build_interspec
 ARG repo=https://github.com/sandialabs/InterSpec.git \
 ARG tag=master \
-ARG hostdepdir=true \
+ARG hostdepdir=false \
 ARG hostbuilddir=false \
 WORKDIR /work
 
@@ -31,8 +31,8 @@ WORKDIR /work
 # COPY src ./src
 # COPY build ./build
 
-RUN --mount=type=bind,target=/mnt/host,rw    \
-        apk add --no-cache \
+RUN --mount=type=bind,source=.,target=/mnt/host,rw    \
+        apk --no-check-certificate add --no-cache \
         alpine-sdk \
         cmake \
         patch \
@@ -61,23 +61,27 @@ RUN --mount=type=bind,target=/mnt/host,rw    \
         srcdir=/work/src && \
         builddir=/work/build; \
     fi && \
+     echo "Will check for source" && \
     if [ ! -d "$srcdir/InterSpec_resources" ]; then \ 
         echo "source repo missing, cloning" && \
         git clone --recursive --branch $tag --depth=1 $repo $srcdir; \
     fi && \
+    echo "About to CMake" && \
     cmake \
         -B "$builddir" \
         -DCONTAINER_MUSL=ON \
         -DInterSpec_FETCH_DEPENDENCIES=ON \
         -S "$srcdir" && \
+    echo "About to build" && \
     cmake --build "$builddir" -j4 && \
+    echo "About to install" && \
     cmake --install "$builddir" --prefix /release && \
     cd /release && \ 
     chmod -R a+r * && \
     chmod a+x bin/InterSpec && \
     mkdir -p data && \
     chmod 777 data && \
-    echo Build complete. 
+    echo "Build complete."
 
 #Web Server
 FROM scratch
