@@ -20,6 +20,9 @@
 # If build fails, add the --no-cache option to the docker build command to force a fresh build
 #  docker build --no-cache --tag 'interspec_alpine' -f alpine_web_container.dockerfile .
 
+# If you are having trouble with proxies, or certificates, and you feel brave, you can add the "--no-check-certificate" argument to the `apk` 
+#  command below to blow past this - but it really isn't a good option.
+
 FROM alpine:3 AS build_interspec
 ARG repo=https://github.com/sandialabs/InterSpec.git \
 ARG tag=master \
@@ -32,7 +35,7 @@ WORKDIR /work
 # COPY build ./build
 
 RUN --mount=type=bind,source=.,target=/mnt/host,rw    \
-        apk --no-check-certificate add --no-cache \
+        apk add --no-cache \
         alpine-sdk \
         cmake \
         patch \
@@ -81,6 +84,10 @@ RUN --mount=type=bind,source=.,target=/mnt/host,rw    \
     chmod a+x bin/InterSpec && \
     mkdir -p data && \
     chmod 777 data && \
+    rm -rf lib && \
+    rm -rf include && \
+    rm -rf share/eigen3 && \
+    rm -rf share/pkgconfig && \
     echo "Build complete."
 
 #Web Server
@@ -90,16 +97,3 @@ COPY --from=build_interspec /release /interspec/
 WORKDIR /interspec
 EXPOSE 8078
 ENTRYPOINT ["./bin/InterSpec", "--config=./share/interspec/data/config/wt_config_web.xml", "--userdatadir=/data", "--http-port=8078", "--http-address=0.0.0.0", "--docroot", "./share/interspec"]
-
-
-
-
-
-# Then numeric group/user value of 280 was chosen randomly; it doesnt conflict with existing groups/users on dev or public server, and is below 1000 (e.g., a system user without a home directory or default shell)
-#RUN groupadd --gid 280 interspec && useradd --uid 280 --gid interspec interspec
-#RUN addgroup -S interspec && adduser --disabled-password --no-create-home -S interspec -G interspec
-#USER interspec
-# Or just use user guest
-#USER guest
-# You could keep the access log by chenging the entrypoint to: "--accesslog=/mnt/interspec_data/wt_access_log.txt"
-# You could also edit the <log-file></log-file> element of data/config/wt_config_web.xml to save the stdout/stderr of InterSpec to a log file at /mnt/interspec_data/interspec_log.txt.
