@@ -166,7 +166,9 @@ private:
   void setupUI();
   void createTreeModel();
   void initBaseDirs();
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   void showInExplorer();
+#endif
 };
 
 #endif // RefSpectraWidget_h 
