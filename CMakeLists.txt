@@ -6,14 +6,33 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
+if( CONTAINER_LIBC OR CONTAINER_MUSL)
+  set( BUILD_AS_LOCAL_SERVER OFF CACHE INTERNAL "" )
+  set( CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
+  set( USE_REL_ACT_TOOL ON CACHE INTERNAL "")
+  set( BUILD_FOR_WEB_DEPLOYMENT ON CACHE INTERNAL "" )
+  set( CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  #set( Boost_INCLUDE_DIR "build/_deps/boost-src/libs")
+  set( ZLIB_INCLUDE_DIR:STRING "build/_deps/zlib-build")
+  set( SpecUtils_PYTHON_BINDINGS ON )
+  set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
+  set ( USE_REL_ACT_TOOL ON ON CACHE INTERNAL "" )
+  if( CONTAINER_MUSL )
+    # In Alpine, the hardening and link-time-optimization clash for `vsnprintf`, so we need to disable one
+    # of these - and for serving to web, lto seems like the better one to disable.
+    #set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -U_FORTIFY_SOURCE" ) # or  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_FORTIFY_SOURCE=0")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+    set( CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++" CACHE INTERNAL "")
+    set( CMAKE_FIND_LIBRARY_SUFFIXES ".a" CACHE INTERNAL "")
+  endif()
+endif()
 
 if( InterSpec_FETCH_DEPENDENCIES )
-  include( cmake/FetchInterSpecDeps.txt )
+  include( cmake/FetchInterSpecDeps.cmake )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 # If we are the top-level project, we'll build the local-server exe
 get_directory_property(hasParent PARENT_DIRECTORY)
-
 
 option(
     BUILD_AS_ELECTRON_APP
@@ -30,7 +49,14 @@ option(
     "Selects options appropriate for the web in the future"
     OFF
 )
-
+option(
+    BUILD_FOR_CONTAINER_LIBC
+    "Configures the executable to be run as a Docker app in a libc-based container"
+)
+option(
+    BUILD_FOR_CONTAINER_MUSL
+    "Configures the executable to be run as a Docker app in a musl-based container"
+)
 if( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" OFF )
 else( hasParent )
@@ -110,9 +136,23 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
-if( IOS OR ANDROID )
+
+
+
+if(BUILD_FOR_WEB_DEPLOYMENT)
+    set(TRY_TO_STATIC_LINK OFF)
+    set(CMAKE_BUILD_TYPE:STRING "Release")
+    set(USE_DB_TO_STORE_SPECTRA ON)
+    set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
+    set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
+    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
+    set(USE_BATCH_TOOLS OFF)
+endif(BUILD_FOR_WEB_DEPLOYMENT)
+
+
+if( IOS OR ANDROID OR BUILD_FOR_WEB_DEPLOYMENT )
   set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
-else()
+else( )
   option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
 endif()
 
@@ -166,19 +206,6 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 
-if(BUILD_FOR_WEB_DEPLOYMENT)
-    set(TRY_TO_STATIC_LINK ON)
-    set(CMAKE_BUILD_TYPE:STRING "Release")
-    set(USE_DB_TO_STORE_SPECTRA ON)
-    #    set( USE_SQLITE3_DB ON )
-    #    set( USE_MYSQL_DB OFF )
-    set(DATABASE_PASSWORD_FILE "/path/to/passwords/databases.xml")
-    set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
-    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-    set(USE_TERMINAL_WIDGET OFF)
-endif(BUILD_FOR_WEB_DEPLOYMENT)
-
 if(BUILD_AS_LOCAL_SERVER)
     set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
     set(SpecUtils_ENABLE_EQUALITY_CHECKS ON CACHE INTERNAL "")
@@ -186,7 +213,7 @@ endif(BUILD_AS_LOCAL_SERVER)
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT AND BUILD_AS_LOCAL_SERVER )
-  message( FATAL_ERROR "You can not buildfor both local webserver and web deployment" )
+  message( FATAL_ERROR "You can not build for both local webserver and web deployment" )
 endif()
 
 
@@ -324,6 +351,8 @@ set(sources
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
+    src/RefSpectraWidget.cpp
+    src/RefSpectraModel.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -430,8 +459,9 @@ set(headers
     InterSpec/AddNewPeakDialog.h
     InterSpec/UserPreferences.h
     InterSpec/XmlUtils.hpp
+    InterSpec/RefSpectraWidget.h
+    InterSpec/RefSpectraModel.h
 )
-
 
 if(USE_DB_TO_STORE_SPECTRA)
     list(APPEND sources src/DbFileBrowser.cpp)
@@ -627,19 +657,34 @@ add_subdirectory(external_libs/SpecUtils)
 add_subdirectory(external_libs/SandiaDecay)
 add_subdirectory(external_libs/muparserx-4.0.7)
 
-add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers})
-
+add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers} )
 
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)
   add_executable(InterSpecExe main.cpp)
   target_link_libraries(InterSpecExe PUBLIC InterSpecLib)
   set_target_properties(InterSpecExe PROPERTIES OUTPUT_NAME "InterSpec")
+  # Tell the runtime linker to search ../lib beside the executable
+  if(UNIX AND NOT APPLE)           # $ORIGIN is a Linux/BSD feature
+    set_target_properties(InterSpecExe PROPERTIES
+        BUILD_RPATH  "$ORIGIN/../lib"
+        INSTALL_RPATH "$ORIGIN/../lib")
+    # makes variables such as $ORIGIN legal in BUILD_RPATH
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+  endif()
 endif()
 
 
 set_target_properties(InterSpecLib PROPERTIES PREFIX "")
 set_target_properties(InterSpecLib PROPERTIES OUTPUT_NAME "InterSpec")
+
+if((UNIX AND NOT APPLE) AND (BUILD_FOR_WEB_DEPLOYMENT OR BUILD_AS_LOCAL_SERVER) )           # $ORIGIN is a Linux/BSD feature
+  set_target_properties(InterSpecExe PROPERTIES
+      BUILD_RPATH  "$ORIGIN/../lib"
+      INSTALL_RPATH "$ORIGIN/../lib")
+  # makes variables such as $ORIGIN legal in BUILD_RPATH
+  set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+endif()
 
 # Turn off some compiler warnings
 target_compile_options(InterSpecLib PRIVATE
@@ -851,11 +896,6 @@ if(TRY_TO_STATIC_LINK)
         target_link_libraries(InterSpecLib PUBLIC ${FCGI_LIBRARIES})
     endif(Wt_FCGI_LIBRARY)
 
-    #include(cmake/WtFindSsl.txt)
-    #if(SSL_FOUND)
-    #    target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
-    #endif(SSL_FOUND)
-
     if(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
         find_library( RT_LIB rt REQUIRES )
         target_link_libraries(InterSpecLib PUBLIC ${RT_LIB})
@@ -904,6 +944,14 @@ if( WIN32 )
   # The following are only needed for Wt 3.7.1, not 3.3.4
   target_link_libraries( InterSpecLib PUBLIC opengl32.lib d2d1.lib windowscodecs.lib Dwrite.lib )
 endif( WIN32 )
+
+# after the target_link_libraries() for InterSpecLib / InterSpecExe
+if (CMAKE_CXX_STANDARD LESS 17)
+    # GCC < 9 still needs libstdc++fs for <experimental/filesystem>
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_libraries(InterSpecLib PUBLIC stdc++fs)
+    endif()
+endif()
 
 #if( ${PERFORM_DEVELOPER_CHECKS} EQUAL ${SpecUtils_ENABLE_EQUALITY_CHECKS} )
 #  MESSAGE(FATAL_ERROR "PERFORM_DEVELOPER_CHECKS (${PERFORM_DEVELOPER_CHECKS}) must be equal to SpecUtils_ENABLE_EQUALITY_CHECKS (${SpecUtils_ENABLE_EQUALITY_CHECKS})")
@@ -965,6 +1013,9 @@ if(NOT WT_RESOURCES_DIRECTORY)
 else(NOT WT_RESOURCES_DIRECTORY)
     MESSAGE("Using Wt resources from ${WT_RESOURCES_DIRECTORY}")
     file(COPY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/)
+    if(BUILD_FOR_WEB_DEPLOYMENT)
+      file(COPY ${WT_RESOURCES_DIRECTORY} DESTINATION ${PROJECT_BINARY_DIR}/resources)
+    endif(BUILD_FOR_WEB_DEPLOYMENT)
 endif(NOT WT_RESOURCES_DIRECTORY)
 
 if(NOT ANDROID)
@@ -1006,6 +1057,11 @@ configure_file(
 # Only create an install target if this is a top-level project (e.g., not Electron, or iOS, etc)
 if( NOT hasParent )
   INSTALL(TARGETS InterSpecExe DESTINATION bin)
-  INSTALL(TARGETS InterSpecLib DESTINATION lib)
+  
+  if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )
+    INSTALL(TARGETS InterSpecLib DESTINATION lib)
+  endif()
+  
   INSTALL(DIRECTORY data example_spectra InterSpec_resources DESTINATION share/interspec)
+  INSTALL(DIRECTORY ${WT_RESOURCES_DIRECTORY}/ DESTINATION share/interspec/resources)
 endif( NOT hasParent )

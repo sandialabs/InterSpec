@@ -120,7 +120,7 @@ public:
   static void fileTooLarge( const ::int64_t size_tried );
 
   //The dataUploaded(..) with two arguments is to help keep from having to
-  //  parse file twice to display when SpectraHeader is not cahcing the
+  //  parse file twice to display when SpectraHeader is not caching the
   //  SpecMeas obj.
   //XXX - The dataUploaded() with one argument is called whe a user uploads from
   //      the 'File Manager' screen - when they will probably want to load the

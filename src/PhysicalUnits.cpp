@@ -381,7 +381,10 @@ std::string printToBestTimeUnits( double time,
   char formatflag[32], buffer[64];
   snprintf(formatflag, sizeof(formatflag), "%%.%if %%s", maxDecimal );
   
-  if( fabs(time) < second*1.0E-3 )
+  if( time == 0.0 )
+  {
+    snprintf(buffer, sizeof(buffer), "%s", "0 s" );
+  }else if( fabs(time) < second*1.0E-3 )
   {
     snprintf(buffer, sizeof(buffer), formatflag, (time*1.0E6/second), "us" );
   }else if( fabs(time) < second*0.1 )

@@ -99,17 +99,17 @@ namespace MassAttenuation
    * \returns The mass attenuation coefficient for:
    *          compton + pair production + photo electric.
    */
-  float massAttenuationCoeficient( const int atomic_number, const float energy );
+  float massAttenuationCoefficientElement( const int atomic_number, const float energy );
   
-  /** Similar to the other #massAttenuationCoeficient function, but instead
+  /** Similar to the other #massAttenuationCoefficientElement function, but instead
    * only for a specific sub-proccess.
    */
-  float massAttenuationCoeficient( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process );
+  float massAttenuationCoefficientElement( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process );
   
   /** Similar to #massAttenuationCoeficient, but interpolated the result between
    * floor(atomic_number) and ceil(atomic_number) linearly.
    */
-  float massAttenuationCoeficientFracAN( const float atomic_number, const float energy );
+  float massAttenuationCoefficientFracAN( const float atomic_number, const float energy );
   
   
   /** Compute the total attenuation coefficient using GADRASs CrossSection.lib.
@@ -117,8 +117,11 @@ namespace MassAttenuation
    * of this function will read it in; if reading fails, will throw
    * std::runtime_exception.  Function is thread safe, but if called
    * simultaneously from multiple threads at first, each may read in
-   * CrossSection.lib, reulsting in a slight innefficncy (this is so we can not
+   * CrossSection.lib, resulting in a slight inefficacy (this is so we can not
    * have the data in memory unless will use it, while still being thread safe).
+   *
+   * Please note: this function is only used to compare to GADRAS, and not used for
+   * any calculations.
    *
    * \param energy Gamma energy in keV.
    * \param atomic_number Atomic number of material, inclusively between 1 and 94.

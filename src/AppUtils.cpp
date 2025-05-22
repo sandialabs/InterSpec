@@ -228,7 +228,7 @@ namespace AppUtils
   }//string sanitize_css_class_name( const string &src_name )
    */
   
-#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER )
+#if( USE_BATCH_TOOLS || BUILD_AS_LOCAL_SERVER || BUILD_FOR_WEB_DEPLOYMENT )
 #if defined(__APPLE__) || defined(unix) || defined(__unix) || defined(__unix__)
 unsigned terminal_width()
 {

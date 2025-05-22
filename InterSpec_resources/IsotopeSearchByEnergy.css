@@ -70,13 +70,9 @@
 
 .IsotopeSourceTypes
 {
-  /* This is the div that holds the "Gammas", "X-rays", and "Reaction" check boxes. */
-  display: flex;
-  flex-flow: row nowrap;
-  justify-content: space-between;
-  padding-left: 7px;
-  padding-top: 5px;
-  padding-bottom: 5px;
+  margin-bottom: 5px;
+  margin-top: 5px;
+  align-self: center;
 }
 
 .IsotopeSearchMinimums
@@ -237,11 +233,6 @@ div.AddSearchEnergy.Wt-disabled, div.DeleteSearchEnergy.Wt-disabled
   }
   
   .SearchEnergy {
-    padding-top: 2px;
-    padding-bottom: 2px;
-  }
-  
-  .IsotopeSourceTypes {
     padding-top: 2px;
     padding-bottom: 2px;
   }

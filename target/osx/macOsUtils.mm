@@ -26,8 +26,12 @@
 #import <dispatch/dispatch.h>
 #import <Foundation/NSUserDefaults.h>
 
+#import <AppKit/AppKit.h>
 #import <AppKit/NSWorkspace.h>    //NSWorkspace
 #import <Foundation/Foundation.h> //NSFileManager, NSBundle, NSURL
+
+#include <Wt/WServer>
+#include <Wt/WApplication>
 
 #include "target/osx/macOsUtils.h"
 
@@ -77,4 +81,82 @@ bool showFileInFinder( const std::string &filepath )
   
   return valid;
 }
+  
+  
+void showFilePicker( const std::string title, const std::string message,
+                           const bool canChooseFiles,
+                           const bool canChooseDirectories,
+                           const bool allowsMultipleSelection,
+                           const std::function<void(const std::vector<std::string> &)> callback )
+{
+  Wt::WApplication * const app = wApp;
+  assert( app );
+  if( !app )
+    throw std::runtime_error( "showDirectoryPicker must be called from WApplication main thread" );
+  const std::string session_id = app->sessionId();
+  
+  // Perform UI operations on the main thread.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    @autoreleasepool {
+      NSOpenPanel *panel = [NSOpenPanel openPanel];
+
+      if( !title.empty() )
+        panel.title = [NSString stringWithUTF8String:title.c_str()];
+      
+      if( !message.empty() )
+        panel.message = [NSString stringWithUTF8String:message.c_str()];
+
+      panel.canChooseFiles = canChooseFiles;
+      panel.canChooseDirectories = canChooseDirectories;
+      panel.allowsMultipleSelection = allowsMultipleSelection;
+      if( canChooseDirectories )
+        panel.canCreateDirectories = YES;
+
+      // Run the panel modally
+      [panel beginWithCompletionHandler:^(NSModalResponse result) {
+        std::vector<std::string> selectedPaths; //will be empty for cancel
+
+        if( result == NSModalResponseOK )
+        {
+          for( NSURL *selectedURL in panel.URLs )
+          {
+            if( !selectedURL.isFileURL )
+            {
+              NSLog(@"Warning: non-file URL returned: %@", selectedURL);
+              continue;
+            }
+            
+            const char *fsRep = [selectedURL fileSystemRepresentation];
+            if( fsRep )
+            {
+              selectedPaths.push_back( std::string(fsRep) );
+            }else
+            {
+              NSLog(@"Warning: Could not get fileSystemRepresentation for URL: %@", selectedURL);
+              // We could try [selectedURL path] here...
+              // selectedPath = std::string([[selectedURL path] UTF8String]);
+            }
+          }//for (NSURL *selectedURL in panel.URLs)
+         }//if( result == NSModalResponseOK )
+
+        // Call the callback from the apps main Wt thread
+        try
+        {
+          Wt::WServer * const server = Wt::WServer::instance();
+          assert( server );
+          if( !server )
+            throw std::runtime_error( "showDirectoryPicker: could get WServer" );
+            
+          server->post(session_id, [selectedPaths,callback](){
+            callback( selectedPaths );
+            wApp->triggerUpdate();
+          });
+        }catch (const std::exception& e)
+        {
+          NSLog(@"Exception in C++ callback: %s", e.what());
+        }//try / catch
+      }];//[panel beginWithCompletion
+    } // @autoreleasepool
+  }); // dispatch_async
+}//void showDirectoryPicker(...)
 }//namespace macOsUtils

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="pe-value">Valeur</message>
+  <message id="pe-uncertainty">Incertitude</message>
+  <message id="pe-parameter">Paramètre</message>
+  <message id="pe-label">Étiquette</message>
+  <message id="pe-peak-type">Type de pic</message>
+  <message id="pe-peak-model-gaussian">Gaussien</message>
+  <message id="pe-peak-model-data">Région de données</message>
+  <message id="pe-skew-type">Type d'asymétrie</message>
+  <message id="pe-btn-refit">Réajuster</message>
+  
+  <message id="pe-label-centroid">Centroïde</message>
+  <message id="pe-label-drf-fwhm">FWHM prédite par la DRF</message>
+  <message id="pe-label-amp">Amplitude</message>
+  <message id="pe-label-skew0">Asymétrie 0</message>
+  <message id="pe-label-skew1">Asymétrie 1</message>
+  <message id="pe-label-skew2">Asymétrie 2</message>
+  <message id="pe-label-skew3">Asymétrie 3</message>
+  <message id="pe-label-cont-p0">Cont. P0</message>
+  <message id="pe-label-cont-p1">Cont. P1</message>
+  <message id="pe-label-cont-p2">Cont. P2</message>
+  <message id="pe-label-cont-p3">Cont. P3</message>
+  <message id="pe-label-cont-p4">Cont. P4</message>
+  <message id="pe-label-roi-start">Début ROI (keV)</message>
+  <message id="pe-label-roi-end">Fin ROI (keV)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DDL</message>
+  <message id="pe-label-peak-color">Couleur du pic</message>
+
+  <message id="pe-multipeak-in-roi">Pic {1} de {2} dans la ROI</message>
+  <message id="pe-apply-all-of-type">Tous les pics {1}</message>
+  <message id="pe-drf-predict-fwhm-txt">La DRF prédit une FWHM de {1} keV</message>
+  <message id="pe-failed-refit-insig">Échec du réajustement du pic (devenu insignifiant), donc aucune action</message>
+
+</messages>

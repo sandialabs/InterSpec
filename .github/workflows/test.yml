@@ -81,7 +81,7 @@ jobs:
           if (Test-Path "Testing/Temporary/LastTest.log") { Copy-Item "Testing/Temporary/LastTest.log" -Destination TestLogs } else { echo "No LastTest.log avaialable" >> TestLogs/LastTest.log }
 
       - name: Upload test logs as GitHub Artifact
-        uses: actions/upload-artifact@v3.1.1
+        uses: actions/upload-artifact@v4
         with: 
           name: InterSpec_test_logs_${{ runner.os }}
           path: '${{runner.temp}}/build_tests/TestLogs'

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <message id="pid-dialog-peak-erase">مسح جميع الذروات؟</message>
+
+  <message id="pid-err-no-foreground">يجب تحميل طيف المقدمة لإضافة ذروة.</message>
+
+  <message id="pid-search-peaks-btn">البحث عن الذروات</message>
+  <message id="pid-tt-search-peaks-btn">البحث عن الذروات باستخدام خوارزمية العثور على الذروة التلقائية.</message>
+  <message id="pid-clear-peaks-btn">مسح جميع الذروات</message>
+  <message id="pid-tt-clear-peaks-btn">يزيل <b>جميع</b> الذروات الموجودة.</message>
+  <message id="pid-nuc-from-ref-btn">النويدات من المرجع</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    تعيين نويدات الذروة من خطوط المرجع المعروضة. ينطبق فقط على
+    الذروات التي ليس لها نويدة مرتبطة بها بالفعل.
+  </message>
+
+  <message id="pid-add-peak-btn">إضافة...</message>
+  <message id="pid-tt-add-peak-btn">إضافة ذروة جديدة يدويًا.</message>
+  <message id="pid-tt-del-peaks">حذف الذروة التي يتم تحريرها حاليًا.</message>
+  <message id="pid-better-editor-hint">انقر بزر الماوس الأيمن على الذروات للحصول على محرر أفضل</message>
+  <message id="pid-better-editor-hint-mobile">اضغط مع الاستمرار على الذروات للحصول على محرر أفضل</message>
+  <message id="pid-tt-csv-export">تصدير معلومات حول الذروات المحددة إلى تنسيق مفصول بفواصل.</message>
+  <message id="pid-tt-csv-copy">نسخ معلومات CSV للذروة إلى الحافظة الخاصة بك.
+    <p>سيتم نسخ بيانات الذروة إلى الحافظة الخاصة بك في كل من المتغيرات المنسقة والنص العادي،
+      لذا سيعتمد تنسيق البيانات على التطبيق الذي تقوم باللصق فيه.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">نسخ CSV الكامل للذروة</message>
+  <message id="pid-csv-copy-no-hdr">نسخ بدون رؤوس</message>
+  <message id="pid-csv-copy-compact">نسخ معلومات ملائمة الذروة</message>
+</messages>

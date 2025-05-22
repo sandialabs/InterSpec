@@ -1,0 +1,437 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- UUR SAND2024-16468O
+
+The entries in this file define the default categories the "Nuclide Search" tab will allow you to select.
+
+You create your own version of this file, and place in the InterSpec user data directory (see
+Help -> "About InterSpec" -> "Data" for this path; on Windows this might be 
+"C:\Users\<user>\AppData\Roaming\InterSpec"), and your entries will be appended after the default ones (after
+you restart InterSpec).
+
+-->
+
+<NucSearchCategories>
+  <!-- There is the "Nuclides + X-rays" category that is hard-coded into the InterSpec executable, that is not defined in this file. -->
+
+  <NucSearchCategory>
+    <!-- The internationalize attribute of the Name and Description elements only applies to default categories to
+    allow translation to other languages (e.g. entry in InterSpec_resources/app_text/IsotopeSearchByEnergy.xml),
+    when making custom categories, you will instead use spelled out names (e.g., "My Fav Nucs"), and either
+    leave out the attribute, or give it a value of "0"
+    -->
+    <Name internationalize="1">isbe-category-nuc-xray-rctn</Name>
+    <Description internationalize="1">isbe-category-nuc-xray-rctn-desc</Description>
+    <MinBr>0.0</MinBr>                    <!-- Defaults to zero if not specified.  Only applicable to AllowNucGammas. -->
+    <MinHl>6000 s</MinHl>                 <!-- Defaults to zero if not specified.  Only applicable to AllowNucGammas. -->
+    <AllowNucGammas>1</AllowNucGammas>    <!-- If should search on nuclide gammas and decay x-rays. These options default to false if not specified. -->
+    <AllowFluorXrays>1</AllowFluorXrays>  <!-- If should search on element fluorescence x-rays. -->
+    <AllowReactions>1</AllowReactions>    <!-- If should include reactions. -->
+    <AllowAlphas>0</AllowAlphas>          <!-- If should search for alpha energy of nuclides. If true, then betas, x-rays, reactions, and nulcides must be false. -->
+    <AllowBetas>0</AllowBetas>            <!-- If should search for beta end-point energy of nuclides. If true, then alphas, x-rays, reactions, and nulcides must be false. -->
+    <NoProgeny>0</NoProgeny>              <!-- If should only consider the parent nuclide, and NOT consider any of the progeny. -->
+     
+    <!-- You can specify specific element, that will be the only elements fluorescence x-rays can come from.
+    If empty or not specified, will allow all elements.
+    Use same values you would type into Ref. Photopeak tool - Invalid values will be silently discarded.
+    Also, if you specify any values, AllowFluorXrays must have value "1"
+    <Elements>
+      <Element>U<Element>
+      <Element>Pu<Element>
+    </Elements>
+    --> 
+
+    <!-- Specific nuclides to search from; if not specified, or empty, will allow all nuclides.
+    Also, if you specify any values, AllowNucGammas, AllowAlphas, or AllowBetas must have value "1"
+    <Nuclides>
+      <Nuclide>Co60</Nuclide>
+      <Nuclide>Am241</Nuclide>
+    </Nuclides>
+    -->
+  
+    <!-- Specific reactions to search from; if not specified, or empty, will allow all nuclides.
+    Also, if you specify any values, AllowReactions must have value "1"
+    <Reactions>                           
+      <Reaction>Fe(n,g)</Reaction>        
+      <Reaction>U(n,n)</Reaction>
+    </Reactions>
+    -->
+  </NucSearchCategory>
+
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-xray</Name>
+    <Description internationalize="1">isbe-category-xray-desc</Description>
+    <AllowFluorXrays>1</AllowFluorXrays>
+  </NucSearchCategory>
+
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-reactions</Name>
+    <Description internationalize="1">isbe-category-reactions-desc</Description>
+    <AllowReactions>1</AllowReactions>
+  </NucSearchCategory>
+
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-norm</Name>
+    <Description internationalize="1">isbe-category-norm-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    
+    <!-- NORM nuclides from (retrieved 20241205):
+    https://world-nuclear.org/information-library/safety-and-security/radiation-and-health/naturally-occurring-radioactive-materials-norm
+    -->
+    <Nuclides>
+      <Nuclide>C-14</Nuclide><Nuclide>H-3</Nuclide><Nuclide>Na-22</Nuclide><Nuclide>Be-7</Nuclide>
+      <Nuclide>U-238</Nuclide><Nuclide>Ra-226</Nuclide><Nuclide>Pb-210</Nuclide><Nuclide>Po-210</Nuclide>
+      <Nuclide>Th-232</Nuclide><Nuclide>Ra-228</Nuclide><Nuclide>K-40</Nuclide><Nuclide>Rn222</Nuclide>
+    </Nuclides>
+    
+    <Elements>
+      <Element>U</Element><Element>Pb</Element><Element>Ra</Element><Element>Rn</Element>
+    </Elements>
+  </NucSearchCategory>
+  
+  
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-medical</Name>
+    <Description internationalize="1">isbe-category-medical-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <Nuclides>
+      <!-- The next 111 nuclides are from
+      https://www.radiochemistry.org/nuclearmedicine/frames/medical_radioisotopes/index.html, which
+      was retrieved 20241205, using:
+      https://web.archive.org/web/20170827073102/https://www.radiochemistry.org/nuclearmedicine/frames/medical_radioisotopes/index.html
+      -->
+      <Nuclide>Ac-225</Nuclide><Nuclide>Ac-227</Nuclide><Nuclide>Am-241</Nuclide><Nuclide>As-72</Nuclide>
+      <Nuclide>As-74</Nuclide><Nuclide>At-211</Nuclide><Nuclide>Au-198</Nuclide><Nuclide>B-11</Nuclide>
+      <Nuclide>Be-7</Nuclide><Nuclide>Bi-212</Nuclide><Nuclide>Bi-213</Nuclide><Nuclide>Br-75</Nuclide>
+      <Nuclide>Br-77</Nuclide><Nuclide>C-11</Nuclide><Nuclide>C-14</Nuclide><Nuclide>Ca-48</Nuclide>
+      <Nuclide>Cd-109</Nuclide><Nuclide>Ce-139</Nuclide><Nuclide>Ce-141</Nuclide><Nuclide>Cf-252</Nuclide>
+      <Nuclide>Co-55</Nuclide><Nuclide>Co-57</Nuclide><Nuclide>Co-60</Nuclide><Nuclide>Cr-51</Nuclide>
+      <Nuclide>Cs-130</Nuclide><Nuclide>Cs-131</Nuclide><Nuclide>Cs-137</Nuclide><Nuclide>Cu-61</Nuclide>
+      <Nuclide>Cu-62</Nuclide><Nuclide>Cu-64</Nuclide><Nuclide>Cu-67</Nuclide><Nuclide>Dy-165</Nuclide>
+      <Nuclide>Eu-152</Nuclide><Nuclide>Eu-155</Nuclide><Nuclide>F-18</Nuclide><Nuclide>Fe-55</Nuclide>
+      <Nuclide>Fe-59</Nuclide><Nuclide>Ga-64</Nuclide><Nuclide>Ga-67</Nuclide><Nuclide>Ga-68</Nuclide>
+      <Nuclide>Gd-153</Nuclide><Nuclide>Ge-68</Nuclide><Nuclide>H-3</Nuclide><Nuclide>I-122</Nuclide>
+      <Nuclide>I-123</Nuclide><Nuclide>I-124</Nuclide><Nuclide>I-125</Nuclide><Nuclide>I-131</Nuclide>
+      <Nuclide>I-132</Nuclide><Nuclide>In-111</Nuclide><Nuclide>In-115m</Nuclide><Nuclide>Ir-191m</Nuclide>
+      <Nuclide>Ir-192</Nuclide><Nuclide>Kr-81m</Nuclide><Nuclide>Lu-177</Nuclide><Nuclide>Mn-51</Nuclide>
+      <Nuclide>Mn-52</Nuclide><Nuclide>Mo-99</Nuclide><Nuclide>N-13</Nuclide><Nuclide>Nb-95</Nuclide>
+      <Nuclide>O-15</Nuclide><Nuclide>Os-191</Nuclide><Nuclide>Os-194</Nuclide><Nuclide>P-32</Nuclide>
+      <Nuclide>P-33</Nuclide><Nuclide>Pb-203</Nuclide><Nuclide>Pb-212</Nuclide><Nuclide>Pd-103</Nuclide>
+      <Nuclide>Pd-109</Nuclide><Nuclide>Pu-238</Nuclide><Nuclide>Ra-223</Nuclide><Nuclide>Ra-226</Nuclide>
+      <Nuclide>Rb-82</Nuclide><Nuclide>Re-186</Nuclide><Nuclide>Re-188</Nuclide><Nuclide>Rh-105</Nuclide>
+      <Nuclide>Ru-97</Nuclide><Nuclide>Ru-103</Nuclide><Nuclide>S-35</Nuclide><Nuclide>Sc-46</Nuclide>
+      <Nuclide>Sc-47</Nuclide><Nuclide>Se-72</Nuclide><Nuclide>Se-75</Nuclide><Nuclide>Si-28</Nuclide>
+      <Nuclide>Sm-145</Nuclide><Nuclide>Sm-153</Nuclide><Nuclide>Sn-117m</Nuclide><Nuclide>Sr-85</Nuclide>
+      <Nuclide>Sr-89</Nuclide><Nuclide>Sr-90</Nuclide><Nuclide>Ta-178</Nuclide><Nuclide>Ta-179</Nuclide>
+      <Nuclide>Ta-182</Nuclide><Nuclide>Tb-149</Nuclide><Nuclide>Tc-96</Nuclide><Nuclide>Tc-99m</Nuclide>
+      <Nuclide>Th-228</Nuclide><Nuclide>Th-229</Nuclide><Nuclide>Tl-201</Nuclide><Nuclide>Tm-170</Nuclide>
+      <Nuclide>Tm-171</Nuclide><Nuclide>W-188</Nuclide><Nuclide>Xe-127</Nuclide><Nuclide>Xe-133</Nuclide>
+      <Nuclide>Y-88</Nuclide><Nuclide>Y-90</Nuclide><Nuclide>Y-91</Nuclide><Nuclide>Yb-169</Nuclide>
+      <Nuclide>Zn-62</Nuclide><Nuclide>Zn-65</Nuclide><Nuclide>Zr-95</Nuclide>
+      
+      <!-- The following 10 are additional nuclides obtained from (retrieved 20241205):
+           https://world-nuclear.org/information-library/non-power-nuclear-applications/radioisotopes-research/radioisotopes-in-medicine
+      -->
+      <Nuclide>Er-169</Nuclide><Nuclide>Ho-166</Nuclide><Nuclide>K-42</Nuclide><Nuclide>Na-22</Nuclide>
+      <Nuclide>Th-227</Nuclide><Nuclide>Yb-177</Nuclide><Nuclide>Co-64</Nuclide><Nuclide>Co-67</Nuclide>
+      <Nuclide>Kr-81</Nuclide><Nuclide>Sr-82</Nuclide>
+      
+      <!-- The following 50 additional nuclides are from PeakEasy 5.21
+      -->
+      <Nuclide>Al-26</Nuclide><Nuclide>Au-195m</Nuclide><Nuclide>Au-197m</Nuclide><Nuclide>Au-199</Nuclide>
+      <Nuclide>Ba-128</Nuclide><Nuclide>Bi-205</Nuclide><Nuclide>Bi-206</Nuclide><Nuclide>Br-76</Nuclide>
+      <Nuclide>Ca-45</Nuclide><Nuclide>Ca-47</Nuclide><Nuclide>Cd-115</Nuclide><Nuclide>Cd-115m</Nuclide>
+      <Nuclide>Co-56</Nuclide><Nuclide>Co-58</Nuclide><Nuclide>Co-61</Nuclide><Nuclide>Cr-48</Nuclide>
+      <Nuclide>Cs-132</Nuclide><Nuclide>Cs-136</Nuclide><Nuclide>Dy-166</Nuclide><Nuclide>Gd-159</Nuclide>
+      <Nuclide>Hg-195m</Nuclide><Nuclide>Hg-197</Nuclide><Nuclide>Hg-197m</Nuclide><Nuclide>Hg-203</Nuclide>
+      <Nuclide>Ho-166m</Nuclide><Nuclide>In-113m</Nuclide><Nuclide>In-114</Nuclide><Nuclide>In-114m</Nuclide>
+      <Nuclide>K-43</Nuclide><Nuclide>Kr-85</Nuclide><Nuclide>Lu-177m</Nuclide><Nuclide>Mg-28</Nuclide>
+      <Nuclide>Na-24</Nuclide><Nuclide>Pd-109m</Nuclide><Nuclide>Pm-149</Nuclide><Nuclide>Pm-151</Nuclide>
+      <Nuclide>Pt-195m</Nuclide><Nuclide>Ra-225</Nuclide><Nuclide>Ru-106</Nuclide><Nuclide>Sn-113</Nuclide>
+      <Nuclide>Sr-83</Nuclide><Nuclide>Sr-87m</Nuclide><Nuclide>Tc-94m</Nuclide><Nuclide>Tc-99</Nuclide>
+      <Nuclide>V-48</Nuclide><Nuclide>W-178</Nuclide><Nuclide>Xe-122</Nuclide><Nuclide>Yb-169m</Nuclide>
+      <Nuclide>Yb-175</Nuclide><Nuclide>Zr-89</Nuclide>
+    </Nuclides>
+  </NucSearchCategory>
+  
+
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-industrial</Name>
+    <Description internationalize="1">isbe-category-industrial-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    <Nuclides>
+      <!-- The following 22 nuclides are from (retrieved 20241205):
+      https://world-nuclear.org/information-library/non-power-nuclear-applications/radioisotopes-research/radioisotopes-in-industry
+      -->
+      <Nuclide>C14</Nuclide><Nuclide>Cl36</Nuclide><Nuclide>Pb210</Nuclide><Nuclide>H3</Nuclide>
+      <Nuclide>Am241</Nuclide><Nuclide>Cs137</Nuclide><Nuclide>Cr51</Nuclide>
+      <Nuclide>La140</Nuclide><Nuclide>Sc46</Nuclide><Nuclide>Ag110m</Nuclide><Nuclide>Au198</Nuclide>
+      <Nuclide>Co60</Nuclide><Nuclide>Tc99m</Nuclide><Nuclide>Ir192</Nuclide><Nuclide>Kr85</Nuclide>
+      <Nuclide>Mn54</Nuclide><Nuclide>Ni63</Nuclide><Nuclide>Se75</Nuclide><Nuclide>Sr90</Nuclide>
+      <Nuclide>Tl204</Nuclide><Nuclide>Yb169</Nuclide><Nuclide>Zn65</Nuclide>
+
+      <!-- The following 8 additional nuclides are from GADRAS 19.3.0 default DB.dat -->
+      <Nuclide>Co57</Nuclide><Nuclide>Y88</Nuclide><Nuclide>Ba133</Nuclide><Nuclide>Eu152</Nuclide>
+      <Nuclide>Eu154</Nuclide><Nuclide>Ho166m</Nuclide><Nuclide>Cf249</Nuclide><Nuclide>Cf252</Nuclide>
+      
+      <!-- The following 12 additional nuclides are from (retrieved 20241205):
+      https://archive.epa.gov/radiation/source-reduction-management/web/html/radionuclides.html
+      -->
+      <Nuclide>Cd109</Nuclide><Nuclide>Cm244</Nuclide><Nuclide>Fe55</Nuclide><Nuclide>Pu238</Nuclide>
+      <Nuclide>Po210</Nuclide><Nuclide>Pm147</Nuclide><Nuclide>Ra226</Nuclide><Nuclide>Na24</Nuclide>
+      <Nuclide>S35</Nuclide><Nuclide>Th232</Nuclide><Nuclide>Th229</Nuclide><Nuclide>Th230</Nuclide>
+      
+      <!-- Other sources -->
+      <Nuclide>Sb124</Nuclide>
+      <Nuclide>Na22</Nuclide>
+    </Nuclides>
+    <Elements>
+      <Element>U</Element>
+      <Element>Pb</Element>
+      <Element>W</Element>
+    </Elements>
+  </NucSearchCategory>
+
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-snm</Name>
+    <Description internationalize="1">isbe-category-snm-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    <AllowReactions>1</AllowReactions>
+    
+    <!-- The following nuclides, reactions, and elements are from GADRAS 19.3.0 default DB.dat -->
+    <Nuclides>
+      <Nuclide>Na22</Nuclide><Nuclide>U232</Nuclide><Nuclide>U233</Nuclide><Nuclide>U235</Nuclide>
+      <Nuclide>U237</Nuclide><Nuclide>Np237</Nuclide><Nuclide>U238</Nuclide><Nuclide>Pu239</Nuclide>
+      <Nuclide>Pu238</Nuclide><Nuclide>Pu241</Nuclide><Nuclide>Am241</Nuclide>
+    </Nuclides>
+    
+    <Elements>
+      <Element>U</Element>
+      <Element>Pu</Element>
+      <Element>Np</Element>
+    </Elements>
+    
+    <Reactions>
+      <Reaction>Fe(n,n)</Reaction><Reaction>Fe(n,g)</Reaction><Reaction>Fe(a,a)</Reaction><Reaction>H(n,g)</Reaction>
+      <Reaction>Al(a,p)</Reaction><Reaction>Cd(n,g)</Reaction><Reaction>Li(a,a)</Reaction><Reaction>Li(n,g)</Reaction>
+      <Reaction>Li(n,n)</Reaction><Reaction>O(a,n)</Reaction><Reaction>O(n,g)</Reaction><Reaction>O(n,n)</Reaction>
+    </Reactions>
+  </NucSearchCategory>
+
+  
+  <NucSearchCategory>
+    <!-- Nuclides and neutrons/reactions probable to be encountered in gamma spectroscopy, for field-based data (i.e., not
+    laboratory or dedicated facilities).
+    List provided by Michael Enghauser of Sandia National Laboratories.
+    -->
+    
+    <Name internationalize="1">isbe-category-common</Name>
+    <Description internationalize="1">isbe-category-common-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    <AllowReactions>1</AllowReactions>
+    
+    <!-- We'll allow searching on all x-rays, so wont specify individually. -->
+    
+    <Nuclides>
+      <Nuclide>Ac-225</Nuclide><Nuclide>Ac-227</Nuclide><Nuclide>Ag-108m</Nuclide><Nuclide>Ag-110m</Nuclide>
+      <Nuclide>Al-28</Nuclide><Nuclide>Am-241</Nuclide><Nuclide>Am-243</Nuclide><Nuclide>As-72</Nuclide>
+      <Nuclide>At-211</Nuclide><Nuclide>Au-198</Nuclide><Nuclide>Ba-133</Nuclide><Nuclide>Ba-140</Nuclide>
+      <Nuclide>Be-7</Nuclide><Nuclide>Bi-207</Nuclide><Nuclide>Bi-213</Nuclide><Nuclide>Br-76</Nuclide>
+      <Nuclide>Br-82</Nuclide><Nuclide>Ca-47</Nuclide><Nuclide>Cd-109</Nuclide><Nuclide>Ce-141</Nuclide>
+      <Nuclide>Ce-144</Nuclide><Nuclide>Cf-249</Nuclide><Nuclide>Cf-251</Nuclide><Nuclide>Cf-252</Nuclide>
+      <Nuclide>Cm-243</Nuclide><Nuclide>Cm-244</Nuclide><Nuclide>Cm-245</Nuclide><Nuclide>Co-56</Nuclide>
+      <Nuclide>Co-57</Nuclide><Nuclide>Co-58</Nuclide><Nuclide>Co-60</Nuclide><Nuclide>Cr-51</Nuclide>
+      <Nuclide>Cs-131</Nuclide><Nuclide>Cs-132</Nuclide><Nuclide>Cs-134</Nuclide><Nuclide>Cs-136</Nuclide>
+      <Nuclide>Cs-137</Nuclide><Nuclide>Cs-138</Nuclide><Nuclide>Cu-64</Nuclide><Nuclide>Cu-67</Nuclide>
+      <Nuclide>Eu-152</Nuclide><Nuclide>Eu-152m</Nuclide><Nuclide>Eu-154</Nuclide><Nuclide>Eu-155</Nuclide>
+      <Nuclide>Eu-156</Nuclide><Nuclide>F-18</Nuclide><Nuclide>Fe-59</Nuclide><Nuclide>Ga-67</Nuclide>
+      <Nuclide>Ga-68</Nuclide><Nuclide>Ga-72</Nuclide><Nuclide>Gd-153</Nuclide><Nuclide>Ge-71m</Nuclide>
+      <Nuclide>Ge-75m</Nuclide><Nuclide>Ge-77m</Nuclide><Nuclide>Hf-175</Nuclide><Nuclide>Hf-181</Nuclide>
+      <Nuclide>Ho-166m</Nuclide><Nuclide>I-121</Nuclide><Nuclide>I-123</Nuclide><Nuclide>I-124</Nuclide>
+      <Nuclide>I-125</Nuclide><Nuclide>I-126</Nuclide><Nuclide>I-131</Nuclide><Nuclide>I-132</Nuclide>
+      <Nuclide>In-111</Nuclide><Nuclide>In-114m</Nuclide><Nuclide>Ir-192</Nuclide><Nuclide>Ir-194</Nuclide>
+      <Nuclide>K-40</Nuclide><Nuclide>Kr-85</Nuclide><Nuclide>La-138</Nuclide><Nuclide>La-140</Nuclide>
+      <Nuclide>Lu-176</Nuclide><Nuclide>Lu-177</Nuclide><Nuclide>Lu-177m</Nuclide><Nuclide>Mn-52</Nuclide>
+      <Nuclide>Mn-54</Nuclide><Nuclide>Mn-56</Nuclide><Nuclide>Mo-99</Nuclide><Nuclide>Na-22</Nuclide>
+      <Nuclide>Na-24</Nuclide><Nuclide>Nb-94</Nuclide><Nuclide>Nb-95</Nuclide><Nuclide>Nb-95m</Nuclide>
+      <Nuclide>Nd-147</Nuclide><Nuclide>Np-237</Nuclide><Nuclide>Np-239</Nuclide><Nuclide>P-32</Nuclide>
+      <Nuclide>Pa-231</Nuclide><Nuclide>Pd-103</Nuclide><Nuclide>Po-210</Nuclide><Nuclide>Pu-238</Nuclide>
+      <Nuclide>Pu-239</Nuclide><Nuclide>Pu-240</Nuclide><Nuclide>Pu-241</Nuclide><Nuclide>Ra-223</Nuclide>
+      <Nuclide>Ra-226</Nuclide><Nuclide>Rb-82</Nuclide><Nuclide>Rb-86</Nuclide><Nuclide>Re-183</Nuclide>
+      <Nuclide>Re-184</Nuclide><Nuclide>Re-186</Nuclide><Nuclide>Re-188</Nuclide><Nuclide>Ru-103</Nuclide>
+      <Nuclide>Ru-106</Nuclide><Nuclide>Sb-124</Nuclide><Nuclide>Sb-125</Nuclide><Nuclide>Sc-46</Nuclide>
+      <Nuclide>Se-75</Nuclide><Nuclide>Sm-153</Nuclide><Nuclide>Sn-113</Nuclide><Nuclide>Sn-117m</Nuclide>
+      <Nuclide>Sr-85</Nuclide><Nuclide>Sr-90</Nuclide><Nuclide>Ta-182</Nuclide><Nuclide>Tb-160</Nuclide>
+      <Nuclide>Tb-161</Nuclide><Nuclide>Tc-99m</Nuclide><Nuclide>Te-121</Nuclide><Nuclide>Te-132</Nuclide>
+      <Nuclide>Th-228</Nuclide><Nuclide>Th-229</Nuclide><Nuclide>Th-232</Nuclide><Nuclide>Tl-200</Nuclide>
+      <Nuclide>Tl-201</Nuclide><Nuclide>Tl-202</Nuclide><Nuclide>Tl-204</Nuclide><Nuclide>U-232</Nuclide>
+      <Nuclide>U-233</Nuclide><Nuclide>U-234</Nuclide><Nuclide>U-235</Nuclide><Nuclide>U-238</Nuclide>
+      <Nuclide>V-48</Nuclide><Nuclide>W-181</Nuclide><Nuclide>W-185</Nuclide><Nuclide>W-187</Nuclide>
+      <Nuclide>W-188</Nuclide><Nuclide>Xe-131m</Nuclide><Nuclide>Xe-133</Nuclide><Nuclide>Xe-133m</Nuclide>
+      <Nuclide>Y-88</Nuclide><Nuclide>Y-90</Nuclide><Nuclide>Yb-169</Nuclide><Nuclide>Zn-65</Nuclide>
+      <Nuclide>Zr-89</Nuclide><Nuclide>Zr-95</Nuclide>
+      <!-- <Nuclide>U-Ore</Nuclide> -->
+    </Nuclides>
+  
+    <Reactions>
+      <Reaction>Al(n,g)</Reaction>
+      <Reaction>Be(a,n)</Reaction>
+      <Reaction>Be(n,g)</Reaction>
+      <Reaction>Cl(n,g)</Reaction>
+      <Reaction>Cl(n,n)</Reaction>
+      <Reaction>Cr(n,g)</Reaction>
+      <Reaction>Cr(n,n)</Reaction>
+      <Reaction>Cu(n,g)</Reaction>
+      <Reaction>Cu(n,n)</Reaction>
+      <!-- <Reaction>F(a,g)</Reaction> -->
+      <Reaction>F(a,a)</Reaction>
+      <Reaction>F(a,n)</Reaction>
+      <Reaction>F(a,p)</Reaction>
+      <Reaction>Fe(n,g)</Reaction>
+      <Reaction>Fe(n,n)</Reaction>
+      <Reaction>Ge(n,g)</Reaction>
+      <Reaction>Ge(n,n)</Reaction>
+      <!-- <Reaction>HPGe(n,n)</Reaction> -->
+      <Reaction>H(n,g)</Reaction>
+      <!-- <Reaction>Li(a,g)</Reaction> -->
+      <Reaction>Li(n,g)</Reaction>
+      <Reaction>Li(n,n)</Reaction>
+      <Reaction>Li(a,a)</Reaction>
+      <Reaction>N(n,g)</Reaction>
+      <Reaction>N(n,n)</Reaction>
+      <Reaction>Ni(n,g)</Reaction>
+      <Reaction>Ni(n,n)</Reaction>
+      <Reaction>Pb(n,g)</Reaction>
+      <Reaction>Pb(n,n)</Reaction>
+      <Reaction>W(n,g)</Reaction>
+      <Reaction>W(n,n)</Reaction>
+    </Reactions>
+  </NucSearchCategory>
+  
+  <NucSearchCategory>
+    <!-- Nuclides probable to be encountered in gamma spectroscopy, for field-based data (i.e., not
+    laboratory or dedicated facilities).
+    List provided by Michael Enghauser of Sandia National Laboratories.
+    -->
+    <Name internationalize="1">isbe-category-common-nuc</Name>
+    <Description internationalize="1">isbe-category-common-nuc-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    <AllowReactions>1</AllowReactions>
+    
+    <!--
+    We'll allow searching on all x-rays, so wont specify individually.
+    <Elements>
+      <Element>Au<Element><Element>Pb<Element><Element>Bi<Element><Element>W<Element>
+    </Elements>
+    -->
+    
+    <Nuclides>
+      <Nuclide>Ac-225</Nuclide><Nuclide>Ac-227</Nuclide><Nuclide>Ag-108m</Nuclide><Nuclide>Ag-110m</Nuclide>
+      <Nuclide>Al-28</Nuclide><Nuclide>Am-241</Nuclide><Nuclide>Am-243</Nuclide><Nuclide>As-72</Nuclide>
+      <Nuclide>At-211</Nuclide><Nuclide>Au-198</Nuclide><Nuclide>Ba-133</Nuclide><Nuclide>Ba-140</Nuclide>
+      <Nuclide>Be-7</Nuclide><Nuclide>Bi-207</Nuclide><Nuclide>Bi-213</Nuclide><Nuclide>Br-76</Nuclide>
+      <Nuclide>Br-82</Nuclide><Nuclide>Ca-47</Nuclide><Nuclide>Cd-109</Nuclide><Nuclide>Ce-141</Nuclide>
+      <Nuclide>Ce-144</Nuclide><Nuclide>Cf-249</Nuclide><Nuclide>Cf-251</Nuclide><Nuclide>Cf-252</Nuclide>
+      <Nuclide>Cm-243</Nuclide><Nuclide>Cm-244</Nuclide><Nuclide>Cm-245</Nuclide><Nuclide>Co-56</Nuclide>
+      <Nuclide>Co-57</Nuclide><Nuclide>Co-58</Nuclide><Nuclide>Co-60</Nuclide><Nuclide>Cr-51</Nuclide>
+      <Nuclide>Cs-131</Nuclide><Nuclide>Cs-132</Nuclide><Nuclide>Cs-134</Nuclide><Nuclide>Cs-136</Nuclide>
+      <Nuclide>Cs-137</Nuclide><Nuclide>Cs-138</Nuclide><Nuclide>Cu-64</Nuclide><Nuclide>Cu-67</Nuclide>
+      <Nuclide>Eu-152</Nuclide><Nuclide>Eu-152m</Nuclide><Nuclide>Eu-154</Nuclide><Nuclide>Eu-155</Nuclide>
+      <Nuclide>Eu-156</Nuclide><Nuclide>F-18</Nuclide><Nuclide>Fe-59</Nuclide><Nuclide>Ga-67</Nuclide>
+      <Nuclide>Ga-68</Nuclide><Nuclide>Ga-72</Nuclide><Nuclide>Gd-153</Nuclide><Nuclide>Ge-71m</Nuclide>
+      <Nuclide>Ge-75m</Nuclide><Nuclide>Ge-77m</Nuclide><Nuclide>Hf-175</Nuclide><Nuclide>Hf-181</Nuclide>
+      <Nuclide>Ho-166m</Nuclide><Nuclide>I-121</Nuclide><Nuclide>I-123</Nuclide><Nuclide>I-124</Nuclide>
+      <Nuclide>I-125</Nuclide><Nuclide>I-126</Nuclide><Nuclide>I-131</Nuclide><Nuclide>I-132</Nuclide>
+      <Nuclide>In-111</Nuclide><Nuclide>In-114m</Nuclide><Nuclide>Ir-192</Nuclide><Nuclide>Ir-194</Nuclide>
+      <Nuclide>K-40</Nuclide><Nuclide>Kr-85</Nuclide><Nuclide>La-138</Nuclide><Nuclide>La-140</Nuclide>
+      <Nuclide>Lu-176</Nuclide><Nuclide>Lu-177</Nuclide><Nuclide>Lu-177m</Nuclide><Nuclide>Mn-52</Nuclide>
+      <Nuclide>Mn-54</Nuclide><Nuclide>Mn-56</Nuclide><Nuclide>Mo-99</Nuclide><Nuclide>Na-22</Nuclide>
+      <Nuclide>Na-24</Nuclide><Nuclide>Nb-94</Nuclide><Nuclide>Nb-95</Nuclide><Nuclide>Nb-95m</Nuclide>
+      <Nuclide>Nd-147</Nuclide><Nuclide>Np-237</Nuclide><Nuclide>Np-239</Nuclide><Nuclide>P-32</Nuclide>
+      <Nuclide>Pa-231</Nuclide><Nuclide>Pd-103</Nuclide><Nuclide>Po-210</Nuclide><Nuclide>Pu-238</Nuclide>
+      <Nuclide>Pu-239</Nuclide><Nuclide>Pu-240</Nuclide><Nuclide>Pu-241</Nuclide><Nuclide>Ra-223</Nuclide>
+      <Nuclide>Ra-226</Nuclide><Nuclide>Rb-82</Nuclide><Nuclide>Rb-86</Nuclide><Nuclide>Re-183</Nuclide>
+      <Nuclide>Re-184</Nuclide><Nuclide>Re-186</Nuclide><Nuclide>Re-188</Nuclide><Nuclide>Ru-103</Nuclide>
+      <Nuclide>Ru-106</Nuclide><Nuclide>Sb-124</Nuclide><Nuclide>Sb-125</Nuclide><Nuclide>Sc-46</Nuclide>
+      <Nuclide>Se-75</Nuclide><Nuclide>Sm-153</Nuclide><Nuclide>Sn-113</Nuclide><Nuclide>Sn-117m</Nuclide>
+      <Nuclide>Sr-85</Nuclide><Nuclide>Sr-90</Nuclide><Nuclide>Ta-182</Nuclide><Nuclide>Tb-160</Nuclide>
+      <Nuclide>Tb-161</Nuclide><Nuclide>Tc-99m</Nuclide><Nuclide>Te-121</Nuclide><Nuclide>Te-132</Nuclide>
+      <Nuclide>Th-228</Nuclide><Nuclide>Th-229</Nuclide><Nuclide>Th-232</Nuclide><Nuclide>Tl-200</Nuclide>
+      <Nuclide>Tl-201</Nuclide><Nuclide>Tl-202</Nuclide><Nuclide>Tl-204</Nuclide><Nuclide>U-232</Nuclide>
+      <Nuclide>U-233</Nuclide><Nuclide>U-234</Nuclide><Nuclide>U-235</Nuclide><Nuclide>U-238</Nuclide>
+      <Nuclide>V-48</Nuclide><Nuclide>W-181</Nuclide><Nuclide>W-185</Nuclide><Nuclide>W-187</Nuclide>
+      <Nuclide>W-188</Nuclide><Nuclide>Xe-131m</Nuclide><Nuclide>Xe-133</Nuclide><Nuclide>Xe-133m</Nuclide>
+      <Nuclide>Y-88</Nuclide><Nuclide>Y-90</Nuclide><Nuclide>Yb-169</Nuclide><Nuclide>Zn-65</Nuclide>
+      <Nuclide>Zr-89</Nuclide><Nuclide>Zr-95</Nuclide>
+      <!-- <Nuclide>U-Ore</Nuclide> -->
+    </Nuclides>
+  </NucSearchCategory>
+   
+   <NucSearchCategory>
+     <Name internationalize="1">isbe-category-fission</Name>
+     <Description internationalize="1">isbe-category-fission-desc</Description>
+     <AllowNucGammas>1</AllowNucGammas>
+  
+     <Nuclides>
+       <!-- Major reactor coolant nuclides -->
+       <Nuclide>Cr-51</Nuclide><Nuclide>Mn-54</Nuclide><Nuclide>Mn-56</Nuclide><Nuclide>Fe-55</Nuclide>
+       <Nuclide>Fe-59</Nuclide><Nuclide>Co-58</Nuclide><Nuclide>Co-60</Nuclide><Nuclide>Ni-63</Nuclide>
+       <Nuclide>Ni-65</Nuclide><Nuclide>Cu-64</Nuclide><Nuclide>Zn-65</Nuclide><Nuclide>As-76</Nuclide>
+       <Nuclide>Zr-95</Nuclide><Nuclide>Ag-110m</Nuclide><Nuclide>Sn-113</Nuclide>
+       
+       <!-- Major short lived fission nuclides nuclides -->
+       <Nuclide>Cr-51</Nuclide><Nuclide>Mn-54</Nuclide><Nuclide>Mn-56</Nuclide><Nuclide>Fe-55</Nuclide>
+       <Nuclide>Fe-59</Nuclide><Nuclide>Co-58</Nuclide><Nuclide>Co-60</Nuclide><Nuclide>Ni-63</Nuclide>
+       <Nuclide>Ni-65</Nuclide><Nuclide>Cu-64</Nuclide><Nuclide>Zn-65</Nuclide><Nuclide>As-76</Nuclide>
+       <Nuclide>Zr-95</Nuclide><Nuclide>Ag-110m</Nuclide><Nuclide>Sn-113</Nuclide><Nuclide>Nb-95</Nuclide>
+       <Nuclide>Zr-97</Nuclide><Nuclide>Nb-97</Nuclide><Nuclide>Mo-99</Nuclide><Nuclide>Tc-99m</Nuclide>
+       <Nuclide>Ru-103</Nuclide><Nuclide>Rh-103</Nuclide><Nuclide>Ru-106</Nuclide><Nuclide>Rh-106</Nuclide>
+       <Nuclide>Sb-125</Nuclide><Nuclide>Te-125m</Nuclide><Nuclide>Te-127m</Nuclide><Nuclide>Te-129m</Nuclide>
+       <Nuclide>I-131</Nuclide><Nuclide>Xe-131</Nuclide><Nuclide>Te-132</Nuclide><Nuclide>I-132</Nuclide>
+       <Nuclide>I-133</Nuclide><Nuclide>Cs-134</Nuclide><Nuclide>Cs-137</Nuclide><Nuclide>Ba-140</Nuclide>
+       <Nuclide>La-140</Nuclide><Nuclide>Ce-141</Nuclide><Nuclide>Ce-143</Nuclide><Nuclide>Pr-143</Nuclide>
+       <Nuclide>Ce-144</Nuclide><Nuclide>Pr-144</Nuclide><Nuclide>Nd-147</Nuclide><Nuclide>Pm-147</Nuclide>
+       <Nuclide>Pm-151</Nuclide><Nuclide>Sm-151</Nuclide><Nuclide>Eu-154</Nuclide><Nuclide>Eu-155</Nuclide>
+      
+       <!-- Additional _potential_ fission nuclides, collected from various sources - not well vetted at all -->
+       <Nuclide>Cs-136</Nuclide><Nuclide>Cs-138</Nuclide><Nuclide>Eu-156</Nuclide><Nuclide>I-134</Nuclide>
+       <Nuclide>I-135</Nuclide><Nuclide>Kr-87</Nuclide><Nuclide>Kr-88</Nuclide><Nuclide>La-141</Nuclide>
+       <Nuclide>La-142</Nuclide><Nuclide>Mo-101</Nuclide><Nuclide>Nb-98m</Nuclide><Nuclide>Nd-149</Nuclide>
+       <Nuclide>Pm-143</Nuclide><Nuclide>Pm-148</Nuclide><Nuclide>Pm-148m</Nuclide><Nuclide>Pm-149</Nuclide>
+       <Nuclide>Pr-145</Nuclide><Nuclide>Pr-146</Nuclide><Nuclide>Rh-105</Nuclide><Nuclide>Rb-88</Nuclide>
+       <Nuclide>Rb-89</Nuclide><Nuclide>Ru-105</Nuclide><Nuclide>Sb-127</Nuclide><Nuclide>Sb-128</Nuclide>
+       <Nuclide>Sb-128m</Nuclide><Nuclide>Sb-129</Nuclide><Nuclide>Sb-130</Nuclide><Nuclide>Sb-131</Nuclide>
+       <Nuclide>Sn-127</Nuclide><Nuclide>Sn-128</Nuclide><Nuclide>Sr-89</Nuclide><Nuclide>Sr-90</Nuclide>
+       <Nuclide>Sr-91</Nuclide><Nuclide>Sr-92</Nuclide><Nuclide>Te-131</Nuclide><Nuclide>Te-133</Nuclide>
+       <Nuclide>Te-133m</Nuclide><Nuclide>Te-134</Nuclide><Nuclide>Xe-133</Nuclide><Nuclide>Xe-133m</Nuclide>
+       <Nuclide>Xe-135</Nuclide><Nuclide>Xe-135m</Nuclide><Nuclide>Xe-138</Nuclide><Nuclide>Y-91m</Nuclide>
+       <Nuclide>Y-92</Nuclide><Nuclide>Y-93</Nuclide><Nuclide>Y-94</Nuclide><Nuclide>Br-84</Nuclide>
+     </Nuclides>
+   </NucSearchCategory>
+   
+   
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-alphas</Name>
+    <Description internationalize="1">isbe-category-alphas-desc</Description>
+    <AllowAlphas>1</AllowAlphas>
+  </NucSearchCategory>
+
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-betas</Name>
+    <Description internationalize="1">isbe-category-betas-desc</Description>
+    <AllowBetas>1</AllowBetas>
+  </NucSearchCategory>
+
+  <NucSearchCategory>
+    <Name internationalize="1">isbe-category-no-progeny</Name>
+    <Description internationalize="1">isbe-category-no-progeny-desc</Description>
+    <AllowNucGammas>1</AllowNucGammas>
+    <AllowFluorXrays>1</AllowFluorXrays>
+    <NoProgeny>1</NoProgeny>
+  </NucSearchCategory>
+</NucSearchCategories>

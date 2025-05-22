@@ -2843,8 +2843,8 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const SandiaDecay::Nuclide *wanted_nuc = db->nuclide( nuclide );
-  assert( wanted_nuc );
-  if( !wanted_nuc )
+  
+  if( !wanted_nuc ) //Will be nullptr for reactions and x-rays
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): invalid nuclide" );
   
   //assert( !m_nonlin_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
@@ -3242,7 +3242,7 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
       << "%";
     }catch( std::exception & )
     {
-      
+      // We will get here for reactions and x-rays.
     }
     
     results_html << "</td>"
@@ -3990,9 +3990,12 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   get_mass_fraction_table( results_html );
   get_mass_ratio_table( results_html );
   
-  
-  const bool has_decay_corr = !m_input.peaks_before_decay_correction.empty();
-  
+  const bool has_decay_corr = !m_input_peaks_before_decay_corr.empty();
+
+  bool any_peak_has_multiple_srcs = false;
+  for( const GenericPeakInfo &info : m_input_peak )
+    any_peak_has_multiple_srcs |= (info.m_source_gammas.size() > 1);
+
   // Make table giving info on each of the _used_ peaks
   results_html << "<table class=\"peaktable resulttable\">\n";
   results_html << "  <caption>Peaks used for analysis.</caption>\n";
@@ -4007,6 +4010,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   "<th scope=\"col\">Add. Unc.</th>"
   "<th scope=\"col\">Meas. Rel Eff</th>"
   "<th scope=\"col\">Meas. Rel Eff Unct</th>"
+  << (any_peak_has_multiple_srcs ? "<th scope=\"col\">Peak Frac</th>" : "")
   << (has_decay_corr ? "<th scope=\"col\">Decay Corr.</th>" : "")
   << "</tr></thead>\n"
   "  <tbody>\n";
@@ -4038,7 +4042,20 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       << "</td><td>" << SpecUtils::printCompact( info.m_base_rel_eff_uncert, nsigfig )
       << "</td><td>" << SpecUtils::printCompact( meas_rel_eff, nsigfig )
       << "</td><td>" << SpecUtils::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
-      
+
+      if( any_peak_has_multiple_srcs )
+      {
+        results_html << "</td><td>";
+        if( info.m_source_gammas.size() >= 2 )
+        {
+          double sum_counts = 0.0;
+          for( const GenericLineInfo &sum_line : info.m_source_gammas )
+            sum_counts += relative_activity(sum_line.m_isotope) * sum_line.m_yield;
+          const double contrib_percent = 100.0*(rel_act*line.m_yield) / sum_counts;
+          results_html << SpecUtils::printCompact( contrib_percent, nsigfig ) << "%";
+        }
+      }//if( any_peak_has_multiple_srcs )
+
       if( has_decay_corr )
       {
         results_html << "</td><td>";
@@ -5913,7 +5930,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
         //size_t transition_index = 0;
         //const SandiaDecay::Transition *transition = nullptr;
         //PeakDef::SourceGammaType sourceGammaType;
-        //PeakDef::findNearestPhotopeak( nuc, nuc_energy, -1.0, false,
+        //PeakDef::findNearestPhotopeak( nuc, nuc_energy, -1.0, false, -1.0,
         //                               transition, transition_index, sourceGammaType );
         
         SandiaDecay::NuclideMixture mix;

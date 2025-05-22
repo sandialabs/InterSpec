@@ -272,10 +272,13 @@ void SpecFileSummary::init()
   spectrumGroupBox->addStyleClass( "SpecSummChoose" );
   m_spectraGroup = new WButtonGroup( this );
   button = new WRadioButton( WString::tr("Foreground"), spectrumGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Foreground) );
   button = new WRadioButton( WString::tr("Secondary"), spectrumGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::SecondForeground) );
   button = new WRadioButton( WString::tr("Background"), spectrumGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_spectraGroup->addButton( button, static_cast<int>(SpecUtils::SpectrumType::Background) );
   m_spectraGroup->setCheckedButton( m_spectraGroup->button( static_cast<int>(SpecUtils::SpectrumType::Foreground) ) );
   m_spectraGroup->checkedChanged().connect( this, &SpecFileSummary::handleSpectrumTypeChanged );
@@ -285,8 +288,10 @@ void SpecFileSummary::init()
   editGroupBox->addStyleClass( "SpecSummAllowEdit" );
   m_allowEditGroup = new WButtonGroup( this );
   button = new WRadioButton( WString::tr("Yes"), editGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_allowEditGroup->addButton( button, kAllowModify );
   button = new WRadioButton( WString::tr("No"), editGroupBox );
+  button->addStyleClass( "CbNoLineBreak" );
   m_allowEditGroup->addButton( button, kDontAllowModify );
   m_allowEditGroup->setCheckedButton( m_allowEditGroup->button(kDontAllowModify) );
   m_allowEditGroup->checkedChanged().connect( this, &SpecFileSummary::handleAllowModifyStatusChange );
@@ -302,7 +307,6 @@ void SpecFileSummary::init()
   m_reloadSpectrum = new WPushButton( WString::tr("sfs-update-display-btn"), editGroupBox );
   m_reloadSpectrum->setToolTip( WString::tr("sfs-tt-update-display") );
   m_reloadSpectrum->setIcon( WLink("InterSpec_resources/images/arrow_refresh.svg") );
-  m_reloadSpectrum->setFloatSide( Wt::Right );
   m_reloadSpectrum->clicked().connect( this, &SpecFileSummary::reloadCurrentSpectrum );
   m_reloadSpectrum->disable();
   

@@ -7,6 +7,19 @@
   border: 1px solid black;
 }
 
+.SpecSummChoose, .SpecSummAllowEdit
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  column-gap: 5px;
+}
+
+.SpecSummAllowEdit > button
+{
+  margin-left: auto;
+}
+
 .SpectrumFileSummaryLabel
 {
   font-weight:bold;

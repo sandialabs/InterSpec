@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- hw- is short for HelpWindow
-  -->
   <message id="hw-welcome-link">Bienvenue...</message>
-<message id="hw-tutorials-link">Tutoriels et astuces d'utilisation</message>
-<message id="hw-err-opening-xml">Page d'Aide Introuvable</message>
-<message id="hw-err-opening-json">Impossible d'ouvrir le fichier JSON d'aide à '{1}'.</message>
+  <message id="hw-tutorials-link">Tutoriels et conseils d'utilisation</message>
+  <message id="hw-err-opening-xml">Page d'aide introuvable</message>
+  <message id="hw-err-opening-json">Impossible d'ouvrir le fichier JSON d'aide à '{1}'.</message>
+  <message id="hw-search-empty-text">Rechercher</message>
 </messages>

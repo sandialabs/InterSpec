@@ -318,7 +318,8 @@ void EnergyToNuclideServer::initGammaToNuclideMatches( const SandiaDecay::Sandia
         const vector<SandiaDecay::RadParticle> &products = transition->products;
         for( size_t part = 0; part < products.size(); ++part )
         {
-          if( products[part].type == SandiaDecay::GammaParticle )
+          if( (products[part].type == SandiaDecay::GammaParticle)
+             || (products[part].type == SandiaDecay::XrayParticle) )
             gamma_br_sum += products[part].intensity * transition->branchRatio;
           else if( products[part].type == SandiaDecay::PositronParticle )
             gamma_br_sum += 2.0f * products[part].intensity * transition->branchRatio;
@@ -333,7 +334,9 @@ void EnergyToNuclideServer::initGammaToNuclideMatches( const SandiaDecay::Sandia
       const vector<SandiaDecay::RadParticle> &products = transition->products;
       for( size_t part = 0; part < products.size(); ++part )
       {
-        if( products[part].type == SandiaDecay::GammaParticle || products[part].type == SandiaDecay::PositronParticle )
+        const bool gamma_or_xray = ((products[part].type == SandiaDecay::GammaParticle)
+                                    || (products[part].type == SandiaDecay::XrayParticle));
+        if( gamma_or_xray || products[part].type == SandiaDecay::PositronParticle )
         {
           if( min_gamma_intensity > 0.0 )
           {
@@ -343,7 +346,7 @@ void EnergyToNuclideServer::initGammaToNuclideMatches( const SandiaDecay::Sandia
               continue;
           }//if( min_gamma_intensity > 0.0 )
           
-          const double energy = (products[part].type==SandiaDecay::GammaParticle ? products[part].energy : static_cast<float>(510.99891*SandiaDecay::keV) );
+          const double energy = (gamma_or_xray ? products[part].energy : static_cast<float>(510.99891*SandiaDecay::keV) );
           const EnergyNuclidePair enPair( energy, nuclide );
           std::vector<EnergyNuclidePair>::iterator begin, end, pos;
           

@@ -1,52 +1,58 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- dcw- is short for DoseCalcWidget -->
-  <message id="dcw-err-failed-fit-AD">Échec de la convergence sur une quantité de blindage.</message>
-<message id="dcw-qr-tool-state-title">État de l'Outil de Dose</message>
-<message id="dcw-qr-tool-state-txt">État actuel de l'outil de dose.</message>
-<message id="dcw-inputs">Entrées</message>
-<message id="dcw-answer">Réponse</message>
-<message id="dcw-intro-instructions">Sélectionnez la quantité que vous souhaitez calculer à gauche</message>
-<message id="dcw-intro-calc-desc">Les valeurs de dose sont calculées en utilisant le cas le plus conservateur ANSI/ANS-6.1.1-1991 : orientation Antérieur-Postérieur.
-    Les calculs de dose sont au mieux un guide approximatif et sont
+  <message id="dcw-err-failed-fit-AD">Impossible de converger sur une quantité de blindage.</message>
+  <message id="dcw-qr-tool-state-title">État de l'outil de dose</message>
+  <message id="dcw-qr-tool-state-txt">État actuel de l'outil de dose.</message>
+  <message id="dcw-inputs">Entrées</message>
+  <message id="dcw-answer">Réponse</message>
+  <message id="dcw-intro-instructions">Sélectionnez la quantité que vous souhaitez calculer sur la gauche</message>
+  <message id="dcw-intro-instructions-vert-phone">Sélectionnez la quantité que vous souhaitez calculer ci-dessus</message>
+  <message id="dcw-intro-calc-desc">Les valeurs de dose sont calculées en utilisant le cas le plus
+    conservateur de la norme ANSI/ANS-6.1.1-1991 : orientation antéro-postérieure.
+    Les calculs de dose sont une estimation approximative, au mieux, et sont
     sujets à de nombreuses incertitudes ou erreurs.
-</message>
-<message id="dcw-source-label">Source :</message>
-<message id="dcw-neutron">Neutron</message>
-<message id="dcw-tt-neut-not-imp">Le calcul de dose pour les neutrons n'est pas encore implémenté.</message>
-<message id="dcw-tt-distance">Distance du centre de la source au visage du détecteur. Le nombre doit être suivi par des unités ; les unités valides sont : mètres, m, cm, mm, km, pieds, ft, ', in, pouces, ou \". Vous pouvez également ajouter plusieurs distances, telles que '3ft 4in', ou '3.6E-2 m 12 cm' qui sont équivalentes à 40 pouces et 15.6 cm respectivement.</message>
-<message id="dcw-shield-empty-text">Matériau de Blindage</message>
-<message id="dcw-runtime-checks-failed">Les vérifications de cohérence à l'exécution ont échoué !</message>
-<message id="dcw-runtime-check-msg">
-    <div>Ne faites pas confiance aux résultats de cette utilité de calcul</div>
-    Veuillez envoyer un courriel à <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>
-    ce message d'erreur et inclure le type et le modèle de votre appareil (par exemple, iPad pro,
-    ordinateur portable Dell Windows 10, etc.)
-</message>
-<message id="dcw-runtime-check-err-div">Résultats Suspects - Ne Pas Faire Confiance</message>
-<message id="dcw-err-no-nuc">Nucléide source vide ou invalide</message>
-<message id="dcw-act-invalid">Activité invalide</message>
-<message id="dcw-shield-invalid">Blindage invalide</message>
-<message id="dcw-generic-shield-invalid">Erreur de calcul de dose, blindage invalide, désolé :{</message>
-<message id="dcw-dist-invalid">Distance invalide.</message>
-<message id="dcw-err-other">Erreur de calcul de dose à partir de la source, désolé :{</message>
-<message id="dcw-invalid-src-dose">Dose source invalide.</message>
-<message id="dcw-invalid-src-act">Activité source invalide.</message>
-<message id="dcw-failed-find-lower-dist">Échec de la recherche de la distance limite inférieure, à {1} cm.</message>
-<message id="dcw-failed-find-upper-dist">Échec de la recherche de la distance limite supérieure, à {1} cm.</message>
-<message id="dcw-failed-find-dist">Impossible de trouver la distance ; nombre maximal d'itérations dépassé.</message>
-<message id="dcw-got-neg-dist">Distance négative obtenue : {1}</message>
-<message id="dcw-err-calc-dose-for-dist">Erreur de calcul de dose lors de la recherche de distance, désolé :{</message>
-<message id="dcw-material-not-valid">Matériau non valide</message>
-<message id="dcw-no-an-entered">Vous devez entrer le numéro atomique du matériau de blindage.</message>
-<message id="dcw-no-shield-name">Vous devez entrer le type de matériau de blindage.</message>
-<message id="dcw-brehm-warning">Avertissement : Le rayonnement de freinage des désintégrations bêta n'est pas pris en compte, les résultats peuvent ne pas être fiables.</message>
-<message id="dcw-no-dose-entered">Aucune valeur numérique entrée pour la dose</message>
-<message id="dcw-stay-time">Temps de Séjour</message>
-<message id="dcw-dental-xray">Radiographie Dentaire</message>
-<message id="dcw-annual-background">Fond Annuel Typique</message>
-<message id="dcw-annual-occ-limit">Limite Annuelle Professionnelle</message>
-<message id="dcw-save-property">Sauver des Biens Précieux</message>
-<message id="dcw-life-saving">Sauvetage de Vie</message>
-<message id="dcw-radiation-sickness">Maladie des Radiations</message>
+  </message>
+  <message id="dcw-source-label">Source :</message>
+  <message id="dcw-neutron">Neutron</message>
+  <message id="dcw-tt-neut-not-imp">Calcul de la dose de neutrons non implémenté pour l'instant.</message>
+  <message id="dcw-tt-distance">Distance du centre de la source à la face du détecteur.  Le nombre doit être"
+    " suivi des unités ; les unités valides sont : meters, m, cm, mm, km, feet,"
+    " ft, ', in, inches, ou \".  Vous pouvez également ajouter plusieurs distances,"
+    " comme '3ft 4in', ou '3.6E-2 m 12 cm' qui sont équivalentes à "
+    " 40 pouces et 15.6 cm respectivement.</message>
+  <message id="dcw-shield-empty-text">Matériau de blindage</message>
+  <message id="dcw-runtime-checks-failed">Les vérifications d'exécution ont échoué !</message>
+  <message id="dcw-runtime-check-msg">
+    <div>Ne faites pas confiance aux résultats de cet utilitaire de calcul</div>
+    Veuillez envoyer par e-mail à <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>
+    ce message d'erreur et inclure le type et le modèle de votre appareil (par exemple, iPad Pro,
+    ordinateur portable Dell Windows 10, etc.)
+  </message>
+  <message id="dcw-runtime-check-err-div">Résultats suspects - Ne pas faire confiance</message>
+  <message id="dcw-err-no-nuc">Nucléide source vide ou invalide</message>
+  <message id="dcw-act-invalid">L'activité est invalide</message>
+  <message id="dcw-shield-invalid">Blindage invalide</message>
+  <message id="dcw-generic-shield-invalid">Erreur lors du calcul de la dose, blindage invalide, désolé :{</message>
+  <message id="dcw-dist-invalid">La distance est invalide.</message>
+  <message id="dcw-err-other">Erreur lors du calcul de la dose à partir de la source, désolé :{</message>
+  <message id="dcw-invalid-src-dose">Dose source invalide.</message>
+  <message id="dcw-invalid-src-act">Activité source invalide.</message>
+  <message id="dcw-invalid-src-dose">Dose source invalide.</message>
+  <message id="dcw-failed-find-lower-dist">Impossible de trouver la distance limite inférieure, à {1} cm.</message>
+  <message id="dcw-failed-find-upper-dist">Impossible de trouver la distance limite supérieure, à {1} cm.</message>
+  <message id="dcw-failed-find-dist">Impossible de trouver la distance ; nombre maximal d'itérations dépassé.</message>
+  <message id="dcw-got-neg-dist">Distance négative obtenue : {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">Erreur lors du calcul de la dose lors de la recherche de la distance, désolé :{</message>
+  <message id="dcw-material-not-valid">Matériau non valide</message>
+  <message id="dcw-no-an-entered">Vous devez entrer le numéro atomique du matériau de blindage.</message>
+  <message id="dcw-no-shield-name">Vous devez entrer le type de matériau de blindage.</message>
+  <message id="dcw-brehm-warning">Avertissement : le Bremsstrahlung des désintégrations bêta n'est pas pris en compte, les résultats peuvent ne pas être fiables.</message>
+  <message id="dcw-no-dose-entered">Aucune valeur numérique saisie pour la dose</message>
+  <message id="dcw-stay-time">Temps de séjour</message>
+  <message id="dcw-dental-xray">Radiographie dentaire</message>
+  <message id="dcw-annual-background">Bruit de fond annuel typ.</message>
+  <message id="dcw-annual-occ-limit">Limite annuelle prof.</message>
+  <message id="dcw-save-property">Sauver des biens précieux</message>
+  <message id="dcw-life-saving">Sauver des vies</message>
+  <message id="dcw-radiation-sickness">Mal des rayons</message>
 </messages>

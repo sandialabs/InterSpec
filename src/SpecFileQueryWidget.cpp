@@ -97,6 +97,12 @@
 #include "target/electron/ElectronUtils.h"
 #endif
 
+
+#if( BUILD_AS_OSX_APP )
+#include "target/osx/macOsUtils.h"
+#endif
+
+
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
 
 
@@ -1468,11 +1474,6 @@ SpecFileQueryWidget::~SpecFileQueryWidget()
     if( c.second )  //should always be true
       c.second->stop_caching();
   }
-  
-#if( BUILD_AS_OSX_APP )
-  SpecFileQuery::setIsSelectingDirectory( false );
-  SpecFileQuery::setSearchDirectory( "" );
-#endif
 }//~SpecFileQueryWidget()
 
 
@@ -1570,11 +1571,34 @@ void SpecFileQueryWidget::init()
                      );
   */
 #elif( BUILD_AS_OSX_APP )
-  SpecFileQuery::setIsSelectingDirectory( true );
-  setSearchDirectory( "" );
-  m_baseLocation = new WFileUpload();
-  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
+  WContainerWidget *pathDiv = new WContainerWidget();
+  linelayout->addWidget( pathDiv, 0, 1 );
+
+  //ToDo: make a proper path selecting widget for Electron
+  WPushButton *pickPath = new WPushButton( "Select Path", pathDiv );
+  m_baseLocation = new WText( "(No Path Selected)", pathDiv );
+  m_baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
+  m_baseLocation->setMargin( 3, Wt::Left );
+  
+  pickPath->clicked().connect( std::bind( [this](){
+    // We need to use the lifetime management of WObject to safely bind the callback:
+    auto bound_txt_cb = boost::bind( &WText::setText, m_baseLocation, boost::placeholders::_1 );
+    auto bound_update_cb = boost::bind( &SpecFileQueryWidget::newMacOsPathSelected, this, boost::placeholders::_1 );
+    
+    auto on_select_callback = [bound_update_cb,bound_txt_cb]( const std::vector<std::string> &paths ){
+      assert( paths.empty() || (paths.size() == 1) );
+      bound_txt_cb( paths.empty() ? string("(No Path Selected)") : paths[0] );
+      bound_update_cb( paths.empty() ? string("") : paths[0] );
+    };
+    
+    const bool canChooseFiles = false;
+    const bool canChooseDirectories = true;
+    const bool allowsMultipleSelection = false;
+    
+    macOsUtils::showFilePicker( "Select Directory", "Select base-directory of reference spectra.",
+                               canChooseFiles, canChooseDirectories, allowsMultipleSelection,
+                               on_select_callback );
+  }) );
 #else
   m_baseLocation = new WLineEdit();
   
@@ -2123,17 +2147,13 @@ void SpecFileQueryWidget::doPersistCacheChanged()
 #if( BUILD_AS_ELECTRON_APP )
 void SpecFileQueryWidget::newElectronPathSelected( std::string path )
 {
-  if( path == "")
-    return;
-  
   m_basePath = path;
-  
   basePathChanged();
 }
 #elif( BUILD_AS_OSX_APP )
-void SpecFileQueryWidget::newMacOsPathSelected()
+void SpecFileQueryWidget::newMacOsPathSelected( std::string path )
 {
-  m_basePath = SpecFileQuery::getSearchDirectory();
+  m_basePath = path;
   basePathChanged();
 }//void newMacOsPathSelected()
 #endif

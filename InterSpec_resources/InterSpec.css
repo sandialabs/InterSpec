@@ -1621,3 +1621,11 @@ a:hover { color:#E88400; border-bottom:none; }
     /* TODO: style and make selector more specific */
     color: red;
   }
+
+.CbNoLineBreak
+{
+  white-space: nowrap;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}

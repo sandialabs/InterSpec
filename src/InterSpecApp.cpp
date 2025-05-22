@@ -183,6 +183,8 @@ bool InterSpecApp::checkExternalTokenFromUrl()
     {
       m_externalToken = p.second.front();
       
+      InterSpecServer::add_allowed_session_token( m_externalToken.c_str(), InterSpecServer::SessionType::PrimaryAppInstance );
+      
       const int status = InterSpecServer::set_session_loaded( m_externalToken.c_str() );
       
       pair<bool,InterSpecServer::SessionType> session_type
@@ -453,6 +455,7 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
     wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
+    wApp->useStyleSheet( "InterSpec_resources/RefSpectraWidget.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
     // anything else relevant?
@@ -1304,12 +1307,17 @@ void InterSpecApp::prepareForEndOfSession()
   Wt::log("debug") << "Have prepared for end of session " << sessionId() << ".";
 }//void InterSpecApp::prepareForEndOfSession()
 
-#if(  BUILD_AS_WX_WIDGETS_APP )
+
+#if( WT_VERSION>=0x3030400 )
 void InterSpecApp::handleJavaScriptError( const std::string &errorText )
 {
+  const string js_err_msg = WString("There was a javascript error: {1}")
+    .arg(errorText)
+    .jsStringLiteral();
+  doJavaScript( "console.error(" + js_err_msg + ");", false );
+
+#if(  BUILD_AS_WX_WIDGETS_APP )
   // It doesnt look like we can call wxWidgets here via JS, so we will call into wxWidgets event loop
-  doJavaScript( "console.log('Here I am after error');", false );
-  
   if( isPrimaryWindowInstance() )
   {
     std::function<void(std::string, std::string)> handler;
@@ -1322,11 +1330,20 @@ void InterSpecApp::handleJavaScriptError( const std::string &errorText )
     if( handler )
       handler( errorText, m_externalToken );
   }
-
-  // Default WApplication implementation just logs error, and then calls WApplication:quit()
-  WApplication::handleJavaScriptError( errorText );
-}//void handleJavaScriptError( const std::string &errorText )
+#else
+  
 #endif
+  
+  // Default WApplication implementation logs error, and then calls WApplication:quit()
+  WApplication::handleJavaScriptError( errorText );
+  
+#if( !BUILD_FOR_WEB_DEPLOYMENT )
+  // TODO: Allow re-loading of the window - would require implementing each target (exWindow, Electron, etc), and improving error messaging
+  //if( !m_externalToken.empty() )
+  //  InterSpecServer::set_session_reload_allow( m_externalToken.c_str() );
+#endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
+}//void handleJavaScriptError( const std::string &errorText )
+#endif //#if( WT_VERSION>=0x3030400 )
 
 void InterSpecApp::clearSession()
 {

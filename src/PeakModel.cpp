@@ -537,7 +537,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
   //Columns that may or not be in file, in whcih case will be >= 0.
   int roi_lower_index = -1, roi_upper_index = -1, nuc_index = -1, nuc_energy_index = -1;
   int color_index = -1, label_index = -1, cont_type_index = -1, skew_type_index = -1;
-  int cont_coef_index = -1, skew_coef_index = -1, area_uncert_index = -1;
+  int cont_coef_index = -1, skew_coef_index = -1, area_uncert_index = -1, peak_type_index = -1;
   
   {//begin to get field_pos
     vector<string> headers;
@@ -559,6 +559,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     const auto skew_type_pos = std::find( begin(headers), end(headers), "skew_type");
     const auto cont_coef_pos = std::find( begin(headers), end(headers), "continuum_coefficients");
     const auto skew_coef_pos = std::find( begin(headers), end(headers), "skew_coefficients");
+    const auto peak_type_pos = std::find( begin(headers), end(headers), "peak_type");
     
     if( centroid_pos == end(headers) )
       throw runtime_error( "Header did not contain 'Centroid'" );
@@ -606,6 +607,9 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
     
     if( skew_coef_pos != end(headers) )
       skew_coef_index = static_cast<int>( skew_coef_pos - begin(headers) );
+    
+    if( peak_type_pos != end(headers) )
+      peak_type_index = static_cast<int>( peak_type_pos - begin(headers) );
   }//end to get field_pos
   
   
@@ -797,6 +801,78 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
         // TODO: it looks like all double quote characters never make it here, even if they are in the file correctly
         peak.setUserLabel( fields[label_index] );
       }
+      
+      if( (peak_type_index >= 0) && (peak_type_index < nfields) )
+      {
+        const string &strval = fields[peak_type_index];
+        
+        try
+        {
+          const PeakDef::DefintionType peak_type = PeakDef::peak_type_from_str( strval.c_str() );
+          
+          switch( peak_type )
+          {
+            case PeakDef::DefintionType::GaussianDefined:
+              // Nothing to do here.
+              break;
+              
+            case PeakDef::DefintionType::DataDefined:
+            {
+              peak.m_type = peak_type;
+              const auto energycal = meas ? meas->energy_calibration() : nullptr;
+              const double lx = peak.lowerX(), ux = peak.upperX();
+              
+              // Adjust the linear continuum to match the data at the ROI edges.  Right now
+              //  we are only doing this for linear continua - should we do for others?
+              if( energycal && (peak.continuum()->type() == PeakContinuum::OffsetType::Linear) )
+              {
+                try
+                {
+                  const double ref_energy = 0.5*(lx + ux);
+                  const size_t start_channel      = meas->find_gamma_channel( lx );
+                  const size_t end_channel        = meas->find_gamma_channel( ux );
+                  
+                  const size_t num_side_bins = 3;
+                  double coefficients[2] = { 0.0, 0.0 };
+                  
+                  PeakContinuum::eqn_from_offsets( start_channel, end_channel, ref_energy,
+                                                  meas, num_side_bins, num_side_bins,
+                                                  coefficients[1], coefficients[0] );
+                  
+                  peak.continuum()->setParameters( ref_energy, coefficients, nullptr );
+                }catch( std::exception &e )
+                {
+                  //
+                }//try /catch
+              }//if( linear continuum )
+              
+              
+              double continuumsum = 0.0, datasum = 0.0;
+              if( meas && energycal && energycal->valid() && meas->channel_energies() )
+              {
+                datasum = meas->gamma_integral( lx, ux );
+                continuumsum = peak.continuum()->offset_integral( lx, ux, meas );
+              }
+              double peaksum = datasum - continuumsum;
+              peaksum = ((peaksum >= 0.0) && !IsNan(peaksum) && !IsInf(peaksum)) ? peaksum : 0.0;
+              datasum = ((datasum >= 0.0) && !IsNan(datasum) && !IsInf(datasum)) ? datasum : 0.0;
+              
+              peak.set_coefficient( peaksum, PeakDef::GaussAmplitude );
+              peak.set_uncertainty( sqrt(datasum), PeakDef::GaussAmplitude );
+              
+              break;
+            }//case PeakDef::DefintionType::DataDefined:
+          }//switch( peak_type )
+        }catch( std::exception & )
+        {
+          const string msg = "Failed to convert '" + strval + "' to a peak type.";
+          cerr << msg << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+          log_developer_error( __func__, msg.c_str() );
+#endif
+        }//try / catch
+      }//if( (skew_type_index >= 0) && (skew_type_index < nfields) )
+      
       
       //Go through existing peaks and if the new peak should share a ROI, do that here
       if( peak.continuum()->energyRangeDefined() )
@@ -2302,12 +2378,12 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   PeakDef::SourceGammaType sourceGammaType = src_type;
   
   PeakDef::findNearestPhotopeak( nuclide, ref_energy, width,
-                                xrayOnly, transition, transition_index, sourceGammaType );
+                                xrayOnly, -1.0, transition, transition_index, sourceGammaType );
   
   //There wasnt any photopeaks within 4 sigma, so instead we'll just use
   //  the closest photpopeak
   if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) && (nsigma_window>=0.0) )
-    PeakDef::findNearestPhotopeak( nuclide, ref_energy, -1.0, xrayOnly,
+    PeakDef::findNearestPhotopeak( nuclide, ref_energy, -1.0, xrayOnly, -1.0,
                                   transition, transition_index, sourceGammaType );
   
   switch( src_type )
@@ -2949,7 +3025,7 @@ bool PeakModel::setData( const WModelIndex &index,
           //  most likely
           PeakDef::SourceGammaType sourceGammaType;
           const bool xrayOnly = (srcType == PeakDef::SourceGammaType::XrayGamma);
-          PeakDef::findNearestPhotopeak( nuclide, energy, 0.0, xrayOnly,
+          PeakDef::findNearestPhotopeak( nuclide, energy, 0.0, xrayOnly, -1.0,
                                 transition, trans_index, sourceGammaType );
           
           if( !transition && (sourceGammaType!=PeakDef::AnnihilationGamma) )
@@ -3638,7 +3714,8 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
         "<th>Skew_Type</th>"
         "<th>Continuum_Coefficients</th>"
         "<th>Skew_Coefficients</th>"
-        "<th>RealTime (s)</th>";
+        "<th>RealTime (s)</th>"
+        "<th>Peak_Type</th>";
       }
       outstrm << eol_char << "    </tr>" << eol_char
       << "  </thead>" << eol_char;
@@ -3651,7 +3728,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       {
         outstrm <<
         ",         ,     ,     , Nuclide, Photopeak_Energy, ROI_Lower_Energy, ROI_Upper_Energy, Color, User_Label, Continuum_Type, "
-        "Skew_Type, Continuum_Coefficients, Skew_Coefficients,         ";
+        "Skew_Type, Continuum_Coefficients, Skew_Coefficients,         , Peak_Type";
       }
       outstrm << eol_char
       <<
@@ -3662,7 +3739,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
       {
         outstrm <<
         ", LiveTime, Date, Time,        ,              keV,              keV,              keV, (css),           ,               , "
-        "         ,                       ,                  , RealTime";
+        "         ,                       ,                  , RealTime,          ";
       }
       outstrm << eol_char;
     }//if( write_html ) / else
@@ -3850,6 +3927,7 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
     const PeakContinuum::OffsetType cont_type = continuum->type();
     const string continuum_type = PeakContinuum::offset_type_str( cont_type );
     const string skew_type = PeakDef::to_string( peak.skewType() );
+    const char *peak_type = PeakDef::to_str( peak.type() );
     
     string cont_coefs;
     switch( cont_type )
@@ -3939,7 +4017,8 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
         << field_sep << skew_type
         << field_sep << cont_coefs
         << field_sep << skew_coefs
-        << field_sep << real_time_str;
+        << field_sep << real_time_str
+        << field_sep << peak_type;
       }
       outstrm << "</td></tr>" << eol_char;
     }else
@@ -3970,7 +4049,8 @@ void PeakModel::write_peak_csv( std::ostream &outstrm,
         << ',' << skew_type
         << ',' << cont_coefs
         << ',' << skew_coefs
-        << ',' << real_time_str;
+        << ',' << real_time_str
+        << ',' << peak_type;
       }
       
       outstrm << eol_char;

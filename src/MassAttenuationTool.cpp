@@ -194,17 +194,17 @@ namespace
      * \returns The mass attenuation coefficient for:
      *          compton + pair production + photo electric.
      */
-    float massAttenuationCoeficient( const int atomic_number, const float energy );
+    float massAttenuationCoefficientElement( const int atomic_number, const float energy );
     
     /** Similar to the other #massAttenuationCoeficient function, but instead
-     * only for a specific sub-proccess.
+     * only for a specific sub-process.
      */
-    float massAttenuationCoeficient( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process );
+    float massAttenuationCoefficientElement( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process );
     
     /** Similar to #massAttenuationCoeficient, but interpolated the result between
      * floor(atomic_number) and ceil(atomic_number) linearly.
      */
-    float massAttenuationCoeficientFracAN( const float atomic_number, const float energy );
+    float massAttenuationCoefficientFracAN( const float atomic_number, const float energy );
     
     
     static float logLogInterpolate( const float energy,
@@ -321,8 +321,8 @@ namespace MassAttenuation
     {
       for( int i = 1; i < 98; ++i )
       {
-        xstool.massAttenuationCoeficient( i, 30.0 );
-        xstool.massAttenuationCoeficient( i, 3000.0 );
+        xstool.massAttenuationCoefficientElement( i, 30.0 );
+        xstool.massAttenuationCoefficientElement( i, 3000.0 );
       }
     }catch( std::exception &e )
     {
@@ -434,19 +434,19 @@ namespace MassAttenuation
   }//float AttCoef( const float energy, const float atomic_number )
   
   
-  float massAttenuationCoeficient( const int atomic_number, const float energy )
+  float massAttenuationCoefficientElement( const int atomic_number, const float energy )
   {
-    return sm_xs_tool.massAttenuationCoeficient( atomic_number, energy );
+    return sm_xs_tool.massAttenuationCoefficientElement( atomic_number, energy );
   }
   
-  float massAttenuationCoeficient( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process )
+  float massAttenuationCoefficientElement( const int atomic_number, const float energy, MassAttenuation::GammaEmProcces process )
   {
-    return sm_xs_tool.massAttenuationCoeficient( atomic_number, energy, process );
+    return sm_xs_tool.massAttenuationCoefficientElement( atomic_number, energy, process );
   }
   
-  float massAttenuationCoeficientFracAN( const float atomic_number, const float energy )
+  float massAttenuationCoefficientFracAN( const float atomic_number, const float energy )
   {
-    return sm_xs_tool.massAttenuationCoeficientFracAN( atomic_number, energy );
+    return sm_xs_tool.massAttenuationCoefficientFracAN( atomic_number, energy );
   }
 
 
@@ -470,13 +470,13 @@ void print_xs_csv( std::ostream &output )
     for( int an = 1; an <= 100; ++an )
     {
       output << ",";
-      try{ output << (MassAttenuation::massAttenuationCoeficient(an, energy) / units); }catch(...){}
+      try{ output << (MassAttenuation::massAttenuationCoefficientElement(an, energy) / units); }catch(...){}
       
       // We could print out values for each individual processes, via:
       //for( const auto process : processes )
       //{
       //  output << ",";
-      //  try{ output << (MassAttenuation::massAttenuationCoeficient(an,energy,process) / units); }catch(...){}
+      //  try{ output << (MassAttenuation::massAttenuationCoefficientElement(an,energy,process) / units); }catch(...){}
       //}
     }
     output << endl;
@@ -797,7 +797,7 @@ const ElementAttenuation *MassAttenuationTool::attenuationData(
 }//attenuationData(...)
 
 
-float MassAttenuationTool::massAttenuationCoeficient( const int atomic_num,
+float MassAttenuationTool::massAttenuationCoefficientElement( const int atomic_num,
                                                       const float energy )
 {
 #if( USE_SNL_GAMMA_ATTENUATION_VALUES )
@@ -887,30 +887,30 @@ float MassAttenuationTool::massAttenuationCoeficient( const int atomic_num,
   
   return comptXs + photoXs + convXs;
 #endif
-}//float massAttenuationCoeficient(...)
+}//float massAttenuationCoefficientElement(...)
 
 
-float MassAttenuationTool::massAttenuationCoeficientFracAN( const float atomic_number, const float energy )
+float MassAttenuationTool::massAttenuationCoefficientFracAN( const float atomic_number, const float energy )
 {
   const int floor_an = static_cast<int>( std::floor( atomic_number ) );
   
   if( atomic_number >= MassAttenuation::sm_max_xs_atomic_number || (atomic_number == floor_an) )
-    return massAttenuationCoeficient( static_cast<int>(atomic_number), energy );
+    return massAttenuationCoefficientElement( static_cast<int>(atomic_number), energy );
   
   const int next_an = floor_an + 1;
   
-  const float muf = massAttenuationCoeficient( floor_an, energy );
-  const float mup1 = massAttenuationCoeficient( next_an, energy );
+  const float muf = massAttenuationCoefficientElement( floor_an, energy );
+  const float mup1 = massAttenuationCoefficientElement( next_an, energy );
   
   const float anfrac = min( 1.0f, max( 0.0f, atomic_number-floor_an ) );  //the min/max can probably be removed, but leaving in JIC
   const float mu = (1.0f - anfrac)*muf + anfrac*mup1;
 
   return mu;
-}//float MassAttenuationTool::massAttenuationCoeficientFracAN( const float atomic_number, const float energy )
+}//float MassAttenuationTool::massAttenuationCoefficientFracAN( const float atomic_number, const float energy )
 
 
 
-float MassAttenuationTool::massAttenuationCoeficient( const int atomic_number,
+float MassAttenuationTool::massAttenuationCoefficientElement( const int atomic_number,
                                                       const float energy,
                                                       MassAttenuation::GammaEmProcces process )
 {
@@ -945,6 +945,6 @@ float MassAttenuationTool::massAttenuationCoeficient( const int atomic_number,
   return logLogInterpolate( energy,
                          data->m_proccesses[static_cast<int>(process)].m_logEnergies,
                          data->m_proccesses[static_cast<int>(process)].m_logAttenuationCoeffs );
-}//float massAttenuationCoeficient(...)
+}//float massAttenuationCoefficientElement(...)
 
 }
