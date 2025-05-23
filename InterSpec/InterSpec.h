@@ -893,7 +893,7 @@ public:
    Sets the `m_exportSpecFileWindow` member variable to nullptr.
    */
   void handleExportSpectrumFileDialogClose();
-  
+
 #if( USE_DETECTION_LIMIT_TOOL )
   /** If `query_str` is not empty, the handle app URI function will be called. */
   void showDetectionLimitTool( const std::string &query_str );

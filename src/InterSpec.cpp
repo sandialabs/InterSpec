@@ -1784,6 +1784,11 @@ void InterSpec::initDragNDrop()
   doJavaScript( "$('.Wt-domRoot').data('SecondUpUrl','" +
                m_fileManager->secondForegroundDragNDrop()->url() + "');" );
   
+#if( USE_BATCH_TOOLS )
+  doJavaScript( "$('.Wt-domRoot').data('BatchUploadEnabled', true);" );
+  doJavaScript( "$('.Wt-domRoot').data('BatchUpUrl','" +
+               m_fileManager->batchDragNDrop()->url() + "');" );
+#endif
   doJavaScript( "Wt.WT.FileUploadFcn();" );
 }//void InterSpec::initDragNDrop()
 

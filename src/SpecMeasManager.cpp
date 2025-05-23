@@ -154,6 +154,10 @@
 #include "InterSpec/QRSpectrum.h"
 #endif
 
+#if( USE_BATCH_TOOLS )
+#include "InterSpec/BatchGuiWidget.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -1392,12 +1396,18 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_foregroundDragNDrop( new FileDragUploadResource(this) ),
     m_secondForegroundDragNDrop( new FileDragUploadResource(this) ),
     m_backgroundDragNDrop( new FileDragUploadResource(this) ),
+#if( USE_BATCH_TOOLS )
+    m_batchDragNDrop( nullptr ),
+#endif
     m_multiUrlSpectrumDialog( nullptr ),
     m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) ),
     m_previousStatesDialog( nullptr ),
     m_processingUploadDialog( nullptr ),
     m_nonSpecFileDialog( nullptr ),
+#if( USE_BATCH_TOOLS )
+    m_batchDialog( nullptr ),
+#endif
     m_processingUploadTimer{}
 {
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
@@ -1443,6 +1453,12 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_backgroundDragNDrop->setUploadProgress( true );
   m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
+
+#if( USE_BATCH_TOOLS )
+  m_batchDragNDrop = new FileDragUploadResource( this );
+  m_batchDragNDrop->setUploadProgress( true );
+  m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
+#endif
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
@@ -1597,6 +1613,13 @@ FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
 {
   return m_backgroundDragNDrop;
 }
+
+#if( USE_BATCH_TOOLS )
+FileDragUploadResource *SpecMeasManager::batchDragNDrop()
+{
+  return m_batchDragNDrop;
+}
+#endif
 
 
 void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
@@ -3719,6 +3742,22 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
                                                     name, spoolName, type, dialog, wApp ) );
 }//handleFileDrop(...)
 
+
+#if( USE_BATCH_TOOLS )
+void SpecMeasManager::showBatchDialog()
+{
+  if( m_batchDialog )
+    return;
+  
+  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
+  m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+}//void showBatchDialog()
+
+void SpecMeasManager::handleBatchDialogFinished()
+{
+  m_batchDialog = nullptr;
+}//void handleBatchDialogFinished()
+#endif
 
 #if( USE_QR_CODES )
 void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )

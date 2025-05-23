@@ -1,0 +1,225 @@
+
+
+/* We need to override some of the SimpleDialog CSS so we can be wider than 50% of screen width */
+.simple-dialog.RefSpectraDialog
+{
+  max-width: 95vw;
+  max-height: 95vh;
+}
+
+.simple-dialog.RefSpectraDialog .body
+{
+  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
+  max-height: calc( 95vh - 90px );
+  overflow-y: hidden;
+  padding-top: 16px;
+  padding-bottom: 5px;
+}
+
+@media screen and (max-width: 1000px) {
+  .simple-dialog.RefSpectraDialog {
+    max-width: calc(99vw);
+  }
+  
+  .simple-dialog.RefSpectraDialog .body {
+    max-width: calc(99vw - 30px );
+  }
+}
+
+@media screen and (min-width: 1000px) {
+  .simple-dialog.RefSpectraDialog {
+    max-width: calc(99vw)
+  }
+  .simple-dialog.RefSpectraDialog .body {
+    max-width: calc( 99vw - 30px );
+  }
+}
+
+.simple-dialog.RefSpectraDialog.RefSpectraDialog-phone
+{
+}
+
+.simple-dialog.RefSpectraDialog.RefSpectraDialog-portrait
+{
+}
+
+.simple-dialog.RefSpectraDialog.RefSpectraDialog-phone.RefSpectraDialog-iphone .body
+{
+  /* Not sure why the extra 10 px are needed on iPhone, but seems to be (havent tested on Android phone - just Chrome device sim.)*/
+  /* padding-bottom: 20px; */
+}
+
+
+.RefSpectraDialog
+{
+
+}
+
+.RefSpectraWidget
+{
+    
+}
+
+.RefSpectraWidget .RefSpectraTreeView
+{
+  border: 1px solid #e1e1e1;
+}
+
+.RefSpectraStack
+{
+  border: 1px solid #e1e1e1;
+  border-left: none;
+}
+
+.RefSpectraWidget .RefSpectraOptions,
+.RefSpectraWidget .ShowAsContainer
+{
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  align-items: center;
+}
+
+.RefSpectraWidget .RefSpectraOptions
+{
+  padding-left: 5px;
+  height: 23px;
+  font-size: 13px;
+  border: 1px solid #e1e1e1;
+  border-top: none;
+}
+
+.RefSpectraWidget.RefSpectraWidget-landscape .RefSpectraOptions.RefSpectraOptions.RefSpecDispOptions
+{
+  border-left: none;
+}
+
+.RefSpectraWidget .RefSpectraOptionsSpacer
+{
+  flex-grow: 1;
+}
+
+.RefSpectraWidget .RefSpectraOptions .LinkBtn.ShowInExplorerBtn
+{
+  font-weight: normal
+}
+
+.RefSpectraStack > div
+{
+  width: 100%;
+  height: 100%;
+}
+
+.RefSpectraWidget .AddDirBtn, .RefSpectraWidget .DeleteDirBtn
+{
+  opacity: 0.6;
+  cursor:pointer;
+  background-repeat: no-repeat;
+  height: 21px;
+  width: 21px;
+  display: inline-block;
+}
+
+.RefSpectraWidget .AddDirBtn
+{
+  background-image: url('../InterSpec_resources/images/plus_min_black.svg');
+  background-position: center center;
+}
+
+.RefSpectraWidget .DeleteDirBtn
+{
+  margin-left: 8px;
+  background-image: url('../InterSpec_resources/images/minus_min_black.svg');
+  background-position: center center;
+}
+
+.RefSpectraWidget .AddDirBtn:hover, .RefSpectraWidget .DeleteDirBtn:hover
+{
+  opacity: 1;
+}
+
+div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.Wt-disabled
+{
+  background: none;
+}
+
+
+.RefSpectraAddDirDialog
+{
+  width: 300px;
+}
+
+.RefSpectraAddDirDialogContents
+{
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  height: 40px;
+}
+
+.RefSpectraAddDirDialogContents input
+{
+  flex-grow: 1;
+}
+
+.RefSpectraAddDirDialog .title
+{
+  text-wrap: nowrap;
+}
+
+.DirInfoTitle
+{
+  margin: 5px;
+  margin-left: 10px;
+  margin-right: 10px;
+  /* font-size: 14px; */
+  display: block;
+}
+
+.DirReadmeText, .RefSpectraNoDirSelected
+{
+  margin: 5px;
+  margin-left: 10px;
+  margin-right: 10px;
+  padding: 0;
+  overflow-y: auto;
+  display: block;
+}
+
+.ErrorLoadingText
+{
+  color: red;
+}
+
+.RefSpectraShowAsGroup
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+
+.RefSpectraWidget .Wt-header.headerrh.cwidth
+{
+  background-color: #EEEEEE;
+}
+
+.RefSpectraNativePathArea
+{
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  align-items: center;
+  width: 400px;
+}
+
+.RefSpectraNativePathArea .RefSpectraNativePathTxt
+{
+  flex-grow: 1;
+  flex-shrink: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
