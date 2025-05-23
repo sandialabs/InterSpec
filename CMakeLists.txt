@@ -593,6 +593,12 @@ if( USE_BATCH_TOOLS )
   )
 endif( USE_BATCH_TOOLS )
 
+if( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
+  list( APPEND sources src/DirectorySelector.cpp )
+  list( APPEND headers InterSpec/DirectorySelector.h )
+endif( (NOT IOS) AND (NOT ANDROID) AND (NOT BUILD_FOR_WEB_DEPLOYMENT) )
+
+
 if( BUILD_AS_OSX_APP )
   list( APPEND sources target/osx/macOsUtils.mm target/osx/NativeMenu.mm )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )

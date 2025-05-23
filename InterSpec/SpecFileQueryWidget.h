@@ -67,6 +67,7 @@ namespace Wt
   class WApplication;
 }
 
+class DirectorySelector;
 class SpecFileQueryDbCache;
 
 /* Implimetation ideas
@@ -203,12 +204,8 @@ protected:
   ResultTableModel *m_resultmodel;
   RowStretchTreeView *m_resultview;
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
-  std::string m_basePath;
-  Wt::WText *m_baseLocation;
-#else
-  Wt::WLineEdit *m_baseLocation;
-#endif
+  DirectorySelector *m_baseLocation;
+
   
   Wt::WCheckBox *m_recursive;
   Wt::WCheckBox *m_filterByExtension;

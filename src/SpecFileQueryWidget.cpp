@@ -82,6 +82,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/DirectorySelector.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/SpecFileQueryWidget.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -1527,94 +1528,17 @@ void SpecFileQueryWidget::init()
     }
   }
   
-  WLabel *label = new WLabel( "Base Path:" );
-  linelayout->addWidget( label, 0, 0 );
-  label->setMargin( 3, Wt::Top );
+  m_baseLocation = new DirectorySelector();
+  m_baseLocation->setLabelTxt( "Base Path:" );
+  linelayout->addWidget( m_baseLocation, 0, 0 );
   
-#if( BUILD_AS_ELECTRON_APP )
-  WContainerWidget *pathDiv = new WContainerWidget();
-  linelayout->addWidget( pathDiv, 0, 1 );
-
-  //ToDo: make a proper path selecting widget for Electron
-  WPushButton *pickPath = new WPushButton( "Select Path", pathDiv );
-  m_baseLocation = new WText( "(No Path Selected)", pathDiv );
-  m_baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
-  m_baseLocation->setMargin( 3, Wt::Left );
-  
-  
-  pickPath->clicked().connect( std::bind( [this](){
-    // We need to use the lifetime management of WObject to safely bind the callback:
-    auto bound_callback = boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 );
-    
-    // Now we need to convert the boost bound thing, to a std::function, so we'll use a lamda as an
-    //  intermediary to also capture the bound_function
-    auto callback = [bound_callback]( string value ){
-      bound_callback( value );
-    };
-    
-    ElectronUtils::browse_for_directory( "Select Directory", "Select base-directory to search in.", callback );
-  }) );
-
-
-  /*
-  const string uploadname = id() + "PathPicker";
-  const string uploadhtml = "<input id=\"" + uploadname + "\" type=\"file\" webkitdirectory=\"\" />";
-  
-  WText *m_baseLocation = new WText( uploadhtml, XHTMLUnsafeText );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
-  
-  //TODO: put in error handling!
-  wApp->doJavaScript( "document.getElementById('" + uploadname + "').onchange = function(event){"
-                         "var outputDir = document.getElementById('" + uploadname + "').files[0].path;"
-                         "Wt.emit( \"" + id() + "\", { name: 'BaseDirSelected' }, outputDir );"
-                     "};"
-                     );
-  */
-#elif( BUILD_AS_OSX_APP )
-  WContainerWidget *pathDiv = new WContainerWidget();
-  linelayout->addWidget( pathDiv, 0, 1 );
-
-  //ToDo: make a proper path selecting widget for Electron
-  WPushButton *pickPath = new WPushButton( "Select Path", pathDiv );
-  m_baseLocation = new WText( "(No Path Selected)", pathDiv );
-  m_baseLocation->addStyleClass( "SpecFileQueryPathTxt" );
-  m_baseLocation->setMargin( 3, Wt::Left );
-  
-  pickPath->clicked().connect( std::bind( [this](){
-    // We need to use the lifetime management of WObject to safely bind the callback:
-    auto bound_txt_cb = boost::bind( &WText::setText, m_baseLocation, boost::placeholders::_1 );
-    auto bound_update_cb = boost::bind( &SpecFileQueryWidget::newMacOsPathSelected, this, boost::placeholders::_1 );
-    
-    auto on_select_callback = [bound_update_cb,bound_txt_cb]( const std::vector<std::string> &paths ){
-      assert( paths.empty() || (paths.size() == 1) );
-      bound_txt_cb( paths.empty() ? string("(No Path Selected)") : paths[0] );
-      bound_update_cb( paths.empty() ? string("") : paths[0] );
-    };
-    
-    const bool canChooseFiles = false;
-    const bool canChooseDirectories = true;
-    const bool allowsMultipleSelection = false;
-    
-    macOsUtils::showFilePicker( "Select Directory", "Select base-directory of reference spectra.",
-                               canChooseFiles, canChooseDirectories, allowsMultipleSelection,
-                               on_select_callback );
-  }) );
-#else
-  m_baseLocation = new WLineEdit();
-  
-  if( !defpath.empty() )
-    m_baseLocation->setText( defpath );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
-  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::basePathChanged );
-  m_baseLocation->enterPressed().connect( this, &SpecFileQueryWidget::basePathChanged );
-  m_baseLocation->setEmptyText( "Path to base directory to search" );
-#endif
+  m_baseLocation->pathChanged().connect( this, &SpecFileQueryWidget::basePathChanged );  
   
   m_optionsBtn = new WPushButton( "Options" );
   m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
   
   m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
-  linelayout->addWidget( m_optionsBtn, 0, 2 );
+  linelayout->addWidget( m_optionsBtn, 0, 1 );
   
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
@@ -1632,7 +1556,7 @@ void SpecFileQueryWidget::init()
   m_recursive->checked().connect( this, &SpecFileQueryWidget::basePathChanged );
   m_recursive->unChecked().connect( this, &SpecFileQueryWidget::basePathChanged );
   
-  linelayout->setColumnStretch( 1, 1 );
+  linelayout->setColumnStretch( 0, 1 );
   
   layout->addWidget( line, 0, 0 );
   
@@ -1650,7 +1574,7 @@ void SpecFileQueryWidget::init()
 //  linelayout->setColumnStretch( linelayout->columnCount()-1, 1 );
 
   auto maxFileSizeDiv = new WContainerWidget();
-  label = new WLabel( "Max file size:", maxFileSizeDiv );
+  WLabel *label = new WLabel( "Max file size:", maxFileSizeDiv );
   label->setMargin( 4, Wt::Bottom );
   label->setMargin( 15, Wt::Left );
   
@@ -2173,19 +2097,10 @@ void SpecFileQueryWidget::basePathChanged()
   if( basepath.empty() || !SpecUtils::is_directory( basepath ) )
   {
     m_numberResults->setText( "Not a valid base directory" );
-#if( BUILD_AS_ELECTRON_APP )
-    m_baseLocation->setText( "(No Path Selected)" );
-#elif( !BUILD_AS_OSX_APP )
     m_baseLocation->addStyleClass( "SpecFileQueryErrorTxt" );
-#endif
     m_update->disable();
     return;
   }
-  
-#if( BUILD_AS_ELECTRON_APP )
-  // TODO: need to limit string length here... maybe by adding a style class, or whatever
-  m_baseLocation->setText( WString::fromUTF8(basepath) );
-#endif
   
   const bool recursive = m_recursive->isChecked();
   const bool docache = m_cacheParseResults->isChecked();
@@ -2435,11 +2350,7 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
 
 std::string SpecFileQueryWidget::baseDirectory()
 {
-#if( BUILD_AS_OSX_APP || BUILD_AS_ELECTRON_APP )
-  return m_basePath;
-#else
-  return m_baseLocation->text().toUTF8();
-#endif
+  return m_baseLocation->path();
 }//std::string baseDirectory()
 
 
