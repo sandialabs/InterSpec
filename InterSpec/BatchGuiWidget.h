@@ -47,7 +47,10 @@ namespace Wt
 namespace SpecUtils{ enum class SpectrumType : int; }
 
 class BatchGuiWidget;
+class DirectorySelector;
 class FileDragUploadResource;
+
+class BatchGuiAnaWidget;
 
 class BatchGuiDialog : public SimpleDialog
 {
@@ -76,19 +79,41 @@ public:
   BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WContainerWidget *parent = nullptr );
   virtual ~BatchGuiWidget();
 
-  void handleClose();
-  void handleFileDrop( const std::string &displayName, const std::string &spooledName );
   Wt::Signal<bool> &canDoAnalysis();
 
-  void addInputFiles( const std::vector<std::tuple<std::string,std::string,bool>> &files );
+  void performAnalysis();
 
 protected:
+  void handleFileDrop( const std::string &disp_name, const std::string &spol_name );
+
+  /** Takes ownership of the files, and will eventually delete them if the third argument is true.
+   *  The tuple is {display name, path to file, should delete}
+   *  Display name may either be the name provided to the http upload, or it may be the
+   *  full path to the file for native apps.
+   */
+  void addInputFiles( const std::vector<std::tuple<std::string,std::string,bool>> &files );
+
   void updateCanDoAnalysis();
 
-  
+protected:
+  /** The resource used to upload the files.
+   * This is _not_ owned by this class, but rather the SpecMeasManager.
+  */
   FileDragUploadResource *m_uploadResource;
+  
+  Wt::WMenu *m_batch_type_menu;
+  Wt::WStackedWidget *m_options_stack;
+  BatchGuiAnaWidget *m_act_shield_ana_opts;
+  BatchGuiAnaWidget *m_peak_fit_opts;
+
+  Wt::WContainerWidget *m_input_files_container;
+
+  DirectorySelector *m_output_dir;
+
+  bool m_can_do_analysis;
+
+  /** Signal used to indicate if the button for doing the analysis should be enabled/disabled */
   Wt::Signal<bool> m_canDoAnalysis;
-  std::vector<std::tuple<std::string,std::string,bool>> m_inputFiles;
 };//class BatchGuiWidget
 
 #endif // BatchGuiWidget_h 

@@ -1,13 +1,13 @@
 
 
 /* We need to override some of the SimpleDialog CSS so we can be wider than 50% of screen width */
-.simple-dialog.RefSpectraDialog
+.simple-dialog.BatchGuiDialog
 {
   max-width: 95vw;
   max-height: 95vh;
 }
 
-.simple-dialog.RefSpectraDialog .body
+.simple-dialog.BatchGuiDialog .body
 {
   /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
   max-height: calc( 95vh - 90px );
@@ -17,209 +17,194 @@
 }
 
 @media screen and (max-width: 1000px) {
-  .simple-dialog.RefSpectraDialog {
+  .simple-dialog.BatchGuiDialog {
     max-width: calc(99vw);
   }
   
-  .simple-dialog.RefSpectraDialog .body {
+  .simple-dialog.BatchGuiDialog .body {
     max-width: calc(99vw - 30px );
   }
 }
 
 @media screen and (min-width: 1000px) {
-  .simple-dialog.RefSpectraDialog {
+  .simple-dialog.BatchGuiDialog {
     max-width: calc(99vw)
   }
-  .simple-dialog.RefSpectraDialog .body {
+  .simple-dialog.BatchGuiDialog .body {
     max-width: calc( 99vw - 30px );
   }
 }
 
-.simple-dialog.RefSpectraDialog.RefSpectraDialog-phone
+.simple-dialog.BatchGuiDialog.BatchGuiDialog-phone
 {
 }
 
-.simple-dialog.RefSpectraDialog.RefSpectraDialog-portrait
+.simple-dialog.BatchGuiDialog.BatchGuiDialog-portrait
 {
 }
 
-.simple-dialog.RefSpectraDialog.RefSpectraDialog-phone.RefSpectraDialog-iphone .body
+.simple-dialog.BatchGuiDialog.BatchGuiDialog-phone.BatchGuiDialog-iphone .body
 {
   /* Not sure why the extra 10 px are needed on iPhone, but seems to be (havent tested on Android phone - just Chrome device sim.)*/
   /* padding-bottom: 20px; */
 }
 
 
-.RefSpectraDialog
+.BatchGuiDialog
 {
 
 }
 
-.RefSpectraWidget
+.BatchGuiWidget
 {
-    
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-wrap: nowrap;
+
+  padding-bottom: 5px;
 }
 
-.RefSpectraWidget .RefSpectraTreeView
-{
-  border: 1px solid #e1e1e1;
-}
-
-.RefSpectraStack
-{
-  border: 1px solid #e1e1e1;
-  border-left: none;
-}
-
-.RefSpectraWidget .RefSpectraOptions,
-.RefSpectraWidget .ShowAsContainer
+.BatchGuiWidget .TypeSelectContainer
 {
   display: flex;
   flex-direction: row;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
-}
+  flex-wrap: nowrap;
 
-.RefSpectraWidget .RefSpectraOptions
-{
   padding-left: 5px;
-  height: 23px;
-  font-size: 13px;
-  border: 1px solid #e1e1e1;
-  border-top: none;
+  padding-right: 5px;
+  padding-top: 0px;
+  padding-bottom: 0px;
+
+  height: 150px;
 }
 
-.RefSpectraWidget.RefSpectraWidget-landscape .RefSpectraOptions.RefSpectraOptions.RefSpecDispOptions
+.BatchGuiWidget .TypeSelectContainer ul.VerticalNavMenu
 {
-  border-left: none;
+  padding-inline-start: 0px;
+  list-style-type: none;
+  width: 25px;
 }
 
-.RefSpectraWidget .RefSpectraOptionsSpacer
-{
-  flex-grow: 1;
-}
 
-.RefSpectraWidget .RefSpectraOptions .LinkBtn.ShowInExplorerBtn
+.BatchGuiWidget .TypeSelectContainer ul li
 {
-  font-weight: normal
-}
-
-.RefSpectraStack > div
-{
-  width: 100%;
-  height: 100%;
-}
-
-.RefSpectraWidget .AddDirBtn, .RefSpectraWidget .DeleteDirBtn
-{
-  opacity: 0.6;
-  cursor:pointer;
-  background-repeat: no-repeat;
-  height: 21px;
-  width: 21px;
   display: inline-block;
+  -webkit-writing-mode: vertical-lr;
+  writing-mode: vertical-rl;
+  writing-mode: tb-lr;
+  transform: scale(-1, -1);
+  white-space: nowrap;
+
+  font-weight: normal;
+  font-size: 11px;
+
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  border-radius: 5px;
+  
+  text-align: center;
 }
 
-.RefSpectraWidget .AddDirBtn
+/*
+.BatchGuiWidget .TypeSelectContainer ul.VerticalNavMenu
 {
-  background-image: url('../InterSpec_resources/images/plus_min_black.svg');
-  background-position: center center;
-}
+  margin-block-start: 0px;
+  margin-block-end: 0px;
 
-.RefSpectraWidget .DeleteDirBtn
-{
-  margin-left: 8px;
-  background-image: url('../InterSpec_resources/images/minus_min_black.svg');
-  background-position: center center;
-}
-
-.RefSpectraWidget .AddDirBtn:hover, .RefSpectraWidget .DeleteDirBtn:hover
-{
-  opacity: 1;
-}
-
-div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.Wt-disabled
-{
-  background: none;
-}
-
-
-.RefSpectraAddDirDialog
-{
-  width: 300px;
-}
-
-.RefSpectraAddDirDialogContents
-{
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-  align-items: center;
-  height: 40px;
-}
-
-.RefSpectraAddDirDialogContents input
-{
-  flex-grow: 1;
-}
-
-.RefSpectraAddDirDialog .title
-{
-  text-wrap: nowrap;
-}
-
-.DirInfoTitle
-{
-  margin: 5px;
-  margin-left: 10px;
-  margin-right: 10px;
-  /* font-size: 14px; */
-  display: block;
-}
-
-.DirReadmeText, .RefSpectraNoDirSelected
-{
-  margin: 5px;
-  margin-left: 10px;
-  margin-right: 10px;
-  padding: 0;
+  overflow-x: hidden;
   overflow-y: auto;
-  display: block;
+  padding-left: 0px;
+  padding-right: 0px;
+  font-size: 13px;
+  width: 20px;
+  text-align: center;
+  text-overflow: ellipsis;
 }
 
-.ErrorLoadingText
+.BatchGuiWidget .TypeSelectContainer ul.VerticalNavMenu li
 {
-  color: red;
+  height: 1.5em;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  border-radius: 2px;
+  white-space: nowrap;
 }
+*/
 
-.RefSpectraShowAsGroup
-{
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 5px;
-}
 
-.RefSpectraWidget .Wt-header.headerrh.cwidth
-{
-  background-color: #EEEEEE;
-}
-
-.RefSpectraNativePathArea
-{
-  display: flex;
-  flex-direction: row;
-  gap: 5px;
-  align-items: center;
-  width: 400px;
-}
-
-.RefSpectraNativePathArea .RefSpectraNativePathTxt
+.BatchGuiWidget .InputFilesContainer
 {
   flex-grow: 1;
   flex-shrink: 1;
+  min-height: 100px;
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  overflow-y: auto;
+}
+
+.BatchGuiWidget .DirectorySelector
+{
+}
+
+.BatchGuiWidget .InputFileWidget
+{
+  position: relative;
+  width: 125px;
+  height: 100px;
+  border-radius: 5px;
+  border: solid 1px #e1e1e1; 
   overflow: hidden;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+}
+
+.BatchGuiWidget .InputFileWidget .closeicon-wtdefault
+{
+  position: absolute;
+  top: 0px;
+  right: 0px;
+}
+
+.BatchGuiWidget .InputFileWidget .InputFilePreview
+{
+  width: 100%;
+  height: 80px;
+  border-bottom: solid 1px #e1e1e1; 
+}
+
+.BatchGuiWidget .InputFileWidget .FilenameText
+{
+  font-size: 11px;
+  text-align: center;
+  overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 12px;
+  white-space: nowrap;
+  width: 100%;
+  line-height: 15px;
+}
+
+
+.BatchGuiWidget .InputFileWidget .InputFilePreview .NotSpectrumFile
+{
+  border: solid 1px red;
+  background-color: #f0f0f0;
+}
+
+
+.BatchGuiWidget .InputFileWidget .InputFilePreview .PreviewError
+{
+  border: solid 1px red; 
+  background-color: #f0f0f0;
 }

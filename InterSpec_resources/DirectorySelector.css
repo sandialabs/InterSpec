@@ -8,6 +8,7 @@
   gap: 10px;
   width: 100%;
   justify-content: flex-start;
+  flex-wrap: nowrap;
 }
 
 

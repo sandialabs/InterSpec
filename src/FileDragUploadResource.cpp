@@ -201,6 +201,8 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       m_fileDrop.emit( clientFileName, spoolFileName );
     }
   }//for( const Wt::Http::UploadedFileMap::value_type &parname_file : request.uploadedFiles() )
+
+  app->triggerUpdate();
 }//void FileDragUploadResource::handleRequest(...)
 
 

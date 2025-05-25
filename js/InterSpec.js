@@ -3,7 +3,7 @@ WT_DECLARE_WT_MEMBER
 (FileUploadFcn, Wt::JavaScriptFunction, "FileUploadFcn",
 function()
 {
-  var target = $('.Wt-domRoot').get(0);
+  const target = $('.Wt-domRoot').get(0);
   
   var urlIdFromName = function(name)
   {
@@ -31,6 +31,9 @@ function()
         return;
       }
       
+      if( $('.Wt-domRoot').data('BatchUploadOnly') )
+        urlid = 'BatchUpUrl';
+
       let files_to_upload = [];
       if( (files.length === 1) || (urlid === 'BatchUpUrl') )
       {
@@ -58,6 +61,7 @@ function()
             .map(uid => ({url: uid, file: toUpload[uid]}));
         }catch(error)
         {
+          // TODO: specialize how this error is sent to the server so it can put in proper internationalized text
           const msg = 'showMsg-error-You can only upload a single file at a time unless the name is'
                     + ' prefixed with "i-", "b-", "k-" or has back/fore/item/calib'
                     + ' in the file name, and there is at most one of each spectrum type.';
@@ -291,6 +295,14 @@ function()
   
   
   target.addEventListener("dragenter", function(event){
+
+      // If the "batch analysis" GUI is showing, then any file we drop will be uploaded to the batch upload URL.
+    if( $('.Wt-domRoot').data('BlockFileDrops') ){
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     var hasfore = $('.Wt-domRoot').data("HasForeground");
     
     var thisel=$(event.target);
@@ -302,9 +314,10 @@ function()
     if( hasfore )
       updiv.addClass("active");
 
-    const is_batch_upload = ( event.dataTransfer  && event.dataTransfer.items 
+    const is_batch_upload = ((event.dataTransfer  && event.dataTransfer.items 
                               && (event.dataTransfer.items.length > 2)
-                              && $('.Wt-domRoot').data('BatchUploadEnabled') );
+                              && $('.Wt-domRoot').data('BatchUploadEnabled'))
+                            || $('.Wt-domRoot').data('BatchUploadOnly') );
 
     //For windows Qt version of app, when someone drags from Outlook onto app, the file contents
     //  dropped and intercepted in the C++ WebViewWindow::dropEvent() function, instead

@@ -52,6 +52,10 @@ namespace Wt{
   class WSvgImage;
 };
 
+namespace SandiaDecay{
+  struct Nuclide;
+}
+
 /** Functions in this header/source are kinda go between of the GUI and the
  numerical code (although of course, separation is never as clean as one would
  like).

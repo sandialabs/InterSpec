@@ -22,8 +22,6 @@
   </message>
   <message id="rs-show-as">Load as</message>
   <message id="rs-add-dir-dialog-title">Add Reference Spectra Directory</message>
-  <message id="rs-add-dir-dialog-path">Path:</message>
-  <message id="rs-invalid-dir-path">Invalid directory path: '{1}'</message>
   <message id="rs-duplicate-dir-path">Directory already in selected: '{1}'</message>
   <message id="rs-dir-not-found">Directory not found, so not removed from preferences: '{1}'</message>
   <message id="rs-dir-info-only-spectra">Directory contains {1} spectra files<br /></message>

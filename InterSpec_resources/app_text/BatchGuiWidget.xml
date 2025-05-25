@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget -->
+  <message id="bgw-analyze-button">Analyze</message>
+  <message id="bgw-output-dir-label">Output Directory:</message>
+  <message id="bgw-type-select-label">Analysis Type Options</message>
+  <message id="bgw-input-files-label">Input Files</message>
+  <message id="bgw-act-shield-ana-opts-label">Act/Shield</message>
+  <message id="bgw-peak-fit-opts-label">Peak Fit</message>
+  <message id="bgw-not-spec-preview">Not a spectrum file</message>
+  <message id="bgw-preview-error">Error rendering preview</message>
+</messages>
