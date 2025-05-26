@@ -371,7 +371,7 @@ public:
    */
   void saveChartToImg( const std::string &name, const bool asPng );
   
-  
+  void setThumbnailMode();
 protected:
 
   //updates the data JSON for the D3 spectrum on the JS side
@@ -604,7 +604,12 @@ protected:
   std::string m_peakLabelFontSize;
   double m_peakLabelRotationDegrees;
   double m_logYAxisMin;
-  
+
+  /** Holds the CSS rules this instance of the class has created.
+
+   However, most of the rules set are like `":root", "--d3spec-grid-major-color: #b3b3b3;"`,
+   which actually apply to all instances of this class - so should instead be applied globally, not in a per-instance fashion.
+   */
   std::map<std::string,Wt::WCssTextRule *> m_cssRules;
   
   /** JS calls requested before the widget has been rendered, so wouldnt have
