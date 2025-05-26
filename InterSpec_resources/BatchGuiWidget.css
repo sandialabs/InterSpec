@@ -151,8 +151,34 @@
   gap: 5px;
   align-items: center;
   flex-wrap: wrap;
+  justify-content: space-around;
   overflow-y: auto;
 }
+
+.BatchGuiWidget .InputFilesContainer.DragedOver
+{
+  border: 3px dashed green;
+  border-radius: 8px;
+}
+
+.BatchGuiWidget .InputFilesContainer.Uploading 
+{
+  border: 3px dashed green;
+  border-radius: 8px;
+  animation: blink 1s infinite;
+}
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 
 .BatchGuiWidget .DirectorySelector
 {

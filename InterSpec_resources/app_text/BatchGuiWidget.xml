@@ -9,4 +9,5 @@
   <message id="bgw-peak-fit-opts-label">Peak Fit</message>
   <message id="bgw-not-spec-preview">Not a spectrum file</message>
   <message id="bgw-preview-error">Error rendering preview</message>
+  <message id="bgw-passthrough-sum-error">Passthrough error</message>
 </messages>

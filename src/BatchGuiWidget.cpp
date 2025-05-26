@@ -58,7 +58,6 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DirectorySelector.h"
-#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/FileDragUploadResource.h"
 
@@ -141,12 +140,12 @@ namespace
 
     void set_spectrum( std::shared_ptr<SpecMeas> spec_meas, std::shared_ptr<int> status_ptr )
     {
-      WText *preview = new WText(  m_preview_container );
-
       if( !status_ptr || !spec_meas || (spec_meas->num_measurements() == 0) || ((*status_ptr) != 1) )
       {
+        WText *preview = new WText( m_preview_container );
         preview->setText( WString::tr("bgw-not-spec-preview") );
         preview->setStyleClass( "NotSpectrumFile" );
+        return;
       }else
       {
         shared_ptr<const deque<shared_ptr<const PeakDef> > > peaks = nullptr;
@@ -156,20 +155,90 @@ namespace
         const int width_px = 120, height_px = 70;
         const shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
 
-        //Find most likely foreground.
+        //Find most likely foreground.  If passthrough, sum everything
         shared_ptr<const SpecUtils::Measurement> preview_meas;
-        preview_meas = spec_meas->measurement( size_t(0) );
 
-        shared_ptr<WSvgImage> svg = PeakSearchGuiUtils::renderChartToSvg( preview_meas, peaks, reflines,
-                                              0.0, 0.0, width_px, height_px, theme, compact );
-
-        if( svg )
+        const std::set<int> &samples = spec_meas->sample_numbers();
+        const vector<string> &det_names = spec_meas->detector_names();
+        if( spec_meas->passthrough() )
         {
-          stringstream strm;
-          svg->write( strm );
-          preview->setText( strm.str() );
+          try
+          {
+            preview_meas = spec_meas->sum_measurements(samples, det_names, nullptr );
+          }catch( std::exception & )
+          {
+            WText *preview = new WText( m_preview_container );
+            preview->setText( WString::tr("bgw-passthrough-sum-error") );
+            return;
+          }
         }else
         {
+          // If not first passthrough, we'll take the first marked Foreground, Unknown,
+          //  Background, sample number, in that order
+          shared_ptr<const SpecUtils::Measurement> first_back, first_unk, first_fore;
+
+          for( int sample_num : spec_meas->sample_numbers() )
+          {
+            shared_ptr<const SpecUtils::Measurement> sample_meas;
+            try
+            {
+              if( det_names.size() == 1 )
+                sample_meas = spec_meas->measurement( sample_num, det_names.front() );
+              else
+                sample_meas = spec_meas->sum_measurements({sample_num}, det_names, nullptr );
+            }catch( std::exception &e )
+            {
+            }//try / catch
+
+            if( !sample_meas )
+              continue;
+
+            switch( sample_meas->source_type() )
+            {
+              case SpecUtils::SourceType::IntrinsicActivity:
+              case SpecUtils::SourceType::Calibration:
+                break;
+              case SpecUtils::SourceType::Background:
+                if( !first_back )
+                  first_back = sample_meas;
+                break;
+              case SpecUtils::SourceType::Foreground:
+                if( !first_fore )
+                  first_fore = sample_meas;
+                break;
+              case SpecUtils::SourceType::Unknown:
+                if( !first_unk )
+                  first_unk = sample_meas;
+                break;
+            }//switch( sample_meas->source_type() )
+
+            if( first_fore )
+              break;
+          }//for( int sample_num : spec_meas->sample_numbers() )
+
+          if( first_fore )
+            preview_meas = first_fore;
+          else if( first_unk )
+            preview_meas = first_unk;
+          else
+            preview_meas = first_back;
+        }//if( spec_meas->passthrough() ) / else
+
+        if( preview_meas )
+        {
+          D3SpectrumDisplayDiv *spec = new D3SpectrumDisplayDiv( m_preview_container );
+          spec->setThumbnailMode();
+          spec->setData( preview_meas, false );
+          spec->resize( WLength(100,WLength::Percentage), WLength(100,WLength::Percentage) );
+
+          //We dont currently need to explicitly set the color theme, as all color theme styling for
+          //  D3SpectrumDisplayDiv is globablly applied...
+          //InterSpec *interspec = InterSpec::instance();
+          //spec->applyColorTheme( interspec->getColorTheme() );
+          //interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, spec, boost::placeholders::_1 ) );
+        }else
+        {
+          WText *preview = new WText( m_preview_container );
           preview->setText( WString::tr("bgw-preview-error") );
           preview->setStyleClass( "PreviewError" );
         }
@@ -460,6 +529,8 @@ BatchGuiDialog *BatchGuiDialog::createDialog( FileDragUploadResource *uploadReso
 }
 
 
+
+
 BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WContainerWidget *parent )
   : Wt::WContainerWidget( parent ),
     m_uploadResource( uploadResource ),
@@ -474,12 +545,14 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
 {
   assert( m_uploadResource );
   wApp->useStyleSheet( "InterSpec_resources/BatchGuiWidget.css" );
+  wApp->require( "InterSpec_resources/BatchGuiWidget.js" );
   InterSpec::instance()->useMessageResourceBundle( "BatchGuiWidget" );
-  
+
+
   addStyleClass( "BatchGuiWidget" );
   
-  //doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', true);" );
-  doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', true);" );
+  doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', true);" );
+  //doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', true);" );
 
   Wt::WGroupBox *options_container = new WGroupBox( WString::tr("bgw-type-select-label"),  this );
   options_container->addStyleClass( "TypeSelectContainer" );
@@ -513,6 +586,8 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   
   m_input_files_container = new WGroupBox( WString::tr("bgw-input-files-label"),  this );
   m_input_files_container->addStyleClass( "InputFilesContainer" );
+  m_input_files_container->doJavaScript("BatchInputDropUploadSetup(" + m_input_files_container->jsRef() + ");" );
+
 
   m_output_dir = new DirectorySelector( this );
   m_output_dir->setLabelTxt( WString::tr("bgw-output-dir-label") );
@@ -526,8 +601,8 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
 
 BatchGuiWidget::~BatchGuiWidget()
 {
-  //wApp->doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', null);" );
-  wApp->doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', null);" );
+  wApp->doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', null);" );
+  //wApp->doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', null);" );
   
   m_uploadResource->clearSpooledFiles();
 }//~BatchGuiWidget()
