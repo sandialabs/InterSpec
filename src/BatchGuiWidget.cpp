@@ -227,6 +227,9 @@ namespace
 /** Base class for all batch analysis widgets. */
 class BatchGuiAnaWidget : public Wt::WContainerWidget
 {
+protected:
+  Wt::Signal<bool> m_canDoAnalysis;
+
 public:
   BatchGuiAnaWidget( Wt::WContainerWidget *parent )
     : Wt::WContainerWidget( parent )
@@ -235,6 +238,14 @@ public:
   }
 
   virtual void performAnalysis( const vector<tuple<string,string,std::shared_ptr<const SpecMeas>>> &input_files, const string &output_dir ) = 0;
+
+  virtual bool canDoAnalysis() const = 0;
+
+
+  Wt::Signal<bool> &canDoAnalysisSignal()
+  {
+    return m_canDoAnalysis;
+  }
 };//BatchGuiAnaWidget
 
 
@@ -288,13 +299,18 @@ But duplicate a lot of the logging code.
 Or maybe, and probably a better idea, is to over-ride both these functions to take in measurements in memory, as well as thier names; this way we can probably keep things straight in the reporting by using the real names...
 */
 
-  }
+  }//BatchGuiPeakFitWidget constructor
+
 
   virtual void performAnalysis( const vector<tuple<string,string,std::shared_ptr<const SpecMeas>>> &input_files, const string &output_dir ) override
   {
 
-  }
+  }//performAnalysis(...)
 
+  virtual bool canDoAnalysis() const override
+  {
+    return true;
+  }
 };//BatchGuiPeakFitWidget
 
 class BatchGuiActShieldAnaWidget : public BatchGuiPeakFitWidget
@@ -340,6 +356,11 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   virtual void performAnalysis( const vector<tuple<string,string,std::shared_ptr<const SpecMeas>>> &input_files, const string &output_dir ) override
   {
 
+  }//void performAnalysis()
+
+  virtual bool canDoAnalysis() const override
+  {
+    return true;
   }
 };//BatchGuiActShieldAnaWidget
 
@@ -491,10 +512,12 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   
   m_act_shield_ana_opts = new BatchGuiActShieldAnaWidget();
   WMenuItem *item = new WMenuItem( WString::tr("bgw-act-shield-ana-opts-label"), m_act_shield_ana_opts, WMenuItem::LoadPolicy::PreLoading );
+  m_act_shield_ana_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
   m_batch_type_menu->addItem( item );
 
   m_peak_fit_opts = new BatchGuiPeakFitWidget();
   item = new WMenuItem( WString::tr("bgw-peak-fit-opts-label"), m_peak_fit_opts, WMenuItem::LoadPolicy::PreLoading );
+  m_peak_fit_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
   m_batch_type_menu->addItem( item );
 
   m_batch_type_menu->select( 0 );
@@ -568,7 +591,11 @@ void BatchGuiWidget::updateCanDoAnalysis()
     num_input_files += (input_file && input_file->spec_meas());
   }
 
-  bool can_do_analysis = (num_input_files > 0) && m_output_dir->isPathValid();
+  BatchGuiAnaWidget *const batch_ana_widget = dynamic_cast<BatchGuiAnaWidget *>( m_options_stack->currentWidget() );
+
+  const bool can_do_analysis = (num_input_files > 0) 
+                                && m_output_dir->isPathValid()
+                                && (batch_ana_widget && batch_ana_widget->canDoAnalysis());
   if( can_do_analysis != m_can_do_analysis )  
   {
     m_can_do_analysis = can_do_analysis;
