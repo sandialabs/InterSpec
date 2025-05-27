@@ -62,6 +62,8 @@ namespace BatchPeak
   
   struct InterSpec_API BatchPeakFitOptions
   {
+    /** If specified to be true, then instead of looking for just the peaks in the exemplar file, a search for all peaks in the specrtum will be performed. */
+    bool fit_all_peaks;
     bool to_stdout;
     bool refit_energy_cal;
     bool use_exemplar_energy_cal;
@@ -106,45 +108,73 @@ namespace BatchPeak
     /** File path to report templates that summarizes all input files. */
     std::vector<std::string> summary_report_templates;
   };//struct BatchPeakFitOptions
-  
-  
-  InterSpec_API void fit_peaks_in_files( const std::string &exemplar_filename,
-                          const std::set<int> &exemplar_sample_nums,
-                          const std::vector<std::string> &files,
-                          const BatchPeakFitOptions &options );
-  
+
   struct InterSpec_API BatchPeakFitResult
   {
     std::string file_path;
     BatchPeakFitOptions options;
-    
+
     std::shared_ptr<const SpecMeas> exemplar;
     std::set<int> exemplar_sample_nums;
     std::deque<std::shared_ptr<const PeakDef>> exemplar_peaks;
     std::shared_ptr<const SpecUtils::Measurement> exemplar_spectrum;
     std::vector<std::shared_ptr<const PeakDef>> unfit_exemplar_peaks;  //Exemplar peaks not found in the spectrum
-    
+
     std::shared_ptr<SpecMeas> measurement;
     std::shared_ptr<SpecUtils::Measurement> spectrum;
     std::set<int> sample_numbers;
     std::deque<std::shared_ptr<const PeakDef>> fit_peaks;
-    
-    /** Background spectrum that was subtracted from the foreground, to make `spectrum`, if any. 
-     
+
+    /** Background spectrum that was subtracted from the foreground, to make `spectrum`, if any.
+
      The background subtraction can either be on a peak-by-peak basis, or a hard
      background subtraction, see `BatchPeakFitOptions::use_exemplar_energy_cal_for_background`.
      */
     std::shared_ptr<SpecUtils::Measurement> background;
-    
+
     bool success;
     std::vector<std::string> warnings;
-    
+
     /** The original energy calibration of the spectrum, before re-fitting it (if done). */
     std::shared_ptr<const SpecUtils::EnergyCalibration> original_energy_cal;
-    
+
     /** The energy calibration after fitting for it - will only be non-null if energy calibration was performed */
     std::shared_ptr<const SpecUtils::EnergyCalibration> refit_energy_cal;
   };//struct BatchPeakFitResult
+
+
+  struct BatchPeakFitSummaryResults
+  {
+    BatchPeakFitOptions options;
+    std::string exemplar_filename;
+    std::shared_ptr<const SpecMeas> exemplar;
+    std::set<int> exemplar_sample_nums;
+
+    /** Each of these next four `file_*` variables will have the same number of entries, as the input number of files. */
+    std::vector<BatchPeakFitResult> file_results;
+    std::vector<std::string> file_json;
+    std::vector<std::string> file_peak_csvs;
+    std::vector<std::vector<std::string>> file_reports;
+
+    std::string summary_json;
+    std::vector<std::string> summary_reports;
+    std::vector<std::string> warnings;
+  };//struct BatchPeakFitSummaryResults
+
+
+  /** Fits the peaks in a number of spectrum files, prodicing individual reports (if wanted) as well as a summary report.
+   @param exemplar_filename The name of the spectrum file to use as the exemplar file.  This may be an N42
+
+   */
+  InterSpec_API void fit_peaks_in_files( const std::string &exemplar_filename,
+                          std::shared_ptr<const SpecMeas> optional_parsed_exemplar_n42,
+                          const std::set<int> &exemplar_sample_nums,
+                          const std::vector<std::string> &files,
+                          std::vector<std::shared_ptr<SpecMeas>> cached_files,
+                          const BatchPeakFitOptions &options,
+                          BatchPeakFitSummaryResults *results = nullptr );
+
+
   
   
   /** Fits the exemplar peaks for a given file.
