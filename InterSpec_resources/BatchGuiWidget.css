@@ -155,7 +155,8 @@
   overflow-y: auto;
 }
 
-.BatchGuiWidget .InputFilesContainer.DragedOver
+.BatchGuiWidget .InputFilesContainer.DragedOver,
+.BatchGuiWidget .InputFilesContainer.DragedOver.DomIsDrugOver
 {
   border: 3px dashed green;
   border-radius: 8px;
@@ -177,6 +178,33 @@
   100% {
     opacity: 0;
   }
+}
+
+.BatchGuiWidget .InputFilesContainer.DomIsDrugOver
+{
+  border: 3px dashed grey;
+  border-radius: 8px;
+
+  /* Add styles to grey out the element */
+  position: relative; /* Establish positioning context for overlay */
+  background-color: rgba(128, 128, 128, 0.5); /* Grey background with transparency */
+}
+.BatchGuiWidget .InputFilesContainer.DomIsDrugOver::after
+{
+  content: 'Drop Here';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* Center the text */
+  color: white; /* White text color */
+  font-size: 1.2em; /* Adjust font size as needed */
+  text-align: center;
+}
+
+
+.BatchGuiWidget .InputFilesContainer.DragedOver.DomIsDrugOver::after
+{
+  background-color: transparent;
 }
 
 

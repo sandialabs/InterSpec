@@ -586,8 +586,9 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   
   m_input_files_container = new WGroupBox( WString::tr("bgw-input-files-label"),  this );
   m_input_files_container->addStyleClass( "InputFilesContainer" );
+  
   m_input_files_container->doJavaScript("BatchInputDropUploadSetup(" + m_input_files_container->jsRef() + ");" );
-
+  doJavaScript("setupOnDragEnterDom(['" + m_input_files_container->id() + "']);");
 
   m_output_dir = new DirectorySelector( this );
   m_output_dir->setLabelTxt( WString::tr("bgw-output-dir-label") );
@@ -603,7 +604,8 @@ BatchGuiWidget::~BatchGuiWidget()
 {
   wApp->doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', null);" );
   //wApp->doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', null);" );
-  
+  wApp->doJavaScript("removeOnDragEnterDom(['" + m_input_files_container->id() + "']);");
+
   m_uploadResource->clearSpooledFiles();
 }//~BatchGuiWidget()
 

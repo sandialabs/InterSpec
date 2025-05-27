@@ -1,3 +1,87 @@
+/** Called when files  */
+function onDragOverStart(event){
+  event.preventDefault(); // to allow dropping
+  event.stopPropagation(); // stop event from bubbling up
+  console.log( "onDragOverStart" );
+  
+  try {
+    const domRoot = document.querySelector('.Wt-domRoot');
+    console.log( "onDragOverStart domRoot.dataset.batchUploadIds:", domRoot.dataset.batchUploadIds );
+    const idsList = JSON.parse(domRoot.dataset.batchUploadIds);
+    console.log( "onDragOverStart idsList:", idsList );
+    for( const widget_id of idsList ){
+      const el = document.getElementById(widget_id);
+      if( el )
+        el.classList.add('DomIsDrugOver');
+     else
+        console.log( "onDragOverStart: no element for id", widget_id );
+    }
+  }catch(err){
+    console.log( "onDragOverStart error:", err );
+  }
+}//function onDragOverStart(event)
+
+
+function onDragOverEnd(event){
+  try {
+    const domRoot = document.querySelector('.Wt-domRoot');
+    const idsList = JSON.parse(domRoot.dataset.batchUploadIds);
+    for( const widget_id of idsList ){
+      const el = document.getElementById(widget_id);
+      if( el )
+        el.classList.remove('DomIsDrugOver');
+      else
+       console.log( "onDragOverEnd: no element for id", widget_id );
+    }
+  }catch(err){
+    console.log( "onDragOverStart error:", err );
+  }
+}//function onDragOverEnd(event)
+
+
+/** Setups DOM to look for files being started to be drug over.
+ * @param target_id_list A list/array of ids (strings) of element that should
+ *        have the `DomIsDrugOver` class added when this happens.
+ */
+function setupOnDragEnterDom( target_id_list ){
+  console.log( "setupOnDragEnterDom:", target_id_list );
+  const domRoot = document.querySelector('.Wt-domRoot');
+  domRoot.addEventListener("dragenter", onDragOverStart, false );
+  domRoot.addEventListener("dragover", onDragOverStart, false );
+  domRoot.addEventListener("dragleave", onDragOverEnd, false);
+  
+  let oldIdsList = [];
+  try{
+    oldIdsList = JSON.parse(domRoot.dataset.batchUploadIds);
+  }catch(err){
+  }
+
+  const idsList = [...oldIdsList, ...target_id_list];
+  domRoot.dataset.batchUploadIds = JSON.stringify(idsList);
+  console.log( "setupOnDragEnterDom: new idsList:", domRoot.dataset.batchUploadIds );
+}//function setupOnDragEnterDom( target_id_list )
+
+
+function removeOnDragEnterDom( target_id_list ){
+  try {
+    const domRoot = document.querySelector('.Wt-domRoot');
+    domRoot.removeEventListener("dragenter", onDragOverStart, false );
+
+    const batchUploadIdStrs = domRoot.dataset.batchUploadIds;
+    let idsList = JSON.parse(batchUploadIdStrs);
+    for( const widget_id of target_id_list ){
+      const index = idsList.indexOf(widget_id);
+      if (index > -1) { // Check if the string was found
+        arr.splice(index, 1); // Remove 1 element at the found index
+      }
+    }
+    console.log( "After removing ", target_id_list, " idsList=", idsList );
+    domRoot.dataset.batchUploadIds = JSON.stringify(idsList);
+  }catch(err){
+    console.log( "removeOnDragEnterDom error:", err );
+  }
+}//function removeOnDragEnterDom( target_id_list )
+
 
 
 function BatchInputDropUploadSetup( target )
@@ -5,19 +89,15 @@ function BatchInputDropUploadSetup( target )
   const uploadFcn = function(evt){
     try
     {
-      evt.preventDefault();
-      evt.stopPropagation();
-
       const uploadURL = $('.Wt-domRoot').data('BatchUpUrl');
       let files_to_upload = [];
       
-      for (let file of evt.dataTransfer.files)
+      for( const file of evt.dataTransfer.files )
           files_to_upload.push( file );
-
-      console.log( "files_to_upload:", files_to_upload );
 
       function removeUploading(){
         target.classList.remove( "Uploading" );
+        onDragOverEnd(null);
         // Clear the time-out timer, if we have one
         clearTimeout( $('.Wt-domRoot').data('BatchUploadTimer') );
         $('.Wt-domRoot').data( 'BatchUploadTimer', null );
@@ -182,13 +262,10 @@ function BatchInputDropUploadSetup( target )
     }
   };
 
-  target.addEventListener("dragover", function(event){
-    event.preventDefault();
-    target.classList.add("DragedOver");
-  }, false);
-
   target.addEventListener("drop", function(event){
     target.classList.remove("DragedOver");
+    event.preventDefault(); // 
+    event.stopPropagation();
     uploadFcn(event)
   }, false);
 
@@ -200,4 +277,9 @@ function BatchInputDropUploadSetup( target )
     event.preventDefault();
     target.classList.add("DragedOver");
   }, false);
-}
+
+  target.addEventListener("dragover", function(event){
+    event.preventDefault();
+    target.classList.add("DragedOver");
+  }, false);
+}//function setupOnDragEnterDom( target_id_list )
