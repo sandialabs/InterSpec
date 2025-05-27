@@ -254,6 +254,17 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
     // TODO: Look for previous DRFs in the DB, that the user has used
       
   }//if( !drf_file.empty() ) / else if( !drf_name.empty() )
+
+
+  // Try to open as a spectrum file, and see if there is a detector saved with it.
+  //  (untested as of 20250527)
+  {//begin try to open as spectrum file
+    SpecMeas spec;
+    const bool sucess = spec.load_file( drf_file, SpecUtils::ParserType::Auto, drf_file );
+    if( sucess && spec.detector() )
+      return spec.detector();
+  }//end try to open as spectrum file
+
   
   throw runtime_error( "Could not load specified detector efficiency function."
                         + (drf_file.empty() ? string("") : " Filename='" + drf_file + "'.")

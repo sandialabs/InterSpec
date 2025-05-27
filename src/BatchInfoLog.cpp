@@ -1458,6 +1458,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   void add_peak_fit_options_to_json( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options )
   {
     auto &options_obj = data["PeakFitOptions"];
+    options_obj["FitAllPeaks"] = options.fit_all_peaks;
     options_obj["RefitEnergyCal"] = options.refit_energy_cal;
     options_obj["UseExemplarEnergyCal"] = options.use_exemplar_energy_cal;
     options_obj["WriteN42WithResults"] = options.write_n42_with_results;
