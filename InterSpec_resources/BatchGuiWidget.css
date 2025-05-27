@@ -1,5 +1,3 @@
-
-
 /* We need to override some of the SimpleDialog CSS so we can be wider than 50% of screen width */
 .simple-dialog.BatchGuiDialog
 {
@@ -85,7 +83,7 @@
 {
   padding-inline-start: 0px;
   list-style-type: none;
-  width: 25px;
+  width: 95px;
 }
 
 
@@ -139,6 +137,63 @@
   white-space: nowrap;
 }
 */
+
+
+.BatchGuiWidget .TypeSelectContainer .Wt-stack
+{
+  height: 100%;
+}
+
+
+.BatchGuiWidget .BatchGuiPeakFitWidget
+{
+  overflow-y: auto;
+}
+
+/* Peak Fit Options Container - Flex row layout that wraps */
+.BatchGuiWidget .BatchGuiPeakFitWidget .PeakFitOptionsContainer
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 5px;
+}
+
+
+/* Threshold Option Container - Flex layout with vertical centering */
+.BatchGuiWidget .ThresholdOptionContainer
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+  padding: 5px;
+  border: 1px solid #e1e1e1;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+}
+
+.BatchGuiWidget .ThresholdOptionContainer label
+{
+  margin: 0;
+  white-space: nowrap;
+  font-weight: normal;
+}
+
+.BatchGuiWidget .ThresholdOptionContainer .FloatInput
+{
+  margin: 0;
+}
+
+/* Checkbox styling for peak fit options */
+.BatchGuiWidget .PeakFitOptionsContainer .Wt-checkbox
+{
+  margin: 5px;
+  white-space: nowrap;
+}
 
 
 .BatchGuiWidget .InputFilesContainer

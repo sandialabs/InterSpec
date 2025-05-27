@@ -58,6 +58,7 @@
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DirectorySelector.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/FileDragUploadResource.h"
 
@@ -321,7 +322,28 @@ public:
 class BatchGuiPeakFitWidget : public BatchGuiAnaWidget
 {
 protected:
-  Wt::WContainerWidget *m_peak_container;
+  Wt::WContainerWidget *m_options_container;
+  
+  // Option widgets
+  Wt::WCheckBox *m_fit_all_peaks;
+  Wt::WCheckBox *m_refit_energy_cal;
+  Wt::WCheckBox *m_use_exemplar_energy_cal;
+  Wt::WCheckBox *m_write_n42_with_results;
+  Wt::WCheckBox *m_show_nonfit_peaks;
+  Wt::WCheckBox *m_overwrite_output_files;
+  Wt::WCheckBox *m_create_csv_output;
+  Wt::WCheckBox *m_create_json_output;
+  Wt::WCheckBox *m_use_existing_background_peaks;
+  Wt::WCheckBox *m_use_exemplar_energy_cal_for_background;
+  
+  // Threshold options with labels
+  Wt::WContainerWidget *m_peak_stat_threshold_container;
+  Wt::WLabel *m_peak_stat_threshold_label;
+  NativeFloatSpinBox *m_peak_stat_threshold;
+  
+  Wt::WContainerWidget *m_peak_hypothesis_threshold_container;
+  Wt::WLabel *m_peak_hypothesis_threshold_label;
+  NativeFloatSpinBox *m_peak_hypothesis_threshold;
 
 public:
   BatchGuiPeakFitWidget( Wt::WContainerWidget *parent = nullptr )
@@ -329,47 +351,87 @@ public:
   {
     addStyleClass( "BatchGuiPeakFitWidget" );
 
-    new WText( "PeakFitAnaOpts", this );
+    m_options_container = new Wt::WContainerWidget( this );
+    m_options_container->addStyleClass( "PeakFitOptionsContainer" );
 
+    // Create checkbox options
+    m_fit_all_peaks = new Wt::WCheckBox( "Fit all peaks", m_options_container );
+    m_fit_all_peaks->setToolTip( "Instead of fitting for peaks in an exemplar file - all peaks in the spectrum will be fit for." );
+    
+    m_refit_energy_cal = new Wt::WCheckBox( "Refit energy calibration", m_options_container );
+    m_refit_energy_cal->setToolTip( "After initial peak fit, uses those peaks to adjust energy gain, then refits the peaks with the updated energy calibration." );
+    
+    m_use_exemplar_energy_cal = new Wt::WCheckBox( "Use exemplar energy calibration", m_options_container );
+    m_use_exemplar_energy_cal->setToolTip( "Use the exemplar N42 energy calibration with the input foreground files." );
+    
+    m_write_n42_with_results = new Wt::WCheckBox( "Write N42 with results", m_options_container );
+    m_write_n42_with_results->setToolTip( "Adds the fit peaks to the input spectrum file, and then saves as a N42." );
+    
+    m_show_nonfit_peaks = new Wt::WCheckBox( "Show non-fit peaks", m_options_container );
+    m_show_nonfit_peaks->setToolTip( "Include peaks that could not be fit in the output." );
+    
+    m_overwrite_output_files = new Wt::WCheckBox( "Overwrite output files", m_options_container );
+    m_overwrite_output_files->setToolTip( "Allows overwriting output N42, CSV, or report files." );
+    
+    m_create_csv_output = new Wt::WCheckBox( "Create CSV output", m_options_container );
+    m_create_csv_output->setToolTip( "Output peak fit CSV files." );
+    m_create_csv_output->setChecked( true ); // Default to true as per command line
+    
+    m_create_json_output = new Wt::WCheckBox( "Create JSON output", m_options_container );
+    m_create_json_output->setToolTip( "Writes the JSON used to create the report templates, out to file." );
+    
+    m_use_existing_background_peaks = new Wt::WCheckBox( "Use existing background peaks", m_options_container );
+    m_use_existing_background_peaks->setToolTip( "Use existing background peaks if available." );
+    
+    m_use_exemplar_energy_cal_for_background = new Wt::WCheckBox( "Use exemplar energy cal for background", m_options_container );
+    m_use_exemplar_energy_cal_for_background->setToolTip( "Use the exemplar N42 energy calibration for the background file." );
 
-/*
- struct InterSpec_API BatchPeakFitOptions
-  {
-    bool to_stdout;
-    bool refit_energy_cal;
-    bool use_exemplar_energy_cal;
-    bool write_n42_with_results;
-    bool show_nonfit_peaks;
-    bool overwrite_output_files;
-    bool create_csv_output;
-    bool create_json_output;
-    std::string background_subtract_file;
-    std::set<int> background_subtract_samples;
-    bool use_existing_background_peaks;
-    bool use_exemplar_energy_cal_for_background;
-    double peak_stat_threshold;
-    double peak_hypothesis_threshold;
-    std::string template_include_dir;
-    std::vector<std::string> report_templates;
-    std::vector<std::string> summary_report_templates;
-  };//struct BatchPeakFitOptions
+    // Create threshold options with labels
+    m_peak_stat_threshold_container = new Wt::WContainerWidget( m_options_container );
+    m_peak_stat_threshold_container->addStyleClass( "ThresholdOptionContainer" );
+    
+    m_peak_stat_threshold_label = new Wt::WLabel( "Peak stat threshold:", m_peak_stat_threshold_container );
+    m_peak_stat_threshold = new NativeFloatSpinBox( m_peak_stat_threshold_container );
+    m_peak_stat_threshold_label->setBuddy( m_peak_stat_threshold );
+    m_peak_stat_threshold->setValue( 2.0f ); // Default value from command line
+    m_peak_stat_threshold->setRange( 0.0f, 10.0f );
+    m_peak_stat_threshold->setSpinnerHidden( true );
+    m_peak_stat_threshold->setWidth( 80 );
+    m_peak_stat_threshold->setToolTip( "The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI. Reasonable values are between ~1 (weak peak) and ~5 (significant peak)." );
 
-  void fit_peaks_in_files( const std::string &exemplar_filename,
-                          const std::set<int> &exemplar_sample_nums,
-                          const std::vector<std::string> &files,
-                        const ::BatchPeak::BatchPeakFitOptions &options )
-or 
-use use:
-const BatchPeak::BatchPeakFitResult fit_results
-                 = fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
-                                     cached_exemplar_n42, filename, nullptr, {}, options );
-But duplicate a lot of the logging code.
+    m_peak_hypothesis_threshold_container = new Wt::WContainerWidget( m_options_container );
+    m_peak_hypothesis_threshold_container->addStyleClass( "ThresholdOptionContainer" );
+    
+    m_peak_hypothesis_threshold_label = new Wt::WLabel( "Peak hypothesis threshold:", m_peak_hypothesis_threshold_container );
+    m_peak_hypothesis_threshold = new NativeFloatSpinBox( m_peak_hypothesis_threshold_container );
+    m_peak_hypothesis_threshold_label->setBuddy( m_peak_hypothesis_threshold );
+    m_peak_hypothesis_threshold->setValue( 1.0f ); // Default value from command line
+    m_peak_hypothesis_threshold->setRange( 0.0f, 10.0f );
+    m_peak_hypothesis_threshold->setSpinnerHidden( true );
+    m_peak_hypothesis_threshold->setWidth( 80 );
+    m_peak_hypothesis_threshold->setToolTip( "Requirement for how compatible the ROI must be to Gaussian peaks + continuum. The ratio of null hypothesis chi2 to test hypothesis chi2. Reasonable values are in the 1 to 5 range." );
 
-Or maybe, and probably a better idea, is to over-ride both these functions to take in measurements in memory, as well as thier names; this way we can probably keep things straight in the reporting by using the real names...
-*/
-
+    // Connect signals to update analysis capability
+    m_fit_all_peaks->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_refit_energy_cal->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_use_exemplar_energy_cal->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_write_n42_with_results->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_show_nonfit_peaks->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_overwrite_output_files->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_create_csv_output->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_create_json_output->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_use_existing_background_peaks->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_use_exemplar_energy_cal_for_background->changed().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_peak_stat_threshold->valueChanged().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_peak_hypothesis_threshold->valueChanged().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
   }//BatchGuiPeakFitWidget constructor
 
+  void peakFitOptionChanged()
+  {
+
+    // Emit signal to parent that analysis capability may have changed
+    m_canDoAnalysis.emit( canDoAnalysis() );
+  }
 
   virtual void performAnalysis( const vector<tuple<string,string,std::shared_ptr<const SpecMeas>>> &input_files, const string &output_dir ) override
   {
@@ -575,7 +637,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', true);" );
   //doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', true);" );
 
-  Wt::WGroupBox *options_container = new WGroupBox( WString::tr("bgw-type-select-label"),  this );
+  Wt::WGroupBox *options_container = new Wt::WGroupBox( WString::tr("bgw-type-select-label"),  this );
   options_container->addStyleClass( "TypeSelectContainer" );
   
   m_options_stack = new Wt::WStackedWidget();
