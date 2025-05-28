@@ -47,6 +47,7 @@ namespace Wt
 namespace SpecUtils{ enum class SpectrumType : int; }
 
 class BatchGuiWidget;
+class InputFileWidget;
 class DirectorySelector;
 class FileDragUploadResource;
 
@@ -92,6 +93,8 @@ protected:
    *  full path to the file for native apps.
    */
   void addInputFiles( const std::vector<std::tuple<std::string,std::string,bool>> &files );
+
+  void handle_remove_input_file( InputFileWidget *input );
 
   void updateCanDoAnalysis();
 

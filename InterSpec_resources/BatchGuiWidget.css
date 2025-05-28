@@ -76,7 +76,7 @@
   padding-top: 0px;
   padding-bottom: 0px;
 
-  height: 150px;
+  height: 200px;
 }
 
 .BatchGuiWidget .TypeSelectContainer ul.VerticalNavMenu
@@ -141,24 +141,52 @@
 
 .BatchGuiWidget .TypeSelectContainer .Wt-stack
 {
-  height: 100%;
+
 }
 
-
-.BatchGuiWidget .BatchGuiPeakFitWidget
+.BatchGuiWidget .BatchGuiAnaWidget
 {
   overflow-y: auto;
+  height: 180px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
 
-/* Peak Fit Options Container - Flex row layout that wraps */
+
+.BatchGuiWidget .BatchGuiAnaWidget.BatchGuiPeakFitWidget
+{
+
+}
+
 .BatchGuiWidget .BatchGuiPeakFitWidget .PeakFitOptionsContainer
+{
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+
+/* Peak Fit Options Container - Flex row layout that wraps */
+.BatchGuiWidget .BatchGuiPeakFitWidget .PeakFitBoolOptionsContainer
 {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
   gap: 10px;
   align-items: flex-start;
-  padding: 5px;
+}
+
+.BatchGuiWidget .BatchGuiPeakFitWidget .PeakFitFloatOptionsContainer
+{
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-around;
 }
 
 
@@ -168,32 +196,30 @@
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 5px;
   align-items: center;
+
+  /*
   padding: 5px;
   border: 1px solid #e1e1e1;
   border-radius: 4px;
   background-color: #f9f9f9;
+   */
 }
 
-.BatchGuiWidget .ThresholdOptionContainer label
+.BatchGuiWidget .BatchGuiAnaWidget .ForegroundToUseOpt,
+.BatchGuiWidget .BatchGuiAnaWidget .BackgroundToUseOpt
 {
-  margin: 0;
-  white-space: nowrap;
-  font-weight: normal;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
 }
 
-.BatchGuiWidget .ThresholdOptionContainer .FloatInput
+.BatchGuiWidget .BatchGuiAnaWidget.BatchGuiActShieldAnaWidget
 {
-  margin: 0;
+
 }
 
-/* Checkbox styling for peak fit options */
-.BatchGuiWidget .PeakFitOptionsContainer .Wt-checkbox
-{
-  margin: 5px;
-  white-space: nowrap;
-}
 
 
 .BatchGuiWidget .InputFilesContainer
@@ -210,14 +236,43 @@
   overflow-y: auto;
 }
 
+.BatchGuiAnaWidget .ExemplarToUseOpt
+{
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+}
+
+.BatchGuiWidget .ExemplarFileDrop
+{
+  border: 1px #e1e1e1;
+  border-radius: 5px;
+  width: 125px;  /* same as InputFileWidget */
+  height: 100px; /* same as InputFileWidget */
+}
+
+.BatchGuiWidget .ExemplarFileDrop.EmptyExemplarUpload::before
+{
+  content: "Drop file or click";
+  display: block;
+  background-color: lightgray;
+  color: darkgray;
+  text-align: center;
+  line-height: 100px;
+  width: 125px;
+  height: 100px;
+}
+
 .BatchGuiWidget .InputFilesContainer.DragedOver,
 .BatchGuiWidget .InputFilesContainer.DragedOver.DomIsDrugOver
+.BatchGuiWidget .ExemplarFileDrop.DragedOver.DomIsDrugOver
 {
   border: 3px dashed green;
   border-radius: 8px;
 }
 
-.BatchGuiWidget .InputFilesContainer.Uploading 
+.BatchGuiWidget .InputFilesContainer.Uploading,
+.BatchGuiWidget .ExemplarFileDrop.Uploading
 {
   border: 3px dashed green;
   border-radius: 8px;
@@ -235,7 +290,8 @@
   }
 }
 
-.BatchGuiWidget .InputFilesContainer.DomIsDrugOver
+.BatchGuiWidget .InputFilesContainer.DomIsDrugOver,
+.BatchGuiWidget .ExemplarFileDrop.DomIsDrugOver
 {
   border: 3px dashed grey;
   border-radius: 8px;
@@ -244,9 +300,10 @@
   position: relative; /* Establish positioning context for overlay */
   background-color: rgba(128, 128, 128, 0.5); /* Grey background with transparency */
 }
-.BatchGuiWidget .InputFilesContainer.DomIsDrugOver::after
+.BatchGuiWidget .InputFilesContainer.DomIsDrugOver::after,
+.BatchGuiWidget .ExemplarFileDrop.DomIsDrugOver::after
 {
-  content: 'Drop Here';
+  content: 'Drop file or click here';
   position: absolute;
   top: 50%;
   left: 50%;
@@ -257,7 +314,8 @@
 }
 
 
-.BatchGuiWidget .InputFilesContainer.DragedOver.DomIsDrugOver::after
+.BatchGuiWidget .InputFilesContainer.DragedOver.DomIsDrugOver::after,
+.BatchGuiWidget .ExemplarFileDrop.DragedOver.DomIsDrugOver::after,
 {
   background-color: transparent;
 }

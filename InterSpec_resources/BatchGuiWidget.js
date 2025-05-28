@@ -2,13 +2,10 @@
 function onDragOverStart(event){
   event.preventDefault(); // to allow dropping
   event.stopPropagation(); // stop event from bubbling up
-  console.log( "onDragOverStart" );
   
   try {
     const domRoot = document.querySelector('.Wt-domRoot');
-    console.log( "onDragOverStart domRoot.dataset.batchUploadIds:", domRoot.dataset.batchUploadIds );
     const idsList = JSON.parse(domRoot.dataset.batchUploadIds);
-    console.log( "onDragOverStart idsList:", idsList );
     for( const widget_id of idsList ){
       const el = document.getElementById(widget_id);
       if( el )
@@ -44,7 +41,6 @@ function onDragOverEnd(event){
  *        have the `DomIsDrugOver` class added when this happens.
  */
 function setupOnDragEnterDom( target_id_list ){
-  console.log( "setupOnDragEnterDom:", target_id_list );
   const domRoot = document.querySelector('.Wt-domRoot');
   domRoot.addEventListener("dragenter", onDragOverStart, false );
   domRoot.addEventListener("dragover", onDragOverStart, false );
@@ -58,7 +54,6 @@ function setupOnDragEnterDom( target_id_list ){
 
   const idsList = [...oldIdsList, ...target_id_list];
   domRoot.dataset.batchUploadIds = JSON.stringify(idsList);
-  console.log( "setupOnDragEnterDom: new idsList:", domRoot.dataset.batchUploadIds );
 }//function setupOnDragEnterDom( target_id_list )
 
 
@@ -75,32 +70,32 @@ function removeOnDragEnterDom( target_id_list ){
         arr.splice(index, 1); // Remove 1 element at the found index
       }
     }
-    console.log( "After removing ", target_id_list, " idsList=", idsList );
     domRoot.dataset.batchUploadIds = JSON.stringify(idsList);
   }catch(err){
-    console.log( "removeOnDragEnterDom error:", err );
+    console.error( "removeOnDragEnterDom error:", err );
   }
 }//function removeOnDragEnterDom( target_id_list )
 
 
 
-function BatchInputDropUploadSetup( target )
+function BatchInputDropUploadSetup( target, uploadURL )
 {
+  // Add a hidden <input type="file"... /> element so we can have the user click on the div and manually select a file.
+  const fileInput = document.createElement("input");
+  fileInput.setAttribute("type", "file");
+  fileInput.style.display = "none";
+  target.appendChild(fileInput);
+
   const uploadFcn = function(evt){
     try
     {
-      const uploadURL = $('.Wt-domRoot').data('BatchUpUrl');
-      let files_to_upload = [];
-      
-      for( const file of evt.dataTransfer.files )
-          files_to_upload.push( file );
-
       function removeUploading(){
         target.classList.remove( "Uploading" );
         onDragOverEnd(null);
         // Clear the time-out timer, if we have one
         clearTimeout( $('.Wt-domRoot').data('BatchUploadTimer') );
         $('.Wt-domRoot').data( 'BatchUploadTimer', null );
+        fileInput.value = '';
       };
 
 
@@ -119,6 +114,25 @@ function BatchInputDropUploadSetup( target )
         alert( "Error uploading file:" + "\n\t" + xhr.statusText + "\n\tResponse code " + xhr.status + "\n\t" + xhr.responseText );
       }
 
+      let files_to_upload = [];
+      if( evt.dataTransfer && evt.dataTransfer.files )
+      {
+        for( const file of evt.dataTransfer.files )
+          files_to_upload.push( file );
+      }else if( evt.target && evt.target.files && evt.target.files.length )
+      {
+        const files = evt.target.files;
+        console.log( "evt.target.files:", files );
+        for (let i = 0; i < files.length; i++)
+          files_to_upload.push( files[i] );
+        
+        console.log( "files_to_upload:", files_to_upload );
+      }else
+      {
+        console.log( "uploadFcn: no files for some reason." );
+        removeUploading();
+        return;
+      }
 
       function uploadNextFile(){
         if( files_to_upload.length === 0 ){
@@ -131,7 +145,8 @@ function BatchInputDropUploadSetup( target )
       function uploadFileToUrl( file ){
         if( !uploadURL || !file )
         {
-          console.log( 'uploadFileToUrl: - invalid url or file' );
+          console.error( 'uploadFileToUrl: - invalid url or file: uploadURL', uploadURL, ', file: ', file );
+          removeUploading();
           return;
         }
 
@@ -153,8 +168,6 @@ function BatchInputDropUploadSetup( target )
                   fspath = fns.filenames[i];
                   //remove this filename from the array, incase there are multiple files with same leaf-name, but diff paths
                   fns.filenames = fns.filenames.splice(i,i);
-                  console.log( "Matched filenames: ", file.name, " vs ", fspath );
-                  console.log( "Remaining files: ", fns.filenames );
                   if( fns.filenames.length === 0 )
                     $(document).data('dragOverFilePaths', null);
                   break;
@@ -182,8 +195,8 @@ function BatchInputDropUploadSetup( target )
 
               if( (xhr.readyState === 4) && (xhr.status !== 200) ){
                 // Fallback to standard http upload, since reading in c++ failed
-                console.log( 'Failed to upload via native file-system path.' );
-                uploadFileToUrl( uploadURL, file, false );
+                console.error( 'Failed to upload via native file-system path.' );
+                uploadFileToUrl( file );
               }else if( xhr.readyState === 4 ) {
                 // Reading in c++ succeeded
                 console.log( 'Successfully uploaded native file-system path.' );
@@ -216,7 +229,7 @@ function BatchInputDropUploadSetup( target )
             const currentTime = Date.now();
             if( (currentTime - lastUpdateTime) > 500 ){
               lastUpdateTime = currentTime;
-              $('#UploadingProgress').text( Math.trunc(100*pe.loaded/pe.total) + '%' );
+              //$('#UploadingProgress').text( Math.trunc(100*pe.loaded/pe.total) + '%' );
             }
           }
           setUploadTimer(); //reset the upload timer, since we have recieved some data
@@ -258,7 +271,7 @@ function BatchInputDropUploadSetup( target )
       setUploadTimer();
     }catch(error)
     {
-      console.log( "Error in HandleDrop: " + error );
+      console.error( "Error in HandleDrop: " + error );
     }
   };
 
@@ -282,4 +295,15 @@ function BatchInputDropUploadSetup( target )
     event.preventDefault();
     target.classList.add("DragedOver");
   }, false);
+  
+  fileInput.addEventListener('change', function(event){
+    event.preventDefault();
+    uploadFcn(event);
+  });
+
+  // Programmatically trigger the file input click to the <input type="file"... />
+  target.addEventListener("click", function(event){
+    event.stopPropagation();
+    fileInput.click();
+  });
 }//function setupOnDragEnterDom( target_id_list )

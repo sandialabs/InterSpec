@@ -738,6 +738,7 @@ void ExportSpecFileTool::init()
   //   tools current states will be available in the foreground N42 files.
   m_interspec->saveShieldingSourceModelToForegroundSpecMeas();
 #if( USE_REL_ACT_TOOL )
+  m_interspec->saveRelActAutoStateToForegroundSpecMeas();
   m_interspec->saveRelActManualStateToForegroundSpecMeas();
 #endif
   
