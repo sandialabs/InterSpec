@@ -25,9 +25,11 @@
 
 #include <fstream>
 #include <iostream>
+#include <chrono>
 
 #include <Wt/WText>
 #include <Wt/WMenu>
+#include <Wt/Utils>
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
@@ -42,6 +44,14 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WFileDropWidget>
 #include <Wt/WContainerWidget>
+#include <Wt/WResource>
+#include <Wt/Http/Request>
+#include <Wt/Http/Response>
+
+#include <nlohmann/json.hpp>
+
+#include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
+
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -53,6 +63,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/BatchGuiWidget.h"
@@ -75,6 +86,37 @@
 using namespace Wt;
 using namespace std;
 
+namespace 
+{
+  // Create a custom resource to serve the HTML content
+  class BatchReportResource : public Wt::WResource
+  {
+    private:
+    const std::string m_html_content;
+          
+    public:
+    BatchReportResource( std::string &&html_content, WObject* parent = nullptr )
+      : Wt::WResource(parent), m_html_content( std::move(html_content) )
+    {
+      setDispositionType( DispositionType::Inline );
+    }
+          
+    virtual ~BatchReportResource()
+    {
+      beingDeleted();
+    }
+          
+    virtual void handleRequest(const Wt::Http::Request& request, Wt::Http::Response& response) override
+    {
+      response.setMimeType("text/html; charset=utf-8");
+      response.addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      response.addHeader("Pragma", "no-cache");
+      response.addHeader("Expires", "0");
+            
+      response.out() << m_html_content;
+    }
+  };//class BatchReportResource
+}//namespace
 
 /** Represents a spectrum file, with a little thumbnail preview.
 
@@ -845,7 +887,6 @@ public:
 
   virtual void performAnalysis( const vector<tuple<string,string,shared_ptr<const SpecMeas>>> &input_files, const string &output_dir ) override
   {
-
     BatchPeak::BatchPeakFitOptions options = getPeakFitOptions();
     options.output_dir = output_dir;
 
@@ -881,13 +922,76 @@ public:
       BatchPeak::fit_peaks_in_files( exemplar_filename, exemplar, exemplar_samples,
                                     file_names, spec_files, options, &results );
 
-      SimpleDialog *dialog = new SimpleDialog( "Batch Analysis Done", "Batch analysis is done..." );
+      SimpleDialog *dialog = new SimpleDialog( "Batch Analysis Summary" );
+      dialog->addStyleClass( "BatchAnalysisResultDialog" );
+      
+      try
+      {
+        nlohmann::json summary_json = nlohmann::json::parse(results.summary_json);
+        inja::Environment env = BatchInfoLog::get_default_inja_env( options );
+        string rpt = BatchInfoLog::render_template("html", env,
+                       BatchInfoLog::TemplateRenderType::PeakFitSummary, options, summary_json );
+        
+        // Create the resource and get its URL
+        BatchReportResource *report_resource = new BatchReportResource( std::move(rpt), dialog);
+        const string resource_url = report_resource->url();
+        
+        const string contents = "<iframe "
+                     "style=\"width: 100%; height: 100%; border: none;\" "
+                     "sandbox=\"allow-scripts\" "
+                     "src=\"" + resource_url + "\" "
+                     "onerror=\"console.error('Iframe failed to load')\"> "
+                     "</iframe>";
+        
+        dialog->resize( WLength(80.0,WLength::Percentage), WLength(95.0,WLength::Percentage) );
+        
+        WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
+        result_text->addStyleClass( "BatchReportIFrameHolder" );
+        result_text->setWidth( WLength(100.0,WLength::Percentage) );
+        result_text->setHeight( WLength(100.0,WLength::Percentage) );
+      }catch( nlohmann::json::parse_error &e )
+      {
+        const string contents = "<p>Error parsing JSON results: <br /><code>" + string(e.what()) + "</code></p>";
+        WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
+        result_text->addStyleClass( "BatchReportJsonError" );
+      }catch( inja::InjaError &e )
+      {
+        const string contents = "<p>Error creating HTML due to exception: <br /><code>" + e.message +"</code><br/>"
+        " from line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column) + "</p>";
+        
+        WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
+        result_text->addStyleClass( "BatchReportInjaError" );
+      }catch( std::exception &e )
+      {
+        const string contents = "<p>Unable to generate result summary due to exception: <br /><code>" + string(e.what()) + "</code></p>";
+        WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
+        result_text->addStyleClass( "BatchReportMiscError" );
+      }
+      
       dialog->addButton( WString::tr("Okay") );
+      
+      
+      if( !results.warnings.empty() )
+      {
+        SimpleDialog *warnings_dialog = new SimpleDialog( "Warning" );
+        warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
+        
+        WContainerWidget *contents = warnings_dialog->contents();
+        contents->setList( true, false );
+        for( const string &warn_msg : results.warnings )
+        {
+          WContainerWidget *item = new WContainerWidget( contents );
+          new WText( warn_msg, item );
+        }
+        
+        warnings_dialog->addButton( WString::tr("Okay") );
+      }//if( !results.warnings.empty() )
     }catch( std::exception &e )
     {
       SimpleDialog *dialog = new SimpleDialog( "Error Performing Batch Analysis", "Error: " + string(e.what()) );
+      dialog->addStyleClass( "BatchAnalysisErrorDialog" );
       dialog->addButton( WString::tr("Okay") );
-    }//try / catch
+    }
   }//performAnalysis(...)
 
 
