@@ -665,7 +665,7 @@ void get_exemplar_spectrum_and_peaks(
   }else if( !exemplar_sample_nums.empty() )
   {
     const set<set<int>> withPeakSampleNums = exemplar_n42->sampleNumsWithPeaks();
-    if( withPeakSampleNums.count(exemplar_sample_nums) )
+    if( !withPeakSampleNums.count(exemplar_sample_nums) )
       throw runtime_error( "The specified exemplar sample numbers did not have peaks associated with them." );
       
     exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
