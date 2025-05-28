@@ -375,3 +375,63 @@
   border: solid 1px red; 
   background-color: #f0f0f0;
 }
+
+
+
+.simple-dialog.BatchAnalysisResultDialog
+{
+  max-width: 95vw;
+  max-height: 95vh;
+  width: 95vw;
+  height: 95vw;
+}
+
+.simple-dialog.BatchAnalysisResultDialog .body
+{
+  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
+  max-height: calc( 95vh - 90px );
+  max-width: calc(95vw - 30px);
+  overflow-y: hidden;
+  padding-top: 16px;
+  padding-bottom: 5px;
+}
+
+.simple-dialog.BatchAnalysisResultDialog .body .BatchReportIFrameHolder
+{
+  border: solid 1px #e1e1e1;
+  border-radius: 5px;
+  display: block;
+}
+
+
+.simple-dialog.BatchAnalysisResultDialog .body .BatchReportJsonError,
+.simple-dialog.BatchAnalysisResultDialog .body .BatchReportInjaError,
+.simple-dialog.BatchAnalysisResultDialog .body .BatchReportMiscError
+{
+  color: red;
+}
+
+
+.simple-dialog.BatchAnalysisWarningDialog
+{
+  
+}
+
+.simple-dialog.BatchAnalysisWarningDialog .body
+{
+  color: orange;
+}
+
+.simple-dialog.BatchAnalysisWarningDialog ul.body
+{
+  list-style-type: none;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.simple-dialog.BatchAnalysisWarningDialog ul.body li
+{
+  margin-bottom: 10px;
+}
+
+

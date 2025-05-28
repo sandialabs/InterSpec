@@ -916,21 +916,36 @@ public:
       spec_files.push_back( spec_copy );
     }//for( size_t i = 0; i < input_files.size(); ++i )
 
-    try
-    {
-      BatchPeak::BatchPeakFitSummaryResults results;
-      BatchPeak::fit_peaks_in_files( exemplar_filename, exemplar, exemplar_samples,
-                                    file_names, spec_files, options, &results );
+    // We need to do the work off the main GUI thread, so we need to post the work to the server.
+    const string sessionid = Wt::WApplication::instance()->sessionId();
+    auto error_msg = make_shared<string>();
+    auto results = make_shared<BatchPeak::BatchPeakFitSummaryResults>();
+
+    SimpleDialog *waiting_dialog = new SimpleDialog( "Performing Work", "Please wait while the batch analysis is performed..." );
+    waiting_dialog->addButton( WString::tr("Close") );
+    boost::function<void(void)> close_waiting_dialog = wApp->bind( boost::bind( &SimpleDialog::done, waiting_dialog, Wt::WDialog::DialogCode::Accepted ) );
+
+
+    std::function<void(void)> show_error_dialog = [error_msg, close_waiting_dialog](){
+      close_waiting_dialog();
+      SimpleDialog *dialog = new SimpleDialog( "Error Performing Batch Analysis", "Error: " + *error_msg );
+      dialog->addStyleClass( "BatchAnalysisErrorDialog" );
+      dialog->addButton( WString::tr("Okay") );
+      wApp->triggerUpdate();
+    };
+
+    std::function<void(void)> update_gui_fcn = [results, options, close_waiting_dialog](){
+      close_waiting_dialog();
 
       SimpleDialog *dialog = new SimpleDialog( "Batch Analysis Summary" );
       dialog->addStyleClass( "BatchAnalysisResultDialog" );
       
       try
       {
-        nlohmann::json summary_json = nlohmann::json::parse(results.summary_json);
+        nlohmann::json summary_json = nlohmann::json::parse(results->summary_json);
         inja::Environment env = BatchInfoLog::get_default_inja_env( options );
         string rpt = BatchInfoLog::render_template("html", env,
-                       BatchInfoLog::TemplateRenderType::PeakFitSummary, options, summary_json );
+                         BatchInfoLog::TemplateRenderType::PeakFitSummary, options, summary_json );
         
         // Create the resource and get its URL
         BatchReportResource *report_resource = new BatchReportResource( std::move(rpt), dialog);
@@ -957,7 +972,7 @@ public:
       }catch( inja::InjaError &e )
       {
         const string contents = "<p>Error creating HTML due to exception: <br /><code>" + e.message +"</code><br/>"
-        " from line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column) + "</p>";
+          " from line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column) + "</p>";
         
         WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
         result_text->addStyleClass( "BatchReportInjaError" );
@@ -971,14 +986,14 @@ public:
       dialog->addButton( WString::tr("Okay") );
       
       
-      if( !results.warnings.empty() )
+      if( !results->warnings.empty() )
       {
         SimpleDialog *warnings_dialog = new SimpleDialog( "Warning" );
         warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
         
         WContainerWidget *contents = warnings_dialog->contents();
         contents->setList( true, false );
-        for( const string &warn_msg : results.warnings )
+        for( const string &warn_msg : results->warnings )
         {
           WContainerWidget *item = new WContainerWidget( contents );
           new WText( warn_msg, item );
@@ -986,12 +1001,27 @@ public:
         
         warnings_dialog->addButton( WString::tr("Okay") );
       }//if( !results.warnings.empty() )
-    }catch( std::exception &e )
-    {
-      SimpleDialog *dialog = new SimpleDialog( "Error Performing Batch Analysis", "Error: " + string(e.what()) );
-      dialog->addStyleClass( "BatchAnalysisErrorDialog" );
-      dialog->addButton( WString::tr("Okay") );
-    }
+
+      wApp->triggerUpdate();
+    };//update_gui_fcn lambda
+    
+
+    std::function<void(void)> do_work_fcn = [exemplar_filename, exemplar, exemplar_samples, file_names, spec_files, options, results, error_msg, update_gui_fcn, show_error_dialog, sessionid](){
+      try
+      {
+        BatchPeak::fit_peaks_in_files( exemplar_filename, exemplar, exemplar_samples,
+                                    file_names, spec_files, options, results.get() );
+        
+        WServer::instance()->post( sessionid, update_gui_fcn );
+      }catch( std::exception &e )
+      {
+        *error_msg = e.what();
+        WServer::instance()->post( sessionid, show_error_dialog );
+      }
+    };//do_work_fcn lambda
+
+    // Do the peak fitting work in a non-gui thread.
+    WServer::instance()->ioService().boost::asio::io_service::post( do_work_fcn );
   }//performAnalysis(...)
 
 
