@@ -557,47 +557,47 @@ public:
     boolOptions->addStyleClass( "PeakFitBoolOptionsContainer" );
 
     // Create checkbox options
-    m_fit_all_peaks = new Wt::WCheckBox( "Fit all peaks", boolOptions );
+    m_fit_all_peaks = new Wt::WCheckBox( WString::tr("bgw-fit-all-peaks"), boolOptions );
     m_fit_all_peaks->addStyleClass( "CbNoLineBreak" );
-    m_fit_all_peaks->setToolTip( "Instead of fitting for peaks in an exemplar file - all peaks in the spectrum will be fit for." );
+    HelpSystem::attachToolTipOn( m_fit_all_peaks, WString::tr("bgw-fit-all-peaks-tt"), true );
 
-    m_refit_energy_cal = new Wt::WCheckBox( "Refit energy calibration", boolOptions );
+    m_refit_energy_cal = new Wt::WCheckBox( WString::tr("bgw-refit-energy-cal"), boolOptions );
     m_refit_energy_cal->addStyleClass( "CbNoLineBreak" );
-    m_refit_energy_cal->setToolTip( "After initial peak fit, uses those peaks to adjust energy gain, then refits the peaks with the updated energy calibration." );
+    HelpSystem::attachToolTipOn( m_refit_energy_cal, WString::tr("bgw-refit-energy-cal-tt"), true );
 
-    m_use_exemplar_energy_cal = new Wt::WCheckBox( "Use exemplar energy calibration", boolOptions );
+    m_use_exemplar_energy_cal = new Wt::WCheckBox( WString::tr("bgw-use-exemplar-energy-cal"), boolOptions );
     m_use_exemplar_energy_cal->addStyleClass( "CbNoLineBreak" );
-    m_use_exemplar_energy_cal->setToolTip( "Use the exemplar N42 energy calibration with the input foreground files." );
+    HelpSystem::attachToolTipOn( m_use_exemplar_energy_cal, WString::tr("bgw-use-exemplar-energy-cal-tt"), true );
 
-    m_write_n42_with_results = new Wt::WCheckBox( "Write N42 with results", boolOptions );
+    m_write_n42_with_results = new Wt::WCheckBox( WString::tr("bgw-write-n42-with-results"), boolOptions );
     m_write_n42_with_results->addStyleClass( "CbNoLineBreak" );
-    m_write_n42_with_results->setToolTip( "Adds the fit peaks to the input spectrum file, and then saves as a N42." );
+    HelpSystem::attachToolTipOn( m_write_n42_with_results, WString::tr("bgw-write-n42-with-results-tt"), true );
     m_write_n42_with_results->setChecked( true );
 
-    m_show_nonfit_peaks = new Wt::WCheckBox( "Show non-fit peaks", boolOptions );
+    m_show_nonfit_peaks = new Wt::WCheckBox( WString::tr("bgw-show-nonfit-peaks"), boolOptions );
     m_show_nonfit_peaks->addStyleClass( "CbNoLineBreak" );
-    m_show_nonfit_peaks->setToolTip( "Include peaks that could not be fit in the output." );
+    HelpSystem::attachToolTipOn( m_show_nonfit_peaks, WString::tr("bgw-show-nonfit-peaks-tt"), true );
 
-    m_overwrite_output_files = new Wt::WCheckBox( "Overwrite output files", boolOptions );
+    m_overwrite_output_files = new Wt::WCheckBox( WString::tr("bgw-overwrite-output-files"), boolOptions );
     m_overwrite_output_files->addStyleClass( "CbNoLineBreak" );
-    m_overwrite_output_files->setToolTip( "Allows overwriting output N42, CSV, or report files." );
+    HelpSystem::attachToolTipOn( m_overwrite_output_files, WString::tr("bgw-overwrite-output-files-tt"), true );
 
-    m_create_csv_output = new Wt::WCheckBox( "Create CSV output", boolOptions );
+    m_create_csv_output = new Wt::WCheckBox( WString::tr("bgw-create-csv-output"), boolOptions );
     m_create_csv_output->addStyleClass( "CbNoLineBreak" );
-    m_create_csv_output->setToolTip( "Output peak fit CSV files." );
+    HelpSystem::attachToolTipOn( m_create_csv_output, WString::tr("bgw-create-csv-output-tt"), true );
     m_create_csv_output->setChecked( true ); // Default to true as per command line
     
-    m_create_json_output = new Wt::WCheckBox( "Create JSON output", boolOptions );
+    m_create_json_output = new Wt::WCheckBox( WString::tr("bgw-create-json-output"), boolOptions );
     m_create_json_output->addStyleClass( "CbNoLineBreak" );
-    m_create_json_output->setToolTip( "Writes the JSON used to create the report templates, out to file." );
+    HelpSystem::attachToolTipOn( m_create_json_output, WString::tr("bgw-create-json-output-tt"), true );
 
-    m_use_existing_background_peaks = new Wt::WCheckBox( "Use existing background peaks", boolOptions );
+    m_use_existing_background_peaks = new Wt::WCheckBox( WString::tr("bgw-use-existing-background-peaks"), boolOptions );
     m_use_existing_background_peaks->addStyleClass( "CbNoLineBreak" );
-    m_use_existing_background_peaks->setToolTip( "Use existing background peaks if available." );
+    HelpSystem::attachToolTipOn( m_use_existing_background_peaks, WString::tr("bgw-use-existing-background-peaks-tt"), true );
 
-    m_use_exemplar_energy_cal_for_background = new Wt::WCheckBox( "Use exemplar energy cal for background", boolOptions );
+    m_use_exemplar_energy_cal_for_background = new Wt::WCheckBox( WString::tr("bgw-use-exemplar-energy-cal-for-background"), boolOptions );
     m_use_exemplar_energy_cal_for_background->addStyleClass( "CbNoLineBreak" );
-    m_use_exemplar_energy_cal_for_background->setToolTip( "Use the exemplar N42 energy calibration for the background file." );
+    HelpSystem::attachToolTipOn( m_use_exemplar_energy_cal_for_background, WString::tr("bgw-use-exemplar-energy-cal-for-background-tt"), true );
 
     // Create threshold options with labels
     WContainerWidget *float_options = new Wt::WContainerWidget( m_peak_options_container );
@@ -606,7 +606,7 @@ public:
     m_peak_stat_threshold_container = new Wt::WContainerWidget( float_options );
     m_peak_stat_threshold_container->addStyleClass( "ThresholdOptionContainer" );
     
-    m_peak_stat_threshold_label = new Wt::WLabel( "Peak stat threshold:", m_peak_stat_threshold_container );
+    m_peak_stat_threshold_label = new Wt::WLabel( WString::tr("bgw-peak-stat-threshold-label"), m_peak_stat_threshold_container );
     m_peak_stat_threshold_label->setWordWrap( false );
     m_peak_stat_threshold = new NativeFloatSpinBox( m_peak_stat_threshold_container );
     m_peak_stat_threshold_label->setBuddy( m_peak_stat_threshold );
@@ -614,12 +614,12 @@ public:
     m_peak_stat_threshold->setRange( 0.0f, 10.0f );
     m_peak_stat_threshold->setSpinnerHidden( true );
     m_peak_stat_threshold->setWidth( 40 );
-    m_peak_stat_threshold->setToolTip( "The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI. Reasonable values are between ~1 (weak peak) and ~5 (significant peak)." );
+    HelpSystem::attachToolTipOn( m_peak_stat_threshold, WString::tr("bgw-peak-stat-threshold-tt"), true );
 
     m_peak_hypothesis_threshold_container = new Wt::WContainerWidget( float_options );
     m_peak_hypothesis_threshold_container->addStyleClass( "ThresholdOptionContainer" );
     
-    m_peak_hypothesis_threshold_label = new Wt::WLabel( "Peak hypothesis threshold:", m_peak_hypothesis_threshold_container );
+    m_peak_hypothesis_threshold_label = new Wt::WLabel( WString::tr("bgw-peak-hypothesis-threshold-label"), m_peak_hypothesis_threshold_container );
     m_peak_hypothesis_threshold_label->setWordWrap( false );
     m_peak_hypothesis_threshold = new NativeFloatSpinBox( m_peak_hypothesis_threshold_container );
     m_peak_hypothesis_threshold_label->setBuddy( m_peak_hypothesis_threshold );
@@ -627,19 +627,19 @@ public:
     m_peak_hypothesis_threshold->setRange( 0.0f, 10.0f );
     m_peak_hypothesis_threshold->setSpinnerHidden( true );
     m_peak_hypothesis_threshold->setWidth( 40 );
-    m_peak_hypothesis_threshold->setToolTip( "Requirement for how compatible the ROI must be to Gaussian peaks + continuum. The ratio of null hypothesis chi2 to test hypothesis chi2. Reasonable values are in the 1 to 5 range." );
+    HelpSystem::attachToolTipOn( m_peak_hypothesis_threshold, WString::tr("bgw-peak-hypothesis-threshold-tt"), true );
 
 
     m_reports_container = new WGroupBox( WString::tr("bgw-reports-grp-title"),  this );
     m_reports_container->addStyleClass( "ReportsContainer" );
     m_html_report = new Wt::WCheckBox( WString::tr("bgw-reports-write-html"), m_reports_container );
     m_html_report->addStyleClass( "CbNoLineBreak" );
-    m_html_report->setToolTip( WString::tr("bgw-reports-write-html-tooltip") );
+    HelpSystem::attachToolTipOn( m_html_report, WString::tr("bgw-reports-write-html-tooltip"), true );
     m_html_report->setChecked( true );
 
     m_csv_report = new Wt::WCheckBox( WString::tr("bgw-reports-write-csv"), m_reports_container );
     m_csv_report->addStyleClass( "CbNoLineBreak" );
-    m_csv_report->setToolTip( WString::tr("bgw-reports-write-csv-tooltip") );
+    HelpSystem::attachToolTipOn( m_csv_report, WString::tr("bgw-reports-write-csv-tooltip"), true );
     m_csv_report->setChecked( false );
     m_csv_report->hide(); //This option should not be used for peaks fitting - use `m_create_csv_output`.
 
@@ -647,7 +647,7 @@ public:
     custom_rpt_per_file_opts->addStyleClass( "CustomReportOptions" );
     m_per_file_custom_report = new Wt::WCheckBox( WString::tr("bgw-reports-write-custom-per-file"), custom_rpt_per_file_opts );
     m_per_file_custom_report->addStyleClass( "CbNoLineBreak" );
-    m_per_file_custom_report->setToolTip( WString::tr("bgw-reports-write-custom-per-file-tooltip") );
+    HelpSystem::attachToolTipOn( m_per_file_custom_report, WString::tr("bgw-reports-write-custom-per-file-tooltip"), true );
     m_per_file_custom_report->setChecked( false );
     m_per_file_custom_report->checked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
     m_per_file_custom_report->unChecked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
@@ -670,7 +670,7 @@ public:
     
     m_summary_custom_report = new Wt::WCheckBox( WString::tr("bgw-reports-write-custom-summary"), custom_rpt_summary_opts );
     m_summary_custom_report->addStyleClass( "CbNoLineBreak" );
-    m_summary_custom_report->setToolTip( WString::tr("bgw-reports-write-custom-summary-tooltip") );
+    HelpSystem::attachToolTipOn( m_summary_custom_report, WString::tr("bgw-reports-write-custom-summary-tooltip"), true );
     m_summary_custom_report->setChecked( false );
     m_summary_custom_report->checked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
     m_summary_custom_report->unChecked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
