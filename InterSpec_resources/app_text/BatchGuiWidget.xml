@@ -14,9 +14,40 @@
   <message id="bgw-exemplar-grp-title">Exemplar</message>
   <message id="bgw-exemplar-use-current-fore">Use Current Foreground</message>
 
-  <message id="bgw-back-grp-title">Exemplar</message>
+  <message id="bgw-back-grp-title">Background</message>
   <message id="bgw-back-use-current">Use Current Background</message>
   <message id="bgw-back-none">No Background</message>
 
+  <message id="bgw-reports-grp-title">Reports to Write</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">Write an HTML report of the analysis results.</message>
+  <message id="bgw-reports-write-csv">CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">Write a CSV report of the analysis results.</message>
+  <message id="bgw-reports-write-custom-per-file">Custom Per-File</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">Upload a custom report template to use for each file.</message>
+  <message id="bgw-reports-write-custom-summary">Custom Summary</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">Upload a custom report template to use for the summary of all files.</message>
+
+  <!-- performAnalysis function strings -->
+  <message id="bgw-performing-work-title">Performing Work</message>
+  <message id="bgw-performing-work-msg">Please wait while the batch analysis is performed...</message>
+  <message id="bgw-error-analysis-title">Error Performing Batch Analysis</message>
+  <message id="bgw-error-analysis-msg">Error: {1}</message>
+  <message id="bgw-analysis-summary-title">Batch Analysis Summary</message>
+  <message id="bgw-json-parse-error">
+    <p>Error parsing JSON results:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>Error creating HTML due to exception:</p>
+    <code>{1}</code>
+    <br />
+    from line {2}, column {3}
+  </message>
+  <message id="bgw-misc-error">
+    <p>Unable to generate result summary due to exception:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">Warning</message>
 
 </messages>

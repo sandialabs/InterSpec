@@ -75,6 +75,7 @@ namespace BatchPeak
     std::string output_dir;
     std::string background_subtract_file;
     std::set<int> background_subtract_samples;
+    std::shared_ptr<SpecMeas> cached_background_subtract_spec;
     bool use_existing_background_peaks;
     bool use_exemplar_energy_cal_for_background;
     
@@ -102,11 +103,29 @@ namespace BatchPeak
      */
     std::string template_include_dir;
     
-    /** File paths to report templates, that will be saved for each input files. */
+    
+    /** File paths to report templates, that will be saved for each input files. 
+     
+      If the string contains the string ':--DisplayName--:', then everything before this string will
+      be the path to the template, and everything after will be the display name of the template.
+      \sa sm_report_display_name_marker
+    */
     std::vector<std::string> report_templates;
     
-    /** File path to report templates that summarizes all input files. */
+    /** File path to report templates that summarizes all input files. 
+     
+     Similar to `report_templates`, the string may be delimited by ':--DisplayName--:', to specify 
+     the display name of the template.
+     \sa sm_report_display_name_marker
+    */
     std::vector<std::string> summary_report_templates;
+
+    /** Delimeter used within report template filesystem paths to seperate the filesystem path, and the display name of the template.
+     If this delimeter is not present, then the full string is used for both these properties.
+     
+     This is used for report templates uploaded via HTML, and spooled to disk, so we can still generate reasonably named reports.
+     */
+    static const char * const sm_report_display_name_marker; // = ":--DisplayName--:"
   };//struct BatchPeakFitOptions
 
   struct InterSpec_API BatchPeakFitResult

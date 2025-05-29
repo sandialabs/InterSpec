@@ -738,9 +738,13 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   set<int> foreground_sample_numbers = result.m_foreground_sample_numbers;
   
   shared_ptr<SpecMeas> backfile;
-  if( !options.background_subtract_file.empty() )
+  if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
   {
-    if( options.background_subtract_file == filename )
+    if( options.cached_background_subtract_spec )
+    {
+      backfile = options.cached_background_subtract_spec;
+      result.m_background_file = specfile;
+    }else if( options.background_subtract_file == filename )
     {
       backfile = specfile;
       result.m_background_file = specfile;
@@ -872,7 +876,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   shared_ptr<const SpecUtils::Measurement> background;
   try
   {
-    if( options.background_subtract_file == exemplar_filename )
+    if( (options.background_subtract_file == exemplar_filename) || (backfile == cached_exemplar_n42) )
     {
       if( options.background_subtract_samples.empty() )
       {

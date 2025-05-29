@@ -1468,9 +1468,13 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     options_obj["CreateJsonOutput"] = options.create_json_output;
     options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
     
-    if( !options.background_subtract_file.empty() )
+    if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     {
-      options_obj["BackgroundSubFile"] = options.background_subtract_file;
+      string back_filename = options.background_subtract_file;
+      if( back_filename.empty() && options.cached_background_subtract_spec )
+        back_filename = options.cached_background_subtract_spec->filename();
+
+      options_obj["BackgroundSubFile"] = back_filename;
       if( !options.background_subtract_samples.empty() )
       {
         options_obj["BackgroundSubSamples"] = vector<int>{ begin(options.background_subtract_samples),

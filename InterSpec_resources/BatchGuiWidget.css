@@ -263,16 +263,14 @@
   height: 100px;
 }
 
-.BatchGuiWidget .InputFilesContainer.DragedOver,
-.BatchGuiWidget .InputFilesContainer.DragedOver.DomIsDrugOver
-.BatchGuiWidget .ExemplarFileDrop.DragedOver.DomIsDrugOver
+.BatchGuiWidget .DragedOver,
+.BatchGuiWidget .DragedOver.DomIsDrugOver
 {
   border: 3px dashed green;
   border-radius: 8px;
 }
 
-.BatchGuiWidget .InputFilesContainer.Uploading,
-.BatchGuiWidget .ExemplarFileDrop.Uploading
+.BatchGuiWidget .Uploading
 {
   border: 3px dashed green;
   border-radius: 8px;
@@ -290,8 +288,7 @@
   }
 }
 
-.BatchGuiWidget .InputFilesContainer.DomIsDrugOver,
-.BatchGuiWidget .ExemplarFileDrop.DomIsDrugOver
+.BatchGuiWidget .DomIsDrugOver
 {
   border: 3px dashed grey;
   border-radius: 8px;
@@ -376,6 +373,93 @@
   background-color: #f0f0f0;
 }
 
+
+.BatchGuiWidget .MiscInputFileWidget
+{
+  position: relative;
+  width: 115px;
+  line-height: 15px;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.BatchGuiWidget .MiscInputFileWidget .FilenameText  
+{
+  font-size: 10px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.BatchGuiWidget .MiscInputFileWidget .closeicon-wtdefault
+{
+  width: 22px;
+}
+
+.BatchGuiWidget .ReportsContainer
+{
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
+
+.BatchGuiWidget .ReportsContainer .CustomReportOptions
+{
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
+
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader
+{
+  border: solid 1px #e1e1e1;
+  border-radius: 5px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  height: 20px;
+  width: 120px;
+  overflow-y: auto;
+}
+
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.EmptyReportUpload::before
+{
+  content: "Drop/click here";
+  display: block;
+  background-color: lightgray;
+  color: darkgray;
+  text-align: center;
+  line-height: 20px;
+  font-size: 9px;
+  height: 20px;
+  width: 120px;
+}
+
+
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.DomIsDrugOver
+{
+  
+}
+
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader::after
+{
+  content: 'Drop here';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* Center the text */
+  color: white; /* White text color */
+  font-size: 10px;
+  text-align: center;
+}
 
 
 .simple-dialog.BatchAnalysisResultDialog

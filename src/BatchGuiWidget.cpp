@@ -116,6 +116,73 @@ namespace
       response.out() << m_html_content;
     }
   };//class BatchReportResource
+
+
+class MiscInputFileWidget : public Wt::WContainerWidget
+{
+protected:
+  const std::string m_filename;
+  const std::string m_display_name;
+  const bool m_should_cleanup;
+
+  Wt::WText *m_txt;
+
+  Wt::Signal<MiscInputFileWidget *> m_remove_self_request_signal;
+
+public:
+  MiscInputFileWidget( const std::string display_name,
+                  const std::string path_to_file,
+                  const bool should_cleanup,
+                  Wt::WContainerWidget *parent )
+  : Wt::WContainerWidget( parent ),
+  m_filename( path_to_file ),
+  m_display_name( display_name ),
+  m_should_cleanup( should_cleanup ),
+  m_txt( nullptr )
+  {
+    addStyleClass( "MiscInputFileWidget" );
+
+    m_txt = new WText( display_name, this );
+    m_txt->addStyleClass( "FilenameText" );
+    m_txt->setToolTip( "Full path of disk file: '" + path_to_file + "'" );
+
+    WContainerWidget *close_icon = new WContainerWidget( this );
+    close_icon->addStyleClass( "closeicon-wtdefault" );
+    close_icon->clicked().connect( boost::bind( &MiscInputFileWidget::requestRemoveSelf, this ) );
+    close_icon->clicked().preventPropagation();
+  }//MiscInputFileWidget constructor
+
+  ~MiscInputFileWidget()
+  {
+    if( m_should_cleanup )
+    {
+      const bool success = SpecUtils::remove_file( m_filename );
+      if( !success )
+        cerr << "BatchGuiDialog::MiscInputFileWidget: Warning, could not delete file '" << m_filename << "'" << endl;
+    }
+  }//~MiscInputFileWidget()
+
+
+  void requestRemoveSelf()
+  {
+    m_remove_self_request_signal.emit(this);
+  }//void requestRemoveSelf()
+
+  const std::string &display_name() const
+  {
+    return m_display_name;
+  }
+
+  const std::string &path_to_file() const
+  {
+    return m_filename;
+  }
+
+  Wt::Signal<MiscInputFileWidget *> &remove_self_request()
+  {
+    return m_remove_self_request_signal;
+  }
+};//class MiscInputFileWidget
 }//namespace
 
 /** Represents a spectrum file, with a little thumbnail preview.
@@ -411,6 +478,20 @@ protected:
   Wt::WLabel *m_peak_hypothesis_threshold_label = nullptr;
   NativeFloatSpinBox *m_peak_hypothesis_threshold = nullptr;
 
+  Wt::WContainerWidget *m_reports_container = nullptr;
+  Wt::WCheckBox *m_html_report = nullptr;
+  Wt::WCheckBox *m_csv_report = nullptr;
+  
+  // Per-file custom report variables grouped together
+  Wt::WCheckBox *m_per_file_custom_report = nullptr;
+  Wt::WContainerWidget *m_per_file_custom_report_container = nullptr;
+  FileDragUploadResource *m_per_file_custom_report_resource = nullptr;
+
+  // Summary custom report variables grouped together  
+  Wt::WCheckBox *m_summary_custom_report = nullptr;
+  Wt::WContainerWidget *m_summary_custom_report_container = nullptr;
+  FileDragUploadResource *m_summary_custom_report_resource = nullptr;
+
 public:
   BatchGuiPeakFitWidget( Wt::WContainerWidget *parent = nullptr )
     : BatchGuiAnaWidget( parent )
@@ -420,6 +501,7 @@ public:
     m_exemplar_input = new WGroupBox( WString::tr("bgw-exemplar-grp-title"),  this );
     m_exemplar_input->addStyleClass( "ExemplarToUseOpt" );
     m_use_current_foreground = new WCheckBox( WString::tr("bgw-exemplar-use-current-fore"), m_exemplar_input );
+    m_use_current_foreground->addStyleClass( "CbNoLineBreak" );
     m_exemplar_file_drop = new WContainerWidget( m_exemplar_input );
     m_exemplar_file_drop->addStyleClass( "ExemplarFileDrop" );
     const bool have_fore = !!InterSpec::instance()->displayedHistogram(SpecUtils::SpectrumType::Foreground);
@@ -443,12 +525,14 @@ public:
     m_background_input->addStyleClass( "ExemplarToUseOpt" );
 
     m_use_current_background = new WCheckBox( WString::tr("bgw-back-use-current"), m_background_input );
+    m_use_current_background->addStyleClass( "CbNoLineBreak" );
     m_use_current_background->setChecked( have_back );
     m_use_current_background->setHidden( !have_back );
     m_use_current_background->checked().connect( this, &BatchGuiPeakFitWidget::useCurrentBackgroundChanged );
     m_use_current_background->unChecked().connect( this, &BatchGuiPeakFitWidget::useCurrentBackgroundChanged );
 
     m_no_background = new WCheckBox( WString::tr("bgw-back-none"), m_background_input );
+    m_no_background->addStyleClass( "CbNoLineBreak" );
     m_no_background->setChecked( !have_back );
     m_no_background->checked().connect( this, &BatchGuiPeakFitWidget::useNoBackgroundChanged );
     m_no_background->unChecked().connect( this, &BatchGuiPeakFitWidget::useNoBackgroundChanged );
@@ -488,6 +572,7 @@ public:
     m_write_n42_with_results = new Wt::WCheckBox( "Write N42 with results", boolOptions );
     m_write_n42_with_results->addStyleClass( "CbNoLineBreak" );
     m_write_n42_with_results->setToolTip( "Adds the fit peaks to the input spectrum file, and then saves as a N42." );
+    m_write_n42_with_results->setChecked( true );
 
     m_show_nonfit_peaks = new Wt::WCheckBox( "Show non-fit peaks", boolOptions );
     m_show_nonfit_peaks->addStyleClass( "CbNoLineBreak" );
@@ -544,6 +629,64 @@ public:
     m_peak_hypothesis_threshold->setWidth( 40 );
     m_peak_hypothesis_threshold->setToolTip( "Requirement for how compatible the ROI must be to Gaussian peaks + continuum. The ratio of null hypothesis chi2 to test hypothesis chi2. Reasonable values are in the 1 to 5 range." );
 
+
+    m_reports_container = new WGroupBox( WString::tr("bgw-reports-grp-title"),  this );
+    m_reports_container->addStyleClass( "ReportsContainer" );
+    m_html_report = new Wt::WCheckBox( WString::tr("bgw-reports-write-html"), m_reports_container );
+    m_html_report->addStyleClass( "CbNoLineBreak" );
+    m_html_report->setToolTip( WString::tr("bgw-reports-write-html-tooltip") );
+    m_html_report->setChecked( true );
+
+    m_csv_report = new Wt::WCheckBox( WString::tr("bgw-reports-write-csv"), m_reports_container );
+    m_csv_report->addStyleClass( "CbNoLineBreak" );
+    m_csv_report->setToolTip( WString::tr("bgw-reports-write-csv-tooltip") );
+    m_csv_report->setChecked( false );
+    m_csv_report->hide(); //This option should not be used for peaks fitting - use `m_create_csv_output`.
+
+    Wt::WContainerWidget *custom_rpt_per_file_opts = new Wt::WContainerWidget( m_reports_container );
+    custom_rpt_per_file_opts->addStyleClass( "CustomReportOptions" );
+    m_per_file_custom_report = new Wt::WCheckBox( WString::tr("bgw-reports-write-custom-per-file"), custom_rpt_per_file_opts );
+    m_per_file_custom_report->addStyleClass( "CbNoLineBreak" );
+    m_per_file_custom_report->setToolTip( WString::tr("bgw-reports-write-custom-per-file-tooltip") );
+    m_per_file_custom_report->setChecked( false );
+    m_per_file_custom_report->checked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_per_file_custom_report->unChecked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+
+    m_per_file_custom_report_container = new Wt::WContainerWidget( custom_rpt_per_file_opts );
+    m_per_file_custom_report_container->addStyleClass( "CustomReportUploader EmptyReportUpload" );
+
+    m_per_file_custom_report_resource = new FileDragUploadResource( m_per_file_custom_report_container );
+    m_per_file_custom_report_container->doJavaScript("BatchInputDropUploadSetup(" + m_per_file_custom_report_container->jsRef() + ", "
+                                            " '" + m_per_file_custom_report_resource->url() + "');" );
+
+    m_per_file_custom_report_container->doJavaScript("setupOnDragEnterDom(['" + m_per_file_custom_report_container->id() + "']);");
+    m_per_file_custom_report_resource->fileDrop().connect( boost::bind( &BatchGuiPeakFitWidget::perFileCustomReportUploaded, this,
+                                                                boost::placeholders::_1, boost::placeholders::_2) );
+    m_per_file_custom_report_container->hide();
+
+    // Group summary custom report elements together
+    Wt::WContainerWidget *custom_rpt_summary_opts = new Wt::WContainerWidget( m_reports_container );
+    custom_rpt_summary_opts->addStyleClass( "CustomReportOptions" );
+    
+    m_summary_custom_report = new Wt::WCheckBox( WString::tr("bgw-reports-write-custom-summary"), custom_rpt_summary_opts );
+    m_summary_custom_report->addStyleClass( "CbNoLineBreak" );
+    m_summary_custom_report->setToolTip( WString::tr("bgw-reports-write-custom-summary-tooltip") );
+    m_summary_custom_report->setChecked( false );
+    m_summary_custom_report->checked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+    m_summary_custom_report->unChecked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
+
+    m_summary_custom_report_container = new Wt::WContainerWidget( custom_rpt_summary_opts );
+    m_summary_custom_report_container->addStyleClass( "CustomReportUploader EmptyReportUpload" );
+
+    m_summary_custom_report_resource = new FileDragUploadResource( m_summary_custom_report_container );
+    m_summary_custom_report_container->doJavaScript("BatchInputDropUploadSetup(" + m_summary_custom_report_container->jsRef() + ", "
+                                            " '" + m_summary_custom_report_resource->url() + "');" );
+
+    m_summary_custom_report_container->doJavaScript("setupOnDragEnterDom(['" + m_summary_custom_report_container->id() + "']);");
+    m_summary_custom_report_resource->fileDrop().connect( boost::bind( &BatchGuiPeakFitWidget::summaryCustomReportUploaded, this,
+                                                                boost::placeholders::_1, boost::placeholders::_2) );
+    m_summary_custom_report_container->hide();
+
     // Connect signals to update analysis capability
     m_fit_all_peaks->checked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
     m_fit_all_peaks->unChecked().connect( this, &BatchGuiPeakFitWidget::peakFitOptionChanged );
@@ -589,6 +732,8 @@ public:
   {
     wApp->doJavaScript("removeOnDragEnterDom(['" + m_background_file_drop->id() + "']);");
     wApp->doJavaScript("removeOnDragEnterDom(['" + m_exemplar_file_drop->id() + "']);");
+    wApp->doJavaScript("removeOnDragEnterDom(['" + m_per_file_custom_report_container->id() + "']);");
+    wApp->doJavaScript("removeOnDragEnterDom(['" + m_summary_custom_report_container->id() + "']);");
   }
 
 
@@ -636,6 +781,54 @@ public:
     handleFileUpload( m_background_file_drop, m_background_file_resource );
   }
 
+
+  void perFileCustomReportUploaded( const std::string &, const std::string & )
+  {
+    const vector<tuple<string,string,bool>> spooled = m_per_file_custom_report_resource->takeSpooledFiles();
+
+    for( const auto &file : spooled )
+    {
+      const string &display_name = std::get<0>(file);
+      const string &path_to_file = std::get<1>(file);
+      const bool should_delete = std::get<2>(file);
+
+      MiscInputFileWidget *input = new MiscInputFileWidget( display_name, path_to_file, should_delete, m_per_file_custom_report_container );
+      input->remove_self_request().connect( boost::bind( &BatchGuiPeakFitWidget::handle_remove_per_file_custom_report_upload, this, boost::placeholders::_1 ) );
+    }//for( const auto &file : spooled )
+
+    peakFitOptionChanged();
+  }//void perFileCustomReportUploaded( const std::string &, const std::string & )
+
+
+  void summaryCustomReportUploaded( const std::string &, const std::string & )
+  {
+    const vector<tuple<string,string,bool>> spooled = m_summary_custom_report_resource->takeSpooledFiles();
+
+    for( const auto &file : spooled )
+    {
+      const string &display_name = std::get<0>(file);
+      const string &path_to_file = std::get<1>(file);
+      const bool should_delete = std::get<2>(file);
+
+      MiscInputFileWidget *input = new MiscInputFileWidget( display_name, path_to_file, should_delete, m_summary_custom_report_container );
+      input->remove_self_request().connect( boost::bind( &BatchGuiPeakFitWidget::handle_remove_summary_custom_report_upload, this, boost::placeholders::_1 ) );
+    }//for( const auto &file : spooled )
+
+    peakFitOptionChanged();
+  }//void summaryCustomReportUploaded( const std::string &, const std::string & )
+
+
+  void handle_remove_per_file_custom_report_upload( MiscInputFileWidget *input )
+  {
+    delete input;
+    peakFitOptionChanged();
+  }
+
+  void handle_remove_summary_custom_report_upload( MiscInputFileWidget *input )
+  {
+    delete input;
+    peakFitOptionChanged();
+  }
 
   void handle_remove_exemplar_upload( InputFileWidget *input )
   {
@@ -710,6 +903,8 @@ public:
         m_background_file_drop->addStyleClass( "EmptyExemplarUpload" );
     };
 
+    m_use_exemplar_energy_cal_for_background->setHidden( use_no_back || fit_all_peaks );
+
     if( use_no_back )
     {
       assert( !use_current_back );
@@ -733,6 +928,24 @@ public:
       if( !num_kids && !has_drop_class )
         m_background_file_drop->addStyleClass( "EmptyExemplarUpload" );
     }
+
+
+    m_per_file_custom_report_container->setHidden( !m_per_file_custom_report->isChecked() );
+    m_summary_custom_report_container->setHidden( !m_summary_custom_report->isChecked() );
+
+    const bool have_per_file_custom_report = !m_per_file_custom_report_container->children().empty();
+    const bool per_file_has_empty_class = m_per_file_custom_report_container->hasStyleClass( "EmptyReportUpload" );
+    if( have_per_file_custom_report && per_file_has_empty_class )
+      m_per_file_custom_report_container->removeStyleClass( "EmptyReportUpload" );
+    if( !have_per_file_custom_report && !per_file_has_empty_class )
+      m_per_file_custom_report_container->addStyleClass( "EmptyReportUpload" );
+
+    const bool have_summary_custom_report = !m_summary_custom_report_container->children().empty();
+    const bool summary_has_empty_class = m_summary_custom_report_container->hasStyleClass( "EmptyReportUpload" );
+    if( have_summary_custom_report && summary_has_empty_class )
+      m_summary_custom_report_container->removeStyleClass( "EmptyReportUpload" );
+    if( !have_summary_custom_report && !summary_has_empty_class )
+      m_summary_custom_report_container->addStyleClass( "EmptyReportUpload" );
 
     // Emit signal to parent that analysis capability may have changed
     m_canDoAnalysis.emit( canDoAnalysis() );
@@ -868,17 +1081,63 @@ public:
     }else
     {
       const tuple<shared_ptr<const SpecMeas>,string,set<int>> background_info = get_background();
+      const shared_ptr<const SpecMeas> &background_spec = get<0>(background_info);
+      if( background_spec )
+      {
+        shared_ptr<SpecMeas> spec_copy = make_shared<SpecMeas>();
+        spec_copy->uniqueCopyContents( *background_spec );
+        answer.cached_background_subtract_spec = spec_copy;
+      }
+      
       answer.background_subtract_file = get<1>(background_info);
       answer.background_subtract_samples = get<2>(background_info);
       answer.use_existing_background_peaks = m_use_existing_background_peaks->isChecked();
       answer.use_exemplar_energy_cal_for_background = m_use_exemplar_energy_cal_for_background->isChecked();
     }
 
+    answer.create_csv_output = m_create_csv_output->isChecked();
+    answer.create_json_output = m_create_json_output->isChecked();
 
-    //answer.template_include_dir = ...; //std::string
-    //answer.report_templates = ...; //std::vector<std::string>
-    //answer.summary_report_templates; //std::vector<std::string>
 
+    if( m_html_report->isChecked() )
+    {
+      answer.report_templates.push_back( "html" );
+      answer.summary_report_templates.push_back( "html" );
+    }
+   
+    if( m_csv_report->isVisible() && m_csv_report->isChecked() )
+    {
+      answer.report_templates.push_back( "csv" );
+      answer.summary_report_templates.push_back( "csv" );
+    }
+   
+    if( m_per_file_custom_report->isChecked() )
+    {
+      for( Wt::WWidget *child : m_per_file_custom_report_container->children() )
+      {
+        MiscInputFileWidget *input_file = dynamic_cast<MiscInputFileWidget *>( child );
+        assert( input_file );
+        if( !input_file )
+          continue;
+
+        answer.report_templates.push_back( input_file->path_to_file() );
+      }
+    }
+   
+    if( m_summary_custom_report->isChecked() )
+    {
+      for( Wt::WWidget *child : m_summary_custom_report_container->children() )
+      {
+        MiscInputFileWidget *input_file = dynamic_cast<MiscInputFileWidget *>( child );
+        assert( input_file );
+        if( !input_file )
+          continue;
+
+        answer.summary_report_templates.push_back( input_file->path_to_file() );
+      }
+    }//if( m_summary_custom_report->isChecked() )
+   
+    //answer.template_include_dir = ...; //std::string - if we allow setting this, then the custom report templates cant be used.
     //answer.output_dir = ...; //std::string
 
     return answer;
@@ -896,7 +1155,6 @@ public:
     const set<int> &exemplar_samples = get<2>(exemplar_info);
 
     const tuple<shared_ptr<const SpecMeas>,string,set<int>> background_info = get_background();
-#pragma message( "TODO: we need to handle using in-memory background file!!!" )
 
     vector<string> file_names;
     vector<shared_ptr<SpecMeas>> spec_files;
@@ -921,14 +1179,14 @@ public:
     auto error_msg = make_shared<string>();
     auto results = make_shared<BatchPeak::BatchPeakFitSummaryResults>();
 
-    SimpleDialog *waiting_dialog = new SimpleDialog( "Performing Work", "Please wait while the batch analysis is performed..." );
+    SimpleDialog *waiting_dialog = new SimpleDialog( WString::tr("bgw-performing-work-title"), WString::tr("bgw-performing-work-msg") );
     waiting_dialog->addButton( WString::tr("Close") );
     boost::function<void(void)> close_waiting_dialog = wApp->bind( boost::bind( &SimpleDialog::done, waiting_dialog, Wt::WDialog::DialogCode::Accepted ) );
 
 
     std::function<void(void)> show_error_dialog = [error_msg, close_waiting_dialog](){
       close_waiting_dialog();
-      SimpleDialog *dialog = new SimpleDialog( "Error Performing Batch Analysis", "Error: " + *error_msg );
+      SimpleDialog *dialog = new SimpleDialog( WString::tr("bgw-error-analysis-title"), WString::tr("bgw-error-analysis-msg").arg(*error_msg) );
       dialog->addStyleClass( "BatchAnalysisErrorDialog" );
       dialog->addButton( WString::tr("Okay") );
       wApp->triggerUpdate();
@@ -937,7 +1195,7 @@ public:
     std::function<void(void)> update_gui_fcn = [results, options, close_waiting_dialog](){
       close_waiting_dialog();
 
-      SimpleDialog *dialog = new SimpleDialog( "Batch Analysis Summary" );
+      SimpleDialog *dialog = new SimpleDialog( WString::tr("bgw-analysis-summary-title") );
       dialog->addStyleClass( "BatchAnalysisResultDialog" );
       
       try
@@ -966,19 +1224,18 @@ public:
         result_text->setHeight( WLength(100.0,WLength::Percentage) );
       }catch( nlohmann::json::parse_error &e )
       {
-        const string contents = "<p>Error parsing JSON results: <br /><code>" + string(e.what()) + "</code></p>";
+        const string contents = "<p>" + WString::tr("bgw-json-parse-error").arg(string(e.what())).toUTF8() + "</p>";
         WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
         result_text->addStyleClass( "BatchReportJsonError" );
       }catch( inja::InjaError &e )
       {
-        const string contents = "<p>Error creating HTML due to exception: <br /><code>" + e.message +"</code><br/>"
-          " from line " + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column) + "</p>";
+        const string contents = "<p>" + WString::tr("bgw-inja-error").arg(e.message).arg(std::to_string(e.location.line)).arg(std::to_string(e.location.column)).toUTF8() + "</p>";
         
         WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
         result_text->addStyleClass( "BatchReportInjaError" );
       }catch( std::exception &e )
       {
-        const string contents = "<p>Unable to generate result summary due to exception: <br /><code>" + string(e.what()) + "</code></p>";
+        const string contents = "<p>" + WString::tr("bgw-misc-error").arg(string(e.what())).toUTF8() + "</p>";
         WText *result_text = new WText( contents, Wt::TextFormat::XHTMLUnsafeText, dialog->contents() );
         result_text->addStyleClass( "BatchReportMiscError" );
       }
@@ -988,7 +1245,7 @@ public:
       
       if( !results->warnings.empty() )
       {
-        SimpleDialog *warnings_dialog = new SimpleDialog( "Warning" );
+        SimpleDialog *warnings_dialog = new SimpleDialog( WString::tr("bgw-warning-title") );
         warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
         
         WContainerWidget *contents = warnings_dialog->contents();

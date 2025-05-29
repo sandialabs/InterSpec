@@ -46,6 +46,26 @@
 
 using namespace std;
 
+const char * const BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker = ":--DisplayName--:";
+
+namespace
+{
+  std::string get_report_template_name( const std::string &template_path )
+  {
+    const size_t pos = template_path.find( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker );
+    if( pos == std::string::npos )
+      return template_path;
+    return template_path.substr( pos + strlen( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker ) );
+  }
+
+  std::string get_report_template_path( const std::string &template_path )
+  {
+    const size_t pos = template_path.find( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker );
+    if( pos == std::string::npos )
+      return template_path;
+    return template_path.substr( 0, pos );
+  }
+}//namespace
 
 namespace BatchPeak
 {
@@ -421,23 +441,24 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
 
     for( size_t tmplt_index = 0; tmplt_index < options.report_templates.size(); ++tmplt_index )
     {
-      string tmplt = options.report_templates[tmplt_index];
+      const std::string tmplt_path = get_report_template_path( options.report_templates[tmplt_index] );
+      const std::string tmplt_name = get_report_template_name( options.report_templates[tmplt_index] );
 
       try
       {
-        const string rpt = BatchInfoLog::render_template( tmplt, env,
+        const string rpt = BatchInfoLog::render_template( tmplt_path, env,
                             BatchInfoLog::TemplateRenderType::PeakFitIndividual, options, data );
 
         if( results )
           results->file_reports[file_index][tmplt_index] = rpt;
 
-        if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt, "html" ) )
+        if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt_path, "html" ) )
           cout << "\n\n" << rpt << endl << endl;
         
         if( !options.output_dir.empty() )
         {
           const string out_file
-                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt,
+                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt_name,
                                   BatchInfoLog::TemplateRenderType::PeakFitIndividual, options );
 
           if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
@@ -462,7 +483,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
       {
         const string msg = "Error templating results (" + e.type + ": line "
         + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
-        + " of '" + tmplt + "'): " + e.message + ". While processing '" + filename + "'.";
+        + " of '" + tmplt_path + "'): " + e.message + ". While processing '" + filename + "'.";
         
         cerr << msg << endl;
         warnings.push_back( msg );
@@ -579,9 +600,12 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   // Now write summary report(s)
   for( const string &summary_tmplt : options.summary_report_templates )
   {
+    const std::string tmplt_path = get_report_template_path( summary_tmplt );
+    const std::string tmplt_name = get_report_template_name( summary_tmplt );
+
     try
     {
-      const string rpt = BatchInfoLog::render_template( summary_tmplt, env,
+      const string rpt = BatchInfoLog::render_template( tmplt_path, env,
                        BatchInfoLog::TemplateRenderType::PeakFitSummary, options, summary_json );
 
       if( results )
@@ -593,7 +617,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
       if( !options.output_dir.empty() )
       {
         const string out_file
-                    = BatchInfoLog::suggested_output_report_filename( "", summary_tmplt,
+                    = BatchInfoLog::suggested_output_report_filename( "", tmplt_name,
                                     BatchInfoLog::TemplateRenderType::PeakFitSummary, options );
         
         if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
@@ -618,7 +642,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     {
       const string msg = "Error templating summary peak fit output (" + e.type + ": line "
       + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
-      + " of '" + summary_tmplt + "'): " + e.message + ".";
+      + " of '" + tmplt_path + "'): " + e.message + ".";
       
       cerr << msg << endl;
       warnings.push_back( msg );
@@ -927,11 +951,17 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     
     set<int> back_sample_nums;
     shared_ptr<SpecMeas> background_n42;
-    if( !options.background_subtract_file.empty() )
+    if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     {
-      background_n42 = make_shared<SpecMeas>();
-      if( !background_n42->load_file( options.background_subtract_file, SpecUtils::ParserType::Auto ) )
-        throw runtime_error( "Couldnt open background file '" + options.background_subtract_file + "'" );
+      if( options.cached_background_subtract_spec  )
+      {
+        background_n42 = options.cached_background_subtract_spec;
+      }else
+      {
+        background_n42 = make_shared<SpecMeas>();
+        if( !background_n42->load_file( options.background_subtract_file, SpecUtils::ParserType::Auto ) )
+          throw runtime_error( "Couldnt open background file '" + options.background_subtract_file + "'" );
+      }
       
       if( options.background_subtract_samples.empty() )
       {
@@ -1304,7 +1334,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       for( const auto &p: fit_peaks )
         fit_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
 
-      if( options.background_subtract_file.empty() )
+      if( options.background_subtract_file.empty() && !options.cached_background_subtract_spec )
       {
         specfile->setPeaks( fit_peaks_ptrs, used_sample_nums );
       }else
