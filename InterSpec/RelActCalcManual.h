@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <vector>
 #include <memory>
 #include <istream>
@@ -80,19 +81,6 @@ struct SandiaDecayNuc
   const ReactionGamma::Reaction *reaction = nullptr;
 };//struct SandiaDecayNuc
 
-
-/** Information about a SandiaDecay defined nuclide for input into relative efficiency calculation.
- */
-/*
-template<typename T>
-struct SandiaDecayNucRelAct
-{
-  const SandiaDecay::Nuclide *nuclide = nullptr;
-  /// Age at start of measurement.
-  double age = -1.0;
-  T rel_activity = -1.0;
-};//struct SandiaDecayNucRelAct
-*/
 
 /** Struct to specify the yield of a nuclide, that will be associated with a specific peak. */
 struct GenericLineInfo
@@ -203,6 +191,25 @@ struct ManualActRatioConstraint
 #endif
 */
 };//struct ManualActRatioConstraint
+
+
+// As of 20250509 using MassFractionConstraint has not been tested at all, beyond that it compiles - so I'll leave this flag here to help rember to check it out.
+#define USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT 1
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+/** A constraint on the mass fraction of an element in a sample.
+ */
+struct MassFractionConstraint
+{
+  std::string m_nuclide;
+  double m_mass_fraction;
+  
+  /** You must specify the specific activities of each nuclide for this same element,
+   including for this nuclide itself.
+   */
+  std::map<std::string, double> m_specific_activities;
+};//struct MassFractionConstraint
+#endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
 
 /** Adds the `GenericLineInfo` info (e.g. nuclides and their BR) to input `peaks` by clustering gamma lines of
  provided nuclides.
@@ -433,7 +440,17 @@ struct RelEffInput
   /** The activity ratio constraints. */
   std::vector<ManualActRatioConstraint> act_ratio_constraints;
 
-
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  /** The mass fraction constraints. 
+   
+   Note: this initial implementation is less than ideal, as the initial relative activities
+   of the non-mass-fraction constrained isotopes are determined by just ignoring the 
+   mass-fraction-constrained isotopes exist at all.  This can lead to say the 185 keV peak
+   being attributed to the tiny (BR=1.3E-4) peak of U238 at 184.8 keV, instead of the
+   main peak of U235.
+  */
+  std::vector<MassFractionConstraint> mass_fraction_constraints;
+#endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
   /** Checks that the nuclide constraints are valid.
 
    Checks for cyclical constraints, and that all constrained nuclides are found in #nuclides.

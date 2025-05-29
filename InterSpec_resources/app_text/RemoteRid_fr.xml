@@ -1,35 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- rr- is short for RemoteRid
-  -->
   <message id="rr-mi-url">URL</message>
-  <message id="rr-mi-executable-path">Chemin Exe</message>
+  <message id="rr-mi-executable-path">Chemin de l'exécutable</message>
   <message id="rr-url-empty-text">URL du service FullSpectrum</message>
-  <message id="rr-exe-path-empty-text">Chemin vers l'exécutable FullSpectrum</message>
+  <message id="rr-exe-path-empty-text">Chemin de l'exécutable FullSpectrum</message>
   <message id="rr-get-detectors">Récupérer les DRF</message>
-  <message id="rr-detectors-label">DRF :</message>
-  <message id="rr-url-instructions">Après avoir entré l'URL du service web, veuillez (optionnellement) récupérer les DRF, puis appuyez sur "<em>Soumettre</em>"</message>
-  <message id="rr-only-disp-samples-cb">Uniquement les Échantillons Affichés</message>
-  <message id="rr-tt-only-disp-samples">Normalement, le mode de recherche et les données du portail sont analysés dans leur intégralité, mais sélectionner cette option fera en sorte que seul le premier plan/arrière-plan affiché soit analysé.</message>
-  <message id="rr-submit-ana-btn">Soumettre l'Analyse</message>
+  <message id="rr-detectors-label">DRF :</message>
+  <message id="rr-url-instructions">Après avoir entré l'URL du service web, veuillez (facultativement) récupérer les DRF, puis appuyez sur "<em>Soumettre</em>"</message>
+  <message id="rr-only-disp-samples-cb">Uniquement les échantillons affichés</message>
+  <message id="rr-tt-only-disp-samples">Normalement, les données en mode recherche et portail sont analysées dans leur intégralité, mais la sélection de cette option entraînera l'analyse uniquement du premier plan/arrière-plan affiché.</message>
+  <message id="rr-submit-ana-btn">Soumettre l'analyse</message>
   <message id="rr-show-dialog-cb">Afficher la boîte de dialogue</message>
-  <message id="rr-always-call-cb">Toujours appeler au chargement du spectre</message>
-  <message id="rr-tt-show-dialog">Si coché, une boîte de dialogue qui doit être fermée par l'utilisateur sera affichée avec les résultats RID. Si non coché, seule une notification qui disparaîtra après un court moment, sera affichée avec les résultats RID.</message>
-  <message id="rr-gadras-rid-error">Erreur GADRAS RID : {1}</message>
-  <message id="rr-gadras-rid-error-code">Code d'erreur GADRAS RID {1}</message>
-  <message id="rr-gadras-rid-no-id">GADRAS RID : rien identifié</message>
-  <message id="rr-gadras-result">GADRAS RID : {}</message>
-  <message id="rr-gadras-fail-parse">Échec de l'analyse des résultats GADRAS RID.</message>
-  <message id="rr-rid-results-window-title">Résultats RID Externes</message>
+  <message id="rr-always-call-cb">Toujours appeler lors du chargement du spectre</message>
+  <message id="rr-tt-show-dialog">Si cette case est cochée, une boîte de dialogue qui doit être fermée par l'utilisateur s'affichera avec les résultats RID.  Si elle n'est pas cochée, seule une notification qui disparaîtra après un court laps de temps s'affichera avec les résultats RID.</message>
+  <message id="rr-gadras-rid-error">Erreur RID GADRAS : {1}</message>
+  <message id="rr-gadras-rid-error-code">Code d'erreur RID GADRAS {1}</message>
+  <message id="rr-gadras-rid-no-id">RID GADRAS : rien d'identifié</message>
+  <message id="rr-gadras-result">RID GADRAS : {1}</message>
+  <message id="rr-gadras-fail-parse">Échec de l'analyse des résultats RID GADRAS.</message>
+  <message id="rr-rid-results-window-title">Résultats RID externes</message>
   <message id="rr-rid-tool-btn">Outil RID</message>
-  <message id="rr-err-incorrect-url">Erreur lors de l'appel à l'analyse : URL incorrecte ou pas d'internet.</message>
-  <message id="rr-err-locating-exe">Erreur de localisation de l'exécutable : '{1}'</message>
+  <message id="rr-err-incorrect-url">Erreur lors de l'appel de l'analyse : URL incorrecte ou pas d'Internet.</message>
+  <message id="rr-err-locating-exe">Erreur lors de la localisation de l'exécutable : '{1}'</message>
   <message id="rr-err-creating-tmp-file">Erreur lors de la création du nom de fichier temporaire.</message>
   <message id="rr-err-opening-tmp-file">Erreur lors de l'ouverture du fichier temporaire.</message>
   <message id="rr-requesting-ana">Demande d'analyse</message>
   <message id="rr-err-no-spec">Aucun spectre affiché</message>
   <message id="rr-requesting-service-info">Demande d'informations sur le service.</message>
-  <message id="rr-error-parsing-service-info">Erreur lors de l'analyse des résultats des informations sur le service : <code></code></message>
-  <message id="rr-incorrect-url">URL incorrecte ou pas d'internet.</message>
-  <message id="rr-err-requesting-service-info">Erreur lors de la récupération des informations sur le service : <code>{1}</code></message>
+  <message id="rr-error-parsing-service-info">Erreur lors de l'analyse des résultats des informations sur le service : <code></code></message>
+  <message id="rr-incorrect-url">URL incorrecte ou pas d'Internet.</message>
+  <message id="rr-err-requesting-service-info">Erreur lors de la récupération des informations sur le service : <code>{1}</code></message>
 </messages>

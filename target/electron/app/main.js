@@ -98,7 +98,7 @@ if( !gotTheLock )
 
     if( infiles.length > 0 )   
     {
-      let window = (openWindows.length ? openWindows.at(-1) : null);
+      let window = (openWindows.length ? openWindows[openWindows.length-1] : null);
 
       if( window ) 
       {
@@ -134,7 +134,7 @@ if( !gotTheLock )
     if( path_string.toLowerCase().startsWith("interspec://") 
         || path_string.toLowerCase().startsWith("raddata://g0/") )
     {
-      let window = (openWindows.length ? openWindows.at(-1) : null);
+      let window = (openWindows.length ? openWindows[openWindows.length-1] : null);
 
       if( window )
         interspec.openAppUrl( window.appSessionToken, JSON.stringify( [url] ) );
@@ -308,7 +308,7 @@ if( process.platform == 'darwin' ) {
    
      console.log( "Got request to open file: " + path );
      
-     let window = openWindows.length ? openWindows.at(-1) : null;
+     let window = openWindows.length ? openWindows[openWindows.length-1] : null;
      if( window && window.pageHasLoaded && window.appHasLoadConfirmed )
      {
        load_file(window, path);
@@ -326,7 +326,7 @@ if( process.platform == 'darwin' ) {
   
   if( infiles.length )
   {
-    let window = openWindows.length ? openWindows.at(-1) : null;
+    let window = openWindows.length ? openWindows[openWindows.length-1] : null;
     if( window )
       load_file(window,infiles);
     else 
@@ -455,7 +455,7 @@ function createWindow() {
 
   if( openWindows.length )
   {
-    let lastWindow = openWindows.at(-1);
+    let lastWindow = openWindows[openWindows.length-1];
     guiConfig.bounds = lastWindow.getBounds();
     guiConfig.bounds.x += 20;
     guiConfig.bounds.y += 20;
@@ -970,7 +970,7 @@ function messageToNodeJs( token, msg_name, msg_data ){
 function browseForDirectory( token, title, msg ){
   const { dialog } = require('electron');
   
-  let window = openWindows.length ? openWindows.at(-1) : null;
+  let window = (openWindows && openWindows.length) ? openWindows[openWindows.length - 1] : null;
 
   let dirs = dialog.showOpenDialogSync( window, {
     title: title,
@@ -1092,7 +1092,7 @@ app.on('activate', function () {
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   if( openWindows.length )
-    openWindows.at(-1).focus();
+    openWindows[openWindows.length-1].focus();
   else
     createWindow();
 })

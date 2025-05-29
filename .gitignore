@@ -43,7 +43,6 @@ release-builds*
 package-lock.json
 node_modules
 documentation
-testing
 README.txt
 *.tmp
 *.zip
@@ -102,3 +101,4 @@ InterSpec_resources/d3.v3.min.js
 target/macOsQuickLook/SpecFilePreview/SpecFilePreview.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
 
 target/wxWidgets/3rd_party
+.devcontainer/devcontainer.json

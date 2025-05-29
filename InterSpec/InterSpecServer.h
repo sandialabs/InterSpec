@@ -59,9 +59,9 @@ namespace InterSpecServer
   InterSpec_API void startWebServer( std::string proccessname,
                              std::string basedir,
                              const std::string configpath,
-                             unsigned short int server_port_num = 0
+                             unsigned short int server_port_num
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-                             , std::string http_address = "127.0.0.1"
+                             , std::string http_address
 #endif
                               );
   
@@ -91,9 +91,9 @@ namespace InterSpecServer
    */
   InterSpec_API int start_server( const char *process_name, const char *userdatadir,
                     const char *basedir, const char *xml_config_path,
-                    unsigned short int server_port_num = 0
+                    unsigned short int server_port_num
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-                    , const char *http_address = "127.0.0.1"
+                    , const char *http_address
 #endif
                    );
   
@@ -189,6 +189,18 @@ namespace InterSpecServer
 
   /** Sets the session as dead. */
   InterSpec_API void set_session_destructing( const char *session_token );
+  
+  /** Sets marks the session as being allowed to be loaded again.
+   
+   This is used when session JS crashes.
+   
+   If session token does not already exist, it will not be added.
+   
+   Returns true if successful (found session token, and reset state).
+   
+   Currently commented out because it is unused.
+   */
+  //InterSpec_API bool set_session_reload_allow( const char *session_token );
   
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   /** Open one or more files from the filesystem.  For macOS this would be

@@ -83,7 +83,7 @@ some sliders on the spectrum chart that you can drag to do the adjustment in a m
 
 <div style="display:table-row">
 <h4>Additional Buttons</h4>
-The &quot;Spectrum Manager...&quot; and &quot;Previous...&quot; buttons on this tab will bring up dialogs that
+The &quot;Spectrum Manager...&quot; and &quot;&quot; buttons on this tab will bring up dialogs that
 allow you to, respectively, perform more advanced spectrum file selection and manipulation, or browse
 <b>InterSpec</b>s internal database for previously saved spectra.
 </div>

@@ -259,23 +259,14 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     message[2] = parserType;
     m_messageModelSample->appendRow(message);
     
-    if( viewer && viewer->isMobile() )
-    {
-      parserType = new WStandardItem();
-      parserType->setData(SpecUtils::ParserType::N42_2006); //SpeIaea
-      message[0] = new Wt::WStandardItem("Passthrough (16k bin 1064 meas N42)");
-      message[1] = new Wt::WStandardItem("example_spectra/passthrough.n42");
-      message[2] = parserType;
-      m_messageModelSample->appendRow(message);
-    }//if( viewer->isMobile() )
-    else {
-      parserType = new WStandardItem();
-      parserType->setData(SpecUtils::ParserType::N42_2006); //SpeIaea
-      message[0] = new Wt::WStandardItem("Passthrough (16k bin ICD1, 8 det., 133 samples)");
-      message[1] = new Wt::WStandardItem("example_spectra/passthrough.n42");
-      message[2] = parserType;
-      m_messageModelSample->appendRow(message);
-    }//else
+    
+    parserType = new WStandardItem();
+    parserType->setData(SpecUtils::ParserType::N42_2006); //SpeIaea
+    message[0] = new Wt::WStandardItem("Passthrough (16k bin, 8 det, 1064 meas N42)");
+    message[1] = new Wt::WStandardItem("example_spectra/passthrough.n42");
+    message[2] = parserType;
+    m_messageModelSample->appendRow(message);
+  
     
     parserType = new WStandardItem();
     parserType->setData(SpecUtils::ParserType::N42_2006); //SpeIaea
@@ -284,37 +275,48 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     message[2] = parserType;
     m_messageModelSample->appendRow(message);
     
-    if( viewer->isMobile() )
+    const pair<string, string> ref_spectra[7] = {
+      {"Shielded Ir192", "Ir192_Shielded.txt"},
+      {"Shielded Pu239", "Pu239_Shielded_100g.txt"},
+      {"Tl201 and 202 in phantom", "Tl201wTl202_Phantom.txt"},
+      {"2% Enriched Uranium", "U235_Unshielded_0200.txt"},
+      {"90% Enriched Uranium", "U235_Unshielded_9000.txt"},
+      {"Uranium ore","Uore_Unshielded.txt"},
+      {"Shielded Np237","Np237_Shielded.txt"}
+    };
+
+    const pair<string, string> ref_detectors[] = {
+      {"HPGe", "Common_Field_Nuclides/Fulcrum-40h"},
+      {"NaI", "Common_Field_Nuclides/Verifinder-NaI"},
+      {"CZT", "Common_Field_Nuclides/CZT_H3D_M400"}
+    };
+
+    const string static_data_dir = InterSpec::staticDataDirectory();
+    const string ref_spectra_dir = SpecUtils::append_path( static_data_dir, "reference_spectra" );
+
+    for( const pair<string, string> &descript_filename : ref_spectra )
     {
-      parserType = new WStandardItem();
-      parserType->setData(SpecUtils::ParserType::SpeIaea); //N42_2006
-      message[0] = new Wt::WStandardItem("Ba-133 (Low Res, No Calib)");
-      message[1] = new Wt::WStandardItem("example_spectra/Ba133LowResNoCalib.spe");
-      message[2] = parserType;
-      m_messageModelSample->appendRow(message);
-      
-      parserType = new WStandardItem();
-      parserType->setData(SpecUtils::ParserType::SpeIaea); //N42_2006
-      message[0] = new Wt::WStandardItem("Co-60 (Low Res, No Calib)");
-      message[1] = new Wt::WStandardItem("example_spectra/Co60LowResNoCalib.spe");
-      message[2] = parserType;
-      m_messageModelSample->appendRow(message);
-      
-      parserType = new WStandardItem();
-      parserType->setData(SpecUtils::ParserType::SpeIaea); //N42_2006
-      message[0] = new Wt::WStandardItem("Cs-137 (Low Res, No Calib)");
-      message[1] = new Wt::WStandardItem("example_spectra/Cs137LowResNoCalib.spe");
-      message[2] = parserType;
-      m_messageModelSample->appendRow(message);
-      
-      parserType = new WStandardItem();
-      parserType->setData(SpecUtils::ParserType::SpeIaea); //N42_2006
-      message[0] = new Wt::WStandardItem("Th-232 (Low Res, No Calib)");
-      message[1] = new Wt::WStandardItem("example_spectra/Th232LowResNoCalib.spe");
-      message[2] = parserType;
-      m_messageModelSample->appendRow(message);
-    } // if( viewer->isMobile() )
-    
+      const string &description = descript_filename.first;
+      const string &filename = descript_filename.second;
+
+      for( const pair<string, string> dettype_path : ref_detectors )
+      {
+        const string &det_type = dettype_path.first;
+        const string path = SpecUtils::append_path( ref_spectra_dir, dettype_path.second );
+
+        const string descrip = description + " (" + det_type + ")";
+        const string fullpath = SpecUtils::append_path( path, filename );
+
+        parserType = new WStandardItem();
+        parserType->setData(SpecUtils::ParserType::Auto);
+        message[0] = new Wt::WStandardItem(descrip);
+        message[1] = new Wt::WStandardItem(fullpath);
+        message[2] = parserType;
+        m_messageModelSample->appendRow(message);
+      }//for( const auto &[detector, path] : ref_detectors )
+    }//for( const auto &[description, filename] : ref_spectra )
+
+
     //m_messageModelSample->setHeaderData(  0, Horizontal, WString("Example Spectra"), DisplayRole );
     m_tableSample = new RowStretchTreeView();
     m_tableSample->setRootIsDecorated( false ); //makes the tree look like a table! :)
@@ -846,6 +848,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     if( isVertical && rightLayout )
     {
       showAgainCb = new WCheckBox( "show at start when no spectra" );
+      showAgainCb->addStyleClass( "CbNoLineBreak" );
       rightLayout->addWidget( showAgainCb, rightLayout->rowCount(), 0 );
     }else
     {

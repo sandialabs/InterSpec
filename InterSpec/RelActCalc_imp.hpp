@@ -167,8 +167,8 @@ T get_atten_coef_for_an( const T &an, const float energy )
   const int sign = (lower_an < 98) ? 1 : -1;
   const int upper_an = lower_an + sign;
 
-  const double lower_mu = MassAttenuation::massAttenuationCoeficient(lower_an, energy);
-  const double upper_mu = MassAttenuation::massAttenuationCoeficient(upper_an, energy);
+  const double lower_mu = MassAttenuation::massAttenuationCoefficientFracAN(lower_an, energy);
+  const double upper_mu = MassAttenuation::massAttenuationCoefficientFracAN(upper_an, energy);
   
   const T anfrac = an - static_cast<double>(lower_an);  //Looks like this preserves the derivative
   const T mu = (1.0 - anfrac)*lower_mu + anfrac*upper_mu;

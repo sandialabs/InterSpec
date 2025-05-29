@@ -45,6 +45,8 @@ class RelActTxtResults;
 class RelEffShieldWidget;
 class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
+class RelActAutoGuiNuclide;
+class RelActAutoGuiRelEffOptions;
 
 namespace SpecUtils
 {
@@ -63,6 +65,7 @@ namespace Wt
   class WText;
   class WCheckBox;
   class WComboBox;
+  class WInPlaceEdit;
 }//namespace Wt
 
 namespace rapidxml
@@ -78,8 +81,8 @@ class RelActAutoGui : public Wt::WContainerWidget
 public:
   enum class AddUncert : int
   {
-    StatOnly, OnePercent, FivePercent, TenPercent, TwentyFivePercent,
-    FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
+    StatOnly, OneHundrethPercent, OneTenthPercent, OnePercent, FivePercent, TenPercent, 
+    TwentyFivePercent, FiftyPercent, SeventyFivePercent, OneHundredPercent, NumAddUncert
   };//enum class AddUncert
   
   static const char *to_str( const AddUncert val );
@@ -99,14 +102,17 @@ public:
   void updateDuringRenderForFreePeakChange();
   void startUpdatingCalculation();
   void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
-                      std::shared_ptr<std::atomic_bool> cancel_flag );
+                      std::shared_ptr<std::atomic_bool> cancel_flag,
+                      const size_t calc_number );
   void handleCalcException( std::shared_ptr<std::string> message,
                            std::shared_ptr<std::atomic_bool> cancel_flag );
   
   
   void handleDisplayedSpectrumChange( SpecUtils::SpectrumType );
   void handlePresetChange();
-  void handleRelEffEqnFormChanged();
+  void handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleRelEffEqnOrderChanged();
   void handleFwhmFormChanged();
   void handleFwhmEstimationMethodChanged();
@@ -116,7 +122,9 @@ public:
   void handlePuByCorrelationChanged();
   void handleSkewTypeChanged();
   void handleNucDataSrcChanged();
-  void handleAddNuclide();
+  void handleAddNuclideForCurrentRelEffCurve();
+  /** Will return nullptr of invalid `rel_eff_index` passed in; otherwise retuns created widget. */
+  RelActAutoGuiNuclide *addNuclideForRelEffCurve( const int rel_eff_index );
   void handleAddEnergy();
   void handleClearAllEnergyRanges();
   void handleShowFreePeaks();
@@ -134,11 +142,14 @@ public:
   
   void handleConvertEnergyRangeToIndividuals( Wt::WWidget *energy_range );
   
+
   /** Called when a nuclide is added or removed (or changed from one to another) */
   void handleNuclidesChanged();
-  
-  /** Called when a nuclides information (such as age) is changed. */
-  void handleNuclidesInfoEdited();
+
+  /** Called when a nuclide's fit age is changed. */
+  void handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool fit_age );
+
+  void handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc );
   
   /** Called when energy ranges are added, removed, or edited. */
   void handleEnergyRangeChange();
@@ -171,15 +182,21 @@ public:
   
   void setCalcOptionsGui( const RelActCalcAuto::Options &options );
   
-  
+
   RelActCalcAuto::Options getCalcOptions() const;
-  std::vector<RelActCalcAuto::NucInputInfo> getNucInputInfo() const;
+  std::vector<RelActCalcAuto::NucInputInfo> getNucInputInfo( const int rel_eff_curve_index ) const;
+  std::vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> getActRatioConstraints( const int rel_eff_curve_index ) const;
+  std::vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> getMassFractionConstraints( const int rel_eff_curve_index ) const;
+
   std::vector<RelActCalcAuto::RoiRange> getRoiRanges() const;
   std::vector<RelActCalcAuto::FloatingPeak> getFloatingPeaks() const;
   
   
   std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> getCurrentSolution() const;
   
+  /** Update the UI to show/hide shared settings controls based on the number of physical model curves */
+  void updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *changed_opts, RelActAutoGuiRelEffOptions *added_opts );
+
 protected:
   void handleRoiDrag( double new_roi_lower_energy,
                      double new_roi_upper_energy,
@@ -200,9 +217,9 @@ protected:
   
   void handleToggleForceFullRange( Wt::WWidget *w );
   
-  /** Combines the two RelActAutoEnergyRange's into a single range, and returns the resulting RelActAutoEnergyRange.
+  /** Combines the two RelActAutoGuiEnergyRange's into a single range, and returns the resulting RelActAutoGuiEnergyRange.
    
-   Will only return nullptr if one/both of the inputs is not a RelActAutoEnergyRange, or not in #m_energy_ranges.
+   Will only return nullptr if one/both of the inputs is not a RelActAutoGuiEnergyRange, or not in #m_energy_ranges.
    */
   Wt::WWidget *handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget *right_roi );
   
@@ -212,11 +229,22 @@ protected:
   void handleShowRefLines( const bool show );
   void setPeaksToForeground();
   
-  void initPhysModelShields();
-  void handlePhysModelUseHoerlChange();
-  void handlePhysModelShieldChange();
-  void showAndHideOptionsForEqnType();
+  void handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions *curve );
   void handleDetectorChange();
+
+  void handleAddRelEffCurve();
+
+  void handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve );
+  void handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name );
+
+  void handleRelEffCurveOptionsSelected();
+  void handleRelEffNuclidesSelected();
+
+  protected:
+  RelActAutoGuiRelEffOptions *getRelEffCurveOptions( const int index );
+  const RelActAutoGuiRelEffOptions *getRelEffCurveOptions( const int index ) const;
+  std::vector<RelActAutoGuiNuclide *> getNuclideDisplays( const int rel_eff_curve_index );
+  std::vector<const RelActAutoGuiNuclide *> getNuclideDisplays( const int rel_eff_curve_index ) const;
 
   /** Calculation has been started. */
   Wt::Signal<> &calculationStarted();
@@ -298,29 +326,19 @@ protected:
   /* The place to give a summary of the fit, so like "chi2 = 123", or "Chi2 = 123, Uranium Enrichment 23.2%" */
   Wt::WText *m_fit_chi2_msg;
 
-  Wt::WComboBox *m_rel_eff_eqn_form;
-  Wt::WLabel *m_rel_eff_eqn_order_label;
-  Wt::WComboBox *m_rel_eff_eqn_order;
-  
+  Wt::WMenu *m_rel_eff_opts_menu;
+  Wt::WStackedWidget *m_rel_eff_opts_stack;
+
   Wt::WComboBox *m_fwhm_eqn_form;
   Wt::WComboBox *m_fwhm_estimation_method;
   
   Wt::WCheckBox *m_fit_energy_cal;
   Wt::WCheckBox *m_background_subtract;
-  
   Wt::WCheckBox *m_same_z_age;
   
-  Wt::WComboBox *m_pu_corr_method;
   
   Wt::WComboBox *m_skew_type;
-  
   Wt::WComboBox *m_add_uncert;
-  
-  Wt::WContainerWidget *m_phys_model_opts;
-  Wt::WContainerWidget *m_phys_model_shields;
-  RelEffShieldWidget *m_phys_model_self_atten;
-  Wt::WContainerWidget *m_phys_ext_attens;
-  Wt::WCheckBox *m_phys_model_use_hoerl;
   
   // Wt::WComboBox *m_u_pu_data_source;
   PopupDivMenu *m_more_options_menu;
@@ -342,7 +360,9 @@ protected:
   Wt::WPushButton *m_show_free_peak;
   Wt::WContainerWidget *m_free_peaks_container;
   
-  Wt::WContainerWidget *m_nuclides;
+  Wt::WMenu *m_rel_eff_nuclides_menu;
+  Wt::WStackedWidget *m_rel_eff_nuclides_stack;
+  
   Wt::WContainerWidget *m_energy_ranges;
   Wt::WContainerWidget *m_free_peaks;
   
@@ -355,7 +375,16 @@ protected:
   
   
   bool m_is_calculating;
+  
+  /** Incremented each time analysis is posted to update things; */
+  size_t m_calc_number;
+  
+  /** If currently posted analysis should fill out the GUI.  Will be set to false if a new analysis was posted - which indicates whouldnt update
+   the GUI with the associated results.  A new object is allocated for each new analysis, and then this variable is set, so things can be canceled
+   if a new analysis is posted.
+   */
   std::shared_ptr<std::atomic_bool> m_cancel_calc;
+  
   std::shared_ptr<RelActCalcAuto::RelActAutoSolution> m_solution;
   
   /** A good amount of calculation time is spent determining all the "auto-searched" peaks

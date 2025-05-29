@@ -189,6 +189,7 @@ public:
   float totalGammaCounts() const;
   float totalNeutronCounts() const;
   int numDetectors() const;
+  const std::string &riidSummary() const;
   bool hasNeutronDetector() const;
   const Wt::WDateTime &spectrumTime() const;
   bool passthrough() const;
@@ -313,6 +314,9 @@ public:
   Wt::WDateTime m_uploadTime;
   int m_numSamples;
   bool m_isPassthrough;
+  
+  /** TODO: as of 20250227, `m_riidSummary` doesnt get saved to the database (into the `UserFileInDb` class/table) - we should add this. */
+  std::string m_riidSummary;
 
   float m_totalLiveTime;
   float m_totalRealTime;
@@ -325,11 +329,11 @@ public:
   
   //m_modifiedSinceDecode: only updated when writing to file, or database, and
   //  exists to catch the edge case where the SpecMeas object has been written
-  //  to file and not in memorry, but it was requested to save the SpecMeas
+  //  to file and not in memory, but it was requested to save the SpecMeas
   //  object to the database (to fill out UserFileInDb::userHasModified).
   mutable bool m_modifiedSinceDecode;
   
-  //If caching is enable the SpecUtils::SpecFile object will be kept in memorry
+  //If caching is enable the SpecUtils::SpecFile object will be kept in memory
   //  even if no where else references the object
   bool m_keepCache;
   mutable std::shared_ptr<SpecMeas> m_cachedMeasurement;
@@ -341,7 +345,7 @@ public:
   //  user decides to use there previous version of the spectra cause maybe
   //  they had done some peak id or something.
   //  Also, just because this variable is true doesnt mean we will save the file
-  //  to the database (user prefernce may be to not)
+  //  to the database (user preference may be to not)
   bool m_candidateForSavingToDb;
   
   //This weak pointer tracks if the SpecUtils::SpecFile object cooresping to
@@ -407,6 +411,7 @@ public:
     kNeutronCounts,
     kSpectrumTime,
     kNumDetectors,
+    kRiidResult,
     kUploadTime,
     NumDisplayFields
   };//enum DisplayFields

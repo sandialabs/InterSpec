@@ -1583,6 +1583,33 @@ double PeakDef::extract_energy_from_peak_source_string( std::string &str )
 };//extract_energy_from_peak_source_string
 
 
+const char *PeakDef::to_str( const DefintionType type )
+{
+  switch( type )
+  {
+    case GaussianDefined:
+      return "GaussianDefined";
+    case DataDefined:
+      return "DataDefined";
+  }//switch( type )
+  
+  assert( 0 );
+  return "InvalidDefintionType";
+}//const char *to_str( const DefintionType type )
+
+
+PeakDef::DefintionType PeakDef::peak_type_from_str( const char * const str )
+{
+  if( str && SpecUtils::icontains( str, "GaussianDefined" ) )
+    return PeakDef::DefintionType::GaussianDefined;
+  
+  if( str && SpecUtils::icontains( str, "DataDefined" ) )
+    return PeakDef::DefintionType::DataDefined;
+  
+  throw runtime_error( "Invalid PeakDef::DefintionType: '" + string(str ? str : "") );
+}//DefintionType peak_type_from_str( const char * const str )
+
+
 void PeakDef::gammaTypeFromUserInput( std::string &txt,
                                       PeakDef::SourceGammaType &type )
 {
@@ -1973,12 +2000,7 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   }//if( m_userLabel.size() )
   
   
-  switch( m_type )
-  {
-    case GaussianDefined: val = "GaussianDefined"; break;
-    case DataDefined:     val = "DataDefined";     break;
-  }//switch( m_type )
-  
+  val = PeakDef::to_str( m_type );
   node = doc->allocate_node( node_element, "Type", val );
   peak_node->append_node( node );
   
@@ -2874,19 +2896,7 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
     if (!p.lineColor().isDefault())
       answer << q << "lineColor" << q << ":" << q << p.lineColor().cssText(false) << q << ",";
-
-    answer << q << "type" << q << ":";
-    switch( p.type() )
-    {
-      case PeakDef::GaussianDefined:
-        answer << q << "GaussianDefined" << q << ",";
-      break;
-        
-      case PeakDef::DataDefined:
-        answer << q << "DataDefined" << q << ",";
-      break;
-    }//switch( p.type() )
-
+    answer << q << "type" << q << ":" << q << PeakDef::to_str(p.type()) << q << ",";
     
     double dist_norm = 0.0;
     answer << q << "skewType" << q << ":";
@@ -3468,6 +3478,7 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
                                      const double energy,
                                      const double windowHalfWidth,
                                      const bool xraysOnly,
+                                     const double nuclideAge,
                                      const SandiaDecay::Transition *&transition,
                                      size_t &transition_index,
                                      SourceGammaType &sourceGammaType )
@@ -3482,24 +3493,23 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
   SandiaDecay::NuclideMixture mixture;
   mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuclide,1.0) );
   
-  const double decaytime = defaultDecayTime( nuclide );
+  const double decaytime = (nuclideAge >= 0.0) ? nuclideAge : defaultDecayTime( nuclide );
   
-  vector<SandiaDecay::EnergyRatePair> gammas
-  = mixture.gammas( decaytime,
-                   SandiaDecay::NuclideMixture::OrderByAbundance, true );
+  vector<SandiaDecay::EnergyRatePair> photons
+            = mixture.photons( decaytime, SandiaDecay::NuclideMixture::OrderByAbundance );
   
   if( xraysOnly )
-    gammas = mixture.xrays( decaytime, SandiaDecay::NuclideMixture::OrderByAbundance );
+    photons = mixture.xrays( decaytime, SandiaDecay::NuclideMixture::OrderByAbundance );
   
-  if( gammas.empty() )
+  if( photons.empty() )
     return;
   
   map<const SandiaDecay::Transition *, vector<size_t> > ec_trans;
   
   
   double best_delta_e = 99999.9;
-  SandiaDecay::EnergyRatePair nearest_gamma = gammas[0];
-  for( const SandiaDecay::EnergyRatePair &gamma : gammas )
+  SandiaDecay::EnergyRatePair nearest_gamma = photons[0];
+  for( const SandiaDecay::EnergyRatePair &gamma : photons )
   {
     const double delta_e = fabs( gamma.energy - energy );
     if( delta_e < best_delta_e )
@@ -3507,7 +3517,7 @@ void PeakDef::findNearestPhotopeak( const SandiaDecay::Nuclide *nuclide,
       best_delta_e = delta_e;
       nearest_gamma = gamma;
     }//if( delta_e < best_delta_e )
-  }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
+  }//for( const SandiaDecay::EnergyRatePair &gamma : photons )
   
   //loop over the decays and find the gamma nearest 'energy'
   best_delta_e = 99999.9;

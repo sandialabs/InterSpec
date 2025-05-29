@@ -36,12 +36,14 @@
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WComboBox>
+#include <Wt/WGroupBox>
 #include <Wt/WMenuItem>
 #include <Wt/WResource>
 #include <Wt/WIOService>
 #include <Wt/WFileUpload>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
+#include <Wt/WInPlaceEdit>
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
 #include <Wt/WStackedWidget>
@@ -86,9 +88,13 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/RelActAutoGuiNuclide.h"
+#include "InterSpec/RelActAutoGuiFreePeak.h"
 #include "InterSpec/IsotopeNameFilterModel.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+#include "InterSpec/RelActAutoGuiEnergyRange.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+#include "InterSpec/RelActAutoGuiRelEffOptions.h"
 
 
 using namespace Wt;
@@ -101,6 +107,13 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 
 namespace
 {
+  struct DoWorkOnDestruct
+  {
+    std::function<void()> m_worker;
+    DoWorkOnDestruct( std::function<void()> &&worker ) : m_worker( std::move(worker) ){}
+    ~DoWorkOnDestruct(){ if(m_worker) m_worker(); }
+  };//struct DoWorkOnDestruct
+
   //DeleteOnClosePopupMenu - same class as from D3SpectrumDisplayDiv... should refactor
   class DeleteOnClosePopupMenu : public PopupDivMenu
   {
@@ -266,907 +279,6 @@ namespace
       }//try / catch
     }//void handleRequest(...)
   };//class RelActAutoReportResource
-
-
-  class RelActAutoEnergyRange : public WContainerWidget
-  {
-    RelActAutoGui *m_gui;
-    Wt::Signal<> m_updated;
-    Wt::Signal<> m_remove_energy_range;
-    
-    NativeFloatSpinBox *m_lower_energy;
-    NativeFloatSpinBox *m_upper_energy;
-    WComboBox *m_continuum_type;
-    WCheckBox *m_force_full_range;
-    WPushButton *m_to_individual_rois;
-    
-    /// Used to track the Highlight region this energy region corresponds to in D3SpectrumDisplayDiv
-    size_t m_highlight_region_id;
-    
-  public:
-    RelActAutoEnergyRange( RelActAutoGui *gui, WContainerWidget *parent = nullptr )
-    : WContainerWidget( parent ),
-      m_gui( gui ),
-      m_updated( this ),
-      m_remove_energy_range( this ),
-      m_lower_energy( nullptr ),
-      m_upper_energy( nullptr ),
-      m_continuum_type( nullptr ),
-      m_force_full_range( nullptr ),
-      m_to_individual_rois( nullptr ),
-      m_highlight_region_id( 0 )
-    {
-      addStyleClass( "RelActAutoEnergyRange" );
-      
-      wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
-      
-      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-      
-      WLabel *label = new WLabel( "Lower Energy", this );
-      label->addStyleClass( "GridFirstCol GridFirstRow" );
-      
-      m_lower_energy = new NativeFloatSpinBox( this );
-      m_lower_energy->addStyleClass( "GridSecondCol GridFirstRow" );
-      label->setBuddy( m_lower_energy );
-      
-      label = new WLabel( "keV", this );
-      label->addStyleClass( "GridThirdCol GridFirstRow" );
-      
-      label = new WLabel( "Upper Energy", this );
-      label->addStyleClass( "GridFirstCol GridSecondRow" );
-      
-      m_upper_energy = new NativeFloatSpinBox( this );
-      m_upper_energy->addStyleClass( "GridSecondCol GridSecondRow" );
-      label->setBuddy( m_upper_energy );
-      
-      label = new WLabel( "keV", this );
-      label->addStyleClass( "GridThirdCol GridSecondRow" );
-      
-      m_lower_energy->valueChanged().connect( this, &RelActAutoEnergyRange::handleEnergyChange );
-      m_upper_energy->valueChanged().connect( this, &RelActAutoEnergyRange::handleEnergyChange );
-      
-      label = new WLabel( "Continuum Type:", this );
-      label->addStyleClass( "GridFourthCol GridFirstRow" );
-      m_continuum_type = new WComboBox( this );
-      m_continuum_type->addStyleClass( "GridFifthCol GridFirstRow" );
-      label->setBuddy( m_continuum_type );
-      
-      // We wont allow "External" here
-      for( int i = 0; i < static_cast<int>(PeakContinuum::OffsetType::External); ++i )
-      {
-        const char *key = PeakContinuum::offset_type_label_tr( PeakContinuum::OffsetType(i) );
-        m_continuum_type->addItem( WString::tr(key) );
-      }//for( loop over PeakContinuum::OffsetType )
-      
-      m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
-      m_continuum_type->changed().connect( this, &RelActAutoEnergyRange::handleContinuumTypeChange );
-
-      m_force_full_range = new WCheckBox( "Force full-range", this );
-      m_force_full_range->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
-      m_force_full_range->checked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
-      m_force_full_range->unChecked().connect( this, &RelActAutoEnergyRange::handleForceFullRangeChange );
-      
-      WPushButton *removeEnergyRange = new WPushButton( this );
-      removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc GridSixthCol GridFirstRow Wt-icon" );
-      removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
-      removeEnergyRange->clicked().connect( this, &RelActAutoEnergyRange::handleRemoveSelf );
-      
-      m_to_individual_rois = new WPushButton( this );
-      m_to_individual_rois->setStyleClass( "ToIndividualRois GridSixthCol GridSecondRow Wt-icon" );
-      m_to_individual_rois->setIcon( "InterSpec_resources/images/expand_list.svg" );
-      m_to_individual_rois->clicked().connect( boost::bind( &RelActAutoGui::handleConvertEnergyRangeToIndividuals,
-                                                           m_gui, static_cast<WWidget *>(this) ) );
-      m_to_individual_rois->setHidden( m_force_full_range->isChecked() );
-      
-      const char *tooltip = "Converts this energy range into individual ROIs, based on which gammas should be"
-      " grouped together vs apart (e.g., leaves gammas with overlapping peaks in a single ROI, while if two gammas"
-      " are far apart, they will be split into seperate ROIs.";
-      HelpSystem::attachToolTipOn( m_to_individual_rois, tooltip, showToolTips );
-    }//RelActAutoEnergyRange constructor
-    
-    
-    bool isEmpty() const
-    {
-      return ((fabs(m_lower_energy->value() - m_upper_energy->value() ) < 1.0)
-              || (m_upper_energy->value() <= 0.0));
-    }
-    
-    
-    void handleRemoveSelf()
-    {
-      m_remove_energy_range.emit();
-    }//void handleRemoveSelf()
-    
-    
-    void handleContinuumTypeChange()
-    {
-      m_updated.emit();
-    }
-    
-    void handleForceFullRangeChange()
-    {
-      m_to_individual_rois->setHidden( m_to_individual_rois->isDisabled() || m_force_full_range->isChecked() );
-      
-      m_updated.emit();
-    }
-    
-    
-    void enableSplitToIndividualRanges( const bool enable )
-    {
-      m_to_individual_rois->setHidden( !enable || m_force_full_range->isChecked() );
-      m_to_individual_rois->setEnabled( enable );
-    }
-    
-    
-    void handleEnergyChange()
-    {
-      float lower = m_lower_energy->value();
-      float upper = m_upper_energy->value();
-      if( lower > upper )
-      {
-        m_lower_energy->setValue( upper );
-        m_upper_energy->setValue( lower );
-        
-        std::swap( lower, upper );
-      }//if( lower > upper )
-      
-      m_updated.emit();
-    }//void handleEnergyChange()
-    
-    
-    void setEnergyRange( float lower, float upper )
-    {
-      if( lower > upper )
-        std::swap( lower, upper );
-      
-      m_lower_energy->setValue( lower );
-      m_upper_energy->setValue( upper );
-      
-      m_updated.emit();
-    }//void setEnergyRange( float lower, float upper )
-    
-    
-    bool forceFullRange() const
-    {
-      return m_force_full_range->isChecked();
-    }
-    
-    
-    void setForceFullRange( const bool force_full )
-    {
-      if( force_full == m_force_full_range->isChecked() )
-        return;
-      
-      m_force_full_range->setChecked( force_full );
-      m_updated.emit();
-    }
-    
-    
-    void setContinuumType( const PeakContinuum::OffsetType type )
-    {
-      const int type_index = static_cast<int>( type );
-      if( (type_index < 0)
-         || (type_index >= static_cast<int>(PeakContinuum::OffsetType::External)) )
-      {
-        assert( 0 );
-        return;
-      }
-      
-      if( type_index == m_continuum_type->currentIndex() )
-        return;
-      
-      m_continuum_type->setCurrentIndex( type_index );
-      m_updated.emit();
-    }//void setContinuumType( PeakContinuum::OffsetType type )
-    
-    
-    void setHighlightRegionId( const size_t chart_id )
-    {
-      m_highlight_region_id = chart_id;
-    }
-    
-    
-    size_t highlightRegionId() const
-    {
-      return m_highlight_region_id;
-    }
-  
-    float lowerEnergy() const
-    {
-      return m_lower_energy->value();
-    }
-    
-    
-    float upperEnergy() const
-    {
-      return m_upper_energy->value();
-    }
-    
-    
-    void setFromRoiRange( const RelActCalcAuto::RoiRange &roi )
-    {
-      if( roi.continuum_type == PeakContinuum::OffsetType::External )
-        throw runtime_error( "setFromRoiRange: External continuum type not supported" );
-      
-      if( roi.allow_expand_for_peak_width )
-        throw runtime_error( "setFromRoiRange: allow_expand_for_peak_width set to true not supported" );
-      
-      m_lower_energy->setValue( roi.lower_energy );
-      m_upper_energy->setValue( roi.upper_energy );
-      m_continuum_type->setCurrentIndex( static_cast<int>(roi.continuum_type) );
-      m_force_full_range->setChecked( roi.force_full_range );
-      
-      enableSplitToIndividualRanges( !roi.force_full_range );
-    }//setFromRoiRange(...)
-    
-    
-    RelActCalcAuto::RoiRange toRoiRange() const
-    {
-      RelActCalcAuto::RoiRange roi;
-      
-      roi.lower_energy = m_lower_energy->value();
-      roi.upper_energy = m_upper_energy->value();
-      roi.continuum_type = PeakContinuum::OffsetType( m_continuum_type->currentIndex() );
-      roi.force_full_range = m_force_full_range->isChecked();
-      roi.allow_expand_for_peak_width = false; //not currently supported to the GUI, or tested in the calculation code
-      
-      return roi;
-    }//RelActCalcAuto::RoiRange toRoiRange() const
-    
-    
-    Wt::Signal<> &updated()
-    {
-      return m_updated;
-    }
-    
-    
-    Wt::Signal<> &remove()
-    {
-      return m_remove_energy_range;
-    }
-  };//class RelActAutoEnergyRange
-
-
-  class RelActAutoNuclide : public WContainerWidget
-  {
-    RelActAutoGui *m_gui;
-    
-    WLineEdit *m_nuclide_edit;
-    WLabel *m_age_label;
-    WLineEdit *m_age_edit;
-    WCheckBox *m_fit_age;
-    ColorSelect *m_color_select;
-    
-    Wt::Signal<> m_updated;
-    Wt::Signal<> m_remove;
-    
-  public:
-    RelActAutoNuclide( RelActAutoGui *gui, WContainerWidget *parent = nullptr )
-    : WContainerWidget( parent ),
-    m_gui( gui ),
-    m_nuclide_edit( nullptr ),
-    m_age_label( nullptr ),
-    m_age_edit( nullptr ),
-    m_fit_age( nullptr ),
-    m_color_select( nullptr ),
-    m_updated( this ),
-    m_remove( this )
-    {
-      addStyleClass( "RelActAutoNuclide" );
-      
-      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-      
-      WLabel *label = new WLabel( "Nuclide:", this );
-      m_nuclide_edit = new WLineEdit( "", this );
-      
-      m_nuclide_edit->setAutoComplete( false );
-      m_nuclide_edit->setAttributeValue( "ondragstart", "return false" );
-#if( BUILD_AS_OSX_APP || IOS )
-      m_nuclide_edit->setAttributeValue( "autocorrect", "off" );
-      m_nuclide_edit->setAttributeValue( "spellcheck", "off" );
-#endif
-      label->setBuddy( m_nuclide_edit );
-      
-      m_nuclide_edit->changed().connect( this, &RelActAutoNuclide::handleIsotopeChange );
-      
-      // If we are typing in this box, we want to let app-hotkeys propagate up, but not arrow keys and
-      //  stuff
-      const string jsAppKeyDownFcn = wApp->javaScriptClass() + ".appKeyDown";
-      const string keyDownJs = "function(s1,e1){"
-      "if(e1 && e1.ctrlKey && e1.key && " + jsAppKeyDownFcn + ")"
-      + jsAppKeyDownFcn + "(e1);"
-      "}";
-      m_nuclide_edit->keyWentDown().connect( keyDownJs );
-      
-      const char *tooltip = "ex. <b>U235</b>, <b>235 Uranium</b>"
-      ", <b>U-235m</b> (meta stable state)"
-      ", <b>Cs137</b>, Pb, Fe(n,n), etc.";
-      HelpSystem::attachToolTipOn( m_nuclide_edit, tooltip, showToolTips );
-      
-      string replacerJs, matcherJs;
-      IsotopeNameFilterModel::replacerJs( replacerJs );
-      IsotopeNameFilterModel::nuclideNameMatcherJs( matcherJs );
-      IsotopeNameFilterModel *isoSuggestModel = new IsotopeNameFilterModel( this );
-      isoSuggestModel->excludeXrays( false );
-      isoSuggestModel->excludeEscapes( false );
-      isoSuggestModel->excludeReactions( false );
-      
-      WSuggestionPopup *nuclideSuggest = new WSuggestionPopup( matcherJs, replacerJs, this );
-#if( WT_VERSION < 0x3070000 ) //I'm not sure what version of Wt "wtNoReparent" went away.
-      nuclideSuggest->setJavaScriptMember("wtNoReparent", "true");
-#endif
-      nuclideSuggest->setMaximumSize( WLength::Auto, WLength(15, WLength::FontEm) );
-      nuclideSuggest->setWidth( WLength(70, Wt::WLength::Unit::Pixel) );
-      
-      IsotopeNameFilterModel::setQuickTypeFixHackjs( nuclideSuggest );
-      
-      isoSuggestModel->filter( "" );
-      nuclideSuggest->setFilterLength( -1 );
-      nuclideSuggest->setModel( isoSuggestModel );
-      nuclideSuggest->filterModel().connect( isoSuggestModel, &IsotopeNameFilterModel::filter );
-      nuclideSuggest->forEdit( m_nuclide_edit, WSuggestionPopup::Editing );  // | WSuggestionPopup::DropDownIcon
-      
-      m_age_label = new WLabel( "Age:", this );
-      m_age_edit = new WLineEdit( "", this );
-      m_age_label->setBuddy( m_age_edit );
-      
-      WRegExpValidator *validator = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationHalfLiveOptionalRegex(), this );
-      validator->setFlags(Wt::MatchCaseInsensitive);
-      m_age_edit->setValidator(validator);
-      m_age_edit->setAutoComplete( false );
-      m_age_edit->setAttributeValue( "ondragstart", "return false" );
-      m_age_edit->changed().connect( this, &RelActAutoNuclide::handleAgeChange );
-      
-      m_fit_age = new WCheckBox( "Fit Age", this );
-      m_fit_age->setWordWrap( false );
-      m_fit_age->checked().connect( this, &RelActAutoNuclide::handleFitAgeChange );
-      m_fit_age->unChecked().connect( this, &RelActAutoNuclide::handleFitAgeChange );
-      
-      WContainerWidget *spacer = new WContainerWidget( this );
-      spacer->addStyleClass( "RelActAutoNuclideSpacer" );
-      
-      
-      m_color_select = new ColorSelect( ColorSelect::PrefferNative, this );
-      m_color_select->setColor( WColor("#FF6633") );
-      
-      m_color_select->cssColorChanged().connect( this, &RelActAutoNuclide::handleColorChange );
-      
-      
-      WPushButton *removeEnergyRange = new WPushButton( this );
-      removeEnergyRange->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
-      removeEnergyRange->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
-      removeEnergyRange->clicked().connect( this, &RelActAutoNuclide::handleRemoveSelf );
-    }//RelActAutoNuclide
-    
-    
-    void handleIsotopeChange()
-    {
-      const auto nuc_input = nuclide();
-
-      const auto hide_age_stuff = [this,&nuc_input](){
-        m_age_label->hide();
-        m_age_edit->hide();
-        m_fit_age->setUnChecked();
-        m_fit_age->hide();
-
-        const string nucstr = m_nuclide_edit->text().toUTF8();
-        if( !nucstr.empty() && std::holds_alternative<std::monostate>(nuc_input) )
-          passMessage( nucstr + " is not a valid nuclide, x-ray, or reaction.", WarningWidget::WarningMsgHigh );
-      };//hide_age_stuff
-
-      if( std::holds_alternative<std::monostate>(nuc_input) )
-      {
-        hide_age_stuff();
-        m_updated.emit();
-        return;
-      }
-
-      std::string src_name;
-      const SandiaDecay::Nuclide *nuc = nullptr;
-      const SandiaDecay::Element *el = nullptr;
-      const ReactionGamma::Reaction * reaction = nullptr;
-
-      if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
-      {
-        nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
-
-        assert( nuc );
-        if( !nuc )
-          throw runtime_error( "No valid nuclide" );
-
-        src_name = nuc->symbol;
-      
-        if( IsInf(nuc->halfLife) )
-        {
-          const string nucstr = m_nuclide_edit->text().toUTF8();
-          passMessage( nucstr + " is a stable nuclide.", WarningWidget::WarningMsgHigh );
-        
-          m_nuclide_edit->setText( "" );
-          m_nuclide_edit->validate();
-          m_fit_age->setUnChecked();
-          m_fit_age->hide();
-        
-          m_updated.emit();
-          return;
-        }//if( IsInf(nuc->halfLife) )
-      
-        const bool age_is_fittable = !PeakDef::ageFitNotAllowed( nuc );
-      
-        if( nuc->decaysToStableChildren() )
-        {
-          m_age_edit->setText( "0y" );
-        }else
-        {
-          string agestr;
-          PeakDef::defaultDecayTime( nuc, &agestr );
-          m_age_edit->setText( agestr );
-        }
-      
-        m_age_label->setHidden( !age_is_fittable );
-        m_age_edit->setHidden( !age_is_fittable );
-        m_fit_age->setHidden( !age_is_fittable );
-        m_fit_age->setChecked( false );
-      }
-      
-      if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
-      {
-        el = std::get<const SandiaDecay::Element *>(nuc_input);
-        assert( el );
-        src_name = el->symbol;
-        hide_age_stuff();
-      }
-
-      if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
-      {
-        reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
-        assert( reaction );
-        src_name = reaction->name();
-        hide_age_stuff();
-      }
-      
-      bool haveFoundColor = false;
-      
-      // Check user is showing reference lines, displayed peaks, and previous user-selected colors
-      if( !haveFoundColor )
-      {
-        const ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
-        if( refdisp )
-        {
-          const Wt::WColor c = refdisp->suggestColorForSource( src_name );
-          if( !c.isDefault() )
-          {
-            haveFoundColor = true;
-            m_color_select->setColor( c );
-          }
-        }//if( refdisp )
-      }//if( !haveFoundColor )
-      
-      // Check if the theme explicitly specifies a color for this nuclide
-      if( !haveFoundColor )
-      {
-        shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
-        if( theme )
-        {
-          const map<string,WColor> &defcolors = theme->referenceLineColorForSources;
-          const auto pos = defcolors.find( src_name );
-          if( pos != end(defcolors) )
-            m_color_select->setColor( pos->second );
-        }//if( theme )
-      }//if( !haveFoundColor )
-      
-      if( !haveFoundColor )
-      {
-        // TODO: create a cache of previous user-selected colors
-      }//if( !haveFoundColor )
-      
-      m_updated.emit();
-    }//void handleIsotopeChange()
-    
-    
-    void setFitAgeVisible( bool visible, bool do_fit )
-    {
-      if( visible )
-      {
-        m_fit_age->setHidden( false );
-        m_fit_age->setChecked( do_fit );
-      }else
-      {
-        m_fit_age->setHidden( true );
-        m_fit_age->setChecked( false );
-      }
-    }//setFitAgeVisible(...)
-    
-    
-    void setAgeDisabled( bool disabled )
-    {
-      m_fit_age->setDisabled( disabled );
-      m_age_edit->setDisabled( disabled );
-    }//void setAgeDisabled( bool disabled )
-    
-    
-    void setAge( const string &age )
-    {
-      m_age_edit->setValueText( WString::fromUTF8(age) );
-    }
-    
-    void setNuclideEditFocus()
-    {
-      m_nuclide_edit->setFocus();
-    }
-    
-    void handleAgeChange()
-    {
-      m_updated.emit();
-    }//void handleAgeChange()
-    
-    
-    void handleFitAgeChange()
-    {
-      
-      m_updated.emit();
-    }
-    
-    
-    void handleColorChange()
-    {
-      m_updated.emit();
-    }
-    
-    /** Will return std::monostate if invalid text entered. */
-    std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> nuclide() const
-    {
-      const string nucstr = m_nuclide_edit->text().toUTF8();
-      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-      assert( db );
-      if( !db )
-        throw runtime_error( "Couldnt load decay DB" );
-      
-      const SandiaDecay::Nuclide *nuc = db->nuclide( nucstr );
-      if( nuc )
-        return nuc;
-      
-      const SandiaDecay::Element *el = db->element( nucstr );
-      if( el )
-        return el;
-      
-      const ReactionGamma * const reaction_db = ReactionGammaServer::database();
-      assert( reaction_db );
-      if( !reaction_db )
-        throw runtime_error( "Couldnt load reaction DB" );
-      
-      try
-      {
-        const ReactionGamma::Reaction *reaction = nullptr;
-        vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-        reaction_db->gammas( nucstr, possible_rctns );
-        
-        // TODO: we are currently taking the first reaction; however, in principle there could be multiple - however, `ReactionGamma` doesnt have an interface to just return a reaction by name, I guess because
-        for( size_t i = 0; !reaction && (i < possible_rctns.size()); ++i )
-          reaction = possible_rctns[i].reaction;
-        
-        if( reaction )
-          return reaction;
-      }catch( std::exception & )
-      {
-        //ReactionGamma::gammas(...) throws if not a valid reaction
-      }//try / catch
-      
-      return std::monostate{};
-    }
-    
-    WColor color() const
-    {
-      return m_color_select->color();
-    }
-    
-    void setColor( const WColor &color )
-    {
-      m_color_select->setColor( color );
-    }
-    
-    double age() const
-    {
-      const auto nuc_input = nuclide();
-      if( !std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
-        return 0.0;
-      
-      const SandiaDecay::Nuclide * const nuc = std::get<const SandiaDecay::Nuclide *>(nuc_input);
-      if( !nuc )
-        return 0.0;
-    
-      if( m_age_edit->isHidden() || m_age_edit->text().empty() )
-        return PeakDef::defaultDecayTime( nuc );
-      
-      double age = 0.0;
-      try
-      {
-        const string agestr = m_age_edit->text().toUTF8();
-        age = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife( agestr, nuc->halfLife );
-      }catch( std::exception & )
-      {
-        age = PeakDef::defaultDecayTime( nuc );
-      }//try / catch
-      
-      return age;
-    }//double age() const
-    
-    
-    RelActCalcAuto::NucInputInfo toNucInputInfo() const
-    {
-      const auto nuc_input = nuclide();
-      
-   
-      RelActCalcAuto::NucInputInfo nuc_info;
-
-      if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
-      {
-        nuc_info.nuclide = std::get<const SandiaDecay::Nuclide *>(nuc_input);
-        nuc_info.age = age(); // Must not be negative.
-        nuc_info.fit_age = m_fit_age->isChecked();
-      }else if( std::holds_alternative<const SandiaDecay::Element *>(nuc_input) )
-      {
-        nuc_info.element = std::get<const SandiaDecay::Element *>(nuc_input);
-      }else if( std::holds_alternative<const ReactionGamma::Reaction *>(nuc_input) )
-      {
-        nuc_info.reaction = std::get<const ReactionGamma::Reaction *>(nuc_input);
-      }else
-      {
-        throw runtime_error( "No valid nuclide" );
-      }
-      
-      // TODO: Not implemented: vector<double> gammas_to_exclude;
-      //nuc_info.gammas_to_exclude = ;
-      
-      nuc_info.peak_color_css = m_color_select->color().cssText();
-
-      return nuc_info;
-    }//RelActCalcAuto::RoiRange toRoiRange() const
-    
-    
-    void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
-    {
-      if( !info.nuclide && !info.element && !info.reaction )
-      {
-        m_nuclide_edit->setText( "" );
-        if( !info.peak_color_css.empty() )
-          m_color_select->setColor( WColor(info.peak_color_css) );
-        
-        m_age_label->hide();
-        m_age_edit->hide();
-        m_age_edit->setText( "0s" );
-        m_fit_age->setUnChecked();
-        m_fit_age->hide();
-        
-        m_updated.emit();
-        
-        return;
-      }//if( !info.nuclide && !info.element && !info.reaction )
-      
-      if( info.nuclide )
-        m_nuclide_edit->setText( WString::fromUTF8(info.nuclide->symbol) );
-      else if( info.element )
-        m_nuclide_edit->setText( WString::fromUTF8(info.element->symbol) );
-      else if( info.reaction )
-        m_nuclide_edit->setText( WString::fromUTF8(info.reaction->name()) );
-      
-      if( !info.peak_color_css.empty() )
-        m_color_select->setColor( WColor(info.peak_color_css) );
-      
-      if( info.nuclide )
-      {
-        const SandiaDecay::Nuclide * const nuc = info.nuclide;
-        
-        const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
-        m_age_label->setHidden( !age_is_fittable );
-        m_age_edit->setHidden( !age_is_fittable );
-        m_fit_age->setHidden( !age_is_fittable );
-        m_fit_age->setChecked( age_is_fittable && info.fit_age );
-      
-        if( !age_is_fittable || (info.age < 0.0) )
-        {
-          string agestr = "0s";
-          if( nuc )
-            PeakDef::defaultDecayTime( nuc, &agestr );
-          m_age_edit->setText( WString::fromUTF8(agestr) );
-        }else
-        {
-          const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits(info.age);
-          m_age_edit->setText( WString::fromUTF8(agestr) );
-        }
-      }else 
-      {
-        m_age_label->hide();
-        m_age_edit->hide();
-        m_fit_age->setUnChecked();
-        m_fit_age->hide();
-      }//if( info.nuclide )
-      
-      // Not currently supported: info.gammas_to_exclude -> vector<double>;
-
-      handleIsotopeChange();
-    }//void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
-    
-    
-    void handleRemoveSelf()
-    {
-      m_remove.emit();
-    }
-    
-    
-    Wt::Signal<> &updated()
-    {
-      return m_updated;
-    }
-    
-    
-    Wt::Signal<> &remove()
-    {
-      return m_remove;
-    }
-  };//class RelActAutoNuclide
-
-  
-  
-  
-  class RelActFreePeak : public WContainerWidget
-  {
-    RelActAutoGui *m_gui;
-    NativeFloatSpinBox *m_energy;
-    WCheckBox *m_fwhm_constrained;
-    WCheckBox *m_apply_energy_cal;
-    WText *m_invalid;
-    
-    Wt::Signal<> m_updated;
-    Wt::Signal<> m_remove;
-    
-  public:
-    RelActFreePeak( RelActAutoGui *gui, WContainerWidget *parent = nullptr )
-    : WContainerWidget( parent ),
-    m_gui( gui ),
-    m_energy( nullptr ),
-    m_fwhm_constrained( nullptr ),
-    m_apply_energy_cal( nullptr ),
-    m_updated( this ),
-    m_remove( this )
-    {
-      addStyleClass( "RelActFreePeak" );
-      
-      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-      
-      WLabel *label = new WLabel( "Energy", this );
-      label->addStyleClass( "GridFirstCol GridFirstRow" );
-      
-      m_energy = new NativeFloatSpinBox( this );
-      label->setBuddy( m_energy );
-      m_energy->valueChanged().connect( this, &RelActFreePeak::handleEnergyChange );
-      m_energy->addStyleClass( "GridSecondCol GridFirstRow" );
-      
-      // Things are a little cramped if we include the keV
-      //label = new WLabel( "keV", this );
-      //label->addStyleClass( "GridThirdCol GridFirstRow" );
-      
-      WPushButton *removeFreePeak = new WPushButton( this );
-      removeFreePeak->setStyleClass( "DeleteEnergyRangeOrNuc Wt-icon" );
-      removeFreePeak->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
-      removeFreePeak->clicked().connect( this, &RelActFreePeak::handleRemoveSelf );
-      removeFreePeak->addStyleClass( "GridThirdCol GridFirstRow" );
-      
-      m_fwhm_constrained = new WCheckBox( "Constrain FWHM", this );
-      m_fwhm_constrained->setChecked( true );
-      m_fwhm_constrained->checked().connect( this, &RelActFreePeak::handleFwhmConstrainChanged );
-      m_fwhm_constrained->unChecked().connect( this, &RelActFreePeak::handleFwhmConstrainChanged );
-      m_fwhm_constrained->addStyleClass( "FreePeakConstrain GridFirstCol GridSecondRow GridSpanThreeCol" );
-      
-      const char *tooltip = "When checked, this peak will be constrained to the FWHM functional form gamma and x-ray"
-      "peaks are normally constrained to.<br />"
-      "When un-checked, the FWHM for this peak will be fit from the data, independent of all other peak widths.<br />"
-      "Un-checking this option is useful for annihilation and reaction photopeaks.";
-      HelpSystem::attachToolTipOn( m_fwhm_constrained, tooltip, showToolTips );
-      
-      
-      m_apply_energy_cal = new WCheckBox( "True Energy", this );
-      m_apply_energy_cal->setChecked( true );
-      m_apply_energy_cal->checked().connect( this, &RelActFreePeak::handleApplyEnergyCalChanged );
-      m_apply_energy_cal->unChecked().connect( this, &RelActFreePeak::handleApplyEnergyCalChanged );
-      m_apply_energy_cal->addStyleClass( "FreePeakConstrain GridFirstCol GridThirdRow GridSpanThreeCol" );
-      tooltip = "Check this option if the peak is for a gamma of known energy.<br />"
-      "Un-check this option if this peak is an observed peak in the spectrum with unknown true energy.";
-      HelpSystem::attachToolTipOn( m_apply_energy_cal, tooltip, showToolTips );
-      
-      
-      m_invalid = new WText( "Not in a ROI.", this );
-      m_invalid->addStyleClass( "InvalidFreePeakEnergy GridFirstCol GridFourthRow GridSpanThreeCol" );
-      m_invalid->hide();
-    }//RelActFreePeak constructor
-    
-    
-    float energy() const
-    {
-      return m_energy->value();
-    }
-    
-    
-    void setEnergy( const float energy )
-    {
-      m_energy->setValue( energy );
-      m_updated.emit();
-    }
-    
-    
-    bool fwhmConstrained() const
-    {
-      return m_fwhm_constrained->isChecked();
-    }
-    
-    
-    void setFwhmConstrained( const bool constrained )
-    {
-      m_fwhm_constrained->setChecked( constrained );
-      m_updated.emit();
-    }
-    
-    
-    bool applyEnergyCal() const
-    {
-      return (m_apply_energy_cal->isVisible() && m_apply_energy_cal->isChecked());
-    }
-    
-    
-    void setApplyEnergyCal( const bool apply )
-    {
-      m_apply_energy_cal->setChecked( apply );
-    }
-    
-    
-    void setInvalidEnergy( const bool invalid )
-    {
-      if( invalid != m_invalid->isVisible() )
-        m_invalid->setHidden( !invalid );
-    }
-    
-    
-    void handleRemoveSelf()
-    {
-      m_remove.emit();
-    }
-    
-    
-    void handleEnergyChange()
-    {
-      m_updated.emit();
-    }//
-    
-    
-    void handleFwhmConstrainChanged()
-    {
-      m_updated.emit();
-    }
-    
-    
-    void handleApplyEnergyCalChanged()
-    {
-      m_updated.emit();
-    }
-    
-    
-    void setApplyEnergyCalVisible( const bool visible )
-    {
-      if( m_apply_energy_cal->isVisible() != visible )
-        m_apply_energy_cal->setHidden( !visible );
-    }
-    
-    
-    Wt::Signal<> &updated()
-    {
-      return m_updated;
-    }
-    
-    
-    Wt::Signal<> &remove()
-    {
-      return m_remove;
-    }
-  };//RelActFreePeak
 }//namespace
 
 
@@ -1217,8 +329,8 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     {
       if( !viewer->isPhone() )
       {
-        // A size of 1050px by 555px is about the smallest that renders everything nicely.
-        if( (windowWidth > (1050.0/0.8)) && (windowHeight > (555.0/0.8)) )
+        // A size of 1050px by 650px is about the smallest that renders everything okay-ish.
+        if( (windowWidth > (1050.0/0.8)) && (windowHeight > (650.0/0.8)) )
         {
           windowWidth = 0.8*windowWidth;
           windowHeight = 0.8*windowHeight;
@@ -1226,7 +338,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
         }else
         {
           windowWidth = 0.9*windowWidth;
-          windowHeight = 0.9*windowHeight;
+          windowHeight = 0.99*windowHeight;
           window->resizeWindow( windowWidth, windowHeight );
         }
       }//if( !viewer->isPhone() )
@@ -1269,6 +381,8 @@ const char *RelActAutoGui::to_str( const RelActAutoGui::AddUncert val )
   switch( val )
   {
     case RelActAutoGui::AddUncert::StatOnly:           return "StatOnly";
+    case RelActAutoGui::AddUncert::OneHundrethPercent: return "OneHundrethPercent";
+    case RelActAutoGui::AddUncert::OneTenthPercent:    return "OneTenthPercent";
     case RelActAutoGui::AddUncert::OnePercent:         return "OnePercent";
     case RelActAutoGui::AddUncert::FivePercent:        return "FivePercent";
     case RelActAutoGui::AddUncert::TenPercent:         return "TenPercent";
@@ -1281,6 +395,7 @@ const char *RelActAutoGui::to_str( const RelActAutoGui::AddUncert val )
   
   return "InvalidAddUncert";
 }//to_str( const AddUncert val )
+
 
 
 RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
@@ -1303,22 +418,15 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_current_preset_index( -1 ),
   m_error_msg( nullptr ),
   m_fit_chi2_msg( nullptr ),
-  m_rel_eff_eqn_form( nullptr ),
-  m_rel_eff_eqn_order_label( nullptr ),
-  m_rel_eff_eqn_order( nullptr ),
+  m_rel_eff_opts_menu( nullptr ),
+  m_rel_eff_opts_stack( nullptr ),
   m_fwhm_eqn_form( nullptr ),
   m_fwhm_estimation_method( nullptr ),
   m_fit_energy_cal( nullptr ),
   m_background_subtract( nullptr ),
   m_same_z_age( nullptr ),
-  m_pu_corr_method( nullptr ),
   m_skew_type( nullptr ),
   m_add_uncert( nullptr ),
-  m_phys_model_opts( nullptr ),
-  m_phys_model_shields( nullptr ),
-  m_phys_model_self_atten( nullptr ),
-  m_phys_ext_attens( nullptr ),
-  m_phys_model_use_hoerl( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -1328,11 +436,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_clear_energy_ranges( nullptr ),
   m_show_free_peak( nullptr ),
   m_free_peaks_container( nullptr ),
+  m_rel_eff_nuclides_menu( nullptr ),
+  m_rel_eff_nuclides_stack( nullptr ),
 //  m_u_pu_data_source( nullptr ),
-  m_nuclides( nullptr ),
   m_energy_ranges( nullptr ),
   m_free_peaks( nullptr ),
   m_is_calculating( false ),
+  m_calc_number( 0 ),
   m_cancel_calc{},
   m_solution{},
   m_calc_started( this ),
@@ -1439,6 +549,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_interspec->displayedSpectrumChanged().connect( boost::bind(
                  &RelActAutoGui::handleDisplayedSpectrumChange, this, boost::placeholders::_1) );
   
+  m_interspec->detectorChanged().connect( this, &RelActAutoGui::handleDetectorChange );
+  m_interspec->detectorModified().connect( this, &RelActAutoGui::handleDetectorChange );
+
   m_default_par_sets_dir = SpecUtils::append_path( InterSpec::staticDataDirectory(), "rel_act" );
   const vector<string> default_par_sets = SpecUtils::recursive_ls( m_default_par_sets_dir, ".xml" );
   
@@ -1456,7 +569,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   WContainerWidget *presetDiv = new WContainerWidget( this );
   presetDiv->addStyleClass( "PresetsRow" );
-  WLabel *label = new WLabel( "Option Presets", presetDiv );
+  WLabel *label = new WLabel( "Presets", presetDiv );
   m_presets = new WComboBox( presetDiv );
   label->setBuddy( m_presets );
   
@@ -1489,6 +602,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_current_preset_index = 0;
   m_presets->changed().connect( this, &RelActAutoGui::handlePresetChange );
   
+  WContainerWidget *spacer = new WContainerWidget( presetDiv );
+  spacer->addStyleClass( "RelActAutoSpacer" );
+
   m_error_msg = new WText( "Not Calculated.", presetDiv );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
 
@@ -1499,98 +615,22 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_status_indicator->addStyleClass( "RelActAutoStatusMsg" );
   m_status_indicator->hide();
   
-  
-  WContainerWidget *optionsDiv = new WContainerWidget( this );
-  optionsDiv->addStyleClass( "RelActAutoOptions" );
-  
-  label = new WLabel( "Eqn Type", optionsDiv );
-  label->addStyleClass( "GridFirstCol GridFirstRow" );
-  
-  m_rel_eff_eqn_form = new WComboBox( optionsDiv );
-  m_rel_eff_eqn_form->addStyleClass( "GridSecondCol GridFirstRow" );
-  label->setBuddy( m_rel_eff_eqn_form );
-  m_rel_eff_eqn_form->activated().connect( this, &RelActAutoGui::handleRelEffEqnFormChanged );
-  
-  const char *tooltip = "The functional form to use for the relative efficiciency curve.<br />"
-  "Options are:"
-  "<table style=\"margin-left: 10px;\">"
-  "<tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>"
-  "<tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>"
-  "<tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>"
-  "<tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>"
-  "</table>";
-  HelpSystem::attachToolTipOn( {label,m_rel_eff_eqn_form}, tooltip, showToolTips );
-  
-  // Will assume FramEmpirical is the highest
-  static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel)
-                > static_cast<int>(RelActCalc::RelEffEqnForm::LnXLnY),
-                "RelEffEqnForm was changed!"
-                );
-  
-  
-  for( int i = 0; i <= static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel); ++i )
-  {
-    const auto eqn_form = RelActCalc::RelEffEqnForm( i );
-    
-    const char *txt = "";
-    switch( eqn_form )
-    {
-      case RelActCalc::RelEffEqnForm::LnX:
-        //y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...
-        txt = "Log(x)";
-        break;
-        
-      case RelActCalc::RelEffEqnForm::LnY:
-        //y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
-        txt = "Log(y)";
-        break;
-        
-      case RelActCalc::RelEffEqnForm::LnXLnY:
-        //y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )
-        txt = "Log(x)Log(y)";
-        break;
-        
-      case RelActCalc::RelEffEqnForm::FramEmpirical:
-        //y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
-        txt = "Empirical";
-        break;
-        
-      case RelActCalc::RelEffEqnForm::FramPhysicalModel:
-        txt = "Physical";
-        break;
-    }
-    
-    m_rel_eff_eqn_form->addItem( txt );
-  }//for( loop over RelEffEqnForm )
-  
-  m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(RelActCalc::RelEffEqnForm::LnX) );
-  
-  m_rel_eff_eqn_order_label = new WLabel( "Eqn Order", optionsDiv );
-  m_rel_eff_eqn_order_label->addStyleClass( "GridThirdCol GridFirstRow" );
-  
-  m_rel_eff_eqn_order = new WComboBox( optionsDiv );
-  m_rel_eff_eqn_order->addStyleClass( "GridFourthCol GridFirstRow" );
-  m_rel_eff_eqn_order_label->setBuddy( m_rel_eff_eqn_order );
-  m_rel_eff_eqn_order->activated().connect( this, &RelActAutoGui::handleRelEffEqnOrderChanged );
-  
-  m_rel_eff_eqn_order->addItem( "0" );
-  m_rel_eff_eqn_order->addItem( "1" );
-  m_rel_eff_eqn_order->addItem( "2" );
-  m_rel_eff_eqn_order->addItem( "3" );
-  m_rel_eff_eqn_order->addItem( "4" );
-  m_rel_eff_eqn_order->addItem( "5" );
-  m_rel_eff_eqn_order->addItem( "6" );
-  m_rel_eff_eqn_order->setCurrentIndex( 3 );
-  
-  
-  tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
-  HelpSystem::attachToolTipOn( {label, m_rel_eff_eqn_order}, tooltip, showToolTips );
-  
+  // We'll take care of the options that apply to all types of Rel Eff curves now.
+  WGroupBox *generalOptionsDiv = new WGroupBox( "Peak Fitting Options", this );
+  generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
 
-  label = new WLabel( "FWHM Est.", optionsDiv );
-  label->addStyleClass( "GridFirstCol GridSecondRow" );
-  m_fwhm_estimation_method = new WComboBox( optionsDiv );
-  m_fwhm_estimation_method->addStyleClass( "GridSecondCol GridSecondRow" );
+  m_fit_energy_cal = new WCheckBox( "Fit Energy Cal.", generalOptionsDiv );
+  m_fit_energy_cal->checked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
+  m_fit_energy_cal->unChecked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
+  
+  m_background_subtract = new WCheckBox( "Back. Sub.", generalOptionsDiv );
+  m_background_subtract->checked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
+  m_background_subtract->unChecked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
+  
+  WContainerWidget *fwhmEstDiv = new WContainerWidget( generalOptionsDiv );
+  fwhmEstDiv->addStyleClass( "RelActAutoFwhmEstDiv" );
+  label = new WLabel( "FWHM Est.", fwhmEstDiv );
+  m_fwhm_estimation_method = new WComboBox( fwhmEstDiv );
   label->setBuddy( m_fwhm_estimation_method );
 
   for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency); ++i )
@@ -1622,11 +662,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     m_fwhm_estimation_method->addItem( name );
   }//for( loop over RelActCalcAuto::FwhmEstimationMethod )
 
-  label = new WLabel( "FWHM Form", optionsDiv );
-  label->addStyleClass( "GridThirdCol GridSecondRow" );
+  WContainerWidget *fwhmFormDiv = new WContainerWidget( generalOptionsDiv );
+  fwhmFormDiv->addStyleClass( "RelActAutoFwhmFormDiv" );
+  label = new WLabel( "FWHM Form", fwhmFormDiv );
   
-  m_fwhm_eqn_form = new WComboBox( optionsDiv );
-  m_fwhm_eqn_form->addStyleClass( "GridFourthCol GridSecondRow" );
+  m_fwhm_eqn_form = new WComboBox( fwhmFormDiv );
   label->setBuddy( m_fwhm_eqn_form );
 
   for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_6); ++i )
@@ -1648,8 +688,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     m_fwhm_eqn_form->addItem( name );
   }//for( loop over RelActCalcAuto::FwhmForm )
   
-  tooltip = "The equation type used to model peak FWHM as a function of energy.";
-  HelpSystem::attachToolTipOn( {label, m_fwhm_eqn_form}, tooltip, showToolTips );
+  const char *tooltip = "The equation type used to model peak FWHM as a function of energy.";
+  HelpSystem::attachToolTipOn( fwhmFormDiv, tooltip, showToolTips );
   
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
   m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse) );
@@ -1657,6 +697,68 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_fwhm_eqn_form->changed().connect( this, &RelActAutoGui::handleFwhmFormChanged );
   m_fwhm_estimation_method->changed().connect( this, &RelActAutoGui::handleFwhmEstimationMethodChanged );
   
+  WContainerWidget *skewDiv = new WContainerWidget( generalOptionsDiv );
+  skewDiv->addStyleClass( "RelActAutoSkewDiv" );
+  label = new WLabel( "Peak Skew", skewDiv );
+  m_skew_type = new WComboBox( skewDiv );
+  label->setBuddy( m_skew_type );
+  m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
+  tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
+  HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
+  for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
+      st = PeakDef::SkewType(st + 1) )
+  {
+    const char *label = PeakDef::to_label(st);
+    m_skew_type->addItem( label );
+  }//for( loop over SkewTypes )
+    
+  m_skew_type->setCurrentIndex( 0 );
+  
+  WContainerWidget *addUncertDiv = new WContainerWidget( generalOptionsDiv );
+  addUncertDiv->addStyleClass( "RelActAutoAddUncertDiv" );
+  label = new WLabel( "Add. Uncert", addUncertDiv );
+  m_add_uncert = new WComboBox( addUncertDiv );
+  label->setBuddy( m_add_uncert );
+  m_add_uncert->activated().connect( this, &RelActAutoGui::handleAdditionalUncertChanged );
+    
+  for( RelActAutoGui::AddUncert i = RelActAutoGui::AddUncert(0);
+      i < RelActAutoGui::AddUncert::NumAddUncert;
+      i = RelActAutoGui::AddUncert(static_cast<int>(i) + 1) )
+  {
+    WString uncert_txt;
+    switch( i )
+    {
+      case AddUncert::StatOnly:           uncert_txt = WString::fromUTF8("None");  break;
+      case AddUncert::OneHundrethPercent: uncert_txt = WString::fromUTF8("0.01%"); break;
+      case AddUncert::OneTenthPercent:    uncert_txt = WString::fromUTF8("0.1%");  break;
+      case AddUncert::OnePercent:         uncert_txt = WString::fromUTF8("1%");    break;
+      case AddUncert::FivePercent:        uncert_txt = WString::fromUTF8("5%");    break;
+      case AddUncert::TenPercent:         uncert_txt = WString::fromUTF8("10%");   break;
+      case AddUncert::TwentyFivePercent:  uncert_txt = WString::fromUTF8("25%");   break;
+      case AddUncert::FiftyPercent:       uncert_txt = WString::fromUTF8("50%");   break;
+      case AddUncert::SeventyFivePercent: uncert_txt = WString::fromUTF8("75%");   break;
+      case AddUncert::OneHundredPercent:  uncert_txt = WString::fromUTF8("100%");  break;
+      case AddUncert::NumAddUncert:       assert(0);                               break;
+    }//switch( i )
+       
+    m_add_uncert->addItem( uncert_txt );
+  }//for( loop over AddUncert )
+     
+  m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
+    
+  
+  WGroupBox *optionsDiv = new WGroupBox( "Relative Efficiency Curve Options", this );
+  optionsDiv->addStyleClass( "RelActAutoOptions" );
+
+  m_rel_eff_opts_stack = new WStackedWidget();
+  m_rel_eff_opts_stack->addStyleClass( "RelEffCurveOptsStack" );
+  //Do not set a transition animation, it will cause all elements of the stack to be hidden,
+  //  and totally stuck hidden, when we remove an element from the WMenu/WStackedWidget.
+  //m_rel_eff_opts_stack->setTransitionAnimation( animation, true );
+
+  m_rel_eff_opts_menu = new WMenu( m_rel_eff_opts_stack, optionsDiv );
+  m_rel_eff_opts_menu->addStyleClass( "RelEffCurveOptsMenu LightNavMenu" );
+  optionsDiv->addWidget( m_rel_eff_opts_stack );
 
 /*
   label = new WLabel( "Yield Info", optionsDiv );
@@ -1690,116 +792,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_u_pu_data_source->changed().connect( this, &RelActAutoGui::handleDataSrcChanged );
  */
   
-  m_fit_energy_cal = new WCheckBox( "Fit Energy Cal.", optionsDiv );
-  m_fit_energy_cal->addStyleClass( "GridFirstCol GridThirdRow GridSpanTwoCol" );
-  m_fit_energy_cal->checked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
-  m_fit_energy_cal->unChecked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
-  
-  
-  m_background_subtract = new WCheckBox( "Back. Sub.", optionsDiv );
-  m_background_subtract->addStyleClass( "GridThirdCol GridThirdRow GridSpanTwoCol" );
-  m_background_subtract->checked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
-  m_background_subtract->unChecked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
-  
-  
-  m_same_z_age = new WCheckBox( "Same El. Same Age", optionsDiv );
-  m_same_z_age->addStyleClass( "GridFifthCol GridThirdRow GridSpanTwoCol" );
-  m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
-  m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
-  
-  label = new WLabel( "Pu242 corr", optionsDiv );
-  label->addStyleClass( "GridSeventhCol GridSecondRow" );
-  m_pu_corr_method = new WComboBox( optionsDiv );
-  m_pu_corr_method->addStyleClass( "GridEighthCol GridSecondRow" );
-  label->setBuddy( m_pu_corr_method );
-  m_pu_corr_method->activated().connect( this, &RelActAutoGui::handlePuByCorrelationChanged );
-  tooltip = "Pu-242 is often not directly observable in gamma spectra.  However, to"
-  " correct for this isotope when calculating enrichment, the expected contributions of this"
-  " isotope can be inferred from the other Pu isotopes."
-  "  This form allows you to select the correction method.";
-  HelpSystem::attachToolTipOn( {label,m_pu_corr_method}, tooltip, showToolTips );
-  m_pu_corr_method->hide();
-  label->hide();
-  
     
-  label = new WLabel( "Peak Skew", optionsDiv );
-  label->addStyleClass( "GridFifthCol GridSecondRow" );
-  m_skew_type = new WComboBox( optionsDiv );
-  m_skew_type->addStyleClass( "GridSixthCol GridSecondRow" );
-  label->setBuddy( m_skew_type );
-  m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
-  tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
-  HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
-  for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
-      st = PeakDef::SkewType(st + 1) )
-  {
-    const char *label = PeakDef::to_label(st);
-    m_skew_type->addItem( label );
-  }//for( loop over SkewTypes )
-    
-  m_skew_type->setCurrentIndex( 0 );
-  
-    
-  label = new WLabel( "Add. Uncert", optionsDiv );
-  label->addStyleClass( "GridFifthCol GridFirstRow" );
-  m_add_uncert = new WComboBox( optionsDiv );
-  m_add_uncert->addStyleClass( "GridSixthCol GridFirstRow" );
-  label->setBuddy( m_add_uncert );
-    m_add_uncert->activated().connect( this, &RelActAutoGui::handleAdditionalUncertChanged );
-    
-  for( RelActAutoGui::AddUncert i = RelActAutoGui::AddUncert(0);
-      i < RelActAutoGui::AddUncert::NumAddUncert;
-      i = RelActAutoGui::AddUncert(static_cast<int>(i) + 1) )
-  {
-    WString uncert_txt;
-    switch( i )
-    {
-      case AddUncert::StatOnly:           uncert_txt = WString::fromUTF8("None"); break;
-      case AddUncert::OnePercent:         uncert_txt = WString::fromUTF8("1%");   break;
-      case AddUncert::FivePercent:        uncert_txt = WString::fromUTF8("5%");   break;
-      case AddUncert::TenPercent:         uncert_txt = WString::fromUTF8("10%");  break;
-      case AddUncert::TwentyFivePercent:  uncert_txt = WString::fromUTF8("25%");  break;
-      case AddUncert::FiftyPercent:       uncert_txt = WString::fromUTF8("50%");  break;
-      case AddUncert::SeventyFivePercent: uncert_txt = WString::fromUTF8("75%");  break;
-      case AddUncert::OneHundredPercent:  uncert_txt = WString::fromUTF8("100%"); break;
-      case AddUncert::NumAddUncert:       assert(0);                              break;
-    }//switch( i )
-       
-    m_add_uncert->addItem( uncert_txt );
-  }//for( loop over AddUncert )
-     
-  m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
-    
-    
-  m_phys_model_opts = new WContainerWidget( optionsDiv );
-  m_phys_model_opts->addStyleClass( "PhysicalModelOpts GridEleventhCol GridFirstRow GridSpanThreeRows" );
-  
-  m_phys_model_shields = new WContainerWidget( m_phys_model_opts );
-  m_phys_model_shields->addStyleClass( "PhysicalModelShields" );
-    
-  m_phys_ext_attens = new WContainerWidget( m_phys_model_shields );
-  
-  // We will pu the Use 
-  WContainerWidget *phys_opt_row = new WContainerWidget( m_phys_model_opts );
-  phys_opt_row->setStyleClass( "PhysicalModelOptRow" );
-  
-  m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", phys_opt_row );
-  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb" );
-  m_phys_model_use_hoerl->setChecked( true );
-  m_phys_model_use_hoerl->setWordWrap( false );
-  m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
-  m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGui::handlePhysModelUseHoerlChange );
-
-  SpecMeasManager *spec_manager = m_interspec->fileManager();
-  SpectraFileModel *spec_model = spec_manager ? spec_manager->model() : nullptr;
-  DetectorDisplay *det_disp = new DetectorDisplay( m_interspec, spec_model, phys_opt_row );
-  m_interspec->detectorChanged().connect( this, &RelActAutoGui::handleDetectorChange );
-  m_interspec->detectorModified().connect( this, &RelActAutoGui::handleDetectorChange );
-
-  m_phys_model_opts->hide();
-    
-    
-  WPushButton *more_btn = new WPushButton( optionsDiv );
+  WPushButton *more_btn = new WPushButton( this );
   more_btn->setIcon( "InterSpec_resources/images/more_menu_icon.svg" );
   more_btn->addStyleClass( "MoreMenuIcon Wt-icon" );
   
@@ -1822,28 +816,37 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_set_peaks_foreground = m_more_options_menu->addMenuItem( "Set Peaks to foreground" );
   m_set_peaks_foreground->triggered().connect( boost::bind( &RelActAutoGui::setPeaksToForeground, this ) );
   m_set_peaks_foreground->setDisabled( true );
-    
-    
-  // TODO: add item to account for Rel Eff, and Rel Acts
   
   WContainerWidget *bottomArea = new WContainerWidget( this );
   bottomArea->addStyleClass( "EnergiesAndNuclidesHolder" );
   
-  WContainerWidget *nuclidesHolder = new WContainerWidget( bottomArea );
+  //WContainerWidget *nuclidesHolder = new WContainerWidget( bottomArea );
+  WGroupBox *nuclidesHolder = new WGroupBox( "Nuclides", bottomArea );
   nuclidesHolder->addStyleClass( "NuclidesHolder" );
   
-  WContainerWidget *energiesHolder = new WContainerWidget( bottomArea );
+  //WContainerWidget *energiesHolder = new WContainerWidget( bottomArea );
+  WGroupBox *energiesHolder = new WGroupBox( "Energy Ranges", bottomArea );
   energiesHolder->addStyleClass( "EnergiesHolder" );
   
-  m_free_peaks_container = new WContainerWidget( bottomArea );
+  //m_free_peaks_container = new WContainerWidget( bottomArea );
+  m_free_peaks_container = new WGroupBox( "Free Peaks", bottomArea );
   m_free_peaks_container->addStyleClass( "FreePeaksHolder" );
   m_free_peaks_container->hide();
   
-  WText *nuc_header = new WText( "Nuclides", nuclidesHolder );
-  nuc_header->addStyleClass( "EnergyNucHeader" );
+  //WText *nuc_header = new WText( "Nuclides", nuclidesHolder );
+  //nuc_header->addStyleClass( "EnergyNucHeader" );
   
-  m_nuclides = new WContainerWidget( nuclidesHolder );
-  m_nuclides->addStyleClass( "EnergyNucContent" );
+  m_rel_eff_nuclides_stack = new WStackedWidget();
+  m_rel_eff_nuclides_stack->addStyleClass( "RelEffNuclidesStack" );
+  m_rel_eff_nuclides_menu = new WMenu( m_rel_eff_nuclides_stack, nuclidesHolder );
+  m_rel_eff_nuclides_menu->addStyleClass( "RelEffNuclidesMenu LightNavMenu" ); 
+  nuclidesHolder->addWidget( m_rel_eff_nuclides_stack );
+  WContainerWidget *nuclides_content = new WContainerWidget( nuclidesHolder );
+  
+  m_rel_eff_opts_menu->itemSelected().connect( this, &RelActAutoGui::handleRelEffCurveOptionsSelected );
+  m_rel_eff_nuclides_menu->itemSelected().connect( this, &RelActAutoGui::handleRelEffNuclidesSelected );
+
+  handleAddRelEffCurve();
   
   WContainerWidget *nuc_footer = new WContainerWidget( nuclidesHolder );
   nuc_footer->addStyleClass( "EnergyNucFooter" );
@@ -1851,12 +854,23 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   WPushButton *add_nuc_icon = new WPushButton( nuc_footer );
   add_nuc_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_nuc_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
-  add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclide );
+  add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclideForCurrentRelEffCurve );
   tooltip = "Add a nuclide.";
   HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
+
+  spacer = new WContainerWidget( nuc_footer );
+  spacer->addStyleClass( "RelActAutoSpacer" );
+
+  // same_z_age is something that _could_ be a per-relative-efficiency option, 
+  //  but it's a little cleaner and maybe clearer to have it here, near the nuclides
+  //  (and we are currently forcing nuclides to be same age between RelEff curves...)
+  m_same_z_age = new WCheckBox( "Same El. Same Age", nuc_footer );
+  m_same_z_age->addStyleClass( "SameZAgeCb CbNoLineBreak" );
+  m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
+  m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   
-  WText *energy_header = new WText( "Energy Ranges", energiesHolder );
-  energy_header->addStyleClass( "EnergyNucHeader" );
+  //WText *energy_header = new WText( "Energy Ranges", energiesHolder );
+  //energy_header->addStyleClass( "EnergyNucHeader" );
   
   m_energy_ranges = new WContainerWidget( energiesHolder );
   m_energy_ranges->addStyleClass( "EnergyNucContent" );
@@ -1872,6 +886,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   tooltip = "Add an energy range.";
   HelpSystem::attachToolTipOn( add_energy_icon, tooltip, showToolTips );
   
+  spacer = new WContainerWidget( energies_footer );
+  spacer->addStyleClass( "RelActAutoSpacer" );
+
   m_show_free_peak = new WPushButton( "add free peaks", energies_footer );
   m_show_free_peak->addStyleClass( "ShowFreePeaks LightButton" );
   m_show_free_peak->clicked().connect( this, &RelActAutoGui::handleShowFreePeaks );
@@ -1883,8 +900,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   HelpSystem::attachToolTipOn( m_clear_energy_ranges, tooltip, showToolTips );
   m_clear_energy_ranges->hide();
   
-  WText *free_peaks_header = new WText( "Free Peaks", m_free_peaks_container );
-  free_peaks_header->addStyleClass( "EnergyNucHeader" );
+  //WText *free_peaks_header = new WText( "Free Peaks", m_free_peaks_container );
+  //free_peaks_header->addStyleClass( "EnergyNucHeader" );
   m_free_peaks = new WContainerWidget( m_free_peaks_container );
   m_free_peaks->addStyleClass( "EnergyNucContent" );
   
@@ -2077,86 +1094,146 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   const auto add_uncert = RelActAutoGui::AddUncert(m_add_uncert->currentIndex());
   switch( add_uncert )
   {
-    case AddUncert::StatOnly:           options.additional_br_uncert = 0.00;  break;
-    case AddUncert::OnePercent:         options.additional_br_uncert = 0.01;  break;
-    case AddUncert::FivePercent:        options.additional_br_uncert = 0.05;  break;
-    case AddUncert::TenPercent:         options.additional_br_uncert = 0.10;  break;
-    case AddUncert::TwentyFivePercent:  options.additional_br_uncert = 0.25;  break;
-    case AddUncert::FiftyPercent:       options.additional_br_uncert = 0.50;  break;
-    case AddUncert::SeventyFivePercent: options.additional_br_uncert = 0.75;  break;
-    case AddUncert::OneHundredPercent:  options.additional_br_uncert = 1.00;  break;
-    case AddUncert::NumAddUncert:       assert( 0 );                          break;
+    case AddUncert::StatOnly:           options.additional_br_uncert = 0.00;   break;
+    case AddUncert::OneHundrethPercent: options.additional_br_uncert = 0.0001; break;
+    case AddUncert::OneTenthPercent:    options.additional_br_uncert = 0.001;  break;
+    case AddUncert::OnePercent:         options.additional_br_uncert = 0.01;   break;
+    case AddUncert::FivePercent:        options.additional_br_uncert = 0.05;   break;
+    case AddUncert::TenPercent:         options.additional_br_uncert = 0.10;   break;
+    case AddUncert::TwentyFivePercent:  options.additional_br_uncert = 0.25;   break;
+    case AddUncert::FiftyPercent:       options.additional_br_uncert = 0.50;   break;
+    case AddUncert::SeventyFivePercent: options.additional_br_uncert = 0.75;   break;
+    case AddUncert::OneHundredPercent:  options.additional_br_uncert = 1.00;   break;
+    case AddUncert::NumAddUncert:       assert( 0 );                           break;
   }//switch( add_uncert )
   assert( options.additional_br_uncert >= 0.0 );
   options.additional_br_uncert = std::max( options.additional_br_uncert, 0.0 );
   
   options.floating_peaks = getFloatingPeaks();
   options.rois = getRoiRanges();
-
-
-  RelActCalcAuto::RelEffCurveInput rel_eff_curve;
-  rel_eff_curve.nuclides = getNucInputInfo();
-  rel_eff_curve.nucs_of_el_same_age = m_same_z_age->isChecked();
-  rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
-  rel_eff_curve.rel_eff_eqn_order = 0;
-  if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    rel_eff_curve.rel_eff_eqn_order = static_cast<size_t>( std::max( 0, m_rel_eff_eqn_order->currentIndex() ) );
   
-  if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  int num_phys_model_curves = 0;
+  bool any_using_hoerl = false, same_hoerl_all_curves = false, same_ext_shieldings = false;
+  vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
+  
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  assert( num_rel_eff_curves > 0 );
+  for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
   {
-    if( m_phys_model_self_atten && m_phys_model_self_atten->nonEmpty() )
-      rel_eff_curve.phys_model_self_atten = m_phys_model_self_atten->fitInput();
-    
-    for( WWidget *w : m_phys_ext_attens->children() )
-    {
-      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
-      if( sw && sw->nonEmpty() )
-      {
-        auto input = sw->fitInput();
-        if( input )
-          rel_eff_curve.phys_model_external_atten.push_back( input );
-      }
-    }//for( WWidget *w : m_phys_ext_attens->children() )
-    
-    rel_eff_curve.phys_model_use_hoerl = m_phys_model_use_hoerl->isChecked();
-  }//if( options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    const RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( rel_eff_curve_index );
+    if( !opts )
+      throw runtime_error( "Failed to get RelActAutoGuiRelEffOptions" );
 
-  if( m_pu_corr_method->isVisible() )
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+    rel_eff_curve.name = opts->name().toUTF8();
+    rel_eff_curve.nuclides = getNucInputInfo( rel_eff_curve_index );
+    rel_eff_curve.act_ratio_constraints = getActRatioConstraints( rel_eff_curve_index );
+    rel_eff_curve.mass_fraction_constraints = getMassFractionConstraints( rel_eff_curve_index );
+    rel_eff_curve.nucs_of_el_same_age = (m_same_z_age->isVisible() && m_same_z_age->isChecked());
+    rel_eff_curve.rel_eff_eqn_type = opts->rel_eff_eqn_form();
+    rel_eff_curve.rel_eff_eqn_order = opts->rel_eff_eqn_order();
+    rel_eff_curve.phys_model_self_atten = opts->phys_model_self_atten();
+    rel_eff_curve.phys_model_external_atten = opts->phys_model_external_atten();
+    rel_eff_curve.phys_model_use_hoerl = opts->phys_model_use_hoerl();
+    rel_eff_curve.pu242_correlation_method = opts->pu242_correlation_method();
+
+    if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    {
+      num_phys_model_curves += 1;
+      any_using_hoerl = (any_using_hoerl || rel_eff_curve.phys_model_use_hoerl);
+      if( phys_model_external_attens.empty() )
+        phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
+      same_ext_shieldings = (same_ext_shieldings || opts->physModelSameExtShieldAllCurves());
+      same_hoerl_all_curves = (same_hoerl_all_curves || opts->physModelSameHoerlOnAllCurves());
+    }
+    
+    options.rel_eff_curves.push_back( rel_eff_curve );
+  }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
+
+  options.same_hoerl_for_all_rel_eff_curves = false;
+  options.same_external_shielding_for_all_rel_eff_curves = false;
+  if( (num_phys_model_curves > 1) && (same_ext_shieldings || same_hoerl_all_curves) )
   {
-    const string currtxt = m_pu_corr_method->currentText().toUTF8();
-    for( int i = 0; i <= static_cast<int>(RelActCalc::PuCorrMethod::NotApplicable); ++i )
+    if( any_using_hoerl && same_hoerl_all_curves )
     {
-      const auto method = RelActCalc::PuCorrMethod(i);
-      const string &desc = RelActCalc::to_description( method );
-      if( desc == currtxt )
+      options.same_hoerl_for_all_rel_eff_curves = true;
+      for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
       {
-        rel_eff_curve.pu242_correlation_method = method;
-        break;
+        assert( curve.phys_model_use_hoerl );
+        curve.phys_model_use_hoerl = true;
       }
-    }//for( loop over RelActCalc::PuCorrMethod )
-  }//if( m_pu_corr_method->isVisible() )
-
-  options.rel_eff_curves = { rel_eff_curve };
-
+    }//if( any_using_hoerl and all should share a Hoerl)
+    
+    if( same_ext_shieldings && !phys_model_external_attens.empty() )
+    {
+      options.same_external_shielding_for_all_rel_eff_curves = true;
+      
+      for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+      {
+        assert( curve.phys_model_external_atten.size() == phys_model_external_attens.size() );
+        curve.phys_model_external_atten = phys_model_external_attens;
+      }
+    }//if( all should share ext atten and there are some defined )
+  }//if( num_phys_model_curves > 1 )
+  
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
 
 
-vector<RelActCalcAuto::NucInputInfo> RelActAutoGui::getNucInputInfo() const
+vector<RelActCalcAuto::NucInputInfo> RelActAutoGui::getNucInputInfo( const int rel_eff_curve_index ) const
 {
   vector<RelActCalcAuto::NucInputInfo> answer;
   
-  const vector<WWidget *> &kids = m_nuclides->children();
-  for( WWidget *w : kids )
+  const vector<const RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_curve_index );
+  for( const RelActAutoGuiNuclide *nuc : nuc_displays )
   {
-    const RelActAutoNuclide *nuc = dynamic_cast<const RelActAutoNuclide *>( w );
     assert( nuc );
-    if( nuc && !std::holds_alternative<std::monostate>(nuc->nuclide()) )
-      answer.push_back( nuc->toNucInputInfo() );
-  }//for( WWidget *w : kids )
+    if( !nuc || RelActCalcAuto::is_null(nuc->source()) )
+      continue;
+    
+    answer.push_back( nuc->toNucInputInfo() );
+  }//for( RelActAutoGuiNuclide *nuc : nuc_displays )
   
   return answer;
 }//RelActCalcAuto::NucInputInfo getNucInputInfo() const
+
+
+vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> RelActAutoGui::getActRatioConstraints( const int rel_eff_curve_index ) const
+{
+  vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> answer;
+  
+  const vector<const RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_curve_index );
+  for( const RelActAutoGuiNuclide *src : nuc_displays )
+  {
+    assert( src );
+    if( !src || RelActCalcAuto::is_null(src->source()) )
+      continue;
+    
+    if( src->hasActRatioConstraint() )
+      answer.push_back( src->actRatioConstraint() );
+  }//for( RelActAutoGuiNuclide *src : nuc_displays )
+
+  return answer;
+}//vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> getActRatioConstraints() const
+
+
+vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> RelActAutoGui::getMassFractionConstraints( const int rel_eff_curve_index ) const
+{
+  vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> answer;
+  
+  const vector<const RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_curve_index );
+  for( const RelActAutoGuiNuclide *src : nuc_displays )
+  {
+    assert( src );
+    if( !src || RelActCalcAuto::is_null(src->source()) )
+      continue;
+    
+    if( src->hasMassFractionConstraint() )
+      answer.push_back( src->massFractionConstraint() );
+  }//for( RelActAutoGuiNuclide *src : nuc_displays )
+
+  return answer;
+}//vector<RelActCalcAuto::MassFractionConstraint> getMassFractionConstraints() const
 
 
 vector<RelActCalcAuto::RoiRange> RelActAutoGui::getRoiRanges() const
@@ -2165,7 +1242,7 @@ vector<RelActCalcAuto::RoiRange> RelActAutoGui::getRoiRanges() const
   const vector<WWidget *> &kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
-    const RelActAutoEnergyRange *roi = dynamic_cast<const RelActAutoEnergyRange *>( w );
+    const RelActAutoGuiEnergyRange *roi = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi && !roi->isEmpty() )
       answer.push_back( roi->toRoiRange() );
@@ -2182,7 +1259,7 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
   const vector<WWidget *> &roi_widgets = m_energy_ranges->children();
   for( WWidget *w : roi_widgets )
   {
-    const RelActAutoEnergyRange *roi = dynamic_cast<const RelActAutoEnergyRange *>( w );
+    const RelActAutoGuiEnergyRange *roi = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi && !roi->isEmpty() )
       rois.emplace_back( roi->lowerEnergy(), roi->upperEnergy() );
@@ -2193,7 +1270,7 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
   const std::vector<WWidget *> &kids = m_free_peaks->children();
   for( WWidget *w : kids )
   {
-    RelActFreePeak *free_peak = dynamic_cast<RelActFreePeak *>(w);
+    RelActAutoGuiFreePeak *free_peak = dynamic_cast<RelActAutoGuiFreePeak *>(w);
     assert( free_peak );
     if( !free_peak )
       continue;
@@ -2212,7 +1289,7 @@ vector<RelActCalcAuto::FloatingPeak> RelActAutoGui::getFloatingPeaks() const
     peak.apply_energy_cal_correction = free_peak->applyEnergyCal();
     
     answer.push_back( peak );
-  }//for( loop over RelActFreePeak widgets )
+  }//for( loop over RelActAutoGuiFreePeak widgets )
   
   return answer;
 }//RelActCalcAuto::FloatingPeak getFloatingPeaks() const
@@ -2222,6 +1299,36 @@ shared_ptr<const RelActCalcAuto::RelActAutoSolution> RelActAutoGui::getCurrentSo
 {
   return m_solution;
 }
+
+
+
+void RelActAutoGui::updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *changed_opts,
+                                               RelActAutoGuiRelEffOptions *added_opts )
+{
+  // Get the number of rel eff curve options we have
+  const size_t num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  
+  // Track the number of physical models
+  int num_phys_models = 0;
+  
+  // Loop through and count physical models
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    assert( options );
+    if( options )
+      num_phys_models += (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+  }
+  
+  // Update each physical model curve to show/hide shared settings controls
+  const bool multiple_phys_models = (num_phys_models > 1);
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    if( options )
+      options->setHasMultiplePhysicalModels( multiple_phys_models );
+  }
+}//void updateMultiPhysicalModelUI()
 
 
 void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
@@ -2236,12 +1343,12 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
   //<< ", is_final_range=" << is_final_range << endl;
   
   double min_de = 999999.9;
-  RelActAutoEnergyRange *range = nullptr;
+  RelActAutoGuiEnergyRange *range = nullptr;
   
   const vector<WWidget *> &kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( !roi || roi->isEmpty() )
       continue;
@@ -2256,7 +1363,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     }
   }//for( WWidget *w : kids )
 
-  if( !range || (min_de > 2.5) )  // Sometimes the ROI might say its original lower energy is like 603 keV, but the RelActAutoEnergyRange might say 604.2.
+  if( !range || (min_de > 2.5) )  // Sometimes the ROI might say its original lower energy is like 603 keV, but the RelActAutoGuiEnergyRange might say 604.2.
   {
     cerr << "Unexpectedly couldnt find ROI in getRoiRanges()!" << endl;
     cout << "\t\toriginal_roi_lower_energy=" << original_roi_lower_energy
@@ -2264,7 +1371,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     << ", is_final_range=" << is_final_range << endl;
     for( WWidget *w : kids )
     {
-      RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
       assert( roi );
       if( !roi || roi->isEmpty() )
         continue;
@@ -2283,7 +1390,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     return;
   }//if( the user
   
-  // We will only set RelActAutoEnergyRange energies when its final, otherwise the lower energy wont
+  // We will only set RelActAutoGuiEnergyRange energies when its final, otherwise the lower energy wont
   //  match on later updates
   if( is_final_range )
   {
@@ -2366,12 +1473,13 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
   {
     m_spectrum->updateRoiBeingDragged( {} );
     
-    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+    RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
     
     energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     
     energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                                 this, static_cast<WWidget *>(energy_range) ) );
+    energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1 ) );
     
     energy_range->setEnergyRange( roi_lower, roi_upper );
     energy_range->setForceFullRange( true );
@@ -2410,7 +1518,7 @@ void RelActAutoGui::handleShiftDrag( const double lower_energy, const double upp
   const vector<WWidget *> kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( !roi || roi->isEmpty() )
       continue;
@@ -2514,15 +1622,16 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     
     const vector<WWidget *> prev_roi_widgets = m_energy_ranges->children();
     
-    RelActAutoEnergyRange *new_roi_w = new RelActAutoEnergyRange( this, m_energy_ranges );
+    RelActAutoGuiEnergyRange *new_roi_w = new RelActAutoGuiEnergyRange( m_energy_ranges );
     new_roi_w->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     new_roi_w->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(new_roi_w) ) );
+    new_roi_w->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     new_roi_w->setFromRoiRange( new_roi );
     
-    vector<RelActAutoEnergyRange *> overlapping_rois;
+    vector<RelActAutoGuiEnergyRange *> overlapping_rois;
     for( WWidget *w : prev_roi_widgets )
     {
-      RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
       assert( roi );
       if( !roi )
         continue;
@@ -2531,10 +1640,10 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     }
     
     bool combined_an_roi = false;
-    for( RelActAutoEnergyRange *roi : overlapping_rois )
+    for( RelActAutoGuiEnergyRange *roi : overlapping_rois )
     {
       WWidget *w = handleCombineRoi( roi, new_roi_w );
-      RelActAutoEnergyRange *combined_roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+      RelActAutoGuiEnergyRange *combined_roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
       
       assert( combined_roi );
       if( !combined_roi )
@@ -2575,26 +1684,26 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
 void RelActAutoGui::handleRightClick( const double energy, const double counts,
                       const int page_x_px, const int page_y_px )
 {
-  vector<RelActAutoEnergyRange *> ranges;
+  vector<RelActAutoGuiEnergyRange *> ranges;
   const vector<WWidget *> &kids = m_energy_ranges->children();
   for( WWidget *w : kids )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi && !roi->isEmpty() )
        ranges.push_back( roi );
   }//for( WWidget *w : kids )
   
   std::sort( begin(ranges), end(ranges),
-             []( const RelActAutoEnergyRange *lhs, const RelActAutoEnergyRange *rhs) -> bool{
+             []( const RelActAutoGuiEnergyRange *lhs, const RelActAutoGuiEnergyRange *rhs) -> bool{
     return lhs->lowerEnergy() < rhs->lowerEnergy();
   } );
   
   
-  RelActAutoEnergyRange *range = nullptr, *range_to_left = nullptr, *range_to_right = nullptr;
+  RelActAutoGuiEnergyRange *range = nullptr, *range_to_left = nullptr, *range_to_right = nullptr;
   for( size_t i = 0; i < ranges.size(); ++i )
   {
-    RelActAutoEnergyRange *roi = ranges[i];
+    RelActAutoGuiEnergyRange *roi = ranges[i];
     RelActCalcAuto::RoiRange roi_range = roi->toRoiRange();
   
     if( (energy >= roi_range.lower_energy) && (energy < roi_range.upper_energy) )
@@ -2607,7 +1716,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
       
       break;
     }//
-  }//for( RelActAutoEnergyRange *roi : ranges )
+  }//for( RelActAutoGuiEnergyRange *roi : ranges )
   
   if( !range )
   {
@@ -2638,7 +1747,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
       type < PeakContinuum::External; type = PeakContinuum::OffsetType(type+1) )
   {
     WMenuItem *item = continuum_menu->addItem( WString::tr(PeakContinuum::offset_type_label_tr(type)) );
-    item->triggered().connect( boost::bind( &RelActAutoEnergyRange::setContinuumType, range, type ) );
+    item->triggered().connect( boost::bind( &RelActAutoGuiEnergyRange::setContinuumType, range, type ) );
     if( type == roi.continuum_type )
       item->setDisabled( true );
   }//for( loop over PeakContinuum::OffsetTypes )
@@ -2696,9 +1805,9 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
 
 void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
 {
-  assert( options.rel_eff_curves.size() == 1 );
-  if( options.rel_eff_curves.size() != 1 )
-    throw runtime_error( "RelActAutoGui::setCalcOptionsGui: for dev, must have exactly one rel-eff curve." );
+  assert( options.rel_eff_curves.size() >= 1 );
+  if( options.rel_eff_curves.empty() )
+    throw runtime_error( "RelActAutoGui::setCalcOptionsGui: for dev, must have at least one rel-eff curve." );
   
   m_fit_energy_cal->setChecked( options.fit_energy_cal );
   
@@ -2715,8 +1824,12 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   
   // We'll just round add-uncert to the nearest-ish value we allow in the GUI
   RelActAutoGui::AddUncert add_uncert = AddUncert::NumAddUncert;
-  if( options.additional_br_uncert <= 0.005 )
+  if( options.additional_br_uncert <= 0.00005 )
     add_uncert = AddUncert::StatOnly;
+  else if( options.additional_br_uncert <= 0.0005 )
+    add_uncert = AddUncert::OneHundrethPercent;
+  else if( options.additional_br_uncert <= 0.005 )
+    add_uncert = AddUncert::OneTenthPercent;
   else if( options.additional_br_uncert <= 0.025 )
     add_uncert = AddUncert::OnePercent;
   else if( options.additional_br_uncert <= 0.075 )
@@ -2736,113 +1849,98 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( add_uncert == AddUncert::NumAddUncert )
     add_uncert = AddUncert::StatOnly;
   m_add_uncert->setCurrentIndex( static_cast<int>(add_uncert) );
-  
-  
-  m_nuclides->clear();
-  
-  const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[0];
-  m_same_z_age->setChecked( rel_eff.nucs_of_el_same_age );
-  m_rel_eff_eqn_form->setCurrentIndex( static_cast<int>(rel_eff.rel_eff_eqn_type) );
-  if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    m_rel_eff_eqn_order->setCurrentIndex( static_cast<int>(rel_eff.rel_eff_eqn_order) );
-  
-  const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &self_atten = rel_eff.phys_model_self_atten;
-  const vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> &ext_attens = rel_eff.phys_model_external_atten;
-  
-  if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
-     || self_atten || !ext_attens.empty() )
-  {
-    initPhysModelShields();  //Sets shielding widgets to default state
-    
-    assert( m_phys_model_self_atten );
-    if( !m_phys_model_self_atten || !m_phys_ext_attens )
-      throw std::logic_error( "!m_phys_model_self_atten || !m_phys_ext_attens ?!?" );
-    assert( m_phys_ext_attens->count() == 1 );
-    
-    
-    if( self_atten )
-    {
-      RelEffShieldState state;
-      state.setStateFromFitInput( *self_atten );
-      m_phys_model_self_atten->setState( state );
-    }
-    
-    // Fill out the external shielding widgets
-    vector<RelEffShieldWidget *> ext_shields;
-    for( WWidget *w : m_phys_ext_attens->children() )
-    {
-      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
-      assert( sw );
-      if( sw )
-        ext_shields.push_back( sw );
-    }
-    
-    assert( ext_shields.size() == 1 );
-    
-    // Remove any extra shielding widgets
-    while( (ext_shields.size() > 1) && (ext_shields.size() > ext_attens.size()) )
-    {
-      delete ext_shields.back();
-      ext_shields.pop_back();
-    }
-    
-    if( (ext_shields.size()) == 1 && ext_attens.empty() )
-      ext_shields[0]->resetState();
-    
-    // Set state, reusing as many shielding widgets as we can
-    const size_t num_ext_reused = std::min( ext_shields.size(), ext_attens.size() );
-    for( size_t i = 0; i < num_ext_reused; ++i )
-    {
-      RelEffShieldState state;
-      state.setStateFromFitInput( *ext_attens[i] );
-      ext_shields[i]->setState( state );
-    }
-    
-    // Add any new shielding widgets we need
-    for( size_t i = num_ext_reused; i < ext_attens.size(); ++i )
-    {
-      RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_phys_ext_attens );
-      sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
-      ext_shields.push_back( sw );
-      
-      RelEffShieldState state;
-      state.setStateFromFitInput( *ext_attens[i] );
-      sw->setState( state );
-    }
-  }else
-  {
-    // Normally we will keep Physical model shielding around, incase the user is
-    //  messing around, but if we are setting state from XML, we'll hard reset them
-    if( m_phys_model_self_atten )
-    {
-      delete m_phys_model_self_atten;
-      m_phys_model_self_atten = nullptr;
-    }
-    while( !m_phys_ext_attens->children().empty() )
-      delete m_phys_ext_attens->children().front();
-  }//if( Physical Model ) / else
 
-  showAndHideOptionsForEqnType();
-  
-  for( const RelActCalcAuto::NucInputInfo &nuc : rel_eff.nuclides )
+  // First, remove any extra Rel Eff curve GUIs
+  const size_t num_rel_eff_curves = options.rel_eff_curves.size();
+  while( m_rel_eff_opts_menu->count() > num_rel_eff_curves )
   {
-    RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
-    nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
-    nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
-                                              this, static_cast<WWidget *>(nuc_widget) ) );
-    nuc_widget->fromNucInputInfo( nuc );
-  }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( m_rel_eff_opts_menu->count() - 1 );
+    assert( opts );
+    handleDelRelEffCurve( opts );
+  }
   
+  // Add any new Rel Eff curve GUIs we need
+  while( m_rel_eff_opts_menu->count() < num_rel_eff_curves )
+  {
+    handleAddRelEffCurve();
+  }
+
+  assert( m_rel_eff_opts_menu->count() == static_cast<int>(num_rel_eff_curves) );
+  assert( m_rel_eff_nuclides_menu->count() == static_cast<int>(num_rel_eff_curves) );
+
+
+  // Now, set the values for each Rel Eff curve
+  for( size_t i = 0; i < num_rel_eff_curves; ++i )
+  {
+    const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[i];
+    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( static_cast<int>(i) );
+    assert( opts );
+    opts->setRelEffCurveInput( rel_eff );
+  }
+
+  // We'll set the "Same El. Same Age" checkbox based on whether any of the
+  //  Rel Eff curves had this option enabled.
+  bool nucs_of_el_same_age = false;
+  for( size_t i = 0; i < num_rel_eff_curves; ++i )
+    nucs_of_el_same_age |= options.rel_eff_curves[i].nucs_of_el_same_age;
+  m_same_z_age->setChecked( nucs_of_el_same_age );
+
+  
+  // Update the nuclide widgets
+  for( size_t curve_index = 0; curve_index < num_rel_eff_curves; ++curve_index )
+  {
+    // Clear the nuclides from the GUI for this Rel Eff curve
+    WMenuItem *item = m_rel_eff_nuclides_menu->itemAt( static_cast<int>(curve_index) );
+    assert( item );
+    WContainerWidget *content = dynamic_cast<WContainerWidget *>( item->contents() );
+    assert( content );
+    if( content )
+      content->clear();
+
+    // Add the nuclides to the GUI for this Rel Eff curve
+    const vector<RelActCalcAuto::NucInputInfo> &nuclides = options.rel_eff_curves[curve_index].nuclides;
+    for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
+    {
+      const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
+      
+      RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, content );
+      nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
+      nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
+                                              this, static_cast<WWidget *>(nuc_widget) ) );
+      nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
+      nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
+      nuc_widget->fromNucInputInfo( nuc );
+
+      assert( curve_index < options.rel_eff_curves.size() );
+      const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[curve_index];
+      for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint : rel_eff.act_ratio_constraints )
+      {
+        if( constraint.constrained_source == nuc.source )
+          nuc_widget->addActRatioConstraint( constraint );
+      }//for( const auto &constraint : nuc.act_ratio_constraints )
+
+      if( const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source) )
+      {
+        for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff.mass_fraction_constraints )
+        {
+          if( constraint.nuclide == nuc_nuclide )
+            nuc_widget->addMassFractionConstraint( constraint );
+        }//for( const auto &constraint : nuc.mass_fraction_constraints )  
+      }//if( nuc_nuclide )
+    }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
+  }//for( loop over curve_index )
+
   
   m_energy_ranges->clear();
   for( const RelActCalcAuto::RoiRange &roi : options.rois )
   {
-    RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+    RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
     
     energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     
     energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                                 this, static_cast<WWidget *>(energy_range) ) );
+    energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     
     energy_range->setFromRoiRange( roi );
   }//for( const RelActCalcAuto::RoiRange &roi : rois )
@@ -2859,18 +1957,42 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   for( const RelActCalcAuto::FloatingPeak &peak : options.floating_peaks )
     handleAddFreePeak( peak.energy, !peak.release_fwhm, peak.apply_energy_cal_correction );
   
+  handleNuclidesChanged();
   
-  // We will be a bit cheap here, and set one entry in pu correlation selector, and then
-  //  rely on `updateDuringRenderForNuclideChange()` to input all the actual options
-  m_pu_corr_method->setHidden( rel_eff.pu242_correlation_method == RelActCalc::PuCorrMethod::NotApplicable );
-  m_pu_corr_method->clear();
-  m_pu_corr_method->addItem( RelActCalc::to_description(rel_eff.pu242_correlation_method) );
-  m_pu_corr_method->setCurrentIndex( 0 );
-  if( m_pu_corr_method->label() )
-    m_pu_corr_method->label()->setHidden( m_pu_corr_method->isHidden() );
+  // Make sure all
+  updateMultiPhysicalModelUI( nullptr, nullptr );
+  
+  // Just to make sure if we have multie Phys Model curves, and they should all have the same
+  //  external shieldings, we will enforce that, even though its probably already true.
+  vector<const RelEffShieldWidget *> phys_model_ext_attens;
+  if( options.same_external_shielding_for_all_rel_eff_curves )
+  {
+    for( int i = 0; i < num_rel_eff_curves; ++i )
+    {
+      RelActAutoGuiRelEffOptions *rel_eff_opts = getRelEffCurveOptions(i);
+      if( rel_eff_opts && (rel_eff_opts->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      {
+        phys_model_ext_attens = rel_eff_opts->externalAttenWidgets();
+        break;
+      }
+    }//for( int i = 0; i < num_rel_eff_curves; ++i )
+  }//if( options.same_external_shielding_for_all_rel_eff_curves )
   
   
-  
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *rel_eff_opts = getRelEffCurveOptions(i);
+    assert( rel_eff_opts );
+    if( !rel_eff_opts || (rel_eff_opts->rel_eff_eqn_form() != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      continue;
+    
+    rel_eff_opts->setPhysModelSameHoerlOnAllCurves( options.same_hoerl_for_all_rel_eff_curves );
+    rel_eff_opts->setPhysModelSameExtShieldAllCurves( options.same_external_shielding_for_all_rel_eff_curves );
+    
+    if( options.same_external_shielding_for_all_rel_eff_curves )
+      rel_eff_opts->update_external_atten_shield_widget( phys_model_ext_attens );
+  }//for( int i = 0; i < num_rel_eff_curves; ++i )
+
   // options.spectrum_title
   m_render_flags |= RenderActions::UpdateNuclidesPresent;  //To trigger calling `updateDuringRenderForNuclideChange()`
   m_render_flags |= RenderActions::UpdateCalculations;
@@ -2887,14 +2009,14 @@ void RelActAutoGui::handleToggleForceFullRange( Wt::WWidget *w )
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges!" << endl;
+    cerr << "Failed to find a RelActAutoGuiEnergyRange in m_energy_ranges!" << endl;
     assert( 0 );
     return;
   }
   
-  assert( dynamic_cast<RelActAutoEnergyRange *>(w) );
+  assert( dynamic_cast<RelActAutoGuiEnergyRange *>(w) );
   
-  RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>(w);
+  RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>(w);
   assert( roi );
   if( !roi )
     return;
@@ -2916,13 +2038,13 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
   const auto right_pos = std::find( begin(kids), end(kids), right_roi );
   if( (left_pos == end(kids)) || (right_pos == end(kids)) )
   {
-    cerr << "Failed to find left or right RelActAutoEnergyRange in m_energy_ranges!" << endl;
+    cerr << "Failed to find left or right RelActAutoGuiEnergyRange in m_energy_ranges!" << endl;
     assert( 0 );
     return nullptr;
   }
   
-  RelActAutoEnergyRange *left_range = dynamic_cast<RelActAutoEnergyRange *>(left_roi);
-  RelActAutoEnergyRange *right_range = dynamic_cast<RelActAutoEnergyRange *>(right_roi);
+  RelActAutoGuiEnergyRange *left_range = dynamic_cast<RelActAutoGuiEnergyRange *>(left_roi);
+  RelActAutoGuiEnergyRange *right_range = dynamic_cast<RelActAutoGuiEnergyRange *>(right_roi);
   
   assert( left_range && right_range );
   if( !left_range || !right_range )
@@ -3058,9 +2180,27 @@ void RelActAutoGui::handlePresetChange()
   
   m_current_preset_index = index;
   
-  m_nuclides->clear();
   m_energy_ranges->clear();
   
+  while( m_rel_eff_opts_menu->count() > 1 )
+  {
+    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( m_rel_eff_opts_menu->count() - 1 );
+    assert( opts );
+    handleDelRelEffCurve( opts );
+  } 
+
+  assert( m_rel_eff_opts_menu->count() == 1 );
+  assert( m_rel_eff_nuclides_menu->count() == 1 );
+  for( int i = 0; i < m_rel_eff_nuclides_menu->count(); ++i )
+  {
+    WMenuItem *item = m_rel_eff_nuclides_menu->itemAt( i );
+    assert( item );
+    WContainerWidget *content = dynamic_cast<WContainerWidget *>( item->contents() );
+    assert( content );
+    if( content )
+      content->clear();
+  }
+
   if( index <= 0 )
   {
     // Clear everything out!
@@ -3070,9 +2210,6 @@ void RelActAutoGui::handlePresetChange()
   if( index >= m_preset_paths.size() )
   {
     // TODO: let users download config, or clone them
-    
-    m_nuclides->clear();
-    m_energy_ranges->clear();
     
     const auto iter = m_previous_presets.find(index);
     if( iter == std::end(m_previous_presets) )
@@ -3138,14 +2275,115 @@ void RelActAutoGui::handlePresetChange()
 }//void RelActAutoGui::handlePresetChange()
 
 
-void RelActAutoGui::handleRelEffEqnFormChanged()
+void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 {
-  showAndHideOptionsForEqnType();
+  //for( int i = 0; i < m_rel_eff_opts_stack->count(); ++i )
+ // {
+ //   RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( i );
+ //   assert( opts );
+ //   opts->showAndHideOptionsForEqnType();
+ // }
+  
+  // Update the UI based on the number of physical model curves
+  updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
+  
+  if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    vector<const RelEffShieldWidget *> ext_shields;
+    bool same_hoerl = false, same_ext_shield = false, use_hoerl = false;
+  
+    const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+    for( int i = 0; i < num_rel_eff_curves; ++i )
+    {
+      RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+      assert( options );
+      if( options && (options != rel_eff_curve_gui) && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      {
+        same_hoerl = options->physModelSameHoerlOnAllCurves();
+        same_ext_shield = options->physModelSameExtShieldAllCurves();
+        if( same_ext_shield )
+          ext_shields = options->externalAttenWidgets();
+        break; //
+      }
+    }//for( int i = 0; i < num_rel_eff_curves; ++i )
+    
+    rel_eff_curve_gui->setPhysModelSameHoerlOnAllCurves( same_hoerl );
+    rel_eff_curve_gui->setPhysModelSameExtShieldAllCurves( same_ext_shield );
+    
+    if( same_hoerl )
+      rel_eff_curve_gui->setPhysModelUseHoerl( use_hoerl );
+    if( same_ext_shield )
+      rel_eff_curve_gui->update_external_atten_shield_widget( ext_shields );
+  }//if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
-}//void handleRelEffEqnFormChanged();
+}//void handleRelEffEqnTypeChanged();
+
+
+void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+{
+  assert( rel_eff_curve_gui );
+  if( !rel_eff_curve_gui )
+    return;
+  
+  // Show/hide physical model elements
+  updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
+  
+  const bool same_hoerl = rel_eff_curve_gui->physModelSameHoerlOnAllCurves();
+  const bool use_hoerl = rel_eff_curve_gui->phys_model_use_hoerl();
+  
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    assert( options );
+    if( !options )
+      continue;
+    
+    options->setPhysModelSameHoerlOnAllCurves( same_hoerl );
+    if( same_hoerl )
+      options->setPhysModelUseHoerl( use_hoerl );
+  }//for( int i = 0; i < num_rel_eff_curves; ++i )
+  
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+
+
+void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+{
+  assert( rel_eff_curve_gui );
+  if( !rel_eff_curve_gui )
+    return;
+  
+  updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
+  
+  const bool same_shield = rel_eff_curve_gui->physModelSameExtShieldAllCurves();
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  
+  for( int i = 0; i < num_rel_eff_curves; ++i )
+  {
+    RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+    assert( options );
+    if( !options || (options == rel_eff_curve_gui) )
+      continue;
+    
+    options->setPhysModelSameExtShieldAllCurves( same_shield );
+    if( same_shield && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+    {
+      const vector<const RelEffShieldWidget *> ext_atten_widgets = rel_eff_curve_gui->externalAttenWidgets();
+      options->update_external_atten_shield_widget( ext_atten_widgets );
+    }
+  }//for( int i = 0; i < num_rel_eff_curves; ++i )
+  
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
 
 void RelActAutoGui::handleRelEffEqnOrderChanged()
@@ -3199,10 +2437,74 @@ void RelActAutoGui::handleBackgroundSubtractChanged()
 
 void RelActAutoGui::handleSameAgeChanged()
 {
-  checkIfInUserConfigOrCreateOne( false );
-  m_render_flags |= RenderActions::UpdateCalculations;
-  scheduleRender();
-}
+  DoWorkOnDestruct do_work( [&](){
+    checkIfInUserConfigOrCreateOne( false );
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  } );
+
+
+  if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+    return;
+
+  // Go through and set the the ages of all nuclides of each element to the same value.
+  //  We will just use the age of the first nuclide of each element.
+  std::map<short int, WString> z_to_age;
+  std::map<short int, bool> z_to_fit_age;
+  vector<pair<const SandiaDecay::Nuclide *, RelActAutoGuiNuclide *>> srcs_with_nuclides;
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+  {
+    const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+    {
+      assert( src_widget );
+      if( !src_widget )
+        continue;
+
+      const RelActCalcAuto::SrcVariant src_info = src_widget->source(); 
+      const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
+      if( !nuclide )
+        continue;
+
+      srcs_with_nuclides.push_back( std::make_pair( nuclide, src_widget ) );
+
+      const short int atomicNumber = nuclide->atomicNumber;
+    
+      const WString orig_age_str = src_widget->ageStr();
+
+      if( !z_to_fit_age.count(atomicNumber) )
+        z_to_fit_age[atomicNumber] = false;
+      z_to_fit_age[atomicNumber] |= src_widget->fitAge();
+    
+      if( !z_to_age.count(atomicNumber) )
+      {
+        // We are on first nuclide of this element, so we dont need to update its age.
+        z_to_age[atomicNumber] = orig_age_str;
+      }else
+      {
+        const WString &age_str = z_to_age[atomicNumber];
+        if( orig_age_str != age_str )
+          src_widget->setAge( age_str );
+      }
+    }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+
+  // If any nuclides age is being fit, then all nuclides of that element should be fit. 
+  for( const pair<const SandiaDecay::Nuclide *, RelActAutoGuiNuclide *> &nuc_pair : srcs_with_nuclides )
+  {
+    const SandiaDecay::Nuclide * const nuclide = nuc_pair.first;
+    RelActAutoGuiNuclide * const nuc_widget = nuc_pair.second;
+    const short int atomicNumber = nuclide->atomicNumber;
+    assert( z_to_fit_age.count(atomicNumber) );
+    if( !z_to_fit_age.count(atomicNumber) )
+      continue;
+
+    const bool fit_age = z_to_fit_age[atomicNumber];
+    if( fit_age )
+      nuc_widget->setFitAge( fit_age );
+  }//for( loop over srcs_with_nuclides )
+}//void RelActAutoGui::handleSameAgeChanged()
+
 
 void RelActAutoGui::handlePuByCorrelationChanged()
 {
@@ -3229,18 +2531,108 @@ void RelActAutoGui::handleNucDataSrcChanged()
 void RelActAutoGui::handleNuclidesChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
+
+  // We could pick out just the Rel Eff curve that changed, and update those sources, but its
+  //  cheap enough that we'll just update everything so we dont miss a corner case somewhere or something.
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+  {
+    const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+    {
+      assert( src_widget );
+      if( src_widget )
+        src_widget->updateAllowedConstraints();
+    }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleNuclidesChanged()
 
 
-void RelActAutoGui::handleNuclidesInfoEdited()
+void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool fit_age )
 {
-  checkIfInUserConfigOrCreateOne( false );
-  m_render_flags |= RenderActions::UpdateCalculations;
-  scheduleRender();
-}//void handleNuclidesInfoEdited()
+  DoWorkOnDestruct do_work( [&](){
+    checkIfInUserConfigOrCreateOne( false );
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  } );
+    
+  if( !nuc )
+    return;
+
+  if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+    return;
+  
+  const RelActCalcAuto::SrcVariant src_info = nuc->source();
+  const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(src_info);
+  if( !nuclide )
+    return;
+
+  const short int atomicNumber = nuclide->atomicNumber;
+
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+  {
+    const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+    {
+      assert( src_widget );
+      if( !src_widget )
+        continue;
+
+      const RelActCalcAuto::SrcVariant this_src_info = src_widget->source();
+      const SandiaDecay::Nuclide * const this_nuclide = RelActCalcAuto::nuclide(this_src_info);
+      if( this_nuclide && (this_nuclide->atomicNumber == atomicNumber) )
+        src_widget->setFitAge( fit_age );
+    }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+}//void handleNuclideFitAgeChanged()
+
+
+void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
+{
+  DoWorkOnDestruct do_work( [&](){
+    checkIfInUserConfigOrCreateOne( false );
+    m_render_flags |= RenderActions::UpdateCalculations;
+    scheduleRender();
+  } );
+
+  
+  if( !nuc || !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+    return;
+
+  const RelActCalcAuto::SrcVariant src_info = nuc->source();
+  const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(src_info);
+  if( !nuclide )
+    return;
+
+  const bool fit_age = nuc->fitAge();
+  const WString age_str = nuc->ageStr();
+  const pair<WString,WString> age_range = nuc->ageRangeStr();
+
+  const short int atomicNumber = nuclide->atomicNumber;
+  
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+  {
+    const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+    {
+      assert( src_widget );
+      if( !src_widget )
+        continue;
+
+      const RelActCalcAuto::SrcVariant this_src_info = src_widget->source();
+      const SandiaDecay::Nuclide * const this_nuclide = RelActCalcAuto::nuclide(this_src_info);
+      if( !this_nuclide || (this_nuclide->atomicNumber != atomicNumber) )
+        continue;
+
+      src_widget->setAge( age_str );
+      if( fit_age )
+        src_widget->setAgeRange( age_range.first, age_range.second );
+    }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+}//void handleNuclideAgeChanged()
 
 
 void RelActAutoGui::handleEnergyRangeChange()
@@ -3278,12 +2670,12 @@ void RelActAutoGui::setOptionsForNoSolution()
 
   makeZeroAmplitudeRoisToChart();
   m_set_peaks_foreground->setDisabled( true );
-
-  m_rel_eff_chart->setData( 0.0, {}, {}, "", "" );
+  
+  m_rel_eff_chart->setData( RelEffChart::ReCurveInfo{} );
 
   for( WWidget *w : m_energy_ranges->children() )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi )
       roi->enableSplitToIndividualRanges( false );
@@ -3305,7 +2697,7 @@ void RelActAutoGui::setOptionsForValidSolution()
   
   for( WWidget *w : m_energy_ranges->children() )
   {
-    RelActAutoEnergyRange *roi = dynamic_cast<RelActAutoEnergyRange *>( w );
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( !roi )
       continue;
@@ -3362,57 +2754,80 @@ void RelActAutoGui::makeZeroAmplitudeRoisToChart()
 }//void RelActAutoGui::makeZeroAmplitudeRoisToChart()
 
 
-void RelActAutoGui::handleAddNuclide()
+RelActAutoGuiNuclide *RelActAutoGui::addNuclideForRelEffCurve( const int rel_eff_index )
 {
-  const vector<WWidget *> prev_kids = m_nuclides->children();
+  const vector<RelActAutoGuiNuclide *> prev_nuc_widgets = getNuclideDisplays( rel_eff_index );
+  WMenuItem *rel_eff_item = m_rel_eff_nuclides_menu->itemAt( rel_eff_index );
+  assert( rel_eff_item );
+  WContainerWidget *nuc_container = rel_eff_item ? dynamic_cast<WContainerWidget *>( rel_eff_item->contents() ) : nullptr;
+  assert( nuc_container );
+  if( !nuc_container )
+    return nullptr;
   
-  RelActAutoNuclide *nuc_widget = new RelActAutoNuclide( this, m_nuclides );
+  
+  RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, nuc_container );
   nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
   nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
-                                              this, static_cast<WWidget *>(nuc_widget) ) );
+                                            this, static_cast<WWidget *>(nuc_widget) ) );
+  nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
+  nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
   nuc_widget->setNuclideEditFocus();
   
   shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
   if( theme )
   {
     vector<WColor> colors = theme->referenceLineColor;
+    if( colors.empty() )
+      colors = ReferencePhotopeakDisplay::sm_def_line_colors;
     
-    for( WWidget *w : prev_kids )
+    for( int i = 0; i < m_rel_eff_nuclides_menu->count(); ++i )
     {
-      RelActAutoNuclide *nuc = dynamic_cast<RelActAutoNuclide *>( w );
-      assert( nuc );
-      if( !nuc )
-        continue;
-      
-      const WColor color = nuc->color();
-      const auto pos = std::find( begin(colors), end(colors), color );
-      if( pos != end(colors) )
-        colors.erase( pos );
+      const vector<RelActAutoGuiNuclide *> src_widgets = getNuclideDisplays( i );
+      for( RelActAutoGuiNuclide *src_widget : src_widgets )
+      {
+        const WColor color = src_widget->color();
+        if( std::find( begin(colors), end(colors), color ) != end(colors) )
+          colors.erase( std::find( begin(colors), end(colors), color ) );
+      }
     }
     
     if( colors.size() )
       nuc_widget->setColor( colors.front() );
   }//if( theme )
   
+  return nuc_widget;
+}//RelActAutoGuiNuclide *addNuclideForRelEffCurve( const int rel_eff_index )
+
+
+void RelActAutoGui::handleAddNuclideForCurrentRelEffCurve()
+{
+  const int rel_eff_index = m_rel_eff_nuclides_menu->currentIndex();
+  RelActAutoGuiNuclide * const nuc_widget = addNuclideForRelEffCurve( rel_eff_index );
+  
+  assert( nuc_widget );
+  if( !nuc_widget )
+    return;
   
   checkIfInUserConfigOrCreateOne( false );
-  m_render_flags |= RenderActions::UpdateNuclidesPresent;
-  m_render_flags |= RenderActions::UpdateCalculations;
-  scheduleRender();
-}//void handleAddNuclide()
+  
+  // If we just added a blank source widget - no need to trigger a calc update
+  //m_render_flags |= RenderActions::UpdateNuclidesPresent;
+  //m_render_flags |= RenderActions::UpdateCalculations;
+  //scheduleRender();
+}//void handleAddNuclideForCurrentRelEffCurve()
 
 
 void RelActAutoGui::handleAddEnergy()
 {
   const int nprev = m_energy_ranges->count();
   
-  RelActAutoEnergyRange *energy_range = new RelActAutoEnergyRange( this, m_energy_ranges );
+  RelActAutoGuiEnergyRange *energy_range = new RelActAutoGuiEnergyRange( m_energy_ranges );
   
   energy_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
   
   energy_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                       this, static_cast<WWidget *>(energy_range) ) );
-  
+  energy_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
   if( nprev == 0 )
   {
     const auto cal = m_foreground ? m_foreground->energy_calibration() : nullptr;
@@ -3483,12 +2898,12 @@ void RelActAutoGui::handleRemoveFreePeak( Wt::WWidget *w )
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActFreePeak in m_free_peaks!" << endl;
+    cerr << "Failed to find a RelActAutoGuiFreePeak in m_free_peaks!" << endl;
     assert( 0 );
     return;
   }
   
-  assert( dynamic_cast<RelActFreePeak *>(w) );
+  assert( dynamic_cast<RelActAutoGuiFreePeak *>(w) );
   
   delete w;
   
@@ -3508,12 +2923,12 @@ void RelActAutoGui::handleRemoveEnergy( WWidget *w )
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges!" << endl;
+    cerr << "Failed to find a RelActAutoGuiEnergyRange in m_energy_ranges!" << endl;
     assert( 0 );
     return;
   }
   
-  assert( dynamic_cast<RelActAutoEnergyRange *>(w) );
+  assert( dynamic_cast<RelActAutoGuiEnergyRange *>(w) );
   
   delete w;
   
@@ -3532,7 +2947,7 @@ void RelActAutoGui::handleSplitEnergyRange( Wt::WWidget *w, const double energy 
 
 void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
 {
-  RelActAutoEnergyRange *energy_range = dynamic_cast<RelActAutoEnergyRange *>(w);
+  RelActAutoGuiEnergyRange *energy_range = dynamic_cast<RelActAutoGuiEnergyRange *>(w);
   assert( energy_range );
   
   const shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_solution;
@@ -3624,9 +3039,10 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     
     for( const RelActCalcAuto::RoiRange &range : to_ranges )
     {
-      RelActAutoEnergyRange *roi = new RelActAutoEnergyRange( this );
+      RelActAutoGuiEnergyRange *roi = new RelActAutoGuiEnergyRange();
       roi->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
       roi->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(roi) ) );
+      roi->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
       
       roi->setFromRoiRange( range );
       roi->setForceFullRange( true );
@@ -3650,7 +3066,7 @@ void RelActAutoGui::handleAddFreePeak( const double energy, const bool constrain
   if( m_free_peaks_container->isHidden() )
     handleShowFreePeaks();
   
-  RelActFreePeak *peak = new RelActFreePeak( this, m_free_peaks );
+  RelActAutoGuiFreePeak *peak = new RelActAutoGuiFreePeak( m_free_peaks );
   peak->updated().connect( this, &RelActAutoGui::handleFreePeakChange );
   peak->remove().connect( boost::bind( &RelActAutoGui::handleRemoveFreePeak, this, static_cast<WWidget *>(peak) ) );
   peak->setEnergy( static_cast<float>(energy) );
@@ -3677,13 +3093,13 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
   const auto pos = std::find( begin(kids), end(kids), w );
   if( pos == end(kids) )
   {
-    cerr << "Failed to find a RelActAutoEnergyRange in m_energy_ranges (handleRemovePartOfEnergyRange)!" << endl;
+    cerr << "Failed to find a RelActAutoGuiEnergyRange in m_energy_ranges (handleRemovePartOfEnergyRange)!" << endl;
     assert( 0 );
     return;
   }
   
   const int orig_w_index = pos - begin( kids );
-  RelActAutoEnergyRange *range = dynamic_cast<RelActAutoEnergyRange *>( w );
+  RelActAutoGuiEnergyRange *range = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
   assert( range );
   if( !range )
     return;
@@ -3715,15 +3131,17 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
   
   if( is_in_middle )
   {
-    RelActAutoEnergyRange *left_range = new RelActAutoEnergyRange( this );
+    RelActAutoGuiEnergyRange *left_range = new RelActAutoGuiEnergyRange();
     left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                               this, static_cast<WWidget *>(left_range) ) );
+    left_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     
-    RelActAutoEnergyRange *right_range = new RelActAutoEnergyRange( this );
+    RelActAutoGuiEnergyRange *right_range = new RelActAutoGuiEnergyRange();
     right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                                this, static_cast<WWidget *>(right_range) ) );
+    right_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     
     left_range->setFromRoiRange( roi );
     right_range->setFromRoiRange( roi );
@@ -3736,10 +3154,11 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     // TODO: we could split PeakModels ROI peaks here and set them to provide instant feedback during computation
   }else if( is_left )
   {
-    RelActAutoEnergyRange *right_range = new RelActAutoEnergyRange( this );
+    RelActAutoGuiEnergyRange *right_range = new RelActAutoGuiEnergyRange();
     right_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     right_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                                this, static_cast<WWidget *>(right_range) ) );
+    right_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     right_range->setEnergyRange( upper_energy, roi.upper_energy );
     right_range->setFromRoiRange( roi );
     m_energy_ranges->insertWidget( orig_w_index, right_range );
@@ -3747,10 +3166,11 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     // TODO: we could update PeakModels peaks/range here and set them to provide instant feedback during computation
   }else if( is_right )
   {
-    RelActAutoEnergyRange *left_range = new RelActAutoEnergyRange( this );
+    RelActAutoGuiEnergyRange *left_range = new RelActAutoGuiEnergyRange();
     left_range->updated().connect( this, &RelActAutoGui::handleEnergyRangeChange );
     left_range->remove().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy,
                                               this, static_cast<WWidget *>(left_range) ) );
+    left_range->splitRangesRequested().connect( boost::bind(&RelActAutoGui::handleConvertEnergyRangeToIndividuals, this, boost::placeholders::_1) );
     left_range->setFromRoiRange( roi );
     left_range->setEnergyRange( roi.lower_energy, lower_energy );
     m_energy_ranges->insertWidget( orig_w_index, left_range );
@@ -3767,18 +3187,49 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
   if( !w )
     return;
   
-  assert( dynamic_cast<RelActAutoNuclide *>(w) );
-  
-  const std::vector<WWidget *> &kids = m_nuclides->children();
-  const auto pos = std::find( begin(kids), end(kids), w );
-  if( pos == end(kids) )
+  RelActAutoGuiNuclide *src_widget = dynamic_cast<RelActAutoGuiNuclide *>(w);
+  assert( src_widget );
+
+  if( !src_widget )
   {
-    cerr << "Failed to find a RelActAutoNuclide in m_nuclides!" << endl;
+    cerr << "Failed to cast WWidget to RelActAutoGuiNuclide!" << endl;
+    assert( 0 );
+    return;
+  }
+  
+  bool found_widget = false;
+  const int num_rel_effs = m_rel_eff_nuclides_menu->count();
+  for( int rel_eff_index = 0; !found_widget && (rel_eff_index < num_rel_effs); ++rel_eff_index )
+  {
+    const vector<RelActAutoGuiNuclide *> src_widgets = getNuclideDisplays( rel_eff_index );
+    const auto pos = std::find( begin(src_widgets), end(src_widgets), src_widget );
+    if( pos != end(src_widgets) )
+    {
+      found_widget = true;
+      break;
+    }
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+  
+  if( !found_widget )
+  {
+    cerr << "Failed to find a RelActAutoGuiNuclide Widget to remove!" << endl;
     assert( 0 );
     return;
   }
   
   delete w;
+
+  for( int rel_eff_index = 0; rel_eff_index < num_rel_effs; ++rel_eff_index )
+  {
+    const vector<RelActAutoGuiNuclide *> src_widgets = getNuclideDisplays( rel_eff_index );
+    for( RelActAutoGuiNuclide *src : src_widgets )
+    {
+      assert( src );
+      if( src )
+         src->updateAllowedConstraints();
+    }//for( RelActAutoGuiNuclide * src : src_widgets )
+  }//for( int rel_eff_index = 0; rel_eff_index < num_rel_effs; ++rel_eff_index )
+
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
@@ -4159,71 +3610,33 @@ void RelActAutoGui::setPeaksToForeground()
 }//void setPeaksToForeground()
 
 
-void RelActAutoGui::initPhysModelShields()
+void RelActAutoGui::handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions *curve )
 {
-  if( m_phys_model_self_atten )
+  // Check if we need to keep the Physical Models external shieldings in sync.
+  if( curve && (curve->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
   {
-    m_phys_model_self_atten->resetState();
-  }else
-  {
-    m_phys_model_self_atten = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::SelfAtten );
-    m_phys_model_shields->insertWidget( 0, m_phys_model_self_atten );
-    m_phys_model_self_atten->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
-  }
+    const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+    
+    for( int i = 0; i < num_rel_eff_curves; ++i )
+    {
+      RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
+      assert( options );
+      if( options && (options != curve)
+         && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
+      {
+        if( curve->physModelSameExtShieldAllCurves() )
+          options->update_external_atten_shield_widget( curve->externalAttenWidgets() );
+        if( curve->physModelSameHoerlOnAllCurves() )
+          options->setPhysModelUseHoerl( curve->phys_model_use_hoerl() );
+      }
+    }//for( int i = 0; i < num_rel_eff_curves; ++i )
+  }//if( we need to make sure to keep external shieldings in sync )
   
-  vector<RelEffShieldWidget *> starting_ext_shields;
-  const vector<WWidget *> &ext_atten_widgets = m_phys_ext_attens->children();
-  for( WWidget *w : ext_atten_widgets )
-  {
-    RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
-    assert( sw );
-    if( sw )
-      starting_ext_shields.push_back( sw );
-  }
-  
-  if( starting_ext_shields.empty() )
-  {
-    RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten,
-                                                    m_phys_ext_attens );
-    sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
-  }else
-  {
-    starting_ext_shields[0]->resetState();
-    for( size_t i = 1; i < starting_ext_shields.size(); ++i )
-      delete starting_ext_shields[i];
-  }//if( starting_ext_shields.empty() )
-}//void initPhysModelShields()
-
-
-void RelActAutoGui::handlePhysModelUseHoerlChange()
-{
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
-}//void handlePhysModelUseHoerlChange()
+}//void handleRelEffModelOptionsChanged()
 
-
-void RelActAutoGui::handlePhysModelShieldChange()
-{
-  checkIfInUserConfigOrCreateOne( false );
-  m_render_flags |= RenderActions::UpdateCalculations;
-  scheduleRender();
-}//void handlePhysModelShieldChange()
-
-
-void RelActAutoGui::showAndHideOptionsForEqnType()
-{
-  const RelActCalc::RelEffEqnForm eqn_type
-                  = RelActCalc::RelEffEqnForm( std::max( 0, m_rel_eff_eqn_form->currentIndex() ) );
-  
-  const bool is_physical = (eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel);
-  
-  m_rel_eff_eqn_order->setDisabled( is_physical );
-  m_rel_eff_eqn_order_label->setDisabled( is_physical );
-  m_phys_model_opts->setHidden( !is_physical );
-  if( is_physical && !m_phys_model_self_atten )
-    initPhysModelShields();
-}//void showAndHideOptionsForEqnType()
 
 
 void RelActAutoGui::handleDetectorChange()
@@ -4238,6 +3651,242 @@ void RelActAutoGui::handleDetectorChange()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void RelActAutoGui::handleDetectorChange()
+
+
+void RelActAutoGui::handleAddRelEffCurve()
+{ 
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+
+  set<string> existing_curve_names;
+  for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+  {
+    WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+    existing_curve_names.insert( this_item->text().toUTF8() );
+  }
+
+  string name;
+  for( int index = 0; index < 10; ++index )
+  {
+    name = "Curve " + std::to_string(index);
+    if( !existing_curve_names.count(name) )
+      break;
+  }
+
+  // First we'll add the curve to the RelEffCurveOptsMenu/Stack
+  RelActAutoGuiRelEffOptions *rel_eff_curve = new RelActAutoGuiRelEffOptions( this, name, nullptr );  
+  WMenuItem *item = new WMenuItem( name, rel_eff_curve, WMenuItem::LoadPolicy::PreLoading );
+  m_rel_eff_opts_menu->addItem( item );
+  assert( item->contents() == static_cast<WWidget *>(rel_eff_curve) );
+  
+  // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
+  item->clicked().connect( std::bind([this,item](){
+    m_rel_eff_opts_menu->select( item );
+    item->triggered().emit( item );
+  }) );
+
+  rel_eff_curve->addRelEffCurve().connect( this, &RelActAutoGui::handleAddRelEffCurve );
+  rel_eff_curve->delRelEffCurve().connect( boost::bind( &RelActAutoGui::handleDelRelEffCurve, this, boost::placeholders::_1 ) );
+  rel_eff_curve->nameChanged().connect( this, &RelActAutoGui::handleRelEffCurveNameChanged );
+  rel_eff_curve->optionsChanged().connect( boost::bind( &RelActAutoGui::handleRelEffModelOptionsChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->equationTypeChanged().connect( boost::bind( &RelActAutoGui::handleRelEffEqnTypeChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameHoerlOnAllCurvesChanged, this, boost::placeholders::_1 ) );
+  rel_eff_curve->sameExternalShieldingChanged().connect( boost::bind( &RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged, this, boost::placeholders::_1 ) );
+
+  const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
+
+  m_rel_eff_opts_menu->setHidden( single_curve );
+  m_rel_eff_nuclides_menu->setHidden( single_curve );
+
+  for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+  {
+    WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+    RelActAutoGuiRelEffOptions *this_curve = dynamic_cast<RelActAutoGuiRelEffOptions *>( this_item->contents() );
+    assert( this_curve );
+    if( this_curve )
+      this_curve->setIsOnlyOneRelEffCurve( single_curve );
+  }
+
+
+  // Now we'll add the nuclides to the RelEffNuclidesMenu/Stack
+  WContainerWidget *nuclides_content = new WContainerWidget();
+  nuclides_content->addStyleClass( "EnergyNucContent" );
+  
+  WMenuItem *nuc_item = new WMenuItem( name, nuclides_content, WMenuItem::LoadPolicy::PreLoading );
+  m_rel_eff_nuclides_menu->addItem( nuc_item );
+  assert( nuc_item->contents() == static_cast<WWidget *>(nuclides_content) );
+
+
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  
+  //const bool was_blocked = m_rel_eff_opts_menu->itemSelected().isBlocked();
+  //m_rel_eff_opts_menu->itemSelected().setBlocked( true );
+  //m_rel_eff_nuclides_menu->itemSelected().setBlocked( true );
+  
+  m_rel_eff_opts_menu->select( item );
+  m_rel_eff_nuclides_menu->select( nuc_item );
+  
+  //m_rel_eff_opts_menu->itemSelected().setBlocked( was_blocked );
+  //m_rel_eff_nuclides_menu->itemSelected().setBlocked( was_blocked );
+  
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+
+  // Update the UI based on the number of physical model curves
+  updateMultiPhysicalModelUI( nullptr, rel_eff_curve );
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleAddRelEffCurve( RelActAutoGuiRelEffOptions *curve )
+
+
+void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
+{
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+
+  assert( curve );
+  if( !curve )
+    return;
+
+  assert( m_rel_eff_opts_menu->count() > 1 ); 
+  if( m_rel_eff_opts_menu->count() <= 1 )
+    return;
+
+  int index_to_remove = 0;
+  WMenuItem *item = nullptr;
+  for( int index = 0; !item && (index < m_rel_eff_opts_menu->count()); ++index )
+  {
+    WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+    if( this_item->contents() == curve )
+    {
+      item = this_item;
+      index_to_remove = index;
+    }
+  }
+  
+  assert( item );
+  if( !item )
+    return;
+
+  m_rel_eff_opts_menu->removeItem( item );
+  delete curve;
+  delete item;
+
+  WMenuItem *nuc_item = m_rel_eff_nuclides_menu->itemAt( index_to_remove );
+  assert( nuc_item );
+  if( nuc_item )
+  {
+    WContainerWidget *nuc_content = dynamic_cast<WContainerWidget *>( nuc_item->contents() );
+    assert( nuc_content );
+
+    m_rel_eff_nuclides_menu->removeItem( nuc_item );
+    delete nuc_content;
+    delete nuc_item;
+    nuc_item = nullptr;
+  }
+
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+  if( m_rel_eff_opts_menu->count() != m_rel_eff_nuclides_menu->count() )
+    throw logic_error( "Different number of Rel. Eff. curves options, and groups of nuclides." );
+  
+  const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
+  m_rel_eff_opts_menu->setHidden( single_curve );
+  m_rel_eff_nuclides_menu->setHidden( single_curve );
+  
+  for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+  {
+    WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+    RelActAutoGuiRelEffOptions *this_curve = dynamic_cast<RelActAutoGuiRelEffOptions *>( this_item->contents() );
+    assert( this_curve );
+    if( this_curve )
+      this_curve->setIsOnlyOneRelEffCurve( single_curve );
+  }
+
+  m_rel_eff_opts_menu->select( -1 );
+  m_rel_eff_nuclides_menu->select( -1 );
+  
+  m_rel_eff_opts_menu->select( m_rel_eff_opts_menu->count() - 1 );
+  m_rel_eff_nuclides_menu->select( m_rel_eff_nuclides_menu->count() - 1 );
+  
+  // Update the UI based on the number of physical model curves
+  updateMultiPhysicalModelUI( nullptr, nullptr );
+  
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
+
+
+void RelActAutoGui::handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name )
+{
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+  assert( m_rel_eff_nuclides_menu->currentIndex() == m_rel_eff_opts_menu->currentIndex() );
+
+  assert( curve );
+  if( !curve )
+    return;
+
+  assert( curve->name() == name );
+  
+  int changed_index = 0;
+  WMenuItem *item = nullptr;
+  for( int index = 0; !item && (index < m_rel_eff_opts_menu->count()); ++index )
+  {
+    WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+    if( this_item->contents() == curve )
+    {
+      item = this_item;
+      changed_index = index;
+    }
+  }
+  
+  assert( item );
+  if( !item )
+    return;
+
+  item->setText( name );
+
+  WMenuItem *nuc_changed_item = m_rel_eff_nuclides_menu->itemAt( changed_index );
+  assert( nuc_changed_item );
+  if( nuc_changed_item )
+    nuc_changed_item->setText( name );
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleRelEffCurveNameChanged( RelActAutoGuiRelEffOptions *curve, const Wt::WString &name )
+
+
+void RelActAutoGui::handleRelEffCurveOptionsSelected()
+{
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+
+  if( m_rel_eff_opts_menu->count() != m_rel_eff_nuclides_menu->count() )
+    throw logic_error( "Different number of Rel. Eff. curves options, and groups of nuclides." );
+  
+  int index = m_rel_eff_opts_menu->currentIndex();
+  assert( index >= 0 );
+  if( index < 0 )
+    index = 0;
+
+  m_rel_eff_nuclides_menu->select( index );
+}//void handleRelEffCurveOptionsSelected()
+
+
+void RelActAutoGui::handleRelEffNuclidesSelected()
+{
+  assert( m_rel_eff_opts_menu->count() == m_rel_eff_nuclides_menu->count() );
+
+  if( m_rel_eff_opts_menu->count() != m_rel_eff_nuclides_menu->count() )
+    throw logic_error( "Different number of Rel. Eff. curves options, and groups of nuclides." );
+  
+  int index = m_rel_eff_nuclides_menu->currentIndex();
+  assert( index >= 0 );
+  if( index < 0 )
+    index = 0;
+
+  m_rel_eff_opts_menu->select( index );
+}//void handleRelEffNuclidesSelected()
+
 
 
 Wt::Signal<> &RelActAutoGui::calculationStarted()
@@ -4426,6 +4075,109 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
 }//void handleRequestToUploadCALp();
 
 
+RelActAutoGuiRelEffOptions *RelActAutoGui::getRelEffCurveOptions( const int index )
+{
+  assert( m_rel_eff_opts_menu );
+  assert( index >= 0 );
+  assert( index < m_rel_eff_opts_menu->count() );
+  if( (index < 0) || (index >= m_rel_eff_opts_menu->count()) )
+    return nullptr;
+    
+  Wt::WMenuItem * const item = m_rel_eff_opts_menu->itemAt( index );
+  assert( item );
+  if( !item )
+    return nullptr;
+  
+  WWidget * const contents = item->contents();
+  assert( contents );
+  if( !contents )
+    return nullptr;
+  
+  RelActAutoGuiRelEffOptions *ptr = dynamic_cast<RelActAutoGuiRelEffOptions *>( contents );
+  if( !ptr )
+    throw runtime_error( "Failed to cast to RelActAutoGuiRelEffOptions" );
+
+  return ptr;
+}//RelActAutoGuiRelEffOptions *RelActAutoGui::getRelEffCurveOptions( const size_t index )
+
+
+const RelActAutoGuiRelEffOptions *RelActAutoGui::getRelEffCurveOptions( const int index ) const
+{
+  assert( m_rel_eff_opts_menu );
+  assert( index >= 0 );
+  assert( index < m_rel_eff_opts_menu->count() );
+  if( (index < 0) || (static_cast<int>(index) >= m_rel_eff_opts_menu->count()) )
+    return nullptr;
+  
+  Wt::WMenuItem * const item = m_rel_eff_opts_menu->itemAt( index );
+  assert( item );
+  if( !item )
+    return nullptr;
+  
+  const WWidget * const contents = item->contents();
+  assert( contents );
+  if( !contents )
+    return nullptr;
+  
+  const RelActAutoGuiRelEffOptions * const ptr = dynamic_cast<const RelActAutoGuiRelEffOptions *>( contents );
+  if( !ptr )
+    throw runtime_error( "Failed to cast to RelActAutoGuiRelEffOptions" );
+
+  return ptr;
+}//RelActAutoGuiRelEffOptions *RelActAutoGui::getRelEffCurveOptions( const size_t index )
+
+
+std::vector<RelActAutoGuiNuclide *> RelActAutoGui::getNuclideDisplays( const int rel_eff_curve_index )
+{
+  assert( rel_eff_curve_index >= 0 );
+  assert( rel_eff_curve_index < m_rel_eff_nuclides_menu->count() );
+  if( (rel_eff_curve_index < 0) || (rel_eff_curve_index >= m_rel_eff_nuclides_menu->count()) )
+    return {};
+
+  WMenuItem *this_item = m_rel_eff_nuclides_menu->itemAt( rel_eff_curve_index );
+  WContainerWidget *this_content = dynamic_cast<WContainerWidget *>( this_item->contents() );
+  assert( this_content );
+  if( !this_content )
+    return {};
+    
+  vector<RelActAutoGuiNuclide *> nuc_displays;
+  for( WWidget *child : this_content->children() )
+  {
+    RelActAutoGuiNuclide *nuc = dynamic_cast<RelActAutoGuiNuclide *>( child );
+    assert( nuc );
+    if( nuc )
+      nuc_displays.push_back( nuc );
+  }
+
+  return nuc_displays;
+}//std::vector<RelActAutoGuiNuclide *> RelActAutoGui::getNuclideDisplays( const int rel_eff_curve_index )
+
+
+std::vector<const RelActAutoGuiNuclide *> RelActAutoGui::getNuclideDisplays( const int rel_eff_curve_index ) const
+{
+  assert( rel_eff_curve_index >= 0 );
+  assert( rel_eff_curve_index < m_rel_eff_nuclides_menu->count() );
+  if( (rel_eff_curve_index < 0) || (rel_eff_curve_index >= m_rel_eff_nuclides_menu->count()) )
+    return {};
+
+  const WMenuItem * const this_item = m_rel_eff_nuclides_menu->itemAt( rel_eff_curve_index );
+  const WContainerWidget * const this_content = dynamic_cast<const WContainerWidget *>( this_item->contents() );
+  assert( this_content );
+  if( !this_content )
+    return {};
+    
+  vector<const RelActAutoGuiNuclide *> nuc_displays;
+  for( const WWidget *child : this_content->children() )
+  {
+    const RelActAutoGuiNuclide *src = dynamic_cast<const RelActAutoGuiNuclide *>( child );
+    assert( src );
+    if( src )
+      nuc_displays.push_back( src );
+  }
+
+  return nuc_displays;
+}//std::vector<const RelActAutoGuiNuclide *> RelActAutoGui::getNuclideDisplays( const int rel_eff_curve_index ) const
+
 
 void RelActAutoGui::updateDuringRenderForSpectrumChange()
 {
@@ -4515,101 +4267,47 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
 
 
 void RelActAutoGui::updateDuringRenderForNuclideChange()
-{
-  // Check if we need to show/hide
-  //  - m_same_z_age
-  //  - m_u_pu_by_correlation - and also update its text
-  //  - m_u_pu_data_source
-  //
-  // Need to check nuclides arent duplicated
-  // Make sure "Fit Age" checkbox is in a correct state.  I.e.
-  //  - make sure if each nuclide *could* have ages fit, that there is peaks from at least two progeny in the used energy ranges
-  //  - make sure "Same El Same Age" is checked, then all nuclide ages for an element have same age and same m_fit_age value
-  
-  
-  // For a first go, we'll show #m_same_z_age if we hadve more than one nuclide for a given Z.
-  //   However, we really need to be more complex about this, and also hide "Fit Age" and disable age input if this option is selected, on all but the first entry of this Z
+{ 
   bool has_multiple_nucs_of_z = false;
   map<short,int> z_to_num_isotopes;
   
-  const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo();
-  set<string> nuc_names;
-  for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
   {
-    if( !nuc.nuclide )
-      continue;
-    
-    nuc_names.insert( nuc.nuclide->symbol );
-    
-    const short z = nuc.nuclide->atomicNumber;
-    if( !z_to_num_isotopes.count(z) )
-      z_to_num_isotopes[z] = 0;
-    
-    int &num_this_z = z_to_num_isotopes[z];
-    num_this_z += 1;
-    
-    has_multiple_nucs_of_z = has_multiple_nucs_of_z || (num_this_z > 1);
-  }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
-  
-  if( m_same_z_age->isVisible() != has_multiple_nucs_of_z )
-    m_same_z_age->setHidden( !has_multiple_nucs_of_z );
-  
-  
-  // We need Pu238, Pu239, and Pu240 for Bignan95_PWR and Bignan95_BWR.
-  // We need Pu239 and at least one other isotope for ByPu239Only.
-  const bool can_bignan = (nuc_names.count("Pu238") && nuc_names.count("Pu239")
-                           && nuc_names.count("Pu240"));
-  const bool can_239only = (nuc_names.count("Pu239")
-                             && (nuc_names.count("Pu238") || nuc_names.count("Pu240")
-                                  || nuc_names.count("Pu241") || nuc_names.count("Am241")) );
-  
-  const bool show_pu_corr = (can_bignan || can_239only);
-  m_pu_corr_method->setHidden( !show_pu_corr );
-  WLabel *combo_label = m_pu_corr_method->label();
-  if( combo_label )
-    combo_label->setHidden( !show_pu_corr );
-  
+    set<string> nuc_names;
 
-  if( show_pu_corr )
-  {
-    const int nentries = m_pu_corr_method->count();
-    const int nentries_needed = 1 + (can_239only ? 1 : 0) + (can_bignan ? 2 : 0);
-    if( nentries != nentries_needed )
+    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( rel_eff_curve_index );
+    assert( opts );
+    if( !opts )
+      continue;
+
+    const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo( rel_eff_curve_index );
+    
+    opts->updatePuCorrelationOptions( nuclides );
+
+    for( const RelActCalcAuto::NucInputInfo &src : nuclides )
     {
-      string current_txt;
-      if( !m_pu_corr_method->count() )
-        current_txt = m_pu_corr_method->currentText().toUTF8();
-      
-      m_pu_corr_method->clear();
-      
-      const string &none = RelActCalc::to_description( RelActCalc::PuCorrMethod::NotApplicable );
-      const string &byPu239Only = RelActCalc::to_description( RelActCalc::PuCorrMethod::ByPu239Only );
-      const string &bignanBwr = RelActCalc::to_description( RelActCalc::PuCorrMethod::Bignan95_BWR );
-      const string &bignanPwr = RelActCalc::to_description( RelActCalc::PuCorrMethod::Bignan95_PWR );
-      
-      m_pu_corr_method->addItem( WString::fromUTF8(none) );
-      int next_index = 0;
-      if( can_239only )
-      {
-        if( current_txt == byPu239Only )
-          next_index = m_pu_corr_method->count();
-        m_pu_corr_method->addItem( WString::fromUTF8(byPu239Only) );
-      }//if( can_239only )
-      
-      if( can_bignan )
-      {
-        if( current_txt == bignanPwr )
-          next_index = m_pu_corr_method->count();
-        m_pu_corr_method->addItem( WString::fromUTF8(bignanPwr) );
-        
-        if( current_txt == bignanBwr )
-          next_index = m_pu_corr_method->count();
-        m_pu_corr_method->addItem( WString::fromUTF8(bignanBwr) );
-      }//if( can_bignan )
-      
-      m_pu_corr_method->setCurrentIndex( next_index );
-    }//if( nentries != nentries_needed )
-  }//if( show_pu_corr )
+      const SandiaDecay::Nuclide *src_nuc = RelActCalcAuto::nuclide(src.source);
+      if( !src_nuc )
+        continue;
+    
+      const short z = src_nuc->atomicNumber;
+      if( !z_to_num_isotopes.count(z) )
+        z_to_num_isotopes[z] = 0;
+    
+      int &num_this_z = z_to_num_isotopes[z];
+      num_this_z += 1;
+    
+      has_multiple_nucs_of_z = has_multiple_nucs_of_z || (num_this_z > 1);
+    }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+  }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
+
+  if( m_same_z_age->isVisible() != has_multiple_nucs_of_z )
+  {
+    m_same_z_age->setHidden( !has_multiple_nucs_of_z );
+    if( !has_multiple_nucs_of_z )
+      m_same_z_age->setChecked( false );
+  }
 }//void updateDuringRenderForNuclideChange()
 
 
@@ -4617,7 +4315,23 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
 {
   // Determine if we should show/hide the reference lines.
   const bool show_ref_lines = m_hide_ref_lines_item->isEnabled();
-  const vector<RelActCalcAuto::NucInputInfo> nuclides = getNucInputInfo();
+  vector<RelActCalcAuto::NucInputInfo> nuclides;
+
+  const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
+  for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
+  {
+    const vector<RelActCalcAuto::NucInputInfo> nucs = getNucInputInfo( rel_eff_curve_index );
+    for( const RelActCalcAuto::NucInputInfo &nuc : nucs )
+    {
+      const auto pos = std::find_if( begin(nuclides), end(nuclides),
+        [&nuc]( const RelActCalcAuto::NucInputInfo &nuc2 ){
+          return (nuc.source == nuc2.source);
+      } );
+
+      if( pos == end(nuclides) )
+        nuclides.push_back( nuc );
+    }//for( const RelActCalcAuto::NucInputInfo &nuc : nucs )
+  }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
   
   if( !show_ref_lines || nuclides.empty() )
   {
@@ -4643,12 +4357,11 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     // First, clear out all the old lines
     m_photopeak_widget->clearAllLines();
     
-    
     map<std::string,Wt::WColor> nuclide_colors;
-    for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
+    for( const RelActCalcAuto::NucInputInfo &src : nuclides )
     {
-      if( (nuc.nuclide || nuc.element || nuc.reaction) && !nuc.peak_color_css.empty() )
-        nuclide_colors[nuc.name()] = WColor( nuc.peak_color_css );
+      if( !RelActCalcAuto::is_null(src.source) && !src.peak_color_css.empty() )
+        nuclide_colors[RelActCalcAuto::to_name(src.source)] = WColor( src.peak_color_css );
     }
     
     // If the user has a ColorTheme preference to assign a specific color to a nuclide, that
@@ -4658,22 +4371,23 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     
     for( size_t i = 0; i < nuclides.size(); ++i )
     {
-      const RelActCalcAuto::NucInputInfo &nuc = nuclides[i];
+      const RelActCalcAuto::NucInputInfo &src = nuclides[i];
       
       if( i )
         m_photopeak_widget->persistCurentLines();
       
-      if( nuc.nuclide )
-      {
-        m_photopeak_widget->setIsotope( nuc.nuclide, nuc.age );
-      }else if( nuc.element )
-      {
-        m_photopeak_widget->setElement( nuc.element );
-      }else if( nuc.reaction )
-      {
-        m_photopeak_widget->setReaction( nuc.reaction );
-      }
-    }//
+      const SandiaDecay::Nuclide *src_nuc = RelActCalcAuto::nuclide(src.source);
+      const SandiaDecay::Element *src_elem = RelActCalcAuto::element(src.source);
+      const ReactionGamma::Reaction *src_rxn = RelActCalcAuto::reaction(src.source);
+
+      if( src_nuc )
+        m_photopeak_widget->setIsotope( src_nuc, src.age );
+      else if( src_elem )
+        m_photopeak_widget->setElement( src_elem );
+      else if( src_rxn )
+        m_photopeak_widget->setReaction( src_rxn );
+      else { assert( 0 ); }
+    }//for( size_t i = 0; i < nuclides.size(); ++i )
   }//if( !show_ref_lines ) / else
 }//void updateDuringRenderForRefGammaLineChange()
 
@@ -4689,7 +4403,7 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
   const vector<WWidget *> &roi_widgets = m_energy_ranges->children();
   for( WWidget *w : roi_widgets )
   {
-    const RelActAutoEnergyRange *roi = dynamic_cast<const RelActAutoEnergyRange *>( w );
+    const RelActAutoGuiEnergyRange *roi = dynamic_cast<const RelActAutoGuiEnergyRange *>( w );
     assert( roi );
     if( roi && !roi->isEmpty() )
       rois.emplace_back( roi->lowerEnergy(), roi->upperEnergy() );
@@ -4701,7 +4415,7 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
   const std::vector<WWidget *> &kids = m_free_peaks->children();
   for( WWidget *w : kids )
   {
-    RelActFreePeak *free_peak = dynamic_cast<RelActFreePeak *>(w);
+    RelActAutoGuiFreePeak *free_peak = dynamic_cast<RelActAutoGuiFreePeak *>(w);
     assert( free_peak );
     if( !free_peak )
       continue;
@@ -4713,7 +4427,7 @@ void RelActAutoGui::updateDuringRenderForFreePeakChange()
     
     free_peak->setInvalidEnergy( !in_roi );
     free_peak->setApplyEnergyCalVisible( fit_energy_cal );
-  }//for( loop over RelActFreePeak widgets )
+  }//for( loop over RelActAutoGuiFreePeak widgets )
 }//void updateDuringRenderForFreePeakChange()
 
 
@@ -4744,6 +4458,36 @@ void RelActAutoGui::startUpdatingCalculation()
   if( !m_apply_energy_cal_item->isDisabled() )
     m_apply_energy_cal_item->disable();
   
+  assert( m_rel_eff_nuclides_menu->count() == m_rel_eff_opts_menu->count() );
+
+  for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+  {
+    WMenuItem *this_item = m_rel_eff_nuclides_menu->itemAt( rel_eff_index );
+    WContainerWidget *this_content = dynamic_cast<WContainerWidget *>( this_item->contents() );
+    assert( this_content );
+    if( !this_content )
+      continue;
+    
+    for( WWidget *child : this_content->children() )
+    {
+      RelActAutoGuiNuclide *nuclide = dynamic_cast<RelActAutoGuiNuclide *>( child );
+      assert( nuclide );
+      if( nuclide )
+        nuclide->setSummaryText( "" );
+    }//for( WWidget *child : this_content->children() )
+  }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
+
+
+  for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+  {
+    WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+    RelActAutoGuiRelEffOptions *this_curve = dynamic_cast<RelActAutoGuiRelEffOptions *>( this_item->contents() );
+    assert( this_curve );
+    if( this_curve )
+      this_curve->setEqnTxt( "" );
+  }
+
+
   shared_ptr<const SpecUtils::Measurement> foreground = m_foreground;
   shared_ptr<const SpecUtils::Measurement> background = m_background;
   RelActCalcAuto::Options options;
@@ -4761,8 +4505,8 @@ void RelActAutoGui::startUpdatingCalculation()
     
     options = getCalcOptions();
     
-    if( options.rel_eff_curves.size() != 1 )
-      throw runtime_error( "No relative efficiency curves defined - currently you must have exactly one curve." );
+    if( options.rel_eff_curves.empty() )
+      throw runtime_error( "No relative efficiency curves defined." );
 
     for( const auto &rel_eff_curve : options.rel_eff_curves )
     {
@@ -4774,6 +4518,9 @@ void RelActAutoGui::startUpdatingCalculation()
       throw runtime_error( "No energy ranges defined." );
   }catch( std::exception &e )
   {
+    if( m_cancel_calc )
+      m_cancel_calc->store( true );
+   
     m_is_calculating = false;
     m_error_msg->setText( e.what() );
     m_error_msg->show();
@@ -4791,9 +4538,9 @@ void RelActAutoGui::startUpdatingCalculation()
   
   const string sessionid = wApp->sessionId();
   m_is_calculating = true;
-  m_cancel_calc = make_shared<std::atomic_bool>();
-  m_cancel_calc->store( false );
-  shared_ptr<atomic_bool> cancel_calc = m_cancel_calc;
+  m_calc_number += 1;
+  shared_ptr<atomic_bool> cancel_calc = make_shared<std::atomic_bool>(false);
+  m_cancel_calc = cancel_calc;
   
   shared_ptr<const DetectorPeakResponse> cached_drf = m_cached_drf;
   if( !cached_drf )
@@ -4811,7 +4558,7 @@ void RelActAutoGui::startUpdatingCalculation()
   auto solution = make_shared<RelActCalcAuto::RelActAutoSolution>();
   auto error_msg = make_shared<string>();
   
-  auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc) );
+  auto gui_update_callback = wApp->bind( boost::bind( &RelActAutoGui::updateFromCalc, this, solution, cancel_calc, m_calc_number ) );
   auto error_callback = wApp->bind( boost::bind( &RelActAutoGui::handleCalcException, this, error_msg, cancel_calc) );
   
   
@@ -4865,7 +4612,8 @@ void RelActAutoGui::startUpdatingCalculation()
 
 
 void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
-                                    std::shared_ptr<std::atomic_bool> cancel_flag )
+                                    std::shared_ptr<std::atomic_bool> cancel_flag,
+                                    const size_t calc_number )
 {
   assert( answer );
   if( !answer )
@@ -4877,6 +4625,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     return;
   
   if( cancel_flag && (*cancel_flag) )
+    return;
+  
+  // Check to see if a new calculation was launched; the `cancel_flag` should have caught things,
+  //  but this is just a backup, that I dont think we need.
+  if( calc_number != m_calc_number )
     return;
   
   m_is_calculating = false;
@@ -4923,8 +4676,6 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   answer->print_summary( std::cout );
   cout << "\n\n\n";
   
-  const string rel_eff_eqn_js = answer->rel_eff_eqn_js_function(0);
-  
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
   
@@ -4937,8 +4688,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   set<const SandiaDecay::Nuclide *> isotopes;
   for( const auto &relact : answer->m_rel_activities[0] )
   {
-    if( relact.nuclide )
-      isotopes.insert( relact.nuclide );
+    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(relact.source);
+    if( nuc )
+      isotopes.insert( nuc );
   }
   
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -4959,19 +4711,35 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
                         // + "±" + SpecUtils::printCompact(100.0*error, 4)
                          + "% " + iso->symbol;
     chi2_title.arg( enrich );
-  }else if( isotopes.size() == 2 )
+  }else if( isotopes.size() == 2 ) // We are only considering nuclides here, not elements or reactions - not sure why
   {
     const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities.at(0);
-    const int num_index = (rel_acts[0].rel_activity > rel_acts[1].rel_activity) ? 1 : 0;
-    const int denom_index = (num_index ? 0 : 1);
-    const SandiaDecay::Nuclide * const num_nuc = rel_acts[num_index].nuclide;
-    const SandiaDecay::Nuclide * const den_nuc = rel_acts[denom_index].nuclide;
-    assert( num_nuc && den_nuc );
-    if( num_nuc && den_nuc )
+    const RelActCalcAuto::NuclideRelAct *num_rel_act = nullptr, *denom_rel_act = nullptr;
+    for( size_t i = 0; i < rel_acts.size(); ++i )
     {
-      const double ratio = answer->activity_ratio( num_nuc, den_nuc, 0 );
+      // We only want nuclides here
+      if( RelActCalcAuto::nuclide(rel_acts[i].source) )
+      {
+        if( !num_rel_act )
+          num_rel_act = &(rel_acts[i]);
+        else
+          denom_rel_act = &(rel_acts[i]);
+      }
+    }//for( size_t i = 0; i < rel_acts.size(); ++i )
+    
+    assert( num_rel_act && denom_rel_act );
+    
+    if( num_rel_act && denom_rel_act )
+    {
+      if( num_rel_act->rel_activity > denom_rel_act->rel_activity )
+        std::swap( num_rel_act, denom_rel_act );
+      
+      const string num_name = RelActCalcAuto::to_name(num_rel_act->source);
+      const string den_name = RelActCalcAuto::to_name(denom_rel_act->source);
+      
+      const double ratio = answer->activity_ratio( num_rel_act->source, denom_rel_act->source, 0 );
       // TODO: add errors
-      string ratio_txt = ", act(" + num_nuc->symbol + "/" + den_nuc->symbol + ")="
+      string ratio_txt = ", act(" + num_name + "/" + den_name + ")="
       + SpecUtils::printCompact(ratio, 4);
       
       chi2_title.arg( ratio_txt );
@@ -4984,196 +4752,277 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     chi2_title.arg( "" );
   }
 
-  string rel_eff_eqn_txt;
-  try
-  {
-    rel_eff_eqn_txt = "y = " + answer->rel_eff_txt( false, 0);
-  }catch( std::exception & )
-  {
-    // Oh well
-    assert( 0 );
-  }
 
-  m_rel_eff_chart->setData( live_time, answer->m_fit_peaks, answer->m_rel_activities.at(0),
-                           rel_eff_eqn_js, rel_eff_eqn_txt );
+  assert( answer->m_fit_peaks_for_each_curve.size() == answer->m_rel_activities.size() );
+  
+  vector<RelEffChart::ReCurveInfo> info_sets;
+  for( size_t i = 0; i < answer->m_rel_activities.size(); ++i )
+  {
+    RelEffChart::ReCurveInfo info;
+    info.live_time = live_time;
+    info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
+    info.rel_acts = answer->m_rel_activities[i];
+    info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
+    info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves[i].name );
+
+    try
+    { 
+      info.re_curve_eqn_txt = "y = " + answer->rel_eff_txt( false, i ); 
+    }catch( std::exception & ) 
+    { 
+      assert( 0 ); 
+    }
+    
+    info_sets.push_back( info );
+  }//for( size_t i = 0; i < answer->m_rel_activities.size(); ++i )
+  
+  m_rel_eff_chart->setData( info_sets );
 
   m_fit_chi2_msg->setText( chi2_title );
   m_fit_chi2_msg->show();
 
-  bool any_nucs_updated = false;
-  for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities.at(0) )
-  {
-    if( !fit_nuc.age_was_fit || (fit_nuc.age < 0.0) )
-      continue;
-    
-    any_nucs_updated = true;
-    for( WWidget *w : m_nuclides->children() )
-    {
-      RelActAutoNuclide *nuc = dynamic_cast<RelActAutoNuclide *>( w );
-      assert( nuc );
-      
-      if( !nuc || std::holds_alternative<std::monostate>(nuc->nuclide()) )
-        continue;
-      
-      const std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>
-           src_info = nuc->nuclide();
-      const SandiaDecay::Nuclide *nuclide = nullptr;
-      const SandiaDecay::Element *element = nullptr;
-      const ReactionGamma::Reaction * reaction = nullptr;
-      
-      std::visit( [&]( auto &&arg ) {
-        using T = std::decay_t<decltype(arg)>;
-        if constexpr( std::is_same_v<T,std::monostate> )
-        {
-          
-        }if constexpr( std::is_same_v<T, const SandiaDecay::Nuclide *> )
-        {
-          nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
-        }else if constexpr( std::is_same_v<T, const SandiaDecay::Element *> )
-        {
-          element = std::get<const SandiaDecay::Element *>(src_info);
-        }else if constexpr( std::is_same_v<T, const ReactionGamma::Reaction *> )
-        {
-          reaction = std::get<const ReactionGamma::Reaction *>(src_info);
-        }else
-        {
-          assert( 0 );
-          //static_assert( false, "Non-exhaustive visitor.");
-        }
-      }, src_info );
 
-      if( (fit_nuc.nuclide == nuclide)
-          && (fit_nuc.element == element)
-          && (fit_nuc.reaction == reaction) )
+  // Check if we need to update number of Rel Eff curves
+  assert( m_solution->m_options.rel_eff_curves.size() >= 1 );
+  const size_t num_rel_eff_curves = std::max( size_t(1), m_solution->m_options.rel_eff_curves.size() );
+  assert( m_rel_eff_opts_menu->count() == static_cast<int>(num_rel_eff_curves) );
+
+  // Remove any extra rel eff curve options
+  while( m_rel_eff_opts_menu->count() > num_rel_eff_curves )
+  {
+    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( m_rel_eff_opts_menu->count() - 1 );
+    assert( opts );
+    handleDelRelEffCurve( opts );
+  }
+
+  // Add any missing rel eff curve options
+  while( m_rel_eff_opts_menu->count() < num_rel_eff_curves )
+  {
+    handleAddRelEffCurve();
+  }
+
+  assert( m_rel_eff_opts_menu->count() == static_cast<int>(num_rel_eff_curves) );
+  assert( m_rel_eff_nuclides_menu->count() == static_cast<int>(num_rel_eff_curves) );
+
+  // Update the nuclide displays
+  bool any_nucs_updated = false;
+  for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+  {
+    if( rel_eff_index >= m_solution->m_rel_activities.size() )
+      continue; //We would have asserted above (on debug builds) - things are whack - shouldnt be here, so just ignore this...
+      
+    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = m_solution->m_rel_activities[rel_eff_index];
+
+    vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( static_cast<int>(rel_eff_index) );
+    
+    set<RelActAutoGuiNuclide *> updated_nuc_displays, empty_nuc_displays;
+    vector<bool> use_rel_acts( rel_acts.size(), false );
+
+    // A lambda to set GUI info from NuclideRelAct
+    auto set_info_to_widget = [&rel_acts]( RelActAutoGuiNuclide *src_widget, const RelActCalcAuto::NuclideRelAct &fit_nuc ){
+      const RelActCalcAuto::SrcVariant src = src_widget ? src_widget->source() : RelActCalcAuto::SrcVariant();
+      
+      const string rel_act_str = SpecUtils::printCompact(fit_nuc.rel_activity, 4);
+      string summary_text = "Rel. Act=" + rel_act_str;
+      
+      
+      if( fit_nuc.age_was_fit )
       {
         const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );
-        nuc->setAge( agestr );
+        src_widget->setAge( agestr );
+      }
+      
+      if( const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(src) )
+      {
+        size_t num_same_z = 0;
+        double total_rel_mass = 0.0;
+        for( const RelActCalcAuto::NuclideRelAct &other_nuc : rel_acts )
+        {
+          const SandiaDecay::Nuclide * const other_nuc_nuclide = RelActCalcAuto::nuclide(other_nuc.source);
+          if( other_nuc_nuclide && (nuc_nuclide->atomicNumber == other_nuc_nuclide->atomicNumber) )
+          {
+            ++num_same_z;
+            total_rel_mass += (other_nuc.rel_activity / other_nuc_nuclide->activityPerGram());
+          }
+        }//for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities )
+        
+        if( num_same_z > 1 )
+        {
+          const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
+          const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
+          const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+          const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
+          const string el_symbol = el ? el->symbol : "?";
+          summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+        }//if( num_same_z > 1 )
+      }//if( RelActCalcAuto::nuclide(src) )
+      
+      src_widget->setSummaryText( summary_text );
+    };//set_info_to_widget lambda
+    
+     // Update the rel. act., and if applicable, mass fraction for the nuclide displays
+    for( size_t fit_nuc_index = 0; fit_nuc_index < rel_acts.size(); ++fit_nuc_index )
+    {
+      bool found_nuc = false;
+      const RelActCalcAuto::NuclideRelAct &fit_nuc = rel_acts[fit_nuc_index];
+
+      for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+      {
+        assert( src_widget );
+        const RelActCalcAuto::SrcVariant src = src_widget ? src_widget->source() : RelActCalcAuto::SrcVariant();
+      
+        if( RelActCalcAuto::is_null(src) )
+        {
+          if( src_widget )
+            empty_nuc_displays.insert( src_widget );
+          continue;
+        }
+        
+        if( fit_nuc.source != src )
+          continue;
+
+        found_nuc = true;
+        any_nucs_updated = true;
+        updated_nuc_displays.insert( src_widget );
+        use_rel_acts[fit_nuc_index] = true;
+
+        set_info_to_widget( src_widget, fit_nuc );
+        
         break;
-      }//if( this is the widget for this nuclide )
-    }//for( WWidget *w : kids )
-  }//for( const RelActCalcAuto::NuclideRelAct &fit_nuc : m_solution->m_rel_activities )
+      }//for( WWidget *w : nuclide_content->children() )
+
+      assert( found_nuc );
+      if( !found_nuc )
+        cerr << "No nuclide found for rel. eff. curve " << rel_eff_index << " should fix this!" << endl;
+    }//for( const RelActCalcAuto::NuclideRelAct &fit_nuc : rel_acts )
+
+
+    // TODO: handle the possibility that some of the returned sources in the solution are not in the GUI.
+    //       (which shouldnt happen, but just in case things get out of whack with the user editing while computing)
+    for( size_t rel_act_index = 0; rel_act_index < use_rel_acts.size(); ++rel_act_index )
+    {
+      if( use_rel_acts[rel_act_index] )
+        continue;
+      
+      // maybe add a GUI component for this nuclide? - first checking if there are any in `empty_nuc_displays`, before adding a new one
+      // Make sure we set this to empty set
+      const RelActCalcAuto::NuclideRelAct &fit_nuc = rel_acts[rel_act_index];
+      assert( !RelActCalcAuto::is_null(fit_nuc.source) );
+      if( RelActCalcAuto::is_null(fit_nuc.source) )
+        continue;
+        
+      // Check if we have an unused RelActAutoGuiNuclide (from in empty_nuc_displays), and if so, use it
+      //  else we will create a new display.
+      RelActAutoGuiNuclide *gui_src = nullptr;
+      if( !empty_nuc_displays.empty() )
+      {
+        gui_src = *begin(empty_nuc_displays);
+        empty_nuc_displays.erase( gui_src );
+      }
+      
+      if( !gui_src )
+        gui_src = RelActAutoGui::addNuclideForRelEffCurve( static_cast<int>(rel_act_index) );
+      
+      assert( gui_src );
+      if( !gui_src )
+        continue;
+      
+      set_info_to_widget( gui_src, fit_nuc );
+      updated_nuc_displays.insert( gui_src );
+    }//for( size_t rel_act_index = 0; rel_act_index < use_rel_acts.size(); ++rel_act_index )
+
+    
+    // TODO: handle the possibility that some of the GUI nuclides are not in the solution
+    //       (which shouldnt happen, but just in case things get out of whack with the user editing while computing)
+    for( RelActAutoGuiNuclide *nuc : nuc_displays )
+    {
+      if( !updated_nuc_displays.count(nuc) )
+      {
+        assert( RelActCalcAuto::is_null(nuc->source()) ); // we shouldnt get here
+        if( RelActCalcAuto::is_null(nuc->source()) )
+          continue;
+        
+        //Maybe remove the GUI component for this source.
+        nuc->setSummaryText( "" );
+        
+        RelActCalcAuto::NucInputInfo info;
+        info.peak_color_css = nuc->color().cssText(false);
+        nuc->fromNucInputInfo( info );
+      }//
+    }//for( RelActAutoGuiNuclide *nuc : nuc_displays )
+    
+    
+    assert( (nuc_displays.size() - empty_nuc_displays.size()) == rel_acts.size() );
+  }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
   
+
   
   setOptionsForValidSolution();
   
-  // Check if we need to update Physical model shieldings
-  assert( m_solution->m_options.rel_eff_curves.size() == 1 );
-  if( m_solution->m_options.rel_eff_curves.size() != 1 )
-    throw runtime_error( "updateFromCalc: only a single rel eff curve is supported" );
-  const RelActCalcAuto::RelEffCurveInput &rel_eff = m_solution->m_options.rel_eff_curves[0];
-    
-    
-  if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
-     && m_solution->m_phys_model_results.at(0).has_value() )
+  
+  for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
   {
-    const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &phys_info = *m_solution->m_phys_model_results.at(0);
-    
-    assert( m_phys_model_self_atten );
-    if( !m_phys_model_self_atten )
-      initPhysModelShields();
-    assert( m_phys_model_self_atten );
-    
-    const auto update_shield_widget = []( const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo &shield,
-                                      RelEffShieldWidget *w ) {
-      if( !w )
-        return;
-      
-      const Material * const widget_mat = w->material();
-      assert( (!!shield.material) == (!!widget_mat) );
-      assert( !widget_mat || !shield.material || (widget_mat->name == shield.material->name) );
-      
-      if( (!!shield.material) != (!!widget_mat) )
-        w->setMaterialSelected( !!shield.material );
-      
-      if( shield.material && (!widget_mat || (widget_mat->name != shield.material->name)) )
-        w->setMaterial( shield.material->name );
-      
-      if( shield.atomic_number )
-      {
-        assert( shield.atomic_number_was_fit == w->fitAtomicNumber() );
-        assert( shield.atomic_number_was_fit || ((*shield.atomic_number) == w->atomicNumber()));
-        if( (*shield.atomic_number) != w->atomicNumber() )
-          w->setAtomicNumber( *shield.atomic_number );
-        
-        if( shield.atomic_number_was_fit != w->fitAtomicNumber() )
-          w->setFitAtomicNumber( shield.atomic_number_was_fit );
-      }//if( shield.atomic_number )
-      
-      
-      if( shield.areal_density )
-      {
-        if( shield.material )
-        {
-          assert( shield.areal_density_was_fit == w->fitThickness() );
-          const double thick = shield.areal_density / shield.material->density;
-          
-          if( !shield.areal_density_was_fit && (thick != w->thickness()) )
-          {
-            cerr << "Found fixed shielding thickness has changed for '" << shield.material->name << "'; was "
-            << PhysicalUnits::printToBestLengthUnits(w->thickness()) << " but returned answer is "
-            << PhysicalUnits::printToBestLengthUnits(thick) << endl;
-            cerr << endl;
-          }
-          assert( shield.areal_density_was_fit || (thick == w->thickness()));
-          
-          w->setThickness( thick );
-          if( shield.areal_density_was_fit != w->fitThickness() )
-            w->setFitThickness( shield.areal_density_was_fit );
-        }else
-        {
-          const double ad_g_cm2 = shield.areal_density / PhysicalUnits::g_per_cm2;
-          
-          assert( shield.areal_density_was_fit == w->fitArealDensity() );
-          assert( shield.areal_density_was_fit || (ad_g_cm2 == w->arealDensity()));
-          
-          if( ad_g_cm2 != w->arealDensity() )
-            w->setArealDensity( ad_g_cm2 );
-          
-          if( shield.areal_density_was_fit != w->fitArealDensity() )
-            w->setFitArealDensity( shield.areal_density_was_fit );
-        }//if( shield.material ) / else
-      }//if( shield.areal_density )
-    };//set_shield_widget lambda
-   
-    if( phys_info.self_atten.has_value() )
-      update_shield_widget( *phys_info.self_atten, m_phys_model_self_atten );
-    else if( m_phys_model_self_atten )
-      m_phys_model_self_atten->resetState();
-    
-    vector<RelEffShieldWidget *> ext_shields;
-    for( WWidget *w : m_phys_ext_attens->children() )
+    if( rel_eff_index >= m_solution->m_options.rel_eff_curves.size() )
     {
-      RelEffShieldWidget *sw = dynamic_cast<RelEffShieldWidget *>( w );
-      if( sw )
-        ext_shields.push_back( sw );
-    }//for( WWidget *w : m_phys_ext_attens->children() )
-    
-    assert( ext_shields.size() >= phys_info.ext_shields.size() );
-    while( ext_shields.size() < phys_info.ext_shields.size() )
-    {
-      RelEffShieldWidget *sw = new RelEffShieldWidget( RelEffShieldWidget::ShieldType::ExternalAtten, m_phys_ext_attens );
-      sw->changed().connect( this, &RelActAutoGui::handlePhysModelShieldChange );
-      ext_shields.push_back( sw );
+      continue; // solution didnt have any rel eff curves... which probably shouldnt happen.
     }
+
+    RelActAutoGuiRelEffOptions *opts = getRelEffCurveOptions( static_cast<int>(rel_eff_index) );
+    assert( opts ); //shouldnt happen, we adjusted the number of rel eff curve options above
+    if( !opts )
+      throw std::runtime_error( "Failed to get RelActAutoGuiRelEffOptions" );
+
+
+    const RelActCalcAuto::RelEffCurveInput &rel_eff = m_solution->m_options.rel_eff_curves[rel_eff_index];
     
-    while( (ext_shields.size() > 1) && (ext_shields.size() > phys_info.ext_shields.size()) )
+    bool correct_curve = true;
+    if( rel_eff.rel_eff_eqn_type != opts->rel_eff_eqn_form() )
+      correct_curve = false;
+    
+    if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+        && (rel_eff.rel_eff_eqn_order != opts->rel_eff_eqn_order()) )
+      correct_curve = false;
+    if( rel_eff.name != opts->name().toUTF8() )
+      correct_curve = false;
+
+    if( !correct_curve )
+      opts->setRelEffCurveInput( rel_eff );
+
+    std::optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo> phys_info;
+    if( rel_eff_index < m_solution->m_phys_model_results.size() )
+      phys_info = m_solution->m_phys_model_results[rel_eff_index];
+
+    assert( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) || phys_info.has_value() );
+    if( (rel_eff.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) && phys_info.has_value() )
     {
-      delete ext_shields.back();
-      ext_shields.pop_back();
-    }
-    
-    if( (ext_shields.size() == 1) && phys_info.ext_shields.empty() )
-      ext_shields[0]->resetState();
-    
-    assert( ext_shields.size() >= phys_info.ext_shields.size() );
-    for( size_t i = 0; i < phys_info.ext_shields.size(); ++i )
-      update_shield_widget( phys_info.ext_shields[i], ext_shields[i] );
+      const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &phys_info_ref = *phys_info;
+      opts->update_self_atten_shield_widget( phys_info_ref.self_atten );
+      opts->update_external_atten_shield_widget( phys_info_ref.ext_shields );
    
-    assert( phys_info.hoerl_b.has_value() == phys_info.hoerl_c.has_value() );
-    assert( !m_phys_model_use_hoerl || (phys_info.hoerl_b.has_value() == m_phys_model_use_hoerl->isChecked()) );
-    if( m_phys_model_use_hoerl && (m_phys_model_use_hoerl->isChecked() != phys_info.hoerl_b.has_value()) )
-      m_phys_model_use_hoerl->setChecked( phys_info.hoerl_b.has_value() );
-  }//if( m_solution->m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      //phys_info_ref.hoerl_b/hoerl_c will have (double) values iff the correction function was used
+      assert( phys_info_ref.hoerl_b.has_value() == phys_info_ref.hoerl_c.has_value() );
+      //assert( phys_info_ref.hoerl_b.has_value() == opts->phys_model_use_hoerl() );
+      if( phys_info_ref.hoerl_b.has_value() != opts->phys_model_use_hoerl() )
+      {
+        cerr << "Warning: mismatch between solution using Hoerl, and GUI saying thier using Hoerl"
+        << " {solution: " << phys_info_ref.hoerl_b.has_value() << ", GUI: " << opts->phys_model_use_hoerl() << "}";
+        cerr << endl;
+        opts->setPhysModelUseHoerl( phys_info_ref.hoerl_b.has_value() );
+      }
+    }//if( Physical model fit info is available )
+
+
+    try
+    {
+      const string rel_eff_eqn_txt = "y = " + answer->rel_eff_txt( true, rel_eff_index );
+      opts->setEqnTxt( rel_eff_eqn_txt );
+    }catch( std::exception & )
+    {
+      assert( 0 ); // we shouldnt get here, I dont think
+      opts->setEqnTxt( "Error getting equation text" );
+    }
+  }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+
   
   m_solution_updated.emit( m_solution );
   if( m_solution && (m_solution->m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) )

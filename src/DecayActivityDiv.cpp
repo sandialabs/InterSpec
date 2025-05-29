@@ -1555,30 +1555,35 @@ public:
     WCheckBox *cb = new WCheckBox( "act.", el );
     cb->setMargin( 5, Wt::Left );
     cb->setChecked( true );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveActivities, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveActivities, m_csvResouce, false ) );
     
     el = table->elementAt(0,2);
     cb = new WCheckBox( "xrays", el );
     cb->setMargin( 5, Wt::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveXrays, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveXrays, m_csvResouce, false ) );
     
     el = table->elementAt(0,3);
     cb = new WCheckBox( "gammas", el );
     cb->setMargin( 5, Wt::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveGammas, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveGammas, m_csvResouce, false ) );
     
     el = table->elementAt(0,4);
     cb = new WCheckBox( "alphas", el );
     cb->setMargin( 5, Wt::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveAlphas, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveAlphas, m_csvResouce, false ) );
     
     el = table->elementAt(0,5);
     cb = new WCheckBox( "betas", el );
     cb->setMargin( 5, Wt::Left );
+    cb->addStyleClass( "CbNoLineBreak" );
     cb->checked().connect( boost::bind( &DecayCsvResource::setGiveBetas, m_csvResouce, true ) );
     cb->unChecked().connect( boost::bind( &DecayCsvResource::setGiveBetas, m_csvResouce, false ) );
     
@@ -1754,7 +1759,7 @@ void DecayActivityDiv::init()
   m_decayChart                     = new DecayActivityChart();
   m_decayModel                     = new DecayActivityModel( this );
 
-  //Sete elements names so we can style with css
+  //Set elements names so we can style with css
   m_parentNuclidesDiv->addStyleClass( "m_parentNuclidesDiv" );
   m_nuclidesAddedDiv->addStyleClass( "m_nuclidesAddedDiv" );
 

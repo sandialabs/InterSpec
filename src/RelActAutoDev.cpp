@@ -109,7 +109,7 @@ void check_auto_state_xml_serialization()
   curve.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
 
   RelActCalcAuto::NucInputInfo u235_input;
-  u235_input.nuclide = db->nuclide("U235");
+  u235_input.source = db->nuclide("U235");
   u235_input.age = 20.0*PhysicalUnits::year;
   u235_input.fit_age = false;
   u235_input.gammas_to_exclude = { 26.325 };
@@ -117,7 +117,7 @@ void check_auto_state_xml_serialization()
   curve.nuclides.push_back( u235_input );
 
   RelActCalcAuto::NucInputInfo u238_input;
-  u238_input.nuclide = db->nuclide("U238");
+  u238_input.source = db->nuclide("U238");
   u238_input.age = 18.0*PhysicalUnits::year;
   u238_input.fit_age = true;
   u238_input.gammas_to_exclude = { 1001.1 };
@@ -188,7 +188,7 @@ void check_auto_state_xml_serialization()
   curve2.rel_eff_eqn_order = 2;
 
   RelActCalcAuto::NucInputInfo co60_input;
-  co60_input.nuclide = db->nuclide("Co60");
+  co60_input.source = db->nuclide("Co60");
   co60_input.age = 18.0*PhysicalUnits::year;
   co60_input.fit_age = true;
   co60_input.gammas_to_exclude = { 1001.1 };
@@ -459,6 +459,14 @@ void run_u02_example()
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( setup_base_node, &matdb );
   
+  //RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+  //constraint.nuclide = db->nuclide("U235");
+  //constraint.lower_mass_fraction = 0.1;
+  //constraint.upper_mass_fraction = 0.4;
+  //state.options.rel_eff_curves[0].mass_fraction_constraints.push_back( constraint );
+
+
+
   const string detector_xml_path = "Detective-X_GADRAS_drf.xml";
   rapidxml::file<char> detector_input_file( detector_xml_path.c_str() );
   
@@ -644,11 +652,11 @@ void czt_pu_example()
   // We can constrain the RelActivity.
   for( auto &nuc : state.options.rel_eff_curves[0].nuclides )
   {
-    if( nuc.nuclide->symbol == "Pu239" )
+    if( RelActCalcAuto::to_name(nuc.source) == "Pu239" )
     {
       nuc.starting_rel_act = 750*16228.0;
       nuc.min_rel_act = nuc.max_rel_act = nuc.starting_rel_act;
-    }else if( nuc.nuclide->symbol == "Am241" )
+    }else if( RelActCalcAuto::to_name(nuc.source) == "Am241" )
     {
       nuc.starting_rel_act = 5*96521.1;
       nuc.min_rel_act = nuc.max_rel_act = nuc.starting_rel_act;
@@ -693,21 +701,21 @@ void check_auto_nuclide_constraints_checks()
   RelActCalcAuto::RelEffCurveInput rel_eff_curve;
 
   RelActCalcAuto::NucInputInfo u235_input;
-  u235_input.nuclide = u235;
+  u235_input.source = u235;
   u235_input.age = 20.0 * PhysicalUnits::year;
   u235_input.fit_age = false;
   u235_input.gammas_to_exclude = {};
   u235_input.peak_color_css = "rgb(0, 0, 255)";
   
   RelActCalcAuto::NucInputInfo u238_input;
-  u238_input.nuclide = u238;
+  u238_input.source = u238;
   u238_input.age = 20.0 * PhysicalUnits::year;
   u238_input.fit_age = false;
   u238_input.gammas_to_exclude = {};
   u238_input.peak_color_css = "rgb(255, 69, 0)";
 
   RelActCalcAuto::NucInputInfo u234_input;
-  u234_input.nuclide = u234;
+  u234_input.source = u234;
   u234_input.age = 20.0 * PhysicalUnits::year;
   u234_input.fit_age = false;
   u234_input.gammas_to_exclude = {};
@@ -803,8 +811,8 @@ void check_auto_nuclide_constraints_checks()
   {
     RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
     RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
-    nuc_constraint.constrained_nuclide = u235;
-    nuc_constraint.controlling_nuclide = u238;
+    nuc_constraint.constrained_source = u235;
+    nuc_constraint.controlling_source = u238;
     nuc_constraint.constrained_to_controlled_activity_ratio = -1.0;
     
     rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
@@ -834,6 +842,250 @@ void check_auto_nuclide_constraints_checks()
   {
     // We are suppoest to get here because of the cycle
   }
+
+
+  // Now check mass fraction constraints
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.0072;
+    constraint.upper_mass_fraction = 0.0072;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    // We are suppoest to get here
+  }catch(const std::exception& e)
+  {
+    cerr << "Valid mass fraction constraint erroneously detected: Error: " << e.what() << endl;
+    assert( 0 );
+  }
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = db->nuclide("U233");
+    constraint.lower_mass_fraction = 0.0072;
+    constraint.upper_mass_fraction = 0.0072;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect invalid nuclide in mass fraction constraint" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.0072;
+    constraint.upper_mass_fraction = 1.00001;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect invalid nuclide mass fraction" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = -0.0001;
+    constraint.upper_mass_fraction = 0.8;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect invalid nuclide mass fraction" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 1.0;
+    constraint.upper_mass_fraction = 1.0;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect invalid nuclide mass fraction" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.0;
+    constraint.upper_mass_fraction = 0.5;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect multiple mass fraction constraints for same nuclide" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.0;
+    constraint.upper_mass_fraction = 0.5;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+
+    constraint.nuclide = u238;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+    constraint.nuclide = u234;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect all nuclides of element being mass fraction constrained" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.8;
+    constraint.upper_mass_fraction = 0.9;
+
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+
+    constraint.nuclide = u234;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+    
+
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect sum of lower mass fraction values being larger than 1.0" << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.1;
+    constraint.upper_mass_fraction = 0.9;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+
+    RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
+    nuc_constraint.constrained_source = u235;
+    nuc_constraint.controlling_source = u238;
+    nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
+    rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    rel_eff_cpy.check_nuclide_constraints();
+    
+    cerr << "Failed to detect nuclide being both activity and mass-fraction constrained." << endl;
+    assert( 0 );
+  }catch(const std::exception& e)
+  {
+    // We are suppoest to get here
+  }
+
+
+  try
+  {
+    RelActCalcAuto::RelEffCurveInput rel_eff_cpy = rel_eff_curve;
+
+
+    RelActCalcAuto::NucInputInfo co60_input;
+    co60_input.source = db->nuclide("Co60");
+    co60_input.age = 20.0 * PhysicalUnits::year;
+    co60_input.fit_age = false;
+    co60_input.gammas_to_exclude = {};
+    rel_eff_cpy.nuclides.push_back( co60_input );
+
+
+     RelActCalcAuto::NucInputInfo cs137_input;
+    cs137_input.source = db->nuclide("Cs137");
+    cs137_input.age = 20.0 * PhysicalUnits::year;
+    cs137_input.fit_age = false;
+    cs137_input.gammas_to_exclude = {};
+    rel_eff_cpy.nuclides.push_back( cs137_input );
+
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = u235;
+    constraint.lower_mass_fraction = 0.1;
+    constraint.upper_mass_fraction = 0.9;
+    rel_eff_cpy.mass_fraction_constraints.push_back( constraint );
+
+    RelActCalcAuto::RelEffCurveInput::ActRatioConstraint nuc_constraint;
+    nuc_constraint.constrained_source = co60_input.source;
+    nuc_constraint.controlling_source = u238;
+    nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
+    rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    nuc_constraint.constrained_source = cs137_input.source;
+    nuc_constraint.controlling_source = u235;
+    nuc_constraint.constrained_to_controlled_activity_ratio = 0.1;
+    rel_eff_cpy.act_ratio_constraints.push_back( nuc_constraint );
+
+    rel_eff_cpy.check_nuclide_constraints();
+
+    // We are suppoest to get here
+  }catch(const std::exception& e)
+  {
+    cerr << "Failed to allow mass-constrained nuclide activity ratio control nuclide of other element." << endl;
+    assert( 0 );
+  }
+
 
   cout << "All act_ratio_constraints checks passed" << endl;
 }//void check_auto_nuclide_constraints_checks()
@@ -1518,15 +1770,15 @@ void leu_heu_ana()
 
 int dev_code()
 {
-  //check_auto_nuclide_constraints_checks();
+  check_auto_nuclide_constraints_checks();
   //check_manual_nuclide_constraints_checks();
   //check_auto_hoerl_and_ext_shield_checks();
   //return 1;
   
   //check_auto_state_xml_serialization();
 
-  //run_u02_example();
-  //return 1;
+  run_u02_example();
+  return 1;
   
   //check_physical_model_eff_function();
   //return 1;
@@ -1649,8 +1901,6 @@ int dev_code()
   
   const vector<RelActCalcAuto::NucInputInfo> nuclides{ {
       db->nuclide("Pu238"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1662,8 +1912,6 @@ int dev_code()
       "rgb(0, 0, 255)",
     }, {
       db->nuclide("Pu239"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1675,8 +1923,6 @@ int dev_code()
       "rgb(255, 69, 0)",
     }, {
       db->nuclide("Pu240"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1688,8 +1934,6 @@ int dev_code()
       "rgb(34, 139, 34)",
     }, {
       db->nuclide("Pu241"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min

@@ -1,144 +1,136 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- This file applies to ShieldingSourceDisplay.cpp
-    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
-    sfm- is short for SourceFitModel
-    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
-  -->
-  
-
   <message id="ssd-tt-distance">
-    Distance du centre de la source à la face du détecteur. Le nombre doit être
-    suivi d'unités ; les unités valides sont : mètres, m, cm, mm, km, pieds,
-    ft, ', in, pouces, ou ". Vous pouvez également ajouter plusieurs distances,
+    Distance du centre de la source à la face du détecteur.  Le nombre doit être
+    suivi d'unités ; les unités valides sont : mètres, m, cm, mm, km, pieds,
+    ft, ', in, pouces, ou ".  Vous pouvez également ajouter plusieurs distances,
     telles que '3ft 4in', ou '3.6E-2 m 12 cm' qui sont équivalentes à
     40 pouces et 15.6 cm respectivement.
-</message>
-<message id="ssd-geom-point">Point/Sphérique</message>
-<message id="ssd-geom-cyl-end">Cylindrique : face</message>
-<message id="ssd-geom-cyl-side">Cylindrique : côté</message>
-<message id="ssd-rectangular">Rectangulaire</message>
-<message id="ssd-fixed-geom-notification">Utilisation de DRF à géométrie fixe</message>
-<message id="ssd-tt-shieldings">
-    Les blindages sont traités comme des coquilles avec la coquille la plus interne
-    étant la première que vous ajoutez (la plus haute dans cette boîte), et
-    les blindages suivants superposés autour de celle-ci. Toutes les sources
-    non attribuées comme composants des blindages sont traitées comme des sources ponctuelles
-    au centre.
-</message>
-<message id="ssd-add-shield-label">Ajouter un Blindage :</message>
-<message id="ssd-tt-add-shield">Choisissez parmi une bibliothèque de matériaux de blindage communs prédéfinis.</message>
-<message id="ssd-generic-btn">Générique</message>
-<message id="ssd-tt-generic">Vous permet de définir et d'ajuster le numéro atomique et la densité surfacique.</message>
-<message id="ssd-perform-fit-btn">Effectuer l'Ajustement du Modèle</message>
-<message id="ssd-cancel-fit">Annuler l'Ajustement du Modèle</message>
-<message id="ssd-mi-calc-log">Journal des Calculs</message>
-<message id="ssd-mi-import-model">Importer le Modèle...</message>
-<message id="ssd-mi-export-model">Exporter le Modèle</message>
-<message id="ssd-mi-from-db">Ouvrir Depuis la Base de Données...</message>
-<message id="ssd-mi-save-to-db">Sauvegarder Dans la Base de Données...</message>
-<message id="ssd-mi-clone-db-entry">Cloner Dans la Base de Données...</message>
-<message id="ssd-to-small-for-chart">(agrandir la fenêtre pour afficher &chi;<sup>2</sup>)</message>
-<message id="ssd-tt-chi2-switch">Afficher le Chi de chaque pic pour le modèle actuel sur le graphique, ou la zone relative du pic multiple entre le modèle actuel et le pic observé.</message>
-<message id="ssd-cb-all-peaks">Tous les Pics</message>
-<message id="ssd-multi-iso-per-peak">Plusieurs nucléides contribuent au pic</message>
-<message id="ssd-tt-multi-iso-per-peak">Cocher cette option permettra à d'autres nucléides ajustés, autres que celui assigné à un pic, de contribuer aux comptes attendus dans un pic observé. Cela pourrait par exemple être utile lors de l'ajustement à la fois pour Ho166m et U235 qui ont tous deux un pic près de 185 keV.</message>
-<message id="ssd-cb-atten-for-air">Atténuer pour l'air</message>
-<message id="ssd-tt-atten-for-air">Lorsqu'il est coché, l'atténuation due à l'air entre la source, ou le blindage externe, et le détecteur sera prise en compte dans les calculs.</message>
-<message id="ssd-cb-sub-back-peaks">Soustraire les Pics de Fond</message>
-<message id="ssd-tt-sub-back-peaks">Cela force les isotopes d'un élément à tous avoir le même âge dans l'ajustement.</message>
-<message id="ssd-cb-same-el-same-age">Isotopes du même élément du même âge</message>
-<message id="ssd-tt-same-el-same-age">Imposer que les isotopes du même élément aient tous le même âge.</message>
-<message id="ssd-cb-corr-for-decay">Corriger pour la décroissance pendant la mesure.</message>
-<message id="ssd-tt-corr-for-decay">Corrige pour les effets de décroissance et de croissance qui se produisent pendant le temps de la mesure. Les activités résultantes correspondent au début de la mesure. Peut prendre du temps supplémentaire pour trouver la solution.</message>
-<message id="ssd-tt-geometry">Géométrie à utiliser pour modéliser les sources "trace", ou les sources auto-atténuantes.
+  </message>
+  <message id="ssd-geom-point">Point/Sphérique</message>
+  <message id="ssd-geom-cyl-end">Cylindrique : extrémité</message>
+  <message id="ssd-geom-cyl-side">Cylindrique : côté</message>
+  <message id="ssd-rectangular">Rectangulaire</message>
+  <message id="ssd-fixed-geom-notification">Utilisation d'une DRF à géométrie fixe</message>
+  <message id="ssd-tt-shieldings">
+    Les blindages sont traités comme des coques, la
+    coque la plus interne étant la première que vous ajoutez (celle du haut dans cette zone), et
+    les blindages suivants étant superposés autour de celle-ci.  Toutes les sources
+    non attribuées comme composants de blindages sont traitées comme des points
+    sources au centre.
+  </message>
+  <message id="ssd-add-shield-label">Ajouter un blindage :</message>
+  <message id="ssd-tt-add-shield">Choisissez parmi une bibliothèque de matériaux de blindage courants prédéfinis.</message>
+  <message id="ssd-generic-btn">Générique</message>
+  <message id="ssd-tt-generic">Permet de définir et d'ajuster le numéro atomique et la densité surfacique.</message>
+  <message id="ssd-perform-fit-btn">Effectuer l'ajustement du modèle</message>
+  <message id="ssd-cancel-fit">Annuler l'ajustement du modèle</message>
+  <message id="ssd-mi-calc-log">Journal de calcul</message>
+  <message id="ssd-mi-import-model">Importer un modèle...</message>
+  <message id="ssd-mi-export-model">Exporter le modèle</message>
+  <message id="ssd-mi-from-db">Ouvrir depuis la base de données...</message>
+  <message id="ssd-mi-save-to-db">Enregistrer dans la base de données...</message>
+  <message id="ssd-mi-clone-db-entry">Cloner dans la base de données...</message>
+  <message id="ssd-to-small-for-chart">(agrandir la fenêtre pour afficher le χ<sup>2</sup>)</message>
+  <message id="ssd-tt-chi2-switch">Afficher le Chi de chaque pic pour le modèle actuel sur le graphique, ou le multiple de l'aire du pic relative entre le modèle actuel et le pic observé.</message>
+  <message id="ssd-cb-all-peaks">Tous les pics</message>
+  <message id="ssd-multi-iso-per-peak">Plusieurs nucléides contribuent au pic</message>
+  <message id="ssd-tt-multi-iso-per-peak">La sélection de cette option permettra à d'autres nucléides en cours d'ajustement, autres que celui attribué à un pic, de contribuer aux comptes attendus dans un pic observé.  Cela pourrait par exemple être utile lors de l'ajustement de Ho166m et U235 qui ont tous deux un pic près de 185 keV.</message>
+  <message id="ssd-cb-atten-for-air">Atténuer pour l'air</message>
+  <message id="ssd-tt-atten-for-air">Lorsque cette case est cochée, l'atténuation due à l'air entre la source, ou le blindage extérieur, et le détecteur sera prise en compte dans les calculs.</message>
+  <message id="ssd-cb-sub-back-peaks">Soustraire les pics d'arrière-plan</message>
+  <message id="ssd-tt-sub-back-peaks">Cela force les isotopes d'un élément à avoir tous le même âge dans l'ajustement.</message>
+  <message id="ssd-cb-same-el-same-age">Isotopes du même élément de même âge</message>
+  <message id="ssd-tt-same-el-same-age">Imposer que les isotopes d'un même élément aient tous le même âge.</message>
+  <message id="ssd-cb-corr-for-decay">Corriger pour la désintégration pendant la mesure.</message>
+  <message id="ssd-tt-corr-for-decay">Corrige les effets de désintégration et d'accumulation qui se produisent pendant la durée de la mesure.  Les activités résultantes correspondent à l'heure de début de la mesure.  Peut prendre du temps de calcul supplémentaire pour trouver une solution.</message>
+  <message id="ssd-tt-geometry">Géométrie à utiliser pour la modélisation des sources "traces" ou des sources auto-atténuantes.
     <br />
     <br />
     Par défaut, toutes les sources sont des sources ponctuelles à la distance spécifiée du détecteur, pour toutes les géométries.
     <br />
     Cependant, si vous faites d'un nucléide une source "trace" (en cliquant sur le bouton ⊕ d'un blindage
-    et en sélectionnant "<em>Ajouter Source Trace</em>"), ou une source auto-atténuante (en sélectionnant la
-    case à cocher <em>Source pour :</em> lorsque un blindage a le même élément qu'un nucléide pour lequel vous
-    ajustez), alors le nucléide source sera modélisé comme distribué à travers le blindage,
+    et en sélectionnant "<em>Ajouter une source trace</em>"), ou une source auto-atténuante (en sélectionnant la
+    case à cocher <em>Source pour :</em>" lorsqu'un blindage a le même élément qu'un nucléide que vous
+    ajustez), alors l'isotope source sera modélisé comme étant distribué dans tout le blindage,
     et le traçage de rayons sera utilisé pour tenir compte des différentes atténuations à chaque emplacement dans
     le blindage.
     <br />
     <br />
-    Pour simplifier les choses, choisissez la géométrie "Point/Sphérique" à moins que vous ne réalisiez un ajustement à une
+    Pour simplifier les choses, choisissez la géométrie "Point/Sphérique" sauf si vous effectuez un ajustement sur une
     source "trace" ou auto-atténuante.
-</message>
-<message id="ssd-phone-tab-source-peaks">Pics de Source</message>
-<message id="ssd-phone-tab-source-isotopes">Isotopes de Source</message>
-<message id="ssd-phone-tab-shielding">Blindage</message>
-<message id="ssd-warn-no-back-peaks">Il n'y a pas de pics de fond définis, ils ne seront donc pas soustraits</message>
-<message id="ssd-warn-no-back-spec">Il n'y a pas de spectre de fond chargé, donc les zones de pics de fond ne peuvent pas être soustraites du premier plan.</message>
-<message id="ssd-warn-no-back-peaks-toggle">
-    Le spectre de fond n'a pas de pics identifiés. Vous devriez charger le spectre de fond comme
-    le premier plan, identifier les pics à potentiellement soustraire, puis revenir à votre combinaison actuelle
-    de premier plan/arrière-plan.
-</message>
-<message id="ssd-update-dim-to-be-min">Mise à jour de la dimension du blindage pour être une épaisseur minimale.</message>
-<message id="ssd-scaled-shield-to-be-less-dist">Les épaisseurs de blindage ont été ajustées pour être inférieures à la distance du détecteur.</message>
-<message id="ssd-err-fit-only-one-an">Vous ne pouvez ajuster le numéro atomique que d'un seul blindage générique à la fois.</message>
-<message id="ssd-warn-invalid-chi2-for-energy">Un chi2 invalide a été calculé pour {1} keV, d'autres résultats peuvent être invalides</message>
-<message id="ssd-calc-log-window-title">Journal des Calculs</message>
-<message id="ssd-calc-log-export-txt">Fichier TXT</message>
-<message id="ssd-err-opening-import-model">Erreur lors de l'ouverture du modèle XML de blindage/source téléchargé : {1}</message>
-<message id="ssd-import-model-window-title">Importer le Modèle XML de Blindage/Source</message>
-<message id="ssd-err-opening-db-model">Erreur lors de l'ouverture du modèle de blindage/source depuis la base de données : {1}</message>
-<message id="ssd-err-loading-model">Impossible de charger le modèle sélectionné - désolé :(</message>
-<message id="ssd-prev-saved-window-title">Modèles Précédemment Sauvegardés</message>
-<message id="ssd-models-prev-for-fore">Modèles précédemment utilisés avec ce premier plan :</message>
-<message id="ssd-models-prev-saved">Modèles que vous avez précédemment sauvegardés :</message>
-<message id="ssd-model-desc">Description du Modèle :</message>
-<message id="ssd-cb-allow-del">Autoriser la suppression</message>
-
-<message id="ssd-no-model-in-db">Il n'y a pas de modèles dans la base de données pour vous</message>
-<message id="ssd-err-creating-db-browser">Erreur lors de la création du navigateur de modèles de base de données</message>
-<message id="ssd-save-model-to-db-window-title">Sauvegarder le modèle Activité/Blindage dans la base de données</message>
-<message id="ssd-save-to-db-name">Entrez le nom du modèle :</message>
-<message id="ssd-save-to-db-desc">Entrez la description du modèle (facultatif) :</message>
-<message id="ssd-must-enter-name">Vous devez entrer un nom</message>
-<message id="ssd-err-saving-to-db">Erreur lors de la sauvegarde dans la base de données</message>
-<message id="ssd-Best">Meilleur</message>
-<message id="ssd-fit-failed">L'ajustement au modèle a échoué</message>
-<message id="ssd-using-fit-anyway">Utilisation de la solution d'ajustement malgré tout.</message>
-<message id="ssd-err-fit-not-performed">
+  </message>
+  <message id="ssd-phone-tab-source-peaks">Pics de la source</message>
+  <message id="ssd-phone-tab-source-isotopes">Isotopes de la source</message>
+  <message id="ssd-phone-tab-shielding">Blindage</message>
+  <message id="ssd-warn-no-back-peaks">Il n'y a pas de pics d'arrière-plan définis, pas de soustraction</message>
+  <message id="ssd-warn-no-back-spec">Il n'y a pas de spectre d'arrière-plan chargé, il n'est donc pas possible de soustraire les aires des pics d'arrière-plan du premier plan.</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    Le spectre d'arrière-plan n'a pas de pics identifiés.  Vous devriez charger le spectre d'arrière-plan comme
+    premier plan, identifier les pics à potentiellement soustraire, puis revenir à votre
+    combinaison premier plan/arrière-plan actuelle.
+  </message>
+  <message id="ssd-update-dim-to-be-min">Dimension de blindage mise à jour pour être une épaisseur minimale.</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">Les épaisseurs de blindage ont été mises à l'échelle pour être inférieures à la distance du détecteur.</message>
+  <message id="ssd-err-fit-only-one-an">Vous ne pouvez ajuster que le numéro atomique d'un seul blindage générique à la fois.</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">Un chi2 invalide a été calculé pour {1} keV, d'autres résultats peuvent être invalides</message>
+  <message id="ssd-calc-log-window-title">Journal de calcul</message>
+  <message id="ssd-calc-log-export-txt">Fichier TXT</message>
+  <message id="ssd-err-opening-import-model">Erreur lors de l'ouverture du modèle d'ajustement source/blindage téléchargé : {1}</message>
+  <message id="ssd-import-model-window-title">Importer un modèle XML source/blindage</message>
+  <message id="ssd-err-opening-db-model">Erreur lors de l'ouverture du modèle d'ajustement source/blindage depuis la base de données : {1}</message>
+  <message id="ssd-err-loading-model">Impossible de charger le modèle sélectionné - désolé :(</message>
+  <message id="ssd-prev-saved-window-title">Modèles précédemment enregistrés</message>
+  <message id="ssd-models-prev-for-fore">Modèles précédemment utilisés avec ce premier plan :</message>
+  <message id="ssd-models-prev-saved">Modèles que vous avez précédemment enregistrés :</message>
+  <message id="ssd-model-desc">Description du modèle :</message>
+  <message id="ssd-cb-allow-del">Autoriser la suppression</message>
+  <message id="ssd-no-model-in-db">Il n'y a aucun modèle dans la base de données pour vous</message>
+  <message id="ssd-err-creating-db-browser">Erreur lors de la création du navigateur de modèles de base de données</message>
+  <message id="ssd-save-model-to-db-window-title">Enregistrer le modèle activité/blindage dans la base de données</message>
+  <message id="ssd-save-to-db-name">Entrez le nom du modèle :</message>
+  <message id="ssd-save-to-db-desc">Entrez la description du modèle (facultatif) :</message>
+  <message id="ssd-must-enter-name">Vous devez entrer un nom</message>
+  <message id="ssd-err-saving-to-db">Erreur lors de l'enregistrement dans la base de données</message>
+  <message id="ssd-Best">Meilleur</message>
+  <message id="ssd-fit-failed">L'ajustement au modèle a échoué</message>
+  <message id="ssd-using-fit-anyway">Utilisation de la solution d'ajustement quand même.</message>
+  <message id="ssd-err-fit-not-performed">
     {1}
     <br />
     Ajustement non effectué.
-</message>
-<message id="ssd-err-before-fit">
+  </message>
+  <message id="ssd-err-before-fit">
     {1}
     <br />
     Avant l'ajustement.
-</message>
-<message id="ssd-err-couldnt-make-chi2-fcn">
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
     {1}
     <br />
     Ajustement non effectué (impossible de créer Chi2Fcn).
-</message>
-<message id="ssd-error-create-tool">Erreur lors de la création de l'affichage d'ajustement Activité/Blindage : {1}</message>
+  </message>
+  <message id="ssd-error-create-tool">Erreur lors de la création de l'affichage d'ajustement activité/blindage : {1}</message>
 
-<message id="sfm-tt-header-isotope">Les nucléides sont ajoutés ou retirés selon les pics photoélectriques utilisés pour cet ajustement, donc ils ne peuvent pas être modifiés dans ce tableau</message>
-<message id="sfm-tt-header-activity">Activité du nucléide. Entrer une valeur de départ raisonnable peut aider l'ajustement, ou l'activité n'a pas besoin d'être ajustée. Les valeurs peuvent être entrées dans des formats similaires à '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>
-<message id="sfm-tt-header-age">Âge du nucléide. Les valeurs peuvent être entrées dans un format similaire à : '23.3s' '2 hl' - (hl signifie demi-vies), '5.23y', '23:14:21.343', '19min', etc. Notez que les nucléides qui se désintègrent en enfants stables ne peuvent pas vieillir.</message>
-<message id="sfm-tt-header-fit-act">L'ajustement doit-il également trouver l'activité du nucléide, ou supposer que la valeur entrée est correcte ?</message>
-<message id="sfm-tt-header-fit-age">L'ajustement doit-il également trouver l'âge du nucléide, ou juste supposer que la valeur entrée est correcte ? Cette option n'est pas disponible pour les nucléides qui se désintègrent uniquement en enfants stables.</message>
-<message id="sfm-tt-header-iso-mass">Ceci est la masse du nucléide nu en supposant l'activité indiquée.</message>
-<message id="sfm-tt-header-act-uncert">Ceci est l'incertitude dans l'activité de l'ajustement.</message>
-<message id="sfm-tt-header-age-uncert">Ceci est l'incertitude dans l'âge de l'ajustement.</message>
-<message id="sfm-header-fit-act">Ajuster Act.</message>
-<message id="sfm-header-fit-age">Ajuster Âge</message>
-<message id="sfm-header-act-uncert">Incert. Act.</message>
-<message id="sfm-header-age-uncert">Incert. Âge</message>
-<message id="sfm-tt-aging-not-allowed">Les enfants des nucléides sont stables donc le vieillissement n'est pas autorisé car cela n'affecte pas le spectre gamma.</message>
+  <message id="sfm-tt-header-isotope">Les nucléides sont ajoutés ou supprimés en fonction des photopics utilisés pour cet ajustement, ils ne peuvent donc pas être modifiés dans ce tableau</message>
+  <message id="sfm-tt-header-activity">Activité du nucléide.  Entrer une valeur de départ raisonnable peut aider l'ajustement, ou l'activité n'a pas besoin d'être ajustée.  Les valeurs peuvent être entrées dans des formats similaires à '12.4 kBq', '1.0mCi', '55.3uCi', '15.82Mbq'</message>
+  <message id="sfm-tt-header-age">Âge du nucléide.  Les valeurs peuvent être entrées dans un format similaire à : '23.3s' '2 hl' - (hl signifie demi-vies), '5.23a', '23:14:21.343', '19min', etc.  Notez que les nucléides qui se désintègrent en produits stables ne peuvent pas être vieillis.</message>
+  <message id="sfm-tt-header-fit-act">L'ajustement doit-il également essayer de trouver l'activité du nucléide, ou supposer que la valeur entrée est correcte ?</message>
+  <message id="sfm-tt-header-fit-age">L'ajustement doit-il également essayer de trouver l'âge du nucléide, ou simplement supposer que la valeur entrée est correcte ?  Cette option n'est pas disponible pour les nucléides qui se désintègrent uniquement en produits stables.</message>
+  <message id="sfm-tt-header-iso-mass">Il s'agit de la masse du nucléide nu en supposant l'activité indiquée.</message>
+  <message id="sfm-tt-header-act-uncert">Il s'agit de l'incertitude sur l'activité issue de l'ajustement.</message>
+  <message id="sfm-tt-header-age-uncert">Il s'agit de l'incertitude sur l'âge issue de l'ajustement.</message>
+  <message id="sfm-header-fit-act">Ajuster Act.</message>
+  <message id="sfm-header-fit-age">Ajuster Âge</message>
+  <message id="sfm-header-act-uncert">Incert. Act.</message>
+  <message id="sfm-header-age-uncert">Incert. Âge</message>
+  <message id="sfm-tt-aging-not-allowed">Les produits du nucléide sont stables, donc le vieillissement n'est pas autorisé car il n'affecte pas le spectre gamma.</message>
 
-<message id="x2g-yaxis-title-chi">(observé-modèle)/incert</message>
-<message id="x2g-yaxis-title-mult">Mult. du Modèle</message>
-<message id="x2g-">L'axe Y est le nombre de comptes de la zone de pic, moins le nombre de comptes attendus de la source actuellement affichée"
-    " et des valeurs de blindage, le tout divisé par l'incertitude statistique. Le carré de ceci"
-    " est ce qui est utilisé pour optimiser le blindage et les sources.</message>
-<message id="x2g-tt-chi-axis">L'axe Y est le nombre de comptes de la zone de pic, moins le nombre de comptes attendus de la source actuellement affichée et des valeurs de blindage, le tout divisé par l'incertitude statistique. Le carré de ceci est ce qui est utilisé pour optimiser le blindage et les sources.</message>
-<message id="x2g-tt-scale-axis">L'axe Y est le multiple des comptes de pic observés, par rapport à ce qui serait attendu des valeurs de source et de blindage actuelles.</message>
+  <message id="x2g-yaxis-title-chi">(observé-modèle)/incert</message>
+  <message id="x2g-yaxis-title-mult">Mult. du modèle</message>
+  <message id="x2g-">L'axe Y représente le nombre de comptes de l'aire du pic, moins le nombre de comptes attendus à partir des
+     valeurs de source et de blindage actuellement affichées, le tout divisé par l'incertitude statistique. Le carré de ceci
+     est ce qui est utilisé pour optimiser le blindage et les sources.</message>
+  <message id="x2g-tt-chi-axis">L'axe Y représente le nombre de comptes de l'aire du pic, moins le nombre de comptes attendus à partir des valeurs de source et de blindage actuellement affichées, le tout divisé par l'incertitude statistique.  Le carré de ceci est ce qui est utilisé pour optimiser le blindage et les sources.</message>
+  <message id="x2g-tt-scale-axis">L'axe Y est le multiple des comptes de pic observés, par rapport à ce qui serait attendu des valeurs actuelles de source et de blindage.</message>
 </messages>

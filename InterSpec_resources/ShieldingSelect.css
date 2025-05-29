@@ -26,8 +26,11 @@
 {
   border: 1px solid #e1e1e1;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  column-gap: 5px;
 }
-
 
 
 .ShieldingSelect .MaterialSummary
@@ -49,10 +52,27 @@
   padding-left: 10px;
 }
 
-.MassFracNoFit
+.ShieldingSelect .SourceCheckbox .UseAsSrcCb
 {
-  background: Silver;
-  margin-left: 3ex;
+  width: 60px;
+  overflow-x: hidden;
+}
+
+.ShieldingSelect .SourceCheckbox .SelfAttenSrcLabel
+{
+  width: 95px;
+  overflow-x: hidden;
+  font-size: smaller;
+}
+
+.ShieldingSelect .SourceCheckbox input.FloatInput
+{
+  
+}
+
+.ShieldingSelect .SourceCheckbox .FitFractionCb
+{
+  
 }
 
 
@@ -64,6 +84,19 @@
   border:2px solid #e1e1e1;
 }
 
+.ShieldingSelect .LinkBtn.AddTrcSrcBtn
+{
+  height: 12px;
+  font-size: 8px;
+  padding-top: 0px;
+  padding-bottom: 0px;
+  margin-left: auto;
+}
+  
+.ShieldingSelect .warning
+{
+  color: red;
+}
 
 .TraceSrcContainer
 {

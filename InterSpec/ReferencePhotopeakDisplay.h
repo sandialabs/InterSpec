@@ -317,6 +317,26 @@ public:
    */
   Wt::WColor suggestColorForSource( const std::string &src ) const;
   
+  /** Updates `m_previouslyPickedSourceColors` for the specified source.
+   
+   If source string is empty, no action is taken.
+   If color is default, then the source in the cache is removed.
+   */
+  void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );
+
+  
+  bool showingGammaLines() const;
+  void setShowGammaLines( const bool show );
+  
+  bool showingXrayLines() const;
+  void setShowXrayLines( const bool show );
+  
+  bool showingAlphaLines() const;
+  void setShowAlphaLines( const bool show );
+  
+  bool showingBetaLines() const;
+  void setShowBetaLines( const bool show );
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -473,6 +493,9 @@ protected:
   FeatureMarkerWidget *m_featureMarkers;
   
   static const int sm_xmlSerializationVersion;
+
+  public:
+    static const std::vector<Wt::WColor> sm_def_line_colors;
 };//class ReferencePhotopeakDisplay
 
 

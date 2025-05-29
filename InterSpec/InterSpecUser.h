@@ -378,7 +378,9 @@ public:
   std::string uuid;
   std::string filename;
   std::string description;
-
+  
+  // TODO: as of 20250227, `SpectraFileHeader->m_riidSummary` doesnt get saved to the database - we should add this.
+  
   bool userHasModified;
   Wt::WDateTime uploadTime;
   Wt::WDateTime serializeTime;
@@ -483,9 +485,10 @@ public:
  
 class FileToLargeForDbException : public std::exception
 {
-  std::string m_msg;
-  const size_t m_saveSize, m_limit;
 public:
+  const std::string m_msg;
+  const size_t m_saveSize, m_limit;
+
   FileToLargeForDbException( const size_t saveSize, const size_t limit );
   
   virtual const char* what() const noexcept
@@ -768,7 +771,7 @@ struct UserState
   int backgroundId;
   int secondForegroundId;
   int shieldSourceModelId;
-  std::string otherSpectraCsvIds;
+  std::string otherSpectraCsvIds; //!< TODO: This doesnt look to be used; should add option to save all other open files to the database when saving a state; noting which are part of saved app states or not
   std::string foregroundSampleNumsCsvIds;
   std::string secondForegroundSampleNumsCsvIds;
   std::string backgroundSampleNumsCsvIds;

@@ -92,9 +92,40 @@ namespace RelActCalcAuto
 
 int run_test();
 
-/** A typdef for passing either Nuclide, Element, or Reaction to functions. */
-typedef std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> SrcVariant;
-  
+/** A typdef for passing either Nuclide, Element, or Reaction to functions. 
+ 
+ Note that it also includes using a monostate, because we would like to semi-enforse that if a pointer is
+ used, then it is valid; if we didnt include the monostate, then default construction of the variant would
+ use a nullptr for the first pointer type.
+*/
+typedef std::variant<std::monostate,const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> SrcVariant;
+
+/** Returns the #SandiaDecay::Nuclide from the #SrcVariant, returning nullptr if not a #SandiaDecay::Nuclide. */
+const SandiaDecay::Nuclide *nuclide( const SrcVariant &src );
+
+/** Returns the #SandiaDecay::Element from the #SrcVariant, returning nullptr if not a #SandiaDecay::Element. */
+const SandiaDecay::Element *element( const SrcVariant &src );
+
+/** Returns the #ReactionGamma::Reaction from the #SrcVariant, returning nullptr if not a #ReactionGamma::Reaction. */
+const ReactionGamma::Reaction *reaction( const SrcVariant &src );
+
+/** Returns true if the pointer in the #SrcVariant is a nullptr. */
+bool is_null( const SrcVariant &src );
+
+/** Returns a string name for the #SrcVariant. 
+   Either SandiaDecay::Nuclide::symbol, SandiaDecay::Element::symbol, or ReactionGamma::Reaction::name(). 
+   
+   Throws exception if monostate applicable pointer is nullptr.
+*/
+std::string to_name( const SrcVariant &src );
+
+/** Returns a #SrcVariant from a string name.
+ * 
+   If a Nuclide, Element, or Reaction can not be found for name, return monostate.
+*/
+SrcVariant source_from_string( const std::string &name );
+
+
 /** Struct to specify an energy range to consider for doing relative-efficiency/activity calc.
  */
 struct RoiRange
@@ -127,13 +158,12 @@ struct RoiRange
 
 
 /** Struct to specify a nuclide to use for doing relative-efficiency/activity calc.
+ 
+ TODO: min/max rel act to be a constraint
  */
 struct NucInputInfo
 {
-  const SandiaDecay::Nuclide *nuclide = nullptr;
-  
-  const SandiaDecay::Element *element = nullptr;
-  const ReactionGamma::Reaction *reaction = nullptr;
+  SrcVariant source;
   
   /** Age in units of PhysicalUnits (i.e., 1.0 == second), for the nuclide.
    
@@ -192,6 +222,8 @@ struct NucInputInfo
   std::string peak_color_css;
   
   const std::string name() const;
+
+  bool operator==( const NucInputInfo &rhs ) const;
 
   static const int sm_xmlSerializationVersion = 0;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
@@ -364,6 +396,13 @@ struct RelEffCurveInput
 {
   RelEffCurveInput();
 
+  /** The name of the relative efficiency curve. 
+   
+   This value is not used within calculations, but is used for the reporting and 
+   display of results.
+  */
+  std::string name;
+
   /** The nuclides that apply to this relative efficiency curve.
    * You may specify the same nuclide for multiple different RelEffCurveInput inputs,
    * but becareful of degeneracies in the problem.
@@ -418,11 +457,24 @@ struct RelEffCurveInput
    */
   RelActCalc::PuCorrMethod pu242_correlation_method;
 
-  /** A constraint on the activity of a nuclide, relative to another nuclide. */
+  /** A constraint on the activity of a nuclide, relative to another nuclide. 
+   
+   TODO: move controlled/constrained nuclide to be `SrcVariant` (i.e., `std::variant<Nuc,El,Rctn>`)
+   TODO: currently this constraint only applies to a single Rel. Eff. curve; see TODO note in
+        MassFractionConstraint, and do similar for this.
+  */
   struct ActRatioConstraint
   {
-    const SandiaDecay::Nuclide *controlling_nuclide = nullptr;
-    const SandiaDecay::Nuclide *constrained_nuclide = nullptr;
+    /** The source whose relative activity is varied in the fit. */
+    SrcVariant controlling_source;
+
+    /** The source that is fixed to the `controlling_source`. */
+    SrcVariant constrained_source;
+
+    /** The ratio of the activity of the `constrained_source` to the `controlling_source`. 
+     
+     e.g., `act(constrained_source) = constrained_to_controlled_activity_ratio * act(controlling_source)`
+    */
     double constrained_to_controlled_activity_ratio = 0.0;
     
     static ActRatioConstraint from_mass_ratio( const SandiaDecay::Nuclide *constrained, 
@@ -449,6 +501,50 @@ struct RelEffCurveInput
     then there can not be a constraint that Nuc2 is constrained to Nuc1.
   */
   std::vector<ActRatioConstraint> act_ratio_constraints;
+
+
+  /** A constraint on the mass fraction of an nuclide within an element. 
+   
+
+   TODO: currently this constraint only applies to a single Rel. Eff. curve; if you have multiple
+          curves with same constraint/nuclide, then each constraint will be applied seperately.
+          We should add in a `set<size_t>` that specifies the indexes of all the Rel. Eff. curves
+          that this constraint applies to (if only single curve, then allow it to be empty), and 
+          then move the constraint up a level to the `Options` struct.
+  */
+  struct MassFractionConstraint
+  {
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    double lower_mass_fraction = 0.0;
+    double upper_mass_fraction = 0.0;
+
+    static const int sm_xmlSerializationVersion = 0;
+    void toXml( ::rapidxml::xml_node<char> *parent ) const;
+    void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  static void equalEnough( const MassFractionConstraint &lhs, const MassFractionConstraint &rhs );
+#endif
+  };//struct MassFractionConstraint
+
+  /** Constraints on nuclide mass fractions. 
+    
+    All input nuclides must be valid, and be found in `nuclides`.
+
+    The constrained nuclides must not be a controlled nuclide by ActRatioConstraint,
+    or have the min or max relative activity specified.
+
+    If the constrained nuclide controlls the activity of another nuclide, then that other nuclide
+    must be of a different element.
+    (this could be changed in the future, but for the initial implementation, we'll enforce this)
+
+    The lower mass fractions, for a particular element, must sum to less than 1.0.
+
+    There must be at least one nuclide for the element that does not have a mass fraction constraint.
+    (this _could_ be relaxed in the future, but for the initial implementation, this is required)
+  */
+  std::vector<MassFractionConstraint> mass_fraction_constraints;
+
 
   /** Checks that the nuclide constraints are valid.
 
@@ -482,12 +578,7 @@ struct RelEffCurveInput
 struct Options
 {
   Options();
- 
-  // TODO: 
-  // - Fix RelEff to flat 1.0 - dont fit
-  //  - Do not fit FWHM - use DRF, or if that doesnt have it, use FWHM eqn fit from all peaks in spectrum
-  //    This should allow getting a rough idea of which gamma lines _could_ be statistically significant, and hence be used.  And also, for generic nuclides, it will allow fitting small numbers of peaks; so like we could still use the "auto" rel act stuff to fit peaks, even for Cs137
-  
+   
   /** Whether to allow making small adjustments to the gain and/or offset of the energy calibration.
    
    Which coefficients are fit will be determined based on energy ranges used.
@@ -587,12 +678,10 @@ struct Options
 #endif
 };//struct Options
 
-
+/** Struct to a sources fit relative activity.*/
 struct NuclideRelAct
 {
-  const SandiaDecay::Nuclide *nuclide = nullptr;
-  const SandiaDecay::Element *element = nullptr;
-  const ReactionGamma::Reaction *reaction = nullptr;
+  SrcVariant source;
   
   std::string name() const;
 
@@ -654,12 +743,6 @@ struct RelActAutoSolution
   
   void print_html_report( std::ostream &strm ) const;
   
-  /** Prints out the JSON data the JS the RelEff chart accepts.
-   
-   Note: currently this code largely duplicates #RelEffChart::setData, so need to refactor.
-   */
-  void rel_eff_json_data( std::ostream &json, std::ostream &css, const size_t rel_eff_index ) const;
-  
   /** Prints the txt version of relative eff eqn. */
   std::string rel_eff_txt( const bool html_format, const size_t rel_eff_index ) const;
   
@@ -697,7 +780,6 @@ struct RelActAutoSolution
    */
   double activity_ratio( const SrcVariant &numerator, const SrcVariant &denominator, const size_t rel_eff_index ) const;
 
-  double activity_ratio( const NuclideRelAct &numerator, const NuclideRelAct &denominator, const size_t rel_eff_index ) const;
   
   /** Returns the relative activity of a nuclide.
   
@@ -709,17 +791,13 @@ struct RelActAutoSolution
   */
   double rel_activity( const SrcVariant &src, const size_t rel_eff_index ) const;
 
-  double rel_activity( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
 
   /** Returns the counts in all peaks for a source in the relative efficency curve.
 
   Note: it actually returns the sum of peak amplitudes, for all gammas within `m_final_roi_ranges`.
 
-  Throws exception if \c nuclide is nullptr, or was not in the problem, or any counts were inf or NaN.
+  Throws exception if \c src is nullptr, or was not in the problem, or any counts were inf or NaN.
   */
-  double nuclide_counts( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
-
-  /** A convience function for calling the above for a specific nuclide. */
   double nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const;
 
   /**  Gives the relative efficiency for a given energy. 
@@ -727,8 +805,6 @@ struct RelActAutoSolution
   double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
-  size_t nuclide_index( const NuclideRelAct &nucinfo, const size_t rel_eff_index ) const;
-
   size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
   
   /** Returns result of `RelActCalc::rel_eff_eqn_js_function(...)` or
@@ -840,12 +916,20 @@ struct RelActAutoSolution
    */
   std::vector<PeakDef> m_fit_peaks;
   
+  /** Same as `m_fit_peaks`, but with the peaks seperated by relative efficiency curve (they will share peak continua between curves).
+   Will not include free-floating peaks.
+   */
+  std::vector<std::vector<PeakDef>> m_fit_peaks_for_each_curve;
+  
   /** The fit peaks, in the energy calibration of the spectrum (i.e., what you would display,
    if you are not updating the displayed spectrum for the adjusted energy cal).
    
    You would use these peaks for `m_foreground`.
    */
   std::vector<PeakDef> m_fit_peaks_in_spectrums_cal;
+  
+  /** Same as `m_fit_peaks_in_spectrums_cal`, but seperated by rel eff curve, and not including free-floating peaks. */
+  std::vector<std::vector<PeakDef>> m_fit_peaks_in_spectrums_cal_for_each_curve;
   
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
    be assessed based on peak localities and expected counts; this variable holds the ROI

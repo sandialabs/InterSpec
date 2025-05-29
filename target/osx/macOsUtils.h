@@ -39,6 +39,30 @@ namespace macOsUtils
   
   bool openFinderToPath( const std::string &filepath );
   bool showFileInFinder( const std::string &filepath );
+  
+  /** Asynchronously, but modally, shows a native file/directory chooser, using obj-c code, calling the provided callback when
+   selection is done.
+   
+   This function must be called from within the main Wt thread of your application, and the callback with results will be posted
+   to this same application instance.
+   
+   @param title The utf-8 title of the selection dialog
+   @param message The utf-8  message for the selection dialog
+   @param canChooseFiles
+   @param canChooseDirectories
+   @param allowsMultipleSelection
+   @param callback The callback called when user selection is done; the argument will have the filesystem paths
+          of the selected files/directories, or if the user canceled, this vector will be empty.  This callback is made from
+          within the main Wt thread of your the instance that called this function.  The WApplication::triggerUpdate() function
+          will be called after calling your function.
+   
+   Upon failure, some messages is printed to stdout, but thats about it.
+   */
+  void showFilePicker( const std::string title, const std::string message,
+                           const bool canChooseFiles,
+                           const bool canChooseDirectories,
+                           const bool allowsMultipleSelection,
+                           const std::function<void(const std::vector<std::string> &)> callback );
 }
 
 #endif

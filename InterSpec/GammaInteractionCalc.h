@@ -640,6 +640,7 @@ struct SourceDetails
   size_t selfAttenShieldIndex;
   std::string selfAttenShieldName;
   bool isSelfAttenVariableMassFrac;
+  /** This is the fraction of the element in the shielding, that this nuclide is for. */
   double selfAttenMassFrac;
   double selfAttenMassFracUncertainty;
   
@@ -675,7 +676,7 @@ class ShieldingSourceChi2Fcn
 //                     e.g. to print out to user divide by g/cm2)
 //    - ignored
 //if material 1 normal material (if Material* is non-NULL pointer)
-  //    -Material { spherical thickness | cylindrical radius thickness | rectangular width thickness }
+//    -Material { spherical thickness | cylindrical radius thickness | rectangular width thickness }
 // ...
 //
 //could add another member variable that holds pointer to source isotopes to
@@ -703,7 +704,7 @@ public:
          (but since we only always do all or nothing, we arent actually losing much) - so we could upgrade ShieldingInfo to return mass-fractions
          to fit, and just always have it return all self-atten sources, if fitting for them is selected.
    */
-  struct ShieldLayerInfo
+  struct ShieldLayerInfo_remove_mea
   {
     /** The material this struct holds info for.
      If nullptr it represents generic shielding (e.g., AN/AD), and neither #self_atten_sources or #trace_sources may have entries.
@@ -852,41 +853,66 @@ public:
    `errors` must either be empty (in which case uncert will be set to zero), or the
    same size as `pars`.
  
-   Note: the returned mass fraction is mass fraction of the entire shielding, and
-        not just the fraction of that nuclides element.
+   Note: the returned mass fraction is mass fraction for the nuclides element - and not of the
+   entire shielding.
+   
+   Nuclide may, or may not, have its mass-fraction being fitted for.
+   
+   The element is required when nuc is nullptr, which indicates the mass fraction of the "other"
+   non-source nuclides.
    */
-  void massFraction( double &massFrac, double &uncert,
+  void massFractionOfElement( double &massFrac, double &uncert,
                      const size_t material_index,
                      const SandiaDecay::Nuclide *nuc,
+                     const SandiaDecay::Element *el,
                      const std::vector<double> &pars,
                      const std::vector<double> &errors ) const;
   
-  double massFraction( const size_t material_index,
+  double massFractionOfElement( const size_t material_index,
                           const SandiaDecay::Nuclide *nuc,
                           const std::vector<double> &pars ) const;
-  double massFractionUncert( const size_t material_index,
+  double massFractionOfElementUncertainty( const size_t material_index,
                              const SandiaDecay::Nuclide *nuc,
                              const std::vector<double> &pars,
                              const std::vector<double> &error ) const;
   
+  /** Return if the passed in nuclide is having its mass-fraction fitted.
+   */
   bool isVariableMassFraction( const size_t material_index,
                                const SandiaDecay::Nuclide *nuc ) const;
+  /** Returns if the elements "other nuclide" fraction is being fit. */
+  bool isVariableOtherMassFraction( const size_t material_index,
+                               const SandiaDecay::Element *el ) const;
+  
   bool hasVariableMassFraction( const size_t material_index ) const;
   
-  /** Returns a Material, with the elemental composition set to account for the mass-varied amounts,
-   so that the attenuation cross-sections will be as expected.
-   */
-  std::shared_ptr<Material> variedMassFracMaterial( const size_t material_index,
-                                          const std::vector<double> &x ) const;
-  
-  void setNuclidesToFitMassFractionFor( const size_t material_index,
-                   const std::vector<const SandiaDecay::Nuclide *> &nuclides );
   std::vector<const Material *> materialsFittingMassFracsFor() const;
-  std::vector<const SandiaDecay::Nuclide *> selfAttenuatingNuclides( const size_t material_index ) const;
-  const std::vector<const SandiaDecay::Nuclide *> &nuclideFittingMassFracFor(
-                                                                const size_t material_index ) const;
   
+  /** Returns nuclides that are self-attenuating, wether fitting the mass-fraction for them or not. */
+  std::vector<const SandiaDecay::Nuclide *> selfAttenuatingNuclides( const size_t material_index ) const;
+  
+  /** Returns the nuclides fitting mass fraction for, grouped by element.
+   
+   nullptr nuclides represent the "other" non-source nuclides, if that component is being fit.
+   
+   The mass-fraction parameter order is dictated by this result (which is also the same as `m_initial_shieldings`), of looping
+   over the Element, and then all the nuclides for that element ordered as in the vector..
+   */
+  std::map<const SandiaDecay::Element *,std::vector<const SandiaDecay::Nuclide *>> nuclideFittingMassFracFor(
+                                                                const size_t material_index ) const;
+  /** */
+  std::vector<const SandiaDecay::Element *> elementsFittingOtherFracFor( const size_t material_index ) const;
 
+  /** Returns information about all self-attenuating sources, grouped by element, wether mass-fraction for them are being fit or not.
+   
+   A nullptr nuclide indicates "other" non-source component, and may or may not be present if not fit for (if fit for, it will be present).
+   
+   Information returned about each nuclide is mass-fraction, uncertainty (valid if >0), and if it was fit for.
+   */
+  std::map<const SandiaDecay::Element *,std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double,bool>>> selfAttenSrcInfo(
+                                                            const size_t material_index,
+                                                            const std::vector<double> &pars,
+                                                            const std::vector<double> &error ) const;
   
   //setBackgroundPeaks(...): if you wish to correct for background counts, you
   //  can set that here.  The peaks you pass in should be the original
@@ -1153,8 +1179,6 @@ protected:
   std::vector<PeakDef> m_backgroundPeaks;
   std::shared_ptr<const DetectorPeakResponse> m_detector;
   
-  // TODO: we could probably eliminate m_materials, and just use m_initial_shieldings
-  std::vector<ShieldLayerInfo> m_materials;
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_initial_shieldings;
   
   std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphabetically and unique

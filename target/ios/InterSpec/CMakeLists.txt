@@ -37,7 +37,7 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 32 CACHE INTERNAL "" )
 set(USE_REL_ACT_TOOL ON CACHE INTERNAL "")
     
 
-project( InterSpecIOS VERSION 1.12 )
+project( InterSpecIOS VERSION 1.13 )
 
 add_definitions( -DIOS )
 

@@ -103,26 +103,17 @@ const int DecayParticleModel::RowData::ReactionToGammaMode = 1001;
 const int DecayParticleModel::RowData::NormGammaDecayMode = 1002;
 const int DecayParticleModel::RowData::CascadeSumMode = 1003;
 
-namespace
-{
-  //See: https://sashat.me/2017/01/11/list-of-20-simple-distinct-colors/
+//See: https://sashat.me/2017/01/11/list-of-20-simple-distinct-colors/
   //  for a pallet of distint colors
   //Or http://artshacker.com/wp-content/uploads/2014/12/Kellys-22-colour-chart.jpg
-  const static vector<Wt::WColor> ns_def_line_colors{
-    {"#0000FF"}, {"#006600"}, {"#0099FF"}, {"#9933FF"},
-    {"#FF66FF"}, {"#CC3333"}, {"#FF6633"}, {"#FFFF99"},
-    {"#CCFFCC"}, {"#0000CC"}, {"#666666"}, {"#003333"}
-  };
-  
-  
-  //struct on_scope_exit
-  //{
-  //  on_scope_exit( std::function<void( void )> f ) : m_function( f ) {}
-  //  ~on_scope_exit( void ) { m_function(); }
-  //private:
-  //  std::function<void( void )> m_function;
-  //};//on_scope_exit
-  
+const vector<Wt::WColor> ReferencePhotopeakDisplay::sm_def_line_colors{
+  {"#0000FF"}, {"#006600"}, {"#0099FF"}, {"#9933FF"},
+  {"#FF66FF"}, {"#CC3333"}, {"#FF6633"}, {"#FFFF99"},
+  {"#CCFFCC"}, {"#0000CC"}, {"#666666"}, {"#003333"}
+};
+
+namespace
+{   
   struct UpdateGuard
   {
     bool &m_guard;
@@ -224,6 +215,10 @@ namespace
         case ReferenceLineInfo::SourceType::OneOffSrcLines:
           filename += "_one_off_src";
           break;
+        
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+          filename += "_fision_lines";
+          break;
           
         case ReferenceLineInfo::SourceType::None:
           filename = "empty";
@@ -291,6 +286,12 @@ namespace
           out << "AgeDecayedTo," << refinfo.m_input.m_age << eol_char;
           break;
         }//
+          
+        case ReferenceLineInfo::SourceType::FissionRefLines:
+        {
+          out << "FissionProductLines," << refinfo.m_input.m_input_txt << eol_char;
+          out << "TimeAfterFission," << refinfo.m_input.m_age << eol_char;
+        }
           
         case ReferenceLineInfo::SourceType::None:
           assert( 0 );
@@ -388,6 +389,7 @@ namespace
         case ReferenceLineInfo::SourceType::CustomEnergy:
         case ReferenceLineInfo::SourceType::NuclideMixture:
         case ReferenceLineInfo::SourceType::OneOffSrcLines:
+        case ReferenceLineInfo::SourceType::FissionRefLines:
           out << eol_char << rel_amp_note << eol_char << eol_char;
           out << "Energy (keV),Rel. Yield";
           break;
@@ -856,7 +858,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_csvDownload( nullptr ),
     m_userHasPickedColor( false ),
     m_peaksGetAssignedRefLineColor( false ),
-    m_lineColors{ ns_def_line_colors },
+    m_lineColors{ sm_def_line_colors },
     m_specificSourcelineColors{},
     m_displayingNuclide( this ),
     m_nuclidesCleared( this ),
@@ -1069,7 +1071,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //m_fitPeaks->disable();
   
   if( m_lineColors.empty() )
-    m_lineColors = ns_def_line_colors;
+    m_lineColors = sm_def_line_colors;
     
   m_colorSelect = new ColorSelect(ColorSelect::PrefferNative);
   m_colorSelect->setColor( m_lineColors[0] );
@@ -1117,6 +1119,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   m_promptLinesOnly = new WCheckBox( WString::tr("rpd-opt-prompt"), m_optionsContent );  //ɣ
   HelpSystem::attachToolTipOn(m_promptLinesOnly, WString::tr("rpd-opt-tt-prompt"), showToolTips);
+  m_promptLinesOnly->addStyleClass( "CbNoLineBreak" );
   m_promptLinesOnly->checked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->unChecked().connect(this, &ReferencePhotopeakDisplay::updateDisplayChange);
   m_promptLinesOnly->hide();
@@ -1135,15 +1138,25 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers = new WCheckBox( WString::tr("rpd-feature-markers"), m_optionsContent );
       
   m_showGammas->setWordWrap( false );
+  m_showGammas->addStyleClass( "CbNoLineBreak" );
   m_showXrays->setWordWrap( false );
+  m_showXrays->addStyleClass( "CbNoLineBreak" );
   m_showAlphas->setWordWrap( false );
+  m_showAlphas->addStyleClass( "CbNoLineBreak" );
   m_showBetas->setWordWrap( false );
+  m_showBetas->addStyleClass( "CbNoLineBreak" );
   m_showCascadeSums->setWordWrap( false );
+  m_showCascadeSums->addStyleClass( "CbNoLineBreak" );
   m_showEscapes->setWordWrap( false );
+  m_showEscapes->addStyleClass( "CbNoLineBreak" );
   m_showPrevNucs->setWordWrap( false );
+  m_showPrevNucs->addStyleClass( "CbNoLineBreak" );
   m_showRiidNucs->setWordWrap( false );
+  m_showRiidNucs->addStyleClass( "CbNoLineBreak" );
   m_showAssocNucs->setWordWrap( false );
+  m_showAssocNucs->addStyleClass( "CbNoLineBreak" );
   m_showFeatureMarkers->setWordWrap( false );
+  m_showFeatureMarkers->addStyleClass( "CbNoLineBreak" );
 
   m_showPrevNucs->checked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
   m_showPrevNucs->unChecked().connect( this, &ReferencePhotopeakDisplay::updateOtherNucsDisplay );
@@ -1352,10 +1365,11 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const string isotopeLabel = m_nuclideEdit->text().toUTF8();
-  const SandiaDecay::Nuclide *nuc = db->nuclide( isotopeLabel );
+  const bool fission = SpecUtils::icontains(isotopeLabel, "Fission");
+  const SandiaDecay::Nuclide *nuc = fission ? nullptr : db->nuclide( isotopeLabel );
   const string agestr = m_ageEdit->text().toUTF8();
   const SandiaDecay::Element *el = NULL;
-
+  
   if( nuc )
   {
     bool prompt = (nuc->canObtainPromptEquilibrium()
@@ -1412,11 +1426,37 @@ void ReferencePhotopeakDisplay::handleIsotopeChange( const bool useCurrentAge )
       passMessage( WString::tr("rpd-changed-age").arg(nuc->symbol).arg(agestr).arg(defagestr),
                    WarningWidget::WarningMsgLow );
       m_ageEdit->setText( defagestr );
-    }else
+    }else if( !fission )
     {
       m_ageEdit->setText( "0y" );
     }//if( nuc ) / else
   }//try / catch
+  
+  if( fission )
+  {
+    m_ageEdit->enable();
+    
+    
+    if( !useCurrentAge )
+    {
+      const string defagestr = PhysicalUnitsLocalized::printToBestTimeUnits( 1*PhysicalUnits::day, 1 );
+      m_ageEdit->setText( defagestr );
+    }else
+    {
+      try
+      {
+        const double age = PhysicalUnitsLocalized::stringToTimeDuration( agestr );
+        if( age < 0.0 )
+          throw exception();
+      }catch( std::exception &e )
+      {
+        const string defagestr = PhysicalUnitsLocalized::printToBestTimeUnits( 1*PhysicalUnits::day, 1 );
+        passMessage( WString::tr("rpd-changed-age-fission").arg(defagestr),
+                    WarningWidget::WarningMsgLow );
+        m_ageEdit->setText( defagestr );
+      }//try / catch
+    }//if( !useCurrentAge ) / else
+  }//if( fission )
   
   updateDisplayChange();
   
@@ -1693,6 +1733,66 @@ void ReferencePhotopeakDisplay::setNarrowPhoneLayout( const bool narrow )
 #endif //InterSpec_PHONE_ROTATE_FOR_TABS
 
 
+bool ReferencePhotopeakDisplay::showingGammaLines() const
+{
+  return (m_showGammas && m_showGammas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowGammaLines( const bool show )
+{
+  const bool showing = (m_showGammas && m_showGammas->isChecked()); // !m_showGammas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showGammas->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingXrayLines() const
+{
+  return (m_showXrays && m_showXrays->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowXrayLines( const bool show )
+{
+  const bool showing = (m_showXrays && m_showXrays->isChecked()); // !m_showXrays->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showXrays->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingAlphaLines() const
+{
+  return (m_showAlphas && m_showAlphas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowAlphaLines( const bool show )
+{
+  const bool showing = (m_showAlphas && m_showAlphas->isChecked()); // !m_showAlphas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showAlphas->setChecked( show );
+  updateDisplayChange();
+}
+
+bool ReferencePhotopeakDisplay::showingBetaLines() const
+{
+  return (m_showBetas && m_showBetas->isChecked());
+}
+
+void ReferencePhotopeakDisplay::setShowBetaLines( const bool show )
+{
+  const bool showing = (m_showBetas && m_showBetas->isChecked()); // !m_showBetas->isHidden()
+  if( showing == show )
+    return;
+  
+  m_showBetas->setChecked( show );
+  updateDisplayChange();
+}
+
 FeatureMarkerWidget *ReferencePhotopeakDisplay::featureMarkerTool()
 {
   return m_featureMarkers;
@@ -1917,7 +2017,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   }//if( riid_ana )
 
 
-  // TODO: Need to implement option to show or not show suggestion catagories, and if show none, then hide the column
+  // TODO: Need to implement option to show or not show suggestion categories, and if show none, then hide the column
   if( (m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid)
      && !currentInput.empty()
      && showAssoc )
@@ -2206,9 +2306,6 @@ Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src 
   
   if( m_peaksGetAssignedRefLineColor )
   {
-#ifndef _MSC_VER
-#warning "Need to test string comparison for sources always work.  E.g., need case-insensitive, etc."
-#endif
     const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
     
     auto hasBeenUsed = [&usedColors](const WColor &color)->bool{
@@ -2447,7 +2544,8 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   //  are candidates for aging - but for now we'll just assume we can age them.
   const bool enable_aging = ((nuclide && !ref_lines->m_input.m_promptLinesOnly
                               && !nuclide->decaysToStableChildren())
-                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture) ) ;
+                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::NuclideMixture)
+                             || (ref_lines->m_source_type == ReferenceLineInfo::SourceType::FissionRefLines) ) ;
   
   string agestr = (!enable_aging || !ref_lines) ? string() : ref_lines->m_input.m_age;
   
@@ -2521,6 +2619,10 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     case ReferenceLineInfo::SourceType::OneOffSrcLines:
       // We treat custom energy and one-off sources as a gammas, so only show it - but really we shouldnt show any of them
       showXrayCb = showAplhaCb = showBetaCb = false;
+      break;
+    
+    case ReferenceLineInfo::SourceType::FissionRefLines:
+      showAplhaCb = showBetaCb = false;
       break;
       
     case ReferenceLineInfo::SourceType::None:
@@ -2655,6 +2757,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     switch( src_type )
     {
       case ReferenceLineInfo::SourceType::Nuclide:
+      case ReferenceLineInfo::SourceType::FissionRefLines:
         nonDefaultOpts |= ref_lines->m_input.m_promptLinesOnly;
         nonDefaultOpts |= !ref_lines->m_input.m_showXrays;
         nonDefaultOpts |= !ref_lines->m_input.m_showGammas;
@@ -2772,7 +2875,7 @@ void ReferencePhotopeakDisplay::setColors( const std::vector<Wt::WColor> &refere
       m_lineColors.push_back( i );
   
   if( m_lineColors.empty() )
-    m_lineColors = ns_def_line_colors;
+    m_lineColors = sm_def_line_colors;
   
   //should update currently displayed line colors here, but there are bigger fish to fry ATM
 }//void setColors( const std::vector<Wt::WColor> &referenceLineColor )
@@ -3374,6 +3477,32 @@ void ReferencePhotopeakDisplay::fitPeaks()
 
 void ReferencePhotopeakDisplay::clearAllLines()
 {
+  const ReferenceLineInfo starting_showing = m_currentlyShowingNuclide;
+  const vector<ReferenceLineInfo> starting_persisted = m_persisted;
+  const deque<RefLineInput> starting_prev_nucs = m_prevNucs;
+  const bool starting_user_color = m_userHasPickedColor;
+  
+  // Add current nuclide to list of previous nuclides
+  if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
+  {
+    RefLineInput prev = m_currentlyShowingNuclide.m_input;
+    
+    // Remove any other previous nuclides that have same `prev.m_nuclide` as what
+    //  we are about to push on
+    m_prevNucs.erase(std::remove_if(begin(m_prevNucs), end(m_prevNucs),
+                                    [&prev](const RefLineInput &val) -> bool {
+      return (val.m_input_txt == prev.m_input_txt);
+    }), end(m_prevNucs));
+    
+    // Push new value onto front of history
+    m_prevNucs.push_front( std::move(prev) );
+    
+    // Check history length, and truncate if needed
+    if( m_prevNucs.size() > m_max_prev_nucs )
+      m_prevNucs.resize( m_max_prev_nucs );
+  }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
+  
+  
   //m_fitPeaks->disable();
   m_persisted.clear();
   m_currentlyShowingNuclide.reset();
@@ -3402,6 +3531,12 @@ void ReferencePhotopeakDisplay::clearAllLines()
 
   m_chart->clearAllReferncePhotoPeakLines();
   
+  
+  const RefLineInput user_input = userInput();
+  
+  addUndoRedoPoint( starting_showing, starting_persisted, starting_prev_nucs,
+                   starting_user_color, user_input );
+  
   m_nuclidesCleared.emit();
 }//void clearAllLines()
 
@@ -3421,10 +3556,20 @@ void ReferencePhotopeakDisplay::userColorSelectCallback( const WColor &color )
   {
     m_userHasPickedColor = true;
     m_currentlyShowingNuclide.m_input.m_color = color;
-    m_previouslyPickedSourceColors[m_currentlyShowingNuclide.m_input.m_input_txt] = color;
+    const string &src = m_currentlyShowingNuclide.m_input.m_input_txt;
+    updateColorCacheForSource( src, color );
     refreshLinesDisplayedToGui();
   }
 }//void userColorSelectCallback( const std::string &color )
 
 
-
+void ReferencePhotopeakDisplay::updateColorCacheForSource( const std::string &source, const Wt::WColor &color )
+{
+  if( source.empty() )
+    return;
+  
+  if( color.isDefault() )
+    m_previouslyPickedSourceColors.erase(source);
+  else
+    m_previouslyPickedSourceColors[source] = color;
+}//void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );

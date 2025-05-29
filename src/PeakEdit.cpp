@@ -48,8 +48,10 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/IsotopeSelectionAids.h"
@@ -79,7 +81,7 @@ namespace
 PeakEditWindow::PeakEditWindow( const double energy,
                                 PeakModel *peakmodel,
                                 InterSpec *viewer )
-  : AuxWindow( "Peak Editor", WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
+  : AuxWindow( WString::tr("window-title-peak-editor"), WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
 {
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   
@@ -136,6 +138,7 @@ PeakDef::CoefficientType PeakEdit::row_to_peak_coef_type( const PeakEdit::PeakPa
     case PeakPars::OffsetPolynomial2:
     case PeakPars::OffsetPolynomial3:
     case PeakPars::OffsetPolynomial4:
+    case PeakPars::SetContinuumToLinear:
     case PeakPars::PeakColor:
     case PeakPars::NumPeakPars:
       break;
@@ -170,6 +173,7 @@ PeakEdit::PeakEdit( const double energy,
     m_peakType( NULL ),
     m_continuumType( NULL ),
     m_skewType( NULL ),
+    m_resetLinearContinuum( NULL ),
     m_apply( NULL ),
     m_accept( NULL ),
     m_cancel( NULL ),
@@ -187,28 +191,30 @@ PeakEdit::PeakEdit( const double energy,
 }//PeakEdit( constructor )
 
 
-const char *PeakEdit::rowLabel( const PeakPars t )
+Wt::WString PeakEdit::rowLabel( const PeakPars t )
 {
   switch( t )
   {
-    case PeakEdit::Mean:              return "Centroid";
-    case PeakEdit::Sigma:             return "FWHM";
-    case PeakEdit::SigmaDrfPredicted: return "DRF Pred. FWHM";
-    case PeakEdit::GaussAmplitude:    return "Amplitude";
-    case PeakEdit::SkewPar0:   return "Skew 0";
-    case PeakEdit::SkewPar1:        return "Skew 1";
-    case PeakEdit::SkewPar2:       return "Skew 2";
-    case PeakEdit::SkewPar3:       return "Skew 3";
-    case PeakEdit::OffsetPolynomial0: return "Cont. P0";
-    case PeakEdit::OffsetPolynomial1: return "Cont. P1";
-    case PeakEdit::OffsetPolynomial2: return "Cont. P2";
-    case PeakEdit::OffsetPolynomial3: return "Cont. P3";
-    case PeakEdit::OffsetPolynomial4: return "Cont. P4";
-    case PeakEdit::RangeStartEnergy:  return "ROI Start (keV)";
-    case PeakEdit::RangeEndEnergy:    return "ROI End (keV)";
-    case PeakEdit::Chi2DOF:           return "&chi;2/DOF";
-    case PeakEdit::PeakColor:         return "Peak Color";
-    case PeakEdit::NumPeakPars:       return "";
+    case PeakEdit::Mean:              return WString::tr("pe-label-centroid");
+    case PeakEdit::Sigma:             return WString::tr("FWHM");
+    case PeakEdit::SigmaDrfPredicted: return WString::tr("pe-label-drf-fwhm");
+    case PeakEdit::GaussAmplitude:    return WString::tr("pe-label-amp");
+    case PeakEdit::SkewPar0:          return WString::tr("pe-label-skew0");
+    case PeakEdit::SkewPar1:          return WString::tr("pe-label-skew1");
+    case PeakEdit::SkewPar2:          return WString::tr("pe-label-skew2");
+    case PeakEdit::SkewPar3:          return WString::tr("pe-label-skew3");
+    case PeakEdit::OffsetPolynomial0: return WString::tr("pe-label-cont-p0");
+    case PeakEdit::OffsetPolynomial1: return WString::tr("pe-label-cont-p1");
+    case PeakEdit::OffsetPolynomial2: return WString::tr("pe-label-cont-p2");
+    case PeakEdit::OffsetPolynomial3: return WString::tr("pe-label-cont-p3");
+    case PeakEdit::OffsetPolynomial4: return WString::tr("pe-label-cont-p4");
+    case PeakEdit::RangeStartEnergy:  return WString::tr("pe-label-roi-start");
+    case PeakEdit::RangeEndEnergy:    return WString::tr("pe-label-roi-end");
+    case PeakEdit::Chi2DOF:           return WString::tr("pe-label-chi2-dof");
+    case PeakEdit::PeakColor:         return WString::tr("pe-label-peak-color");
+    case PeakPars::SetContinuumToLinear:
+    case PeakEdit::NumPeakPars:
+      return "";
       break;
   }//case( t )
 
@@ -221,18 +227,23 @@ void PeakEdit::init()
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   addStyleClass( "PeakEdit" );
   
+  if( m_viewer )
+    m_viewer->useMessageResourceBundle( "PeakEdit" );
+  
   m_valueTable = new WTable( this );
   m_valueTable->setHeaderCount( 1, Horizontal );
   m_valueTable->addStyleClass( "PeakEditTable" );
   
-  WLabel *label = new WLabel( "Parameter", m_valueTable->elementAt(0,0) );
-  label = new WLabel( "Value", m_valueTable->elementAt(0,1) );
-  label = new WLabel( "Uncertainty", m_valueTable->elementAt(0,2) );
-  label = new WLabel( "Fit", m_valueTable->elementAt(0,3) );
+  WLabel *label = new WLabel( WString::tr("pe-parameter"), m_valueTable->elementAt(0,0) );
+  label = new WLabel( WString::tr("pe-value"), m_valueTable->elementAt(0,1) );
+  label = new WLabel( WString::tr("pe-uncertainty"), m_valueTable->elementAt(0,2) );
+  label = new WLabel( WString::tr("Fit"), m_valueTable->elementAt(0,3) );
   
   for( PeakPars t = PeakPars(0); t < NumPeakPars; t = PeakPars(t+1) )
   {
-   if( t == PeakEdit::PeakColor || t == PeakEdit::PeakPars::SigmaDrfPredicted )
+   if( (t == PeakEdit::PeakColor)
+      || (t == PeakEdit::PeakPars::SigmaDrfPredicted)
+      || (t == PeakEdit::PeakPars::SetContinuumToLinear) )
    {
      m_values[t] = m_uncertainties[t] = nullptr;
      m_fitFors[t] = nullptr;
@@ -274,6 +285,7 @@ void PeakEdit::init()
         
       case PeakEdit::PeakPars::SigmaDrfPredicted:
       case PeakEdit::PeakPars::PeakColor:
+      case PeakPars::SetContinuumToLinear:
         assert( 0 );
         break;
     }//case( t )
@@ -303,7 +315,7 @@ void PeakEdit::init()
       case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       case PeakEdit::OffsetPolynomial4:
- case PeakEdit::PeakColor:
+ case PeakEdit::PeakColor: case PeakEdit::PeakPars::SetContinuumToLinear:
       case PeakEdit::RangeStartEnergy:  case PeakEdit::RangeEndEnergy:
       case PeakPars::SigmaDrfPredicted:
       case PeakEdit::Chi2DOF: case PeakEdit::NumPeakPars:
@@ -326,6 +338,7 @@ void PeakEdit::init()
       case PeakEdit::SkewPar0: case PeakEdit::SkewPar1:
       case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
       case PeakEdit::PeakPars::SigmaDrfPredicted:
+      case PeakPars::SetContinuumToLinear:
       case PeakEdit::NumPeakPars:
         break;
       
@@ -389,8 +402,20 @@ void PeakEdit::init()
   m_viewer->detectorModified().connect( std::bind(drfUpdater) );
   
   
+  row = m_valueTable->rowAt( PeakEdit::PeakPars::SetContinuumToLinear + 1 );
+  row->elementAt(0)->setColumnSpan(4);
+  m_resetLinearContinuum = new WPushButton( WString::tr("pe-btn-cont-to-linear"), row->elementAt(0) );
+  m_resetLinearContinuum->setToolTip( WString::tr("pe-tt-btn-cont-to-linear") );
+  m_resetLinearContinuum->addStyleClass( "LightButton PeakEditEstLinCont" );
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
+  HelpSystem::attachToolTipOn( m_resetLinearContinuum, WString::tr("pe-tt-btn-cont-to-linear"),
+                              showToolTips, HelpSystem::ToolTipPosition::Right );
+  row->setHidden( true );
+  m_resetLinearContinuum->clicked().connect( boost::bind( &PeakEdit::estimateLinearContinuumFromData, this ) );
+  
+  
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+1 );
-  label = new WLabel( "Nuclide", row->elementAt(0) );
+  label = new WLabel( WString::tr("Nuclide"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_nuclide = new WLineEdit( row->elementAt(1) );
   
@@ -428,14 +453,14 @@ void PeakEdit::init()
   m_nuclide->blurred().connect( this, &PeakEdit::isotopeChanged );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+2 );
-  label = new WLabel( "Photopeak", row->elementAt(0) );
+  label = new WLabel( WString::tr("Photopeak"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_photoPeakEnergy = new WComboBox( row->elementAt(1) );
   m_photoPeakEnergy->setWidth( WLength(13.5,WLength::FontEm) );
   m_photoPeakEnergy->activated().connect( this, &PeakEdit::transitionChanged );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+3 );
-  label = new WLabel( "Label", row->elementAt(0) );
+  label = new WLabel( WString::tr("pe-label"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_userLabel = new WLineEdit( row->elementAt(1) );
   
@@ -453,7 +478,7 @@ void PeakEdit::init()
   m_userLabel->textInput().connect( boost::bind( &PeakEdit::checkIfUserLabelDirty, this ) );
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+4 );
-  label = new WLabel( "Peak Color", row->elementAt(0) );
+  label = new WLabel( WString::tr("pe-label-peak-color"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(1);
   m_color = new ColorSelect( ColorSelect::AllowNoColor, row->elementAt(1) );
   m_color->cssColorChanged().connect( boost::bind( &PeakEdit::checkIfColorDirty, this ) );
@@ -466,17 +491,17 @@ void PeakEdit::init()
   
   
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+5 );
-  label = new WLabel( "Peak Type", row->elementAt(0) );
+  label = new WLabel( WString::tr("pe-peak-type"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   
   m_peakType = new WComboBox( row->elementAt(1) );
-  m_peakType->addItem( "Gaussian" );    //PeakDef::GaussianDefined
-  m_peakType->addItem( "Data Region" ); //PeakDef::DataDefined
+  m_peakType->addItem( WString::tr("pe-peak-model-gaussian") );    //PeakDef::GaussianDefined
+  m_peakType->addItem( WString::tr("pe-peak-model-data") ); //PeakDef::DataDefined
   m_peakType->activated().connect( this, &PeakEdit::peakTypeChanged );
 //
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+6 );
-  label = new WLabel( "Continuum", row->elementAt(0) );
+  label = new WLabel( WString::tr("Continuum"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_continuumType = new WComboBox( row->elementAt(1) );
   m_continuumType->activated().connect( this, &PeakEdit::contnuumTypeChanged );
@@ -488,7 +513,7 @@ void PeakEdit::init()
   }//for( loop over PeakContinuum::OffsetType )
 
   row = m_valueTable->rowAt( PeakEdit::NumPeakPars+7 );
-  label = new WLabel( "Skew Type", row->elementAt(0) );
+  label = new WLabel( WString::tr("pe-skew-type"), row->elementAt(0) );
   row->elementAt(1)->setColumnSpan(2);
   m_skewType = new WComboBox( row->elementAt(1) );
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
@@ -521,19 +546,16 @@ void PeakEdit::init()
   
   
   
-//  WContainerWidget *buttonDiv = new WContainerWidget( m_footer );
-  m_cancel = m_aux->addCloseButtonToFooter( "Cancel", false, m_footer );//new WPushButton( "Cancel", m_footer );
-  
-  m_refit  = new WPushButton( "Refit",  m_footer );
-  m_apply  = new WPushButton( "Apply",  m_footer );
-
-  m_accept = new WPushButton( "Accept", m_footer );
+  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );//new WPushButton( "Cancel", m_footer );
+  m_refit  = new WPushButton( WString::tr("pe-btn-refit"),  m_footer );
+  m_apply  = new WPushButton( WString::tr("Apply"),  m_footer );
+  m_accept = new WPushButton( WString::tr("Accept"), m_footer );
   if( m_viewer && !m_viewer->isMobile() )
     m_accept->setIcon( "InterSpec_resources/images/accept.png" );
   
   //Add class to give padding on left side (or modify current style class)
   
-  WPushButton *deleteButton = new WPushButton( "Delete", m_footer );
+  WPushButton *deleteButton = new WPushButton( WString::tr("Delete"), m_footer );
 //  deleteButton->setFloatSide( Wt::Right );
   
   m_cancel->clicked().connect( this, &PeakEdit::cancel );
@@ -833,9 +855,13 @@ void PeakEdit::peakModelRowsAdded( Wt::WModelIndex , int /* firstRowInserted */ 
   {
     PeakModel::PeakShrdPtr nearest = m_peakModel->nearestPeak( mean );
     
+    double fwhm = 1.0;
+    if( nearest )
+      fwhm = nearest->gausPeak() ? nearest->fwhm() : 0.25*nearest->roiWidth();
+    
     // Allowing new peak to be within 0.5*FWHM of original peak is an arbitrary choice, but should
     //  about uniquely identify the originally intended peak region
-    if( nearest && (fabs(nearest->mean() - mean) < 0.5*nearest->fwhm()) )
+    if( nearest && (fabs(nearest->mean() - mean) < 0.5*fwhm) )
     {
       m_peakIndex = m_peakModel->indexOfPeak( nearest );
     }else
@@ -954,6 +980,7 @@ void PeakEdit::refreshPeakInfo()
       case PeakPars::OffsetPolynomial0: case PeakPars::OffsetPolynomial1:
       case PeakPars::OffsetPolynomial2: case PeakPars::OffsetPolynomial3:
       case PeakPars::OffsetPolynomial4: case PeakPars::PeakColor:
+      case PeakPars::SetContinuumToLinear:
       case PeakPars::NumPeakPars:
         break;
     }//switch( t )
@@ -1131,6 +1158,10 @@ void PeakEdit::refreshPeakInfo()
         updateDrfFwhmTxt();
         break;
         
+      case PeakPars::SetContinuumToLinear:
+        row->setHidden( m_currentPeak.gausPeak() );
+        break;
+        
       case PeakEdit::NumPeakPars:
       break;
     }//case( t )
@@ -1151,6 +1182,7 @@ void PeakEdit::refreshPeakInfo()
           
         case PeakPars::RangeStartEnergy: case PeakPars::RangeEndEnergy:
         case PeakPars::SigmaDrfPredicted:
+        case PeakPars::SetContinuumToLinear:
         case PeakPars::NumPeakPars:
           break;
           
@@ -1185,6 +1217,7 @@ void PeakEdit::refreshPeakInfo()
       case PeakPars::Chi2DOF:
       case PeakPars::RangeStartEnergy: case PeakPars::RangeEndEnergy:
       case PeakPars::SigmaDrfPredicted:
+      case PeakPars::SetContinuumToLinear:
       case PeakPars::NumPeakPars:
         uncertTxt[0] = '\0';
         break;
@@ -1258,14 +1291,15 @@ void PeakEdit::refreshPeakInfo()
     m_otherPeakTxt->setText( "" );
   }else
   {
-    char text[128];
     const size_t npeak = peaksInRoi.size();
-    snprintf( text, sizeof(text), "Peak %i of %i in ROI", int(thispeak+1), int(npeak) );
     m_prevPeakInRoi->setHidden( thispeak == 0 );
     m_nextPeakInRoi->setHidden( thispeak == (npeak-1) );
     
     m_otherPeaksDiv->show();
-    m_otherPeakTxt->setText( text );
+    WString txt = WString::tr("pe-multipeak-in-roi")
+        .arg( static_cast<int>(thispeak+1) )
+        .arg( static_cast<int>(npeak) );
+    m_otherPeakTxt->setText( txt );
   }//if( peaksInRoi.size() < 2 ) / else
   
   updateSkewParameterLabels( m_currentPeak.skewType() );
@@ -1384,7 +1418,7 @@ void PeakEdit::setNuclideFields( const SandiaDecay::Nuclide *nuclide,
     const bool xrayOnly = (sourceGammaType == PeakDef::XrayGamma);
     
     size_t transition_index = 0;
-    PeakDef::findNearestPhotopeak( nuclide, mean + extraEnergy, 4.0*sigma, xrayOnly,
+    PeakDef::findNearestPhotopeak( nuclide, mean + extraEnergy, 4.0*sigma, xrayOnly, -1.0,
                                     transition, transition_index, sourceGammaType );
     particle_index = static_cast<int>( transition_index );
   }//if( !transition || particle_index<0 )
@@ -1505,22 +1539,22 @@ bool PeakEdit::checkNuclideForDiffColors()
   
   if( auto nuc = m_currentPeak.parentNuclide() )
   {
-    m_applyColorForAllNuc->setText( "All " + nuc->symbol + " peaks" );
+    m_applyColorForAllNuc->setText( WString::tr("pe-apply-all-of-type").arg(nuc->symbol) );
     for( const auto &p : *allpeaks )
       nsamesrc += (p->parentNuclide()==nuc && p->lineColor()!=c);
   }else if( auto el = m_currentPeak.xrayElement() )
   {
-    m_applyColorForAllNuc->setText( "All " + el->symbol + " peaks" );
+    m_applyColorForAllNuc->setText( WString::tr("pe-apply-all-of-type").arg(el->symbol) );
     for( const auto & p : *allpeaks )
       nsamesrc += (p->xrayElement()==el && p->lineColor()!=c);
   }else if( auto rctn = m_currentPeak.reaction() )
   {
-    m_applyColorForAllNuc->setText( "All " + rctn->name() + " peaks" );
+    m_applyColorForAllNuc->setText( WString::tr("pe-apply-all-of-type").arg(rctn->name()) );
     for( const auto & p : *allpeaks )
       nsamesrc += (p->reaction()==rctn && p->lineColor()!=c);
   }else
   {
-    m_applyColorForAllNuc->setText( "All no src peaks" );
+    m_applyColorForAllNuc->setText( WString::tr("pe-apply-all-of-type").arg("no src") );
     for( const auto & p : *allpeaks )
       nsamesrc += (!p->parentNuclide() && !p->xrayElement() && !p->reaction()
                    && p->lineColor()!=c);
@@ -1600,6 +1634,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
     }
     
     case SigmaDrfPredicted:
+    case PeakPars::SetContinuumToLinear:
     case RangeStartEnergy: case RangeEndEnergy:
     case PeakColor: case NumPeakPars:
     break;
@@ -1656,19 +1691,18 @@ void PeakEdit::peakTypeChanged()
             break;
           }//case( polynomial coefficient )
             
-          case PeakEdit::OffsetPolynomial4:
-            row->setHidden( true );
-          break;
+          case PeakEdit::OffsetPolynomial4:    row->setHidden( true ); break;
 
-          case PeakEdit::RangeStartEnergy:  row->setHidden( false ); break;
-          case PeakEdit::RangeEndEnergy:    row->setHidden( false ); break;
+          case PeakEdit::RangeStartEnergy:     row->setHidden( false ); break;
+          case PeakEdit::RangeEndEnergy:       row->setHidden( false ); break;
           case PeakEdit::Chi2DOF:
             row->setHidden( m_currentPeak.chi2Defined() );
           break;
             
-          case PeakEdit::PeakColor:         row->setHidden( false ); break;
-          case PeakPars::SigmaDrfPredicted: break;
-          case PeakEdit::NumPeakPars: break;
+          case PeakEdit::PeakColor:            row->setHidden( false ); break;
+          case PeakPars::SigmaDrfPredicted:    row->setHidden( false ); break;
+          case PeakPars::SetContinuumToLinear: row->setHidden( true );  break;
+          case PeakEdit::NumPeakPars:                                   break;
         }//switch ( t )
       }//for( PeakPars t )
     break;
@@ -1691,6 +1725,7 @@ void PeakEdit::peakTypeChanged()
           case PeakPars::SkewPar3:
             row->setHidden( true );
             break;
+            
           case PeakEdit::OffsetPolynomial0:
           case PeakEdit::OffsetPolynomial1:
           case PeakEdit::OffsetPolynomial2:
@@ -1698,13 +1733,13 @@ void PeakEdit::peakTypeChanged()
           case PeakEdit::OffsetPolynomial4:
 //            row->setHidden( true );
           break;
-          case PeakEdit::RangeStartEnergy:  row->setHidden( false ); break;
-          case PeakEdit::RangeEndEnergy:    row->setHidden( false ); break;
-          case PeakEdit::Chi2DOF:
-            row->setHidden( m_currentPeak.chi2Defined() );
-          break;
-          case PeakEdit::PeakColor:         row->setHidden( true ); break;
-          case PeakPars::SigmaDrfPredicted: break;
+            
+          case PeakEdit::RangeStartEnergy:     row->setHidden( false ); break;
+          case PeakEdit::RangeEndEnergy:       row->setHidden( false ); break;
+          case PeakEdit::Chi2DOF:              row->setHidden( m_currentPeak.chi2Defined() ); break;
+          case PeakEdit::PeakColor:            row->setHidden( true );  break;
+          case PeakPars::SigmaDrfPredicted:    row->setHidden( true );  break;
+          case PeakPars::SetContinuumToLinear: row->setHidden( false ); break;
           case PeakEdit::NumPeakPars: break;
         }//switch ( t )
       }//for( PeakPars t )    break;
@@ -1935,9 +1970,9 @@ void PeakEdit::updateDrfFwhmTxt()
   }else
   {
     const double drf_fwhm = drf->peakResolutionFWHM( mean );
-    char text[128] = { '\0' };
-    snprintf( text, sizeof(text), "DRF predicts FWHM of %.2f keV", drf_fwhm );
-    m_drfFwhm->setText( text );
+    char text[32] = { '\0' };
+    snprintf( text, sizeof(text), "%.2f", drf_fwhm );
+    m_drfFwhm->setText( WString::tr("pe-drf-predict-fwhm-txt").arg(text) );
     row->setHidden( false );
   }//case PeakPars::SigmaDrfPredicted:
 }//void updateDrfFwhmTxt();
@@ -1979,6 +2014,90 @@ void PeakEdit::setSkewInputValueRanges( const PeakDef::SkewType type )
     }
   }//for( int i = 0; i <= num_skew_pars; ++i )
 }//void setSkewInputValueRanges( const PeakDef::SkewType skewType )
+
+
+void PeakEdit::estimateLinearContinuumFromData()
+{
+  const double ref_energy = m_currentPeak.mean();
+  
+  vector<PeakModel::PeakShrdPtr> prev_peaks;
+  shared_ptr<const deque< PeakModel::PeakShrdPtr > > prev_peaks_ptr = m_peakModel->peaks();
+  if( prev_peaks_ptr )
+    prev_peaks.insert( end(prev_peaks), begin(*prev_peaks_ptr), end(*prev_peaks_ptr) );
+  
+  shared_ptr<const SpecUtils::Measurement> meas = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  if( !meas )
+  {
+    //Shouldnt really get here, I wouldnt think.
+    passMessage( WString::tr("pe-est-lin-cont-no-data"), WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  
+  try
+  {
+    apply();
+  }catch( std::exception &e )
+  {
+    passMessage( e.what(), WarningWidget::WarningMsgHigh );
+    return;
+  }
+  
+  
+  
+  try
+  {
+    const double x0 = m_currentPeak.lowerX();
+    const double x1 = m_currentPeak.upperX();
+    
+    const size_t start_channel      = meas->find_gamma_channel( x0 );
+    const size_t end_channel        = meas->find_gamma_channel( x1 );
+    
+    const size_t num_side_bins = 3;
+    double coefficients[2] = { 0.0, 0.0 };
+    
+    PeakContinuum::eqn_from_offsets( start_channel, end_channel, ref_energy,
+                                    meas, num_side_bins, num_side_bins,
+                                    coefficients[1], coefficients[0] );
+    
+    m_currentPeak.continuum()->setType( PeakContinuum::Linear );
+    m_currentPeak.continuum()->setParameters( ref_energy, coefficients, nullptr );
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("pe-failed-est-lin-cont").arg(e.what()), WarningWidget::WarningMsgHigh );
+  }//try /catch
+  
+  refreshPeakInfo();
+  
+  UndoRedoManager *undo_manager = m_viewer->undoRedoManager();
+  if( !undo_manager || !undo_manager->canAddUndoRedoNow() )
+    return;
+  
+  vector<PeakModel::PeakShrdPtr> after_peaks;
+  shared_ptr<const deque< PeakModel::PeakShrdPtr > > after_peaks_ptr = m_peakModel->peaks();
+  if( after_peaks_ptr )
+    after_peaks.insert( end(after_peaks), begin(*after_peaks_ptr), end(*after_peaks_ptr) );
+  
+  auto undo = [prev_peaks,ref_energy](){
+    PeakEdit *edit = get_session_peak_editor();
+    if( !edit )
+      return;
+    edit->m_peakModel->setPeaks( prev_peaks );
+    edit->changePeak( ref_energy );
+  };//undo
+  
+  auto redo = [after_peaks,ref_energy](){
+    PeakEdit *edit = get_session_peak_editor();
+    if( !edit )
+      return;
+    edit->m_energy = ref_energy;
+    edit->m_peakModel->setPeaks( after_peaks );
+    edit->changePeak( ref_energy );
+  };
+  
+  undo_manager->addUndoRedoStep( undo, redo, "Est. linear continuum." );
+}//void estimateLinearContinuumFromData()
 
 
 bool PeakEdit::nuclideInfoIsDirty() const
@@ -2152,8 +2271,7 @@ void PeakEdit::refit()
   
   if( outputPeak.size() != inputPeak.size() )
   {
-    passMessage( "Failed to refit peak (became insignificant), so not doing "
-                 "anything", WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("pe-failed-refit-insig"), WarningWidget::WarningMsgHigh );
     return;
   }//if( outputPeak.size() != inputPeak.size() )
   
@@ -2401,7 +2519,7 @@ void PeakEdit::apply()
         {
           if( m_values[t]->validate() != WValidator::Valid )
             throw runtime_error( "Value for '"
-                                + string(rowLabel(t)) + "' is not a valid number" );
+                                + rowLabel(t).toUTF8() + "' is not a valid number" );
           
           const string valtxt = m_values[t]->text().toUTF8();
           if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
@@ -2496,6 +2614,7 @@ void PeakEdit::apply()
             
           case PeakEdit::Chi2DOF:
           case PeakPars::SigmaDrfPredicted:
+          case PeakPars::SetContinuumToLinear:
           case PeakEdit::NumPeakPars:
             break;
         }//case( t )
@@ -2507,7 +2626,7 @@ void PeakEdit::apply()
         
         if( m_uncertainties[t]->validate() != WValidator::Valid )
           throw runtime_error( "Uncertainty for '"
-                              + string(rowLabel(t)) + "' is not a valid number" );
+                              + rowLabel(t).toUTF8() + "' is not a valid number" );
         
         string valtxt = m_uncertainties[t]->text().narrow();
         if( !(stringstream(valtxt) >> val) && !valtxt.empty() )
@@ -2549,9 +2668,10 @@ void PeakEdit::apply()
             continuum->setPolynomialUncert( t-OffsetPolynomial0, val );
             break;
             
-          case PeakEdit::RangeStartEnergy: case PeakEdit::RangeEndEnergy:
-          case PeakEdit::Chi2DOF:          case PeakEdit::PeakColor:
+          case PeakEdit::RangeStartEnergy:  case PeakEdit::RangeEndEnergy:
+          case PeakEdit::Chi2DOF:           case PeakEdit::PeakColor:
           case PeakEdit::SigmaDrfPredicted: case PeakEdit::NumPeakPars:
+          case PeakPars::SetContinuumToLinear:
             break;
         }//case( t )
       }//if( m_uncertIsDirty[t] )
@@ -2639,7 +2759,7 @@ void PeakEdit::apply()
         const bool xrayOnly = (srcType == PeakDef::XrayGamma);
         
         PeakDef::SourceGammaType nearestGammaType;
-        PeakDef::findNearestPhotopeak( nuc, energy, 0.0, xrayOnly,
+        PeakDef::findNearestPhotopeak( nuc, energy, 0.0, xrayOnly, -1.0,
                                       transition, transition_index, nearestGammaType );
         
         switch( srcType )

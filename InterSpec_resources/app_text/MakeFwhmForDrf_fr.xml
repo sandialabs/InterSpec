@@ -1,20 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <!-- fpm- is short for FwhmPeaksModel
-       mffdw- is short for MakeFwhmForDrfWindow
-       mffd- is short for MakeFwhmForDrf
-  -->
   <message id="fpm-fwhm-uncert">Incertitude FWHM</message>
-<message id="fpm-peak-source">Source du Pic</message>
-<message id="fpm-user">Utilisateur</message>
-<message id="fpm-auto-fit">Ajustement Auto</message>
-
-<message id="mffdw-use-fwhm-btn">Utiliser FWHM</message>
-
-<message id="mffd-eqn-type-label">Type d'Équation :</message>
-<message id="mffd-num-terms-label">Nombre de Termes :</message>
-<message id="mffd-par-vals-label">Valeurs des Paramètres :</message>
-<message id="mffd-err-no-foreground">Il n'y a pas de données sur lesquelles rechercher des pics.</message>
-<message id="mffd-tt-par">Avec incertitude : {1}</message>
-<message id="mffd-err-fail-fit">Échec de l'ajustement de l'équation FWHM : {1}</message>
+  <message id="fpm-peak-source">Source du pic</message>
+  <message id="fpm-user">Utilisateur</message>
+  <message id="fpm-auto-fit">Ajustement auto</message>
+  
+  
+  <message id="mffdw-use-fwhm-btn">Utiliser la FWHM</message>
+  
+  <message id="mffd-eqn-type-label">Type d'équation :</message>
+  <message id="mffd-num-terms-label">Nombre de termes :</message>
+  <message id="mffd-par-vals-label">Valeurs des paramètres :</message>
+  <message id="mffd-err-no-foreground">Il n'y a pas de données sur lesquelles rechercher des pics.</message>
+  <message id="mffd-tt-par">Avec incertitude : {1}</message>
+  <message id="mffd-err-fail-fit">Échec de l'ajustement de l'équation FWHM : {1}</message>
 </messages>

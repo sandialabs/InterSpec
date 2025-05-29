@@ -825,7 +825,11 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     
     // If we have no act ratio constraints, we can just fit the relative activities directly,
     //  otherwise we need to re-define the isotopes and BRs to eliminate constrained isotopes.
-    if( m_input.act_ratio_constraints.empty() )
+    if( m_input.act_ratio_constraints.empty() 
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+        && m_input.mass_fraction_constraints.empty() 
+#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+    )
     {
       if( est_eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
@@ -903,17 +907,52 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           mod_isotopes.erase( pos );
       }
 
-      vector<double> mod_activities;
+    vector<double> mod_activities;
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+      if( !m_input.mass_fraction_constraints.empty() )
+      {
+        m_setup_warnings.push_back( "Mass fraction constraints have not been tested, and the implementation is less than ideal." );
+        
+        std::cerr << "\n\nWarning: ManualGenericRelActFunctor: mass fraction constraints have not been tested, and the implementation is less than ideal.\n\n\n";
+        
+        //TODO: This is less than ideal, but well fit just the activities of the non-mass-fraction constrained isotopes.
+        //  To do it properly, we would need to do a non-linear fit for the activities of the constrained isotopes,
+        //  which is maybe a bit beyond this initial go.
+        for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
+        {
+          const auto mod_isotope_pos = std::find( begin(mod_isotopes), end(mod_isotopes), constraint.m_nuclide );
+          assert( mod_isotope_pos != end(mod_isotopes) );
+          if( mod_isotope_pos != std::end(mod_isotopes) )
+            mod_isotopes.erase( mod_isotope_pos );
+
+          for( RelActCalcManual::GenericPeakInfo &peak : mod_peaks )
+          {
+            // Remove all lines from the peak that are the mass-fraction-constrained nuclide.
+            peak.m_source_gammas.erase( std::remove_if( begin(peak.m_source_gammas), end(peak.m_source_gammas),
+                            [&constraint]( const RelActCalcManual::GenericLineInfo &line ) -> bool {
+              return line.m_isotope == constraint.m_nuclide;
+            } ), end(peak.m_source_gammas) );
+          }//for( RelActCalcManual::GenericPeakInfo &peak : mod_peaks )
+        }//for( RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
+
+        mod_peaks.erase( std::remove_if( begin(mod_peaks), end(mod_peaks),
+                            []( const RelActCalcManual::GenericPeakInfo &peak ) -> bool {
+              return peak.m_source_gammas.empty();
+            } ), end(mod_peaks) );
+      }//if( !m_input.mass_fraction_constraints.empty() )
+#endif  //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+
       if( est_eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
         RelActCalcManual::fit_act_to_phys_rel_eff( m_input, mod_isotopes, mod_peaks,
-                          mod_activities, dummy_rel_act_norm_uncerts );
+                            mod_activities, dummy_rel_act_norm_uncerts );
       }else
       {
         const vector<double> flat_rel_eff_coefs{ (est_eqn_form==RelActCalc::RelEffEqnForm::LnX ? 1.0 : 0.0), 0.0 };
         RelActCalcManual::fit_act_to_rel_eff( est_eqn_form, flat_rel_eff_coefs,
-                         mod_isotopes, mod_peaks,
-                         mod_activities, dummy_rel_act_norm_uncerts );
+                           mod_isotopes, mod_peaks,
+                           mod_activities, dummy_rel_act_norm_uncerts );
       }
 
       assert( mod_activities.size() == mod_isotopes.size() );
@@ -929,6 +968,11 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           bool has_constrained = false;
           for( size_t j = 0; !has_constrained && (j < m_input.act_ratio_constraints.size()); ++j )
             has_constrained = (m_input.act_ratio_constraints[j].m_constrained_nuclide == iso);
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+          for( size_t j = 0; !has_constrained && (j < m_input.mass_fraction_constraints.size()); ++j )
+            has_constrained = (m_input.mass_fraction_constraints[j].m_nuclide == iso);
+#endif
           assert( has_constrained );
 #endif
         }else
@@ -938,6 +982,12 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           bool has_constrained = false;
           for( size_t j = 0; !has_constrained && (j < m_input.act_ratio_constraints.size()); ++j )
             has_constrained = (m_input.act_ratio_constraints[j].m_constrained_nuclide == iso);
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+          for( size_t j = 0; !has_constrained && (j < m_input.mass_fraction_constraints.size()); ++j )
+            has_constrained = (m_input.mass_fraction_constraints[j].m_nuclide == iso);
+#endif
+
           assert( !has_constrained );
 #endif
         }//if( pos == end(mod_isotopes) ) / else
@@ -951,6 +1001,11 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       bool is_constrained = false;
       for( size_t j = 0; !is_constrained && (j < m_input.act_ratio_constraints.size()); ++j )  
         is_constrained = (m_input.act_ratio_constraints[j].m_constrained_nuclide == m_isotopes[i]);
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+      for( size_t j = 0; !is_constrained && (j < m_input.mass_fraction_constraints.size()); ++j )
+        is_constrained = (m_input.mass_fraction_constraints[j].m_nuclide == m_isotopes[i]);
+#endif
 
       if( is_constrained )
       {
@@ -1011,6 +1066,59 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       return relative_activity( constraint.m_controlling_nuclide, x ) * constraint.m_constrained_to_controlled_activity_ratio;
     }//if( constraint_index >= 0 )
 
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+    for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
+    {
+      if( constraint.m_nuclide == iso )
+      {
+#ifndef NDEBUG
+        const size_t index = iso_index( iso );
+        assert( (abs(x[index] - -1.0) < 1.0E-6) || (abs(x[index] - 0.0) < 1.0E-6) );
+#endif
+        // Now what we need to do is get the mass fraction of the non mass-fraction-constrained isotopes.
+        const std::map<std::string, double> &specific_activities_for_el = constraint.m_specific_activities;
+        const auto this_nuc_pos = specific_activities_for_el.find( iso );
+        assert( this_nuc_pos != end(specific_activities_for_el) );
+        if( this_nuc_pos == end(specific_activities_for_el) )
+          throw std::logic_error( "ManualGenericRelActFunctor: missing nuclide in constraint.m_specific_activities???" );
+        
+        // Sum the relative masses of the other nuclides of this element
+        // and sum the mass-constrained portion of this element.
+        T sum_unconstrained_rel_mass_of_el( 0.0 ); //Note this is rel act divide by specific activity, and does not add up to one
+        double sum_constrained_frac_rel_mass_of_el = 0.0; // This will include `constraint.m_nuclide`, and be less than 1.0
+
+
+        for( const auto &[iso, specific_act] : specific_activities_for_el )
+        {
+          auto constraint_pos = std::find_if( begin(m_input.mass_fraction_constraints), end(m_input.mass_fraction_constraints),
+            [&iso]( const RelActCalcManual::MassFractionConstraint &c ) -> bool {
+              return c.m_nuclide == iso;
+            } );
+
+          if( constraint_pos == end(m_input.mass_fraction_constraints) )
+          {
+            // `iso` is not mass-constrained
+            sum_unconstrained_rel_mass_of_el += (relative_activity( iso, x ) / specific_act);
+          }else
+          {
+            // `iso` is mass-constrained
+            sum_constrained_frac_rel_mass_of_el += constraint_pos->m_mass_fraction;
+          }
+        }//for( [ const string &iso, const double &activity] : element_specific_activities )
+          
+
+        assert( sum_constrained_frac_rel_mass_of_el <= 1.00000001 );
+        assert( sum_constrained_frac_rel_mass_of_el >= 0.0 );
+        const double unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
+        
+        const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;
+        const T this_rel_mass = total_rel_mass * constraint.m_mass_fraction;
+        const T this_rel_act = this_rel_mass * this_nuc_pos->second;
+
+        return this_rel_act;
+      }//if( constraint.m_nuclide == iso )
+    }//for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
+#endif
 
     const size_t index = iso_index( iso );
     assert( index < x.size() );
@@ -2219,7 +2327,13 @@ void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
   // TODO: determine if HouseholderQr or BDC SVD is better/more-stable/faster/whatever
   //const Eigen::VectorXd solution = A.colPivHouseholderQr().solve(b);
   
-  const Eigen::BDCSVD<Eigen::MatrixX<double>> bdc = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
+  //const Eigen::BDCSVD<Eigen::MatrixX<double>> bdc = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV); //depreciated.
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+    const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> bdc(A); //slow, but best decomposition
+#else
+    const Eigen::BDCSVD<Eigen::MatrixX<double>> bdc(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
+
   const Eigen::VectorXd solution = bdc.solve(b);
   
   assert( solution.size() == num_isotopes );
@@ -2283,6 +2397,16 @@ void RelEffInput::check_nuclide_constraints() const
 
     if( !is_controlling_nuclide_in_curve )
       throw logic_error( "RelEffInput: Controlling nuclide is not in any peak." );
+
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+    //Check `nuc_constraint.m_constrained_nuclide` is not also in mass_fraction_constraints
+    for( const RelActCalcManual::MassFractionConstraint &mass_frac_constraint : mass_fraction_constraints )
+    {
+      if( mass_frac_constraint.m_nuclide == nuc_constraint.m_constrained_nuclide )
+        throw logic_error( "RelEffInput: Constrained nuclide is also in mass fraction constraints." );
+    }
+#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
   }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : act_ratio_constraints )
 
   // Check that the constrained nuclide is only controlled by one nuclide
@@ -2345,7 +2469,115 @@ void RelEffInput::check_nuclide_constraints() const
         }
       }//for( size_t inner_index = 0; inner_index < rel_eff_curve.act_ratio_constraints.size(); ++inner_index )
     }//while( found_constroller )
-  }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+  }//for( size_t outer_index = 0; outer_index < act_ratio_constraints.size(); ++outer_index )
+
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  // Check that mass fraction constraints are valid
+  for( const RelActCalcManual::MassFractionConstraint &constraint : mass_fraction_constraints )
+  {
+    if( constraint.m_nuclide.empty() )
+      throw logic_error( "RelEffInput: Mass fraction constraint nuclide is empty." );
+
+    if( constraint.m_mass_fraction <= 0.0 )
+      throw logic_error( "RelEffInput: Mass fraction constraint is less than or equal to 0." );
+
+    if( constraint.m_mass_fraction >= 1.0 )
+      throw logic_error( "RelEffInput: Mass fraction constraint is greater than or equal to 1." );
+
+
+    // Check that the nuclide is in the nuclides list
+    // Check that the constrained nuclide is a nuclide in this RelEffCurve
+    const auto check_iso_in_curve = [&]( const string &iso ) -> bool
+    {
+      for( const GenericPeakInfo &peak : peaks )
+      {
+        for( const GenericLineInfo &line : peak.m_source_gammas )
+        {
+          if( iso == line.m_isotope )
+            return true;
+        }//for( const GenericLineInfo &line : peak.m_source_gammas )
+      }//for( const GenericPeakInfo &peak : peaks )
+
+      return false;
+    };//const auto check_iso_in_curve = [&]( const string &iso ) -> bool
+
+    if( !check_iso_in_curve( constraint.m_nuclide ) )
+      throw logic_error( "RelEffInput: Mass fraction constraint nuclide is not in any peak." );
+
+    if( constraint.m_specific_activities.size() < 2 )
+      throw logic_error( "RelEffInput: Mass fraction constraint has less than 2 specific activities." );
+
+    // Check each nuclide with a specific activity is in the curve, and has a positive specific activity,
+    //  and that this nuclide has a specific activity.
+    bool has_this_nuc = false;
+    for( const auto &specific_activity : constraint.m_specific_activities )
+    {
+      if( specific_activity.second <= 0.0 )
+        throw logic_error( "RelEffInput: Mass fraction constraint specific activity is less than or equal to 0." );
+
+      if( !check_iso_in_curve( specific_activity.first ) )
+        throw logic_error( "RelEffInput: Mass fraction constraint specific activity nuclide is not in any peak." );
+
+      has_this_nuc |= (specific_activity.first == constraint.m_nuclide);
+    }//for( const auto &specific_activity : constraint.m_specific_activities )
+
+    if( !has_this_nuc )
+      throw logic_error( "RelEffInput: Mass fraction constraint nuclide is not in the specific activity list." );
+
+    // Check that any other constraint for nuclides in `constraint.m_specific_activities`, has the same `m_specific_activities`.
+    for( const RelActCalcManual::MassFractionConstraint &other_constraint : mass_fraction_constraints )
+    {
+      if( other_constraint.m_nuclide == constraint.m_nuclide )
+        continue;
+      
+      const auto other_pos = other_constraint.m_specific_activities.find( constraint.m_nuclide );
+      if( other_pos != end(other_constraint.m_specific_activities) )
+      {
+        //`other_constraint.m_specific_activities` should be the same as `constraint.m_specific_activities`
+        if( other_constraint.m_specific_activities.size() != constraint.m_specific_activities.size() )
+          throw logic_error( "RelEffInput: Mass fraction constraint nuclide is in another mass fraction constraint with a different number of specific activities." );
+
+        for( const auto &specific_activity : constraint.m_specific_activities )
+        {
+          const auto other_const_nuc_pos = other_constraint.m_specific_activities.find( specific_activity.first );
+          if( other_const_nuc_pos == end(other_constraint.m_specific_activities) )
+            throw logic_error( "RelEffInput: Mass fraction constraint nuclide is in another mass fraction constraint with a different list of specific activities." );
+
+          if( fabs(other_const_nuc_pos->second - specific_activity.second) > 1.0e-6*std::max(other_const_nuc_pos->second, specific_activity.second) )
+            throw logic_error( "RelEffInput: Mass fraction constraint nuclide is in another mass fraction constraint with a different specific activity." );
+        }//for( const auto &specific_activity : constraint.m_specific_activities )
+      }//if( other_pos != end(other_constraint.m_specific_activities) )
+    }//for( const RelActCalcManual::MassFractionConstraint &other_constraint : mass_fraction_constraints )
+
+
+    // Check that there is at least one nuclide in `constraint.m_specific_activities` that is not mass-fraction-consrained.
+    // Check that the summ of mass-fraction-constrained nuclides for this element is less than 1.0
+    size_t num_not_mass_frac_constrained = 0;
+    double sum_mass_frac_constrained = 0.0;
+    for( const auto &specific_activity : constraint.m_specific_activities )
+    {
+      sum_mass_frac_constrained += specific_activity.second;
+      const auto mass_frac_pos = std::find_if( begin(mass_fraction_constraints), end(mass_fraction_constraints),
+        [&]( const RelActCalcManual::MassFractionConstraint &mfc )
+        {
+          return mfc.m_nuclide == specific_activity.first;
+        } );
+        
+      if( mass_frac_pos == end(mass_fraction_constraints) )
+        ++num_not_mass_frac_constrained;
+    }//for( const auto &specific_activity : constraint.m_specific_activities )
+    
+    if( num_not_mass_frac_constrained == 0 )
+      throw logic_error( "RelEffInput: There is no elements nuclide that is not mass fraction constrainted." );
+
+    if( fabs(sum_mass_frac_constrained - 1.0) > 1.0e-6 )
+      throw logic_error( "RelEffInput: The sum of mass fraction constrained nuclides is not 1.0." );
+  }//for( const RelActCalcManual::MassFractionConstraint &constraint : mass_fraction_constraints )
+
+#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+
+
 }//RelEffInput::check_nuclide_constraints()
 
 double RelEffSolution::relative_activity( const std::string &nuclide ) const
@@ -2478,6 +2710,47 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1_index, const siz
       return 0.0;
   }//if( m_input.act_ratio_constraints.size() > 0 )
 
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  if( m_input.mass_fraction_constraints.size() > 0 )
+  {
+    // If this is iso1 or iso2, then 
+    const auto constraint_begin = begin(m_input.mass_fraction_constraints);
+    const auto constraint_end = end(m_input.mass_fraction_constraints);
+    const auto iso1_constraint_pos 
+      = std::find_if( constraint_begin, constraint_end, [&]( const RelActCalcManual::MassFractionConstraint &mfc ){
+        return mfc.m_nuclide == m_rel_activities[iso1].m_isotope;
+      } );
+    const auto iso2_constraint_pos = std::find_if( constraint_begin, constraint_end,
+        [&]( const RelActCalcManual::MassFractionConstraint &mfc ){
+        return mfc.m_nuclide == m_rel_activities[iso2].m_isotope;
+      } );
+      
+    if( (iso1_constraint_pos == constraint_end) && (iso2_constraint_pos == constraint_end) )
+    {
+      // Neither nuclide is mass fraction constrained - nothing to do here
+    }else if( (iso1_constraint_pos != constraint_end) && (iso2_constraint_pos != constraint_end) )
+    {
+      // Both nuclides are mass fraction constrained.
+#ifdef _MSC_VER
+#pragma message( "TODO: RelEffSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when both nuclides are mass fraction constrained." )
+#else
+#warning "TODO: RelEffSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when both nuclides are mass fraction constrained."
+#endif
+      cerr << "RelEffSolution::activity_ratio_uncert: both nuclides are mass fraction constrained - calculating activity_ratio_uncert is not implemented." << endl;
+      return -1.0;
+    }else if( (iso1_constraint_pos != constraint_end) && (iso2_constraint_pos == constraint_end) )
+    {
+      // Only one isotope is mass fraction constrained.
+#ifdef _MSC_VER
+#pragma message( "TODO: RelEffSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when only one isotope is mass fraction constrained." )
+#else
+#warning "TODO: RelEffSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when only one isotope is mass fraction constrained."
+#endif
+      cerr << "RelEffSolution::activity_ratio_uncert: only one isotope is mass fraction constrained - calculating activity_ratio_uncert is not implemented." << endl;
+      return -1.0;
+    }
+  }//if( m_input.mass_fraction_constraints.size() > 0 )
+#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
 
   const double norm_1 = m_activity_norms[iso1];
   const double norm_2 = m_activity_norms[iso2];
@@ -2492,7 +2765,12 @@ double RelEffSolution::activity_ratio_uncert( const size_t iso1_index, const siz
   
   // TODO: I think if we have constraints, all we need to do is multiply the ratio by the activity ratios
   //       of the constraints.... but not checked as of 20250316.
-#warning "Need to check if we are computing activity ratio uncertainties correctly when there are constraints (looks correct with a simple example)."
+
+#ifdef _MSC_VER
+#pragma message( "TODO: Need to check if we are computing activity ratio uncertainties correctly when there are constraints (looks correct with a simple example)." )
+#else
+#warning "TODO: Need to check if we are computing activity ratio uncertainties correctly when there are constraints (looks correct with a simple example)."
+#endif
   if( m_input.act_ratio_constraints.size() > 0 )
     cerr << "Need to check if we are computing activity ratio uncertainties correctly when there are constraints." << endl;
   
@@ -2565,8 +2843,8 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
 {
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const SandiaDecay::Nuclide *wanted_nuc = db->nuclide( nuclide );
-  assert( wanted_nuc );
-  if( !wanted_nuc )
+  
+  if( !wanted_nuc ) //Will be nullptr for reactions and x-rays
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): invalid nuclide" );
   
   //assert( !m_nonlin_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
@@ -2964,7 +3242,7 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
       << "%";
     }catch( std::exception & )
     {
-      
+      // We will get here for reactions and x-rays.
     }
     
     results_html << "</td>"
@@ -3712,9 +3990,12 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   get_mass_fraction_table( results_html );
   get_mass_ratio_table( results_html );
   
-  
   const bool has_decay_corr = !m_input.peaks_before_decay_correction.empty();
-  
+
+  bool any_peak_has_multiple_srcs = false;
+  for( const GenericPeakInfo &info : m_input.peaks )
+    any_peak_has_multiple_srcs |= (info.m_source_gammas.size() > 1);
+
   // Make table giving info on each of the _used_ peaks
   results_html << "<table class=\"peaktable resulttable\">\n";
   results_html << "  <caption>Peaks used for analysis.</caption>\n";
@@ -3729,6 +4010,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   "<th scope=\"col\">Add. Unc.</th>"
   "<th scope=\"col\">Meas. Rel Eff</th>"
   "<th scope=\"col\">Meas. Rel Eff Unct</th>"
+  << (any_peak_has_multiple_srcs ? "<th scope=\"col\">Peak Frac</th>" : "")
   << (has_decay_corr ? "<th scope=\"col\">Decay Corr.</th>" : "")
   << "</tr></thead>\n"
   "  <tbody>\n";
@@ -3760,7 +4042,20 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       << "</td><td>" << SpecUtils::printCompact( info.m_base_rel_eff_uncert, nsigfig )
       << "</td><td>" << SpecUtils::printCompact( meas_rel_eff, nsigfig )
       << "</td><td>" << SpecUtils::printCompact( meas_rel_eff_uncert, nsigfig ) << "%";
-      
+
+      if( any_peak_has_multiple_srcs )
+      {
+        results_html << "</td><td>";
+        if( info.m_source_gammas.size() >= 2 )
+        {
+          double sum_counts = 0.0;
+          for( const GenericLineInfo &sum_line : info.m_source_gammas )
+            sum_counts += relative_activity(sum_line.m_isotope) * sum_line.m_yield;
+          const double contrib_percent = 100.0*(rel_act*line.m_yield) / sum_counts;
+          results_html << SpecUtils::printCompact( contrib_percent, nsigfig ) << "%";
+        }
+      }//if( any_peak_has_multiple_srcs )
+
       if( has_decay_corr )
       {
         results_html << "</td><td>";
@@ -3828,8 +4123,16 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   << "</div>\n";
   
   
-  //Write out the data JSON
-  stringstream rel_eff_plot_values, add_rel_eff_plot_css;
+  //Write out the data JSON and CSS data
+  stringstream rel_eff_plot_values;
+  
+  // Previous to 20250520, we used to use CSS to color data markers.
+  //  Then we switched to just doing it in the JSON/JS directly, to make it
+  //  easier to keep things in sync acros doing HTML reports and within interactive
+  //  InterSpec - leaving the code in, but commented out for for the moment incase we
+  //  want to go back
+  //stringstream add_rel_eff_plot_css;
+  
   rel_eff_plot_values << "[";
   for( size_t index = 0; index < m_input.peaks.size(); ++index )
   {
@@ -3877,8 +4180,8 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     const SandiaDecay::Nuclide * const nuc = p ? p->parentNuclide() : nullptr;
     if( nuc && !nuclides_with_colors.count(nuc) && !p->lineColor().isDefault() )
     {
-      add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol
-                           << "{ fill: " << p->lineColor().cssText() << "; }\n";
+      //add_rel_eff_plot_css << "        .RelEffPlot circle." << nuc->symbol
+      //                     << "{ fill: " << p->lineColor().cssText() << "; }\n";
       nuclides_with_colors.insert( nuc );
     }
   }//for( const shared_ptr<const PeakDef> &p : display_peaks )
@@ -3897,9 +4200,9 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
       for( size_t i = 0; i < nucstr.size(); ++i )
         nucstr[i] = std::isalpha( static_cast<unsigned char>(nucstr[i]) ) ? nucstr[i] : '_';
       
-      add_rel_eff_plot_css << "        .RelEffPlot circle." << nucstr << "{ fill: "
-      << default_nuc_colors[unseen_nuc_index % default_nuc_colors.size()]
-      << "; }\n";
+      //add_rel_eff_plot_css << "        .RelEffPlot circle." << nucstr << "{ fill: "
+      //<< default_nuc_colors[unseen_nuc_index % default_nuc_colors.size()]
+      //<< "; }\n";
       
       unseen_nuc_index += 1;
     }
@@ -3963,7 +4266,8 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   const string rel_eff_plot_css = load_file_contents( "RelEffPlot.css" );
   SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_JS}", rel_eff_plot_js.c_str() );
   SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_CSS}", rel_eff_plot_css.c_str() );
-  SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", add_rel_eff_plot_css.str().c_str() );
+  //SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", add_rel_eff_plot_css.str().c_str() );
+  SpecUtils::ireplace_all( html, "${REL_EFF_PLOT_ADDITIONAL_CSS}", "" );
   
   
   if( spectrum )
@@ -4345,8 +4649,26 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
         pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
         break;
       }
-    }//for( size_t i = 0; i < num_nuclides; ++i )
-  }//for( const auto &constraint : input.act_ratio_constraints )
+    }//for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
+  }//for( const ManualActRatioConstraint &constraint : input.act_ratio_constraints )
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  for( const MassFractionConstraint &constraint : input.mass_fraction_constraints )
+  {
+    assert( num_nuclides == cost_functor->m_isotopes.size() );
+
+    for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
+    {
+      if( constraint.m_nuclide == cost_functor->m_isotopes[i] )
+      {
+        assert( std::find( begin(constant_parameters), end(constant_parameters), i ) == end(constant_parameters) );
+        constant_parameters.push_back( i );
+        pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
+        break;
+      }
+    }//for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
+  }//for( const ManualMassFractionConstraint &constraint : input.mass_fraction_constraints )
+#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
   
   if( !constant_parameters.empty() )
   {
@@ -4363,6 +4685,14 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       if( constraint.m_constrained_nuclide == cost_functor->m_isotopes[i] )
         is_constrained = true;
     }
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+    for( const auto &constraint : input.mass_fraction_constraints )
+    {
+      if( constraint.m_nuclide == cost_functor->m_isotopes[i] )
+        is_constrained = true;
+    }
+#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
     if( is_constrained )
       pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
     else
@@ -4643,6 +4973,11 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
         bool is_constrained = false;
         for( size_t j = 0; !is_constrained && (j < input.act_ratio_constraints.size()); ++j )  
           is_constrained = (input.act_ratio_constraints[j].m_constrained_nuclide == iso);
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+        for( size_t j = 0; !is_constrained && (j < input.mass_fraction_constraints.size()); ++j )
+          is_constrained = (input.mass_fraction_constraints[j].m_nuclide == iso);
+#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
         
         if( !is_constrained )
         {
@@ -5595,7 +5930,7 @@ vector<RelActCalcManual::GenericPeakInfo> peak_csv_to_peaks( istream &csv )
         //size_t transition_index = 0;
         //const SandiaDecay::Transition *transition = nullptr;
         //PeakDef::SourceGammaType sourceGammaType;
-        //PeakDef::findNearestPhotopeak( nuc, nuc_energy, -1.0, false,
+        //PeakDef::findNearestPhotopeak( nuc, nuc_energy, -1.0, false, -1.0,
         //                               transition, transition_index, sourceGammaType );
         
         SandiaDecay::NuclideMixture mix;

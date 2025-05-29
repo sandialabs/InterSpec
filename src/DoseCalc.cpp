@@ -158,7 +158,7 @@ namespace DoseCalc
     {
       const float energy = energies[energyInd];
       const float I_0 = intensity[energyInd];
-//      const double mu = MassAttenuation::massAttenuationCoeficientFracAN( an, energy );
+//      const double mu = MassAttenuation::massAttenuationCoefficientFracAN( an, energy );
 //      const double transmittion = exp( -mu * areal_density );
       
       const float hydrogen_frac_ad = 0.0f;

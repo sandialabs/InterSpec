@@ -29,6 +29,11 @@ class MaterialDB;
 class SwitchCheckbox;
 class NativeFloatSpinBox;
 
+namespace rapidxml
+{
+  template<class Ch> class xml_node;
+}//namespace rapidxml
+
 namespace RelActCalc
 {
   struct PhysicalModelShieldInput;
@@ -49,8 +54,8 @@ struct RelEffShieldState
   double arealDensity;
   bool fitArealDensity;
 
-  void toXml(rapidxml::xml_node<>* node) const;
-  void fromXml(const rapidxml::xml_node<>* node);
+  void toXml(rapidxml::xml_node<char>* node) const;
+  void fromXml(const rapidxml::xml_node<char>* node);
   
   /** Will return nullptr if invalid or empty state, including the material name can not be parsed. */
   std::shared_ptr<RelActCalc::PhysicalModelShieldInput> fitInput( MaterialDB *materialDB ) const;

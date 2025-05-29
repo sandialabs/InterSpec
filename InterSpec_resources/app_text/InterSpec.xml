@@ -12,6 +12,8 @@
   <message id="Create">Create</message>
   <message id="Energy">Energy</message>
   <message id="Counts">Counts</message>
+  <message id="Apply">Apply</message>
+  <message id="Accept">Accept</message>
   <message id="Foreground">Foreground</message>
   <message id="Background">Background</message>
   <message id="Secondary">Secondary</message>
@@ -28,6 +30,10 @@
   <message id="Distance">Distance</message>
   <message id="Activity">Activity</message>
   <message id="Remark">Remark</message>
+  <message id="Tap">Tap</message>
+  <message id="Click">Click</message>
+  <message id="tap">tap</message>
+  <message id="click">click</message>
 
 
   <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
@@ -81,6 +87,7 @@
   <message id="Unknown">Unknown</message>
   <message id="Energy (keV)">Energy (keV)</message>
   <message id="Efficiency">Efficiency</message>
+  <message id="stable">stable</message>
 
   <!-- Units the user may use to write time duration.
     Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
@@ -141,7 +148,8 @@
   <message id="window-title-license-credit">Disclaimers, Licenses, Credit, and Contact</message>
   <message id="window-title-help">InterSpec Help</message>
   <message id="window-title-simple-mda">Simple Minimum Detectable Activity Calculation</message>
-
+  <message id="window-title-peak-editor">Peak Editor</message>
+  
 
   <!-- The names of the tool-tabs at the bottom of the app -->
   <message id="app-tab-peak-manager">Peak Manager</message>
@@ -218,10 +226,7 @@
   <message id="app-mi-samples-passthrough-mobile">Passthrough (16k channel)</message>
   <message id="app-mi-samples-passthrough">Passthrough (16k bin ICD1, 8 det., 133 samples)</message>
   <message id="app-mi-samples-background">Background (16k bin N42)</message>
-  <message id="app-mi-samples-ba133-lowres">Ba-133 (Low Res, No Calib)</message>
-  <message id="app-mi-samples-co60-lowres">Co-60 (Low Res, No Calib)</message>
-  <message id="app-mi-samples-cs137-lowres">Cs-137 (Low Res, No Calib)</message>
-  <message id="app-mi-samples-th232-lowres">Th-232 (Low Res, No Calib)</message>
+  <message id="app-mi-samples-reference">Reference Spectra...</message>
 
   <!-- Items in the "Edit" menu -->
   <message id="app-mi-edit-undo">Undo</message>
@@ -415,7 +420,10 @@
 
 
   <!-- Error messages, the user probably wont see -->
-  <message id="err-save-sate-to-db">I'm sorry there was a technical error saving your  user state to the database.</message>
+  <message id="err-save-sate-to-db">
+    I'm sorry there was a technical error saving your user state to the database.
+    <p style="font-size: x-small;">{1}</p>
+  </message>
   <message id="err-save-to-large-for-db">File is larger than allowed to be saved to database (is {1} kb, allowed {2} kb).</message>
   <message id="err-no-roi-to-add-peak">There was no ROI to add peak to.</message>
   <message id="err-no-add-peak-to-data-roi">Sorry, cant add peaks to a ROI with a data defined peak.</message>
@@ -569,6 +577,7 @@
   <message id="lang-ko">한국어</message>
   <message id="lang-vi">Tiếng Việt</message>
   <message id="lang-tr">Türkçe</message>
+  <message id="lang-ar">العربية</message>
 
 
   <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
