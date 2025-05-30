@@ -73,7 +73,9 @@
   <!-- Tooltips matching command line help text -->
   <message id="bgw-fit-all-peaks-tt">Instead of fitting for peaks in an exemplar file - all peaks in the spectrum will be fit for.</message>
   
-  <message id="bgw-refit-energy-cal-tt">After initial peak fit, uses the those peaks (and their assigned nuclides) to adjust energy gain, then refits the peaks with the updated energy calibration.</message>
+  <message id="bgw-refit-energy-cal-tt">After initial peak fit, uses the those peaks (and their assigned nuclides) to adjust energy gain, then refits the peaks with the updated energy calibration.
+  This also applies to the background file if you are fitting for activity/shielding.
+  </message>
   
   <message id="bgw-use-exemplar-energy-cal-tt">Use the exemplar N42 energy calibration with the input foreground files.
 If refit-energy-cal is specified true, then the exemplar energy cal will be used for initial fit, and then refined and peaks refit.

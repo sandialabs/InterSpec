@@ -1030,8 +1030,12 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       return result;
     }
     
-    const shared_ptr<const SpecUtils::EnergyCalibration> exemplar_cal
+    shared_ptr<const SpecUtils::EnergyCalibration> exemplar_cal
                                                   = exemplar_spectrum->energy_calibration();
+    // Make a copy of energy cal, jic, to keep things independednt (I dont think this is really necassary)
+    if( options.use_exemplar_energy_cal || options.use_exemplar_energy_cal_for_background )
+      exemplar_cal = make_shared<SpecUtils::EnergyCalibration>( *exemplar_cal );
+    
     if( options.use_exemplar_energy_cal )
     {
       try
@@ -1197,7 +1201,12 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
                                              foreground_sample_numbers, peak_fit_options );
   
   result.m_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( foreground_peak_fit_result );
+
+  // Energy cal may have been modified - pick up these changes
+  result.m_foreground = foreground_peak_fit_result.spectrum;
+  result.m_foreground_file = foreground_peak_fit_result.measurement;
   
+
   if( !foreground_peak_fit_result.success )
   {
     result.m_error_msg = "Fitting of foreground peaks failed.";
@@ -1270,6 +1279,10 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
                                      peak_fit_options );
       
       result.m_background_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( background_peaks );
+      
+      // Energy cal may have been modified - pick up these changes (as of 20250530, background is not )
+      result.m_background = background_peaks.spectrum;
+      result.m_background_file = background_peaks.measurement;
       
       if( !background_peaks.success )
       {

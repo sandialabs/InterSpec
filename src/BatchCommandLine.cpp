@@ -184,6 +184,7 @@ int run_batch_command( int argc, char **argv )
       ("refit-energy-cal", po::value<bool>(&refit_energy_cal)->implicit_value(true)->default_value(false),
        "After initial peak fit, uses the those peaks (and their assigned nuclides) to adjust energy"
        " gain, then refits the peaks with the updated energy calibration."
+       " If you are fitting for activity/shielding, this will also apply to the background file, if being used."
        )
       ("use-exemplar-energy-cal", po::value<bool>(&use_exemplar_energy_cal)->implicit_value(true)->default_value(false),
        "Use the exemplar N42 energy calibration with the input foreground files.\n"

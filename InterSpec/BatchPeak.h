@@ -78,6 +78,7 @@ namespace BatchPeak
     std::shared_ptr<SpecMeas> cached_background_subtract_spec;
     bool use_existing_background_peaks;
     bool use_exemplar_energy_cal_for_background;
+    // TODO: right now there is no option to refit energy calibration of background
     
     /** The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI.
      

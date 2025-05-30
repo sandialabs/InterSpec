@@ -960,7 +960,15 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     {
       try
       {
-        propagate_energy_cal( exemplar_spectrum->energy_calibration(), spec, specfile, used_sample_nums );
+        // We will make a copy of the energy calibration in case we modify it further in the future; we dont
+        //  want to modify the exemplar energy calibration
+        shared_ptr<const SpecUtils::EnergyCalibration> exemplar_cal = exemplar_spectrum->energy_calibration();
+        if( !exemplar_cal || !exemplar_cal->valid() )
+          throw runtime_error( "Exemplar spectrum doesnt have a valid energy calibration." );
+        
+        shared_ptr<SpecUtils::EnergyCalibration> spec_cal = make_shared<SpecUtils::EnergyCalibration>( *exemplar_cal );
+
+        propagate_energy_cal( spec_cal, spec, specfile, used_sample_nums );
       }catch( std::exception &e )
       {
         results.warnings.push_back( "Not using exemplar energy calibration for '" + filename + "': "
@@ -1041,7 +1049,12 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         {
           try
           {
-            propagate_energy_cal( exemplar_spectrum->energy_calibration(), results.background, background_n42, back_sample_nums );
+             shared_ptr<const SpecUtils::EnergyCalibration> exemplar_cal = exemplar_spectrum->energy_calibration();
+            if( !exemplar_cal || !exemplar_cal->valid() )
+              throw runtime_error( "Exemplar spectrum doesnt have a valid energy calibration." );        
+            shared_ptr<SpecUtils::EnergyCalibration> spec_cal = make_shared<SpecUtils::EnergyCalibration>( *exemplar_cal );
+
+            propagate_energy_cal( spec_cal, results.background, background_n42, back_sample_nums );
           }catch( std::exception &e )
           {
             results.warnings.push_back( "Not using exemplar energy calibration for background of '" + filename + "': "
@@ -1255,6 +1268,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       }//for( const auto &p : exemplar_peaks )
 
       results.original_energy_cal = spec ? spec->energy_calibration() : nullptr;
+      //if( !results.original_energy_cal )
+      //  results.original_energy_cal = make_shared<SpecUtils::EnergyCalibration>( *spec->energy_calibration() ); //Make a copy, just to make sure it doesnt get messed up
 
       if( options.refit_energy_cal )
       {
@@ -1357,9 +1372,17 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
 
       // Now we will associate the fit peaks to the spectrum and save an N42 file you can open up in
       //  InterSpec and inspect the fits.
-
+      map<shared_ptr<const PeakContinuum>, shared_ptr<PeakContinuum>> peak_continuum_map;
       for( const auto &p: fit_peaks )
-        fit_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
+      {
+        shared_ptr<PeakDef> new_peak = make_shared<PeakDef>(p);
+        shared_ptr<const PeakContinuum> cont = new_peak->continuum();
+        auto pos = peak_continuum_map.find( cont );
+        if( pos == end(peak_continuum_map) )
+          pos = peak_continuum_map.insert( { cont, std::make_shared<PeakContinuum>( *cont ) } ).first;
+        new_peak->setContinuum( pos->second );
+        fit_peaks_ptrs.push_back( new_peak );
+      }
 
       if( options.background_subtract_file.empty() && !options.cached_background_subtract_spec )
       {
