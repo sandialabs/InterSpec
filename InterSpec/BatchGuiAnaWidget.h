@@ -211,6 +211,7 @@ public:
 /*
 class FileConvertOpts : public Wt::WContainerWidget
 {
+ 
 public:
   FileConvertOpts( Wt::WContainerWidget *parent )
     : Wt::WContainerWidget( parent )

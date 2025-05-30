@@ -142,9 +142,11 @@ BatchGuiAnaWidget::BatchGuiAnaWidget( Wt::WContainerWidget *parent ) : Wt::WCont
   addStyleClass( "BatchGuiAnaWidget" );
 
   WApplication *app = WApplication::instance();
+  InterSpec *interspec = InterSpec::instance();
 
   app->useStyleSheet( "InterSpec_resources/BatchGuiAnaWidget.css" );
   app->require( "InterSpec_resources/BatchGuiWidget.js" ); //Should already be loaded, but JIC
+  interspec->useMessageResourceBundle( "BatchGuiAnaWidget" );
 }
 
 Wt::Signal<bool> &BatchGuiAnaWidget::canDoAnalysisSignal()

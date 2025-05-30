@@ -77,6 +77,11 @@ BatchGuiInputFile::BatchGuiInputFile( const std::string display_name,
 {
   addStyleClass( "BatchGuiInputFile" );
 
+  InterSpec * const interspec = InterSpec::instance();
+  interspec->useMessageResourceBundle( "BatchGuiInputFile" );
+
+  wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
+  
   m_txt = new WText( display_name, this );
   m_txt->addStyleClass( "FilenameText" );
   m_txt->setToolTip( "Full path of disk file: '" + path_to_file + "'" );
@@ -135,6 +140,11 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
 {
   addStyleClass( "BatchGuiInputSpectrumFile" );
 
+  InterSpec * const interspec = InterSpec::instance();
+  interspec->useMessageResourceBundle( "BatchGuiInputFile" );
+  
+  wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
+  
   m_preview_container = new Wt::WContainerWidget( this );
   m_preview_container->addStyleClass( "InputFilePreview" );
 

@@ -158,6 +158,12 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   doJavaScript( "$('.Wt-domRoot').data('BlockFileDrops', true);" );
   // doJavaScript( "$('.Wt-domRoot').data('BatchUploadOnly', true);" );
 
+  interspec->saveShieldingSourceModelToForegroundSpecMeas();
+#if ( USE_REL_ACT_TOOL )
+  interspec->saveRelActManualStateToForegroundSpecMeas();
+  interspec->saveRelActAutoStateToForegroundSpecMeas();
+#endif
+  
   Wt::WGroupBox *options_container = new Wt::WGroupBox( WString::tr( "bgw-type-select-label" ), this );
   options_container->addStyleClass( "TypeSelectContainer" );
 
