@@ -582,6 +582,8 @@ if( USE_BATCH_TOOLS )
         src/BatchActivity.cpp
         src/BatchInfoLog.cpp
         src/BatchGuiWidget.cpp
+        src/BatchGuiAnaWidget.cpp
+        src/BatchGuiInputFile.cpp
   )
   
   list( APPEND headers
@@ -589,7 +591,9 @@ if( USE_BATCH_TOOLS )
         InterSpec/BatchPeak.h
         InterSpec/BatchActivity.h
         InterSpec/BatchInfoLog.h
-        InterSpec/BatchGuiWidget.h 
+        InterSpec/BatchGuiWidget.h
+        InterSpec/BatchGuiAnaWidget.h
+        InterSpec/BatchGuiInputFile.h
   )
 endif( USE_BATCH_TOOLS )
 

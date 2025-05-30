@@ -210,10 +210,11 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
     
     
     // Try a Rel Eff CSV file
-    input.seekg( 0, ios::beg );
-      
     try
     {
+      input.seekg( 0, ios::beg );
+      input.clear();
+      
       auto det = DrfSelect::parseRelEffCsvFile( drf_file );
       if( det )
         return det;
@@ -227,6 +228,7 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
     try
     {
       input.seekg( 0, ios::beg );
+      input.clear();
         
       auto answer = DetectorPeakResponse::parseEccFile( input );
       if( std::get<0>(answer) )

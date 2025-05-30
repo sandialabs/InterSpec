@@ -47,11 +47,10 @@ namespace Wt
 namespace SpecUtils{ enum class SpectrumType : int; }
 
 class BatchGuiWidget;
-class InputFileWidget;
+class BatchGuiAnaWidget;
 class DirectorySelector;
 class FileDragUploadResource;
-
-class BatchGuiAnaWidget;
+class BatchGuiInputSpectrumFile;
 
 class BatchGuiDialog : public SimpleDialog
 {
@@ -94,7 +93,7 @@ protected:
    */
   void addInputFiles( const std::vector<std::tuple<std::string,std::string,bool>> &files );
 
-  void handle_remove_input_file( InputFileWidget *input );
+  void handle_remove_input_file( BatchGuiInputSpectrumFile *input );
 
   void updateCanDoAnalysis();
 

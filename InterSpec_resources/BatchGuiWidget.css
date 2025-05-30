@@ -47,7 +47,6 @@
   /* padding-bottom: 20px; */
 }
 
-
 .BatchGuiDialog
 {
 
@@ -85,7 +84,6 @@
   list-style-type: none;
 }
 
-
 .BatchGuiWidget .TypeSelectContainer ul li
 {
   display: inline-block;
@@ -102,123 +100,16 @@
   padding-right: 4px;
   margin-top: 2px;
   margin-bottom: 2px;
-  margin-right: 2px;
+  margin-right: 6px;
   border-radius: 5px;
   
   text-align: center;
 }
 
-/*
-.BatchGuiWidget .TypeSelectContainer ul.VerticalNavMenu
-{
-  margin-block-start: 0px;
-  margin-block-end: 0px;
-
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-left: 0px;
-  padding-right: 0px;
-  font-size: 13px;
-  width: 20px;
-  text-align: center;
-  text-overflow: ellipsis;
-}
-
-.BatchGuiWidget .TypeSelectContainer ul.VerticalNavMenu li
-{
-  height: 1.5em;
-  padding-top: 2px;
-  padding-bottom: 2px;
-  margin-top: 2px;
-  margin-bottom: 2px;
-  border-radius: 2px;
-  white-space: nowrap;
-}
-*/
-
-
 .BatchGuiWidget .TypeSelectContainer .Wt-stack
 {
 
 }
-
-.BatchGuiWidget .BatchGuiAnaWidget
-{
-  overflow-y: auto;
-  height: 180px;
-
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-
-.BatchGuiWidget .BatchGuiAnaWidget.BatchGuiPeakFitWidget
-{
-
-}
-
-.BatchGuiWidget .BatchGuiPeakFitWidget .PeakFitOptionsContainer
-{
-  padding: 5px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-
-/* Peak Fit Options Container - Flex row layout that wraps */
-.BatchGuiWidget .BatchGuiPeakFitWidget .PeakFitBoolOptionsContainer
-{
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.BatchGuiWidget .BatchGuiPeakFitWidget .PeakFitFloatOptionsContainer
-{
-  display: flex;
-  flex-direction: row;
-  gap: 5px;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-around;
-}
-
-
-/* Threshold Option Container - Flex layout with vertical centering */
-.BatchGuiWidget .ThresholdOptionContainer
-{
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  gap: 5px;
-  align-items: center;
-
-  /*
-  padding: 5px;
-  border: 1px solid #e1e1e1;
-  border-radius: 4px;
-  background-color: #f9f9f9;
-   */
-}
-
-.BatchGuiWidget .BatchGuiAnaWidget .ForegroundToUseOpt,
-.BatchGuiWidget .BatchGuiAnaWidget .BackgroundToUseOpt
-{
-  display: flex;
-  flex-direction: row;
-  gap: 8px;
-}
-
-.BatchGuiWidget .BatchGuiAnaWidget.BatchGuiActShieldAnaWidget
-{
-
-}
-
-
 
 .BatchGuiWidget .InputFilesContainer
 {
@@ -234,33 +125,7 @@
   overflow-y: auto;
 }
 
-.BatchGuiAnaWidget .ExemplarToUseOpt
-{
-  display: flex;
-  flex-direction: row;
-  gap: 5px;
-}
-
-.BatchGuiWidget .ExemplarFileDrop
-{
-  border: 1px #e1e1e1;
-  border-radius: 5px;
-  width: 125px;  /* same as InputFileWidget */
-  height: 100px; /* same as InputFileWidget */
-}
-
-.BatchGuiWidget .ExemplarFileDrop.EmptyExemplarUpload::before
-{
-  content: "Drop file or click";
-  display: block;
-  background-color: lightgray;
-  color: darkgray;
-  text-align: center;
-  line-height: 100px;
-  width: 125px;
-  height: 100px;
-}
-
+/* Shared drag and drop utilities used by both BatchGuiWidget and BatchGuiAnaWidget */
 .BatchGuiWidget .DragedOver,
 .BatchGuiWidget .DragedOver.DomIsDrugOver
 {
@@ -274,6 +139,7 @@
   border-radius: 8px;
   animation: blink 1s infinite;
 }
+
 @keyframes blink {
   0% {
     opacity: 1;
@@ -286,7 +152,10 @@
   }
 }
 
-.BatchGuiWidget .DomIsDrugOver
+.BatchGuiWidget .DomIsDrugOver,
+.BatchGuiWidget .ExemplarFileDrop.DomIsDrugOver,
+.BatchGuiWidget .BatchGuiInputFile.DomIsDrugOver,
+.BatchGuiWidget .BatchGuiInputSpectrumFile.DomIsDrugOver
 {
   border: 3px dashed grey;
   border-radius: 8px;
@@ -295,6 +164,7 @@
   position: relative; /* Establish positioning context for overlay */
   background-color: rgba(128, 128, 128, 0.5); /* Grey background with transparency */
 }
+
 .BatchGuiWidget .InputFilesContainer.DomIsDrugOver::after,
 .BatchGuiWidget .ExemplarFileDrop.DomIsDrugOver::after
 {
@@ -308,235 +178,12 @@
   text-align: center;
 }
 
-
 .BatchGuiWidget .InputFilesContainer.DragedOver.DomIsDrugOver::after,
-.BatchGuiWidget .ExemplarFileDrop.DragedOver.DomIsDrugOver::after,
+.BatchGuiWidget .ExemplarFileDrop.DragedOver.DomIsDrugOver::after
 {
   background-color: transparent;
 }
 
-
 .BatchGuiWidget .DirectorySelector
 {
-}
-
-.BatchGuiWidget .InputFileWidget
-{
-  position: relative;
-  width: 125px;
-  height: 100px;
-  border-radius: 5px;
-  border: solid 1px #e1e1e1; 
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.BatchGuiWidget .InputFileWidget .closeicon-wtdefault
-{
-  position: absolute;
-  top: 0px;
-  right: 0px;
-}
-
-.BatchGuiWidget .InputFileWidget .InputFilePreview
-{
-  width: 100%;
-  height: 80px;
-  border-bottom: solid 1px #e1e1e1; 
-}
-
-.BatchGuiWidget .InputFileWidget .FilenameText
-{
-  font-size: 11px;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 100%;
-  line-height: 15px;
-}
-
-
-.BatchGuiWidget .InputFileWidget .InputFilePreview .NotSpectrumFile
-{
-  border: solid 1px red;
-  background-color: #f0f0f0;
-}
-
-.BatchGuiWidget .InputFileWidget .InputFilePreview .PeaksCsvFile
-{
-  border: solid 1px #e1e1e1;
-  background-color: #f0f0f0; 
-}
-
-.BatchGuiWidget .InputFileWidget .InputFilePreview .PreviewError
-{
-  border: solid 1px red; 
-  background-color: #f0f0f0;
-}
-
-
-.BatchGuiWidget .MiscInputFileWidget
-{
-  position: relative;
-  width: 115px;
-  line-height: 15px;
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  justify-content: flex-start;
-}
-
-.BatchGuiWidget .MiscInputFileWidget .FilenameText  
-{
-  font-size: 10px;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-grow: 1;
-  flex-shrink: 1;
-}
-
-.BatchGuiWidget .MiscInputFileWidget .closeicon-wtdefault
-{
-  width: 22px;
-}
-
-.BatchGuiWidget .ReportsContainer
-{
-  display: flex;
-  flex-direction: row;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.BatchGuiWidget .ReportsContainer .CustomReportOptions
-{
-  display: flex;
-  flex-direction: row;
-  gap: 10px;
-  align-items: center;
-}
-
-.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader,
-.BatchGuiWidget .DetectorFileDrop
-{
-  border: solid 1px #e1e1e1;
-  border-radius: 5px;
-
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  height: 20px;
-  width: 120px;
-  overflow-y: auto;
-}
-
-.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.EmptyReportUpload::before,
-.BatchGuiWidget .DetectorFileDrop.EmptyDetectorUpload::before
-{
-  content: "Drop/click here";
-  display: block;
-  background-color: lightgray;
-  color: darkgray;
-  text-align: center;
-  line-height: 20px;
-  font-size: 9px;
-  height: 20px;
-  width: 120px;
-}
-
-
-.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.DomIsDrugOver,
-.BatchGuiWidget .DetectorFileDrop.DomIsDrugOver
-{
-  border: 3px dashed grey;
-  border-radius: 8px;
-
-  /* Add styles to grey out the element */
-  position: relative; /* Establish positioning context for overlay */
-  background-color: rgba(128, 128, 128, 0.5); /* Grey background with transparency */
-}
-
-.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.DomIsDrugOver::after,
-.BatchGuiWidget .DetectorFileDrop.DomIsDrugOver::after
-{
-  content: 'Drop here';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%); /* Center the text */
-  color: white; /* White text color */
-  font-size: 10px;
-  text-align: center;
-}
-
-
-.BatchGuiWidget .DetectorInputContainer
-{
-  display: flex;
-  flex-direction: row;
-  gap: 10px;
-  align-items: center;
-}
-
-.simple-dialog.BatchAnalysisResultDialog
-{
-  max-width: 95vw;
-  max-height: 95vh;
-  width: 95vw;
-  height: 95vw;
-}
-
-.simple-dialog.BatchAnalysisResultDialog .body
-{
-  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
-  max-height: calc( 95vh - 90px );
-  max-width: calc(95vw - 30px);
-  overflow-y: hidden;
-  padding-top: 16px;
-  padding-bottom: 5px;
-}
-
-.simple-dialog.BatchAnalysisResultDialog .body .BatchReportIFrameHolder
-{
-  border: solid 1px #e1e1e1;
-  border-radius: 5px;
-  display: block;
-}
-
-
-.simple-dialog.BatchAnalysisResultDialog .body .BatchReportJsonError,
-.simple-dialog.BatchAnalysisResultDialog .body .BatchReportInjaError,
-.simple-dialog.BatchAnalysisResultDialog .body .BatchReportMiscError
-{
-  color: red;
-}
-
-
-.simple-dialog.BatchAnalysisWarningDialog
-{
-  
-}
-
-.simple-dialog.BatchAnalysisWarningDialog .body
-{
-  color: orange;
-}
-
-.simple-dialog.BatchAnalysisWarningDialog ul.body
-{
-  list-style-type: none;
-  padding-left: 20px;
-  padding-right: 20px;
-}
-
-.simple-dialog.BatchAnalysisWarningDialog ul.body li
-{
-  margin-bottom: 10px;
-}
-
-
+} 
