@@ -1777,6 +1777,7 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
   
   const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
   const bool overwrite = m_overwrite_output->isChecked();
+  const bool sum_multi =  m_sum_for_single_output_types->isChecked();
   
   for( size_t index = 0; index < input_files.size(); ++index )
   {
@@ -1803,21 +1804,32 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
       if( num_records > max_records )
       {
         // We will write out every record into a different file.
-        vector<shared_ptr<const SpecUtils::Measurement> > meass = spec_meas->measurements();
-        for( size_t record_num = 0; record_num < meass.size(); ++record_num )
+        if( sum_multi )
         {
-          const shared_ptr<const SpecUtils::Measurement> &m = meass[record_num];
-          
-          const string outputname = base_filename + "_" + std::to_string(record_num) + "." + output_ext;
-          
-          if( SpecUtils::is_file(outputname) && !overwrite )
+          const string outputname = base_filename + "." + output_ext;
+          spec_meas->write_to_file( outputname, save_type );
+        }else
+        {
+          vector<shared_ptr<const SpecUtils::Measurement> > meass = spec_meas->measurements();
+          for( size_t record_num = 0; record_num < meass.size(); ++record_num )
           {
-            spec_meas->write_to_file( outputname, {m->sample_number()}, {m->detector_name()}, save_type );
-          }else
-          {
-            spec_meas->write_to_file( outputname, save_type );
-          }
-        }
+            const shared_ptr<const SpecUtils::Measurement> &m = meass[record_num];
+            
+            const string outputname = base_filename + "_" + std::to_string(record_num) + "." + output_ext;
+            const bool is_file = SpecUtils::is_file(outputname);
+            
+            if( SpecUtils::is_file(outputname) && !overwrite )
+            {
+              warnings.push_back( "Not overwriting existing '" + outputname + "'" );
+            }else
+            {
+              if( is_file && !SpecUtils::remove_file(outputname) )
+                warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
+              
+              spec_meas->write_to_file( outputname, {m->sample_number()}, {m->detector_name()}, save_type );
+            }
+          }//for( size_t record_num = 0; record_num < meass.size(); ++record_num )
+        }//if( sum_multi )
       }else
       {
         const string outputname = base_filename + "." + output_ext;
@@ -1828,11 +1840,8 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
           warnings.push_back( "Not overwriting existing '" + outputname + "'" );
         }else
         {
-          if( is_file )
-          {
-            if( !SpecUtils::remove_file( outputname ) )
-              warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
-          }
+          if( is_file && !SpecUtils::remove_file(outputname) )
+            warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
           
           spec_meas->write_to_file( outputname, save_type );
         }

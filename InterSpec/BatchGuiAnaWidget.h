@@ -59,7 +59,10 @@ namespace SpecUtils
 }
 
 
-/** Base class for all batch analysis widgets. */
+/** Base class for all batch analysis widgets.
+ 
+ TODO: need to refactor doing the analysis so the off-gui-thread work is done by a std::function<void()> function
+ */
 class BatchGuiAnaWidget : public Wt::WContainerWidget
 {
 protected:
