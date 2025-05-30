@@ -275,14 +275,20 @@ shared_ptr<DetectorPeakResponse> init_drf_from_name( std::string drf_file, std::
 
   
 void fit_activities_in_files( const std::string &exemplar_filename,
+                          std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::set<int> &exemplar_sample_nums,
                           const std::vector<std::string> &files,
-                          const BatchActivityFitOptions &options )
+                          std::vector<std::shared_ptr<SpecMeas>> optional_cached_files,
+                          const BatchActivityFitOptions &options,
+                          BatchActivityFitSummary * const summary_results )
 {
   vector<string> warnings;
   
   if( files.empty() )
     throw runtime_error( "No input files specified." );
+
+  if( !optional_cached_files.empty() && (optional_cached_files.size() != files.size()) )
+    throw runtime_error( "If you specify cached files, you must specify the same number of files." );
   
   if( !options.output_dir.empty() && !SpecUtils::is_directory(options.output_dir) )
     throw runtime_error( "Output directory ('" + options.output_dir + "'), is not a directory." );
@@ -320,13 +326,24 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     summary_json["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
   summary_json["InputFiles"] = files;
   
-  
-  std::shared_ptr<const SpecMeas> cached_exemplar_n42;
-  for( const string filename : files )
+  if( summary_results )
   {
+    summary_results->options = options;
+    summary_results->exemplar_filename = exemplar_filename;
+    summary_results->exemplar = cached_exemplar_n42;
+    summary_results->exemplar_sample_nums = exemplar_sample_nums;
+  }//if( summary_results )
+
+
+  for( size_t file_index = 0; file_index < files.size(); ++file_index )
+  {
+    const string filename = files[file_index];
+    string leaf_name = SpecUtils::filename(filename);
+    const shared_ptr<SpecMeas> cached_file = optional_cached_files.empty() ? nullptr : optional_cached_files[file_index];
+
     const BatchActivityFitResult fit_results
                  = fit_activities_in_file( exemplar_filename, exemplar_sample_nums,
-                                     cached_exemplar_n42, filename, options );
+                                     cached_exemplar_n42, filename, cached_file, options );
     
     if( (fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenExemplar)
        || (fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenBackgroundFile) )
@@ -334,7 +351,9 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     
     if( !cached_exemplar_n42 )
       cached_exemplar_n42 = fit_results.m_exemplar_file;
-    warnings.insert(end(warnings), begin(fit_results.m_warnings), end(fit_results.m_warnings) );
+    
+    for( const string &warn : fit_results.m_warnings )
+      warnings.push_back( "File '" + leaf_name + "': " + warn );
     
     if( !set_setup_info_to_summary_json && fit_results.m_fit_results )
     {
@@ -436,12 +455,25 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     if( fit_results.m_fit_results )
       BatchInfoLog::shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, use_bq, data );
       
+    if( summary_results )
+    {
+      summary_results->file_results.push_back( fit_results );
+      summary_results->file_json.push_back( data.dump() );
+      summary_results->file_peak_csvs.push_back( "" );              //We will fill this in below
+      summary_results->file_reports.push_back( vector<string>() );  //We will fill this in below
+      summary_results->exemplar = fit_results.m_exemplar_file;      //JIC we havent grabbed this yet
+    }//if( summary_results )
+
+
     for( string tmplt : options.report_templates )
     {
       try
       {
         const string rpt = BatchInfoLog::render_template( tmplt, env,
                             BatchInfoLog::TemplateRenderType::ActShieldIndividual, options, data );
+        
+        if( summary_results )
+          summary_results->file_reports.back().push_back( rpt );
         
         if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt, "html" ) )
           cout << "\n\n" << rpt << endl << endl;
@@ -520,7 +552,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     
     if( !options.output_dir.empty() && options.create_json_output )
       BatchInfoLog::write_json( options, warnings, filename, data );
-    
+
     if( fit_results.m_peak_fit_results )
     {
       const BatchPeak::BatchPeakFitResult &peak_fit_res = *fit_results.m_peak_fit_results;
@@ -547,10 +579,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         std::sort( begin(fit_peaks), end(fit_peaks), &PeakDef::lessThanByMeanShrdPtr );
       }//if( make_nonfit_peaks_zero )
       
-      
       if( !options.output_dir.empty() && options.create_csv_output )
       {
-        string leaf_name = SpecUtils::filename(filename);
         const string file_ext = SpecUtils::file_extension(leaf_name);
         if( !file_ext.empty() )
           leaf_name = leaf_name.substr(0, leaf_name.size() - file_ext.size());
@@ -590,6 +620,15 @@ void fit_activities_in_files( const std::string &exemplar_filename,
                                   fit_peaks, peak_fit_res.spectrum );
         cout << endl;
       }
+
+      if( summary_results )
+      {
+        const string leaf_name = SpecUtils::filename(filename);
+        stringstream ss;
+        PeakModel::write_peak_csv( ss, leaf_name, PeakModel::PeakCsvType::Full,
+                                      fit_peaks, peak_fit_res.spectrum );
+        summary_results->file_peak_csvs.back() = ss.str();
+      }
     }//if( fit_results.m_peak_fit_results )
     
     for( const pair<string,string> &key_val : spec_chart_js_and_css )
@@ -609,7 +648,10 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     {
       const string rpt = BatchInfoLog::render_template( summary_tmplt, env,
                        BatchInfoLog::TemplateRenderType::ActShieldSummary, options, summary_json );
-      
+
+     if( summary_results )
+      summary_results->summary_reports.push_back( rpt );
+
       if( options.to_stdout && !SpecUtils::iequals_ascii(summary_tmplt, "html" ) )
         cout << "\n\n" << rpt << endl << endl;
       
@@ -659,6 +701,12 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     cerr << endl << endl;
   for( const auto warn : warnings )
     cerr << warn << endl;
+
+  if( summary_results )
+  {
+    summary_results->summary_json = summary_json.dump();
+    summary_results->warnings = warnings;
+  }//if( summary_results )
 }//fit_activities_in_files(...)
   
 
@@ -666,6 +714,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
                           std::set<int> exemplar_sample_nums,
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,
+                          std::shared_ptr<SpecMeas> specfile,
                           const BatchActivityFitOptions &options )
 {
   //  TODO: allow specifying, not just in the exemplar N42.  Also note InterSpec defines a URL encoding for model as well
@@ -726,14 +775,17 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     return result;
   }//if( !cached_exemplar_n42 )
   
-  
-  auto specfile = make_shared<SpecMeas>();
-  if( !specfile->load_file( filename, SpecUtils::ParserType::Auto ) )
+  if( !specfile )
   {
-    result.m_error_msg = "Could not load foreground '" + filename + "'.";
-    result.m_result_code = BatchActivityFitResult::ResultCode::CouldntOpenInputFile;
-    return result;
-  }//if( !meas->load_file( filename, ParserType::Auto ) )
+    specfile = make_shared<SpecMeas>();
+    if( !specfile->load_file( filename, SpecUtils::ParserType::Auto ) )
+    {
+      result.m_error_msg = "Could not load foreground '" + filename + "'.";
+      result.m_result_code = BatchActivityFitResult::ResultCode::CouldntOpenInputFile;
+      return result;
+    }//if( !meas->load_file( filename, ParserType::Auto ) )
+  }//if( !specfile )
+
   result.m_foreground_file = specfile;
   set<int> foreground_sample_numbers = result.m_foreground_sample_numbers;
   
@@ -743,7 +795,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     if( options.cached_background_subtract_spec )
     {
       backfile = options.cached_background_subtract_spec;
-      result.m_background_file = specfile;
+      result.m_background_file = backfile;
     }else if( options.background_subtract_file == filename )
     {
       backfile = specfile;
@@ -1135,6 +1187,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   // Now need to figure out the foreground and possibly background sample numbers in the exemplar
   BatchPeak::BatchPeakFitOptions peak_fit_options = options;
   peak_fit_options.background_subtract_file = "";
+  peak_fit_options.cached_background_subtract_spec = nullptr;
   peak_fit_options.use_exemplar_energy_cal = false;  //We've already applied this.
   peak_fit_options.use_exemplar_energy_cal_for_background = false;
 
@@ -1154,7 +1207,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   }//if( !foreground_peaks.success )
   
   
-  if( !options.background_subtract_file.empty() && !options.hard_background_sub )
+  if( (!options.background_subtract_file.empty() || background) && !options.hard_background_sub )
   {
     if( options.use_existing_background_peaks )
     {

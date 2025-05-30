@@ -345,7 +345,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
                           const std::vector<std::string> &files,
                         std::vector<std::shared_ptr<SpecMeas>> cached_files,
                         const ::BatchPeak::BatchPeakFitOptions &options,
-                        BatchPeakFitSummaryResults *results )
+                        BatchPeakFitSummary * const results )
 {
   vector<string> warnings;
   
@@ -762,6 +762,31 @@ void get_exemplar_spectrum_and_peaks(
     exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
     exemplar_spectrum = exemplar_n42->sum_measurements( exemplar_sample_nums, det_names, nullptr );
   }//if( sample nums specified ) / else ( single meas ) / else ( search for peaks )
+
+  if( !exemplar_peaks )
+    return;
+
+  //We need to make sure that the exemplar peaks have unique continuums
+  //  This is because the peak fitter will modify the continuums, and we need to make sure that
+  //  the exemplar peaks have the same continuums as the fit peaks
+  shared_ptr<deque<shared_ptr<const PeakDef>>> exemplar_peaks_copy = make_shared<deque<shared_ptr<const PeakDef>>>();
+  
+  std::map<std::shared_ptr<const PeakContinuum>, std::shared_ptr<PeakContinuum>> cont_map;
+  for( size_t peak_index = 0; peak_index < exemplar_peaks->size(); peak_index += 1 )
+  {
+    const shared_ptr<const PeakDef> &peak = exemplar_peaks->at( peak_index );
+    assert( peak );
+    const shared_ptr<const PeakContinuum> cont = peak->continuum();
+    auto pos = cont_map.find( cont );
+    if( pos == end(cont_map) )
+      pos = cont_map.insert( { cont, std::make_shared<PeakContinuum>( *cont ) } ).first;
+    shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( *peak );
+    new_peak->setContinuum( pos->second );
+    
+    exemplar_peaks_copy->push_back( new_peak );
+  }//for( size_t peak_index = 0; peak_index < exemplar_peaks->size(); peak_index += 1 )
+
+  exemplar_peaks = exemplar_peaks_copy;
 }//void get_exemplar_spectrum_and_peaks(...)
   
 
@@ -818,6 +843,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
   assert( !exemplar_n42 || (exemplar_peaks && !exemplar_peaks->empty()) );
   
   
+
+
   BatchPeakFitResult results;
   results.file_path = exemplar_filename;
   results.options = options;

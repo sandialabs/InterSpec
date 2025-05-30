@@ -63,16 +63,11 @@ namespace BatchActivity
     : public BatchPeak::BatchPeakFitOptions
   {
     bool use_bq = false;
-    std::shared_ptr<DetectorPeakResponse> drf_override;
+    std::shared_ptr<const DetectorPeakResponse> drf_override;
     boost::optional<double> distance_override;
     bool hard_background_sub;
   };//struct BatchActivityFitOptions
   
-  
-  InterSpec_API void fit_activities_in_files( const std::string &exemplar_filename,
-                          const std::set<int> &exemplar_sample_nums,
-                          const std::vector<std::string> &files,
-                          const BatchActivityFitOptions &options );
   
   struct InterSpec_API BatchActivityFitResult
   {
@@ -143,6 +138,32 @@ namespace BatchActivity
     std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> m_fit_results;
   };//struct BatchActivityFitResult
   
+  struct BatchActivityFitSummary
+  {
+    BatchActivityFitOptions options;
+    std::string exemplar_filename;
+    std::shared_ptr<const SpecMeas> exemplar;
+    std::set<int> exemplar_sample_nums;
+
+    /** Each of these next four `file_*` variables will have the same number of entries, as the input number of files. */
+    std::vector<BatchActivityFitResult> file_results;
+    std::vector<std::string> file_json;
+    std::vector<std::string> file_peak_csvs;
+    std::vector<std::vector<std::string>> file_reports;
+
+    std::string summary_json;
+    std::vector<std::string> summary_reports;
+    std::vector<std::string> warnings;
+  };//struct BatchActivityFitSummary
+  
+  
+  InterSpec_API void fit_activities_in_files( const std::string &exemplar_filename,
+                                              std::shared_ptr<const SpecMeas> optional_parsed_exemplar_n42,
+                                             const std::set<int> &exemplar_sample_nums,
+                                             const std::vector<std::string> &files,
+                                             std::vector<std::shared_ptr<SpecMeas>> optional_cached_files,
+                                             const BatchActivityFitOptions &options,
+                                             BatchActivityFitSummary * const summary_results = nullptr );
   
   
   /** Fits the peaks, activities, and shieldings
@@ -155,7 +176,8 @@ namespace BatchActivity
           of sample numbers must specify peaks to use.
    @param cached_exemplar_n42 If non-null, then `exemplar_filename` will be ignored, and this file will be used; to avoid re-parsing
           of the exemplar file over-and-over again.
-   @param filename The name of the spectrum file to fit peaks to.
+   @param filename The filesystem path of the spectrum file to fit peaks to.
+   @param cached_file If non-null, then this file will be used as the input file for analysis, and `filename` will only be used as the display name of the input file in the reports.
    @param options The options to use for fitting peaks; note, not all options are used, as some of them are only applicable to
           #fit_peaks_in_files
    */
@@ -163,6 +185,7 @@ namespace BatchActivity
                           std::set<int> exemplar_sample_nums,
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,
+                          std::shared_ptr<SpecMeas> cached_file,
                           const BatchActivityFitOptions &options );
   
 }//namespace BatchPeak

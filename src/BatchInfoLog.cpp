@@ -1483,7 +1483,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       }
       options_obj["UsedExistingBackgroundPeak"] = options.use_existing_background_peaks;
       options_obj["UseExemplarEnergyCalForBackground"] = options.use_exemplar_energy_cal_for_background;
-    }//if( !options.background_subtract_file.empty() )
+    }//if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     
     options_obj["ReportTemplateIncludeDir"] = options.template_include_dir;
     options_obj["ReportTemplates"] = options.report_templates;

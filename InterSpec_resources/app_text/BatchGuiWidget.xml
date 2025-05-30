@@ -8,6 +8,7 @@
   <message id="bgw-act-shield-ana-opts-label">Act/Shield</message>
   <message id="bgw-peak-fit-opts-label">Peak Fit</message>
   <message id="bgw-not-spec-preview">Not a spectrum file</message>
+  <message id="bgw-peaks-csv-txt">Peaks CSV file</message>
   <message id="bgw-preview-error">Error rendering preview</message>
   <message id="bgw-passthrough-sum-error">Passthrough error</message>
 
@@ -21,12 +22,12 @@
   <message id="bgw-reports-grp-title">Reports to Write</message>
   <message id="bgw-reports-write-html">HTML</message>
   <message id="bgw-reports-write-html-tooltip">Write an HTML report of the analysis results.</message>
-  <message id="bgw-reports-write-csv">CSV</message>
-  <message id="bgw-reports-write-csv-tooltip">Write a CSV report of the analysis results.</message>
+  <message id="bgw-reports-write-csv">Summary CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">Write a summary CSV file with analysis results from all input files.</message>
   <message id="bgw-reports-write-custom-per-file">Custom Per-File</message>
   <message id="bgw-reports-write-custom-per-file-tooltip">Upload a custom report template to use for each file.</message>
   <message id="bgw-reports-write-custom-summary">Custom Summary</message>
-  <message id="bgw-reports-write-custom-summary-tooltip">Upload a custom report template to use for the summary of all files.</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files. You can also specify "default" (=csv+html), "csv", "html", or "none".</message>
 
   <!-- performAnalysis function strings -->
   <message id="bgw-performing-work-title">Performing Work</message>
@@ -56,8 +57,8 @@
   <message id="bgw-write-n42-with-results">Write N42 with results</message>
   <message id="bgw-show-nonfit-peaks">Show non-fit peaks</message>
   <message id="bgw-overwrite-output-files">Overwrite output files</message>
-  <message id="bgw-create-csv-output">Create CSV output</message>
-  <message id="bgw-create-json-output">Create JSON output</message>
+  <message id="bgw-create-csv-output">Peak CSV</message>
+  <message id="bgw-create-json-output">Write JSON</message>
   <message id="bgw-use-existing-background-peaks">Use existing background peaks</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Use exemplar energy cal for background</message>
   
@@ -105,4 +106,20 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   <message id="bgw-reports-write-custom-per-file-tooltip">One or more spectrum report template files - for each input file, a report will be produced with each template specified. You can also specify "default" (=txt+html), "txt", "html", or "none".</message>
   
   <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files. You can also specify "default" (=csv+html), "csv", "html", or "none".</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Use Bq units</message>
+  <message id="bgw-hard-background-sub">Hard background subtract</message>
+  
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">Detector Response Function</message>
+  <message id="bgw-use-detector-override">Use custom detector</message>
+  
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">Override Distance</message>
+  <message id="bgw-distance-label">Distance:</message>
+  
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">No exemplar spectrum is available. Please select a foreground spectrum or upload an exemplar file.</message>
+  <message id="bgw-activity-analysis-complete">Activity analysis completed successfully.</message>
 </messages>

@@ -67,7 +67,7 @@ function removeOnDragEnterDom( target_id_list ){
     for( const widget_id of target_id_list ){
       const index = idsList.indexOf(widget_id);
       if (index > -1) { // Check if the string was found
-        arr.splice(index, 1); // Remove 1 element at the found index
+        idsList.splice(index, 1); // Remove 1 element at the found index
       }
     }
     domRoot.dataset.batchUploadIds = JSON.stringify(idsList);

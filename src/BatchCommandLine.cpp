@@ -512,8 +512,8 @@ int run_batch_command( int argc, char **argv )
       if( batch_act_fit )
       {
         options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name );
-        BatchActivity::fit_activities_in_files( exemplar_path, exemplar_sample_nums,
-                                               expanded_input_files, options );
+        BatchActivity::fit_activities_in_files( exemplar_path, nullptr, exemplar_sample_nums,
+                                               expanded_input_files, {}, options, nullptr );
       }//if( batch_act_fit )
     }catch( std::exception &e )
     {

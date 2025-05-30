@@ -162,7 +162,7 @@ namespace BatchPeak
   };//struct BatchPeakFitResult
 
 
-  struct BatchPeakFitSummaryResults
+  struct BatchPeakFitSummary
   {
     BatchPeakFitOptions options;
     std::string exemplar_filename;
@@ -178,20 +178,32 @@ namespace BatchPeak
     std::string summary_json;
     std::vector<std::string> summary_reports;
     std::vector<std::string> warnings;
-  };//struct BatchPeakFitSummaryResults
+  };//struct BatchPeakFitSummary
 
 
   /** Fits the peaks in a number of spectrum files, prodicing individual reports (if wanted) as well as a summary report.
-   @param exemplar_filename The name of the spectrum file to use as the exemplar file.  This may be an N42
-
+   
+   @param exemplar_filename The filesystem path to the spectrum file to use as the exemplar file.  This may be an N42 
+          or a peaks CSV file.
+   @param optional_parsed_exemplar_n42 If non-null, this object will be used as the exemplar file, with 
+          `exemplar_filename` then serving as just the display name of the exemplar file to use in the reports.
+   @param exemplar_sample_nums If a N42-2012 file is used for exemplar, and which peaks to use is ambiguous, these
+          sample numbers specify which peaks to use.  Must be blank if exemplar is CSV file, or if N42-2012 file, this
+          combination of sample numbers must specify peaks to use.  Can be empty in non-ambigous.
+   @param files The list of spectrum files to fit peaks to.
+   @param optional_cached_files If non-empty, then these objects will be used as the input files for analysis, and 
+          `files` will only be used as the display names of the input files in the reports.  If non-empty, then
+          must be exactly the same length as `files`.
+   @param options The options to use for fitting peaks.
+   @param results If non-null, then the results will be stored in this object.
    */
   InterSpec_API void fit_peaks_in_files( const std::string &exemplar_filename,
                           std::shared_ptr<const SpecMeas> optional_parsed_exemplar_n42,
                           const std::set<int> &exemplar_sample_nums,
                           const std::vector<std::string> &files,
-                          std::vector<std::shared_ptr<SpecMeas>> cached_files,
+                          std::vector<std::shared_ptr<SpecMeas>> optional_cached_files,
                           const BatchPeakFitOptions &options,
-                          BatchPeakFitSummaryResults *results = nullptr );
+                          BatchPeakFitSummary * const results = nullptr );
 
 
   

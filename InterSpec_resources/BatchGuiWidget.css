@@ -366,6 +366,11 @@
   background-color: #f0f0f0;
 }
 
+.BatchGuiWidget .InputFileWidget .InputFilePreview .PeaksCsvFile
+{
+  border: solid 1px #e1e1e1;
+  background-color: #f0f0f0; 
+}
 
 .BatchGuiWidget .InputFileWidget .InputFilePreview .PreviewError
 {
@@ -407,6 +412,7 @@
   flex-direction: row;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .BatchGuiWidget .ReportsContainer .CustomReportOptions
@@ -417,7 +423,8 @@
   align-items: center;
 }
 
-.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader,
+.BatchGuiWidget .DetectorFileDrop
 {
   border: solid 1px #e1e1e1;
   border-radius: 5px;
@@ -430,7 +437,8 @@
   overflow-y: auto;
 }
 
-.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.EmptyReportUpload::before
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.EmptyReportUpload::before,
+.BatchGuiWidget .DetectorFileDrop.EmptyDetectorUpload::before
 {
   content: "Drop/click here";
   display: block;
@@ -444,12 +452,19 @@
 }
 
 
-.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.DomIsDrugOver
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.DomIsDrugOver,
+.BatchGuiWidget .DetectorFileDrop.DomIsDrugOver
 {
-  
+  border: 3px dashed grey;
+  border-radius: 8px;
+
+  /* Add styles to grey out the element */
+  position: relative; /* Establish positioning context for overlay */
+  background-color: rgba(128, 128, 128, 0.5); /* Grey background with transparency */
 }
 
-.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader::after
+.BatchGuiWidget .ReportsContainer .CustomReportOptions .CustomReportUploader.DomIsDrugOver::after,
+.BatchGuiWidget .DetectorFileDrop.DomIsDrugOver::after
 {
   content: 'Drop here';
   position: absolute;
@@ -461,6 +476,14 @@
   text-align: center;
 }
 
+
+.BatchGuiWidget .DetectorInputContainer
+{
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+}
 
 .simple-dialog.BatchAnalysisResultDialog
 {
