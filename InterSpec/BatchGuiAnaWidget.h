@@ -52,6 +52,12 @@ namespace Wt
   class WLineEdit;
 }
 
+namespace SpecUtils
+{
+  //enum class SpectrumType : int;
+  enum class SaveSpectrumAsType : int;
+}
+
 
 /** Base class for all batch analysis widgets. */
 class BatchGuiAnaWidget : public Wt::WContainerWidget
@@ -208,20 +214,31 @@ public:
 
 
 
-/*
-class FileConvertOpts : public Wt::WContainerWidget
+
+class FileConvertOpts : public BatchGuiAnaWidget
 {
- 
+protected:
+  Wt::WMenu *m_format_menu;
+  Wt::WCheckBox *m_overwrite_output;
+  Wt::WCheckBox *m_sum_for_single_output_types;
+  
+  void handleFormatChange();
+  SpecUtils::SaveSpectrumAsType currentSaveType() const;
+  
 public:
-  FileConvertOpts( Wt::WContainerWidget *parent )
-    : Wt::WContainerWidget( parent )
-  {
-    addStyleClass( "FileConvertOpts" );
+  FileConvertOpts( Wt::WContainerWidget *parent = nullptr );
+  ~FileConvertOpts();
+  
+  virtual void performAnalysis( const std::vector<std::tuple<std::string, std::string, std::shared_ptr<const SpecMeas>>> &input_files,
+                               const std::string &output_dir ) override;
+  
+  virtual bool canDoAnalysis() const override;
+  
+  virtual void optionsChanged() override;
+};//class FileConvertOpts
 
-    new WText( "FileConvertOpts", this );
-  }
-};//FileConvertOpts
 
+/*
 class RelActAutoOpts : public Wt::WContainerWidget
 {
 public:

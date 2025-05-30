@@ -230,3 +230,54 @@
 {
   margin-bottom: 10px;
 }
+
+
+.BatchGuiWidget .FileConvertOpts
+{
+    
+}
+
+
+.BatchGuiWidget .FileConvertOpts
+{
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    align-items: center;
+    overflow-y: hidden;
+}
+
+.BatchGuiWidget .FileConvertOpts .SideMenuHolder
+{
+    height: 180px;
+    overflow-y: auto;
+}
+
+.BatchGuiWidget .FileConvertOpts .FileConvertOptsOptions
+{
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: center;
+}
+
+.BatchGuiWidget .FileConvertOpts .FileConvertFormatMenu.SideMenu
+{  
+}
+
+.BatchGuiWidget .FileConvertOpts.FileConvertOptsMobile .FileConvertFormatMenu.SideMenu
+{
+  /* On mobile, there is no info/help icon on the menu item, so we can make it narrower. */
+  width: 8.5em;
+}
+
+.BatchGuiWidget .FileConvertOpts.FileConvertOptsPhone .FileConvertFormatMenu.SideMenu
+{
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.BatchGuiWidget .FileConvertOpts .FileConvertFormatMenu.SideMenu li
+{
+  height: 1.25em;
+}

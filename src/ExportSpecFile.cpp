@@ -1733,13 +1733,11 @@ SpecUtils::SaveSpectrumAsType ExportSpecFileTool::currentSaveType() const
 }//SpecUtils::SaveSpectrumAsType currentSaveType() const;
 
 
-uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecMeas> spec ) const
+uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( const SpecUtils::SaveSpectrumAsType save_format, std::shared_ptr<const SpecMeas> spec )
 {
-  const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
-  
   switch( save_format )
   {
-    // Spectrum file types that can have many spectra in them
+      // Spectrum file types that can have many spectra in them
     case SpecUtils::SaveSpectrumAsType::Txt:
     case SpecUtils::SaveSpectrumAsType::Csv:
     case SpecUtils::SaveSpectrumAsType::Pcf:
@@ -1750,10 +1748,8 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
       return std::numeric_limits<uint16_t>::max();
       
 #if( USE_QR_CODES )
-    // Spectrum file types that can have two spectra in them (foreground + background)
+      // Spectrum file types that can have two spectra in them (foreground + background)
     case SpecUtils::SaveSpectrumAsType::Uri:
-      if( !spec )
-        spec = currentlySelectedFile();
       return (spec && (spec->num_gamma_channels() < 2075)) ? 2 : 1;
 #endif
       
@@ -1762,7 +1758,7 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
       return 2;
 #endif
       
-    // Spectrum file types that can have a single spectra in them
+      // Spectrum file types that can have a single spectra in them
     case SpecUtils::SaveSpectrumAsType::Chn:
     case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
     case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
@@ -1771,13 +1767,13 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
     case SpecUtils::SaveSpectrumAsType::Cnf:
     case SpecUtils::SaveSpectrumAsType::Tka:
       return 1;
-    
+      
 #if( SpecUtils_INJA_TEMPLATES )
     case SpecUtils::SaveSpectrumAsType::Template:
       assert( 0 );
       break;
 #endif
-    
+      
     case SpecUtils::SaveSpectrumAsType::NumTypes:
       assert( 0 );
       break;
@@ -1786,6 +1782,16 @@ uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecM
   assert( 0 );
   
   return 0;
+}
+
+uint16_t ExportSpecFileTool::maxRecordsInCurrentSaveType( shared_ptr<const SpecMeas> spec ) const
+{
+  const SpecUtils::SaveSpectrumAsType save_format = currentSaveType();
+  
+  if( (save_format == SpecUtils::SaveSpectrumAsType::Uri) && !spec )
+    spec = currentlySelectedFile();
+  
+  return maxRecordsInCurrentSaveType( save_format, spec );
 }//uint16_t maxRecordsInCurrentSaveType() const
 
 

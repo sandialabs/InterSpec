@@ -75,16 +75,21 @@
   padding-top: 0px;
   padding-bottom: 0px;
 
-  height: 200px;
+  height: 220px;
 }
 
-.BatchGuiWidget .TypeSelectContainer ul.VerticalNavMenu
+.BatchGuiWidget .TypeSelectContainer ul.AnaTypeMenu.VerticalNavMenu
 {
+  width: 55px;
+  
   padding-inline-start: 0px;
   list-style-type: none;
+  
+  margin-block-start: 0em;
+  margin-block-end: 0em;
 }
 
-.BatchGuiWidget .TypeSelectContainer ul li
+.BatchGuiWidget .TypeSelectContainer ul.AnaTypeMenu li
 {
   display: inline-block;
   writing-mode: vertical-rl;
@@ -108,7 +113,8 @@
 
 .BatchGuiWidget .TypeSelectContainer .Wt-stack
 {
-
+  flex-grow: 1;
+  flex-shrink: 1;
 }
 
 .BatchGuiWidget .InputFilesContainer

@@ -140,6 +140,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   m_options_stack( nullptr ),
   m_act_shield_ana_opts( nullptr ),
   m_peak_fit_opts( nullptr ),
+  m_file_convert_opts( nullptr ),
   m_input_files_container( nullptr ),
   m_output_dir( nullptr ),
   m_can_do_analysis( false ),
@@ -169,7 +170,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
 
   m_options_stack = new Wt::WStackedWidget();
   m_batch_type_menu = new Wt::WMenu( m_options_stack, options_container );
-  m_batch_type_menu->addStyleClass( "LightNavMenu VerticalNavMenu" );
+  m_batch_type_menu->addStyleClass( "LightNavMenu VerticalNavMenu AnaTypeMenu" );
   options_container->addWidget( m_options_stack );
 
   m_act_shield_ana_opts = new BatchGuiActShieldAnaWidget();
@@ -182,8 +183,16 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   item = new WMenuItem( WString::tr( "bgw-peak-fit-opts-label" ), m_peak_fit_opts, WMenuItem::LoadPolicy::PreLoading );
   m_peak_fit_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
   m_batch_type_menu->addItem( item );
+  
+  
+  m_file_convert_opts = new FileConvertOpts();
+  item = new WMenuItem( WString::tr( "bgw-file-convert-opts-label" ), m_file_convert_opts, WMenuItem::LoadPolicy::PreLoading );
+  m_file_convert_opts->canDoAnalysisSignal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
+  m_batch_type_menu->addItem( item );
+  
 
   m_batch_type_menu->select( 0 );
+  m_batch_type_menu->itemSelected().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
 
   m_input_files_container = new WGroupBox( WString::tr( "bgw-input-files-label" ), this );
   m_input_files_container->addStyleClass( "InputFilesContainer" );

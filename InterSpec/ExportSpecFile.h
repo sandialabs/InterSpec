@@ -115,6 +115,8 @@ public:
    */
   uint16_t maxRecordsInCurrentSaveType( std::shared_ptr<const SpecMeas> spec ) const;
   
+  static uint16_t maxRecordsInCurrentSaveType( const SpecUtils::SaveSpectrumAsType save_format, std::shared_ptr<const SpecMeas> spec );
+  
   /** Returns if this option is selected in the GUI; the `generateFileToSave()` function will have removed
    most info, but if we are saving to N42, then we'll be a bit more careful and remove more at export time.
    */

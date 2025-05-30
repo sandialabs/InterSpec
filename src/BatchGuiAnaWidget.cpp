@@ -41,6 +41,7 @@
 #include <Wt/WText>
 #include <Wt/WMenu>
 #include <Wt/Utils>
+#include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
@@ -104,6 +105,64 @@ using namespace std;
 
 namespace
 {
+  void right_select_item( WMenu *menu, WMenuItem *item )
+  {
+    menu->select( item );
+    item->triggered().emit( item ); //
+  }
+  
+  // This is a duplicate of `ExportSpecFileTool::maxRecordsInCurrentSaveType(...)`.
+  uint16_t max_records_in_save_type( const SpecUtils::SaveSpectrumAsType save_format, std::shared_ptr<const SpecMeas> spec )
+  {
+    switch( save_format )
+    {
+        // Spectrum file types that can have many spectra in them
+      case SpecUtils::SaveSpectrumAsType::Txt:
+      case SpecUtils::SaveSpectrumAsType::Csv:
+      case SpecUtils::SaveSpectrumAsType::Pcf:
+      case SpecUtils::SaveSpectrumAsType::N42_2006:
+      case SpecUtils::SaveSpectrumAsType::N42_2012:
+      case SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0:
+      case SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2:
+        return std::numeric_limits<uint16_t>::max();
+        
+#if( USE_QR_CODES )
+        // Spectrum file types that can have two spectra in them (foreground + background)
+      case SpecUtils::SaveSpectrumAsType::Uri:
+        return (spec && (spec->num_gamma_channels() < 2075)) ? 2 : 1;
+#endif
+        
+#if( SpecUtils_ENABLE_D3_CHART )
+      case SpecUtils::SaveSpectrumAsType::HtmlD3:
+        return 2;
+#endif
+        
+        // Spectrum file types that can have a single spectra in them
+      case SpecUtils::SaveSpectrumAsType::Chn:
+      case SpecUtils::SaveSpectrumAsType::SpcBinaryInt:
+      case SpecUtils::SaveSpectrumAsType::SpcBinaryFloat:
+      case SpecUtils::SaveSpectrumAsType::SpcAscii:
+      case SpecUtils::SaveSpectrumAsType::SpeIaea:
+      case SpecUtils::SaveSpectrumAsType::Cnf:
+      case SpecUtils::SaveSpectrumAsType::Tka:
+        return 1;
+        
+#if( SpecUtils_INJA_TEMPLATES )
+      case SpecUtils::SaveSpectrumAsType::Template:
+        assert( 0 );
+        break;
+#endif
+        
+      case SpecUtils::SaveSpectrumAsType::NumTypes:
+        assert( 0 );
+        break;
+    }//switch( save_format )
+    
+    assert( 0 );
+    
+    return 0;
+  }//max_records_in_save_type(...)
+  
 // Create a custom resource to serve the HTML content
 class BatchReportResource : public Wt::WResource
 {
@@ -137,7 +196,9 @@ public:
 
 
 
-BatchGuiAnaWidget::BatchGuiAnaWidget( Wt::WContainerWidget *parent ) : Wt::WContainerWidget( parent ), m_canDoAnalysis()
+BatchGuiAnaWidget::BatchGuiAnaWidget( Wt::WContainerWidget *parent )
+  : Wt::WContainerWidget( parent ),
+  m_canDoAnalysis( this )
 {
   addStyleClass( "BatchGuiAnaWidget" );
 
@@ -1578,3 +1639,234 @@ BatchGuiActShieldAnaWidget::~BatchGuiActShieldAnaWidget()
 {
   wApp->doJavaScript( "removeOnDragEnterDom(['" + m_detector_file_drop->id() + "']);" );
 }
+
+
+FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
+ : BatchGuiAnaWidget( parent ),
+  m_format_menu( nullptr ),
+  m_overwrite_output( nullptr ),
+  m_sum_for_single_output_types( nullptr )
+{
+  addStyleClass( "FileConvertOpts" );
+  
+  WContainerWidget *menuHolder = new WContainerWidget( this );
+  menuHolder->addStyleClass( "SideMenuHolder" );
+  
+  m_format_menu = new WMenu( menuHolder );
+  m_format_menu->itemSelected().connect( this, &FileConvertOpts::handleFormatChange );
+  m_format_menu->addStyleClass( "SideMenu VerticalNavMenu LightNavMenu FileConvertFormatMenu" );
+  
+  const bool isMobile = false;
+  
+  Wt::WMessageResourceBundle descrip_bundle;
+  if( !isMobile )
+  {
+    const string docroot = wApp->docRoot();
+    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/spectrum_file_format_descriptions" );
+    descrip_bundle.use(bundle_file,true);
+  }//if( !isMobile )
+  
+  
+  auto addFormatItem = [this, &descrip_bundle, isMobile]( const char *label, SpecUtils::SaveSpectrumAsType type ){
+    WMenuItem *item = m_format_menu->addItem( label );
+    item->clicked().connect( boost::bind(&right_select_item, m_format_menu, item) );
+    item->setData( reinterpret_cast<void *>(type) );
+    
+    if( !isMobile )
+    {
+      string description;
+      if( descrip_bundle.resolveKey(label, description) )
+      {
+        SpecUtils::trim( description );
+        
+        description = Wt::Utils::htmlEncode( description, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
+        
+        WImage *img = new WImage( item );
+        img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+        img->setStyleClass("Wt-icon");
+        img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+        img->setFloatSide( Wt::Side::Right );
+        
+        HelpSystem::attachToolTipOn( img, description, true,
+                                    HelpSystem::ToolTipPosition::Right,
+                                    HelpSystem::ToolTipPrefOverride::InstantAlways );
+      }//if( we have the description of the file )
+    }//if( !isMobile )
+  };//addFormatItem lambda
+  
+  
+  addFormatItem( "N42-2012", SpecUtils::SaveSpectrumAsType::N42_2012 );
+  addFormatItem( "N42-2006", SpecUtils::SaveSpectrumAsType::N42_2006 );
+  addFormatItem( "CHN", SpecUtils::SaveSpectrumAsType::Chn );
+  addFormatItem( "IAEA SPE", SpecUtils::SaveSpectrumAsType::SpeIaea );
+  addFormatItem( "CSV", SpecUtils::SaveSpectrumAsType::Csv );
+  addFormatItem( "TXT", SpecUtils::SaveSpectrumAsType::Txt );
+  addFormatItem( "PCF", SpecUtils::SaveSpectrumAsType::Pcf );
+  addFormatItem( "CNF", SpecUtils::SaveSpectrumAsType::Cnf );
+  addFormatItem( "SPC (int)", SpecUtils::SaveSpectrumAsType::SpcBinaryInt );
+  addFormatItem( "SPC (float)", SpecUtils::SaveSpectrumAsType::SpcBinaryFloat );
+  addFormatItem( "SPC (ascii)", SpecUtils::SaveSpectrumAsType::SpcAscii );
+  addFormatItem( "TKA", SpecUtils::SaveSpectrumAsType::Tka );
+  addFormatItem( "GR-130", SpecUtils::SaveSpectrumAsType::ExploraniumGr130v0 );
+  addFormatItem( "GR-135", SpecUtils::SaveSpectrumAsType::ExploraniumGr135v2 );
+#if( SpecUtils_ENABLE_D3_CHART )
+  addFormatItem( "HTML", SpecUtils::SaveSpectrumAsType::HtmlD3 );
+#endif
+#if( USE_QR_CODES )
+  addFormatItem( "URI", SpecUtils::SaveSpectrumAsType::Uri );
+#endif
+  
+  WContainerWidget *opts = new WContainerWidget( this );
+  opts->addStyleClass( "FileConvertOptsOptions" );
+  
+  m_overwrite_output = new WCheckBox( "Overwrite output", opts );
+  m_overwrite_output->addStyleClass( "CbNoLineBreak" );
+  m_overwrite_output->checked().connect( this, &FileConvertOpts::optionsChanged );
+  
+  m_sum_for_single_output_types = new WCheckBox( "Sum files with multiple records to single record", opts );
+  m_sum_for_single_output_types->addStyleClass( "CbNoLineBreak" );
+  m_sum_for_single_output_types->hide();
+  m_sum_for_single_output_types->checked().connect( this, &FileConvertOpts::optionsChanged );
+  
+  
+  WText *txt = new WText( "Input files will be converted to selected output spectrum file type.", opts );
+  txt->setInline( false );
+  
+  m_format_menu->select( 0 );
+  handleFormatChange();
+}//
+
+
+FileConvertOpts::~FileConvertOpts()
+{
+  
+}
+
+void FileConvertOpts::handleFormatChange()
+{
+  const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
+  const uint16_t max_records = max_records_in_save_type( save_type, nullptr );
+
+  if( m_sum_for_single_output_types )
+    m_sum_for_single_output_types->setHidden( max_records > 3 );
+  
+  optionsChanged();
+}//void FileConvertOpts::handleFormatChange()
+
+
+SpecUtils::SaveSpectrumAsType FileConvertOpts::currentSaveType() const
+{
+  const WMenuItem * const currentFormatItem = m_format_menu->currentItem();
+  assert( currentFormatItem );
+  
+  if( currentFormatItem )
+  {
+    const uint64_t data = reinterpret_cast<uint64_t>( currentFormatItem->data() );
+    assert( data < static_cast<int>(SpecUtils::SaveSpectrumAsType::NumTypes) );
+    return SpecUtils::SaveSpectrumAsType( data );
+  }//if( currentFormatItem )
+  
+  return SpecUtils::SaveSpectrumAsType::N42_2012;
+}//SpecUtils::SaveSpectrumAsType currentSaveType() const;
+
+
+void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared_ptr<const SpecMeas>>> &input_files,
+                               const string &output_dir )
+{
+  vector<string> warnings;
+  
+  const SpecUtils::SaveSpectrumAsType save_type = currentSaveType();
+  const bool overwrite = m_overwrite_output->isChecked();
+  
+  for( size_t index = 0; index < input_files.size(); ++index )
+  {
+    const string &display_name = get<0>( input_files[index] );
+    const string &path_to_file = get<1>( input_files[index] );
+    const shared_ptr<const SpecMeas> &spec_meas = get<2>( input_files[index] );
+    assert( spec_meas );
+    if( !spec_meas )
+      continue;
+    
+    try
+    {
+      const uint16_t max_records = max_records_in_save_type( save_type, spec_meas );
+      
+      const string orig_leaf_name = SpecUtils::filename(display_name);
+      const string orig_ext = SpecUtils::file_extension(orig_leaf_name);
+      const string leaf_name = ((orig_ext.size() > 0) && (orig_ext.size() <= 4) && (orig_ext.size() < orig_leaf_name.size()))
+      ? orig_leaf_name.substr( 0, orig_leaf_name.size() - orig_ext.size() )
+      : orig_leaf_name;
+      const string output_ext = SpecUtils::suggestedNameEnding(save_type);
+      const string base_filename = SpecUtils::append_path( output_dir, leaf_name );
+      
+      const size_t num_records = spec_meas->num_measurements();
+      if( num_records > max_records )
+      {
+        // We will write out every record into a different file.
+        vector<shared_ptr<const SpecUtils::Measurement> > meass = spec_meas->measurements();
+        for( size_t record_num = 0; record_num < meass.size(); ++record_num )
+        {
+          const shared_ptr<const SpecUtils::Measurement> &m = meass[record_num];
+          
+          const string outputname = base_filename + "_" + std::to_string(record_num) + "." + output_ext;
+          
+          if( SpecUtils::is_file(outputname) && !overwrite )
+          {
+            spec_meas->write_to_file( outputname, {m->sample_number()}, {m->detector_name()}, save_type );
+          }else
+          {
+            spec_meas->write_to_file( outputname, save_type );
+          }
+        }
+      }else
+      {
+        const string outputname = base_filename + "." + output_ext;
+        if( SpecUtils::is_file(outputname) && !overwrite )
+        {
+          warnings.push_back( "Not overwriting existing '" + outputname + "'" );
+        }else
+        {
+          spec_meas->write_to_file( outputname, save_type );
+        }
+      }//if( num_records > max_records ) / else
+      
+    }catch( std::exception &e )
+    {
+      warnings.push_back( "Unexpected error writing file '" + display_name + "': " + string(e.what()) );
+    }
+  }//for( size_t index = 0; index < input_files.size(); ++index )
+  
+  
+  SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-analysis-summary-title" ) );
+  dialog->addStyleClass( "BatchAnalysisResultDialog" );
+  
+  if( warnings.empty() )
+  {
+    new WText( "File conversion complete.", dialog->contents() );
+  }else
+  {
+    dialog->addStyleClass( "BatchAnalysisWarningDialog" );
+    
+    WContainerWidget *contents = dialog->contents();
+    contents->setList( true, false );
+    for( const string &warn_msg : warnings )
+    {
+      WContainerWidget *item = new WContainerWidget( contents );
+      new WText( warn_msg, item );
+    }
+  }//if( warnings.empty() ) / else
+  
+  dialog->addButton( WString::tr( "Okay" ) );
+}//void FileConvertOpts::performAnalysis(...)
+
+  
+bool FileConvertOpts::canDoAnalysis() const
+{
+  return true;
+}//bool FileConvertOpts::canDoAnalysis() const
+  
+
+void FileConvertOpts::optionsChanged()
+{
+  m_canDoAnalysis.emit( canDoAnalysis() );
+}//void optionsChanged()

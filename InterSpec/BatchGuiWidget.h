@@ -107,6 +107,8 @@ protected:
   Wt::WStackedWidget *m_options_stack;
   BatchGuiAnaWidget *m_act_shield_ana_opts;
   BatchGuiAnaWidget *m_peak_fit_opts;
+  BatchGuiAnaWidget *m_file_convert_opts;
+  
 
   Wt::WContainerWidget *m_input_files_container;
 
