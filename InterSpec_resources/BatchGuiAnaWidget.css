@@ -240,25 +240,26 @@
 
 .BatchGuiWidget .FileConvertOpts
 {
-    display: flex;
-    flex-direction: row;
-    gap: 10px;
-    align-items: center;
-    overflow-y: hidden;
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  align-items: center;
+  overflow-y: hidden;
 }
 
 .BatchGuiWidget .FileConvertOpts .SideMenuHolder
 {
-    height: 180px;
-    overflow-y: auto;
+  height: 180px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .BatchGuiWidget .FileConvertOpts .FileConvertOptsOptions
 {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
 }
 
 .BatchGuiWidget .FileConvertOpts .FileConvertFormatMenu.SideMenu

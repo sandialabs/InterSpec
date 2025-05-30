@@ -1821,11 +1821,19 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
       }else
       {
         const string outputname = base_filename + "." + output_ext;
+        const bool is_file = SpecUtils::is_file(outputname);
+        
         if( SpecUtils::is_file(outputname) && !overwrite )
         {
           warnings.push_back( "Not overwriting existing '" + outputname + "'" );
         }else
         {
+          if( is_file )
+          {
+            if( !SpecUtils::remove_file( outputname ) )
+              warnings.push_back( "Failed to delete existing file '" + outputname + "'" );
+          }
+          
           spec_meas->write_to_file( outputname, save_type );
         }
       }//if( num_records > max_records ) / else
