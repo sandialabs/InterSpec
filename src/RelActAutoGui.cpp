@@ -407,6 +407,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_foreground( nullptr ),
   m_background( nullptr ),
   m_background_sf( 0.0 ),
+  m_back_sub_foreground( nullptr ),
   m_status_indicator( nullptr ),
   m_spectrum( nullptr ),
   m_peak_model( nullptr ),
@@ -432,6 +433,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_show_ref_lines_item( nullptr ),
   m_hide_ref_lines_item( nullptr ),
   m_set_peaks_foreground( nullptr ),
+  m_show_background( nullptr ),
+  m_hide_background( nullptr ),
+  m_showing_background( false ),
   m_photopeak_widget(),
   m_clear_energy_ranges( nullptr ),
   m_show_free_peak( nullptr ),
@@ -816,7 +820,20 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_set_peaks_foreground = m_more_options_menu->addMenuItem( "Set Peaks to foreground" );
   m_set_peaks_foreground->triggered().connect( boost::bind( &RelActAutoGui::setPeaksToForeground, this ) );
   m_set_peaks_foreground->setDisabled( true );
-  
+
+  m_show_background = m_more_options_menu->addMenuItem( "Show Background" );
+  m_show_background->triggered().connect( boost::bind( &RelActAutoGui::handleShowBackground, this, true ) );
+  m_show_background->setDisabled( true );
+
+  m_hide_background = m_more_options_menu->addMenuItem( "Hide Background" );
+  m_hide_background->triggered().connect( boost::bind( &RelActAutoGui::handleShowBackground, this, false ) );
+  m_hide_background->setDisabled( true );
+
+  m_showing_background = UserPreferences::preferenceValue<bool>( "IsoByNucsShowBackground", m_interspec );
+  m_show_background->setHidden( m_showing_background );
+  m_hide_background->setHidden( !m_showing_background );
+
+
   WContainerWidget *bottomArea = new WContainerWidget( this );
   bottomArea->addStyleClass( "EnergiesAndNuclidesHolder" );
   
@@ -956,7 +973,10 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     updateDuringRenderForSpectrumChange();
     m_render_flags |= RenderActions::UpdateCalculations;
   }
-  
+
+  if( m_render_flags.testFlag(RenderActions::UpdateShowHideBack) )
+    updateDuringRenderForShowHideBackground();
+
   if( m_render_flags.testFlag(RenderActions::UpdateFreePeaks)
      || m_render_flags.testFlag(RenderActions::UpdateEnergyRanges)
      || m_render_flags.testFlag(RenderActions::UpdateFitEnergyCal) )
@@ -1019,10 +1039,6 @@ void RelActAutoGui::handleDisplayedSpectrumChange( SpecUtils::SpectrumType type 
   const bool enableBackSub = (back && fore);
   if( enableBackSub != m_background_subtract->isEnabled() )
     m_background_subtract->setEnabled( enableBackSub );
-  
-  if( (fore == m_foreground) && (back == m_background) && (!back || (backsf == m_background_sf)) )
-    return;
-  
   
   if( fore != m_foreground )
   {
@@ -2429,6 +2445,10 @@ void RelActAutoGui::handleFitEnergyCalChanged()
 
 void RelActAutoGui::handleBackgroundSubtractChanged()
 {
+  const bool canShowBackground = (m_background && !m_background_subtract->isChecked());
+  m_show_background->setDisabled( !canShowBackground );
+  m_hide_background->setDisabled( !canShowBackground );
+
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
@@ -3394,6 +3414,38 @@ void RelActAutoGui::handleShowRefLines( const bool show )
 }//void RelActAutoGui::handleShowRefLines()
 
 
+void RelActAutoGui::handleShowBackground( const bool show )
+{
+  if( show != m_showing_background )
+  {
+    m_showing_background = show;
+    m_show_background->setHidden( show );
+    m_hide_background->setHidden( !show );
+
+    try
+    {
+      UserPreferences::setPreferenceValue( "IsoByNucsShowBackground", show, m_interspec );
+    } catch( std::exception & )
+    {
+      assert( 0 );
+    }
+  }//if( show != m_showing_background )
+
+  const bool can_show = m_background && !m_background_subtract->isChecked();
+  if( can_show == m_show_background->isDisabled() )
+  {
+    m_show_background->setDisabled( !can_show );
+    m_hide_background->setDisabled( !can_show );
+  }
+
+  if( can_show )
+  {
+    m_render_flags |= RenderActions::UpdateShowHideBack;
+    scheduleRender();
+  }
+}//void handleShowBackground( const bool show )
+
+
 void RelActAutoGui::setPeaksToForeground()
 {
   assert( m_solution && !m_solution->m_fit_peaks_in_spectrums_cal.empty() );
@@ -4208,18 +4260,57 @@ void RelActAutoGui::updateDuringRenderForSpectrumChange()
     m_background_sf = m_interspec->displayScaleFactor( SpecUtils::SpectrumType::Background );
   else
     m_background_sf = 1.0;
-  
+
+  m_back_sub_foreground = nullptr;
   m_spectrum->setData( m_foreground, foreground_same );
-  m_spectrum->setBackground( m_background );
-  m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
-  
+  const bool back_sub = m_background_subtract->isChecked();
+  if( back_sub || !m_showing_background )
+  {
+    m_spectrum->setBackground( nullptr );
+  }else if( m_showing_background )
+  {
+    m_spectrum->setBackground( m_background );
+    m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
+  }
+
   m_spectrum->removeAllDecorativeHighlightRegions();
   //m_spectrum->setChartTitle( WString() );
   m_fit_chi2_msg->setText( "" );
   m_fit_chi2_msg->hide();
 
-  m_background_subtract->setHidden( !m_background );
+  const bool canBackSub = !!m_background;
+  if( canBackSub != m_background_subtract->isEnabled() )
+    m_background_subtract->setEnabled( canBackSub );
+
+  const bool disableShowBack = (back_sub || !m_background);
+  if( disableShowBack != m_show_background->isDisabled() )
+  {
+    m_show_background->setDisabled( disableShowBack );
+    m_hide_background->setDisabled( disableShowBack );
+  }
 }//void updateDuringRenderForSpectrumChange()
+
+
+void RelActAutoGui::updateDuringRenderForShowHideBackground()
+{
+  const bool back_sub = m_background_subtract->isChecked();
+  const bool disableShowBack = (back_sub || !m_background);
+  if( disableShowBack != m_show_background->isDisabled() )
+  {
+    m_show_background->setDisabled( disableShowBack );
+    m_hide_background->setDisabled( disableShowBack );
+  }
+
+  if( m_background && !back_sub && m_showing_background )
+  {
+    m_background_sf = m_interspec->displayScaleFactor( SpecUtils::SpectrumType::Background );
+    m_spectrum->setBackground( m_background );
+    m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
+  }else
+  {
+    m_spectrum->setBackground( nullptr );
+  }
+}//void updateDuringRenderForShowHideBackground()
 
 
 void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
@@ -4489,7 +4580,7 @@ void RelActAutoGui::startUpdatingCalculation()
 
 
   shared_ptr<const SpecUtils::Measurement> foreground = m_foreground;
-  shared_ptr<const SpecUtils::Measurement> background = m_background;
+  shared_ptr<const SpecUtils::Measurement> background; // = m_background;
   RelActCalcAuto::Options options;
   
   try
@@ -4500,9 +4591,12 @@ void RelActAutoGui::startUpdatingCalculation()
     if( !m_solution || !m_peak_model->rowCount() )
       makeZeroAmplitudeRoisToChart();
     
-    if( m_background_subtract->isChecked() )
-      background = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
-    
+    if( m_background_subtract->isEnabled() && m_background_subtract->isChecked() )
+    {
+      assert( m_background );
+      assert( m_background == m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background) );
+      background = m_background; //m_interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+    }
     options = getCalcOptions();
     
     if( options.rel_eff_curves.empty() )
@@ -4634,7 +4728,35 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   m_is_calculating = false;
   m_status_indicator->hide();
-  
+
+  // If solution is background subtracted, check if we need to upldate our display
+  const bool has_back_sub_spec = (answer->m_foreground && answer->m_background && answer->m_spectrum);
+  if( has_back_sub_spec != (!!m_back_sub_foreground) )
+  {
+    m_background_subtract->setChecked( has_back_sub_spec );
+    m_show_background->setDisabled( has_back_sub_spec );
+    m_hide_background->setDisabled( has_back_sub_spec );
+
+    if( !has_back_sub_spec )
+    {
+      m_back_sub_foreground = nullptr;
+      m_spectrum->setData( m_foreground, true );
+      m_spectrum->setBackground( m_background );
+      m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
+    }else
+    {
+      // `answer->m_spectrum` may have adjusted energy calibration, but we want to display in the original energy cal,
+      //  although this is debatable how we should do it
+      const auto new_spec = make_shared<SpecUtils::Measurement>( *answer->m_spectrum );
+      const auto new_cal = make_shared<SpecUtils::EnergyCalibration>( *answer->m_foreground->energy_calibration() );
+      new_spec->set_energy_calibration( new_cal );
+      m_back_sub_foreground = new_spec;
+      m_spectrum->setBackground( nullptr );
+      m_spectrum->setData( new_spec, true );
+    }
+  }//if( solution being background subtracted, doesnt match our current display )
+
+
   switch( answer->m_status )
   {
     case RelActCalcAuto::RelActAutoSolution::Status::Success:

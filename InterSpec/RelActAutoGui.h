@@ -100,6 +100,7 @@ public:
   void updateDuringRenderForRefGammaLineChange();
   void updateDuringRenderForEnergyRangeChange();
   void updateDuringRenderForFreePeakChange();
+  void updateDuringRenderForShowHideBackground();
   void startUpdatingCalculation();
   void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer,
                       std::shared_ptr<std::atomic_bool> cancel_flag,
@@ -227,6 +228,7 @@ protected:
   void startApplyFitEnergyCalToSpecFile();
   void applyFitEnergyCalToSpecFile();
   void handleShowRefLines( const bool show );
+  void handleShowBackground( const bool show );
   void setPeaksToForeground();
   
   void handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions *curve );
@@ -264,14 +266,15 @@ protected:
   
   enum RenderActions
   {
-    UpdateSpectra         = 0x01,
-    UpdateNuclidesPresent = 0x02,
-    UpdateEnergyRanges    = 0x04,
-    UpdateCalculations    = 0x08,
-    ChartToDefaultRange   = 0x10,
-    UpdateFreePeaks       = 0x20,
-    UpdateFitEnergyCal    = 0x40,
-    UpdateRefGammaLines   = 0x80
+    UpdateSpectra         = 0x0001,
+    UpdateNuclidesPresent = 0x0002,
+    UpdateEnergyRanges    = 0x0004,
+    UpdateCalculations    = 0x0008,
+    ChartToDefaultRange   = 0x0010,
+    UpdateFreePeaks       = 0x0020,
+    UpdateFitEnergyCal    = 0x0040,
+    UpdateRefGammaLines   = 0x0080,
+    UpdateShowHideBack    = 0x0100
   };//enum D3RenderActions
   
   Wt::WFlags<RenderActions> m_render_flags;
@@ -283,7 +286,13 @@ protected:
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   double m_background_sf;
-  
+
+  /** Background subtracted forground - only non-null when the `m_background_subtract` option is checked, and after the
+   computation of answer (e.g., this variable is set by the solution).  It is not upldated with every solution, and has the energy calibration
+   as `m_foreground`.
+   */
+  std::shared_ptr<const SpecUtils::Measurement> m_back_sub_foreground;
+
   
   Wt::WText *m_status_indicator;
   
@@ -346,7 +355,10 @@ protected:
   PopupDivMenuItem *m_show_ref_lines_item;
   PopupDivMenuItem *m_hide_ref_lines_item;
   PopupDivMenuItem *m_set_peaks_foreground;
-  
+  PopupDivMenuItem *m_show_background;
+  PopupDivMenuItem *m_hide_background;
+  bool m_showing_background;
+
   /** If the user wants to show reference gamma lines, we'll use a #ReferencePhotopeakDisplay
    widget to calculate them and load them to m_spectrum; this is primarily for code re-use
    until I bother to refactor #ReferencePhotopeakDisplay to more easily generate reference
