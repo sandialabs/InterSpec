@@ -88,10 +88,15 @@ public:
   
   const SandiaDecay::Nuclide *nuclide() const;
   const SandiaDecay::Element *element() const;
-  const ReactionGamma::Reaction * reaction() const;
+  const ReactionGamma::Reaction *reaction() const;
   std::string source_name() const;
 
-  std::set<size_t> relEffCurves() const;
+  /** Returns the Relative Effiiciency curve index of this source.
+
+   Throws exception if could not be deterimind (e.g., during initial model loading, the widget hasnt been added to gui, etc.), and
+   there is more than one rel. eff. curve
+   */
+  int relEffCurveIndex() const;
 
   bool hasActRatioConstraint() const;
   RelActCalcAuto::RelEffCurveInput::ActRatioConstraint actRatioConstraint() const;

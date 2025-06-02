@@ -2481,8 +2481,8 @@ void RelActAutoGui::handleSameAgeChanged()
       if( !src_widget )
         continue;
 
-      const RelActCalcAuto::SrcVariant src_info = src_widget->source(); 
-      const SandiaDecay::Nuclide * const nuclide = std::get<const SandiaDecay::Nuclide *>(src_info);
+      const RelActCalcAuto::SrcVariant src_info = src_widget->nuclide();
+      const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(src_info);
       if( !nuclide )
         continue;
 
@@ -2584,7 +2584,7 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
 
   if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
     return;
-  
+
   const RelActCalcAuto::SrcVariant src_info = nuc->source();
   const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(src_info);
   if( !nuclide )
@@ -2653,6 +2653,81 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
     }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
   }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
 }//void handleNuclideAgeChanged()
+
+
+bool RelActAutoGui::suggestInitialNuclideAge( const int rel_eff_index,
+                              const SandiaDecay::Nuclide * const nuc,
+                              std::string &agestr,
+                              bool &fit_age,
+                              std::string &fit_lower_age,
+                              std::string &fit_upper_age)
+{
+  if( !nuc )
+    return false;
+
+  const int num_rel_curves = m_rel_eff_nuclides_menu->count();
+  if( (rel_eff_index < 0) || (rel_eff_index >= num_rel_curves) )
+    return false;
+
+  if( m_same_z_age->isChecked() )
+  {
+    // See if we can find an nuclide of the same element.
+    const vector<RelActAutoGuiNuclide *> sources = getNuclideDisplays( rel_eff_index );
+
+    for( const RelActAutoGuiNuclide *src : sources )
+    {
+      const SandiaDecay::Nuclide * const this_nuc = src->nuclide();
+      if( !this_nuc || (this_nuc == nuc) ) //dont return the age the nuclide already is
+        continue;
+
+      if( this_nuc->atomicNumber == nuc->atomicNumber )
+      {
+        agestr = src->ageStr().toUTF8();
+        fit_age = src->fitAge();
+
+        const pair<optional<double>,optional<double>> age_range = src->ageRange();
+        const pair<WString,WString> age_range_str = src->ageRangeStr();
+        if( age_range.first.has_value() )
+          fit_lower_age = age_range_str.first.toUTF8();
+
+        if( age_range.second.has_value() )
+          fit_upper_age = age_range_str.second.toUTF8();
+
+        return true;
+      }
+    }//for( const RelActAutoGuiNuclide *src : sources )
+  }//if( m_same_z_age->isChecked() )
+
+
+  return false;
+}//suggestInitialNuclideAge(...)
+
+
+
+int RelActAutoGui::relEffCurveIndex( const RelActAutoGuiNuclide * const src )
+{
+  const int num_rel_curves = m_rel_eff_nuclides_menu->count();
+
+  // If there is only one Rel. Eff. curve defined, just return 0.
+  //  I'm a little on edge about this, because it introduces a different behaviour for one vs
+  //  mutliple Rel. Eff. curves, which seems like it is some debugging waiting to happen since
+  //  we may be here during loading of a new state or something.
+  if( num_rel_curves == 1 )
+    return 0;
+
+  for( int rel_eff_index = 0; rel_eff_index < num_rel_curves; rel_eff_index += 1 )
+  {
+    vector<RelActAutoGuiNuclide *> sources = getNuclideDisplays( num_rel_curves );
+    for( const RelActAutoGuiNuclide *this_src : sources )
+    {
+      if( this_src == src )
+        return rel_eff_index;
+    }//for( loop over sources )
+  }//for( loop over rel eff curves )
+
+  throw runtime_error( "RelActAutoGui::relEffCurveIndex(): couldnt find rel eff curve" );
+}//size_t relEffCurveIndex( const RelActAutoGuiNuclide * const src )
+
 
 
 void RelActAutoGui::handleEnergyRangeChange()

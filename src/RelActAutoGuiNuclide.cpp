@@ -409,10 +409,8 @@ public:
     m_constraint_type->setCurrentIndex( static_cast<int>(NucConstraintType::ActRatio) );
     m_stacked_widget->setCurrentIndex( static_cast<int>(NucConstraintType::ActRatio) );
 
-    const std::set<size_t> rel_eff_curves = m_nuc->relEffCurves();
-    assert( !rel_eff_curves.empty() );
-    const size_t rel_eff_curve_index = *rel_eff_curves.begin();
-    
+    const int rel_eff_curve_index = m_nuc->relEffCurveIndex(); //May throw exception
+
     //m_act_control_nuc_combo should already be up to date, but just in case, we'll update it
     const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
     m_act_control_nuc_combo->clear();
@@ -459,9 +457,8 @@ public:
 
     const string src_name = m_act_control_nuc_combo->currentText().toUTF8();
 
-    const set<size_t> rel_eff_curves = m_nuc->relEffCurves();
-    assert( !rel_eff_curves.empty() );
-    const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( *begin(rel_eff_curves) );
+    const int rel_eff_curve_index = m_nuc->relEffCurveIndex();  //May throw exception
+    const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
     for( const RelActCalcAuto::NucInputInfo &src : nucs )
     {
       const RelActCalcAuto::SrcVariant &src_variant = src.source;
@@ -532,9 +529,17 @@ public:
 
   void updateAllowedConstraints()
   {
-    const set<size_t> rel_eff_curves = m_nuc->relEffCurves();
-    assert( !rel_eff_curves.empty() );
-    const size_t rel_eff_curve_index = *rel_eff_curves.begin();
+    int rel_eff_curve_index = -1;
+
+    try
+    {
+      rel_eff_curve_index = m_nuc->relEffCurveIndex();
+    }catch( std::exception &e )
+    {
+      cerr << "Note from RelActAutoGuiNuclideConstraint: not updating allowed constraints"
+      << " due to not being able to determine Rel Eff curve index." << endl;
+      return;
+    }//try / catch
 
     const vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
     const RelActCalcAuto::SrcVariant src_variant = m_nuc->source();
@@ -776,12 +781,10 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
 }//RelActAutoGuiNuclide
   
 
-std::set<size_t> RelActAutoGuiNuclide::relEffCurves() const
+int RelActAutoGuiNuclide::relEffCurveIndex() const
 {
-  #pragma message("RelActAutoGuiNuclide::relEffCurves() is not implemented")
-
-  return { size_t(0) };
-}//std::set<size_t> relEffCurves() const
+  return m_gui->relEffCurveIndex( this );
+}//size_t relEffCurveIndex() const
 
 
 bool RelActAutoGuiNuclide::hasActRatioConstraint() const
@@ -882,22 +885,47 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
       m_updated.emit();
       return;
     }//if( IsInf(nuc->halfLife) )
-    
+
+    bool fit_age = false;
     const bool age_is_fittable = !PeakDef::ageFitNotAllowed( nuc );
-    
+
     if( nuc->decaysToStableChildren() )
     {
       m_age_edit->setText( "0y" );
     }else
     {
-      string agestr;
-      PeakDef::defaultDecayTime( nuc, &agestr );
-      m_age_edit->setText( agestr );
-    }
-    
+      string agestr, fit_lower_age, fit_upper_age;
+
+      try
+      {
+        const int rel_eff_index = relEffCurveIndex();
+
+        if( m_gui->suggestInitialNuclideAge( rel_eff_index, nuc, agestr, fit_age, fit_lower_age, fit_upper_age ) )
+        {
+          m_fit_age_min_edit->setText( WString::fromUTF8(fit_lower_age) );
+          m_fit_age_max_edit->setText( WString::fromUTF8(fit_upper_age) );
+        }else
+        {
+          PeakDef::defaultDecayTime( nuc, &agestr );
+          m_fit_age_min_edit->setText( "" );
+          m_fit_age_max_edit->setText( "" );
+        }
+
+        m_age_edit->setText( WString::fromUTF8(agestr) );
+      }catch( std::exception &e )
+      {
+        cerr << "RelActAutoGuiNuclide::handleIsotopeChange(): unable to get Rel Eff index - skipping getting" << endl;
+
+        PeakDef::defaultDecayTime( nuc, &agestr );
+        m_age_edit->setText( WString::fromUTF8(agestr) );
+        m_fit_age_min_edit->setText( "" );
+        m_fit_age_max_edit->setText( "" );
+      }//try / catch get ages users want
+    }//if( nuc->decaysToStableChildren() ) / else
+
+    m_fit_age->setChecked( fit_age && age_is_fittable );
     m_age_container->setHidden( !age_is_fittable );
-    m_fit_age->setChecked( false );
-    m_age_range_container->setHidden( !age_is_fittable || !m_fit_age->isChecked() );
+    m_age_range_container->setHidden( !age_is_fittable || !fit_age );
   }//if( nuc )
   
   if( el|| rctn )
@@ -980,23 +1008,27 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
     if( def_line_colors.empty() )
       def_line_colors = ReferencePhotopeakDisplay::sm_def_line_colors;
 
-    const std::set<size_t> rel_eff_curves = relEffCurves();
-    assert( !rel_eff_curves.empty() );
-    const size_t rel_eff_curve_index = *rel_eff_curves.begin();
-    const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
-
-    for( const RelActCalcAuto::NucInputInfo &other_nuc : nucs )
+    try
     {
-      const Wt::WColor c = WColor( other_nuc.peak_color_css );
-      const auto pos = std::find( begin(def_line_colors), end(def_line_colors), c );
-      if( pos != end(def_line_colors) )
-        def_line_colors.erase( pos );
-    }
+      const int rel_eff_curve_index = relEffCurveIndex();
+      const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
 
-    if( !def_line_colors.empty() )
+      for( const RelActCalcAuto::NucInputInfo &other_nuc : nucs )
+      {
+        const Wt::WColor c = WColor( other_nuc.peak_color_css );
+        const auto pos = std::find( begin(def_line_colors), end(def_line_colors), c );
+        if( pos != end(def_line_colors) )
+          def_line_colors.erase( pos );
+      }
+
+      if( !def_line_colors.empty() )
+      {
+        m_color_select->setColor( def_line_colors[0] );
+        haveFoundColor = true;
+      }
+    }catch( std::exception &e )
     {
-      m_color_select->setColor( def_line_colors[0] );
-      haveFoundColor = true;
+      cerr << "RelActAutoGuiNuclide::handleIsotopeChange(): failed to get Rel Eff index to get nuc color." << endl;
     }
   }//if( !haveFoundColor && (m_color_select->color() == ns_default_color) )
 

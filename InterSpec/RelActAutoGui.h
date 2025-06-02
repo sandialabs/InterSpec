@@ -151,7 +151,24 @@ public:
   void handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool fit_age );
 
   void handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc );
-  
+
+  /** Puts the age, as a string into the `agestr` argument
+
+   Returns true if an age was succefully suggested based on currently displayed nuclides and user options
+   */
+  bool suggestInitialNuclideAge( const int rel_eff_index,
+                                const SandiaDecay::Nuclide * const nuc,
+                                std::string &agestr,
+                                bool &fit_age,
+                                std::string &fit_lower_age,
+                                std::string &fit_upper_age );
+
+  /** Returns the Relative Efficiency curve index that a give `RelActAutoGuiNuclide` is in.
+
+   Throws exception if none of the rel eff curves have the provided widget in them, and there is one than one Rel. Eff. curve defined.
+   */
+  int relEffCurveIndex( const RelActAutoGuiNuclide * const src );
+
   /** Called when energy ranges are added, removed, or edited. */
   void handleEnergyRangeChange();
   
