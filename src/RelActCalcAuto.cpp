@@ -2002,7 +2002,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
       
       // Completely arbitrary
-      if( ((lowest_energy < 200) && (highest_energy > 600))
+      if( ((lowest_energy < 250) && (highest_energy > 650))
          || ((lowest_energy < 120) && (highest_energy > 250)) )
       {
         solution.m_fit_energy_cal[0] = true;
@@ -3037,32 +3037,51 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( !use )
           throw logic_error( "Inconsistent skew parameter thing" );
           
-        bool fit_energy_dep = PeakDef::is_energy_dependent( options.skew_type, ct );
-          
-        if( fit_energy_dep && (energy_ranges.size() == 1) )
+        bool fit_skew_energy_dep = PeakDef::is_energy_dependent( options.skew_type, ct );
+
+        if( fit_skew_energy_dep )
         {
-          // TODO: if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false
-#ifdef _MSC_VER
-#pragma message( "if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false" )
-#else
-#warning "if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false"
-#endif
-          const double dx = (energy_ranges.front().upper_energy - energy_ranges.front().lower_energy);
-          fit_energy_dep = (dx > 100.0);
-        }
-         
+          //We'll check if stat sig peaks span at least 100 keV (arbitrarily chosen), and if not,
+          // drop fitting the energy dependence for skew
+          const double min_energy_range_for_skew_ene_dep = 100;
+          shared_ptr<const PeakDef> lowest_peak, highest_peak;
+          for( const shared_ptr<const PeakDef> &p : all_peaks )
+          {
+            for( const auto &r : energy_ranges )
+            {
+              if( (p->mean() >= r.lower_energy) && (p->mean() <= r.upper_energy) )
+              {
+                if( !lowest_peak || (p->mean() < lowest_peak->mean()) )
+                  lowest_peak = p;
+
+                if( !highest_peak || (p->mean() > highest_peak->mean()) )
+                  highest_peak = p;
+
+                break;
+              }//if( we found the ROI for this peak )
+            }//for( const auto &r : energy_ranges )
+          }//for( const shared_ptr<const PeakDef> &p : all_peaks )
+
+          if( !lowest_peak
+             || !highest_peak
+             || (highest_peak->mean() < (lowest_peak->mean() + min_energy_range_for_skew_ene_dep)))
+          {
+            fit_skew_energy_dep = false;
+          }
+        }//if( fit_skew_energy_dep )
+
         // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
         assert( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall );
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
-          fit_energy_dep = false;
+          fit_skew_energy_dep = false;
         }
 #endif
         
         // If we will be fitting an energy dependence, make sure the cost functor knows this
-        cost_functor->m_skew_has_energy_dependance |= fit_energy_dep;
-          
+        cost_functor->m_skew_has_energy_dependance |= fit_skew_energy_dep;
+
         const size_t skew_start = cost_functor->m_skew_par_start_index;
         const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
         
@@ -3098,7 +3117,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
           
         // Specify ranges for second set of skew parameters
-        if( !fit_energy_dep )
+        if( !fit_skew_energy_dep )
         {
           parameters[skew_start + i + num_skew_coefs] = -999.9;
           constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
