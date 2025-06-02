@@ -831,8 +831,107 @@ RelActCalcAuto::RelEffCurveInput::MassFractionConstraint RelActAutoGuiNuclide::m
 }//RelActCalcAuto::RelEffCurveInput::MassFractionConstraint massFractionConstraint() const
 
 
+Wt::WColor RelActAutoGuiNuclide::getColorForSource( const RelActCalcAuto::SrcVariant &source ) const
+{
+  const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( source );
+  const SandiaDecay::Element * const el = RelActCalcAuto::element( source );
+  const ReactionGamma::Reaction * const rctn = RelActCalcAuto::reaction( source );
+  const string src_name = RelActCalcAuto::is_null(source) ? string() : RelActCalcAuto::to_name(source);
+
+  const ReferencePhotopeakDisplay * const refdisp = InterSpec::instance()->referenceLinesWidget();
+  if( refdisp )
+  {
+    const Wt::WColor c = refdisp->suggestColorForSource( src_name );
+    if( !c.isDefault() )
+      return c;
+  }//if( refdisp )
+
+
+  // Check peaks for the same source, and if so, use that color
+  InterSpec * const interspec = InterSpec::instance();
+  const PeakModel * const pmodel = interspec->peakModel();
+  assert( pmodel );
+
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = pmodel->peaks();
+  assert( peaks );
+  if( peaks )
+  {
+    for( const PeakModel::PeakShrdPtr &peak : *peaks )
+    {
+      assert( peak );
+      if( !peak || peak->lineColor().isDefault() )
+        continue;
+
+      const SandiaDecay::Nuclide * const peak_nuc = peak->parentNuclide();
+      const SandiaDecay::Element * const peak_el = peak->xrayElement();
+      const ReactionGamma::Reaction * const peak_rctn = peak->reaction();
+      if( (peak_nuc == nuc) && (peak_el == el) && (peak_rctn == rctn) )
+        return peak->lineColor();
+    }//for( const PeakModel::PeakShrdPtr &peak : *peaks )
+  }//if( peaks )
+
+
+  shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
+  if( theme )
+  {
+    const map<string,WColor> &defcolors = theme->referenceLineColorForSources;
+    const auto pos = defcolors.find( src_name );
+    if( pos != end(defcolors) )
+      return pos->second;
+  }//if( theme )
+
+
+  // If we still havent found a color for this source, and the color picker is the default color,
+  //  We'll use the first avaiable color of a predifined set of colors (the same one reference lines widget uses).
+
+  //Use the same pre-defined colors as the reference lines widget, and use the first one that is not already used
+  vector<Wt::WColor> def_line_colors;
+
+  if( theme )
+    def_line_colors = theme->referenceLineColor;
+
+  if( def_line_colors.empty() )
+    def_line_colors = ReferencePhotopeakDisplay::sm_def_line_colors;
+
+  try
+  {
+    const int rel_eff_curve_index = relEffCurveIndex();
+    const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
+
+    for( const RelActCalcAuto::NucInputInfo &other_nuc : nucs )
+    {
+      if( source == other_nuc.source )
+        continue;
+
+      const Wt::WColor c = WColor( other_nuc.peak_color_css );
+      const auto pos = std::find( begin(def_line_colors), end(def_line_colors), c );
+      if( pos != end(def_line_colors) )
+        def_line_colors.erase( pos );
+    }
+
+    if( !def_line_colors.empty() )
+      return def_line_colors[0];
+  }catch( std::exception &e )
+  {
+    cerr << "RelActAutoGuiNuclide::handleIsotopeChange(): failed to get Rel Eff index to get nuc color." << endl;
+  }
+
+
+  // We've failed at everything else, so generate a random color...
+  //  (we could use some better scheme to get a better color than random, but whatever at this point)
+  const char letters[] = "0123456789ABCDEF";
+
+  string hex = "#";
+  for( size_t i = 0; i < 6; ++i )
+    hex += letters[std::rand() % 16];
+  return WColor( hex );
+}//Wt::WColor getColorForSource() const
+
+
 void RelActAutoGuiNuclide::handleIsotopeChange()
 {
+  //This function is called when the user changes the nuclide via the gui; not meant to be called if loading a
+  //  serialized state.
   const auto prev_src_info = m_src_info;
 
   const auto nuc_input = source();
@@ -928,122 +1027,21 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
     m_age_range_container->setHidden( !age_is_fittable || !fit_age );
   }//if( nuc )
   
-  if( el|| rctn )
+  if( el || rctn || !nuc )
     hide_age_stuff();
-  
-  bool haveFoundColor = false;
-  
-  // Check user is showing reference lines, displayed peaks, and previous user-selected colors
-  if( !haveFoundColor )
+
+  if( RelActCalcAuto::is_null(nuc_input) )
   {
-    const ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
+    m_color_select->setColor( ns_default_color );
+  }else if( nuc_input != prev_src_info )
+  {
+    const WColor color = getColorForSource( nuc_input );
+    m_color_select->setColor( color );
+
+    ReferencePhotopeakDisplay * const refdisp = InterSpec::instance()->referenceLinesWidget();
     if( refdisp )
-    {
-      const Wt::WColor c = refdisp->suggestColorForSource( src_name );
-      if( !c.isDefault() )
-      {
-        haveFoundColor = true;
-        m_color_select->setColor( c );
-      }
-    }//if( refdisp )
-  }//if( !haveFoundColor )
-  
-  // Check if the theme explicitly specifies a color for this nuclide
-  if( !haveFoundColor )
-  {
-    shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
-    if( theme )
-    {
-      const map<string,WColor> &defcolors = theme->referenceLineColorForSources;
-      const auto pos = defcolors.find( src_name );
-      if( pos != end(defcolors) )
-      {
-        m_color_select->setColor( pos->second );
-        haveFoundColor = true;
-      }
-    }//if( theme )
-  }//if( !haveFoundColor )
-  
-  if( !haveFoundColor )
-  {
-    // Check peaks for the same source, and if so, use that color
-    InterSpec * const interspec = InterSpec::instance();
-    const PeakModel * const pmodel = interspec->peakModel();
-    assert( pmodel );
-    
-    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = pmodel->peaks();
-    assert( peaks );
-    if( peaks )
-    {
-      for( const PeakModel::PeakShrdPtr &peak : *peaks )
-      {
-        assert( peak );
-        if( !peak || peak->lineColor().isDefault() )
-          continue;
-
-        const SandiaDecay::Nuclide * const peak_nuc = peak->parentNuclide();
-        const SandiaDecay::Element * const peak_el = peak->xrayElement();
-        const ReactionGamma::Reaction * const peak_rctn = peak->reaction();
-        if( (peak_nuc == nuc) && (peak_el == el) && (peak_rctn == rctn) )
-        {
-          m_color_select->setColor( peak->lineColor() );
-          haveFoundColor = true;
-          break;
-        }//if( (peak_nuc == nuc) && (peak_el == el) && (peak_rctn == rctn) )
-      }//for( const PeakModel::PeakShrdPtr &peak : *peaks )
-    }//if( peaks )
-  }//if( !haveFoundColor )
-
-  // If we still havent found a color for this source, and the color picker is the default color,
-  //  We'll use the first avaiable color of a predifined set of colors (the same one reference lines widget uses).
-  if( !haveFoundColor && (m_color_select->color() == ns_default_color) )
-  {
-    //Use the same pre-defined colors as the reference lines widget, and use the first one that is not already used
-    vector<Wt::WColor> def_line_colors;
-
-    std::shared_ptr<const ColorTheme> theme = InterSpec::instance()->getColorTheme();
-    if( theme )
-      def_line_colors = theme->referenceLineColor;
-
-    if( def_line_colors.empty() )
-      def_line_colors = ReferencePhotopeakDisplay::sm_def_line_colors;
-
-    try
-    {
-      const int rel_eff_curve_index = relEffCurveIndex();
-      const std::vector<RelActCalcAuto::NucInputInfo> nucs = m_gui->getNucInputInfo( rel_eff_curve_index );
-
-      for( const RelActCalcAuto::NucInputInfo &other_nuc : nucs )
-      {
-        const Wt::WColor c = WColor( other_nuc.peak_color_css );
-        const auto pos = std::find( begin(def_line_colors), end(def_line_colors), c );
-        if( pos != end(def_line_colors) )
-          def_line_colors.erase( pos );
-      }
-
-      if( !def_line_colors.empty() )
-      {
-        m_color_select->setColor( def_line_colors[0] );
-        haveFoundColor = true;
-      }
-    }catch( std::exception &e )
-    {
-      cerr << "RelActAutoGuiNuclide::handleIsotopeChange(): failed to get Rel Eff index to get nuc color." << endl;
-    }
-  }//if( !haveFoundColor && (m_color_select->color() == ns_default_color) )
-
-  if( !haveFoundColor )
-  {
-    // We've failed at everything else, so generate a random color... 
-    //  (we could use some better scheme to get a better color than random, but whatever at this point)
-    const char letters[] = "0123456789ABCDEF";
-
-    string hex = "#";
-    for( size_t i = 0; i < 6; ++i )
-      hex += letters[std::rand() % 16];
-    m_color_select->setColor( WColor( hex ) );
-    haveFoundColor = true;
-  }//if( !haveFoundColor )
+      refdisp->updateColorCacheForSource( src_name, color );
+  }//if( nuc_input != prev_src_info )
 
   updateAllowedConstraints();
   
@@ -1330,19 +1328,8 @@ const ReactionGamma::Reaction *RelActAutoGuiNuclide::reaction() const
 
 string RelActAutoGuiNuclide::source_name() const
 {
-  const SandiaDecay::Nuclide * const nuc = nuclide();
-  if( nuc )
-    return nuc->symbol;
-
-  const SandiaDecay::Element * const el = element();
-  if( el )
-    return el->symbol;
-  
-  const ReactionGamma::Reaction * const rctn = reaction();
-  if( rctn )
-    return rctn->name();
-
-  return "";
+  const RelActCalcAuto::SrcVariant src = source();
+  return RelActCalcAuto::is_null(src) ? string() : RelActCalcAuto::to_name(src);
 }//string source_name() const
 
 
@@ -1445,6 +1432,8 @@ RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
 
 void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
 {
+  handleRemoveConstraint();
+
   if( RelActCalcAuto::is_null(info.source) )
   {
     m_nuclide_edit->setText( "" );
@@ -1456,18 +1445,31 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     m_fit_age->setUnChecked();
     m_age_range_container->hide();
 
-    handleIsotopeChange();
+    updateAllowedConstraints();
 
     m_updated.emit();
     
     return;
   }//if( !info.nuclide && !info.element && !info.reaction )
-  
-  m_nuclide_edit->setText( WString::fromUTF8( RelActCalcAuto::to_name(info.source) ) );
-  
+
+  const std::string src_name = RelActCalcAuto::to_name(info.source);
+  m_nuclide_edit->setText( WString::fromUTF8(src_name) );
+
+  bool set_color = false;
   if( !info.peak_color_css.empty() )
-    m_color_select->setColor( WColor(info.peak_color_css) );
-  
+  {
+    const WColor c(info.peak_color_css);
+    m_color_select->setColor( c );
+
+    set_color = !c.isDefault();
+    if( !c.isDefault() && !src_name.empty() )
+    {
+      ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
+      if( refdisp )
+        refdisp->updateColorCacheForSource( src_name, c );
+    }//if( !c.isDefault() )
+  }//if( !info.peak_color_css.empty() )
+
   const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(info.source);
   if( nuc )
   {
@@ -1488,10 +1490,6 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
       m_age_edit->setText( WString::fromUTF8(agestr) );
     }
     
-    // TODO: blah blah blah - implement the below
-    //std::optional<double> info.fit_age_min;
-    //std::optional<double> info.fit_age_max;
-
     // TODO: it would be nice to print the times compact.  e.g., "20 y" instead of "20.000 y"
     WString min_str, max_str;
     if( info.fit_age_min.has_value() )
@@ -1523,8 +1521,31 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
   //std::optional<double> info.starting_rel_act;
   //std::vector<double> info.gammas_to_exclude;
   // Not currently supported: info.gammas_to_exclude -> vector<double>;
-  
-  handleIsotopeChange();
+
+  updateAllowedConstraints();
+
+  const SandiaDecay::Element * const el = RelActCalcAuto::element(info.source);
+  const ReactionGamma::Reaction * const rctn = RelActCalcAuto::reaction(info.source);
+
+  if( !nuc )
+  {
+    m_age_container->hide();
+    m_age_edit->setText( "0s" );
+    m_fit_age->setUnChecked();
+    m_age_range_container->hide();
+  }
+
+  if( !set_color && (el || rctn || nuc) )
+  {
+    assert( !src_name.empty() );
+    const Wt::WColor c = getColorForSource( info.source );
+    m_color_select->setColor( c );
+    ReferencePhotopeakDisplay *refdisp = InterSpec::instance()->referenceLinesWidget();
+    if( refdisp )
+      refdisp->updateColorCacheForSource( src_name, c );
+  }
+
+  m_updated.emit();
 }//void fromNucInputInfo( const RelActCalcAuto::NucInputInfo &info )
 
 
