@@ -3687,9 +3687,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             p.setContinuum( shared_continuum );
           }//for( PeakDef &p : this_re_peaks.peaks )
           
-          if( i == 1 )
-            cout << "Got " << this_re_peaks.peaks.size() << " rel_eff_index=" << i << endl;
-          
           vector<PeakDef> &re_peaks = fit_peaks_for_each_curve[i];
           re_peaks.insert( end(re_peaks), begin(this_re_peaks.peaks), end(this_re_peaks.peaks) );
         }//for( size_t i = 0; i < num_rel_eff_curves; ++i )

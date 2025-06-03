@@ -2717,7 +2717,7 @@ int RelActAutoGui::relEffCurveIndex( const RelActAutoGuiNuclide * const src )
 
   for( int rel_eff_index = 0; rel_eff_index < num_rel_curves; rel_eff_index += 1 )
   {
-    vector<RelActAutoGuiNuclide *> sources = getNuclideDisplays( num_rel_curves );
+    vector<RelActAutoGuiNuclide *> sources = getNuclideDisplays( rel_eff_index );
     for( const RelActAutoGuiNuclide *this_src : sources )
     {
       if( this_src == src )

@@ -538,6 +538,7 @@ public:
     {
       cerr << "Note from RelActAutoGuiNuclideConstraint: not updating allowed constraints"
       << " due to not being able to determine Rel Eff curve index." << endl;
+      assert( 0 );
       return;
     }//try / catch
 
