@@ -8,8 +8,10 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
-namespace fs = std::filesystem;
+#include "InterSpec/DecayDataBaseServer.h"
 
+using namespace std;
+namespace fs = std::filesystem;
 
 RefSpectraModel::RefSpectraModel( Wt::WObject *parent )
   : Wt::WAbstractItemModel( parent )
@@ -266,20 +268,80 @@ void RefSpectraModel::populateNode( Node *node ) const
 {
   try 
   {
-    for( const auto &entry : fs::directory_iterator(node->fullPath) ) {
+    vector<tuple<std::string,std::string,bool>> dir_entries;
+    for( const auto &entry : fs::directory_iterator(node->fullPath) )
+    {
       const fs::path entryPath = entry.path();
       std::string entryName = entryPath.filename().string();
       const std::string entryPathStr = entryPath.string();
       const bool isDir = entry.is_directory();
-      
+
       if( entryName.empty() || entryName.front() == '.' )
         continue;
 
-      if( !isDir && (SpecUtils::iequals_ascii( entryName, "readme.txt" ) 
+      if( !isDir && (SpecUtils::iequals_ascii( entryName, "readme.txt" )
                      || SpecUtils::iequals_ascii( entryName, "readme.xml" ) ) )
       {
         continue;
       }
+
+      dir_entries.emplace_back( entryName, entryPathStr, isDir );
+    }//for( const auto &entry : fs::directory_iterator(node->fullPath) )
+
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    assert( db );
+
+    std::sort( begin(dir_entries), end(dir_entries), [db]( const auto &lhs, const auto &rhs ) -> bool {
+      const string &lhs_name = std::get<0>(lhs);
+      const string &rhs_name = std::get<0>(rhs);
+
+      const bool lhs_is_dir = std::get<2>(lhs);
+      const bool rhs_is_dir = std::get<2>(rhs);
+
+      // Put directories before files
+      if( lhs_is_dir != rhs_is_dir )
+          return lhs_is_dir;
+
+      // Sort directories by alphabetical name
+      if( lhs_is_dir && rhs_is_dir )
+        return lhs_name < rhs_name;
+
+
+      //If the name is like "U238_Sh_raw_...", try to extract the nuclide
+      //  We could use a bit more sophisticated of a regex to extract Nuclide name, but for now we'll just try
+      //  whatever comes before the first underscore.
+
+      const std::string::size_type lhs_pos = lhs_name.find( '_' );
+      const std::string::size_type rhs_pos = rhs_name.find( '_' );
+
+      const SandiaDecay::Nuclide * const lhs_nuc = (lhs_pos != string::npos) ? db->nuclide(lhs_name.substr(0,lhs_pos)) : nullptr;
+      const SandiaDecay::Nuclide * const rhs_nuc = (rhs_pos != string::npos) ? db->nuclide(rhs_name.substr(0,rhs_pos)) : nullptr;
+
+      if( !lhs_nuc && !rhs_nuc )
+        return lhs_name < rhs_name;
+
+      // We'll list non-nuclide first
+      if( !lhs_nuc )
+        return false;
+
+      if( !rhs_nuc )
+        return true;
+
+      if( lhs_nuc->atomicNumber != rhs_nuc->atomicNumber )
+        return (lhs_nuc->atomicNumber < rhs_nuc->atomicNumber);
+
+      if( lhs_nuc->massNumber != rhs_nuc->massNumber )
+        return (lhs_nuc->massNumber < rhs_nuc->massNumber);
+
+      return (lhs_nuc->isomerNumber < rhs_nuc->isomerNumber);
+    } );
+
+
+    for( const tuple<std::string,std::string,bool> &entry : dir_entries )
+    {
+      std::string entryName = std::get<0>(entry);
+      const std::string entryPathStr = std::get<1>(entry);
+      const bool isDir = std::get<2>(entry);
 
       // If not a directory, remove extension and replace all underscores with spaces.
       if( !isDir )
