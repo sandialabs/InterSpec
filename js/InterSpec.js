@@ -61,14 +61,23 @@ function()
             .map(uid => ({url: uid, file: toUpload[uid]}));
         }catch(error)
         {
-          // TODO: specialize how this error is sent to the server so it can put in proper internationalized text
-          const msg = 'showMsg-error-You can only upload a single file at a time unless the name is'
-                    + ' prefixed with "i-", "b-", "k-" or has back/fore/item/calib'
-                    + ' in the file name, and there is at most one of each spectrum type.';
-        
-          Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, msg );
-          return;
-        }
+          if( $('.Wt-domRoot').data('BatchUploadEnabled') )
+          {
+            // If batch upload is enabled, we'll just trigger that.
+            urlid = 'BatchUpUrl';
+            for (let file of files)
+              files_to_upload.push( {url: urlid, file: file} );
+          }else
+          {
+            // TODO: specialize how this error is sent to the server so it can put in proper internationalized text
+            const msg = 'showMsg-error-You can only upload a single file at a time unless the name is'
+            + ' prefixed with "i-", "b-", "k-" or has back/fore/item/calib'
+            + ' in the file name, and there is at most one of each spectrum type.';
+            
+            Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, msg );
+            return;
+          }
+        }//try / catch
       }
       
       function removeUploading(){
