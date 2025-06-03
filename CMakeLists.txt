@@ -6,14 +6,33 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
+if( CONTAINER_LIBC OR CONTAINER_MUSL)
+  set( BUILD_AS_LOCAL_SERVER OFF CACHE INTERNAL "" )
+  set( CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
+  set( USE_REL_ACT_TOOL ON CACHE INTERNAL "")
+  set( BUILD_FOR_WEB_DEPLOYMENT ON CACHE INTERNAL "" )
+  set( CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  #set( Boost_INCLUDE_DIR "build/_deps/boost-src/libs")
+  set( ZLIB_INCLUDE_DIR:STRING "build/_deps/zlib-build")
+  set( SpecUtils_PYTHON_BINDINGS ON )
+  set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
+  set ( USE_REL_ACT_TOOL ON ON CACHE INTERNAL "" )
+  if( CONTAINER_MUSL )
+    # In Alpine, the hardening and link-time-optimization clash for `vsnprintf`, so we need to disable one
+    # of these - and for serving to web, lto seems like the better one to disable.
+    #set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -U_FORTIFY_SOURCE" ) # or  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_FORTIFY_SOURCE=0")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+    set( CMAKE_EXE_LINKER_FLAGS "-static -static-libgcc -static-libstdc++" CACHE INTERNAL "")
+    set( CMAKE_FIND_LIBRARY_SUFFIXES ".a" CACHE INTERNAL "")
+  endif()
+endif()
 
 if( InterSpec_FETCH_DEPENDENCIES )
-  include( cmake/FetchInterSpecDeps.txt )
+  include( cmake/FetchInterSpecDeps.cmake )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 # If we are the top-level project, we'll build the local-server exe
 get_directory_property(hasParent PARENT_DIRECTORY)
-
 
 option(
     BUILD_AS_ELECTRON_APP
@@ -30,7 +49,14 @@ option(
     "Selects options appropriate for the web in the future"
     OFF
 )
-
+option(
+    BUILD_FOR_CONTAINER_LIBC
+    "Configures the executable to be run as a Docker app in a libc-based container"
+)
+option(
+    BUILD_FOR_CONTAINER_MUSL
+    "Configures the executable to be run as a Docker app in a musl-based container"
+)
 if( hasParent )
   option( BUILD_AS_LOCAL_SERVER "Build for use as a server for localhost" OFF )
 else( hasParent )
@@ -110,6 +136,20 @@ option(
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
 
+
+
+
+if(BUILD_FOR_WEB_DEPLOYMENT)
+    set(TRY_TO_STATIC_LINK OFF)
+    set(CMAKE_BUILD_TYPE:STRING "Release")
+    set(USE_DB_TO_STORE_SPECTRA ON)
+    set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
+    set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
+    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
+    set(USE_BATCH_TOOLS OFF)
+endif(BUILD_FOR_WEB_DEPLOYMENT)
+
+
 if( IOS OR ANDROID OR BUILD_FOR_WEB_DEPLOYMENT )
   set( USE_BATCH_TOOLS OFF CACHE INTERNAL "")
 else( )
@@ -171,16 +211,6 @@ if(NOT CMAKE_BUILD_TYPE)
     )
 endif(NOT CMAKE_BUILD_TYPE)
 
-
-if(BUILD_FOR_WEB_DEPLOYMENT)
-    set(TRY_TO_STATIC_LINK OFF)
-    set(CMAKE_BUILD_TYPE:STRING "Release")
-    set(USE_DB_TO_STORE_SPECTRA ON)
-    set(PERFORM_DEVELOPER_CHECKS OFF CACHE INTERNAL "")
-    set(SpecUtils_ENABLE_EQUALITY_CHECKS OFF CACHE INTERNAL "")
-    set(USE_SPECRUM_FILE_QUERY_WIDGET OFF)
-    set(USE_BATCH_TOOLS OFF)
-endif(BUILD_FOR_WEB_DEPLOYMENT)
 
 if(BUILD_AS_LOCAL_SERVER)
     set(PERFORM_DEVELOPER_CHECKS ON CACHE INTERNAL "")
@@ -855,11 +885,6 @@ if(TRY_TO_STATIC_LINK)
         include(cmake/WtFindFcgi.txt)
         target_link_libraries(InterSpecLib PUBLIC ${FCGI_LIBRARIES})
     endif(Wt_FCGI_LIBRARY)
-
-    #include(cmake/WtFindSsl.txt)
-    #if(SSL_FOUND)
-    #    target_link_libraries(InterSpecLib PUBLIC ${SSL_LIBRARIES})
-    #endif(SSL_FOUND)
 
     if(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))
         find_library( RT_LIB rt REQUIRES )

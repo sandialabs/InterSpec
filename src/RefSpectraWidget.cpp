@@ -809,15 +809,14 @@ void RefSpectraWidget::handleSelectionChanged()
   if( selectedIndexes.empty() )
   {
     m_lastCollapsedIndex = WModelIndex();
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
     m_deleteDirButton->setHidden( true );
     m_showInExplorerButton->setHidden( true );
+#endif
     m_refBackground->setHidden( true );
     m_showCurrentForeground->setHidden( true );
     //m_showAsComboBox->setHidden( true );
     m_stack->setCurrentIndex( 0 );
-#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
-    m_showInExplorerButton->hide();
-#endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
     m_fileSelectionChangedSignal.emit( RefSpectraWidgetSelectionType::None );
     return;
@@ -949,15 +948,13 @@ void RefSpectraWidget::handleSelectionChanged()
   m_lastCollapsedIndex = WModelIndex();
 
   m_refBackground->setHidden( true );
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
   m_deleteDirButton->setHidden( true );
   m_showInExplorerButton->setHidden( false );
+#endif
   
   m_showCurrentForeground->setHidden( false );
   m_showAsComboBox->setHidden( false ); //JIC
-
-#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
-    m_showInExplorerButton->show();
-#endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
   m_stack->setCurrentIndex( 2 );
 
@@ -1310,6 +1307,7 @@ void RefSpectraWidget::initBaseDirs()
 }//void initBaseDirs();
 
 
+#if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
 void RefSpectraWidget::showInExplorer()
 {
   const WModelIndexSet selectedIndexes = m_treeView->selectedIndexes();
@@ -1325,7 +1323,7 @@ void RefSpectraWidget::showInExplorer()
   const std::string filePath = m_treeModel->getFilePath( index );
   AppUtils::showFileInOsFileBrowser(filePath);
 }//void showInExplorer()
-
+#endif
 
 /*
 #include "SpecUtils/Filesystem.h"
