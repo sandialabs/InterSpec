@@ -190,7 +190,7 @@ else
       ./bootstrap.sh --prefix="${MY_WT_PREFIX}"
     fi # if b2 already built / else
 
-    ./b2 -j${_ncore} cxxflags="-std=c++17" linkflags="-std=c++17" link=static variant=release threading=multi --build-dir=linux_build --prefix="${MY_WT_PREFIX}" -a install
+    ./b2 -j${_ncore} cxxflags="-std=c++17" linkflags="-std=c++17" link=static variant=release threading=multi --without-python --build-dir=linux_build --prefix="${MY_WT_PREFIX}" -a install
 
     touch "${working_directory}/boost.built"
   fi
@@ -282,9 +282,9 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCONFIGURATION=data/config/wt_config_web.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -S ..
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DWT_CMAKE_FINDER_INSTALL_DIR="${MY_WT_PREFIX}/share -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCONFIGURATION=data/config/wt_config_web.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -S ..
   #make -j${_ncore} install
-  cmake --build . --config Release --target install -j${_ncore}
+  cmake --build . --config Release --target install --parallel ${_ncore}
 
   touch "${working_directory}/wt.installed"
 fi #if wt.installed exists / else
@@ -357,7 +357,7 @@ else
   cd build_macos
 
   cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF ..
-  cmake --build . --config Release --target install -j${_ncore}
+  cmake --build . --config Release --target install --parallel ${_ncore}
 
   touch "${working_directory}/Ceres.installed"
 fi #if Ceres.installed exists / else
