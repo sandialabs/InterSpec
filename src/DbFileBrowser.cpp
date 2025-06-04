@@ -534,7 +534,7 @@ SnapshotBrowser::SnapshotBrowser( SpecMeasManager *manager,
       
       
       // If a 'buttonBar' was specified to this constructor, then this browser is NOT on the
-      //  InterSpec introductory screen, but instantiated by the "InterSpec" --> "Previous..." menu.
+      //  InterSpec introductory screen, but instantiated by the "InterSpec" --> "Previous" menu.
       if( buttonBar && rowDiv )
       {
         WImage *delBtn = new WImage( "InterSpec_resources/images/minus_min_black.svg", rowDiv );

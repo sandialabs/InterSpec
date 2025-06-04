@@ -159,20 +159,21 @@ int main( int argc, char **argv )
   
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-  if( cl_vm.count("config") )
+  if( !cl_vm.count("config") )
   {
     std::cerr << "You must specify the Wt config file to use (the 'config' option)" << std::endl;
     return -20;
   }
   
-  if( cl_vm.count("http-address") )
+  if( !cl_vm.count("http-address") )
+  if( !cl_vm.count("http-address") )
   {
     std::cerr << "You must specify the network adapter address to bind to"
     << " (the 'http-address' option)." << std::endl;
     return -21;
   }
   
-  if( cl_vm.count("docroot") )
+  if( !cl_vm.count("docroot") )
   {
     std::cerr << "You must specify the HTTP document root directory to use (the 'docroot' option)" << std::endl;
     return -22;
@@ -244,7 +245,7 @@ int main( int argc, char **argv )
     }//if( !SpecUtils::is_absolute_path(userDir) )
     
     user_data_dir = dev_user_data;
-#else
+#elif( BUILD_FOR_WEB_DEPLOYMENT )
     std::cerr << "You must specify the directory to store user data to (the 'userdatadir' option)."
               << std::endl;
     return -25;
@@ -291,6 +292,17 @@ int main( int argc, char **argv )
     }
     InterSpec::setStaticDataDirectory( datadir );
   }//if( cl_vm.count("static-data-dir") ) / else
+#else
+    {
+    const std::string datadir = SpecUtils::append_path( docroot, "data" );
+    if( !SpecUtils::is_directory(datadir) )
+    {
+      std::cerr << "No 'data' directory in docroot-'" << docroot << "';"
+                << " please specify the '--static-data-dir' argument." << std::endl;
+      return -26;
+    }
+    InterSpec::setStaticDataDirectory( datadir );
+  }//if( cl_vm.count("static-data-dir") ) / else
 #endif
   
   //return RelActAutoDev::dev_code();
@@ -305,7 +317,11 @@ int main( int argc, char **argv )
   const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),
                                                  docroot.c_str(),
                                                  wt_config.c_str(),
-                                                 static_cast<short int>(server_port_num) );
+                                                 static_cast<short int>(server_port_num)
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+                                                 , http_address.c_str()
+#endif
+                                                 );
   if( rval < 0 )
   {
     std::cerr << "Failed to start server, val=" << rval << std::endl;

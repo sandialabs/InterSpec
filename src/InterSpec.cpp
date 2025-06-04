@@ -64,10 +64,8 @@
 #include <Wt/WSuggestionPopup>
 #include <Wt/WContainerWidget>
 #include <Wt/WDefaultLoadingIndicator>
+#include <Wt/WEvent>
 
-#if( USE_CSS_FLEX_LAYOUT )
-#include <Wt/WStackedWidget>
-#endif
 
 #if( USE_DB_TO_STORE_SPECTRA )
 #include <Wt/Json/Array>
@@ -126,6 +124,7 @@
 #include "InterSpec/AddNewPeakDialog.h"
 #include "InterSpec/ColorThemeWindow.h"
 #include "InterSpec/GammaCountDialog.h"
+#include "InterSpec/RefSpectraWidget.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/EnterAppUrlWindow.h"
 #include "InterSpec/LocalTimeDelegate.h"
@@ -703,13 +702,15 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_mobileBackButton = new WContainerWidget( wApp->domRoot() );
     m_mobileBackButton->addStyleClass( "MobilePrevSample btn" );
     m_mobileBackButton->setZIndex( 8388635 );
-    m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, false) );
+    m_mobileBackButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum,
+                     this, SpecUtils::SpectrumType::Foreground, false) );
     m_mobileBackButton->setHidden(true);
       
     m_mobileForwardButton = new WContainerWidget( wApp->domRoot() );
     m_mobileForwardButton->addStyleClass( "MobileNextSample btn" );
     m_mobileForwardButton->setZIndex( 8388635 );
-    m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum, this, SpecUtils::SpectrumType::Foreground, true) );
+    m_mobileForwardButton->clicked().connect( boost::bind(&InterSpec::handleUserIncrementSampleNum,
+                     this, SpecUtils::SpectrumType::Foreground, true) );
     m_mobileForwardButton->setHidden(true);
   }else  //if( isMobile() )
   {
@@ -1584,8 +1585,10 @@ void InterSpec::layoutSizeChanged( int w, int h )
         if( m_enterUri )
           m_enterUri->accept();
         assert( !m_enterUri );
+#if( USE_TERMINAL_WIDGET )
         if( m_terminalWindow )
           m_terminalWindow->hide();
+#endif
 #if( USE_REMOTE_RID )
         if( m_remoteRidWindow )
           deleteRemoteRidWindow();
@@ -1784,6 +1787,11 @@ void InterSpec::initDragNDrop()
   doJavaScript( "$('.Wt-domRoot').data('SecondUpUrl','" +
                m_fileManager->secondForegroundDragNDrop()->url() + "');" );
   
+#if( USE_BATCH_TOOLS )
+  doJavaScript( "$('.Wt-domRoot').data('BatchUploadEnabled', true);" );
+  doJavaScript( "$('.Wt-domRoot').data('BatchUpUrl','" +
+               m_fileManager->batchDragNDrop()->url() + "');" );
+#endif
   doJavaScript( "Wt.WT.FileUploadFcn();" );
 }//void InterSpec::initDragNDrop()
 
@@ -6190,28 +6198,9 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
                                          SpecUtils::append_path(docroot, "example_spectra/background_20100317.n42"),
                                          SpecUtils::SpectrumType::Background, SpecUtils::ParserType::N42_2006 ) );
-  //If its a mobile device, we'll give a few more spectra to play with
-  if( mobile )
-  {
-    item = subPopup->addMenuItem( WString::tr("app-mi-samples-ba133-lowres") );
-    item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           SpecUtils::append_path(docroot, "example_spectra/Ba133LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-    
-    item = subPopup->addMenuItem( WString::tr("app-mi-samples-co60-lowres") );
-    item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           SpecUtils::append_path(docroot, "example_spectra/Co60LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-    
-    item = subPopup->addMenuItem( WString::tr("app-mi-samples-cs137-lowres") );
-    item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           SpecUtils::append_path(docroot, "example_spectra/Cs137LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-    item = subPopup->addMenuItem( WString::tr("app-mi-samples-th232-lowres") );
-    item->triggered().connect( boost::bind( &SpecMeasManager::loadFromFileSystem, m_fileManager,
-                                           SpecUtils::append_path(docroot, "example_spectra/Th232LowResNoCalib.spe"),
-                                           SpecUtils::SpectrumType::Foreground, SpecUtils::ParserType::SpeIaea ) );
-  }//if( mobile )
+  
+  item = subPopup->addMenuItem( WString::tr("app-mi-samples-reference") );
+  item->triggered().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::LastUserSelectedSpectra, SpecUtils::SpectrumType::Foreground ) );
   
   
   if( !mobile )
@@ -9879,7 +9868,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   extRidTT.arg( "" );
 #endif
   
-  HelpSystem::attachToolTipOn( m_terminalMenuItem, extRidTT, showToolTips );
+  HelpSystem::attachToolTipOn( m_remoteRidMenuItem, extRidTT, showToolTips );
   m_remoteRidMenuItem->triggered().connect( this, &InterSpec::createRemoteRidWindow );
 #endif
 }//void InterSpec::addToolsMenu( Wt::WContainerWidget *menuDiv )

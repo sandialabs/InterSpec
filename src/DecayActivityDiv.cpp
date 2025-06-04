@@ -708,15 +708,15 @@ class DateLengthCalculator : public WContainerWidget
             mintime = std::min( mintime, nuc->halfLife );
         }
         
-        if( (duration < 0.01*mintime) && m_activityDiv && m_activityDiv->m_displayTimeLength )
+        if( (fabs(duration) < 0.01*mintime) && m_activityDiv && m_activityDiv->m_displayTimeLength )
         {
           m_duration->setText( m_activityDiv->m_displayTimeLength->text() );
           updateInfo();
           return;
         }
         
-        int64_t ndays = std::floor(duration / PhysicalUnits::day);
-        double remanderSeconds = duration - (ndays * PhysicalUnits::day);
+        int64_t ndays = std::floor(fabs(duration) / PhysicalUnits::day);
+        double remanderSeconds = fabs(duration) - (ndays * PhysicalUnits::day);
         if( fabs(PhysicalUnits::day - remanderSeconds) <= 1.0 )
         {
           remanderSeconds = PhysicalUnits::day - remanderSeconds;
@@ -724,13 +724,23 @@ class DateLengthCalculator : public WContainerWidget
         }
         
         // \TODO: do the same thing as days, but for years to try and set an initial date
-        
-        if( (ndays < 1) || (remanderSeconds > 1.0)
-           || (m_enddate->validate() != WValidator::State::Valid)
-           || ndays >= std::numeric_limits<int>::max() )
+        if( duration < 0.0 )
+          ndays = -ndays;
+
+        if( (abs(ndays) < 1) || (remanderSeconds > 1.0))
+        {
           m_begindate->setText( "" );
-        else
+        }else if( m_enddate->validate() == WValidator::State::Valid )
+        {
           m_begindate->setDate( m_enddate->date().addDays( -static_cast<int>(ndays) ) );
+        }else if( m_begindate->validate() == WValidator::State::Valid )
+        {
+          m_enddate->setDate( m_begindate->date().addDays( static_cast<int>(ndays) ) );
+        }else
+        {
+          m_begindate->setText( "" );
+          m_enddate->setText( "" );
+        }
       }catch(...)
       {
         m_begindate->setText( "" );

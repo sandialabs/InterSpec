@@ -2354,7 +2354,17 @@ namespace PeakSearchGuiUtils
       WFont labelFont( WFont::Default );
       labelFont.setSize(8);
       chart->axis(Chart::XAxis).setLabelFont( labelFont );
-      chart->axis(Chart::YAxis).setLabelFont( labelFont );
+
+      if( width < 125 ) //125 px arbitrarily chosen as widest to not show y-axis numbers
+      {
+        chart->setPlotAreaPadding( 6, Wt::Left );
+        labelFont.setSize(1);
+        chart->axis(Chart::YAxis).setLabelFont( labelFont );
+        chart->axis(Chart::YAxis).setTextPen( WPen( WColor(0,0,0,0) ) );
+      }else
+      {
+        chart->axis(Chart::YAxis).setLabelFont( labelFont );
+      }
     }//if( compact )
     
     shared_ptr<Wt::WSvgImage> img = make_shared<WSvgImage>( width, height );

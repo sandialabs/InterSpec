@@ -18,7 +18,7 @@
   <message id='cfm-show-image-btn'>embedded image</message>
 
   <message id='cfm-db-spec'>Prev. Saved Spectra</message>
-
+  <message id='cfm-ref-spectra-btn'>Reference Spectra...</message>
   <message id='cfm-err-invalid-sample-num'>Sample number requested doesn't exist.</message>
   <message id='cfm-err-no-meas'>Cant change sample numbers, there is no current measurement.</message>
   <message id='cfm-err-missing-sample-num'>One of the sample number requested doesn't exist.</message>
@@ -43,4 +43,11 @@
   <message id='cfm-model'>Model</message>
   <message id='cfm-meas-type'>Rec. Type</message>
   <message id='cfm-tt-meas-type'>The records recorded type within the spectrum file.</message>
+
+  <message id='cfm-tt-clear-spectrum'>Clears the current spectrum.</message>
+  
+  <message id='cfm-swap-back-with-foreground-btn'>foreground↔background</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>Swap the foreground and background spectra</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>foreground↔secondary</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>Swap the foreground and secondary spectra</message>
 </messages>

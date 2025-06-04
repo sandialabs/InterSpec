@@ -1471,6 +1471,12 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
       m_detector.reset();
       parse_warnings_.push_back( "Could not decode InterSpec specific detector response function in N42 file: "
                                  + std::string(e.what()) );
+      
+      string drf_xml;
+      rapidxml::print( std::back_inserter(drf_xml), *node, 2 );
+      cerr << "Failed to decode DRF:\n" << drf_xml << endl;
+      
+      cerr << endl;
     }// try / catch
   }else
   {
@@ -1841,7 +1847,13 @@ bool SpecMeas::load_N42_from_data( char *data, char *data_end )
   reset();
   
   data_end = SpecUtils::convert_n42_utf16_xml_to_utf8( data, data_end );
-  
+
+  // Some times a bunch of null characters can get appended to the end
+  //  of the file - lets remove them, or rapidxml::parse will fail.
+  //  TODO: bet yet, we should look for the last '>' character, or even better, the last valid closing tag
+  while( ((data_end - data) > 2) && ((*(data_end - 1)) == '\0') )
+    --data_end;
+
   if( !SpecUtils::is_candidate_n42_file(data,data_end) )
   {
     return false;

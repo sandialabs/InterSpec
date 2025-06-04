@@ -3,13 +3,13 @@ WT_DECLARE_WT_MEMBER
 (FileUploadFcn, Wt::JavaScriptFunction, "FileUploadFcn",
 function()
 {
-  var target = $('.Wt-domRoot').get(0);
+  const target = $('.Wt-domRoot').get(0);
   
   var urlIdFromName = function(name)
   {
     var str = name.toLowerCase();
     if( str.indexOf('i-')===0 || str.indexOf('fore')>-1 || str.indexOf('item')>-1
-        || str.indexOf('ipc')>-1 || str.indexOf('unk')>-1 || str.indexOf('inter')>-1  )
+        || str.indexOf('ipc')>-1 || str.indexOf('unk')>-1 || str.indexOf('inter')>-1 || str.indexOf('ioi')>-1  )
       return 'ForegroundUpUrl';
     if( str.indexOf('b-') === 0 || str.indexOf('back')>-1 || str.indexOf('bkg')>-1 || str.indexOf('bgd')>-1 || str.indexOf('bg')>-1 )
       return 'BackgroundUpUrl';
@@ -23,38 +23,61 @@ function()
     {
       evt.preventDefault();
       evt.stopPropagation();
-      var files = evt.dataTransfer.files;
-
+      
+      const files = evt.dataTransfer.files;
       if( !files || !files.length )
       {
         console.log( "uploadFcn: no files for some reason." );
         return;
       }
       
-      
-      //Go through and make sure we have either one file total, or a max of one
-      //  for each foreground/background/second.
-      var validin = true, uid, filelen = files.length, x, i;
-      var uploadOrder = ["ForegroundUpUrl", "BackgroundUpUrl", "SecondUpUrl"];
-      var toUpload = {"ForegroundUpUrl":null, "BackgroundUpUrl":null, "SecondUpUrl":null};
-      
-      for(i = 0; i < filelen; ++i)
+      if( $('.Wt-domRoot').data('BatchUploadOnly') )
+        urlid = 'BatchUpUrl';
+
+      let files_to_upload = [];
+      if( (files.length === 1) || (urlid === 'BatchUpUrl') )
       {
-        uid = filelen>1 ? urlIdFromName(files[i].name) : urlid;
-        if( filelen>1 && (uid===null || (toUpload[uid]!==null)) )
-          validin = false;
-        else
-          toUpload[uid] = files[i];
-      }
-      
-      if( !validin )
+        for (let file of files)
+          files_to_upload.push( {url: urlid, file: file} );
+        console.log( "Batch upload detected" );
+      }else
       {
-        const msg = 'showMsg-error-You can only upload a single file at a time unless the name is'
-                    + ' prefixed with "i-", "b-", "k-" or has back/fore/item/calib'
-                    + ' in the file name, and there is at most one of each spectrum type.';
+        // Map files to upload slots (max one per type), maintaining upload order
+        const uploadOrder = ["ForegroundUpUrl", "BackgroundUpUrl", "SecondUpUrl"];
+        const toUpload = Object.fromEntries(uploadOrder.map(id => [id, null]));
         
-        Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, msg );
-        return;
+        try
+        {
+          for( let file of files )
+          {
+            const uid = urlIdFromName(file.name);
+            if ( !uid || (toUpload[uid] !== null) )
+              throw 'invalid file';
+            toUpload[uid] = file;
+          }
+
+          files_to_upload = uploadOrder
+            .filter(uid => toUpload[uid])
+            .map(uid => ({url: uid, file: toUpload[uid]}));
+        }catch(error)
+        {
+          if( $('.Wt-domRoot').data('BatchUploadEnabled') )
+          {
+            // If batch upload is enabled, we'll just trigger that.
+            urlid = 'BatchUpUrl';
+            for (let file of files)
+              files_to_upload.push( {url: urlid, file: file} );
+          }else
+          {
+            // TODO: specialize how this error is sent to the server so it can put in proper internationalized text
+            const msg = 'showMsg-error-You can only upload a single file at a time unless the name is'
+            + ' prefixed with "i-", "b-", "k-" or has back/fore/item/calib'
+            + ' in the file name, and there is at most one of each spectrum type.';
+            
+            Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, msg );
+            return;
+          }
+        }//try / catch
       }
       
       function removeUploading(){
@@ -82,26 +105,15 @@ function()
         alert( "Error uploading file:" + "\n\t" + xhr.statusText + "\n\tResponse code " + xhr.status + "\n\t" + xhr.responseText );
       }
       
-      // We want to upload the foreground, then background, then secondary, waiting for each upload
-      //  to finish before starting the next.
-      var uploadIndex = -1;
-      
+    
       function uploadNextFile(){
-        for( ++uploadIndex; (uploadIndex < uploadOrder.length) && (toUpload[uploadOrder[uploadIndex]] === null); ++uploadIndex )
-        {
-        }
-        
-        if( uploadIndex >= uploadOrder.length )
-        {
+        if( files_to_upload.length === 0 ){
           removeUploading();
-          return;
+        }else{
+          const thisUpload = files_to_upload.shift();
+          uploadFileToUrl( $(target).data(thisUpload.url), thisUpload.file, true );
         }
-        
-        var thisUid = uploadOrder[uploadIndex];
-        uploadFileToUrl( $(target).data(thisUid), toUpload[thisUid], true );
       };
-      
-      
       
       function uploadFileToUrl( uploadURL, file, lookForPath ){
         if( !uploadURL || !file )
@@ -112,14 +124,10 @@ function()
           
         //console.log( 'uploadFileToUrl: will upload to ' + uploadURL );
         
-        var xhr = new XMLHttpRequest();
+        let xhr = new XMLHttpRequest();
         xhr.open("POST", uploadURL, true);
-        xhr.setRequestHeader("Content-type", "application/x-spectrum");
         xhr.setRequestHeader("Cache-Control", "no-cache");
         xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
-        // Filename may have non-ISO-8859-1 code points, so we need to URI encode it
-        const filename_uri = encodeURIComponent(file.name);
-        xhr.setRequestHeader("X-File-Name", filename_uri);
         
         
         if( lookForPath && file.name && (file.name.length > 3) ){
@@ -150,6 +158,11 @@ function()
             //   stuff.  But we also need to fallback, JIC c++ fails for some unforeseen reason.
             //   See #FileDragUploadResource::handleRequest for the other part of this logic
             xhr.setRequestHeader("Is-File-Path", "1" );
+            xhr.setRequestHeader("Content-type", "application/x-spectrum");
+
+            // Filename may have non-ISO-8859-1 code points, so we need to URI encode it
+            const filename_uri = encodeURIComponent(file.name);
+            xhr.setRequestHeader("X-File-Name", filename_uri);
           
             console.log( 'Will send native file-system path, instead of actual file; path: ', fspath );
           
@@ -226,8 +239,16 @@ function()
           removeUploading();
         });
         
-          
-        xhr.send(file);
+        // Instead of having different urls for foreground/background/secondary/batch, we
+        //  could have a single upload resource, and instead use "foreground", "background", 
+        // "secondary", "multiple", "batch" as the parameter name, and then sort this out on 
+        // the server.  
+        // This would also let us send multiple files at the same time.
+        // But we will leave this to the future.
+        const formData = new FormData();
+        formData.append('file', file, file.name); 
+
+        xhr.send(formData);
       };//uploadFileToUrl
       
       uploadNextFile();
@@ -283,6 +304,14 @@ function()
   
   
   target.addEventListener("dragenter", function(event){
+
+      // If the "batch analysis" GUI is showing, then any file we drop will be uploaded to the batch upload URL.
+    if( $('.Wt-domRoot').data('BlockFileDrops') ){
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     var hasfore = $('.Wt-domRoot').data("HasForeground");
     
     var thisel=$(event.target);
@@ -293,7 +322,12 @@ function()
     
     if( hasfore )
       updiv.addClass("active");
-    
+
+    const is_batch_upload = ((event.dataTransfer  && event.dataTransfer.items 
+                              && (event.dataTransfer.items.length > 2)
+                              && $('.Wt-domRoot').data('BatchUploadEnabled'))
+                            || $('.Wt-domRoot').data('BatchUploadOnly') );
+
     //For windows Qt version of app, when someone drags from Outlook onto app, the file contents
     //  dropped and intercepted in the C++ WebViewWindow::dropEvent() function, instead
     //  of by the browser. The fact this is happening is indicated by the JS "DropFileContents"
@@ -303,7 +337,13 @@ function()
     var isDropContents = $('.Wt-domRoot').data("DropFileContents");
     var el = $('#Uploader');
     
-    if( !isDropContents && (el.length > 0) )
+    if( is_batch_upload && (el.length > 0) )
+    {
+      var infodiv = $('.UpInfo');
+      infodiv.html("Will start batch tool.");
+
+      return;
+    }else if( !isDropContents && (el.length > 0) )
     {
         var infodiv = $('.UpInfo');
         if( hasfore || updiv.hasClass("UpForeground") )
@@ -331,19 +371,36 @@ function()
       return;
     }
 
-    //The list of files (or even how many of them) does not appear to be available here... :(
-    //  If it was available, we could customize it for CALp files.
+    //The list of files (or even how many of them) does not appear to be available here for Safari.
+    //  But were it is available, we could customize it for CALp files, Det. Eff. files, etc .
     //const files = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : null;
     //const isCALp = (files && files.length === 1 && files[0].includes(".CALp"));
     
     
     el = $('<div id=\"Uploader\" class=\"FileUploadCover\"></div>');
     el.appendTo(target);
+    
+    
+    if( is_batch_upload )
+    {
+      let batch = $('<div class=\"UpDiv UpBatch active\"><div class=\"UpCenterDiv\"><div class=\"UpDivTxt\">Batch Upload</div></div></div>');
+      batch.appendTo(el);
+
+      let info = $('<div class=\"UpInfoWrapper\"><div class=\"UpInfo\"></div></div>');
+      info.appendTo(batch);
+
+      el.get(0).addEventListener("drop", function(event){
+      $('#Uploader').remove();
+      uploadFcn(event,'BatchUpUrl')
+    }, false);
+
+      return;
+    }
+
     el.get(0).addEventListener("drop", function(event){
       $('#Uploader').remove();
       uploadFcn(event,'ForegroundUpUrl')
     }, false);
-    
 
     if( isDropContents )
     {

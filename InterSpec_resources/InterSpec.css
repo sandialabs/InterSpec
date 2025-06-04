@@ -183,6 +183,18 @@ border-right: 1px dashed white;
 left: 66.667%;
 }
 
+.FileUploadCover .UpDiv.UpBatch
+{
+  width: 100%;
+}
+
+.UpDiv.UpBatch > .UpCenterDiv
+{
+  width: 30%;
+  top: 25%;
+  left: 35%;
+}
+
 .UpInstrInfoWrapper
 {
 position: absolute;

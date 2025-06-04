@@ -487,8 +487,15 @@ void D3SpectrumDisplayDiv::defineJavaScript()
 void D3SpectrumDisplayDiv::initChangeableCssRules()
 {
   WCssStyleSheet &style = wApp->styleSheet();
-  m_cssRules["GridColor"] = style.addRule( ":root", "--d3spec-grid-major-color: #b3b3b3;" );      //Not actually needed, as CSS will default to this
-  m_cssRules["MinorGridColor"] = style.addRule( ":root", "--d3spec-grid-minor-color: #e6e6e6;" ); //Not actually needed, as CSS will default to this
+
+  const string grid_color_name = id() + "_GridColor";
+  const string minor_grid_color_name = id() + "_MinorGridColor";
+
+  //Not actually needed, as CSS will default to this
+  m_cssRules[grid_color_name] = style.addRule( ":root", "--d3spec-grid-major-color: #b3b3b3;", grid_color_name );
+
+  //Not actually needed, as CSS will default to this
+  m_cssRules[minor_grid_color_name] = style.addRule( ":root", "--d3spec-grid-minor-color: #e6e6e6;", minor_grid_color_name );
 }//void initChangeableCssRules()
 
 
@@ -1798,12 +1805,12 @@ void D3SpectrumDisplayDiv::setForegroundSpectrumColor( const Wt::WColor &color )
 {
   m_foregroundLineColor = color.isDefault() ? WColor( 0x00, 0x00, 0x00 ) : color;
   
-  string rulename = "ForeSpecLineColor";
+  const string rulename = id() + "_ForeSpecLineColor";
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-fore-line-color: " + m_foregroundLineColor.cssText() );
-  
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-fore-line-color: " + m_foregroundLineColor.cssText(), rulename );
+
   //scheduleUpdateForeground();
 }
 
@@ -1811,12 +1818,12 @@ void D3SpectrumDisplayDiv::setBackgroundSpectrumColor( const Wt::WColor &color )
 {
   m_backgroundLineColor = color.isDefault() ? WColor(0x00,0xff,0xff) : color;
   
-  string rulename = "BackSpecLineColor";
+  const string rulename = id() + "_BackSpecLineColor";
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-back-line-color: " + m_backgroundLineColor.cssText() );
-  
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-back-line-color: " + m_backgroundLineColor.cssText(), rulename );
+
   //scheduleUpdateBackground();
 }
 
@@ -1824,12 +1831,12 @@ void D3SpectrumDisplayDiv::setSecondarySpectrumColor( const Wt::WColor &color )
 {
   m_secondaryLineColor = color.isDefault() ? WColor(0x00,0x80,0x80) : color;
   
-  string rulename = "SecondSpecLineColor";
+  const string rulename = id() + "_SecondSpecLineColor";
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-second-line-color: " + m_secondaryLineColor.cssText() );
-  
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-second-line-color: " + m_secondaryLineColor.cssText(), rulename );
+
   //scheduleUpdateSecondData();
 }
 
@@ -1837,13 +1844,13 @@ void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
 {
   m_textColor = color.isDefault() ? WColor(0,0,0) : color;
   const string c = m_textColor.cssText();
-  const string rulename = "TextColor";
-  
+  const string rulename = id() + "_TextColor";
+
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-text-color: " + c + ";" );
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-text-color: " + c + ";", rulename );
 }
 
 
@@ -1851,16 +1858,16 @@ void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
 {
   m_axisColor = color.isDefault() ? WColor(0,0,0) : color;
   
-  string rulename = "AxisColor";
-  
+  const string rulename = id() + "_AxisColor";
+
   WCssStyleSheet &style = wApp->styleSheet();
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
   // Sets axis colors, and ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine"
   
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-axis-color: " + m_axisColor.cssText() );
-  
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-axis-color: " + m_axisColor.cssText(), rulename );
+
   
   //ToDo: figure out how to make grid lines look okay.
   //rulename = "GridColor";
@@ -1878,8 +1885,8 @@ void D3SpectrumDisplayDiv::setChartMarginColor( const Wt::WColor &color )
 {
   m_chartMarginColor = color;
   
-  const string rulename = "MarginColor";
-  
+  const string rulename = id() + "_MarginColor";
+
   WCssStyleSheet &style = wApp->styleSheet();
   
   if( color.isDefault() )
@@ -1896,7 +1903,7 @@ void D3SpectrumDisplayDiv::setChartMarginColor( const Wt::WColor &color )
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
   
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-background-color: " + color.cssText() + ";" );
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-background-color: " + color.cssText() + ";", rulename );
   //Actually this will set the background for the entire chart...
   //m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() ); // to set background color for just this chart
 }//setChartMarginColor(...)
@@ -1907,14 +1914,14 @@ void D3SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
   m_chartBackgroundColor = color;
   const string c = color.isDefault() ? "rgba(0,0,0,0)" : color.cssText();
   
-  const string rulename = "BackgroundColor";
-  
+  const string rulename = id() + "_BackgroundColor";
+
   WCssStyleSheet &style = wApp->styleSheet();
   
   if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
     
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-chart-area-color: " + c + ";" );
+  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-chart-area-color: " + c + ";", rulename );
   //m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c ); //If we wanted to apply this color to only this chart
 }
 
@@ -1994,6 +2001,45 @@ void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bo
                   + string(asPng ? "true" : "false") + ");" );
 }//void saveChartToPng( const std::string &name )
 
+
+void D3SpectrumDisplayDiv::setThumbnailMode()
+{
+  disableLegend();
+  setXAxisTitle( {} );
+  setYAxisTitle( {}, {} );
+
+
+  // Set padding to none
+  string js = m_jsgraph + R"delim(.setChartPadding( { "top": 0, 
+  "right":0, 
+  "bottom": 0, 
+  "xTitlePad": 0,
+  "left":0, 
+  "labelPad":0,
+  "title": 0,
+  "label": 0,
+  "sliderChart": 0
+  } );
+  )delim";
+
+  //Need to set dont have y-axis numbers
+  js += m_jsgraph + ".setNoYAxisNumbers(true);\n";
+
+  //Turn off the mouse-move numbers in lower-right corner
+  js += m_jsgraph + ".setShowMouseStats(false);";
+
+
+  // Make the x-axis (energy) text nice and small.
+  const string rule_name = id() + "_ThumbnailTxt";
+  WCssStyleSheet &style = wApp->styleSheet();
+  if( !m_cssRules.contains(rule_name)  )
+    m_cssRules[rule_name] = style.addRule( "#" + id() + " .SpectrumChartD3.InterSpecD3Chart .axis text", "font-size: 6px;", rule_name );
+
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//void D3SpectrumDisplayDiv::setThumbnailMode()
 
 
 void D3SpectrumDisplayDiv::setFeatureMarkerOption( FeatureMarkerType option, bool show )
@@ -2827,6 +2873,14 @@ void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
 {
   //doJavaScript( "try{" + m_jsgraph + "=null;}catch(){}" );
+
+  // Cleanup the style rules we created.
+  WCssStyleSheet &style = wApp->styleSheet();
+  for( const auto name_rule : m_cssRules )
+  {
+    if( !name_rule.first.empty() && style.isDefined(name_rule.first) )
+      style.removeRule( name_rule.second );
+  }
 }//~D3SpectrumDisplayDiv()
 
 

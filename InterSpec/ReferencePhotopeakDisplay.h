@@ -306,6 +306,25 @@ public:
   void setNarrowPhoneLayout( const bool narrow );
 #endif
   
+  /** Pass in a source string (U235, Fe(n,n), Pb, etc), and get back the color that has been previously used
+   by the user.
+   Checks `currentlyUsedPeakColors()`, then  `m_previouslyPickedSourceColors`, then
+   `m_specificSourcelineColors`.  If no history of it can be found, returns default/empty color.
+   
+   Note that `src` passed in must exactly match nuclide/reaction/element.
+   
+   This function is intended to be called by other widgets.
+   */
+  Wt::WColor suggestColorForSource( const std::string &src ) const;
+  
+  /** Updates `m_previouslyPickedSourceColors` for the specified source.
+   
+   If source string is empty, no action is taken.
+   If color is default, then the source in the cache is removed.
+   */
+  void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );
+
+  
   bool showingGammaLines() const;
   void setShowGammaLines( const bool show );
   
@@ -317,18 +336,6 @@ public:
   
   bool showingBetaLines() const;
   void setShowBetaLines( const bool show );
-
-  
-  /** Pass in a source string (U235, Fe(n,n), Pb, etc), and get back the color that has been previously used
-   by the user.
-   Checks `currentlyUsedPeakColors()`, then  `m_previouslyPickedSourceColors`, then
-   `m_specificSourcelineColors`.  If no history of it can be found, returns default/empty color.
-   
-   Note that `src` passed in must exactly match nuclide/reaction/element.
-   
-   This function is intended to be called by other widgets.
-   */
-  Wt::WColor suggestColorForSource( const std::string &src ) const;
   
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
@@ -486,6 +493,9 @@ protected:
   FeatureMarkerWidget *m_featureMarkers;
   
   static const int sm_xmlSerializationVersion;
+
+  public:
+    static const std::vector<Wt::WColor> sm_def_line_colors;
 };//class ReferencePhotopeakDisplay
 
 

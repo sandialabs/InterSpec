@@ -3527,39 +3527,69 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
                          const std::shared_ptr<const SpecUtils::Measurement> &data )
 {
   const bool asscend = (order==AscendingOrder);
-  
+
+  if( lhs == rhs )
+    return false;
+
   if( !lhs || !rhs )
-    return (asscend ? lhs.get()<rhs.get() : lhs.get()>rhs.get());
+    return (asscend ? (lhs.get() < rhs.get()) : (lhs.get() > rhs.get()));
 
   switch( column )
   {
     case kMean:
-      return (asscend ? lhs->mean()<rhs->mean() : lhs->mean()>rhs->mean());
+      return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+
     case kFwhm:
     {
       const double lw = lhs->gausPeak() ? lhs->sigma() : 0.5*lhs->roiWidth();
       const double rw = rhs->gausPeak() ? rhs->sigma() : 0.5*rhs->roiWidth();
-      return (asscend ? lw<rw : lw>rw);
+      return (asscend ? (lw < rw) : (lw > rw));
     }//case kFwhm:
       
     case kCps:  //We dont have live time, but if peaks are for same spectrum, it doesnt matter
     case kAmplitude:
-      return (asscend ? lhs->peakArea()<rhs->peakArea() : lhs->peakArea()>rhs->peakArea());
-      
+      return (asscend ? (lhs->peakArea() < rhs->peakArea()) : (lhs->peakArea() > rhs->peakArea()));
+
     case kUserLabel:
-      return (asscend ? lhs->userLabel()<rhs->userLabel() : lhs->userLabel()>rhs->userLabel());
+    {
+      if( lhs->userLabel() == lhs->userLabel() )
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+      return (asscend ? (lhs->userLabel() < rhs->userLabel()) : (lhs->userLabel() > rhs->userLabel()));
+    }
+
     case kPeakLineColor:
-      return (asscend ? lhs->lineColor().cssText()<rhs->lineColor().cssText() : lhs->lineColor().cssText()>rhs->lineColor().cssText());
+    {
+      const std::string lhsColor = lhs->lineColor().cssText();
+      const std::string rhsColor = rhs->lineColor().cssText();
+
+      if( lhsColor == rhsColor )
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+      return (asscend ? (lhsColor < rhsColor) : (lhsColor > rhsColor));
+    }
+
     case kHasSkew:
-      return (asscend ? lhs->skewType()<rhs->skewType() : lhs->skewType()>rhs->skewType());
+    {
+      if( lhs->skewType() == rhs->skewType() )
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+      return (asscend ? (lhs->skewType() < rhs->skewType()) : (lhs->skewType() > rhs->skewType()));
+    }
     case kSkewAmount:
       return true;
+
     case kType:
-      return (asscend ? lhs->gausPeak()<rhs->gausPeak() : lhs->gausPeak()>rhs->gausPeak());
+    {
+      if( lhs->gausPeak() == rhs->gausPeak() )
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+
+      return (asscend ? (lhs->gausPeak() < rhs->gausPeak()) : (lhs->gausPeak() > rhs->gausPeak()));
+    }
+
     case kLowerX:
-      return (asscend ? lhs->lowerX()<rhs->lowerX() : lhs->lowerX()>rhs->lowerX());
+      return (asscend ? (lhs->lowerX() < rhs->lowerX()) : (lhs->lowerX() > rhs->lowerX()));
+
     case kUpperX:
-      return (asscend ? lhs->upperX()<rhs->upperX() : lhs->upperX()>rhs->upperX());
+      return (asscend ? (lhs->upperX() < rhs->upperX()) : (lhs->upperX() > rhs->upperX()));
+
     case kRoiCounts:
     {
       double lhs_area( 0.0 ), rhs_area( 0.0 );
@@ -3579,15 +3609,26 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
         }
       }
       
-      return (asscend ? (lhs_area<rhs_area) : (lhs_area>rhs_area));
+      return (asscend ? (lhs_area < rhs_area) : (lhs_area > rhs_area));
     }//case kRoiCounts:
 
     case kContinuumType:
-      return (asscend ? lhs->continuum()->type()<rhs->continuum()->type() : lhs->continuum()->type()>rhs->continuum()->type());
+    {
+      const PeakContinuum::OffsetType lhsType = lhs->continuum()->type();
+      const PeakContinuum::OffsetType rhsType = rhs->continuum()->type();
+
+      if( lhsType == rhsType )
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+      return (asscend ? (lhsType < rhsType) : (lhsType > rhsType) );
+    }
+
     case kIsotope:
     {
       const SandiaDecay::Nuclide *lhsParent = lhs->parentNuclide();
       const SandiaDecay::Nuclide *rhsParent = rhs->parentNuclide();
+
+     if( lhsParent == rhsParent )
+       return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
 
       bool thisorder = false;
       if( !lhsParent )
@@ -3613,12 +3654,11 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
         if( rhs->hasSourceGammaAssigned() )
           rhsEnergy = rhs->gammaParticleEnergy();
       }catch(std::exception &){}
-      
+
       if( lhs == rhs )
-        return false;
-      
-      const bool thisorder = (lhsEnergy < rhsEnergy);
-      return (asscend ? thisorder : (!thisorder));
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+
+      return (asscend ? (lhsEnergy < rhsEnergy) : (lhsEnergy > rhsEnergy));
     }//case kPhotoPeakEnergy:
 
     case kDifference:
@@ -3635,27 +3675,41 @@ bool PeakModel::compare( const PeakShrdPtr &lhs, const PeakShrdPtr &rhs,
         if( rhs->hasSourceGammaAssigned() )
           rhsdiff = rhs->gammaParticleEnergy() - rhs->mean();
       }catch(std::exception &){}
-      
-      const bool thisorder = (lhsdiff < rhsdiff);
-      return (asscend ? thisorder : (!thisorder));
+
+      return (asscend ? (lhsdiff < rhsdiff) : (lhsdiff > rhsdiff));
     }//case kDifference:
       
     case kUseForShieldingSourceFit:
     {
-      const bool thisorder = lhs->useForShieldingSourceFit() < rhs->useForShieldingSourceFit();
-      return (asscend ? thisorder : (!thisorder));
+      const bool lhsUse = lhs->useForShieldingSourceFit();
+      const bool rhsUse = rhs->useForShieldingSourceFit();
+
+      if( lhsUse == rhsUse )
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+
+      return (asscend ? (lhsUse < rhsUse) : (rhsUse < lhsUse));
     }//case kUseForShieldingSourceFit:
 
     case kUseForCalibration:
     {
-      const bool thisorder = lhs->useForEnergyCalibration() < rhs->useForEnergyCalibration();
-      return (asscend ? thisorder : (!thisorder));
+      const bool lhsUse = lhs->useForEnergyCalibration();
+      const bool rhsUse = rhs->useForEnergyCalibration();
+
+      if( lhsUse == rhsUse )
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+
+      return (asscend ? (lhsUse < rhsUse) : (rhsUse < lhsUse));
     }//case kUseForCalibration:
       
     case kUseForManualRelEff:
     {
-      const bool thisorder = lhs->useForManualRelEff() < rhs->useForManualRelEff();
-      return (asscend ? thisorder : (!thisorder));
+      const bool lhsUse = lhs->useForManualRelEff();
+      const bool rhsUse = rhs->useForManualRelEff();
+
+      if( lhsUse == rhsUse )
+        return (asscend ? (lhs->mean() < rhs->mean()) : (lhs->mean() > rhs->mean()));
+
+      return (asscend ? (lhsUse < rhsUse) : (rhsUse < lhsUse));
     }//case kUseForManualRelEff:
 
     case kCandidateIsotopes:

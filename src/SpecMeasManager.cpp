@@ -154,6 +154,10 @@
 #include "InterSpec/QRSpectrum.h"
 #endif
 
+#if( USE_BATCH_TOOLS )
+#include "InterSpec/BatchGuiWidget.h"
+#endif
+
 using namespace Wt;
 using namespace std;
 
@@ -1392,12 +1396,18 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
     m_foregroundDragNDrop( new FileDragUploadResource(this) ),
     m_secondForegroundDragNDrop( new FileDragUploadResource(this) ),
     m_backgroundDragNDrop( new FileDragUploadResource(this) ),
+#if( USE_BATCH_TOOLS )
+    m_batchDragNDrop( nullptr ),
+#endif
     m_multiUrlSpectrumDialog( nullptr ),
     m_destructMutex( new std::mutex() ),
     m_destructed( new bool(false) ),
     m_previousStatesDialog( nullptr ),
     m_processingUploadDialog( nullptr ),
     m_nonSpecFileDialog( nullptr ),
+#if( USE_BATCH_TOOLS )
+    m_batchDialog( nullptr ),
+#endif
     m_processingUploadTimer{}
 {
   std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_blocker;
@@ -1443,6 +1453,12 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_backgroundDragNDrop->setUploadProgress( true );
   m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
+
+#if( USE_BATCH_TOOLS )
+  m_batchDragNDrop = new FileDragUploadResource( this );
+  m_batchDragNDrop->setUploadProgress( true );
+  m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
+#endif
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
@@ -1597,6 +1613,13 @@ FileDragUploadResource *SpecMeasManager::backgroundDragNDrop()
 {
   return m_backgroundDragNDrop;
 }
+
+#if( USE_BATCH_TOOLS )
+FileDragUploadResource *SpecMeasManager::batchDragNDrop()
+{
+  return m_batchDragNDrop;
+}
+#endif
 
 
 void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
@@ -1959,7 +1982,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   assert( !m_nonSpecFileDialog );
   
   m_nonSpecFileDialog = dialog;
-  cout << "Assigning m_nonSpecFileDialog to " << dialog << endl;
   
   // The dialog may get deleted, and never accepted, so we will hook up to the
   //  `destroyed()` signal to keep track of `m_nonSpecFileDialog`
@@ -3642,7 +3664,8 @@ void SpecMeasManager::handleFileDropWorker( const std::string &name,
   
  
   if( (name.length() > 4)
-     && SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
+     && (SpecUtils::iequals_ascii( name.substr(name.length()-4), ".zip")
+         || SpecUtils::iequals_ascii( name.substr(name.length()-4), ".tfa"))
      && handleZippedFile( name, spoolName, type ) )
   {
     return;
@@ -3719,6 +3742,22 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
                                                     name, spoolName, type, dialog, wApp ) );
 }//handleFileDrop(...)
 
+
+#if( USE_BATCH_TOOLS )
+void SpecMeasManager::showBatchDialog()
+{
+  if( m_batchDialog )
+    return;
+  
+  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
+  m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+}//void showBatchDialog()
+
+void SpecMeasManager::handleBatchDialogFinished()
+{
+  m_batchDialog = nullptr;
+}//void handleBatchDialogFinished()
+#endif
 
 #if( USE_QR_CODES )
 void SpecMeasManager::handleSpectrumUrl( std::string &&unencoded )
@@ -6094,10 +6133,15 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
         }//if( header->shouldSaveToDb() )
       }catch( FileToLargeForDbException &e )
       {
-        WString msg = WString::tr("smm-cant-save").arg( e.message() );
-        
+        const string save_size = SpecUtils::printCompact(e.m_saveSize/(1024.0*1024.0), 3) + " MB";
+        const string limit_size = SpecUtils::printCompact(e.m_limit/(1024.0*1024.0), 3) + " MB";
+
+        WString msg = WString::tr("smm-cant-save")
+          .arg( save_size )
+          .arg( limit_size );
+
         WServer::instance()->post( sessionID,
-                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgHigh ) );
+                  boost::bind( &postErrorMessage, msg, WarningWidget::WarningMsgMedium ) );
       }
       return;
     }//if( this is a new-to-us file )

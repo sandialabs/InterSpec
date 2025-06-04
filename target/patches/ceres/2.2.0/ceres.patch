@@ -1,0 +1,12 @@
+diff --git a/internal/ceres/file.cc b/internal/ceres/file.cc
+index 60d35fa..5ee7658 100644
+--- a/internal/ceres/file.cc
++++ b/internal/ceres/file.cc
+@@ -34,6 +34,7 @@
+ 
+ #include <cstdio>
+ #include <string>
++#include <cstdint>
+ 
+ #include "glog/logging.h"
+ 

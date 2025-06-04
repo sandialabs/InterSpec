@@ -75,12 +75,8 @@ FileDragUploadResource::FileDragUploadResource( WObject *parent  )
 FileDragUploadResource::~FileDragUploadResource()
 {
   beingDeleted();
-  for( size_t i = 0; i < m_spooledFiles.size(); ++i )
-  {
-    const bool success = SpecUtils::remove_file( m_spooledFiles[i] );
-    if( !success )
-      cerr << "Warning, could not delete file '" << m_spooledFiles[i] << "'" << endl;
-  }
+  
+  clearSpooledFiles();
 }
 
 
@@ -93,27 +89,6 @@ Wt::Signal<std::string,std::string > &FileDragUploadResource::fileDrop() //<disp
 void FileDragUploadResource::handleRequest( const Http::Request& request,
                                             Http::Response& response )
 {
-// TODO: It's assuming handleRequest(...) is only called once all the data is uploaded; this needs
-//       to be verified.
-  
-// TODO: Currently the client side JS FileUploadFcn(...) function just puts file contents inside the
-//  the POST body, so it doesnt look like files, for all the handling we do here.
-//  We could, and maybe should, use a <form /> to upload the files to take advantage of the
-//  WResource spooling of files, and uploading multiple files and all that, like could be done in
-//  this next bit of commented out text.
-//
-//    std::vector<Http::UploadedFile> files;
-//    std::pair<Http::UploadedFileMap::const_iterator, Http::UploadedFileMap::const_iterator> range
-//               = request.uploadedFiles().equal_range(key);
-//    for(Http::UploadedFileMap::const_iterator i = range.first; i != range.second; ++i)
-//      files.push_back(i->second);
-//    for (unsigned i = 0; i < files.size(); ++i)
-//      if (!files[i].clientFileName().empty())
-//      {
-//        m_spooledFiles.push_back( files[i].spoolFileName() );
-//        m_fileDrop.emit( files[i].clientFileName(), files[i].spoolFileName() );
-//      }
-  
   response.setMimeType("text/html; charset=utf-8");
   response.addHeader("Expires", "Sun, 14 Jun 2020 00:00:00 GMT");
   response.addHeader("Cache-Control", "max-age=315360000");
@@ -135,6 +110,14 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
     response.setStatus( 403 ); //Forbidden
     return;
   }//if( !app )
+
+  WApplication::UpdateLock lock( app );
+  if( !lock )
+  {
+    response.setStatus( 500 );  //Internal Server error
+    output << "App session may be over.";
+    return;
+  }//if( !lock )
   
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP )
@@ -143,6 +126,8 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
   
   if( (isFilePath == "1") || (isFilePath == "true") || (isFilePath == "yes") )
   {
+    assert( request.uploadedFiles().empty() );
+    
     try
     {
       // We'll make sure this is the primary electron instance making this request, jic
@@ -156,7 +141,6 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       if( clientAddress.find("127.0.0.1") == std::string::npos )
         throw runtime_error( "Opening via full path only allowed from localhost" );
 
-      
       std::istreambuf_iterator<char> eos;
       string body(std::istreambuf_iterator<char>(request.in()), eos);
       
@@ -180,62 +164,75 @@ void FileDragUploadResource::handleRequest( const Http::Request& request,
       }// end test if can read file
       
       cout << "Will open spectrum file using path='" << fullpath << "'" << endl;
-      
-      WApplication::UpdateLock lock( app );
 
+      m_spooledFiles.push_back( {SpecUtils::filename(fullpath), fullpath, false} );
       m_fileDrop.emit( SpecUtils::filename(fullpath), fullpath );
-      
-      app->triggerUpdate();
     }catch( std::exception &e )
     {
       cerr << "Failed to parse fullpath POST request: " << e.what() << " - returning status 406.\n";
       
       response.setStatus( 406 );
-      return;
     }//try / catch to figure out how to interpret
     
+    app->triggerUpdate();
     return;
   }//if( (fullpath == "1") || (fullpath == "true") || (fullpath == "yes") )
 #endif  //BUILD_AS_ELECTRON_APP
   
-  const int datalen = request.contentLength();
-
-  if( datalen )
+  // TODO: Instead of having multiple Resources we upload files to, we could have a single
+  //       upload Resource, and instead use "foreground", "background", "secondary", "multiple", "batch"
+  //       as the parameter name, which would then let us upload multiple files at the same time.
+  //       The native filesystem path stuff could also be easily modified.
+  assert( request.uploadedFiles().size() <= 1 );
+  
+  for( const Wt::Http::UploadedFileMap::value_type &parname_file : request.uploadedFiles() )
   {
-    const string temp_name = SpecUtils::temp_file_name( wApp->sessionId(), InterSpecApp::tempDirectory() );
-#ifdef _WIN32
-    const wstring wtemp_name = SpecUtils::convert_from_utf8_to_utf16(temp_name);
-    ofstream spool_file( wtemp_name.c_str(), ios::binary|ios::out );
-#else
-    ofstream spool_file( temp_name.c_str(), ios::binary|ios::out );
-#endif
+    assert( parname_file.first == "file" );
     
-    if( spool_file.is_open() )
+    const Wt::Http::UploadedFile &file = parname_file.second;
+    assert( !file.clientFileName().empty() );
+    
+    if( !file.clientFileName().empty() )
     {
-      spool_file << request.in().rdbuf();
-      spool_file.close();
-      const string userNameEncoded = request.headerValue( "X-File-Name" );
-      const string userName = Wt::Utils::urlDecode(userNameEncoded);
-      
-      //cerr << "\n\n\nuserName = '" << userName << "'\n\n" << endl;
-      
-      auto app = WApplication::instance();
-      WApplication::UpdateLock lock( app );
-      
-      if( lock )
-      {
-        m_spooledFiles.push_back( temp_name );
-        m_fileDrop.emit( userName, temp_name );
-        app->triggerUpdate();
-      }else
-      {
-        response.setStatus( 500 );  //Internal Server error
-        output << "App session may be over.";
-      }
-    }else
-    {
-      response.setStatus( 500 );  //Internal Server error
-      output << "Coulnt open temporary file on server";
-    }//if( spool_file.is_open() ) / else
-  }//if( request.contentLength() )
+      const string &clientFileName = file.clientFileName();
+      const string &spoolFileName = file.spoolFileName();
+      file.stealSpoolFile(); //Take ownership of this file
+      m_spooledFiles.emplace_back( clientFileName, spoolFileName, true );
+      m_fileDrop.emit( clientFileName, spoolFileName );
+    }
+  }//for( const Wt::Http::UploadedFileMap::value_type &parname_file : request.uploadedFiles() )
+
+  app->triggerUpdate();
 }//void FileDragUploadResource::handleRequest(...)
+
+
+vector<tuple<string,string,bool>> FileDragUploadResource::takeSpooledFiles()
+{
+  vector<tuple<string,string,bool>> files;
+  files.swap( m_spooledFiles );
+  return files;
+}
+
+const std::vector<std::tuple<std::string,std::string,bool>> &FileDragUploadResource::spooledFiles() const
+{
+  return m_spooledFiles;
+}
+
+
+void FileDragUploadResource::clearSpooledFiles()
+{
+  for( size_t i = 0; i < m_spooledFiles.size(); ++i )
+  {
+    const bool isTempFile = std::get<2>( m_spooledFiles[i] );
+
+    if( isTempFile )
+    {
+      const string &spooledName = std::get<1>( m_spooledFiles[i] );
+      const bool success = SpecUtils::remove_file( spooledName );
+      if( !success )
+        cerr << "FileDragUploadResource: Warning, could not delete file '" << spooledName << "'" << endl;
+    }
+  }//for( size_t i = 0; i < m_spooledFiles.size(); ++i )
+
+  m_spooledFiles.clear();
+}//void clearSpooledFiles()

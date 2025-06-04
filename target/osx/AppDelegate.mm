@@ -51,10 +51,6 @@
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
-#if( USE_SPECRUM_FILE_QUERY_WIDGET )
-#include "InterSpec/SpecFileQueryWidget.h"
-#endif
-
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SerialToDetectorModel.h"
 
@@ -677,6 +673,7 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   }
 }//themeChanged
 
+
 //WKUIDelegate
 //webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:
 //webViewDidClose:
@@ -688,11 +685,22 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   // Create the File Open Dialog class.
   NSOpenPanel *openDlg = [NSOpenPanel openPanel];
   
-  bool chooseDirectory = false;
-  
-#if( USE_SPECRUM_FILE_QUERY_WIDGET )
-  chooseDirectory = SpecFileQuery::isSelectingDirectory();
-#endif
+  // You can allow the WKWebView to select directories, using the Wt::WFileUpload,
+  //  by setting the 'webkitdirectory' attribute on the input element of the WFileUpload,
+  //  through a call like:
+  //    upload->doJavaScript( "document.querySelector('#" + upload->id() + " input').setAttribute('webkitdirectory', true);" );
+  //    (and similarly to allow multiple files with the attribute 'multiple')
+  //  The user can then select directories, and the following will will correctly get what we want,
+  //  and below in the obj-c we can get the path of the directory selected, and pass it off to other
+  //  parts of the program, or the DOM, or whatever.
+  //  But the cleaner way of doing things is to call `macOsUtils::showFilePicker(...)`,
+  //  Leaving in this mechanism, and note in the code for now because it is likely we will
+  //  want a multi-file and/or directory selector, that uses a WFileUpload as the presentation
+  //  to the user, so it would be reasonable to create a class that inherits from, or contains,
+  //  WFileUpload and will just kinda take care of providing native filesystem paths normally,
+  //  but will fallback to html upload.
+  const BOOL chooseDirectory = [parameters allowsDirectories];
+  const BOOL multiSelect = [parameters allowsMultipleSelection]; //Untested
   
   if( chooseDirectory )
   {
@@ -704,21 +712,56 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     [openDlg setCanChooseDirectories:NO];
   }
   
+  if( multiSelect )
+    [openDlg setAllowsMultipleSelection: YES];
+  
   if( [openDlg runModal] == NSModalResponseOK )
   {
-    NSArray* files = [[openDlg URLs]valueForKey:@"relativePath"];
+    NSArray<NSURL *> *urls = [openDlg URLs];
     
-#if( USE_SPECRUM_FILE_QUERY_WIDGET )
-    if( chooseDirectory && [files count] )
-    {
-      NSURL *u = [files objectAtIndex:0];
-      if( u && [u respondsToSelector:@selector(UTF8String)]) {
-        SpecFileQuery::setSearchDirectory( [u UTF8String] );
+    /*
+    {//Begin get user selected paths, and set to DOM, and wherever else in memory wanted
+      Wt::Json::Array json_array;
+      
+      // Form some JSON to set a variable in JS client-side, that can then make the call to server code
+      for (NSURL *url in urls)
+      {
+        const char *fs_path = [url fileSystemRepresentation];  //Will be UTF-8 encoded
+        json_array.push_back( Wt::WString::fromUTF8(fs_path) );
       }
-    }
-#endif
+      
+      if( json_array.empty() )
+      {
+        //Probably got file promise(s) here - we'll just fall-back to normal file upload, and
+        //  let WkWebView take care of getting the files.
+        NSString *js = @"(function(){$(document).data('SelectedPaths',null);})()";
+        [_InterSpecWebView evaluateJavaScript: js completionHandler:nil];
+        
+        NSLog( @"Cleared path data to JS." );
+      }else
+      {
+        const std::string json_data = Wt::Json::serialize(json_array);
+        const std::string js_str =
+        "(function(){\n\t"
+        "let fns = {};\n\t"
+        "fns.time = new Date();\n\t"
+        "fns.isDir = " + std::string(chooseDirectory ? "1" : "0") + ";"
+        "fns.filenames = " + json_data + ";\n\t"
+        "$(document).data('SelectedPaths',fns);\n\t"
+        "console.log(\"Set SelectedPaths paths\",fns);\n"
+        "})();";
+        
+        NSString *js = [[NSString alloc] initWithCString:js_str.c_str() encoding:NSUTF8StringEncoding];
+        [_InterSpecWebView evaluateJavaScript: js completionHandler:nil];
+        
+        NSLog( @"Set path data to JS=%s", js_str.c_str() );
+      }//if( !json_array.empty() )
+      
+      // Set to wherever else in memory wanted
+    }//end get user selected paths, and set to DOM, and wherever else in memory wanted
+    */
     
-    completionHandler( [openDlg URLs] );
+    completionHandler( urls );
   }else
   {
     completionHandler( nil );

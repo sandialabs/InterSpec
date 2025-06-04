@@ -169,7 +169,6 @@ T get_atten_coef_for_an( const T &an, const float energy )
 
   const double lower_mu = MassAttenuation::massAttenuationCoefficientElement(lower_an, energy);
   const double upper_mu = MassAttenuation::massAttenuationCoefficientElement(upper_an, energy);
-  
   const T anfrac = an - static_cast<double>(lower_an);  //Looks like this preserves the derivative
   const T mu = (1.0 - anfrac)*lower_mu + anfrac*upper_mu;
   

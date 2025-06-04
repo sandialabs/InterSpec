@@ -47,6 +47,26 @@
 
 using namespace std;
 
+const char * const BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker = ":--DisplayName--:";
+
+namespace
+{
+  std::string get_report_template_name( const std::string &template_path )
+  {
+    const size_t pos = template_path.find( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker );
+    if( pos == std::string::npos )
+      return template_path;
+    return template_path.substr( pos + strlen( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker ) );
+  }
+
+  std::string get_report_template_path( const std::string &template_path )
+  {
+    const size_t pos = template_path.find( BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker );
+    if( pos == std::string::npos )
+      return template_path;
+    return template_path.substr( 0, pos );
+  }
+}//namespace
 
 namespace BatchPeak
 {
@@ -321,9 +341,12 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
 
   
 void fit_peaks_in_files( const std::string &exemplar_filename,
+                        std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::set<int> &exemplar_sample_nums,
                           const std::vector<std::string> &files,
-                        const ::BatchPeak::BatchPeakFitOptions &options )
+                        std::vector<std::shared_ptr<SpecMeas>> cached_files,
+                        const ::BatchPeak::BatchPeakFitOptions &options,
+                        BatchPeakFitSummary * const results )
 {
   vector<string> warnings;
   
@@ -335,7 +358,11 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     
   if( options.write_n42_with_results && options.output_dir.empty() )
     throw runtime_error( "If you specify to write N42 files with the fit peaks, you must specify an output directory." );
-  
+
+  if( !cached_files.empty() && (cached_files.size() != files.size()) )
+    throw runtime_error( "If you provide any cached intput files, the input vector of SpecMeas objects"
+                        " must be the same size as input filenames" );
+
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   if( !db )
   {
@@ -363,13 +390,27 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   summary_json["InputFiles"] = files;
   for( const pair<string,string> &key_val : spec_chart_js_and_css )
     summary_json[key_val.first] = key_val.second;
-  
-  std::shared_ptr<const SpecMeas> cached_exemplar_n42;
-  for( const string filename : files )
+
+  // Resize per-file results to match the input file size
+  if( results )
   {
+    results->file_results.resize( files.size() );
+    results->file_json.resize( files.size() );
+    results->file_peak_csvs.resize( files.size() );
+    results->file_reports.resize( files.size() );
+  }//if( results )
+
+  for( size_t file_index = 0; file_index < files.size(); file_index += 1 )
+  {
+    const string filename = files[file_index];
+
+    std::shared_ptr<SpecMeas> cached_file;
+    if( file_index < cached_files.size() )
+      cached_file = cached_files[file_index];
+
     const BatchPeak::BatchPeakFitResult fit_results
                  = fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
-                                     cached_exemplar_n42, filename, nullptr, {}, options );
+                                     cached_exemplar_n42, filename, cached_file, {}, options );
     
     if( !cached_exemplar_n42 )
       cached_exemplar_n42 = fit_results.exemplar;
@@ -391,23 +432,36 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     
     for( const pair<string,string> &key_val : spec_chart_js_and_css )
       data[key_val.first] = key_val.second;
-    
-    for( string tmplt : options.report_templates )
+
+    if( results )
     {
+      results->file_json[file_index] = data.dump(2);
+      results->file_results[file_index] = fit_results;
+      results->file_reports[file_index].resize( options.report_templates.size() );
+    }
+
+    for( size_t tmplt_index = 0; tmplt_index < options.report_templates.size(); ++tmplt_index )
+    {
+      const std::string tmplt_path = get_report_template_path( options.report_templates[tmplt_index] );
+      const std::string tmplt_name = get_report_template_name( options.report_templates[tmplt_index] );
+
       try
       {
-        const string rpt = BatchInfoLog::render_template( tmplt, env,
+        const string rpt = BatchInfoLog::render_template( tmplt_path, env,
                             BatchInfoLog::TemplateRenderType::PeakFitIndividual, options, data );
-        
-        if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt, "html" ) )
+
+        if( results )
+          results->file_reports[file_index][tmplt_index] = rpt;
+
+        if( options.to_stdout && !SpecUtils::iequals_ascii(tmplt_path, "html" ) )
           cout << "\n\n" << rpt << endl << endl;
         
         if( !options.output_dir.empty() )
         {
           const string out_file
-                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt,
+                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt_name,
                                   BatchInfoLog::TemplateRenderType::PeakFitIndividual, options );
-          
+
           if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
           {
             warnings.push_back( "Not writing '" + out_file + "', as it would overwrite a file."
@@ -430,7 +484,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
       {
         const string msg = "Error templating results (" + e.type + ": line "
         + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
-        + " of '" + tmplt + "'): " + e.message + ". While processing '" + filename + "'.";
+        + " of '" + tmplt_path + "'): " + e.message + ". While processing '" + filename + "'.";
         
         cerr << msg << endl;
         warnings.push_back( msg );
@@ -521,7 +575,15 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
         }
       }//if( SpecUtils::is_file( outcsv ) ) / else
     }//if( !options.output_dir.empty() )
-    
+
+    if( results )
+    {
+      stringstream out_csv;
+      PeakModel::write_peak_csv( out_csv, SpecUtils::filename(filename),
+                                PeakModel::PeakCsvType::Full, fit_peaks, fit_results.spectrum );
+      results->file_peak_csvs[file_index] = out_csv.str();
+    }
+
     if( options.to_stdout )
     {
       const string leaf_name = SpecUtils::filename(filename);
@@ -530,8 +592,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
                                 fit_peaks, fit_results.spectrum );
       cout << endl;
     }
-  }//for( const string filename : files )
-    
+  }//for( size_t file_index = 0; file_index < files.size(); file_index += 1 )
+
   // Add any encountered errors to output summary JSON
   for( const string &warn : warnings )
     summary_json["Warnings"].push_back( warn );
@@ -539,18 +601,24 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   // Now write summary report(s)
   for( const string &summary_tmplt : options.summary_report_templates )
   {
+    const std::string tmplt_path = get_report_template_path( summary_tmplt );
+    const std::string tmplt_name = get_report_template_name( summary_tmplt );
+
     try
     {
-      const string rpt = BatchInfoLog::render_template( summary_tmplt, env,
+      const string rpt = BatchInfoLog::render_template( tmplt_path, env,
                        BatchInfoLog::TemplateRenderType::PeakFitSummary, options, summary_json );
-      
+
+      if( results )
+        results->summary_reports.push_back( rpt );
+
       if( options.to_stdout && !SpecUtils::iequals_ascii(summary_tmplt, "html" ) )
         cout << "\n\n" << rpt << endl << endl;
       
       if( !options.output_dir.empty() )
       {
         const string out_file
-                    = BatchInfoLog::suggested_output_report_filename( "", summary_tmplt,
+                    = BatchInfoLog::suggested_output_report_filename( "", tmplt_name,
                                     BatchInfoLog::TemplateRenderType::PeakFitSummary, options );
         
         if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
@@ -575,7 +643,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     {
       const string msg = "Error templating summary peak fit output (" + e.type + ": line "
       + std::to_string(e.location.line) + ", column " + std::to_string(e.location.column)
-      + " of '" + summary_tmplt + "'): " + e.message + ".";
+      + " of '" + tmplt_path + "'): " + e.message + ".";
       
       cerr << msg << endl;
       warnings.push_back( msg );
@@ -593,6 +661,17 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     cerr << endl << endl;
   for( const auto warn : warnings )
     cerr << warn << endl;
+
+  if( results )
+  {
+    results->options = options;
+    results->exemplar_filename = exemplar_filename;
+    results->exemplar = cached_exemplar_n42;
+    results->exemplar_sample_nums = exemplar_sample_nums;
+
+    results->summary_json = summary_json.dump(2);
+    results->warnings = warnings;
+  }
 }//fit_peaks_in_files(...)
   
   
@@ -611,7 +690,7 @@ void get_exemplar_spectrum_and_peaks(
   }else if( !exemplar_sample_nums.empty() )
   {
     const set<set<int>> withPeakSampleNums = exemplar_n42->sampleNumsWithPeaks();
-    if( withPeakSampleNums.count(exemplar_sample_nums) )
+    if( !withPeakSampleNums.count(exemplar_sample_nums) )
       throw runtime_error( "The specified exemplar sample numbers did not have peaks associated with them." );
       
     exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
@@ -684,6 +763,31 @@ void get_exemplar_spectrum_and_peaks(
     exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
     exemplar_spectrum = exemplar_n42->sum_measurements( exemplar_sample_nums, det_names, nullptr );
   }//if( sample nums specified ) / else ( single meas ) / else ( search for peaks )
+
+  if( !exemplar_peaks )
+    return;
+
+  //We need to make sure that the exemplar peaks have unique continuums
+  //  This is because the peak fitter will modify the continuums, and we need to make sure that
+  //  the exemplar peaks have the same continuums as the fit peaks
+  shared_ptr<deque<shared_ptr<const PeakDef>>> exemplar_peaks_copy = make_shared<deque<shared_ptr<const PeakDef>>>();
+  
+  std::map<std::shared_ptr<const PeakContinuum>, std::shared_ptr<PeakContinuum>> cont_map;
+  for( size_t peak_index = 0; peak_index < exemplar_peaks->size(); peak_index += 1 )
+  {
+    const shared_ptr<const PeakDef> &peak = exemplar_peaks->at( peak_index );
+    assert( peak );
+    const shared_ptr<const PeakContinuum> cont = peak->continuum();
+    auto pos = cont_map.find( cont );
+    if( pos == end(cont_map) )
+      pos = cont_map.insert( { cont, std::make_shared<PeakContinuum>( *cont ) } ).first;
+    shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( *peak );
+    new_peak->setContinuum( pos->second );
+    
+    exemplar_peaks_copy->push_back( new_peak );
+  }//for( size_t peak_index = 0; peak_index < exemplar_peaks->size(); peak_index += 1 )
+
+  exemplar_peaks = exemplar_peaks_copy;
 }//void get_exemplar_spectrum_and_peaks(...)
   
 
@@ -696,8 +800,8 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                           const BatchPeakFitOptions &options )
 {
   shared_ptr<const SpecMeas> exemplar_n42 = cached_exemplar_n42;
-  
-  if( !exemplar_n42 )
+
+  if( !exemplar_n42 && !exemplar_filename.empty() )
   {
     // Read in the N42 file exported from InterSpec.
     //  This file should have good energy calibration applied, have the peaks fit that you care
@@ -734,11 +838,14 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     if( exemplar_spectrum->num_gamma_channels() < 64  )
       throw runtime_error( "Exemplar spectrum doesnt have enough gamma channels." );
   }//if( exemplar_is_n42 )
-  
+
+
   assert( !exemplar_n42 || exemplar_spectrum );
   assert( !exemplar_n42 || (exemplar_peaks && !exemplar_peaks->empty()) );
   
   
+
+
   BatchPeakFitResult results;
   results.file_path = exemplar_filename;
   results.options = options;
@@ -854,7 +961,15 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     {
       try
       {
-        propagate_energy_cal( exemplar_spectrum->energy_calibration(), spec, specfile, used_sample_nums );
+        // We will make a copy of the energy calibration in case we modify it further in the future; we dont
+        //  want to modify the exemplar energy calibration
+        shared_ptr<const SpecUtils::EnergyCalibration> exemplar_cal = exemplar_spectrum->energy_calibration();
+        if( !exemplar_cal || !exemplar_cal->valid() )
+          throw runtime_error( "Exemplar spectrum doesnt have a valid energy calibration." );
+        
+        shared_ptr<SpecUtils::EnergyCalibration> spec_cal = make_shared<SpecUtils::EnergyCalibration>( *exemplar_cal );
+
+        propagate_energy_cal( spec_cal, spec, specfile, used_sample_nums );
       }catch( std::exception &e )
       {
         results.warnings.push_back( "Not using exemplar energy calibration for '" + filename + "': "
@@ -872,11 +987,17 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     
     set<int> back_sample_nums;
     shared_ptr<SpecMeas> background_n42;
-    if( !options.background_subtract_file.empty() )
+    if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     {
-      background_n42 = make_shared<SpecMeas>();
-      if( !background_n42->load_file( options.background_subtract_file, SpecUtils::ParserType::Auto ) )
-        throw runtime_error( "Couldnt open background file '" + options.background_subtract_file + "'" );
+      if( options.cached_background_subtract_spec  )
+      {
+        background_n42 = options.cached_background_subtract_spec;
+      }else
+      {
+        background_n42 = make_shared<SpecMeas>();
+        if( !background_n42->load_file( options.background_subtract_file, SpecUtils::ParserType::Auto ) )
+          throw runtime_error( "Couldnt open background file '" + options.background_subtract_file + "'" );
+      }
       
       if( options.background_subtract_samples.empty() )
       {
@@ -929,7 +1050,12 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         {
           try
           {
-            propagate_energy_cal( exemplar_spectrum->energy_calibration(), results.background, background_n42, back_sample_nums );
+             shared_ptr<const SpecUtils::EnergyCalibration> exemplar_cal = exemplar_spectrum->energy_calibration();
+            if( !exemplar_cal || !exemplar_cal->valid() )
+              throw runtime_error( "Exemplar spectrum doesnt have a valid energy calibration." );        
+            shared_ptr<SpecUtils::EnergyCalibration> spec_cal = make_shared<SpecUtils::EnergyCalibration>( *exemplar_cal );
+
+            propagate_energy_cal( spec_cal, results.background, background_n42, back_sample_nums );
           }catch( std::exception &e )
           {
             results.warnings.push_back( "Not using exemplar energy calibration for background of '" + filename + "': "
@@ -1004,254 +1130,272 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     
     results.sample_numbers = used_sample_nums;
     results.spectrum = spec;
-    
-    vector<PeakDef> starting_peaks;
-    
-    if( exemplar_peaks )
+
+    deque<shared_ptr<const PeakDef>> fit_peaks_ptrs;
+    set<shared_ptr<const PeakDef>> unused_exemplar_peaks;
+
+    if( options.fit_all_peaks )
     {
-      for( const auto p : *exemplar_peaks )
-        starting_peaks.push_back( *p );
+      std::shared_ptr<const DetectorPeakResponse> det;
+      if( exemplar_n42 )
+        det = exemplar_n42->detector();
+
+      // TODO: 'peak-stat-threshold' and 'peak-shape-threshold' are not currently taken into account.
+      if( (options.peak_stat_threshold != 2.0) || (options.peak_hypothesis_threshold != 1.0) )
+        results.warnings.push_back( "peak-stat-threshold and peak-hypothesis-threshold are currently not used when fitting for all peaks." );
+
+      vector<shared_ptr<const PeakDef>> fit_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spec, det, nullptr, false );
+      fit_peaks_ptrs.insert( end(fit_peaks_ptrs), begin(fit_peaks), end(fit_peaks) );
     }else
     {
-      // Open the input CSV file - and get those peaks.
-      assert( !exemplar_n42 );
-      
+      vector<PeakDef> starting_peaks;
+
+      if( exemplar_peaks )
+      {
+        for( const auto p : *exemplar_peaks )
+          starting_peaks.push_back( *p );
+      }else
+      {
+        // Open the input CSV file - and get those peaks.
+        assert( !exemplar_n42 );
+
 #ifdef _WIN32
-      const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(exemplar_filename);
-      std::ifstream input( wfilename.c_str() );
+        const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(exemplar_filename);
+        std::ifstream input( wfilename.c_str() );
 #else
-      std::ifstream input( exemplar_filename.c_str() );
+        std::ifstream input( exemplar_filename.c_str() );
 #endif
-      
-      if( !input.is_open() )
-        throw runtime_error( "Exemplar peak file, '" + exemplar_filename + "', could not be opened." );
-      
-      try
+
+        if( !input.is_open() )
+          throw runtime_error( "Exemplar peak file, '" + exemplar_filename + "', could not be opened." );
+
+        try
+        {
+          starting_peaks = PeakModel::csv_to_candidate_fit_peaks( spec, input );
+        }catch( std::exception &e )
+        {
+          throw runtime_error( "Invalid input exemplar CSV peak file: " + string(e.what()) );
+        }
+
+        if( starting_peaks.empty() )
+        {
+          results.warnings.push_back( "No candidate peaks for file '" + filename + "', perhaps peaks from CSV were not good candidate peaks -- skipping file." );
+
+          return results;
+        }
+
+      }//if( !exemplar_peaks )
+
+      if( starting_peaks.empty() && !options.fit_all_peaks )
       {
-        starting_peaks = PeakModel::csv_to_candidate_fit_peaks( spec, input );
-      }catch( std::exception &e )
-      {
-        throw runtime_error( "Invalid input exemplar CSV peak file: " + string(e.what()) );
-      }
-      
-      if( starting_peaks.empty() )
-      {
-        results.warnings.push_back( "No candidate peaks for file '" + filename + "', perhaps peaks from CSV were not good candidate peaks -- skipping file." );
-        
+        results.warnings.push_back( "No candidate peaks for '" + filename + "' - maybe a programming logic error?" );
+
         return results;
       }
-      
-    }//if( !exemplar_peaks )
-    
-    if( starting_peaks.empty() )
-    {
-      results.warnings.push_back( "No candidate peaks for '" + filename + "' - maybe a programming logic error?" );
-      
-      return results;
-    }
-    
-    // Sort the peaks by mean even though its probably already sorted
-    std::sort( begin(starting_peaks), end(starting_peaks), &PeakDef::lessThanByMean );
-    
-    results.exemplar_peaks.clear();
-    vector<shared_ptr<const PeakDef>> exemplar_peaks;
-    set<shared_ptr<const PeakDef>> unused_exemplar_peaks;
-    for( const auto &p : starting_peaks )
-    {
-      auto ep = make_shared<PeakDef>(p);
-      results.exemplar_peaks.push_back( ep );
-      exemplar_peaks.push_back( ep );
-      unused_exemplar_peaks.insert( ep );
-      results.unfit_exemplar_peaks.push_back( ep ); //We will clear this later on if unsuccessful
-    }
-    
-    //  We are re-using functions called by the GUI InterSpec, so there are some extra arguments
-    //  that arent totally applicable to us right now.
-    const double lower_energy = starting_peaks.front().mean() - 0.1;
-    const double uppper_energy = starting_peaks.back().mean() + 0.1;
-    
-    // We are not refitting peaks, because the areas may be wildly different.
-    const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
 
-    
-    const double ncausalitysigma = 0.0;
-    const double stat_threshold = options.peak_stat_threshold;
-    const double hypothesis_threshold = options.peak_hypothesis_threshold;
-    
-    vector<PeakDef> candidate_peaks;
-    for( const auto &p : starting_peaks )
-    {
-      PeakDef peak = p;
-      
-      // If you had selected for certain peak quantities to not be fit for in exemplar spectrum
-      //  in InterSpec, then by default those quantities also wouldnt be fit for here.
-      //  You can alter this similar to below.
-      //  For the moment we'll just make sure the peak amplitude will be fit for.
-      
-      //peak.setFitFor( PeakDef::Mean, true );
-      //peak.setFitFor( PeakDef::Sigma, false );
-      peak.setFitFor( PeakDef::GaussAmplitude, true );
-      
-      
-      // Lets also make sure starting amplitude is something halfway reasonable,
-      //  and continuum coefficients are reasonable starting values
-      if( peak.gausPeak() )
+      // Sort the peaks by mean even though its probably already sorted
+      std::sort( begin(starting_peaks), end(starting_peaks), &PeakDef::lessThanByMean );
+
+      results.exemplar_peaks.clear();
+      vector<shared_ptr<const PeakDef>> exemplar_peaks;
+      set<shared_ptr<const PeakDef>> unused_exemplar_peaks;
+      for( const auto &p : starting_peaks )
       {
-        std::shared_ptr<PeakContinuum> continuum = peak.continuum();
-        assert( continuum );
-        if( continuum && continuum->isPolynomial() )
-        {
-          const PeakContinuum::OffsetType origType = continuum->type();
-          continuum->calc_linear_continuum_eqn( spec, peak.mean(), peak.lowerX(), peak.upperX(), 2, 2 );
-          continuum->setType( origType );
-        }//if( continuum )
-        
-        const double mean = peak.mean(), fwhm = peak.fwhm();
-        const double data_area = spec->gamma_integral( mean - fwhm, mean + fwhm );
-        
-        if( (data_area > 1) && (peak.amplitude() > data_area) )
-        {
-          double cont_area = continuum->offset_integral(  mean - fwhm, mean + fwhm, spec );
-          if( (cont_area > 0.0) && (cont_area < data_area) )
-          {
-            peak.setAmplitude( data_area - cont_area );
-          }else
-          {
-            peak.setAmplitude( 0.25*data_area );
-          }
-          
-        }//if( exemplar peak is clearly much larger than data )
-      }//if( peak.gausPeak() )
-      
-      candidate_peaks.push_back( peak );
-    }//for( const auto &p : exemplar_peaks )
-    
-    const bool isHPGe = PeakFitUtils::is_high_res( spec );
-    results.original_energy_cal = spec ? spec->energy_calibration() : nullptr;
-    
-    if( options.refit_energy_cal )
-    {
-      // We will refit the energy calibration - maybe a few times - to really hone in on things
-      for( size_t i = 0; i < 5; ++i )
-      {
-        vector<PeakDef> energy_cal_peaks = candidate_peaks;
-        for( auto &peak : energy_cal_peaks )
-        {
-          peak.setFitFor( PeakDef::Mean, true );
-          peak.setFitFor( PeakDef::Sigma, true );
-          peak.setFitFor( PeakDef::GaussAmplitude, true );
-        }
-        
-        vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
-                                                stat_threshold, hypothesis_threshold,
-                                                energy_cal_peaks, spec, fit_options, isHPGe );
-        try
-        {
-          fit_energy_cal_from_fit_peaks( spec, peaks );
-        }catch( std::exception &e )
-        {
-          const string msg = "Energy calibration not performed: " + string(e.what());
-          auto pos = std::find( begin(results.warnings), end(results.warnings), msg );
-          if( pos == end(results.warnings) )
-            results.warnings.push_back( msg );
-        }
-      }//for( size_t i = 0; i < 1; ++i )
-      
-      // Propagate the updated energy cal to the result file
-      assert( spec && spec->energy_calibration() && spec->energy_calibration()->valid() );
-      shared_ptr<const SpecUtils::EnergyCalibration> new_cal = spec ? spec->energy_calibration() : nullptr;
-      if( new_cal && new_cal->valid() )
-      {
-        try
-        {
-          propagate_energy_cal( new_cal, spec, results.measurement, {} );
-        }catch( std::exception &e )
-        {
-          results.warnings.push_back( "Failed to propagate fit energy calibration in '" + filename + "'." );
-        }
-      }else
-      {
-        results.warnings.push_back( "Failed to fit an appropriate energy calibration in '" + filename + "'." );
+        auto ep = make_shared<PeakDef>(p);
+        results.exemplar_peaks.push_back( ep );
+        exemplar_peaks.push_back( ep );
+        unused_exemplar_peaks.insert( ep );
+        results.unfit_exemplar_peaks.push_back( ep ); //We will clear this later on if unsuccessful
       }
-      
-      results.refit_energy_cal = spec ? spec->energy_calibration() : nullptr;
-    }//if( options.refit_energy_cal )
-    
-    vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
-                                                stat_threshold, hypothesis_threshold,
-                                                candidate_peaks, spec, fit_options, isHPGe );
-#if( !USE_LM_PEAK_FIT )
-    // Re-fit the peaks again a few more times
-    for( size_t i = 0; i < 3; ++i )
-    {
-      Wt::WFlags<PeakFitLM::PeakFitLMOptions> re_fit_options;
-      re_fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
-      
-      fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
-                                  stat_threshold, hypothesis_threshold,
-                                  fit_peaks, spec, re_fit_options, isHPGe );
-    }
-#endif
-    
-    //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
-    //<< starting_peaks.size() <<  ") from the raw spectrum:"
-    //<< endl;
-    
-    for( PeakDef &p: fit_peaks )
-    {
-      // Find nearest exemplar peak, and we'll use this to set nuclides, colors, and such
-      const double fit_mean = p.mean();
-      
-      shared_ptr<const PeakDef> exemplar_parent;
-      for( const auto &exemplar : exemplar_peaks )
+
+      //  We are re-using functions called by the GUI InterSpec, so there are some extra arguments
+      //  that arent totally applicable to us right now.
+      const double lower_energy = starting_peaks.front().mean() - 0.1;
+      const double uppper_energy = starting_peaks.back().mean() + 0.1;
+
+      // We are not refitting peaks, because the areas may be wildly different.
+      const bool isRefit = false;
+
+      const double ncausalitysigma = 0.0;
+      const double stat_threshold = options.peak_stat_threshold;
+      const double hypothesis_threshold = options.peak_hypothesis_threshold;
+
+      vector<PeakDef> candidate_peaks;
+      for( const auto &p : starting_peaks )
       {
-        const double exemplar_mean = exemplar->mean();
-        
-        const double energy_diff = fabs( fit_mean - exemplar_mean );
-        // We will require the fit peak to be within 0.5 FWHM (arbitrarily chosen distance)
-        //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
-        //  fit peak
-        if( ((energy_diff < 0.5*p.fwhm()) || (energy_diff < 0.5*exemplar->fwhm()))
-           && (!exemplar_parent || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
+        PeakDef peak = p;
+
+        // If you had selected for certain peak quantities to not be fit for in exemplar spectrum
+        //  in InterSpec, then by default those quantities also wouldnt be fit for here.
+        //  You can alter this similar to below.
+        //  For the moment we'll just make sure the peak amplitude will be fit for.
+
+        //peak.setFitFor( PeakDef::Mean, true );
+        //peak.setFitFor( PeakDef::Sigma, false );
+        peak.setFitFor( PeakDef::GaussAmplitude, true );
+
+
+        // Lets also make sure starting amplitude is something halfway reasonable,
+        //  and continuum coefficients are reasonable starting values
+        if( peak.gausPeak() )
         {
-          exemplar_parent = exemplar;
-        }
-      }//for( loop over exemplars to find original peak corresponding to the fit peak 'p' )
-      
-      if( exemplar_parent )
+          std::shared_ptr<PeakContinuum> continuum = peak.continuum();
+          assert( continuum );
+          if( continuum && continuum->isPolynomial() )
+          {
+            const PeakContinuum::OffsetType origType = continuum->type();
+            continuum->calc_linear_continuum_eqn( spec, peak.mean(), peak.lowerX(), peak.upperX(), 2, 2 );
+            continuum->setType( origType );
+          }//if( continuum )
+
+          const double mean = peak.mean(), fwhm = peak.fwhm();
+          const double data_area = spec->gamma_integral( mean - fwhm, mean + fwhm );
+
+          if( (data_area > 1) && (peak.amplitude() > data_area) )
+          {
+            double cont_area = continuum->offset_integral(  mean - fwhm, mean + fwhm, spec );
+            if( (cont_area > 0.0) && (cont_area < data_area) )
+            {
+              peak.setAmplitude( data_area - cont_area );
+            }else
+            {
+              peak.setAmplitude( 0.25*data_area );
+            }
+
+          }//if( exemplar peak is clearly much larger than data )
+        }//if( peak.gausPeak() )
+
+        candidate_peaks.push_back( peak );
+      }//for( const auto &p : exemplar_peaks )
+
+      results.original_energy_cal = spec ? spec->energy_calibration() : nullptr;
+      //if( !results.original_energy_cal )
+      //  results.original_energy_cal = make_shared<SpecUtils::EnergyCalibration>( *spec->energy_calibration() ); //Make a copy, just to make sure it doesnt get messed up
+
+      if( options.refit_energy_cal )
       {
-        unused_exemplar_peaks.erase( exemplar_parent );
-        p.inheritUserSelectedOptions( *exemplar_parent, false );
+        // We will refit the energy calibration - maybe a few times - to really hone in on things
+        for( size_t i = 0; i < 5; ++i )
+        {
+          vector<PeakDef> energy_cal_peaks = candidate_peaks;
+          for( auto &peak : energy_cal_peaks )
+          {
+            peak.setFitFor( PeakDef::Mean, true );
+            peak.setFitFor( PeakDef::Sigma, true );
+            peak.setFitFor( PeakDef::GaussAmplitude, true );
+          }
+
+          vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
+                                                  stat_threshold, hypothesis_threshold,
+                                                  energy_cal_peaks, spec, {}, isRefit );
+          try
+          {
+            fit_energy_cal_from_fit_peaks( spec, peaks );
+          }catch( std::exception &e )
+          {
+            const string msg = "Energy calibration not performed: " + string(e.what());
+            auto pos = std::find( begin(results.warnings), end(results.warnings), msg );
+            if( pos == end(results.warnings) )
+              results.warnings.push_back( msg );
+          }
+        }//for( size_t i = 0; i < 1; ++i )
+
+        // Propagate the updated energy cal to the result file
+        assert( spec && spec->energy_calibration() && spec->energy_calibration()->valid() );
+        shared_ptr<const SpecUtils::EnergyCalibration> new_cal = spec ? spec->energy_calibration() : nullptr;
+        if( new_cal && new_cal->valid() )
+        {
+          try
+          {
+            propagate_energy_cal( new_cal, spec, results.measurement, {} );
+          }catch( std::exception &e )
+          {
+            results.warnings.push_back( "Failed to propagate fit energy calibration in '" + filename + "'." );
+          }
+        }else
+        {
+          results.warnings.push_back( "Failed to fit an appropriate energy calibration in '" + filename + "'." );
+        }
+
+        results.refit_energy_cal = spec ? spec->energy_calibration() : nullptr;
+      }//if( options.refit_energy_cal )
+
+      vector<PeakDef> fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
+                                                  stat_threshold, hypothesis_threshold,
+                                                  candidate_peaks, spec, {}, isRefit );
+
+      // Could re-fit the peaks again...
+      for( size_t i = 0; i < 3; ++i )
+      {
+        fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
+                                    stat_threshold, hypothesis_threshold,
+                                    fit_peaks, spec, {}, true );
+      }
+
+      //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
+      //<< starting_peaks.size() <<  ") from the raw spectrum:"
+      //<< endl;
+
+      for( PeakDef &p: fit_peaks )
+      {
+        // Find nearest exemplar peak, and we'll use this to set nuclides, colors, and such
+        const double fit_mean = p.mean();
+
+        shared_ptr<const PeakDef> exemplar_parent;
+        for( const auto &exemplar : exemplar_peaks )
+        {
+          const double exemplar_mean = exemplar->mean();
+
+          const double energy_diff = fabs( fit_mean - exemplar_mean );
+          // We will require the fit peak to be within 0.5 FWHM (arbitrarily chosen distance)
+          //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
+          //  fit peak
+          if( ((energy_diff < 0.5*p.fwhm()) || (energy_diff < 0.5*exemplar->fwhm()))
+             && (!exemplar_parent || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
+          {
+            exemplar_parent = exemplar;
+          }
+        }//for( loop over exemplars to find original peak corresponding to the fit peak 'p' )
+
+        if( exemplar_parent )
+        {
+          unused_exemplar_peaks.erase( exemplar_parent );
+          p.inheritUserSelectedOptions( *exemplar_parent, false );
+        }else
+        {
+          results.warnings.push_back( "In '" + filename + "', failed to find exemplar peak"
+                                     " corresponding to peak fit with mean=" + std::to_string( p.mean() ) + " keV." );
+          //cout << "\tmean=" << p.mean() << ", FWHM=" << p.fwhm() << ", area=" << p.amplitude() << endl;
+        }//if( exemplar_parent ) / else
+      }//for( PeakDef &p: fit_peaks )
+
+      //cout << endl << endl;
+
+      // Now we will associate the fit peaks to the spectrum and save an N42 file you can open up in
+      //  InterSpec and inspect the fits.
+      map<shared_ptr<const PeakContinuum>, shared_ptr<PeakContinuum>> peak_continuum_map;
+      for( const auto &p: fit_peaks )
+      {
+        shared_ptr<PeakDef> new_peak = make_shared<PeakDef>(p);
+        shared_ptr<const PeakContinuum> cont = new_peak->continuum();
+        auto pos = peak_continuum_map.find( cont );
+        if( pos == end(peak_continuum_map) )
+          pos = peak_continuum_map.insert( { cont, std::make_shared<PeakContinuum>( *cont ) } ).first;
+        new_peak->setContinuum( pos->second );
+        fit_peaks_ptrs.push_back( new_peak );
+      }
+
+      if( options.background_subtract_file.empty() && !options.cached_background_subtract_spec )
+      {
+        specfile->setPeaks( fit_peaks_ptrs, used_sample_nums );
       }else
       {
-        results.warnings.push_back( "In '" + filename + "', failed to find exemplar peak"
-                                   " corresponding to peak fit with mean=" + std::to_string( p.mean() ) + " keV." );
-        //cout << "\tmean=" << p.mean() << ", FWHM=" << p.fwhm() << ", area=" << p.amplitude() << endl;
-      }//if( exemplar_parent ) / else
-    }//for( PeakDef &p: fit_peaks )
-    
-    //cout << endl << endl;
-    
-    // Now we will associate the fit peaks to the spectrum and save an N42 file you can open up in
-    //  InterSpec and inspect the fits.
-    
-    deque<shared_ptr<const PeakDef>> fit_peaks_ptrs;
-    for( const auto &p: fit_peaks )
-      fit_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
-    
-    if( options.background_subtract_file.empty() )
-    {
-      specfile->setPeaks( fit_peaks_ptrs, used_sample_nums );
-    }else
-    {
-      assert( specfile->num_measurements() == 1 );
-      specfile->setPeaks( fit_peaks_ptrs, specfile->sample_numbers() );
-    }
-   
+        assert( specfile->num_measurements() == 1 );
+        specfile->setPeaks( fit_peaks_ptrs, specfile->sample_numbers() );
+      }
+    }//if( options.fit_all_peaks ) / else
+
     results.success = true;
-    results.measurement = specfile;
-    results.spectrum = spec;
-    results.sample_numbers = used_sample_nums;
     results.fit_peaks = fit_peaks_ptrs;
     results.unfit_exemplar_peaks.clear();
     results.unfit_exemplar_peaks.insert( end(results.unfit_exemplar_peaks),

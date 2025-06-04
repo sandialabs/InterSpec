@@ -1458,6 +1458,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   void add_peak_fit_options_to_json( nlohmann::json &data, const BatchPeak::BatchPeakFitOptions &options )
   {
     auto &options_obj = data["PeakFitOptions"];
+    options_obj["FitAllPeaks"] = options.fit_all_peaks;
     options_obj["RefitEnergyCal"] = options.refit_energy_cal;
     options_obj["UseExemplarEnergyCal"] = options.use_exemplar_energy_cal;
     options_obj["WriteN42WithResults"] = options.write_n42_with_results;
@@ -1467,9 +1468,13 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     options_obj["CreateJsonOutput"] = options.create_json_output;
     options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
     
-    if( !options.background_subtract_file.empty() )
+    if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     {
-      options_obj["BackgroundSubFile"] = options.background_subtract_file;
+      string back_filename = options.background_subtract_file;
+      if( back_filename.empty() && options.cached_background_subtract_spec )
+        back_filename = options.cached_background_subtract_spec->filename();
+
+      options_obj["BackgroundSubFile"] = back_filename;
       if( !options.background_subtract_samples.empty() )
       {
         options_obj["BackgroundSubSamples"] = vector<int>{ begin(options.background_subtract_samples),
@@ -1478,7 +1483,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       }
       options_obj["UsedExistingBackgroundPeak"] = options.use_existing_background_peaks;
       options_obj["UseExemplarEnergyCalForBackground"] = options.use_exemplar_energy_cal_for_background;
-    }//if( !options.background_subtract_file.empty() )
+    }//if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     
     options_obj["ReportTemplateIncludeDir"] = options.template_include_dir;
     options_obj["ReportTemplates"] = options.report_templates;

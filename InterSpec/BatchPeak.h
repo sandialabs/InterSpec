@@ -62,6 +62,8 @@ namespace BatchPeak
   
   struct InterSpec_API BatchPeakFitOptions
   {
+    /** If specified to be true, then instead of looking for just the peaks in the exemplar file, a search for all peaks in the specrtum will be performed. */
+    bool fit_all_peaks;
     bool to_stdout;
     bool refit_energy_cal;
     bool use_exemplar_energy_cal;
@@ -73,8 +75,10 @@ namespace BatchPeak
     std::string output_dir;
     std::string background_subtract_file;
     std::set<int> background_subtract_samples;
+    std::shared_ptr<SpecMeas> cached_background_subtract_spec;
     bool use_existing_background_peaks;
     bool use_exemplar_energy_cal_for_background;
+    // TODO: right now there is no option to refit energy calibration of background
     
     /** The improvement to the Chi2 of a peak fit required, over just fitting the continuum, to the ROI.
      
@@ -100,51 +104,109 @@ namespace BatchPeak
      */
     std::string template_include_dir;
     
-    /** File paths to report templates, that will be saved for each input files. */
+    
+    /** File paths to report templates, that will be saved for each input files. 
+     
+      If the string contains the string ':--DisplayName--:', then everything before this string will
+      be the path to the template, and everything after will be the display name of the template.
+      \sa sm_report_display_name_marker
+    */
     std::vector<std::string> report_templates;
     
-    /** File path to report templates that summarizes all input files. */
+    /** File path to report templates that summarizes all input files. 
+     
+     Similar to `report_templates`, the string may be delimited by ':--DisplayName--:', to specify 
+     the display name of the template.
+     \sa sm_report_display_name_marker
+    */
     std::vector<std::string> summary_report_templates;
+
+    /** Delimeter used within report template filesystem paths to seperate the filesystem path, and the display name of the template.
+     If this delimeter is not present, then the full string is used for both these properties.
+     
+     This is used for report templates uploaded via HTML, and spooled to disk, so we can still generate reasonably named reports.
+     */
+    static const char * const sm_report_display_name_marker; // = ":--DisplayName--:"
   };//struct BatchPeakFitOptions
-  
-  
-  InterSpec_API void fit_peaks_in_files( const std::string &exemplar_filename,
-                          const std::set<int> &exemplar_sample_nums,
-                          const std::vector<std::string> &files,
-                          const BatchPeakFitOptions &options );
-  
+
   struct InterSpec_API BatchPeakFitResult
   {
     std::string file_path;
     BatchPeakFitOptions options;
-    
+
     std::shared_ptr<const SpecMeas> exemplar;
     std::set<int> exemplar_sample_nums;
     std::deque<std::shared_ptr<const PeakDef>> exemplar_peaks;
     std::shared_ptr<const SpecUtils::Measurement> exemplar_spectrum;
     std::vector<std::shared_ptr<const PeakDef>> unfit_exemplar_peaks;  //Exemplar peaks not found in the spectrum
-    
+
     std::shared_ptr<SpecMeas> measurement;
     std::shared_ptr<SpecUtils::Measurement> spectrum;
     std::set<int> sample_numbers;
     std::deque<std::shared_ptr<const PeakDef>> fit_peaks;
-    
-    /** Background spectrum that was subtracted from the foreground, to make `spectrum`, if any. 
-     
+
+    /** Background spectrum that was subtracted from the foreground, to make `spectrum`, if any.
+
      The background subtraction can either be on a peak-by-peak basis, or a hard
      background subtraction, see `BatchPeakFitOptions::use_exemplar_energy_cal_for_background`.
      */
     std::shared_ptr<SpecUtils::Measurement> background;
-    
+
     bool success;
     std::vector<std::string> warnings;
-    
+
     /** The original energy calibration of the spectrum, before re-fitting it (if done). */
     std::shared_ptr<const SpecUtils::EnergyCalibration> original_energy_cal;
-    
+
     /** The energy calibration after fitting for it - will only be non-null if energy calibration was performed */
     std::shared_ptr<const SpecUtils::EnergyCalibration> refit_energy_cal;
   };//struct BatchPeakFitResult
+
+
+  struct BatchPeakFitSummary
+  {
+    BatchPeakFitOptions options;
+    std::string exemplar_filename;
+    std::shared_ptr<const SpecMeas> exemplar;
+    std::set<int> exemplar_sample_nums;
+
+    /** Each of these next four `file_*` variables will have the same number of entries, as the input number of files. */
+    std::vector<BatchPeakFitResult> file_results;
+    std::vector<std::string> file_json;
+    std::vector<std::string> file_peak_csvs;
+    std::vector<std::vector<std::string>> file_reports;
+
+    std::string summary_json;
+    std::vector<std::string> summary_reports;
+    std::vector<std::string> warnings;
+  };//struct BatchPeakFitSummary
+
+
+  /** Fits the peaks in a number of spectrum files, prodicing individual reports (if wanted) as well as a summary report.
+   
+   @param exemplar_filename The filesystem path to the spectrum file to use as the exemplar file.  This may be an N42 
+          or a peaks CSV file.
+   @param optional_parsed_exemplar_n42 If non-null, this object will be used as the exemplar file, with 
+          `exemplar_filename` then serving as just the display name of the exemplar file to use in the reports.
+   @param exemplar_sample_nums If a N42-2012 file is used for exemplar, and which peaks to use is ambiguous, these
+          sample numbers specify which peaks to use.  Must be blank if exemplar is CSV file, or if N42-2012 file, this
+          combination of sample numbers must specify peaks to use.  Can be empty in non-ambigous.
+   @param files The list of spectrum files to fit peaks to.
+   @param optional_cached_files If non-empty, then these objects will be used as the input files for analysis, and 
+          `files` will only be used as the display names of the input files in the reports.  If non-empty, then
+          must be exactly the same length as `files`.
+   @param options The options to use for fitting peaks.
+   @param results If non-null, then the results will be stored in this object.
+   */
+  InterSpec_API void fit_peaks_in_files( const std::string &exemplar_filename,
+                          std::shared_ptr<const SpecMeas> optional_parsed_exemplar_n42,
+                          const std::set<int> &exemplar_sample_nums,
+                          const std::vector<std::string> &files,
+                          std::vector<std::shared_ptr<SpecMeas>> optional_cached_files,
+                          const BatchPeakFitOptions &options,
+                          BatchPeakFitSummary * const results = nullptr );
+
+
   
   
   /** Fits the exemplar peaks for a given file.

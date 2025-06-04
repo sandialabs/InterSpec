@@ -43,20 +43,9 @@ struct SpecFileInfoToQuery;
 
 namespace SpecFileQuery
 {
-  //Stuff in this namespace is intended to be seperate from the GUI and contain
+  //Stuff in this namespace is intended to be separate from the GUI and contain
   // most of the functional/logical code so it can eventually be used to form a
-  // command line utilitiy or something independant from the GUI.
-  
-#if( BUILD_AS_OSX_APP )
-  //Horrible hack to try and work with Apple sandbox by letting the obj-c code
-  //  check if we are currently trying to select a directory with a
-  //  SpecFileQueryWidget.  Once done selecting directory, the obj-c code will
-  //  set what directory was set.
-  bool isSelectingDirectory();
-  void setIsSelectingDirectory( bool isDir );
-  void setSearchDirectory( std::string path );
-  std::string getSearchDirectory();
-#endif
+  // command line utility or something independent from the GUI.
   
   /** Enum representing which fields a user can search a spectrum file on.
    If you add an enum, you have to update both the C++ and the JavaScript

@@ -1766,8 +1766,7 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
 //                     );
   //m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 ) );
 //#elif( BUILD_AS_OSX_APP )
-//  SpecFileQuery::setIsSelectingDirectory( true );
-//  setSearchDirectory( "" );
+//  see usage of macOsUtils::showFilePicker(...)
 //  m_baseLocation = new WFileUpload();
 //  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
 //  linelayout->addWidget( m_baseLocation, 0, 1 );
@@ -1824,11 +1823,15 @@ GadrasDirectory::GadrasDirectory( std::string directory, GadrasDetSelect *parent
   m_pathSelectedSignal->connect( boost::bind( &SpecFileQueryWidget::newElectronPathSelected, this, boost::placeholders::_1 ) );
 #elif( BUILD_AS_OSX_APP )
  //For macOS dont saved picked directory to preferences in DB as sandboxing will mess this up.
-  SpecFileQuery::setIsSelectingDirectory( true );
-  setSearchDirectory( "" );
-  m_baseLocation = new WFileUpload();
-  m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
-  linelayout->addWidget( m_baseLocation, 0, 1 );
+ 
+ ... use similar to above for electron, but call below inseadt of Electron stuff
+ macOsUtils::showFilePicker( "Select Directory", "Select base-directory of reference spectra.",
+                            canChooseFiles, canChooseDirectories, allowsMultipleSelection,
+                            on_select_callback );
+ 
+  //m_baseLocation = new WFileUpload();
+  //m_baseLocation->changed().connect( this, &SpecFileQueryWidget::newMacOsPathSelected );
+  //linelayout->addWidget( m_baseLocation, 0, 1 );
 #else
 */
   

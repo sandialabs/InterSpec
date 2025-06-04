@@ -26,12 +26,21 @@ public:
   RelEffChart( Wt::WContainerWidget *parent = 0 );
   virtual ~RelEffChart();
   
+  struct ReCurveInfo
+  {
+    double live_time = 0.0;
+    std::vector<PeakDef> fit_peaks;
+    std::vector<RelActCalcAuto::NuclideRelAct> rel_acts;
+    std::string js_rel_eff_eqn;
+    Wt::WString re_curve_name;
+    Wt::WString re_curve_eqn_txt;
+  };//struct ReCurveInfo
+  
   /** Set data from an "auto" relative efficiency fit. */
-  void setData( const double live_time,
-               const std::vector<PeakDef> &fit_peaks,
-               const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts,
-               const std::string &jsRelEffEqn,
-               const Wt::WString &chi2_title_str );
+  void setData( const ReCurveInfo &info );
+  
+  /** Set data from multiple "auto" relative efficiency fits. */
+  void setData( const std::vector<ReCurveInfo> &infoSets );
   
   /** Set data from an "manual" relative efficiency fit. */
   void setData( const std::vector<RelActCalcManual::GenericPeakInfo> &peaks,
@@ -40,11 +49,17 @@ public:
                const Wt::WString &chi2_title_str,
                const std::string &jsRelEffEqnUncert );
   
+  /** Generate JSON from ReCurveInfo objects */
+  static std::string jsonForData(const std::vector<ReCurveInfo> &infoSets);
+  
   void setLineColor( const Wt::WColor &color );
   void setTextColor( const Wt::WColor &color );
   void setAxisLineColor( const Wt::WColor &color );
   void setChartBackgroundColor( const Wt::WColor &color );
   void setDefaultMarkerColor( const Wt::WColor &color );
+  
+  /** Set custom colors for datasets based on ColorTheme */
+  void setRelEffCurveColors();
   
   void setXAxisTitle( const std::string &title );
   void setYAxisTitle( const std::string &title );
@@ -59,6 +74,29 @@ protected:
   void setCssRules();
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
+  
+private:
+  /** Helper struct for dataset information */
+  struct RelEffChartDataset
+  {
+    std::vector<RelActCalcManual::GenericPeakInfo> peaks;
+    std::map<std::string, std::pair<double, std::string>> relActsColors;
+    std::string relEffEqn;
+    Wt::WString chi2_title_str;
+    std::string relEffEqnUncert;
+  };
+  
+  /** Generate JSON for multiple datasets */
+  static std::string jsonForData(const std::vector<RelEffChartDataset> &datasets);
+  
+  /** Generate JSON for a single dataset */
+  static std::string jsonForDataset(const RelEffChartDataset &dataset, bool isFirstDataset);
+  
+  /** Send JavaScript to set the datasets data */
+  void sendDataToJavaScript(const std::string &jsonData);
+  
+  /** Private implementation for multiple datasets */
+  void setData(const std::vector<RelEffChartDataset> &datasets);
   
   /** The javascript variable name used to refer to the RelEffChart object.
    Currently is `jsRef() + ".chart"`.

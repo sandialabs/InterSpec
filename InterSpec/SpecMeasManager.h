@@ -72,6 +72,7 @@ class PopupDivMenu;
 class SpectraHeader;
 class InterSpec;
 class SimpleDialog;
+class BatchGuiDialog;
 class SpecMeasManager;
 class SpectraFileModel;
 class PopupDivMenuItem;
@@ -390,6 +391,9 @@ public:
   FileDragUploadResource *foregroundDragNDrop();
   FileDragUploadResource *secondForegroundDragNDrop();
   FileDragUploadResource *backgroundDragNDrop();
+#if( USE_BATCH_TOOLS )
+  FileDragUploadResource *batchDragNDrop();
+#endif
 
   //handleZippedFile:  presents the user with a dialog to extract and use one
   //  of the spectrum files in a zip archive.  Returns true if a valid zip file.
@@ -433,6 +437,11 @@ public:
                        SpecUtils::SpectrumType type,
                        SimpleDialog *dialog,
                        Wt::WApplication *app );
+
+#if( USE_BATCH_TOOLS )
+  void showBatchDialog();
+  void handleBatchDialogFinished();
+#endif
 
 #if( USE_QR_CODES )
   void handleSpectrumUrl( std::string &&url );
@@ -516,6 +525,9 @@ protected:
   FileDragUploadResource *m_foregroundDragNDrop;
   FileDragUploadResource *m_secondForegroundDragNDrop;
   FileDragUploadResource *m_backgroundDragNDrop;
+#if( USE_BATCH_TOOLS )
+  FileDragUploadResource *m_batchDragNDrop;
+#endif
   
   SimpleDialog *m_multiUrlSpectrumDialog;
   
@@ -546,7 +558,11 @@ protected:
 
   /** Dialog created when a non-spectrum file is dropped on the app. */
   SimpleDialog *m_nonSpecFileDialog;
-  
+
+#if( USE_BATCH_TOOLS )
+  /** Dialog created when a batch of files is dropped on the app. */
+  BatchGuiDialog *m_batchDialog;
+#endif
   
 #if( !defined(MAX_SPECTRUM_MEMMORY_SIZE_MB) ||  MAX_SPECTRUM_MEMMORY_SIZE_MB < 0 )
   static const size_t sm_maxTempCacheSize = 0;

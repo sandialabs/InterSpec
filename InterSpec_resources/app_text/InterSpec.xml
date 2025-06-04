@@ -14,6 +14,7 @@
   <message id="Counts">Counts</message>
   <message id="Apply">Apply</message>
   <message id="Accept">Accept</message>
+  <message id="Okay">Okay</message>
   <message id="Foreground">Foreground</message>
   <message id="Background">Background</message>
   <message id="Secondary">Secondary</message>
@@ -226,10 +227,7 @@
   <message id="app-mi-samples-passthrough-mobile">Passthrough (16k channel)</message>
   <message id="app-mi-samples-passthrough">Passthrough (16k bin ICD1, 8 det., 133 samples)</message>
   <message id="app-mi-samples-background">Background (16k bin N42)</message>
-  <message id="app-mi-samples-ba133-lowres">Ba-133 (Low Res, No Calib)</message>
-  <message id="app-mi-samples-co60-lowres">Co-60 (Low Res, No Calib)</message>
-  <message id="app-mi-samples-cs137-lowres">Cs-137 (Low Res, No Calib)</message>
-  <message id="app-mi-samples-th232-lowres">Th-232 (Low Res, No Calib)</message>
+  <message id="app-mi-samples-reference">Reference Spectra...</message>
 
   <!-- Items in the "Edit" menu -->
   <message id="app-mi-edit-undo">Undo</message>

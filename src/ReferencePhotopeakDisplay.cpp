@@ -103,26 +103,17 @@ const int DecayParticleModel::RowData::ReactionToGammaMode = 1001;
 const int DecayParticleModel::RowData::NormGammaDecayMode = 1002;
 const int DecayParticleModel::RowData::CascadeSumMode = 1003;
 
-namespace
-{
-  //See: https://sashat.me/2017/01/11/list-of-20-simple-distinct-colors/
+//See: https://sashat.me/2017/01/11/list-of-20-simple-distinct-colors/
   //  for a pallet of distint colors
   //Or http://artshacker.com/wp-content/uploads/2014/12/Kellys-22-colour-chart.jpg
-  const static vector<Wt::WColor> ns_def_line_colors{
-    {"#0000FF"}, {"#006600"}, {"#0099FF"}, {"#9933FF"},
-    {"#FF66FF"}, {"#CC3333"}, {"#FF6633"}, {"#FFFF99"},
-    {"#CCFFCC"}, {"#0000CC"}, {"#666666"}, {"#003333"}
-  };
-  
-  
-  //struct on_scope_exit
-  //{
-  //  on_scope_exit( std::function<void( void )> f ) : m_function( f ) {}
-  //  ~on_scope_exit( void ) { m_function(); }
-  //private:
-  //  std::function<void( void )> m_function;
-  //};//on_scope_exit
-  
+const vector<Wt::WColor> ReferencePhotopeakDisplay::sm_def_line_colors{
+  {"#0000FF"}, {"#006600"}, {"#0099FF"}, {"#9933FF"},
+  {"#FF66FF"}, {"#CC3333"}, {"#FF6633"}, {"#FFFF99"},
+  {"#CCFFCC"}, {"#0000CC"}, {"#666666"}, {"#003333"}
+};
+
+namespace
+{   
   struct UpdateGuard
   {
     bool &m_guard;
@@ -867,7 +858,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_csvDownload( nullptr ),
     m_userHasPickedColor( false ),
     m_peaksGetAssignedRefLineColor( false ),
-    m_lineColors{ ns_def_line_colors },
+    m_lineColors{ sm_def_line_colors },
     m_specificSourcelineColors{},
     m_displayingNuclide( this ),
     m_nuclidesCleared( this ),
@@ -1080,7 +1071,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   //m_fitPeaks->disable();
   
   if( m_lineColors.empty() )
-    m_lineColors = ns_def_line_colors;
+    m_lineColors = sm_def_line_colors;
     
   m_colorSelect = new ColorSelect(ColorSelect::PrefferNative);
   m_colorSelect->setColor( m_lineColors[0] );
@@ -2315,9 +2306,6 @@ Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src 
   
   if( m_peaksGetAssignedRefLineColor )
   {
-#ifndef _MSC_VER
-#warning "Need to test string comparison for sources always work.  E.g., need case-insensitive, etc."
-#endif
     const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
     
     auto hasBeenUsed = [&usedColors](const WColor &color)->bool{
@@ -2887,7 +2875,7 @@ void ReferencePhotopeakDisplay::setColors( const std::vector<Wt::WColor> &refere
       m_lineColors.push_back( i );
   
   if( m_lineColors.empty() )
-    m_lineColors = ns_def_line_colors;
+    m_lineColors = sm_def_line_colors;
   
   //should update currently displayed line colors here, but there are bigger fish to fry ATM
 }//void setColors( const std::vector<Wt::WColor> &referenceLineColor )
@@ -3568,10 +3556,20 @@ void ReferencePhotopeakDisplay::userColorSelectCallback( const WColor &color )
   {
     m_userHasPickedColor = true;
     m_currentlyShowingNuclide.m_input.m_color = color;
-    m_previouslyPickedSourceColors[m_currentlyShowingNuclide.m_input.m_input_txt] = color;
+    const string &src = m_currentlyShowingNuclide.m_input.m_input_txt;
+    updateColorCacheForSource( src, color );
     refreshLinesDisplayedToGui();
   }
 }//void userColorSelectCallback( const std::string &color )
 
 
-
+void ReferencePhotopeakDisplay::updateColorCacheForSource( const std::string &source, const Wt::WColor &color )
+{
+  if( source.empty() )
+    return;
+  
+  if( color.isDefault() )
+    m_previouslyPickedSourceColors.erase(source);
+  else
+    m_previouslyPickedSourceColors[source] = color;
+}//void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );

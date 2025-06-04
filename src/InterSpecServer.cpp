@@ -386,9 +386,17 @@ namespace InterSpecServer
       // See remarks in startServer() on performance and reason for this next call
       ns_server->ioService().boost::asio::io_service::post( [](){
         DecayDataBaseServer::initialize();
+
+        // Load the reaction gammas into memory
+        //  When built for web deployment, using a ALpine container (musl libc), there
+        //  is a segfault if we load the infor from XML during an initial request
+        //  (I'm not totally sure what this is about, but I assume its related to musl
+        //  having a much smaller default thread stack size)
+        ReactionGammaServer::database();
+
         ReferenceLineInfo::load_nuclide_mixtures();
       } );
-      
+
       // Checking for available languages probably doesnt take too long, but lets do it now anyway.
       ns_server->ioService().boost::asio::io_service::post( [](){
         InterSpecApp::languagesAvailable();
@@ -566,9 +574,17 @@ int start_server( const char *process_name,
     //  cerr << "Unable to change to directory: '" << basedir << "' :" << e.what() << endl;
     //}
 
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+  const string server_http_address = http_address ? http_address : "127.0.0.1";
+#endif
+
   try
   {
-    InterSpecServer::startWebServer( process_name, relbasedir, wt_config_file, server_port );
+    InterSpecServer::startWebServer( process_name, relbasedir, wt_config_file, server_port
+#if( BUILD_FOR_WEB_DEPLOYMENT )
+                             , server_http_address
+#endif
+                                    );
   }catch( std::exception &e )
   {
     std::cerr << "\n\nCaught exception trying to start InterSpec server:\n\t"
