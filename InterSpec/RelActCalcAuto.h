@@ -30,6 +30,7 @@
 #include <memory>
 #include <vector>
 #include <ostream>
+#include <variant>
 #include <optional>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
