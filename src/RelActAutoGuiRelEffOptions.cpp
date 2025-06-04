@@ -598,7 +598,6 @@ void RelActAutoGuiRelEffOptions::updatePuCorrelationOptions( const vector<RelAct
     const string &bignanPwr = RelActCalc::to_description( RelActCalc::PuCorrMethod::Bignan95_PWR );
     const string &byPu239Only = RelActCalc::to_description( RelActCalc::PuCorrMethod::ByPu239Only );
 
-    m_pu_corr_method->addItem( WString::fromUTF8(none) );
     int next_index = 0;
     if( can_239only )
     {

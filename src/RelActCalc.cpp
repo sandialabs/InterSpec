@@ -460,6 +460,45 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
 }//double eval_eqn_uncertainty(...)
 
 
+std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double>> back_decay_relative_activities(
+                                            const double back_decay_time,
+                                            std::vector<std::tuple<const SandiaDecay::Nuclide *,double>> &nuclide_rel_acts )
+{
+  assert( back_decay_time >= 0.0 );
+  vector<tuple<const SandiaDecay::Nuclide *,double,double>> answer;
+
+  double rel_mass_sum = 0.0;
+  for( const tuple<const SandiaDecay::Nuclide *,double> &nuc_activity : nuclide_rel_acts )
+  {
+    const SandiaDecay::Nuclide * const nuc = get<0>(nuc_activity);
+    const double final_act = get<1>(nuc_activity);
+    assert( nuc );
+    if( !nuc )
+      return;
+
+    const double decrease_factor = std::exp( -back_decay_time * nuc->decayConstant() );
+    const double initial_activity = final_act / decrease_factor;
+
+    answer.emplace_back( nuc, initial_activity, 0.0 );
+
+    const double initial_rel_mass = initial_activity / nuc->activityPerGram();
+    rel_mass_sum += initial_rel_mass;
+  }//for( const tuple<const SandiaDecay::Nuclide *,double> &nuc_activity : nuclide_rel_acts )
+
+
+  for( size_t i = 0; i < answer.size(); ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = get<0>(answer[i]);
+    const double initial_activity = get<1>(answer[i]);
+    const double initial_rel_mass = initial_activity / nuc->activityPerGram();
+
+    get<2>(answer[i]) = initial_rel_mass / rel_mass_sum;
+  }
+
+  return answer;
+}//back_decay_relative_activities(...)
+
+
 const std::string &to_str( const PuCorrMethod method )
 {
   const static std::string s_Bignan95_PWR{ "Bignan95_PWR" };
@@ -507,23 +546,63 @@ const std::string &to_description( const PuCorrMethod method )
 Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput input, PuCorrMethod method )
 {
   // First, lets normalize the the input relative mass, jic it isnt already
+  const bool corr_for_age = (input.pu_age > 0.0);
+  const SandiaDecay::SandiaDecayDataBase * const db = corr_for_age ? DecayDataBaseServer::database() : nullptr;
+  const SandiaDecay::Nuclide * const pu238 = corr_for_age ? db->nuclide( "Pu238" ) : nullptr;
+  const SandiaDecay::Nuclide * const pu239 = corr_for_age ? db->nuclide( "Pu239" ) : nullptr;
+  const SandiaDecay::Nuclide * const pu240 = corr_for_age ? db->nuclide( "Pu240" ) : nullptr;
+  const SandiaDecay::Nuclide * const pu241 = corr_for_age ? db->nuclide( "Pu241" ) : nullptr;
+  const SandiaDecay::Nuclide * const pu242 = corr_for_age ? db->nuclide( "Pu242" ) : nullptr;
+
+  if( corr_for_age )
+  {
+    //Need to back-decay to T=0, to apply correction.  We will then re-decay to the final age for the answer.
+    assert( db );
+    assert( pu238 && pu239 && pu240 && pu241 );
+
+    vector<tuple<const SandiaDecay::Nuclide *,double>> input_nuclide_rel_acts;
+    if( input.pu238_rel_mass > 0.0f )
+      input_nuclide_rel_acts.emplace_back( pu238, input.pu238_rel_mass * pu238->activityPerGram() );
+    if( input.pu239_rel_mass > 0.0f )
+      input_nuclide_rel_acts.emplace_back( pu239, input.pu239_rel_mass * pu239->activityPerGram() );
+    if( input.pu240_rel_mass > 0.0f )
+      input_nuclide_rel_acts.emplace_back( pu240, input.pu240_rel_mass * pu240->activityPerGram() );
+    if( input.pu240_rel_mass > 0.0f )
+      input_nuclide_rel_acts.emplace_back( pu241, input.pu241_rel_mass * pu241->activityPerGram() );
+
+    const vector<tuple<const SandiaDecay::Nuclide *,double,double>> time_zero_vals
+                                  = back_decay_relative_activities( input.pu_age, input_nuclide_rel_acts );
+    for( const tuple<const SandiaDecay::Nuclide *,double,double> &nuc_act_mass : time_zero_vals )
+    {
+      const SandiaDecay::Nuclide * const nuc = get<0>(nuc_act_mass);
+      const double rel_act = get<1>(nuc_act_mass);
+      if( nuc == pu238 )
+        input.pu238_rel_mass = rel_act / nuc->activityPerGram();
+      else if( nuc == pu239 )
+        input.pu239_rel_mass = rel_act / nuc->activityPerGram();
+      else if( nuc == pu240 )
+        input.pu240_rel_mass = rel_act / nuc->activityPerGram();
+      else if( nuc == pu241 )
+        input.pu241_rel_mass = rel_act / nuc->activityPerGram();
+      else { assert( 0 ); }
+    }//for( loop over back-decayed nuclides )
+
+    // We will just let `input.other_pu_mass` stay the same - we dont expect to use it anyway
+  }//if( input.pu_age > 0.0 )
+
   float sum_input_mass = 0.0f;
   sum_input_mass += input.pu238_rel_mass;
   sum_input_mass += input.pu239_rel_mass;
   sum_input_mass += input.pu240_rel_mass;
   sum_input_mass += input.pu241_rel_mass;
   sum_input_mass += input.other_pu_mass;
-  
-  // TODO: in principle we want to account for the decay of Am241 and Pu241 better, but for now we'll just be really gross about it and equate the two nuclides
-  sum_input_mass += input.am241_rel_mass;
-  
+
   input.pu238_rel_mass /= sum_input_mass;
   input.pu239_rel_mass /= sum_input_mass;
   input.pu240_rel_mass /= sum_input_mass;
   input.pu241_rel_mass /= sum_input_mass;
-  input.am241_rel_mass /= sum_input_mass;
   input.other_pu_mass  /= sum_input_mass;
-  
+
   double pu242_mass_frac = 0.0, fractional_uncert = 0.0;
   switch( method )
   {
@@ -571,9 +650,31 @@ Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelation
   answer.pu239_mass_frac = input.pu239_rel_mass * (1.0 - pu242_mass_frac);
   answer.pu240_mass_frac = input.pu240_rel_mass * (1.0 - pu242_mass_frac);
   answer.pu241_mass_frac = input.pu241_rel_mass * (1.0 - pu242_mass_frac);
-  answer.am241_mass_frac = input.am241_rel_mass * (1.0 - pu242_mass_frac);
   answer.pu242_mass_frac = pu242_mass_frac;
-  
+
+  if( input.pu_age > 0.0 )
+  {
+    const double pre_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
+                                                + input.pu241_rel_mass + answer.pu242_mass_frac;
+
+    answer.pu238_mass_frac *= std::exp( -input.pu_age * pu238->decayConstant() );
+    answer.pu239_mass_frac *= std::exp( -input.pu_age * pu239->decayConstant() );
+    answer.pu240_mass_frac *= std::exp( -input.pu_age * pu240->decayConstant() );
+    answer.pu241_mass_frac *= std::exp( -input.pu_age * pu241->decayConstant() );
+    answer.pu242_mass_frac *= std::exp( -input.pu_age * pu242->decayConstant() );
+
+
+    const double post_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
+                                              + input.pu241_rel_mass + answer.pu242_mass_frac;
+
+    const double overall_decay = pre_decay_sum_mass_frac / post_decay_sum_mass_frac;
+    answer.pu238_mass_frac *= overall_decay;
+    answer.pu239_mass_frac *= overall_decay;
+    answer.pu240_mass_frac *= overall_decay;
+    answer.pu241_mass_frac *= overall_decay;
+    answer.pu242_mass_frac *= overall_decay;
+  }//if( input.pu_age > 0.0 )
+
   
   switch( method )
   {
@@ -619,8 +720,7 @@ Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelation
       answer.pu242_uncert = 0.0;
     break;
   }//switch( method )
-  
-  
+
   // Except for the totally made up uncertainties (which are out of validated ranges), the
   //  actual errors are likely much larger than reported in the paper, as their data probably
   //  came from similar sources, or at least dont include nearly all the ways Pu is made, so
@@ -671,6 +771,7 @@ void test_pu242_by_correlation()
     assert( fabs(1.0 - (gamma_spec_pu239 + gamma_spec_pu_other)) < 0.001 );
     
     Pu242ByCorrelationInput input;
+    input.pu_age = 0.0;
     input.pu238_rel_mass = gamma_spec_pu_other;
     input.pu239_rel_mass = gamma_spec_pu239;
     // Pu240, and Pu241/Am241 are irrelevant, all that
@@ -688,11 +789,12 @@ void test_pu242_by_correlation()
   // For PuCorrMethod::Bignan95_BWR and PuCorrMethod::Bignan95_PWR, we dont have nearly as good
   //  of comparison data
   Pu242ByCorrelationInput input;
+  input.pu_age = 0.0;
   input.pu238_rel_mass = 0.0120424;
   input.pu239_rel_mass = 0.6649628;
   input.pu240_rel_mass = 0.2327493;
   input.pu241_rel_mass = 0.0501864;
-  input.pu241_rel_mass = 0.0361259;
+  //input.pu241_rel_mass = 0.0361259;
   Pu242ByCorrelationOutput output = correct_pu_mass_fractions_for_pu242( input, PuCorrMethod::Bignan95_BWR );
   cout << "For Bignan95_BWR: Pu239: " << output.pu239_mass_frac
        << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";

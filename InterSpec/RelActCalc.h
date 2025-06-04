@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <tuple>
 #include <vector>
 #include <cstddef>
 #include <optional>
@@ -129,6 +130,17 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
                              const std::vector<std::vector<double>> &covariance );
 
 
+/** Function to back-calculate Relative Activities and masses of a set of nuclides, a specified time interval previous.
+
+ @param back_decay_time A positive time interval to back-decay nuclides to.
+ @param nuclide_rel_acts The nuclides, and their relative activities at the time of measurement.
+
+ Returns vector of `{nuclide, RelActivityAtTimeZero, RelMassAtTimeZero}`, where the RelativeMasses are as a fraction of all nuclides passed in.
+ */
+std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double>> back_decay_relative_activities(
+                                    const double back_decay_time,
+                                    std::vector<std::tuple<const SandiaDecay::Nuclide *,double>> &nuclide_rel_acts );
+
 
 /** A struct to specify the relative masses of the Pu and Am241 nuclides that
  are observable by gamma spec.
@@ -142,9 +154,11 @@ struct Pu242ByCorrelationInput
   float pu239_rel_mass = 0.0f;
   float pu240_rel_mass = 0.0f;
   float pu241_rel_mass = 0.0f;
-  float am241_rel_mass = 0.0f;
   /** A value to capture all other non-Pu242 plutonium isotopes (I dont expect to ever be used) */
   float other_pu_mass  = 0.0f;
+
+  /** The age of the Pu, so this way the mass fractions can be back-corrected to T=0, to ever so slightly increase the accuracy of the correction. */
+  double pu_age = 0.0;
 };//struct Pu242ByCorrelationInput
 
 
@@ -157,7 +171,6 @@ struct Pu242ByCorrelationOutput
   float pu239_mass_frac;
   float pu240_mass_frac;
   float pu241_mass_frac;
-  float am241_mass_frac;
   float pu242_mass_frac;
   
   /** If enrichment is within literatures specified range.
@@ -232,9 +245,6 @@ const std::string &to_description( const PuCorrMethod method );
 /** Given the isotopics determined from gamma-spec, returns mass fractions of those
  isotopes, as well as Pu242, as determined from the specified correlation estimate
  method.
- 
- Currently doesnt take into account decay of Am241 rel to Pu241, beyond just adding
- Am241 mass to Pu241.
  */
 Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput input, PuCorrMethod method );
 

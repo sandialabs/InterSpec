@@ -133,7 +133,7 @@ void sort_rois_by_energy( vector<RelActCalcAuto::RoiRange> &rois )
   });
 }//void sort_rois( vector<RoiRange> &rois )
  
-  
+
   /*
    /// Function used to convert parameters of one FWHM type, to another.
    ///  Currently it goes from GADRAS to all other types, for a set of
@@ -1822,19 +1822,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       auto check_pu_corr_method = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
         const vector<RelActCalcAuto::NucInputInfo> &nuclides = rel_eff_curve.nuclides;
       
-        // Make a lamda that returns the mass-number of Plutonium nuclides; or if Am241 is present,
-        //  will insert 241
+        // Make a lamda that returns the mass-number of Plu nuclides
         auto pu_iso_present = [&]() -> set<short> {
           set<short> answer;
           for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
           {
             const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
-            if( nuc_nuclide
-               && ((nuc_nuclide->atomicNumber == 94)
-                   || ((nuc_nuclide->atomicNumber == 95) && (nuc_nuclide->massNumber == 241) ) ) )
-            {
+            if( nuc_nuclide && (nuc_nuclide->atomicNumber == 94) )
               answer.insert(nuc_nuclide->massNumber);
-            }
           }//for( loop over input nucldies )
         
           return answer;
@@ -2002,7 +1997,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double highest_energy = cost_functor->m_energy_ranges.back().upper_energy;
       
       // Completely arbitrary
-      if( ((lowest_energy < 200) && (highest_energy > 600))
+      if( ((lowest_energy < 250) && (highest_energy > 650))
          || ((lowest_energy < 120) && (highest_energy > 250)) )
       {
         solution.m_fit_energy_cal[0] = true;
@@ -3037,32 +3032,51 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( !use )
           throw logic_error( "Inconsistent skew parameter thing" );
           
-        bool fit_energy_dep = PeakDef::is_energy_dependent( options.skew_type, ct );
-          
-        if( fit_energy_dep && (energy_ranges.size() == 1) )
+        bool fit_skew_energy_dep = PeakDef::is_energy_dependent( options.skew_type, ct );
+
+        if( fit_skew_energy_dep )
         {
-          // TODO: if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false
-#ifdef _MSC_VER
-#pragma message( "if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false" )
-#else
-#warning "if statistically significant peaks across less than ~100 keV, then set fit_energy_dep to false"
-#endif
-          const double dx = (energy_ranges.front().upper_energy - energy_ranges.front().lower_energy);
-          fit_energy_dep = (dx > 100.0);
-        }
-         
+          //We'll check if stat sig peaks span at least 100 keV (arbitrarily chosen), and if not,
+          // drop fitting the energy dependence for skew
+          const double min_energy_range_for_skew_ene_dep = 100;
+          shared_ptr<const PeakDef> lowest_peak, highest_peak;
+          for( const shared_ptr<const PeakDef> &p : all_peaks )
+          {
+            for( const auto &r : energy_ranges )
+            {
+              if( (p->mean() >= r.lower_energy) && (p->mean() <= r.upper_energy) )
+              {
+                if( !lowest_peak || (p->mean() < lowest_peak->mean()) )
+                  lowest_peak = p;
+
+                if( !highest_peak || (p->mean() > highest_peak->mean()) )
+                  highest_peak = p;
+
+                break;
+              }//if( we found the ROI for this peak )
+            }//for( const auto &r : energy_ranges )
+          }//for( const shared_ptr<const PeakDef> &p : all_peaks )
+
+          if( !lowest_peak
+             || !highest_peak
+             || (highest_peak->mean() < (lowest_peak->mean() + min_energy_range_for_skew_ene_dep)))
+          {
+            fit_skew_energy_dep = false;
+          }
+        }//if( fit_skew_energy_dep )
+
         // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
         assert( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall );
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
-          fit_energy_dep = false;
+          fit_skew_energy_dep = false;
         }
 #endif
         
         // If we will be fitting an energy dependence, make sure the cost functor knows this
-        cost_functor->m_skew_has_energy_dependance |= fit_energy_dep;
-          
+        cost_functor->m_skew_has_energy_dependance |= fit_skew_energy_dep;
+
         const size_t skew_start = cost_functor->m_skew_par_start_index;
         const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
         
@@ -3098,7 +3112,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
           
         // Specify ranges for second set of skew parameters
-        if( !fit_energy_dep )
+        if( !fit_skew_energy_dep )
         {
           parameters[skew_start + i + num_skew_coefs] = -999.9;
           constant_parameters.push_back( static_cast<int>(skew_start + i + num_skew_coefs) );
@@ -3673,9 +3687,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             p.setContinuum( shared_continuum );
           }//for( PeakDef &p : this_re_peaks.peaks )
           
-          if( i == 1 )
-            cout << "Got " << this_re_peaks.peaks.size() << " rel_eff_index=" << i << endl;
-          
           vector<PeakDef> &re_peaks = fit_peaks_for_each_curve[i];
           re_peaks.insert( end(re_peaks), begin(this_re_peaks.peaks), end(this_re_peaks.peaks) );
         }//for( size_t i = 0; i < num_rel_eff_curves; ++i )
@@ -3848,7 +3859,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         try
         {
           RelActCalc::Pu242ByCorrelationInput raw_rel_masses;
-          
+
+          set<double> pu_ages;
           double pu_total_mass = 0.0, raw_rel_mass = 0.0;
           for( const RelActCalcAuto::NuclideRelAct &nuc : rel_acts )
           {
@@ -3861,6 +3873,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             
             if( nuclide->atomicNumber == 94 )
             {
+              pu_ages.insert( nuc.age );
               pu_total_mass += rel_mass;
               switch( nuclide->massNumber )
               {
@@ -3875,11 +3888,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                   break;
                 default:  raw_rel_masses.other_pu_mass = rel_mass;  break;
               }//switch( nuclide->massNumber )
-            }else if( (nuclide->atomicNumber == 95) && (nuclide->massNumber == 241) )
+            }//if( nuclide->atomicNumber == 94 )
+
+            if( pu_ages.size() == 0 )
             {
-              // TODO: need to account for half-life of Am-241 and back decay the equivalent Pu241 mass
-              pu_total_mass += (242.0/241.0) * rel_mass;
-              raw_rel_masses.am241_rel_mass = rel_mass;
+              assert( pu_total_mass == 0.0 );
+            }else if( pu_ages.size() == 1 )
+            {
+              raw_rel_masses.pu_age = *begin(pu_ages);
+            }else
+            {
+              const vector<double> ages( begin(pu_ages), end(pu_ages) );
+              raw_rel_masses.pu_age = ages[ages.size() / 2]; //just take the median age...
             }
           }//for( const NuclideRelAct &nuc : m_rel_activities )
           
@@ -3889,7 +3909,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           raw_rel_masses.pu239_rel_mass /= pu_total_mass;
           raw_rel_masses.pu240_rel_mass /= pu_total_mass;
           raw_rel_masses.pu241_rel_mass /= pu_total_mass;
-          raw_rel_masses.am241_rel_mass /= pu_total_mass;
           raw_rel_masses.other_pu_mass  /= pu_total_mass;
           
           const RelActCalc::Pu242ByCorrelationOutput corr_output
@@ -9316,9 +9335,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       for( const auto &act : rel_acts )
       {
         const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(act.source);
-        if( nuc
-           && ((nuc->atomicNumber == 94)
-               || ((nuc->atomicNumber == 95) && (nuc->massNumber == 241))) )
+        if( nuc && (nuc->atomicNumber == 94) )
         {
           nuclides.insert( act.name() );
         }
@@ -9333,8 +9350,6 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       if( nuclides.count( "Pu241" ) )
         out << "\tPu241: " << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4) << "\n";
       out << "\tPu242 (by corr): " << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4) << "\n";
-      if( nuclides.count( "Am241" ) )
-        out << "\tAm241: " << SpecUtils::printCompact(100.0*pu_corr->am241_mass_frac, 4) << "\n";
       out << "\n";
     }//if( pu_corr )
     
@@ -9516,47 +9531,88 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       " <th scope=\"col\">% Pu Mass</th>"
       " </tr></thead>\n"
       "  <tbody>\n";
-      
-      set<string> nuclides;
-      for( const auto &act : rel_activities )
+
+      double pu239_act = 0.0; //We will need this to convert Pu242 rel mass, to a matching rel act
+      set<string> pu_nuclides;
+      set<double> pu_nuclide_ages;
+      vector<tuple<const SandiaDecay::Nuclide *,double>> pu_rel_acts;
+      for( const NuclideRelAct &act : rel_activities )
       {
         const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(act.source);
-        if( nuc
-           && ((nuc->atomicNumber == 94)
-               || ((nuc->atomicNumber == 95) && (nuc->massNumber == 241))) )
+        if( nuc && (nuc->atomicNumber == 94) )
         {
-          nuclides.insert( act.name() );
+          if( nuc->massNumber == 239 )
+            pu239_act = act.rel_activity;
+          pu_nuclides.insert( act.name() );
+          pu_nuclide_ages.insert( act.age );
+          pu_rel_acts.emplace_back( nuc, act.rel_activity );
         }
       }//for( const auto &act : rel_activities )
       
-      if( nuclides.count( "Pu238" ) )
+      if( pu_nuclides.count( "Pu238" ) )
         results_html << "  <tr><td>Pu238</td><td>"
         << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4)
         << "</td></tr>\n";
-      if( nuclides.count( "Pu239" ) )
+      if( pu_nuclides.count( "Pu239" ) )
         results_html << "  <tr><td>Pu239</td><td>"
         << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4)
         << "</td></tr>\n";
-      if( nuclides.count( "Pu240" ) )
+      if( pu_nuclides.count( "Pu240" ) )
         results_html << "  <tr><td>Pu40</td><td>"
         << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4)
         << "</td></tr>\n";
-      if( nuclides.count( "Pu241" ) )
+      if( pu_nuclides.count( "Pu241" ) )
         results_html << "  <tr><td>Pu241</td><td>"
         << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4)
         << "</td></tr>\n";
       results_html << "  <tr><td>Pu242 (by corr)</td><td>"
       << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4)
       << "</td></tr>\n";
-      if( nuclides.count( "Am241" ) )
-        results_html << "  <tr><td>Am241</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->am241_mass_frac, 4)
-        << "</td></tr>\n";
       results_html << "  </tbody>\n"
       << "</table>\n\n";
+
+      {//Begin put pu242 into `pu_rel_acts`
+        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+        assert( db );
+        const SandiaDecay::Nuclide * const pu239 = db->nuclide("Pu239");
+        const SandiaDecay::Nuclide * const pu242 = db->nuclide("Pu242");
+        assert( pu239 && pu242 );
+        const double pu242_rel_act = pu239_act * (pu_corr->pu242_mass_frac * pu242->activityPerGram())
+                                                     / (pu_corr->pu239_mass_frac * pu239->activityPerGram());
+
+        pu_rel_acts.emplace_back( pu242, pu242_rel_act );
+      }//End put pu242 into `pu_rel_acts`
+
+      if( (pu_nuclide_ages.size() == 1) && (pu_nuclides.size() > 1) )
+      {
+        const double back_decay_time = *begin(pu_nuclide_ages);
+        vector<tuple<const SandiaDecay::Nuclide *,double,double>> nuc_act_massfrac_at_t0
+                                          = RelActCalc::back_decay_relative_activities( back_decay_time, pu_rel_acts );
+        std::sort( begin(nuc_act_massfrac_at_t0), end(nuc_act_massfrac_at_t0), []( const auto &lhs, const auto &rhs ) -> bool {
+          return (get<0>(lhs)->symbol < get<0>(rhs)->symbol);
+        } );
+
+        results_html << "<table class=\"nuctable resulttable\">\n"
+        "  <caption>Plutonium mass fractions at T=0"
+        << (have_multiple_rel_eff ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
+        << "</caption>\n"
+        "  <thead><tr>"
+        " <th scope=\"col\">Nuclide</th>"
+        " <th scope=\"col\">% Pu Mass</th>"
+        " </tr></thead>\n"
+        "  <tbody>\n";
+        for( tuple<const SandiaDecay::Nuclide *,double,double> nuc_act_mass : nuc_act_massfrac_at_t0 )
+        {
+          results_html << "  <tr><td>" << get<0>(nuc_act_mass)->symbol << "</td><td>"
+          << SpecUtils::printCompact(100.0*get<2>(nuc_act_mass), 4)
+          << "</td></tr>\n";
+        }
+        results_html << "  </tbody>\n"
+        << "</table>\n\n";
+      }//if( (pu_nuclide_ages.size() == 1) && (pu_nuclides.size() > 1) )
     }//if( pu_corr )
-    
-    
+
+
     double sum_rel_mass = 0.0;
     for( const auto &act : rel_activities )
     {
@@ -10140,18 +10196,11 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
     throw std::logic_error( "mass_enrichment_fraction: invalid rel eff index" );
   
   const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
-  
-  // We will consider this to by Pu if either Pu or Am241
-  const bool is_pu = ((nuclide->atomicNumber == 94)
-                      || ((nuclide->atomicNumber == 95) && (nuclide->massNumber == 241)));
+
+  const bool is_pu = (nuclide->atomicNumber == 94);
   
   auto is_wanted_element = [is_pu,nuclide]( const SandiaDecay::Nuclide *test ) -> bool {
-    if( test->atomicNumber == nuclide->atomicNumber )
-      return true;
-    
-    return is_pu
-            && ((test->atomicNumber == 94)
-                || ((test->atomicNumber == 95) && (test->massNumber == 241)));
+    return (test->atomicNumber == nuclide->atomicNumber);
   };//is_wanted_element lamda
   
   const size_t nuc_index = nuclide_index( nuclide, rel_eff_index );
@@ -10169,8 +10218,6 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
   if( is_pu && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
   {
     const auto &pu_corr = m_corrected_pu[rel_eff_index];
-    if( (nuclide->atomicNumber == 95) && (nuclide->massNumber == 241) )
-      return pu_corr->am241_mass_frac;
     
     switch( nuclide->massNumber )
     {
@@ -10248,8 +10295,6 @@ double RelActAutoSolution::rel_activity( const SrcVariant &src, const size_t rel
   //  to Pu239, and return the multiple of this.
   //  The other Pu isotopes dont need a correction, I dont think
   const SandiaDecay::Nuclide * const nuc = nuclide(src);
-  const bool is_pu = (nuc && ((nuc->atomicNumber == 94)
-                        || ((nuc->atomicNumber == 95) && (nuc->massNumber == 241))));
   if( nuc && (nuc->atomicNumber == 94) && (nuc->massNumber == 242)
      && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
   {
