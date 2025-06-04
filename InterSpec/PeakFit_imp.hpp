@@ -20,25 +20,30 @@ namespace PeakFit
  * then some of the derivative values may become NaN during the `svd.solve(y)` step
  */
 template<typename PeakType, typename ScalarType>
-void fit_continuum( const float *x, const float *data, const size_t nbin,
-                   const int num_polynomial_terms,
-                   const bool step_continuum,
-                   const ScalarType ref_energy,
-                   const std::vector<PeakType> &fixedAmpPeaks,
-                   const bool multithread,
-                   ScalarType *continuum_coeffs,
-                   ScalarType *peak_counts )
+void fit_continuum( const float * const x,
+                    const float * const data,
+                    const float * const data_uncert,
+                    const size_t nbin,
+                    const int num_polynomial_terms,
+                    const bool step_continuum,
+                    const ScalarType ref_energy,
+                    const std::vector<PeakType> &fixedAmpPeaks,
+                    const bool multithread,
+                    ScalarType *continuum_coeffs,
+                    ScalarType *peak_counts )
 {
   using namespace std;
 
+  static const double MIN_CHANNEL_UNCERT = 1.0;
+
   if( step_continuum && ((num_polynomial_terms < 2) || (num_polynomial_terms > 4)) )
-    throw std::runtime_error( "fit_continuum: Only 2 to 4 terms are supported for step continuums" );
+    throw std::runtime_error( "fit_amp_and_offset: Only 2 to 4 terms are supported for step continuums" );
 
   if( num_polynomial_terms < 0 )
-    throw std::runtime_error( "fit_continuum: continuum must have at least 0 (e.g., no continuum) terms" );
+    throw std::runtime_error( "fit_amp_and_offset: continuum must have at least 0 (e.g., no continuum) terms" );
 
   if( num_polynomial_terms > 4 )
-    throw std::runtime_error( "fit_continuum: you asked for a higher order polynomial continuum than reasonable" );
+    throw std::runtime_error( "fit_amp_and_offset: you asked for a higher order polynomial continuum than reasonable" );
 
   // Loosely following:
   //   https://eigen.tuxfamily.org/dox/group__LeastSquares.html
@@ -85,24 +90,24 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
     pool.join();
 
     /*
-     vector<std::thread> threads( nthread );
-     for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
-     {
-     threads[thread_index] = std::thread( [nbin, thread_index, nfixedpeak, nthread, &results, &fixedAmpPeaks, &x](){
-     results[thread_index].resize( nbin, ScalarType(0.0) );
+    vector<std::thread> threads( nthread );
+    for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
+    {
+      threads[thread_index] = std::thread( [nbin, thread_index, nfixedpeak, nthread, &results, &fixedAmpPeaks, &x](){
+        results[thread_index].resize( nbin, ScalarType(0.0) );
 
-     for( size_t peak_index = thread_index; peak_index < nfixedpeak; peak_index += nthread )
-     {
-     fixedAmpPeaks[peak_index].gauss_integral( x, results[thread_index].data(), nbin );
-     }//for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
-     } );
-     }
+        for( size_t peak_index = thread_index; peak_index < nfixedpeak; peak_index += nthread )
+        {
+          fixedAmpPeaks[peak_index].gauss_integral( x, results[thread_index].data(), nbin );
+        }//for( size_t peak_index = 0; peak_index < nfixedpeak; ++peak_index )
+      } );
+    }
 
-     for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
-     {
-     threads[thread_index].join();
-     }
-     */
+    for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
+    {
+      threads[thread_index].join();
+    }
+    */
 
     // TODO: use Eigen to vectorize these sums
     for( size_t thread_index = 0; thread_index < nthread; ++thread_index )
@@ -121,12 +126,13 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
   for( size_t row = 0; row < nbin; ++row )
   {
     const double data_counts = data[row];
+    const double data_counts_uncert = data_uncert ? data_uncert[row] : sqrt(data[row]);
     const double x0 = x[row];
     const double x1 = x[row+1];
     const ScalarType x0_rel = x0 - ref_energy;
     const ScalarType x1_rel = x1 - ref_energy;
 
-    const double uncert = (data_counts > PEAK_FIT_MIN_CHANNEL_UNCERT) ? sqrt(data_counts) : 1.0;
+    const double uncert = (data_counts_uncert > MIN_CHANNEL_UNCERT) ? data_counts_uncert : 1.0;
 
     uncerts(row) = ScalarType(uncert);
 
@@ -140,8 +146,8 @@ void fit_continuum( const float *x, const float *data, const size_t nbin,
       const double exp = col + 1.0;
 
       if( step_continuum
-         && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
-         && (col == (num_polynomial_terms - 1)) )
+          && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
+          && (col == (num_polynomial_terms - 1)) )
       {
         // This logic mirrors that of PeakContinuum::offset_integral(...), and code
         // If you change it in one place - change it in here, below, and in offset_integral.

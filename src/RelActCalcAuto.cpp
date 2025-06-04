@@ -5601,25 +5601,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     return adjusted_energy;
   }//double un_apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
-  
-  
-  
-  
-  template<typename T>
-  struct PeaksForEnergyRangeImp
-  {
-    std::vector<PeakDefImp<T>> peaks;
-    
-    PeakContinuumImp<T> continuum;
-    
-    size_t first_channel;
-    size_t last_channel;
-    bool no_gammas_in_range;
-    bool forced_full_range;
-    
-    /** Peak plus continuum counts for [first_channel, last_channel] */
-    std::vector<T> peak_counts;
-  };//struct PeaksForEnergyRangeImp
+
   
   
   /** Computes peaks for a ROI range, given current paramaters
@@ -5628,7 +5610,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    @param multithread Wether to use a single, or multiple threads to comput the peaks
    */
   template<typename T>
-  PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
+  RelActCalcAuto::PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
                                                        const std::vector<T> &x,
                                                        const bool multithread ) const
   {
@@ -6117,10 +6099,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     peak_counts.resize( num_channels, T(0.0) );
     T *continuum_coeffs = answer.continuum.m_values.data();
 
-    vector<PeakDefImp<T>> dummy;
+    vector<RelActCalcAuto::PeakDefImp<T>> dummy;
 
-
-    RelActCalcAuto::fit_continuum( energies, data, data_uncerts, num_channels, num_polynomial_terms,
+    PeakFit::fit_continuum( energies, data, data_uncerts, num_channels, num_polynomial_terms,
                                   is_step_continuum, ref_energy, peaks, multithread,
                                   continuum_coeffs,
                                   peak_counts.data() );
@@ -6227,13 +6208,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                              const std::vector<double> &x,
                                              const std::set<size_t> &rel_eff_indices ) const
   {
-    PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
+    RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
 
     
     if( !rel_eff_indices.empty() )
     {
-      vector<PeakDefImp<double>> filtered_peaks;
-      for( const PeakDefImp<double> &p : computed_peaks.peaks )
+      vector<RelActCalcAuto::PeakDefImp<double>> filtered_peaks;
+      for( const RelActCalcAuto::PeakDefImp<double> &p : computed_peaks.peaks )
       {
         if( rel_eff_indices.count(p.m_rel_eff_index) )
           filtered_peaks.push_back( p );

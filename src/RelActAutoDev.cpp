@@ -1922,8 +1922,6 @@ int dev_code()
   
   const vector<RelActCalcAuto::NucInputInfo> nuclides{ {
       db->nuclide("Pu238"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1935,8 +1933,6 @@ int dev_code()
       "rgb(0, 0, 255)",
     }, {
       db->nuclide("Pu239"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1948,8 +1944,6 @@ int dev_code()
       "rgb(255, 69, 0)",
     }, {
       db->nuclide("Pu240"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
@@ -1961,8 +1955,6 @@ int dev_code()
       "rgb(34, 139, 34)",
     }, {
       db->nuclide("Pu241"),
-      nullptr,
-      nullptr,
       20.0*PhysicalUnits::year,  //Default age
       false, //fit age
       std::nullopt, //fit_age_min
