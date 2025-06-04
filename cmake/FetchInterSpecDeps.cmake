@@ -214,7 +214,7 @@ if( USE_REL_ACT_TOOL )
   else()
     set(EIGEN_FETCHCONTENT_SOURCE
       GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-      GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 # Updated 3.4 release, to pickup some CMake fixes
+      GIT_TAG        2e76277bd049f7bec36b0f908c69734a42c5234f  # Get trunk version as of 20250114 to pickup some compile issues for c++20
     )
   endif(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
   FetchContent_Declare(
