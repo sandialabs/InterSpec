@@ -670,8 +670,8 @@ namespace
       m_previewPopup->setOffsets(42, Left | Top);
       m_previewPopup->setOffsets(-10000, Left | Top);
       doJavaScript(WT_CLASS ".positionXY('" + m_previewPopup->id() + "',"
-                   + boost::lexical_cast<std::string>(event.window().x) + ","
-                   + boost::lexical_cast<std::string>(event.window().y) + ");");
+                   + std::to_string(event.window().x) + ","
+                   + std::to_string(event.window().y) + ");");
       
       m_previewPopup->setTransient( true, 0 );
       // connecting to WWebWidget::removeStyleClass(...) fails for some reason I cant quite tell why,

@@ -304,8 +304,8 @@ namespace InterSpecServer
       } );
       
       const int port = ns_server->httpPort();
-      std::string this_url = "http://127.0.0.1:" + boost::lexical_cast<string>(port);
-      
+      std::string this_url = "http://127.0.0.1:" + std::to_string(port);
+
       {
         std::lock_guard<std::mutex> lock( sm_servedOnMutex );
         sm_portServedOn = port;
@@ -404,7 +404,7 @@ namespace InterSpecServer
       
       const int port = ns_server->httpPort();
       assert( !server_port_num || (server_port_num == port) );
-      std::string this_url = "http://" + string(httpaddr_param_value) + ":" + boost::lexical_cast<string>(port);
+      std::string this_url = "http://" + string(httpaddr_param_value) + ":" + std::to_string(port);
       
       {
         std::lock_guard<std::mutex> lock( sm_servedOnMutex );
