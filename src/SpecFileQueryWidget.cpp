@@ -2071,13 +2071,11 @@ void SpecFileQueryWidget::doPersistCacheChanged()
 #if( BUILD_AS_ELECTRON_APP )
 void SpecFileQueryWidget::newElectronPathSelected( std::string path )
 {
-  m_basePath = path;
   basePathChanged();
 }
 #elif( BUILD_AS_OSX_APP )
 void SpecFileQueryWidget::newMacOsPathSelected( std::string path )
 {
-  m_basePath = path;
   basePathChanged();
 }//void newMacOsPathSelected()
 #endif

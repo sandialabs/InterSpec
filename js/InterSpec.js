@@ -137,6 +137,8 @@ function()
           }else{
             const fns = $(document).data('dragOverFilePaths');
             if( fns && Array.isArray(fns.filenames) && fns.time && (Math.abs(fns.time - (new Date())) < 30000) ){
+              const filename_uri = encodeURIComponent(file.name);
+              
               for( let i = 0; i < fns.filenames.length; ++i ) {
                 if( encodeURIComponent(fns.filenames[i]).endsWith(filename_uri) ){
                   fspath = fns.filenames[i];

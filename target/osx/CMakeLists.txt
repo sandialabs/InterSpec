@@ -11,7 +11,7 @@ set(BUILD_AS_OSX_APP ON CACHE INTERNAL "Build a OSX native app" )
 set(USE_OSX_NATIVE_MENU ON CACHE INTERNAL "Use macOS native menu-system" )
 set(USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE INTERNAL "Enable spectrum file query widget" )
 set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "Try to statically link" )
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE INTERNAL "Set OSX deployment target to 10.15" )
+set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE INTERNAL "Set OSX deployment target to 13.3" ) #I think 10.15 would be fine, except for using std::format(...) requiring std::to_chars
 set(USE_REL_ACT_TOOL ON CACHE INTERNAL "Enable Rel. Act. Tools" )
 set(USE_LEAFLET_MAP ON CACHE INTERNAL "Use leaflet map tool" )
 option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
