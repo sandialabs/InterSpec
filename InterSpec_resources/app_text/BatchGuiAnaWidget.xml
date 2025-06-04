@@ -36,7 +36,7 @@
   <message id="bgw-reports-write-custom-per-file">Custom Per-File</message>
   <message id="bgw-reports-write-custom-per-file-tooltip">Upload a custom report template to use for each file.</message>
   <message id="bgw-reports-write-custom-summary">Custom Summary</message>
-  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files. You can also specify "default" (=csv+html), "csv", "html", or "none".</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Performing Work</message>
@@ -69,8 +69,8 @@
   
   <message id="bgw-use-exemplar-energy-cal-tt">Use the exemplar N42 energy calibration with the input foreground files.
 If refit-energy-cal is specified true, then the exemplar energy cal will be used for initial fit, and then refined and peaks refit.
-Only applicable if N42 file is used for exemplar.</message>
-  
+  </message>
+
   <message id="bgw-write-n42-with-results-tt">Adds the fit peaks to the input spectrum file, and then saves as a N42. You must specify 'output_path' if you specify this option; also, will refuse to overwrite existing files.</message>
   
   <message id="bgw-show-nonfit-peaks-tt">Include peaks that are not fit into the output CSV peak results; these peaks will have a zero amplitude set.</message>
@@ -95,9 +95,9 @@ It is the ratio of the null hypothesis chi2 (continuum only, no Gaussian), to th
 A reasonable values for this seems to be in the 1 to 5 range.
 A zero or negative value will mean no requirement, and also no 'peak-stat-threshold' requirement.</message>
   
-  <message id="bgw-reports-write-custom-per-file-tooltip">One or more spectrum report template files - for each input file, a report will be produced with each template specified. You can also specify "default" (=txt+html), "txt", "html", or "none".</message>
-  
-  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files. You can also specify "default" (=csv+html), "csv", "html", or "none".</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">One or more spectrum report template files - for each input file, a report will be produced with each template specified.</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
 
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Use Bq units</message>
