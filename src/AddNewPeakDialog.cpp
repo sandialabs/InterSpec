@@ -520,7 +520,8 @@ void AddNewPeakDialog::doFit()
   vector<PeakDef> input_peaks( 1, *m_candidatePeak ), results;
   const double stat_threshold  = 0.0, hypothesis_threshold = 0.0;
   
-  fitPeaks( input_peaks, stat_threshold, hypothesis_threshold, meas, results, false, isHPGe );
+  Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+  fitPeaks( input_peaks, stat_threshold, hypothesis_threshold, meas, results, fit_options, isHPGe );
   
   if( results.empty() )
   {

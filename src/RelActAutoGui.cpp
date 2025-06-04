@@ -4092,9 +4092,10 @@ void RelActAutoGui::setPeaksToForeground()
           
           std::sort( begin(peaks_to_refit), end(peaks_to_refit), &PeakDef::lessThanByMeanShrdPtr );
           
+          WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+          fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly; //Arbitrary
           
-          const double meanSigmaVary = 0.25; //arbitrary
-          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, meanSigmaVary );
+          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, fit_options );
           
           if( fit_peaks[roi_num].size() != peaks_to_refit.size() )
           {
@@ -4110,10 +4111,12 @@ void RelActAutoGui::setPeaksToForeground()
             const double ncausality = 10;
             const double stat_threshold = 0.5;
             const double hypothesis_threshold = -1.0;
+            Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+            fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //THe peaks should be pretty close, so we'll only allow small changes to mean, so we dont fit into someunrelated peak...
             
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, true, isHPGe );
+                                                          foreground, fit_options, isHPGe );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )

@@ -113,6 +113,7 @@ namespace SpecUtils{ class Measurement; }
 namespace SpecUtils{ enum class SpectrumType : int; }
 namespace SpecUtils{ enum class DetectorType : int; }
 namespace SpecUtils{ enum class OccupancyStatus : int; }
+namespace PeakSearchGuiUtils{ enum class RefitPeakType : int; }
 
 
 namespace DataBaseUtils
@@ -1063,8 +1064,9 @@ protected:
   void rightClickMenuClosed();
   
   void peakEditFromRightClick();
-  void refitPeakFromRightClick();
-  void refitPeakWithDrfFwhm();
+  
+  void refitPeakFromRightClick( const PeakSearchGuiUtils::RefitPeakType type );
+  
   void setMeanToRefPhotopeak();
   void deletePeakFromRightClick();
   void addPeakFromRightClick();
@@ -1086,13 +1088,14 @@ protected:
   void setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
                        std::string nuclide );
   
-  std::shared_ptr<const PeakDef> nearestPeak( const double energy ) const;
-  
   void setIsotopeSearchEnergy( double energy );
   
 //If we are using D3 to render the spectrum chart, we need to have feature markers available
 //  to be able to display/hide them on the chart
 public:
+
+  std::shared_ptr<const PeakDef> nearestPeak( const double energy ) const;
+
   //Tracking of which feature markers are being shown on the c++ side of things
   //  is currently only used for export to the D3 chart...
   
@@ -1430,8 +1433,9 @@ protected:
   enum RightClickItems
   {
     kPeakEdit,
-    kRefitPeak,
-    kRefitROI,
+    kRefitPeakStandard,
+    kRefitRoiStandard,
+    kRefitRoiAgressive,
     kRefitPeakWithDrfFwhm,
     kSetMeanToRefPhotopeak,
     kChangeNuclide,

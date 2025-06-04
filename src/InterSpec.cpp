@@ -118,7 +118,6 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
-#include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
@@ -1079,25 +1078,29 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-peak-editor") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::peakEditFromRightClick );
         break;
-      case kRefitPeak:
+      case kRefitPeakStandard:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-refit-peak") );
-        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
+        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::Standard ) );
         break;
       case kRefitPeakWithDrfFwhm:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-use-drf-fwhm") );
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-use-drf-fwhm") );
-        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakWithDrfFwhm );
+        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::WithDrfFwhm ) );
         break;
-        
       case kSetMeanToRefPhotopeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-fix-mean") );
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-fix-mean") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::setMeanToRefPhotopeak );
         break;
-        
-      case kRefitROI:
+      case kRefitRoiStandard:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-refit-roi") );
-        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::refitPeakFromRightClick );
+        m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-refit-roi") );
+        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::Standard ) );
+        break;
+      case kRefitRoiAgressive:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-refit-roi-aggressive") );
+        m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-refit-roi-aggressive") );
+        m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::RoiAgressive ) );
         break;
       case kDeletePeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-delete-peak") );
@@ -1987,22 +1990,17 @@ std::shared_ptr<const PeakDef> InterSpec::nearestPeak( const double energy ) con
   return nearPeak;
 }//std::shared_ptr<const PeakDef> nearestPeak() const
 
-void InterSpec::refitPeakFromRightClick()
+
+void InterSpec::refitPeakFromRightClick( const PeakSearchGuiUtils::RefitPeakType type )
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
-  
-  PeakSearchGuiUtils::refit_peaks_from_right_click( this, m_rightClickEnergy );
+  PeakSearchGuiUtils::refit_peaks_from_right_click( this, m_rightClickEnergy, type );
 }//void refitPeakFromRightClick()
-
-
-void InterSpec::refitPeakWithDrfFwhm()
-{
-  PeakSearchGuiUtils::refit_peaks_with_drf_fwhm( this, m_rightClickEnergy );
-}//void InterSpec::refitPeakWithDrfFwhm()
 
 
 void InterSpec::setMeanToRefPhotopeak()
 {
+  UndoRedoManager::PeakModelChange peak_undo_creator;
   PeakSearchGuiUtils::refit_peak_with_photopeak_mean( this, m_rightClickEnergy );
 }//void setMeanToRefPhotopeak()
 
@@ -2010,204 +2008,7 @@ void InterSpec::setMeanToRefPhotopeak()
 void InterSpec::addPeakFromRightClick()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
-  
-  std::shared_ptr<const SpecUtils::Measurement> dataH = m_spectrum->data();
-  std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
-  if( !peak
-      || m_rightClickEnergy < peak->lowerX()
-      || m_rightClickEnergy > peak->upperX()
-      || !m_dataMeasurement
-      || !dataH )
-  {
-    passMessage( WString::tr("err-no-roi-to-add-peak"), WarningWidget::WarningMsgInfo );
-    return;
-  }//if( !peak )
-  
-  //get all the peaks that belong to this ROI
-  typedef std::shared_ptr<const PeakContinuum> ContPtr;
-  typedef map<ContPtr, std::vector<PeakDef > > ContToPeakMap;
-  
-  
-  const auto origContinumm = peak->continuum();
-  const std::shared_ptr<const deque<PeakModel::PeakShrdPtr>> allOrigPeaksDeque = m_peakModel->peaks();
-  
-  // We need to make a copy of all the shared pointers because we modify the deque that
-  //  allOrigPeaksDeque points at.
-  const deque<PeakModel::PeakShrdPtr> allOrigPeaks( begin(*allOrigPeaksDeque), end(*allOrigPeaksDeque) );
-  
-  ContToPeakMap contToPeaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
-  {
-    if( thispeak )
-      contToPeaks[thispeak->continuum()].push_back( *thispeak );
-  }
-  
-  std::vector<PeakDef> origRoiPeaks = contToPeaks[peak->continuum()];
-  
-  //Make sure we dont try to mix data defined and gaussian defined peaks
-  for( const PeakDef &p : origRoiPeaks )
-  {
-    if( !p.gausPeak() )
-    {
-      passMessage( WString::tr("err-no-add-peak-to-data-roi"), WarningWidget::WarningMsgInfo );
-      return;
-    }
-  }//for( const PeakDef &p : origRoiPeaks )
-  
-  if( origRoiPeaks.empty() )
-    throw runtime_error( "Logic error in InterSpec::addPeakFromRightClick()" );
-  
-  const double x0 = peak->lowerX();
-  const double x1 = peak->upperX();
-  const size_t lower_channel = dataH->find_gamma_channel( x0 );
-  const size_t upper_channel = dataH->find_gamma_channel( x1 );
-  const size_t nbin = ((upper_channel > lower_channel) ? (upper_channel-lower_channel) : size_t(0));
-  
-  double startingChi2, fitChi2;
-  
-  {//begin codeblock to evaluate startingChi2
-    MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(origRoiPeaks.size()),
-                                dataH,
-                                peak->continuum()->type(),
-                                PeakDef::SkewType::NoSkew,
-                                lower_channel, upper_channel );
-    startingChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), origRoiPeaks );
-  }//end codeblock to evaluate startingChi2
-  
-  
-  bool inserted = false;
-  vector< std::shared_ptr<PeakDef> > answer;
-  for( PeakDef p : origRoiPeaks )
-  {
-    if( fabs(p.mean() - peak->mean()) < 0.01 )
-    {
-      inserted = true;
-      PeakDef newpeak = p;
-      newpeak.setMean( m_rightClickEnergy );
-      newpeak.setSigma( newpeak.sigma() / sqrt(2.0) );
-      newpeak.setAmplitude( 0.25*p.amplitude() );
-      p.setAmplitude( 0.75*p.amplitude() );
-      p.setSigma( p.sigma() / sqrt(2.0) );
-      
-      if( newpeak.mean() < p.mean() )
-      {
-        answer.push_back( std::make_shared<PeakDef>( newpeak ) );
-        answer.push_back( std::make_shared<PeakDef>( p ) );
-      }else
-      {
-        answer.push_back( std::shared_ptr<PeakDef>( new PeakDef(p) ) );
-        answer.push_back( std::shared_ptr<PeakDef>( new PeakDef(newpeak) ) );
-      }//if( newpeak.mean() < p.mean() ) / else
-    }else
-    {
-//      p.setFitFor(PeakDef::Mean, false);
-//      p.setFitFor(PeakDef::Sigma, false);
-//      p.setFitFor(PeakDef::GaussAmplitude, false);
-      answer.push_back( std::make_shared<PeakDef>( p ) );
-    }
-  }//for( PeakDef p : origRoiPeaks )
-  
-  if( !inserted )
-    throw runtime_error( "Logic error 2 in InterSpec::addPeakFromRightClick()" );
-
-  const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-  
-  const MultiPeakInitialGuessMethod methods[] = { FromInputPeaks, UniformInitialGuess, FromDataInitialGuess };
-  
-  for( auto method : methods )
-  {
-    
-    vector< std::shared_ptr<PeakDef> > orig_answer;
-    try
-    {
-      for( auto p : answer )
-        orig_answer.push_back( make_shared<PeakDef>( *p ) );
-      
-      findPeaksInUserRange( x0, x1, int(answer.size()), method, dataH,
-                           m_dataMeasurement->detector(), isHPGe, answer, fitChi2 );
-      
-      std::vector<PeakDef> newRoiPeaks;
-      for( size_t i = 0; i < answer.size(); ++i )
-        newRoiPeaks.push_back( *answer[i] );
-      
-      MultiPeakFitChi2Fcn chi2fcn( static_cast<int>(newRoiPeaks.size()),
-                                  dataH,
-                                  peak->continuum()->type(),
-                                  PeakDef::SkewType::NoSkew,
-                                  lower_channel, upper_channel );
-      fitChi2 = chi2fcn.evalRelBinRange( 0, chi2fcn.nbin(), newRoiPeaks );
-      
-      if( !IsNan(fitChi2) && !IsInf(fitChi2) && (fitChi2 < startingChi2) )
-      {
-        //cout << "Method " << method << " gave fitChi2=" << fitChi2 << ", which is better than initial startingChi2=" << startingChi2 << endl;
-        break;
-      }
-      
-      answer = orig_answer;
-    }catch( std::exception & )
-    {
-      answer = orig_answer;
-    }
-  }//for( auto method : methods )
-  
-//  could try to fix all peaks other than the new one, and the nearest one, do the
-//  fit, then replace the other peaks to original fitFor state, and refit all of
-//  them.
-  
-  const double dof = (nbin + 3*origRoiPeaks.size() + peak->continuum()->type());
-  const double chi2Dof = fitChi2 / dof;
-  
-  cerr << "m_rightClickEnergy=" << m_rightClickEnergy << endl;
-  cerr << "PreChi2=" << startingChi2 << ", PostChi2=" << fitChi2 << endl;
-  cerr << "Got chi2Dof=" << chi2Dof << " when fitting for new peak" << endl;
-  
-  for( size_t i = 0; i < answer.size(); ++i )
-  {
-    cerr << "Peak " << i << " at " << answer[i]->mean() << " w/ width="
-         << answer[i]->sigma() << ", and amp=" << answer[i]->amplitude() << endl;
-  }
-  
-  //Remove old ROI peaks
-  if( fitChi2 > startingChi2 )
-  {
-    passMessage( WString::tr("err-add-peak-no-improve"), WarningWidget::WarningMsgInfo );
-    return;
-  }
-  
-  
-  std::map<std::shared_ptr<PeakDef>,PeakModel::PeakShrdPtr> new_to_orig_peaks;
-  for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
-  {
-    if( !thispeak || (thispeak->continuum() != origContinumm) )
-      continue;
-    
-    m_peakModel->removePeak( thispeak );
-    
-    //Associate new peak 
-    double dist = 99999.9;
-    std::shared_ptr<PeakDef> nearest_new;
-    for( std::shared_ptr<PeakDef> newpeak : answer )
-    {
-      const double d = fabs( newpeak->mean() - thispeak->mean() );
-      if( d < dist && !new_to_orig_peaks.count(newpeak) )
-      {
-        dist = d;
-        nearest_new = newpeak;
-      }
-    }//
-    if( nearest_new )
-    {
-      nearest_new->inheritUserSelectedOptions( *thispeak, true );
-      new_to_orig_peaks[nearest_new] = thispeak;
-    }
-  }//for( const PeakModel::PeakShrdPtr &thispeak : allOrigPeaks )
-  
-  
-  for( size_t i = 0; i < answer.size(); ++i )
-  {
-    const bool isNew = !new_to_orig_peaks.count(answer[i]);
-    InterSpec::addPeak( *answer[i], isNew );
-  }
+  PeakSearchGuiUtils::add_peak_from_right_click( this, m_rightClickEnergy );
 }//void addPeakFromRightClick()
 
 
@@ -2244,7 +2045,7 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
   m_peakModel->removePeak( peak );
   addPeak( newpeak, true );
   
-  refitPeakFromRightClick();
+  refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::Standard );
   
   //Now we gotta refit the peaks that have the continuum we took this peak from
   std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks;
@@ -2280,7 +2081,7 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
   std::const_pointer_cast<PeakContinuum>(oldcont)->setRange( minx, maxx );
   const double oldenergy = m_rightClickEnergy;
   m_rightClickEnergy = oldneighbors[0]->mean();
-  refitPeakFromRightClick();
+  refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::Standard );
   m_rightClickEnergy = oldenergy;
 }//void makePeakFromRightClickHaveOwnContinuum()
 
@@ -2408,7 +2209,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 //    continuum->setRange( peak->lowerX(), peaktoshare->upperX() );
 //  boost::const_pointer_cast<PeakDef>(peak)->setContinuum( continuum );
 
-  refitPeakFromRightClick();
+  refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::Standard );
 }//void shareContinuumWithNeighboringPeak( const bool shareWithLeft )
 
 
@@ -2662,6 +2463,19 @@ void InterSpec::handleRightClick( double energy, double counts,
       case kAddPeakToRoi:
         m_rightClickMenutItems[i]->setHidden( !peak );
       break;
+      
+      case kRefitPeakStandard:
+        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() || (npeaksInRoi > 1) );
+      break;
+        
+      case kRefitRoiStandard:
+      case kRefitRoiAgressive:
+        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() || (npeaksInRoi < 2) );
+      break;
+        
+      case kRefitPeakWithDrfFwhm:
+        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() );
+      break;
         
       case kChangeContinuum:
       {
@@ -2758,18 +2572,6 @@ void InterSpec::handleRightClick( double energy, double counts,
         
         break;
       }//case kChangeNuclide:
-        
-      case kRefitPeak:
-        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() || (npeaksInRoi > 1) );
-      break;
-        
-      case kRefitROI:
-        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() || (npeaksInRoi < 2) );
-      break;
-        
-      case kRefitPeakWithDrfFwhm:
-        m_rightClickMenutItems[i]->setHidden( !peak || !peak->gausPeak() );
-      break;
         
       case kSetMeanToRefPhotopeak:
       {
@@ -4752,10 +4554,10 @@ void InterSpec::showLicenseAndDisclaimersWindow()
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto undo = [this](){ deleteLicenseAndDisclaimersWindow(); };
-    auto redo = [this](){ showLicenseAndDisclaimersWindow(); };
-    m_undo->addUndoRedoStep( std::move(undo), std::move(redo),
-                            "Show disclaimers, credits, and contact window." );
+    auto undo = wApp->bind( boost::bind(&WDialog::accept, m_licenseWindow) );
+    // We wont have redo show the dialog again, because then the closer functionoid wont work, and
+    //  it isnt worth making the SimpleDialog a member variable of the InterSpec class.
+    m_undo->addUndoRedoStep( std::move(undo), nullptr, "Show disclaimers, credits, and contact window." );
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void showLicenseAndDisclaimersWindow()
 
@@ -7782,7 +7584,10 @@ void InterSpec::finishHardBackgroundSub( std::shared_ptr<bool> truncate_neg, std
         const double lowE = newspec->gamma_energy_min();
         const double upE = newspec->gamma_energy_max();
       
-        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, true, isHPGe );
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> re_fit_options;
+        //re_fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
+        
+        refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, re_fit_options, isHPGe );
         
         std::deque<std::shared_ptr<const PeakDef> > peakdeque;
         for( const auto &p : refit_peaks )
@@ -11582,9 +11387,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       const std::string sessionid = wApp->sessionId();
       propigate_peaks_fcns = [=,this]( std::shared_ptr<const SpecUtils::Measurement> data ){
-        PeakSearchGuiUtils::fit_template_peaks( this, data, input_peaks, original_peaks,
-                       PeakSearchGuiUtils::PeakTemplateFitSrc::PreviousSpectrum,
-                       sessionid );
+        PeakSearchGuiUtils::add_peak_from_right_click( this, m_rightClickEnergy );
       };
     }//if( prev spec had peaks and new one doesnt )
   }//if( should propogate peaks )
@@ -12833,7 +12636,7 @@ void InterSpec::excludePeaksFromRange( double x0, double x1 )
     //This would make things more consistent between right clicking to fit, and
     //  erasing part of the ROI (which is what happened if we are here).
     
-    PeakShrdVec newpeaks = refitPeaksThatShareROI( data, detector, iter->second, 0.25 );
+    PeakShrdVec newpeaks = refitPeaksThatShareROI( data, detector, iter->second, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
     if( newpeaks.size() == iter->second.size() )
     {
       for( size_t j = 0; j < newpeaks.size(); ++j )

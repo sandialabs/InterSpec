@@ -32,6 +32,7 @@
 #include "Minuit2/FCNBase.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFitLM.h" //necassary because we cant forward-declare the PeakFitLM::PeakFitLMOptions
 
 
 class DetectorPeakResponse;
@@ -46,11 +47,27 @@ namespace ROOT
 
 namespace SpecUtils{ class Measurement; }
 
-
 typedef std::shared_ptr<const DetectorPeakResponse> DetctorPtr;
 typedef std::vector< std::shared_ptr<const PeakDef> > PeakShrdVec;
 
 // TODO: put everything in this file into a namespace
+
+
+/** Using google Ceres to fit peaks.
+ 
+ As of 20250501, it looks like using Ceres via PeakFitLM.h/.cpp is the best way to
+ go for peak fitting.
+ 
+ 
+ MultiPeakFitChi2Fcn and LinearProblemSubSolveChi2Fcn classes should be removed once we are fully into moving to using Ceres based peak fitter
+ The followwing functions will also need to be removed: `refitPeaksThatShareROI_imp`, `fit_peak_for_user_click`
+ */
+#if( USE_REL_ACT_TOOL )
+#define USE_LM_PEAK_FIT 1
+#else
+#define USE_LM_PEAK_FIT 0
+#endif
+
 
 // 20240911: The minimum uncertainty allowed for a gamma spectrum channel.
 // Background subtracted spectra can end up with tiny bins, like 0.0007,
@@ -188,7 +205,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0, const double x1,
                                       const double hypothesis_threshold,
                                       std::vector<PeakDef> all_peaks,
                                       std::shared_ptr<const SpecUtils::Measurement> data,
-                                      bool isRefit,
+                                      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
                                       const bool isHPGe );
 
 
@@ -268,7 +285,7 @@ std::vector< std::shared_ptr<const PeakDef> >
     refitPeaksThatShareROI( const std::shared_ptr<const SpecUtils::Measurement> &dataH,
                             const DetctorPtr &detector,
                             const std::vector< std::shared_ptr<const PeakDef> > &inpeaks,
-                            const double meanSigmaVary );
+                            const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options );
 
 
 //For meaning of stat_threshold and hypothesis_threshold see notes for
@@ -276,12 +293,14 @@ std::vector< std::shared_ptr<const PeakDef> >
 //The fixedpeaks passed in are not included in the results, and are taken as
 //  fixed in the fit, and will not be deleted even if are not significant;
 //  also, they do not influence the X-range fit for.
+//  Note 20250502: during transition to LM-based fitting, only the MediumRefinementOnly and SmallRefinementOnly flags of
+//                 `fit_options` are checked for.  And they both map to PeakFitChi2Fcn::kRefitPeakParameters.
 void fitPeaks( const std::vector<PeakDef> &input_peaks,
                       const double stat_threshold,
                       const double hypothesis_threshold,
                       std::shared_ptr<const SpecUtils::Measurement> data,
                       std::vector<PeakDef> &results,
-                      bool amplitudeOnly,
+                      const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
                       const bool isHPGe ) throw();
 
 enum MultiPeakInitialGuessMethod
@@ -291,8 +310,11 @@ enum MultiPeakInitialGuessMethod
   FromInputPeaks          //uses peaks populated in 'answer', throws if answer.size!=nPeaks, or if they dont all share a continuum
 };//enum MultiPeakInitialGuessMethod
 
-//findPeaksInUserRange(...): method to simultaneously fit for 'nPeaks' in the
-//  the range x0 to x1
+/** Method to simultaneously fit for 'nPeaks' in the  the range x0 to x1.
+ Used when you right-click on a ROI and ask to add a peak, as well as when the user is dragging a ROI-edge on the spectrum.
+ 
+ Answer will be empty if failed to fit.
+ */
 void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           MultiPeakInitialGuessMethod method,
                           std::shared_ptr<const SpecUtils::Measurement> dataH,
@@ -301,14 +323,6 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           std::vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 );
 
-
-void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
-                                      MultiPeakInitialGuessMethod method,
-                          std::shared_ptr<const SpecUtils::Measurement> dataH,
-                          std::shared_ptr<const DetectorPeakResponse> detector,
-                          const bool isHPGe,
-                          std::vector<std::shared_ptr<PeakDef> > &answer,
-                          double &chi2 );
 
 //nsigma is number of sigma away from mean of gaussian being tested to
 //  consider, inorder for the peak to be in the range; for non-gaus peaks

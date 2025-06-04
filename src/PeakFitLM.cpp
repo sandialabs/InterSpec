@@ -1991,7 +1991,7 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const std::vector<std::shared_ptr<const PeakDef>> &inpeaks,
-                                   const double meanSigmaVary )
+                                   const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options )
 {
   vector<shared_ptr<const PeakDef>> answer;
 
@@ -2011,7 +2011,6 @@ std::vector<std::shared_ptr<const PeakDef>> refitPeaksThatShareROI_LM(
     const auto resType = PeakFitUtils::coarse_resolution_from_peaks(inpeaks);
     const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High);
 
-    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( 0 );
     answer = fit_peaks_in_roi_LM( inpeaks, data, isHPGe, fit_options );
 
 

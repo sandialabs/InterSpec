@@ -59,6 +59,7 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/SpecUtilsAsync.h"
+//#include "SpecUtils/DateTime.h" //on for debug SpecUtils::get_cpu_time() / SpecUtils::get_wall_time();
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
@@ -75,18 +76,6 @@
 
 #include "InterSpec/PeakFit_imp.hpp"
 
-/** Using google Ceres to fit peaks is an experiment in using Ceres.
-
- Its actually maybe a slower (although this is probably not the fault of Ceres - but of my
- coding - and actually this is only when using a single thread, and for a single peak - for
- multiple peaks and multiple Ceres threads, it doe beat-out minuit - even with my non-optimal
- usage of Ceres), is totally untested, and hasnt been finished implementing everything.
- */
-#if( USE_REL_ACT_TOOL )
-#define USE_LM_PEAK_FIT 1
-#else
-#define USE_LM_PEAK_FIT 0
-#endif
 
 using namespace std;
 
@@ -489,17 +478,53 @@ std::vector<std::shared_ptr<const PeakDef> > search_for_peaks_multithread(
     
     vector< pair< PeakShrdVec, PeakShrdVec > > results( candidatesBeingFitFor.size() );
     
+    // CPU usuage doesnt *look* pegged for this function because we are doing a
+    //  `while( !candidates.empty() ){...}`, which leads to fewer and fewer peaks
+    //  each iteration.  For the example Ba133 HPGe spectrum, it looks like 2 cores
+    //  are being used, because this loop is actually doing 5 iterations.
+    //std::atomic<double> sum_cpu_time( 0.0 ), sum_wall_time( 0.0 );
+    //const double start_cpu_time = SpecUtils::get_cpu_time();
+    //const double start_wall_time = SpecUtils::get_wall_time();
+    
     for( size_t i = 0; i < candidatesBeingFitFor.size(); ++i )
     {
       const double mean = candidatesBeingFitFor[i]->mean();
-      pool.post( boost::bind( &do_peak_automated_searchfit, mean,
-                             boost::cref(meas), boost::cref(drf),
-                             boost::cref(fitpeakvec), 
-                             isHPGe,
-                             boost::ref(results[i]) ));
+      pair<PeakShrdVec, PeakShrdVec> &res = results[i];
+      
+      pool.post(
+        [mean, isHPGe, &res,
+         //&sum_cpu_time, &sum_wall_time,
+         meas_cref = std::as_const(meas),
+         drf_cref = std::as_const(drf),
+         fitpeakvec_cref = std::as_const(fitpeakvec)
+        ](){
+          
+          //const double this_start_cpu_time = SpecUtils::get_cpu_time();
+          //const double this_start_wall_time = SpecUtils::get_wall_time();
+          
+          do_peak_automated_searchfit( mean, meas_cref, drf_cref, fitpeakvec_cref, isHPGe, res );
+          
+          //const double this_end_cpu_time = SpecUtils::get_cpu_time();
+          //const double this_end_wall_time = SpecUtils::get_wall_time();
+          //sum_cpu_time += (this_end_cpu_time - this_start_cpu_time);
+          //sum_wall_time += (this_end_wall_time - this_start_wall_time);
+        }
+      );
+      
+      //pool.post( boost::bind( &do_peak_automated_searchfit, mean,
+      //                       boost::cref(meas), boost::cref(drf),
+      //                       boost::cref(fitpeakvec),
+      //                       isHPGe,
+      //                       boost::ref(results[i]) ));
     }//for( size_t i = 0; i < peaksToTryIndices.size(); ++i )
     
     pool.join();
+    
+    //const double end_cpu_time = SpecUtils::get_cpu_time();
+    //const double end_wall_time = SpecUtils::get_wall_time();
+    
+    //cout << "Cpu  time: " << (end_cpu_time - start_cpu_time) << "s, vs sum " << sum_cpu_time.load() << "s" << endl;
+    //cout << "Wall time: " << (end_wall_time - start_wall_time) << "s, vs sum " << sum_wall_time.load() << "s" << endl;
     
     bool was_collision = false;
     
@@ -890,11 +915,9 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
                           vector<std::shared_ptr<PeakDef> > &answer,
                           double &chi2 )
 {
-  //Current (main) problems with the results of this function
-  //  --Results can be catastrophically wrong, depending on exact input range
-  
   if( method != FromInputPeaks )
     answer.clear();
+  
   chi2 = std::numeric_limits<double>::max();
   
   if( !dataH || nPeaks<=0 )
@@ -914,16 +937,173 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   for( size_t i = 0; i < answer.size(); ++i )
     intputSharesContinuum &= (answer[i]->continuum()==answer[0]->continuum());
   
-  double p0, p1;
+  
   const size_t nSideBinsToAverage = 3;
   PeakContinuum::OffsetType offsetType = PeakContinuum::Linear;
-  if( intputSharesContinuum )
+  if( intputSharesContinuum && !answer.empty() )
     offsetType = answer[0]->continuum()->type();
   else if( nPeaks > 3 && (end_channel - start_channel) > 20 )  //20 is a WAG
     offsetType = PeakContinuum::Quadratic;
   
+  double p0, p1;
   PeakContinuum::eqn_from_offsets( start_channel, end_channel, start_range,
                                   dataH, nSideBinsToAverage, nSideBinsToAverage, p1, p0 );
+  
+  
+  double conteqn[6] = { p0, p1, 0.0, 0.0, 0.0, 0.0 };
+  double initial_cont_area = PeakContinuum::offset_eqn_integral( conteqn, offsetType, start_range, end_range, start_range );
+  
+  const double totalpeakarea = (areaarea > initial_cont_area)
+                                 ? (areaarea - initial_cont_area) : areaarea;
+  
+  
+#if( USE_LM_PEAK_FIT )
+  vector<std::shared_ptr<const PeakDef>> inpeaks;
+  std::shared_ptr<PeakContinuum> shared_continuum;
+  switch( method )
+  {
+    case UniformInitialGuess:
+    {
+      for( int i = 0; i < nPeaks; ++i )
+      {
+        auto peak = make_shared<PeakDef>();
+        
+        const double amp = totalpeakarea / nPeaks;
+        double mean = x0 + (i+0.5)*(x1-x0)/nPeaks;
+        double sigma = 0.25*fabs(x1-x0) / nPeaks;
+        
+        if( detector && detector->hasResolutionInfo() )
+          sigma = detector->peakResolutionSigma( mean );
+        
+        peak->setAmplitude( amp );
+        peak->setMean( mean );
+        peak->setSigma( sigma );
+        
+        if( i == 0 )
+          shared_continuum = peak->continuum();
+        else
+          peak->setContinuum( shared_continuum );
+        
+        inpeaks.push_back( peak );
+      }//for( int i = 0; i < nPeaks; ++i )
+      
+      break;
+    }//case UniformInitialGuess:
+      
+    case FromDataInitialGuess:
+    {
+      intputSharesContinuum = false;
+      std::vector< std::tuple<float,float,float> > candidates;  //{mean,sigma,area}
+      secondDerivativePeakCanidates( dataH, isHPGe, start_channel, end_channel, candidates );
+      std::sort( begin(candidates), end(candidates),
+                []( const tuple<float,float,float> &lhs, const tuple<float,float,float> &rhs) -> bool {
+        return std::get<2>(lhs) > std::get<2>(rhs);
+      } );
+      
+      double avrg_width = 0.0, avrg_amp = 0.0;
+      for( auto i = begin(candidates); int(inpeaks.size()) < nPeaks && i != end(candidates); ++i )
+      {
+        if( get<0>(*i) >= x0 && get<0>(*i) <= x1 )
+        {
+          avrg_width += get<1>(*i);
+          avrg_amp += get<2>(*i);
+          
+          auto peak = make_shared<PeakDef>(get<0>(*i), get<1>(*i), get<2>(*i));
+          
+          if( !shared_continuum )
+            shared_continuum = peak->continuum();
+          else
+            peak->setContinuum( shared_continuum );
+          
+          inpeaks.push_back( peak );
+        }//if( i->second.mean() >= x0 && i->second.mean() <= x1 )
+      }//for(...)
+      
+      if( inpeaks.size() )
+      {
+        avrg_width /= inpeaks.size();
+        avrg_amp /= inpeaks.size();
+      }else
+      {
+        avrg_width = 0.25*( fabs(x0 - x1) );
+        avrg_amp = 0.5*dataH->gamma_channels_sum( start_channel, end_channel );
+      }//if( inpeaks ) / else
+      
+      for( int i = int(inpeaks.size()); i < nPeaks; ++i )
+      {
+        auto peak = make_shared<PeakDef>();
+        const double amp = totalpeakarea / nPeaks;
+        const double mean = x0 + (x1-x0)/(1+inpeaks.size());
+        double sigma = avrg_width;
+        if( detector && detector->hasResolutionInfo() )
+          sigma = detector->peakResolutionSigma( mean );
+        
+        peak->setMean( mean );
+        peak->setSigma( sigma );
+        peak->setAmplitude( amp );
+        
+        if( i == 0 )
+          shared_continuum = peak->continuum();
+        else
+          peak->setContinuum( shared_continuum );
+        
+        inpeaks.push_back( peak );
+      }//for( int i = int(inpeaks.size()); i < nPeaks; ++i )
+      
+      break;
+    }//case FromDataInitialGuess:
+      
+    case FromInputPeaks:
+    {
+      if( answer.size() != static_cast<size_t>(nPeaks) )
+        throw runtime_error( "findPeaksInUserRange: invalid input for method=FromInputPeaks" );
+      
+      for( size_t i = 0; i < answer.size(); ++i )
+      {
+        auto peak = make_shared<PeakDef>( *answer[i] );
+        if( i == 0 )
+          shared_continuum = std::make_shared<PeakContinuum>( *peak->continuum() );
+        peak->setContinuum( shared_continuum );
+        inpeaks.push_back( peak );
+      }
+      
+      answer.clear();
+      break;
+    }//case FromInputPeaks:
+  }//switch( method )
+  
+  assert( shared_continuum );
+  
+  shared_continuum->setRange( x0, x1 );
+  shared_continuum->setType( offsetType );
+  
+  const bool is_refit = false;
+  const double stat_threshold = 0.0;
+  const double hypothesis_threshold = 0.0;
+  
+  vector<shared_ptr<const PeakDef>> results;
+  
+  PeakFitLM::fit_peaks_LM( results, inpeaks, dataH, stat_threshold, hypothesis_threshold, is_refit, isHPGe );
+  
+  answer.clear();
+  if( static_cast<int>(results.size()) == nPeaks )
+  {
+    for( const shared_ptr<const PeakDef> &p : results )
+      answer.push_back( make_shared<PeakDef>(*p) );
+  }else
+  {
+    cerr << "findPeaksInUserRange, using USE_LM_PEAK_FIT, fit " << results.size()
+    << "peaks, but was requested " << nPeaks << " so will not return any peaks." << endl;
+    
+  }//if( two peaks are too close, or just really couldnt fit the peaks )
+  
+  if( !answer.empty() )
+    chi2 = answer.front()->chi2dof();
+  
+  return;
+#else
+  //Current (main) problems with the results of this function
+  //  --Results can be catastrophically wrong, depending on exact input range
   
   const PeakDef::SkewType skewType = PeakDef::SkewType::NoSkew;
   
@@ -932,12 +1112,6 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
   //chi2fcn.set_reldiff_punish_start( 2.35482 );
   
   vector<PeakDef> inpeaks;
-  double conteqn[6] = { p0, p1, 0.0, 0.0, 0.0, 0.0 };
-  double initial_cont_area = PeakContinuum::offset_eqn_integral( conteqn, offsetType, start_range, end_range, start_range );
-  
-  const double totalpeakarea = (areaarea > initial_cont_area)
-  ? (areaarea - initial_cont_area) : areaarea;
-  
   switch( method )
   {
     case UniformInitialGuess:
@@ -1257,284 +1431,8 @@ void findPeaksInUserRange( double x0, double x1, int nPeaks,
     p->set_coefficient( chi2Dof, PeakDef::Chi2DOF );
     answer.emplace_back( std::move(p) );
   }
+#endif //#if( USE_LM_PEAK_FIT ) / else
 }//void findPeaksInUserRange( double x0, double x1, int nPeaks )
-
-
-
-
-
-void findPeaksInUserRange_linsubsolve( double x0, double x1, int nPeaks,
-                                      MultiPeakInitialGuessMethod method,
-                          std::shared_ptr<const Measurement> dataH,
-                          std::shared_ptr<const DetectorPeakResponse> detector,
-                                      const bool isHPGe,
-                          vector<std::shared_ptr<PeakDef> > &answer,
-                          double &chi2 )
-{
-  //Current (main) problems with the results of this function
-  //  --Results can be catostropically wrong, depending on exact input range
-  
-  if( method != FromInputPeaks )
-    answer.clear();
-  chi2 = std::numeric_limits<double>::max();
-  
-  if( !dataH || nPeaks<=0 )
-    return;
-  
-  if( x1 < x0 )
-    std::swap( x0, x1 );
-  
-  //Lets estimate initial peak parameters
-  const size_t start_channel      = dataH->find_gamma_channel( x0 );
-  const size_t end_channel        = dataH->find_gamma_channel( x1 );
-  const double areaarea    = dataH->gamma_channels_sum( start_channel, end_channel );
-  //const double start_range = dataH->gamma_channel_lower( start_channel );
-  //const double end_range   = dataH->gamma_channel_upper( end_channel ) - DBL_EPSILON;
-  
-  bool intputSharesContinuum = (method==FromInputPeaks);
-  for( size_t i = 0; i < answer.size(); ++i )
-    intputSharesContinuum &= (answer[i]->continuum()==answer[0]->continuum());
-  
-  const size_t roiNumChan = (end_channel > start_channel) ? end_channel - start_channel : size_t(0);
-  PeakContinuum::OffsetType offsetType = PeakContinuum::Linear;
-  if( intputSharesContinuum )
-    offsetType = answer[0]->continuum()->type();
-  else if( nPeaks > 2 && roiNumChan > 20 && nPeaks < 4 && roiNumChan < 40 )  //20 is a WAG
-    offsetType = PeakContinuum::Quadratic;
-  else if( nPeaks >= 4 || roiNumChan >= 40 )
-    offsetType = PeakContinuum::Cubic;
-  
-  //MultiPeakFitChi2Fcn chi2fcn( nPeaks, dataH, offsetType, start_channel, end_channel );
-  //chi2fcn.set_reldiff_punish_start( 2.35482 );
-  
-  const PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
-  
-  LinearProblemSubSolveChi2Fcn chi2fcn( nPeaks, dataH, offsetType, skew_type, x0, x1 );
-  
-  float minw_lower, maxw_lower, minw_upper, maxw_upper;
-  expected_peak_width_limits( x0, isHPGe, dataH, minw_lower, maxw_lower );
-  expected_peak_width_limits( x1, isHPGe, dataH, minw_upper, maxw_upper );
-  
-  float minsigma = std::min( minw_lower, minw_upper );
-  float maxsigma = std::min( maxw_lower, maxw_upper );
-  
-  if( detector && detector->hasResolutionInfo() )
-  {
-    minsigma = std::min( minw_lower, detector->peakResolutionSigma(x0) );
-    minsigma = std::min( minw_lower, detector->peakResolutionSigma(x1) );
-    maxsigma = std::min( maxw_lower, detector->peakResolutionSigma(x0) );
-    maxsigma = std::min( maxw_lower, detector->peakResolutionSigma(x1) );
-  }
-  
-  
-  /*
-   Want to fit for a number of peaks in the given range.
-   All peaks should share a common polynomial continuum.
-   Widths of the peaks are tied together
-   
-   parameters:
-   mean0     {mean of first peak}
-   mean1     {mean of second peak}
-   ...
-   meanN     {mean of N'th peak}
-   width0    {if npeaks==1, width of that peak; else width at m_lowerROI}
-   widthFcn  {multiple of width0, plus fraction of total range time widthFcn}
-   Skew0     {depends on skew type
-   Skew1
-   ...
-   */
-
-  vector<PeakDef> inpeaks;
-  
-  switch( method )
-  {
-    case UniformInitialGuess:
-    {
-      inpeaks.clear();
-      
-      for( int i = 0; i < nPeaks; ++i )
-      {
-        PeakDef peak;
-        
-        const double amp = areaarea / nPeaks;
-        double mean = x0 + (i+0.5)*(x1-x0)/nPeaks;
-        double sigma = 0.25*fabs(x1-x0) / nPeaks;
-      
-        if( detector && detector->hasResolutionInfo() )
-          sigma = detector->peakResolutionSigma( mean );
-        
-        peak.setAmplitude( amp );
-        peak.setMean( mean );
-        peak.setSigma( sigma );
-        
-        inpeaks.push_back( peak );
-        //inpeaks.emplace_back( std::move(peak) );
-      }//for( int i = 0; i < nPeaks; ++i )
-      
-      break;
-    }//case UniformInitialGuess:
-      
-    case FromDataInitialGuess:
-    {
-#if( USE_QUICK_PEAK_CANDIDATE )
-      intputSharesContinuum = false;
-      std::vector< std::tuple<float,float,float> > candidates;  //{mean,sigma,area}
-      secondDerivativePeakCanidates( dataH, isHPGe, start_channel, end_channel, candidates );
-      std::sort( begin(candidates), end(candidates),
-                []( const tuple<float,float,float> &lhs, const tuple<float,float,float> &rhs) -> bool {
-                  return std::get<2>(lhs) > std::get<2>(rhs);
-                } );
-#else
-      typedef std::shared_ptr<PeakDef> PeakPtr;
-      const vector<PeakPtr> derivative_peaks
-      = secondDerivativePeakCanidatesWithROI( dataH, isHPGe, start_channel, end_channel );
-      map<double,PeakPtr> candidates;
-      for( const PeakPtr &p : derivative_peaks )
-        candidates[-p->amplitude()] = p;
-#endif
-      
-    
-      double avrg_width = 0.0, avrg_amp = 0.0;
-      
-      for( auto i = begin(candidates); int(inpeaks.size()) < nPeaks && i != end(candidates); ++i )
-      {
-#if( USE_QUICK_PEAK_CANDIDATE )
-        if( get<0>(*i) >= x0 && get<0>(*i) <= x1 )
-        {
-          avrg_width += get<1>(*i);
-          avrg_amp += get<2>(*i);
-          inpeaks.emplace_back( get<0>(*i), get<1>(*i), get<2>(*i) );
-        }//if( i->second.mean() >= x0 && i->second.mean() <= x1 )
-#else
-        if( i->second->mean() >= x0 && i->second->mean() <= x1 )
-        {
-          avrg_width += i->second->sigma();
-          avrg_amp += i->second->amplitude();
-          inpeaks.push_back( *(i->second) );
-        }//if( i->second.mean() >= x0 && i->second.mean() <= x1 )
-#endif
-      }//for(...)
-      
-      if( inpeaks.size() )
-      {
-        avrg_width /= inpeaks.size();
-        avrg_amp /= inpeaks.size();
-      }else
-      {
-        avrg_width = 0.25*( fabs(x0 - x1) );
-        avrg_amp = 0.5*dataH->gamma_channels_sum( start_channel, end_channel );
-      }//if( inpeaks ) / else
-      
-      for( int i = int(inpeaks.size()); i < nPeaks; ++i )
-      {
-        PeakDef peak;
-        const double amp = areaarea / nPeaks;
-        const double mean = x0 + (x1-x0)/(1+inpeaks.size());
-        double sigma = avrg_width;
-        if( detector && detector->hasResolutionInfo() )
-          sigma = detector->peakResolutionSigma( mean );
-        
-        peak.setMean( mean );
-        peak.setSigma( sigma );
-        peak.setAmplitude( amp );
-        
-        inpeaks.push_back( peak );
-      }//for( int i = int(inpeaks.size()); i < nPeaks; ++i )
-      
-      break;
-    }//case FromDataInitialGuess:
-      
-    case FromInputPeaks:
-    {
-      if( answer.size() != static_cast<size_t>(nPeaks) )
-        throw runtime_error( "findPeaksInUserRange: invalid input for "
-                            "method=FromInputPeaks" );
-      for( size_t i = 0; i < answer.size(); ++i )
-        inpeaks.push_back( *answer[i] );
-      
-      answer.clear();
-      break;
-    }//case FromInputPeaks:
-  }//switch( method )
-  
-  assert( !inpeaks.empty() );
-  
-  /*
-   Want to fit for a number of peaks in the given range.
-   All peaks should share a common polynomial continuum.
-   Widths of the peaks are tied together
-   
-   parameters:
-   mean0     {mean of first peak}
-   mean1     {mean of second peak}
-   ...
-   meanN     {mean of N'th peak}
-   width0    {if npeaks==1, width of that peak; else width at m_lowerROI}
-   widthFcn  {multiple of width0, plus fraction of total range time widthFcn}
-   */
-  
-  
-  
-  ROOT::Minuit2::MnUserParameters inputPrams;
-  for( size_t i = 0; i < inpeaks.size(); ++i )
-  {
-    char name[64];
-    snprintf( name, sizeof(name), "Mean%i", static_cast<int>(i) );
-    const double mean = inpeaks[i].mean();
-    
-    if( !inpeaks[i].fitFor(PeakDef::Mean) )
-      inputPrams.Add( name, mean );
-    else
-      inputPrams.Add( name, mean, 0.1*(x1-x0), x0, x1 );
-  }//for( const PeakDefShrdPtr &peak : inpeaks )
-  
-  const float sigma0 = static_cast<float>( inpeaks[0].sigma() );
-  inputPrams.Add( "Sigma0", std::min(std::max(sigma0,minsigma), maxsigma), 0.2*(maxsigma - minsigma), minsigma, maxsigma );
-  
-  if( nPeaks > 1 )
-    inputPrams.Add( "SigmaFcn", 0.0, 0.001, -0.10, 0.10 );
-  
-  LinearProblemSubSolveChi2Fcn::addSkewParameters( inputPrams, skew_type );
-  
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-  ROOT::Minuit2::MnMinimize fitter( chi2fcn, inputParamState, strategy );
-  
-  unsigned int maxFcnCall = 5000;
-  const double tolerance = 0.5; //beThorough ? 0.5 : 0.75*nPeaks;
-  
-  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  //cout << "minimum.NFcn()=" << minimum.NFcn() << endl;
-  
-  if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, tolerance );
-  if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, tolerance );
-  
-  const ROOT::Minuit2::MnUserParameters fitParams = fitter.Parameters();
-  const vector<double> values = fitParams.Params();
-  const vector<double> errors = fitParams.Errors();
-  
-  //Turn off punishment for peaks being to close
-  //chi2fcn.set_reldiff_punish_weight( 0.0 );
-  
-  chi2 = chi2fcn.DoEval( &(values[0]) );
-  const double dof = chi2fcn.dof();
-  
-  const double chi2Dof = chi2 / dof;
-  vector<PeakDef> peaks;
-  chi2fcn.parametersToPeaks( peaks, &values[0], &errors[0] );
-  
-  for( int i = 0; i < nPeaks; ++i )
-  {
-    auto p = std::make_shared<PeakDef>( peaks[i] );
-    p->set_coefficient( chi2Dof, PeakDef::Chi2DOF );
-    answer.emplace_back( std::move(p) );
-  }
-}//void findPeaksInUserRange( double x0, double x1, int nPeaks )
-
-
-
 
 
 void smoothSpectrum( const std::vector<float> &spectrum, const int side_bins,
@@ -1574,7 +1472,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
                                      const double hypothesis_threshold,
                                      std::vector<PeakDef> input_peaks,
                                      std::shared_ptr<const Measurement> data,
-                                     bool amplitudeOnly,
+                                     const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
                                      const bool isHPGe )
 {
   //20120309: For the Ba133 example spectrum with default settings on my newer
@@ -1599,7 +1497,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
     for( const auto &p : orig_input_peaks )
       lm_input_peaks.push_back( make_shared<PeakDef>(p) );
     peak_from_LM = PeakFitLM::fit_peaks_in_range_LM( x0, x1, ncausality, stat_threshold, hypothesis_threshold,
-                                                    lm_input_peaks, data, amplitudeOnly, isHPGe );
+                                                    lm_input_peaks, data, fit_options, isHPGe );
 
     // If a debug build, we'll compare to old method, for the moment
 #ifdef NDEBUG
@@ -1653,7 +1551,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
                                  hypothesis_threshold,
                                  data,
                                  boost::ref( fit_peak_ranges[peakn] ),
-                                 amplitudeOnly,
+                                 fit_options,
                                  isHPGe ) );
   }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
   
@@ -1694,7 +1592,7 @@ std::vector<PeakDef> fitPeaksInRange( const double x0,
     
     return fitPeaksInRange( x0, x1, ncausality,
                            stat_threshold, hypothesis_threshold,
-                           input_peaks, data, amplitudeOnly, isHPGe );
+                           input_peaks, data, fit_options, isHPGe );
   }//if( migration )
 
 #if( USE_LM_PEAK_FIT )
@@ -2047,7 +1945,8 @@ PeakShrdVec refitPeaksThatShareROI_imp( const std::shared_ptr<const Measurement>
         const double stat_threshold  = 0.0;
         const double hypothesis_threshold = 0.0;
 
-        const bool isRefit = true;
+        Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+        fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
 
         vector<PeakDef> input_peaks;
         for( const auto &p : inpeaks )
@@ -2058,7 +1957,7 @@ PeakShrdVec refitPeaksThatShareROI_imp( const std::shared_ptr<const Measurement>
 
 
         vector<PeakDef> output_peak = fitPeaksInRange( lx, ux, ncausalitysigma, stat_threshold,
-                                     hypothesis_threshold, input_peaks, dataH, isRefit, isHPGe );
+                                     hypothesis_threshold, input_peaks, dataH, fit_options, isHPGe );
 
         if( output_peak.size() == inpeaks.size() )
         {
@@ -2115,17 +2014,24 @@ PeakShrdVec refitPeaksThatShareROI_imp( const std::shared_ptr<const Measurement>
 vector<shared_ptr<const PeakDef>> refitPeaksThatShareROI( const std::shared_ptr<const Measurement> &dataH,
                                    const std::shared_ptr<const DetectorPeakResponse> &detector,
                                    const PeakShrdVec &inpeaks,
-                                   const double meanSigmaVary )
+                                   const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options )
 {
 #if( USE_LM_PEAK_FIT )
 #ifdef NDEBUG
   // For release builds we'll just return the L-M based results.
   //  For debug builds we'll print out some comparisons, for the moment
-  return PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, meanSigmaVary );
+  return PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, fit_options );
 #endif
 
-  vector<shared_ptr<const PeakDef>> answer = refitPeaksThatShareROI_imp( dataH, detector, inpeaks, meanSigmaVary );
-  vector<shared_ptr<const PeakDef>> answer_LM = PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, meanSigmaVary );
+  double mean_sigma_vary = -1.0;
+  if( fit_options & PeakFitLM::PeakFitLMOptions::MediumRefinementOnly )
+    mean_sigma_vary = 0.2;
+  else if( fit_options & PeakFitLM::PeakFitLMOptions::SmallRefinementOnly )
+    mean_sigma_vary = 0.15;
+
+  vector<shared_ptr<const PeakDef>> answer = refitPeaksThatShareROI_imp( dataH, detector, inpeaks, mean_sigma_vary );
+
+  vector<shared_ptr<const PeakDef>> answer_LM = PeakFitLM::refitPeaksThatShareROI_LM( dataH, detector, inpeaks, fit_options );
 
   if( !inpeaks.empty() )
   {
@@ -2210,15 +2116,33 @@ double evaluate_chi2dof_for_range( const std::vector<PeakDef> &peaks,
 }//double evaluate_chi2dof_for_range(...);
 
 
-//refit_for_new_roi(): resultChi2Dof will be DBL_MAX and resultPeaks empty upon
-//  error.
+//refit_for_new_roi(): resultPeaks empty upon error.
 void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPeaks,
                        const std::shared_ptr<const Measurement> &dataH,
                        const double new_lower_roi,
                        const double new_roi_upper,
-                       double &resultChi2Dof,
+                       const bool isHPGe,
                        std::vector<PeakDef> &resultPeaks )
 {
+#if( USE_LM_PEAK_FIT )
+  const bool is_refit = true;
+  const double stat_threshold = 0.0;
+  const double hypothesis_threshold = 0.0;
+  
+  vector<shared_ptr<const PeakDef>> results;
+  PeakFitLM::fit_peaks_LM( results, originalPeaks, dataH,
+                          stat_threshold, hypothesis_threshold, is_refit, isHPGe );
+  
+  resultPeaks.clear();
+  
+  if( !results.empty() && (results.size() == originalPeaks.size()) )
+  {
+    for( const shared_ptr<const PeakDef> &p : results )
+      resultPeaks.push_back( *p );
+  }
+  
+  return;
+#else
   try
   {
     const PeakContinuum::OffsetType offset = originalPeaks[0]->continuum()->type();
@@ -2270,14 +2194,12 @@ void refit_for_new_roi( std::vector< std::shared_ptr<const PeakDef> > originalPe
     const vector<double> pars = params.Params();
     const vector<double> errors = params.Errors();
     
-    const double newChi2 = chi2Fcn.parametersToPeaks( resultPeaks, &pars[0], &errors[0] );
-    
-    resultChi2Dof = newChi2 / chi2Fcn.dof();
+    chi2Fcn.parametersToPeaks( resultPeaks, &pars[0], &errors[0] );
   }catch( std::exception & )
   {
     resultPeaks.clear();
-    resultChi2Dof = DBL_MAX;
   }//try / catch
+#endif
 }//void refit_for_new_roi(...)
 
 
@@ -3331,11 +3253,11 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
       
       if( tailChi2Dof < 0.95*generalChi2Dof )
       {
-        double newChi2Dof;
+        
         vector<PeakDef> newfitpeaks;
-        refit_for_new_roi( inpeaks, dataH, finalLowerE, startx,
-                           newChi2Dof, newfitpeaks );
-          
+        refit_for_new_roi( inpeaks, dataH, finalLowerE, startx, false, newfitpeaks );
+        
+        const double newChi2Dof = newfitpeaks.empty() ? DBL_MAX : evaluate_chi2dof_for_range( newfitpeaks, dataH, finalLowerE, startx );
         const double totalOldlen  = finalUpperE - finalLowerE;
         const double totalNewLen  = startx - finalLowerE;
         const double totalRemovedFrac = (totalOldlen - totalNewLen) / totalOldlen;
@@ -3347,7 +3269,7 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
 #endif
         
         //1.25 is arbitrary
-        if( newChi2Dof < 1.25*oldChi2Body )
+        if( !newfitpeaks.empty() && (newChi2Dof < 1.25*oldChi2Body) )
         {
           chi2Dof = newChi2Dof;
           fitpeaks = newfitpeaks;
@@ -3373,11 +3295,10 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
       //0.95 is arbitrary
       if( tailChi2Dof < 0.95*generalChi2Dof )
       {
-        double newChi2Dof;
         vector<PeakDef> newfitpeaks;
-        refit_for_new_roi( inpeaks, dataH, endx, finalUpperE,
-                            newChi2Dof, newfitpeaks );
-          
+        refit_for_new_roi( inpeaks, dataH, endx, finalUpperE, false, newfitpeaks );
+       
+        const double newChi2Dof = newfitpeaks.empty() ? DBL_MAX : evaluate_chi2dof_for_range( newfitpeaks, dataH, endx, finalUpperE );
         const double totalOldlen  = finalUpperE - finalLowerE;
         const double totalNewLen  = finalUpperE - endx;
         const double totalRemovedFrac = (totalOldlen - totalNewLen) / totalOldlen;
@@ -3388,7 +3309,7 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
 #endif
         
         //1.25 is arbitrary
-        if( newChi2Dof < 1.25*oldChi2Body )
+        if( !newfitpeaks.empty() && (newChi2Dof < 1.25*oldChi2Body) )
         {
           chi2Dof = newChi2Dof;
           fitpeaks = newfitpeaks;
@@ -3414,7 +3335,7 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
       if( (finalLastChannel != initialLastChannel)
             || (finalFirstChannel != initialFirstChannel) )
       {
-        double newChi2Dof;
+        
         vector<PeakDef> newfitpeaks;
           
         PeakShrdVec peaksToReFit;
@@ -3423,10 +3344,11 @@ PeakShrdVec lowres_shrink_roi( const PeakShrdVec &inpeaks,
           
         const vector<double> originalFitPars, originalFitErrors;
           
-        refit_for_new_roi( peaksToReFit, dataH, finalLowerE, finalUpperE,
-                            newChi2Dof, newfitpeaks );
+        refit_for_new_roi( peaksToReFit, dataH, finalLowerE, finalUpperE, false, newfitpeaks );
           
-          
+        const double newChi2Dof = newfitpeaks.empty() ? DBL_MAX
+                                           : evaluate_chi2dof_for_range( newfitpeaks, dataH, finalLowerE, finalUpperE );
+        
         if( (newChi2Dof < chi2Dof) && (newfitpeaks.size() > 0) )
         {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
@@ -3528,10 +3450,12 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
       const double test_lower_roi = tryShrinkLow ? lower_mean-nsigma_shrink_to*lower_sigma : origRoiLower;
       const double test_upper_roi = tryShrinkHigh ? upper_mean+nsigma_shrink_to*upper_sigma : origRoiUpper;
       
-      double testChi2Dof;
+      
       vector<PeakDef> newfitpeaks;
-      refit_for_new_roi( inpeaks, dataH, test_lower_roi, test_upper_roi, testChi2Dof, newfitpeaks );
+      refit_for_new_roi( inpeaks, dataH, test_lower_roi, test_upper_roi, true, newfitpeaks );
       const double origChi2ForNewRange = evaluate_chi2dof_for_range( fitpeaks, dataH, test_lower_roi, test_upper_roi );
+      const double testChi2Dof = newfitpeaks.empty() ? DBL_MAX
+                                     : evaluate_chi2dof_for_range( newfitpeaks, dataH, test_lower_roi, test_upper_roi );
       
 //      if( fabs(lower_mean-144.176) < 1.0 )
 //        cout << endl;
@@ -3637,7 +3561,6 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
       if( (finalLastChannel != initialLastChannel)
          || (finalFirstChannel != initialFirstChannel) )
       {
-        double newChi2Dof;
         vector<PeakDef> newfitpeaks;
         
         PeakShrdVec peaksToReFit;
@@ -3646,8 +3569,10 @@ PeakShrdVec highres_shrink_roi( const PeakShrdVec &inpeaks,
         
         const vector<double> originalFitPars, originalFitErrors;
         
-        refit_for_new_roi( peaksToReFit, dataH, finalLowerE, finalUpperE,
-                          newChi2Dof, newfitpeaks );
+        refit_for_new_roi( peaksToReFit, dataH, finalLowerE, finalUpperE, true, newfitpeaks );
+        
+        const double newChi2Dof = newfitpeaks.empty() ? DBL_MAX
+                                            : evaluate_chi2dof_for_range( newfitpeaks, dataH, finalLowerE, finalUpperE );
         
         vector<PeakDef> origpeaks;
         for( size_t i = 0; i < inpeaks.size(); ++i )
@@ -4312,11 +4237,13 @@ PeakRejectionStatus check_lowres_multi_peak_fit( const vector<std::shared_ptr<co
   
     const double lx = newpeak->lowerX();
     const double ux = newpeak->upperX();
-    double withoutNewChi2Dof;
     vector<PeakDef> withoutResultPeaks;
     const double withNewChi2Dof = newpeak->chi2dof();
     
-    refit_for_new_roi( otherpeak, dataH, lx, ux, withoutNewChi2Dof, withoutResultPeaks );
+    refit_for_new_roi( otherpeak, dataH, lx, ux, false, withoutResultPeaks );
+    
+    const double withoutNewChi2Dof = withoutResultPeaks.empty() ? DBL_MAX
+                                                  : evaluate_chi2dof_for_range( withoutResultPeaks, dataH, lx, ux );
     
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
     DebugLog(cerr) << "second peak at " << newpeak->mean() << " original peak at "
@@ -6036,24 +5963,24 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
               const double hypothesis_threshold,
               std::shared_ptr<const Measurement> data,
               std::vector<PeakDef> &fitpeaks,
-              bool amplitudeOnly,
+              const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options,
               const bool isHPGe ) throw()
 {
   try
   {
     fitpeaks.clear();
-      
+    
     //We have to separate out non-gaussian peaks since they cant enter the
     //  fitting methods
     vector<PeakDef> near_peaks, datadefined_peaks;
     
     std::shared_ptr<const Measurement> external_continuum;
-
+    
     near_peaks.reserve( all_near_peaks.size() );
-
+    
     //Need to make sure near_peaks are all gaussian (if not
     //  seperate them out, and add them in later - not affecting the fit).
-
+    
     for( const PeakDef &p : all_near_peaks )
     {
       if( p.gausPeak() )
@@ -6097,12 +6024,16 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
      std::lock_guard<std::mutex> lock( smutex );
      cerr << "fitPeaks(): we have " << near_peaks.size() << " near peaks, and \nNearPeaks:" << endl;
      for( const PeakDef &peak : near_peaks )
-       cerr << "\t" << peak.mean() << endl;
+     cerr << "\t" << peak.mean() << endl;
      }
      */
     
     ROOT::Minuit2::MnUserParameters inputPrams;
-    PeakFitChi2Fcn::AddPeaksToFitterMethod method = (amplitudeOnly
+    
+    const bool amp_only = (fit_options.testFlag(PeakFitLM::PeakFitLMOptions::SmallRefinementOnly)
+                           || fit_options.testFlag(PeakFitLM::PeakFitLMOptions::MediumRefinementOnly));
+    
+    PeakFitChi2Fcn::AddPeaksToFitterMethod method = (amp_only
                                                      ? PeakFitChi2Fcn::kRefitPeakParameters
                                                      : PeakFitChi2Fcn::kFitForPeakParameters);
     
@@ -6245,9 +6176,12 @@ void fitPeaks( const std::vector<PeakDef> &all_near_peaks,
     }//for( size_t i = 1; i < fitpeaks.size(); ++i )
         
     if( removed_peak )
+    {
+      Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
       fitPeaks( fitpeaks, stat_threshold, hypothesis_threshold,
-                data, fitpeaks, false, isHPGe );
-        
+               data, fitpeaks, fit_options, isHPGe );
+    }
+                           
     if( datadefined_peaks.size() )
     {
       fitpeaks.insert( fitpeaks.end(),
@@ -8870,7 +8804,7 @@ std::vector<PeakDef> search_for_peaks( const std::shared_ptr<const Measurement> 
       
       
       
-      resultpeaks = refitPeaksThatShareROI( meas, detctorPtr, inputpeaks, 0.25 );
+      resultpeaks = refitPeaksThatShareROI( meas, detctorPtr, inputpeaks, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
       
       for( size_t j = 0; j < resultpeaks.size(); ++j )
       {
