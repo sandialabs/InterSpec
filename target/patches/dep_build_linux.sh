@@ -190,7 +190,7 @@ else
       ./bootstrap.sh --prefix="${MY_WT_PREFIX}"
     fi # if b2 already built / else
 
-    ./b2 -j${_ncore} --without-python  cxxflags="-std=c++17" linkflags="-std=c++17 -fPIC -fvisibility=default" cflags=-fPIC link=static variant=release threading=multi --build-dir=linux_build --prefix="${MY_WT_PREFIX}" -a install
+    ./b2 -j${_ncore} --without-python -q cxxflags="-std=c++20 -fPIC -fvisibility=default" linkflags="-std=c++20 -fPIC -fvisibility=default" cflags=-fPIC link=static variant=release threading=multi --build-dir=linux_build --prefix="${MY_WT_PREFIX}" -a install
 
     touch "${working_directory}/boost.built"
   fi
@@ -229,7 +229,7 @@ else
   mkdir build
   cd build
   
-  cmake -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" .. # cmake is an external dependency
+  cmake -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" .. # cmake is an external dependency
   make -j${_ncore} install # make is an external dependency
   rm -rf ./*
   rm -f "${MY_WT_PREFIX}/lib/libz.so"
@@ -282,7 +282,7 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DWT_CMAKE_FINDER_INSTALL_DIR="${MY_WT_PREFIX}/share -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCONFIGURATION=data/config/wt_config_web.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -S ..
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DWT_CMAKE_FINDER_INSTALL_DIR="${MY_WT_PREFIX}/share -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++20" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCONFIGURATION=data/config/wt_config_web.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -S ..
   #make -j${_ncore} install
   cmake --build . --config Release --target install --parallel ${_ncore}
 
@@ -295,22 +295,25 @@ cd "${working_directory}"
 
 ## Install Eigen
 if [ -f "${working_directory}/Eigen.installed" ]; then
-    echo "Eigen already installed (as indicated by existence of Eigen.installed file) - skipping."
+    echo "Eigen already installed (as indicated by existance of Eigen.installed file) - skipping."
 else
-  _file_url="https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz"
-  _file_name="eigen-3.4.0.tar.gz"
-  _expected_sha256="8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72"
-  _src_dir="eigen-3.4.0"
+  # Build Eigen, which is required by ceres-solver, and used a few other places
+  # in InterSpec if its available
 
-  download_file "${_file_url}" "${_file_name}" "${_expected_sha256}"
-
-  if [ -d "${_src_dir}" ]; then
-    echo "Eigen already unzipped, not doing again."
+  src_dir="eigen-3.x"
+  # Get trunk version as of 20250114 to pickup some compile issues for c++20 (minimizing how much history we download)
+  git_hash="2e76277bd049f7bec36b0f908c69734a42c5234f"
+  
+  if [ -d "${src_dir}" ]; then
+    echo "Eigen cloned - not doing it again."
+    cd "${src_dir}"
   else
-    tar -xzvf "${_file_name}"
+    git clone --recursive https://gitlab.com/libeigen/eigen.git --branch master --single-branch --depth 1 "${src_dir}"
+    cd "${src_dir}"
+    git fetch --depth 1 origin ${git_hash}
+    git checkout ${git_hash}
+    git submodule update --init --recursive
   fi
-
-  cd "${_src_dir}"
 
   if [ -d build ]; then
     rm -r build
@@ -320,8 +323,8 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DEIGEN_MPL2_ONLY=1 -DEIGEN_BUILD_SHARED_LIBS=OFF -DEIGEN_BUILD_DOC=OFF -DEIGEN_BUILD_TESTING=OFF ..
-  cmake --build . --config Release --target install -j${_ncore}
+  cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DEIGEN_MPL2_ONLY=1 -DEIGEN_BUILD_SHARED_LIBS=OFF -DEIGEN_BUILD_DOC=OFF -DEIGEN_BUILD_TESTING=OFF ..
+  cmake --build . --config Release --target install --parallel ${_ncore}
 
   touch "${working_directory}/Eigen.installed"
 fi #if Eigen.installed exists / else
@@ -329,26 +332,21 @@ fi #if Eigen.installed exists / else
 
 cd "${working_directory}"
 
+
 ## Build Ceres-Solver
 if [ -f "${working_directory}/Ceres.installed" ]; then
     echo "Ceres-Solver already installed (as indicated by existence of Ceres.installed file) - skipping."
 else
-  _file_url="http://ceres-solver.org/ceres-solver-2.1.0.tar.gz"
-  _file_name="ceres-solver-2.1.0.tar.gz"
-  _expected_sha256="f7d74eecde0aed75bfc51ec48c91d01fe16a6bf16bce1987a7073286701e2fc6"
-  _src_dir="ceres-solver-2.1.0"
+  # Build ceres-solver; this is the optimizer used for the relative efficiency
+  # tool, and a small amount of the peak fitting.
+  git clone --recursive https://github.com/ceres-solver/ceres-solver.git --branch master --single-branch --depth 1
+  cd ceres-solver
+  # Get version 2.2.0, Oct 12, 2023 (minimizing how much history we download)
+  git fetch --depth 1 origin 85331393dc0dff09f6fb9903ab0c4bfa3e134b01
+  git checkout 85331393dc0dff09f6fb9903ab0c4bfa3e134b01
+  git submodule update --init --recursive
 
-  download_file "${_file_url}" "${_file_name}" "${_expected_sha256}"
-
-  if [ -d "${_src_dir}" ]; then
-    echo "Ceres-Solver already unzipped, not doing again."
-  else
-    tar -xzvf "${_file_name}"
-  fi
-
-  cd "${_src_dir}"
-
-  if [ -d build_macos ]; then # Note: Original script named this build_macos, keeping it consistent.
+  if [ -d build_macos ]; then
     rm -r build_macos
     echo "Deleted previous Ceres-Solver build_macos directory."
   fi
@@ -356,8 +354,8 @@ else
   mkdir build_macos
   cd build_macos
 
-  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DCUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF ..
-  cmake --build . --config Release --target install --parallel ${_ncore}
+  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DMINIGLOG=ON -DGFLAGS=OFF -DCXSPARSE=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF ..
+  cmake --build . --config Release --target install -j 16
 
   touch "${working_directory}/Ceres.installed"
 fi #if Ceres.installed exists / else
