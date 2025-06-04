@@ -1480,6 +1480,11 @@ FinalFitSolution mutate(
   const double mu = 0.2*shrink_scale;  // mutation radius
 
   auto mutate_value = [&rnd01,mu](double val, double min_val, double max_val) {
+
+    const double mutate_threshold = 0.15;
+    if( rnd01() > mutate_threshold )
+      return val;
+
     const double r = 2.0*(rnd01() - 0.5);
     val += r*mu*(max_val - min_val);
     return std::max(min_val, std::min(max_val, val));
@@ -1509,14 +1514,17 @@ FinalFitSolution mutate(
 }
 
 
-FinalFitSolution crossover(
-                           const FinalFitSolution& X1,
-                           const FinalFitSolution& X2,
-                           const std::function<double(void)> &rnd01)
+FinalFitSolution crossover( const FinalFitSolution& X1,
+                            const FinalFitSolution& X2,
+                            const std::function<double(void)> &rnd01 )
 {
   FinalFitSolution X_new;
 
   auto cross_value = [&rnd01](double v1, double v2) {
+    const double crossover_threshold = 0.15;
+    if( rnd01() > crossover_threshold )
+      return (rnd01() < 0.5) ? v1 : v2;
+
     const double r = rnd01();
     return r*v1 + (1.0-r)*v2;
   };

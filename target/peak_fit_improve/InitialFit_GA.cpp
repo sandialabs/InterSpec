@@ -1566,6 +1566,7 @@ InitialFitSolution mutate( const InitialFitSolution& X_base,
 {
   InitialFitSolution X_new;
   const double mu = 0.2*shrink_scale; // mutation radius (adjustable)
+  const double mutate_threshold = 0.15;
   bool in_range;
 
   size_t num_tries = 0;
@@ -1590,31 +1591,69 @@ InitialFitSolution mutate( const InitialFitSolution& X_base,
 
     in_range = true;
     X_new = X_base;
-    X_new.initial_stat_threshold += mu*(rnd01()-rnd01());
-    in_range = in_range&&(X_new.initial_stat_threshold>=0.0 && X_new.initial_stat_threshold<8);
-    X_new.initial_hypothesis_threshold+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.initial_hypothesis_threshold>=0.25 && X_new.initial_hypothesis_threshold<3.0);
-    X_new.initial_min_nsigma_roi+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.initial_min_nsigma_roi>=2 && X_new.initial_min_nsigma_roi<8);
-    X_new.initial_max_nsigma_roi+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.initial_max_nsigma_roi>=4 && X_new.initial_max_nsigma_roi<12);
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.initial_stat_threshold += mu*(rnd01()-rnd01());
+      in_range = in_range&&(X_new.initial_stat_threshold>=0.0 && X_new.initial_stat_threshold<8);
+    }
+
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.initial_hypothesis_threshold+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.initial_hypothesis_threshold>=0.25 && X_new.initial_hypothesis_threshold<3.0);
+    }
+
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.initial_min_nsigma_roi+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.initial_min_nsigma_roi>=2 && X_new.initial_min_nsigma_roi<8);
+    }
+
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.initial_max_nsigma_roi+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.initial_max_nsigma_roi>=4 && X_new.initial_max_nsigma_roi<12);
+    }
 
     X_new.fwhm_fcn_form = X_base.fwhm_fcn_form; //unnecessary, but to be explicit
     //X_new.fwhm_fcn_form+=mu*(rnd01()-rnd01());
     //in_range=in_range&&(X_new.fwhm_fcn_form>=0 && X_new.fwhm_fcn_form<3);
 
-    X_new.search_roi_nsigma_deficit+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.search_roi_nsigma_deficit>=3 && X_new.search_roi_nsigma_deficit < 10.0);
-    X_new.search_stat_threshold+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.search_stat_threshold>=1 && X_new.search_stat_threshold<9);
-    X_new.search_hypothesis_threshold+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.search_hypothesis_threshold>=-0.1 && X_new.search_hypothesis_threshold<10.0);
-    X_new.search_stat_significance+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.search_stat_significance>=1 && X_new.search_stat_significance<6);
-    X_new.ROI_add_nsigma_required+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.ROI_add_nsigma_required>=1 && X_new.ROI_add_nsigma_required<8);
-    X_new.ROI_add_chi2dof_improve+=mu*(rnd01()-rnd01());
-    in_range=in_range&&(X_new.ROI_add_chi2dof_improve>=0.0 && X_new.ROI_add_chi2dof_improve<8);
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.search_roi_nsigma_deficit+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.search_roi_nsigma_deficit>=3 && X_new.search_roi_nsigma_deficit < 10.0);
+    }
+
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.search_stat_threshold+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.search_stat_threshold>=1 && X_new.search_stat_threshold<9);
+    }
+
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.search_hypothesis_threshold+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.search_hypothesis_threshold>=-0.1 && X_new.search_hypothesis_threshold<10.0);
+    }
+
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.search_stat_significance+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.search_stat_significance>=1 && X_new.search_stat_significance<6);
+    }
+
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.ROI_add_nsigma_required+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.ROI_add_nsigma_required>=1 && X_new.ROI_add_nsigma_required<8);
+    }
+
+    if( rnd01() < mutate_threshold )
+    {
+      X_new.ROI_add_chi2dof_improve+=mu*(rnd01()-rnd01());
+      in_range=in_range&&(X_new.ROI_add_chi2dof_improve>=0.0 && X_new.ROI_add_chi2dof_improve<8);
+    }
   } while(!in_range);
   return X_new;
 }
@@ -1623,30 +1662,112 @@ InitialFitSolution crossover( const InitialFitSolution& X1,
                              const InitialFitSolution& X2,
                              const std::function<double(void)> &rnd01 )
 {
+  const double crossover_threshold = 0.25;
+
   InitialFitSolution X_new;
+  X_new = X1;
+
   double r;
-  r=rnd01();
-  X_new.initial_stat_threshold=r*X1.initial_stat_threshold+(1.0-r)*X2.initial_stat_threshold;
-  r=rnd01();
-  X_new.initial_hypothesis_threshold=r*X1.initial_hypothesis_threshold+(1.0-r)*X2.initial_hypothesis_threshold;
-  r=rnd01();
-  X_new.initial_min_nsigma_roi=r*X1.initial_min_nsigma_roi+(1.0-r)*X2.initial_min_nsigma_roi;
-  r=rnd01();
-  X_new.initial_max_nsigma_roi=r*X1.initial_max_nsigma_roi+(1.0-r)*X2.initial_max_nsigma_roi;
-  r=rnd01();
-  X_new.fwhm_fcn_form=r*X1.fwhm_fcn_form+(1.0-r)*X2.fwhm_fcn_form;
-  r=rnd01();
-  X_new.search_roi_nsigma_deficit=r*X1.search_roi_nsigma_deficit+(1.0-r)*X2.search_roi_nsigma_deficit;
-  r=rnd01();
-  X_new.search_stat_threshold=r*X1.search_stat_threshold+(1.0-r)*X2.search_stat_threshold;
-  r=rnd01();
-  X_new.search_hypothesis_threshold=r*X1.search_hypothesis_threshold+(1.0-r)*X2.search_hypothesis_threshold;
-  r=rnd01();
-  X_new.search_stat_significance=r*X1.search_stat_significance+(1.0-r)*X2.search_stat_significance;
-  r=rnd01();
-  X_new.ROI_add_nsigma_required=r*X1.ROI_add_nsigma_required+(1.0-r)*X2.ROI_add_nsigma_required;
-  r=rnd01();
-  X_new.ROI_add_chi2dof_improve=r*X1.ROI_add_chi2dof_improve+(1.0-r)*X2.ROI_add_chi2dof_improve;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.initial_stat_threshold=r*X1.initial_stat_threshold+(1.0-r)*X2.initial_stat_threshold;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.initial_stat_threshold = X2.initial_stat_threshold;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.initial_hypothesis_threshold=r*X1.initial_hypothesis_threshold+(1.0-r)*X2.initial_hypothesis_threshold;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.initial_hypothesis_threshold = X2.initial_hypothesis_threshold;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.initial_min_nsigma_roi=r*X1.initial_min_nsigma_roi+(1.0-r)*X2.initial_min_nsigma_roi;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.initial_min_nsigma_roi = X2.initial_min_nsigma_roi;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.initial_max_nsigma_roi=r*X1.initial_max_nsigma_roi+(1.0-r)*X2.initial_max_nsigma_roi;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.initial_max_nsigma_roi = X2.initial_max_nsigma_roi;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.fwhm_fcn_form=r*X1.fwhm_fcn_form+(1.0-r)*X2.fwhm_fcn_form;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.fwhm_fcn_form = X2.fwhm_fcn_form;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.search_roi_nsigma_deficit=r*X1.search_roi_nsigma_deficit+(1.0-r)*X2.search_roi_nsigma_deficit;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.search_roi_nsigma_deficit = X2.search_roi_nsigma_deficit;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.search_stat_threshold=r*X1.search_stat_threshold+(1.0-r)*X2.search_stat_threshold;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.search_stat_threshold = X2.search_stat_threshold;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.search_hypothesis_threshold=r*X1.search_hypothesis_threshold+(1.0-r)*X2.search_hypothesis_threshold;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.search_hypothesis_threshold = X2.search_hypothesis_threshold;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.search_stat_significance=r*X1.search_stat_significance+(1.0-r)*X2.search_stat_significance;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.search_stat_significance = X2.search_stat_significance;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.ROI_add_nsigma_required=r*X1.ROI_add_nsigma_required+(1.0-r)*X2.ROI_add_nsigma_required;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.ROI_add_nsigma_required = X2.ROI_add_nsigma_required;
+  }
+
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.ROI_add_chi2dof_improve=r*X1.ROI_add_chi2dof_improve+(1.0-r)*X2.ROI_add_chi2dof_improve;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.ROI_add_chi2dof_improve = X2.ROI_add_chi2dof_improve;
+  }
+
+  
   return X_new;
 }
 
@@ -1731,7 +1852,7 @@ InitialPeakFindSettings do_ga_eval( std::function<double( const InitialPeakFindS
   ga_obj.idle_delay_us = 1; // switch between threads quickly
   ga_obj.dynamic_threading = true;
   ga_obj.verbose = false;
-  ga_obj.population = 100;
+  ga_obj.population = 250;
   ga_obj.generation_max = 450;
   ga_obj.calculate_SO_total_fitness=calculate_SO_total_fitness;
   ga_obj.init_genes=init_genes;
@@ -1740,9 +1861,9 @@ InitialPeakFindSettings do_ga_eval( std::function<double( const InitialPeakFindS
   ga_obj.crossover=crossover;
   ga_obj.SO_report_generation=SO_report_generation;
   ga_obj.crossover_fraction=0.7;
-  ga_obj.mutation_rate=0.2;
+  ga_obj.mutation_rate=0.4;
   ga_obj.best_stall_max=10;
-  ga_obj.elite_count=10;
+  ga_obj.elite_count=20;
   ga_obj.N_threads = 8; //Keep some free cores on my M1 max so I can still use the computer
   EA::StopReason stop_reason = ga_obj.solve();
 

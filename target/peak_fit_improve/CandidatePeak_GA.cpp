@@ -1112,6 +1112,9 @@ CandidatePeakSolution mutate(
 {
   CandidatePeakSolution X_new;
   const double mu = 0.2*shrink_scale; // mutation radius (adjustable)
+
+  const double mutate_threshold = 0.15;
+
   bool in_range;
 
   size_t num_tries = 0;
@@ -1137,44 +1140,68 @@ CandidatePeakSolution mutate(
     in_range = true;
     X_new = X_base;
 
-    X_new.num_smooth_side_channels += shrink_scale*(rnd01()-rnd01()); //not multiplying by `mu`, because we can get stuck in a single int
+    if( rnd01() > mutate_threshold )
+      X_new.num_smooth_side_channels += shrink_scale*(rnd01()-rnd01()); //not multiplying by `mu`, because we can get stuck in a single int
     //in_range=in_range&&(X_new.num_smooth_side_channels>=2 && X_new.num_smooth_side_channels<15);
-    X_new.num_smooth_side_channels = std::max( X_new.num_smooth_side_channels, 6 );
-    X_new.num_smooth_side_channels = std::min( X_new.num_smooth_side_channels, 13 );
-    in_range=in_range&&(X_new.num_smooth_side_channels>=6 && X_new.num_smooth_side_channels<=13);
+    if( rnd01() > mutate_threshold )
+      X_new.num_smooth_side_channels = std::max( X_new.num_smooth_side_channels, 6 );
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.num_smooth_side_channels = std::min( X_new.num_smooth_side_channels, 13 );
+      in_range=in_range&&(X_new.num_smooth_side_channels>=6 && X_new.num_smooth_side_channels<=13);
+    }
 
     //X_new.smooth_polynomial_order+=mu*(rnd01()-rnd01()); //This is an int we could get stuck in...
     //in_range=in_range&&(X_new.smooth_polynomial_order>=2 && X_new.smooth_polynomial_order<3);
 
-    X_new.threshold_FOM += mu * (rnd01() - rnd01());
-    //in_range=in_range&&(X_new.threshold_FOM>=0.75 && X_new.threshold_FOM<3.5);
-    in_range=in_range&&(X_new.threshold_FOM>=0.75 && X_new.threshold_FOM<=2);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.threshold_FOM += mu * (rnd01() - rnd01());
+      //in_range=in_range&&(X_new.threshold_FOM>=0.75 && X_new.threshold_FOM<3.5);
+      in_range=in_range&&(X_new.threshold_FOM>=0.75 && X_new.threshold_FOM<=2);
+    }
 
-    X_new.more_scrutiny_FOM_threshold_delta += mu*(rnd01() - rnd01());
-    //in_range=in_range&&(X_new.more_scrutiny_FOM_threshold_delta>=-0.5 && X_new.more_scrutiny_FOM_threshold_delta<3.5);
-    in_range=in_range&&(X_new.more_scrutiny_FOM_threshold_delta>=-0.1 && X_new.more_scrutiny_FOM_threshold_delta<=2);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.more_scrutiny_FOM_threshold_delta += mu*(rnd01() - rnd01());
+      //in_range=in_range&&(X_new.more_scrutiny_FOM_threshold_delta>=-0.5 && X_new.more_scrutiny_FOM_threshold_delta<3.5);
+      in_range=in_range&&(X_new.more_scrutiny_FOM_threshold_delta>=-0.1 && X_new.more_scrutiny_FOM_threshold_delta<=2);
+    }
 
-    X_new.pos_sum_threshold_sf += 0.05 * mu * (rnd01() - rnd01()); //mu*(rnd01() - rnd01());
-    //in_range=in_range&&(X_new.pos_sum_threshold_sf>=-0.1 && X_new.pos_sum_threshold_sf<0.1);
-    in_range=in_range&&(X_new.pos_sum_threshold_sf>=-0.15 && X_new.pos_sum_threshold_sf<=0.15);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.pos_sum_threshold_sf += 0.05 * mu * (rnd01() - rnd01()); //mu*(rnd01() - rnd01());
+      //in_range=in_range&&(X_new.pos_sum_threshold_sf>=-0.1 && X_new.pos_sum_threshold_sf<0.1);
+      in_range=in_range&&(X_new.pos_sum_threshold_sf>=-0.15 && X_new.pos_sum_threshold_sf<=0.15);
+    }
 
     //X_new.num_chan_fluctuate+=mu*(rnd01()-rnd01());  //THis is an int we could get stuck in...
     //in_range=in_range&&(X_new.num_chan_fluctuate>=1 && X_new.num_chan_fluctuate<4);
 
-    X_new.more_scrutiny_coarser_FOM_delta += mu*(rnd01() - rnd01());
-    //in_range=in_range&&(X_new.more_scrutiny_coarser_FOM_delta>=-0.1 && X_new.more_scrutiny_coarser_FOM_delta<5);
-    in_range=in_range&&(X_new.more_scrutiny_coarser_FOM_delta>=-0.1 && X_new.more_scrutiny_coarser_FOM_delta<4);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.more_scrutiny_coarser_FOM_delta += mu*(rnd01() - rnd01());
+      //in_range=in_range&&(X_new.more_scrutiny_coarser_FOM_delta>=-0.1 && X_new.more_scrutiny_coarser_FOM_delta<5);
+      in_range=in_range&&(X_new.more_scrutiny_coarser_FOM_delta>=-0.1 && X_new.more_scrutiny_coarser_FOM_delta<4);
+    }
 
-    X_new.more_scrutiny_min_dev_from_line += 2 * mu*(rnd01()-rnd01());
-    //in_range=in_range&&(X_new.more_scrutiny_min_dev_from_line>=0.0 && X_new.more_scrutiny_min_dev_from_line<10.0);
-    in_range=in_range&&(X_new.more_scrutiny_min_dev_from_line>=0.0 && X_new.more_scrutiny_min_dev_from_line<7.0);
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.more_scrutiny_min_dev_from_line += 2 * mu*(rnd01()-rnd01());
+      //in_range=in_range&&(X_new.more_scrutiny_min_dev_from_line>=0.0 && X_new.more_scrutiny_min_dev_from_line<10.0);
+      in_range=in_range&&(X_new.more_scrutiny_min_dev_from_line>=0.0 && X_new.more_scrutiny_min_dev_from_line<7.0);
+    }
 
-    X_new.amp_to_apply_line_test_below += 5 * mu*(rnd01()-rnd01());
-    X_new.amp_to_apply_line_test_below = std::max( X_new.amp_to_apply_line_test_below, 0 );
-    X_new.amp_to_apply_line_test_below = std::min( X_new.amp_to_apply_line_test_below, 100 );
-    in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=100);
-    //in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=75);
-
+    if( rnd01() > mutate_threshold )
+      X_new.amp_to_apply_line_test_below += 5 * mu*(rnd01()-rnd01());
+    if( rnd01() > mutate_threshold )
+      X_new.amp_to_apply_line_test_below = std::max( X_new.amp_to_apply_line_test_below, 0 );
+    if( rnd01() > mutate_threshold )
+    {
+      X_new.amp_to_apply_line_test_below = std::min( X_new.amp_to_apply_line_test_below, 100 );
+      in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=100);
+      //in_range=in_range&&(X_new.amp_to_apply_line_test_below>=0.0 && X_new.amp_to_apply_line_test_below<=75);
+    }
   } while(!in_range);
   return X_new;
 }
@@ -1185,38 +1212,96 @@ CandidatePeakSolution crossover(
     const CandidatePeakSolution& X2,
     const std::function<double(void)> &rnd01)
 {
-  CandidatePeakSolution X_new;
+  const double crossover_threshold = 0.25;
+
+
+  CandidatePeakSolution X_new = X1;
+
 
   double r;
-  r=rnd01();
-  X_new.num_smooth_side_channels=r*X1.num_smooth_side_channels+(1.0-r)*X2.num_smooth_side_channels;
-  //X_new.num_smooth_side_channels = X1.num_smooth_side_channels;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.num_smooth_side_channels=r*X1.num_smooth_side_channels+(1.0-r)*X2.num_smooth_side_channels;
+    //X_new.num_smooth_side_channels = X1.num_smooth_side_channels;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.num_smooth_side_channels = X2.num_smooth_side_channels;
+  }
 
-  r=rnd01();
-  //X_new.smooth_polynomial_order=r*X1.smooth_polynomial_order+(1.0-r)*X2.smooth_polynomial_order;
-  X_new.smooth_polynomial_order = X1.smooth_polynomial_order;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    //X_new.smooth_polynomial_order=r*X1.smooth_polynomial_order+(1.0-r)*X2.smooth_polynomial_order;
+    X_new.smooth_polynomial_order = X1.smooth_polynomial_order;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.smooth_polynomial_order = X2.smooth_polynomial_order;
+  }
 
-  r=rnd01();
-  X_new.threshold_FOM=r*X1.threshold_FOM+(1.0-r)*X2.threshold_FOM;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.threshold_FOM=r*X1.threshold_FOM+(1.0-r)*X2.threshold_FOM;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.threshold_FOM = X2.threshold_FOM;
+  }
 
-  r=rnd01();
-  X_new.more_scrutiny_FOM_threshold_delta=r*X1.more_scrutiny_FOM_threshold_delta+(1.0-r)*X2.more_scrutiny_FOM_threshold_delta;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.more_scrutiny_FOM_threshold_delta=r*X1.more_scrutiny_FOM_threshold_delta+(1.0-r)*X2.more_scrutiny_FOM_threshold_delta;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.more_scrutiny_FOM_threshold_delta = X2.more_scrutiny_FOM_threshold_delta;
+  }
 
-  r=rnd01();
-  X_new.pos_sum_threshold_sf=r*X1.pos_sum_threshold_sf+(1.0-r)*X2.pos_sum_threshold_sf;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.pos_sum_threshold_sf=r*X1.pos_sum_threshold_sf+(1.0-r)*X2.pos_sum_threshold_sf;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.pos_sum_threshold_sf = X2.pos_sum_threshold_sf;
+  }
 
-  r=rnd01();
-  //X_new.num_chan_fluctuate=r*X1.num_chan_fluctuate+(1.0-r)*X2.num_chan_fluctuate;
-  X_new.num_chan_fluctuate = X1.num_chan_fluctuate;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    //X_new.num_chan_fluctuate=r*X1.num_chan_fluctuate+(1.0-r)*X2.num_chan_fluctuate;
+    X_new.num_chan_fluctuate = X1.num_chan_fluctuate;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.num_chan_fluctuate = X2.num_chan_fluctuate;
+  }
 
-  r=rnd01();
-  X_new.more_scrutiny_coarser_FOM_delta=r*X1.more_scrutiny_coarser_FOM_delta+(1.0-r)*X2.more_scrutiny_coarser_FOM_delta;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.more_scrutiny_coarser_FOM_delta=r*X1.more_scrutiny_coarser_FOM_delta+(1.0-r)*X2.more_scrutiny_coarser_FOM_delta;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.more_scrutiny_coarser_FOM_delta = X2.more_scrutiny_coarser_FOM_delta;
+  }
 
-  r=rnd01();
-  X_new.more_scrutiny_min_dev_from_line=r*X1.more_scrutiny_min_dev_from_line+(1.0-r)*X2.more_scrutiny_min_dev_from_line;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.more_scrutiny_min_dev_from_line=r*X1.more_scrutiny_min_dev_from_line+(1.0-r)*X2.more_scrutiny_min_dev_from_line;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.more_scrutiny_min_dev_from_line = X2.more_scrutiny_min_dev_from_line;
+  }
 
-  r=rnd01();
-  X_new.amp_to_apply_line_test_below=r*X1.amp_to_apply_line_test_below+(1.0-r)*X2.amp_to_apply_line_test_below;
+  if( rnd01() < crossover_threshold )
+  {
+    r=rnd01();
+    X_new.amp_to_apply_line_test_below=r*X1.amp_to_apply_line_test_below+(1.0-r)*X2.amp_to_apply_line_test_below;
+  }else if( rnd01() < 0.5 )
+  {
+    X_new.amp_to_apply_line_test_below = X2.amp_to_apply_line_test_below;
+  }
 
   return X_new;
 }
@@ -1307,7 +1392,7 @@ FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettin
   ga_obj.crossover=crossover;
   ga_obj.SO_report_generation=SO_report_generation;
   ga_obj.crossover_fraction=0.7;
-  ga_obj.mutation_rate=0.2;
+  ga_obj.mutation_rate=0.4;
   ga_obj.best_stall_max=10;
   ga_obj.elite_count=10;
   ga_obj.N_threads = 8; //Keep some free cores on my M1 max so I can still use the computer
