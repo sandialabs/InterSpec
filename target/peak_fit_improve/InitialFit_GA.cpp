@@ -69,6 +69,7 @@ namespace InitialFit_GA
 vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                               const FindCandidateSettings &candidate_settings,
                               const shared_ptr<const SpecUtils::Measurement> &data,
+                                          const bool multithread,
                               size_t &num_add_candidates_fit_for,  //Only for eval purposes
                               size_t &num_add_candidates_accepted //Only for eval purposes
                               )
@@ -162,7 +163,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
   //                fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
   //                                     candidate_peaks, data, dummy_fixedpeaks, amplitudeOnly, isHPGe );
 
-  auto fit_peaks_per_roi = [&fit_settings, &data, isHPGe]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
+  auto fit_peaks_per_roi = [&fit_settings, &data, isHPGe, multithread]( const vector<PeakDef> &input_peaks ) -> vector<PeakDef> {
 
     const bool amplitudeOnly = false;
 
@@ -175,43 +176,69 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
     vector<vector<shared_ptr<const PeakDef>>> fit_rois_tmp( roi_to_peaks_map.size() );
 #endif
 
-    SpecUtilsAsync::ThreadPool threadpool;
-
-    size_t fit_rois_index = 0;
-    for( auto &roi_peaks : roi_to_peaks_map )
+    if( multithread )
     {
-      const vector<PeakDef> &peaks = roi_peaks.second;
+      SpecUtilsAsync::ThreadPool threadpool;
+
+      size_t fit_rois_index = 0;
+      for( auto &roi_peaks : roi_to_peaks_map )
+      {
+        const vector<PeakDef> &peaks = roi_peaks.second;
 
 #if( USE_CERES_PEAK_FITTING )
-      vector<shared_ptr<const PeakDef>> &results = fit_rois_tmp[fit_rois_index];
-      vector<shared_ptr<const PeakDef>> input_peaks_tmp;
-      for( const auto &p : peaks )
-        input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
+        vector<shared_ptr<const PeakDef>> &results = fit_rois_tmp[fit_rois_index];
+        vector<shared_ptr<const PeakDef>> input_peaks_tmp;
+        for( const auto &p : peaks )
+          input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
 
-      threadpool.post( boost::bind( &PeakFitLM::fit_peaks_LM,
-                                   boost::ref(results),
-                                   input_peaks_tmp,
-                                   data,
-                                   fit_settings.initial_stat_threshold,
-                                   fit_settings.initial_hypothesis_threshold,
-                                   amplitudeOnly,
-                                   isHPGe ) );
+        threadpool.post( boost::bind( &PeakFitLM::fit_peaks_LM,
+                                     boost::ref(results),
+                                     input_peaks_tmp,
+                                     data,
+                                     fit_settings.initial_stat_threshold,
+                                     fit_settings.initial_hypothesis_threshold,
+                                     amplitudeOnly,
+                                     isHPGe ) );
 #else
-      vector<PeakDef> &results = fit_rois[fit_rois_index];
+        vector<PeakDef> &results = fit_rois[fit_rois_index];
 
-      threadpool.post( boost::bind( &fitPeaks,
-                                   boost::cref(peaks),
-                                   fit_settings.initial_stat_threshold,
-                                   fit_settings.initial_hypothesis_threshold,
-                                   data,
-                                   boost::ref( results ),
-                                   amplitudeOnly,
-                                   isHPGe ) );
+        threadpool.post( boost::bind( &fitPeaks,
+                                     boost::cref(peaks),
+                                     fit_settings.initial_stat_threshold,
+                                     fit_settings.initial_hypothesis_threshold,
+                                     data,
+                                     boost::ref( results ),
+                                     amplitudeOnly,
+                                     isHPGe ) );
 #endif
-      fit_rois_index += 1;
-    }//for( size_t peakn = 0; peakn < seperated_peaks.size(); ++peakn )
+        fit_rois_index += 1;
+      }//for( auto &roi_peaks : roi_to_peaks_map )
 
-    threadpool.join();
+      threadpool.join();
+    }else
+    {
+      size_t fit_rois_index = 0;
+      for( auto &roi_peaks : roi_to_peaks_map )
+      {
+        const vector<PeakDef> &peaks = roi_peaks.second;
+
+#if( USE_CERES_PEAK_FITTING )
+        vector<shared_ptr<const PeakDef>> &results = fit_rois_tmp[fit_rois_index];
+        vector<shared_ptr<const PeakDef>> input_peaks_tmp;
+        for( const auto &p : peaks )
+          input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
+
+        PeakFitLM::fit_peaks_LM( results, input_peaks_tmp, data,
+                                fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
+                                amplitudeOnly, isHPGe );
+#else
+        vector<PeakDef> &results = fit_rois[fit_rois_index];
+        fitPeaks( peaks, fit_settings.initial_stat_threshold, fit_settings.initial_hypothesis_threshold,
+                 data, results, amplitudeOnly, isHPGe );
+#endif
+        fit_rois_index += 1;
+      }//for( auto &roi_peaks : roi_to_peaks_map )
+    }//if( multithread ) / else
 
 #if( USE_CERES_PEAK_FITTING )
     for( size_t i = 0; i < fit_rois.size(); ++i )
@@ -1109,7 +1136,8 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
 
 PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSettings &fit_settings,
                                       const FindCandidateSettings &candidate_settings,
-                                      const DataSrcInfo &src_info )
+                                      const DataSrcInfo &src_info,
+                                                     const bool multithread )
 {
   const InjectSourceInfo &src = src_info.src_info;
   assert( src.src_spectra.size() >= 12 );
@@ -1124,7 +1152,7 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
 
   // `initial_peaks` not const for initial development
   vector<PeakDef> initial_peaks
-                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data,
+                        = InitialFit_GA::initial_peak_find_and_fit( fit_settings, candidate_settings, data, multithread,
                                           num_add_candidates_fit_for, num_add_candidates_accepted);
 
   const vector<ExpectedPhotopeakInfo> &expected_photopeaks = src_info.expected_photopeaks;

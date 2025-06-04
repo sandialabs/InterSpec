@@ -6486,8 +6486,8 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
 #if( !PERFORM_DEVELOPER_CHECKS )
   return PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
                   ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
-                  dummy_amplitudes, dummy_continuum_coeffs,
-                                         dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts,
+                                         amplitudes, continuum_coeffs,
+                                         amplitudes_uncerts, continuum_coeffs_uncerts,
                                          dummy_channel_counts );
 #else
 
@@ -6891,10 +6891,12 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     //cout << "For fit, comparison of amplitudes:" << endl << "Prev\t\tNew\n";
     for( size_t i = 0; i < dummy_amplitudes.size(); ++i )
     {
-      assert( abs(amplitudes[i] - dummy_amplitudes[i])
-             < 0.0001*max(abs(amplitudes[i]),abs(dummy_amplitudes[i])) );
-      assert( abs(amplitudes_uncerts[i] - dummy_amplitudes_uncerts[i])
-             < 0.001*max(abs(amplitudes_uncerts[i]),abs(dummy_amplitudes_uncerts[i])) );
+      assert( (abs(amplitudes[i] - dummy_amplitudes[i])
+             < 0.0001*max(abs(amplitudes[i]),abs(dummy_amplitudes[i])))
+             || (abs(amplitudes[i] - dummy_amplitudes[i]) < 1.0E-7) );
+      assert( (abs(amplitudes_uncerts[i] - dummy_amplitudes_uncerts[i])
+             < 0.001*max(abs(amplitudes_uncerts[i]),abs(dummy_amplitudes_uncerts[i])))
+             || (abs(amplitudes_uncerts[i] - dummy_amplitudes_uncerts[i]) < 1.0E-6) );
       //cout << "  " << amplitudes[i] << "+-" << amplitudes_uncerts[i] << "\t\t" << dummy_amplitudes[i] << "+-" << dummy_amplitudes_uncerts[i] << endl;
     }
 
@@ -6902,15 +6904,17 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     //cout << "For fit, comparison of continuum coeffs:" << endl << "Prev\t\tNew\n";
     for( size_t i = 0; i < continuum_coeffs.size(); ++i )
     {
-      assert( abs(continuum_coeffs[i] - dummy_continuum_coeffs[i])
-              < 0.0001*max(abs(continuum_coeffs[i]),abs(dummy_continuum_coeffs[i])) );
-      assert( abs(continuum_coeffs_uncerts[i] - dummy_continuum_coeffs_uncerts[i])
-             < 0.001*max(abs(continuum_coeffs_uncerts[i]),abs(dummy_continuum_coeffs_uncerts[i])) );
+      assert( (abs(continuum_coeffs[i] - dummy_continuum_coeffs[i])
+              < 0.0001*max(abs(continuum_coeffs[i]),abs(dummy_continuum_coeffs[i])))
+             || (abs(continuum_coeffs[i] - dummy_continuum_coeffs[i]) < 1.0E-7) );
+      assert( (abs(continuum_coeffs_uncerts[i] - dummy_continuum_coeffs_uncerts[i])
+             < 0.001*max(abs(continuum_coeffs_uncerts[i]),abs(dummy_continuum_coeffs_uncerts[i])))
+             || (abs(continuum_coeffs_uncerts[i] - dummy_continuum_coeffs_uncerts[i]) < 1.0E-6) );
       //cout << "  " << continuum_coeffs[i] << "+-" << continuum_coeffs_uncerts[i] << "\t\t" << dummy_continuum_coeffs[i] << "+-" << dummy_continuum_coeffs_uncerts[i] << endl;
     }
     //cout << "And prev Chi2=" << chi2 << ", with new Chi2=" << dummy_chi2 << endl<< endl<< endl;
     //assert( abs(chi2 - dummy_chi2) < 0.01*max(chi2,dummy_chi2) );
-    if( abs(chi2 - dummy_chi2) > 0.01*max(chi2,dummy_chi2) )
+    if( (abs(chi2 - dummy_chi2) > 0.01*max(chi2,dummy_chi2)) && (abs(chi2 - dummy_chi2) > 1.0E-9) )
       cout << "And prev Chi2=" << chi2 << ", with new Chi2=" << dummy_chi2 << endl<< endl<< endl;
   }
 

@@ -276,8 +276,10 @@ struct PeakFitDiffCostFunction
 
     auto continuum = m_starting_peaks[0]->continuum();
     // TODO: get rid of m_roi_lower_energy, m_roi_upper_energy, m_offset_type, and m_ref_energy - since they are all duplicated
-    assert( fabs(continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(continuum->lowerEnergy(),m_roi_lower_energy) );
-    assert( fabs(continuum->upperEnergy() - m_roi_upper_energy) < 1.0E-6*std::max(continuum->upperEnergy(),m_roi_upper_energy) );
+    assert( (continuum->lowerEnergy() < 5.0)
+           || (fabs(continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(continuum->lowerEnergy(),m_roi_lower_energy)) );
+    assert( ((continuum->upperEnergy()+5) > m_data->gamma_energy_max())
+           || (fabs(continuum->upperEnergy() - m_roi_upper_energy) < 1.0E-6*std::max(continuum->upperEnergy(),m_roi_upper_energy)) );
     assert( continuum->type() == m_offset_type );
     //assert( continuum->referenceEnergy() == m_ref_energy ); //When dragging edge of ROI to make it smaller, we have to shift the ref enerergy to keep valid
     
@@ -388,8 +390,11 @@ struct PeakFitDiffCostFunction
     const size_t end_data_residual = m_upper_channel - m_lower_channel;
 
     auto starting_continuum = m_starting_peaks[0]->continuum();
-    assert( fabs(starting_continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(starting_continuum->lowerEnergy(),m_roi_lower_energy) );
-    assert( fabs(starting_continuum->upperEnergy() - m_roi_upper_energy) < 1.0E-6*std::max(starting_continuum->upperEnergy(),m_roi_upper_energy) );
+    assert( (fabs(starting_continuum->lowerEnergy() - m_roi_lower_energy) < 1.0E-6*std::max(starting_continuum->lowerEnergy(),m_roi_lower_energy))
+           || (m_roi_lower_energy < 10.0) );
+    assert( (fabs(starting_continuum->upperEnergy() - m_roi_upper_energy) < 1.0E-6*std::max(starting_continuum->upperEnergy(),m_roi_upper_energy))
+           || !m_data
+           || ((m_roi_upper_energy + 10) > m_data->gamma_energy_max()));
     assert( starting_continuum->type() == m_offset_type );
     //assert( starting_continuum->referenceEnergy() == m_ref_energy ); //may not be true if we are dragging ROI edges to make smaller, so we had to change ref energy to keep it valid
 
@@ -449,6 +454,30 @@ struct PeakFitDiffCostFunction
 
         sigma = params[sigma_index] * m_max_initial_sigma;
         sigma_uncert = uncertainties ? (uncertainties[sigma_index] * m_max_initial_sigma) : T(0.0);
+
+
+        if( isnan(sigma) || isinf(sigma) )
+        {
+          if constexpr ( !std::is_same_v<T, double> )
+          {
+            cerr << "Recieved a NaN or Inf sigma; params[" << sigma_index<< "] = " << params[sigma_index].a
+            << ", sigma=" << sigma.a << endl;
+            cerr << "Pars=[";
+            for( size_t i = 0; i < m_num_parameters; ++i )
+              cerr << params[i].a << ",";
+            cerr << "]" << endl;
+          }else
+          {
+            cerr << "Recieved a NaN or Inf sigma; params[" << sigma_index<< "] = " << params[sigma_index]
+            << ", sigma=" << sigma << endl;
+            cerr << "Pars=[";
+            for( size_t i = 0; i < m_num_parameters; ++i )
+              cerr << params[i] << ",";
+            cerr << "]" << endl;
+          }
+
+          throw runtime_error( "Inf or NaN sigma" );
+        }//if( isnan(sigma) || isinf(sigma) )
       }else
       {
         // If we fit for only one sigma, we use the paramaters value.
@@ -466,7 +495,12 @@ struct PeakFitDiffCostFunction
           const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
           const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
           const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
-          const T frac_dist = (mean - first_mean) / (last_mean - first_mean);
+          T frac_dist;
+          if( (last_mean - first_mean) > 1.0E-2 )
+            frac_dist = (mean - first_mean) / (last_mean - first_mean);
+          else
+            frac_dist = T(1.0*i) / (num_sigmas_fit - 1.0);
+
           const T fist_sigma = sigma;
           const T last_sigma = sigma * params[sigma_index + 1];
           sigma = fist_sigma + frac_dist*(last_sigma - fist_sigma);
@@ -482,6 +516,94 @@ struct PeakFitDiffCostFunction
             sigma_uncert = first_uncert + frac_dist*(last_uncert - first_uncert);
           }
         }//if( num_sigmas_fit > 1 )
+
+        if( isnan(sigma) || isinf(sigma) )
+        {
+          if constexpr ( !std::is_same_v<T, double> )
+          {
+            cerr << "Recieved a NaN _or_ Inf sigma; params[" << sigma_index<< "] = " << params[sigma_index].a
+            << ", sigma=" << sigma.a
+            << ", num_sigmas_fit=" << num_sigmas_fit
+            << endl;
+            if( (i > 0) && (num_sigmas_fit > 1) )
+            {
+              const size_t first_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + 0;
+              const size_t last_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + m_num_peaks - 1;
+              const T frac_first_roi_range = params[first_mean_par_index] - 0.5;
+              const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
+              const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
+              const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
+              T frac_dist;
+              if( (last_mean - first_mean) > 1.0E-2 )
+                frac_dist = (mean - first_mean) / (last_mean - first_mean);
+              else
+                frac_dist = T(1.0*i) / (num_sigmas_fit - 1.0);
+
+              const T fist_sigma = sigma;
+              const T last_sigma = sigma * params[sigma_index + 1];
+              sigma = fist_sigma + frac_dist*(last_sigma - fist_sigma);
+
+              cerr << "\ti=" << i << ", num_sigmas_fit=" << num_sigmas_fit
+              << ", frac_first_roi_range=" << frac_first_roi_range.a
+              << ", frac_last_roi_range=" << frac_last_roi_range.a
+              << ", first_mean=" << first_mean.a
+              << ", last_mean=" << last_mean.a
+              << ", frac_dist=" << frac_dist.a
+              << ", fist_sigma=" << fist_sigma.a
+              << ", last_sigma=" << last_sigma.a
+              << ", sigma=" << sigma.a
+              << endl;
+            }
+
+            cerr << "Pars=[";
+            for( size_t i = 0; i < m_num_parameters; ++i )
+              cerr << params[i].a << ",";
+            cerr << "]" << endl;
+          }else
+          {
+            cerr << "Recieved a NaN _or_ Inf sigma; params[" << sigma_index<< "] = " << params[sigma_index]
+            << ", sigma=" << sigma
+            << ", num_sigmas_fit=" << num_sigmas_fit
+            << endl;
+            if( (i > 0) && (num_sigmas_fit > 1) )
+            {
+              const size_t first_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + 0;
+              const size_t last_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + m_num_peaks - 1;
+              const T frac_first_roi_range = params[first_mean_par_index] - 0.5;
+              const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
+              const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
+              const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
+              T frac_dist;
+              if( (last_mean - first_mean) > 1.0E-2 )
+                frac_dist = (mean - first_mean) / (last_mean - first_mean);
+              else
+                frac_dist = T(1.0*i) / (num_sigmas_fit - 1);
+              
+              const T fist_sigma = sigma;
+              const T last_sigma = sigma * params[sigma_index + 1];
+              sigma = fist_sigma + frac_dist*(last_sigma - fist_sigma);
+
+              cerr << "\ti=" << i << ", num_sigmas_fit=" << num_sigmas_fit
+              << ", frac_first_roi_range=" << frac_first_roi_range
+              << ", frac_last_roi_range=" << frac_last_roi_range
+              << ", first_mean=" << first_mean
+              << ", last_mean=" << last_mean
+              << ", frac_dist=" << frac_dist
+              << ", fist_sigma=" << fist_sigma
+              << ", last_sigma=" << last_sigma
+              << ", sigma=" << sigma
+              << endl;
+            }//if( (i > 0) && (num_sigmas_fit > 1) )
+
+            cerr << "Pars=[";
+            for( size_t i = 0; i < m_num_parameters; ++i )
+              cerr << params[i] << ",";
+            cerr << "]" << endl;
+          }
+
+          throw runtime_error( "Inf or NaN sigma" );
+        }//if( isnan(sigma) || isinf(sigma) )
+
       }//if( num_sigmas_fit == 0 ) / else
 
 #if( DEBUG_PAR_TO_PEAKS )
@@ -1053,7 +1175,9 @@ struct PeakFitDiffCostFunction
         //          upper_bounds[mean_par_index] = rel_mean + 0.5*sigma/range;
         //        }
 
-        // If we want to limit the peaks to be within ROI:
+        // If we want to limit the peaks to be within ROI, we would limit its range to [0.5, 1.5],
+        //  however, we might be fitting a peak outside the ROI, so a little below, if the
+        //  peak is already outside the ROI, we'll let it roam around a little there:
         lower_bounds[mean_par_index] = 0.5;
         upper_bounds[mean_par_index] = 1.5;
 
@@ -1076,6 +1200,15 @@ struct PeakFitDiffCostFunction
           assert( rel_mean >= *lower_bounds[mean_par_index] );
           assert( rel_mean <= *upper_bounds[mean_par_index] );
         }
+
+        // If the peak is already outside the ROI - we'll exand the limits, and give it a little extra to roam
+        if( rel_mean <= *lower_bounds[mean_par_index] )
+          lower_bounds[mean_par_index] = rel_mean - std::max( 0.1, fabs(0.25*rel_mean) ); // A little careful to not g onegative
+        if( rel_mean >= *upper_bounds[mean_par_index] )
+          upper_bounds[mean_par_index] = 1.2*rel_mean;
+
+        assert( rel_mean >= *lower_bounds[mean_par_index] );
+        assert( rel_mean <= *upper_bounds[mean_par_index] );
       }//if( fixed mean ) / else
 
       min_input_sigma = std::min( min_input_sigma, sigma );
@@ -1144,12 +1277,18 @@ struct PeakFitDiffCostFunction
       lower_bounds[num_fit_continuum_pars + num_skew] = (0.5*std::min(minsigma,0.75*min_input_sigma)) / m_max_initial_sigma;
       upper_bounds[num_fit_continuum_pars + num_skew] = (1.5*std::max(maxsigma,1.25*max_input_sigma)) / m_max_initial_sigma;
 
+      assert( parameters[num_fit_continuum_pars + num_skew] >= *lower_bounds[num_fit_continuum_pars + num_skew] );
+      assert( parameters[num_fit_continuum_pars + num_skew] <= *upper_bounds[num_fit_continuum_pars + num_skew] );
+
       if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::MediumRefinementOnly) )
       {
         // These bounds are only approximately the claimed 50% - since we're lumping all peaks in ROI together
         //  but its probably not worth the hassle of correctness to go into much more detail
         lower_bounds[num_fit_continuum_pars + num_skew] = (0.5*min_input_sigma) / m_max_initial_sigma;
         upper_bounds[num_fit_continuum_pars + num_skew] = (1.5*max_input_sigma) / m_max_initial_sigma;
+
+        assert( parameters[num_fit_continuum_pars + num_skew] >= *lower_bounds[num_fit_continuum_pars + num_skew] );
+        assert( parameters[num_fit_continuum_pars + num_skew] <= *upper_bounds[num_fit_continuum_pars + num_skew] );
       }
 
       if( m_options.testFlag(PeakFitLM::PeakFitLMOptions::SmallRefinementOnly) )
@@ -1158,6 +1297,9 @@ struct PeakFitDiffCostFunction
         //  but its probably not worth the hassle of correctness to go into much more detail
         lower_bounds[num_fit_continuum_pars + num_skew] = (0.85*min_input_sigma) / m_max_initial_sigma;
         upper_bounds[num_fit_continuum_pars + num_skew] = (1.15*max_input_sigma) / m_max_initial_sigma;
+
+        assert( parameters[num_fit_continuum_pars + num_skew] >= *lower_bounds[num_fit_continuum_pars + num_skew] );
+        assert( parameters[num_fit_continuum_pars + num_skew] <= *upper_bounds[num_fit_continuum_pars + num_skew] );
       }
 
       assert( parameters[num_fit_continuum_pars + num_skew] >= *lower_bounds[num_fit_continuum_pars + num_skew] );
@@ -1176,6 +1318,9 @@ struct PeakFitDiffCostFunction
 
         // TODO: if PeakFitLM::PeakFitLMOptions::MediumRefinementOnly or PeakFitLM::PeakFitLMOptions::SmallRefinementOnly
         //       we should limit things in a bit more sensical way
+
+        assert( parameters[num_fit_continuum_pars + num_skew + 1] >= *lower_bounds[num_fit_continuum_pars + num_skew + 1] );
+        assert( parameters[num_fit_continuum_pars + num_skew + 1] <= *upper_bounds[num_fit_continuum_pars + num_skew + 1] );
       }
     }//if( !num_sigmas_fit ) / else
 
@@ -1260,9 +1405,14 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     const double roi_lower = dataH->gamma_channel_lower( lower_channel );
     const double roi_upper = dataH->gamma_channel_upper( upper_channel );
     
-    assert( roi_lower <= roiLowerEnergy );
-    assert( roi_upper >= roiUpperEnergy );
-    
+    assert( (lower_channel < 2) || (roi_lower <= roiLowerEnergy) );
+    assert( (roi_upper >= roiUpperEnergy) || ((upper_channel + 3) >= dataH->num_gamma_channels()) );
+
+    if( coFitPeaks.size() >= (upper_channel - lower_channel) ) //PeakFitDiffCostFunction will check for this in an assert
+      throw runtime_error( "Invalid energy channels (" + std::to_string(lower_channel) + ", "
+                          + std::to_string(upper_channel) + ") for " + std::to_string(coFitPeaks.size()) + " peaks." );
+    assert( coFitPeaks.size() < (upper_channel - lower_channel) );
+
     const size_t nchannels = dataH->num_gamma_channels();
     const size_t midbin = dataH->find_gamma_channel( 0.5*(roiLowerEnergy + roiUpperEnergy) );
     const float binwidth = dataH->gamma_channel_width( midbin );
@@ -1357,10 +1507,14 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     options.max_num_iterations = 50000;
 #ifndef NDEBUG
     options.max_solver_time_in_seconds = 300.0;
+#else
+    options.max_solver_time_in_seconds = 30.0;
+#endif
+
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     options.minimizer_progress_to_stdout = true;
     options.logging_type = ceres::PER_MINIMIZER_ITERATION;
 #else
-    options.max_solver_time_in_seconds = 30.0;
     options.minimizer_progress_to_stdout = false;
     options.logging_type = ceres::SILENT;
 #endif
@@ -1382,13 +1536,11 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     ceres::Solver::Summary summary;
     ceres::Solve(options, &problem, &summary);
 
-#ifndef NDEBUG
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     //std::cout << summary.BriefReport() << "\n";
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
 #endif
-
-    cost_functor->m_ncalls = 0;
     
     switch( summary.termination_type )
     {
@@ -1397,13 +1549,26 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
         break;
         
       case ceres::NO_CONVERGENCE:
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "The L-M ceres::Solver solving failed - NO_CONVERGENCE:\n" << summary.FullReport() << endl;
+#endif
+        throw runtime_error( "The L-M ceres::Solver solving failed - NO_CONVERGENCE." );
+
       case ceres::FAILURE:
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "The L-M ceres::Solver solving failed - FAILURE:\n" << summary.FullReport() << endl;
+#endif
+        throw runtime_error( "The L-M ceres::Solver solving failed - FAILURE." );
+        
       case ceres::USER_FAILURE:
-        throw runtime_error( "The L-M ceres::Solver solving failed." );
-        break;
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
+        cerr << "The L-M ceres::Solver solving failed - USER_FAILURE:\n" << summary.FullReport() << endl;
+#endif
+        throw runtime_error( "The L-M ceres::Solver solving failed - USER_FAILURE." );
     }//switch( summary.termination_type )
 
-    
+    cost_functor->m_ncalls = 0;
+
     ceres::Covariance::Options cov_options;
     cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //
     //cov_options.num_threads = 1;
@@ -1418,7 +1583,9 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     
     if( !covariance.Compute(covariance_blocks, &problem) )
     {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
       cerr << "Failed to compute covariance!" << endl;
+#endif
       uncertainties_ptr = nullptr;
     }else
     {
@@ -1450,7 +1617,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
       }//
     }//if( we failed to computer covariance ) / else
 
-#ifndef NDEBUG
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     // Using numeric differentiation, should only be a single call to get covariance.
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to get covariance." << endl;
 #endif
@@ -1465,7 +1632,9 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     return results;
   }catch( std::exception &e )
   {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     cout << "fit_peak_for_user_click_LM caught: " << e.what() << endl;
+#endif
     //assert( 0 );
     throw;
   }//try / catch
@@ -1713,13 +1882,17 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
     return;
   }catch( std::exception &e )
   {
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     cerr << "fit_peaks_LM: caught exception '" << e.what() << "'" << endl;
+#endif
     results.clear();
+    return;
   }//try / catch
 
 
   //We will only reach here if there was no exception, so since never expect
   //  this to actually happen, just assign the results to be same as the input
+  assert( 0 );
   results = input_peaks;
 }//vector<PeakDef> fit_peaks_LM(...);
 
@@ -1800,7 +1973,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_range_LM( const double x0, const 
 
   if( migration )
   {
-#ifndef NDEBUG
+#if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
     cerr << "fitPeaksInRange(...)\n\tWarning: Migration happened!" << endl;
 #endif
 

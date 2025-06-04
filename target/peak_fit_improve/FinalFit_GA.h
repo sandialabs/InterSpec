@@ -70,12 +70,15 @@ struct FinalFitScore
   double total_weight = 0.0;
 
   size_t num_peaks_used = 0;
+
+  std::string print( const std::string &varname ) const;
 };//struct FinalFitScore
 
 
 FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_settings,
                                   const DataSrcInfo &src_info,
-                                  const std::vector<PeakDef> &intial_peaks );
+                                  const std::vector<PeakDef> &intial_peaks,
+                                  const bool write_n42 );
 
 
 

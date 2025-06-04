@@ -28,16 +28,36 @@
 #include <fstream>
 #include <iostream>
 
+
+//Roots Minuit2 includes
+#include "Minuit2/FCNBase.h"
+#include "Minuit2/FunctionMinimum.h"
+#include "Minuit2/MnMigrad.h"
+#include "Minuit2/MnScan.h"
+#include "Minuit2/MnMinos.h"
+#include "Minuit2/MnSimplex.h"
+#include "Minuit2/MinosError.h"
+#include "Minuit2/MnUserParameters.h"
+#include "Minuit2/MnUserParameterState.h"
+#include "Minuit2/CombinedMinimizer.h"
+#include "Minuit2/SimplexMinimizer.h"
+
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/post.hpp> // For boost::asio::post
+
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#include <Wt/WString>
 
 #include "PeakFitImprove.h"
 #include "FinalFit_GA.h"
@@ -52,11 +72,106 @@ namespace
 std::function<double(const FinalPeakFitSettings &)> ns_ga_eval_fcn;
 
 bool sm_has_been_called = false;
-}
+
+std::atomic<size_t> ns_generation_num( 0 );
+std::atomic<size_t> ns_individuals_eval( 0 );
+
+
+/** Fit the ROIs in parralele, using a SpecUtilsAsync::ThreadPool, in `final_peak_fit(...)`*/
+const bool ns_final_peak_fit_parrallel = false;
+
+/** If true, uses `boost::asio::thread_pool` in `ga_eval_fcn` functor, created in `do_final_peak_fit_ga_optimization(...)`,
+ This causes each spectrum to be evaluated in parralele*/
+const bool sm_multithread_individual_spectrum_eval_in_ga_eval_fcn = false;
+
+
+
+
+class FitFinalPeakFitSettingsChi2
+: public ROOT::Minuit2::FCNBase
+{
+  std::function<double( const FinalPeakFitSettings &)> m_eval_fcn;
+
+
+public:
+
+  FitFinalPeakFitSettingsChi2( std::function<double( const FinalPeakFitSettings &)> eval_fcn )
+    : m_eval_fcn( eval_fcn )
+  {
+  }
+
+  virtual double Up() const { return 1.0; }
+  size_t nfitPars() const { return 1; }
+
+  static FinalPeakFitSettings params_to_settings( const std::vector<double> &params )
+  {
+    assert( params.size() == 15 );
+    if( params.size() != 15 )
+      throw std::runtime_error( "params_to_settings: invalid number of parameters." );
+
+    FinalPeakFitSettings settings;
+
+    size_t index = 0;
+    settings.combine_nsigma_near = params[index++];
+    //settings.combine_ROI_overlap_frac = params[index++];
+    settings.cont_type_peak_nsigma_threshold = params[index++];
+    settings.cont_type_left_right_nsigma = params[index++];
+    settings.cont_poly_order_increase_chi2dof_required = params[index++];
+    settings.cont_step_type_increase_chi2dof_required = params[index++];
+    settings.skew_nsigma = params[index++];
+    settings.left_residual_sum_min_to_try_skew = params[index++];
+    settings.right_residual_sum_min_to_try_skew = params[index++];
+    settings.skew_improve_chi2_dof_threshold = params[index++];
+    settings.roi_extent_low_num_fwhm_base = params[index++];
+    settings.roi_extent_high_num_fwhm_base = params[index++];
+    settings.roi_extent_mult_type = FinalPeakFitSettings::RoiExtentMultType::Linear; //Sqrt
+    settings.roi_extent_lower_side_stat_multiple = params[index++];
+    settings.roi_extent_upper_side_stat_multiple = params[index++];
+    settings.multi_roi_extent_lower_side_fwhm_mult = params[index++];
+    settings.multi_roi_extent_upper_side_fwhm_mult = params[index++];
+
+    assert( index == params.size() );
+
+    return settings;
+  }
+
+  virtual double operator()( const std::vector<double> &params ) const
+  {
+    const FinalPeakFitSettings settings = params_to_settings( params );
+
+    try
+    {
+      return m_eval_fcn( settings );
+    }catch( std::exception &e )
+    {
+      std::cerr << "FitFinalPeakFitSettingsChi2::operator() caught: " << e.what() << endl;
+    }
+
+    return std::numeric_limits<double>::max();
+  }//operator()
+};//class FitFinalPeakFitSettingsChi2
+
+
+}//namespace
 
 
 namespace FinalFit_GA
 {
+
+std::string FinalFitScore::print( const std::string &varname ) const
+{
+  string answer;
+  answer += varname + ".area_score =                        " + std::to_string(area_score) + "\n";
+  answer += varname + ".width_score =                       " + std::to_string(width_score) + "\n";
+  answer += varname + ".position_score =                    " + std::to_string(position_score) + "\n";
+  answer += varname + ".ignored_unexpected_peaks =          " + std::to_string(ignored_unexpected_peaks) + "\n";
+  answer += varname + ".unexpected_peaks_sum_significance = " + std::to_string(unexpected_peaks_sum_significance) + "\n";
+  answer += varname + ".num_peaks_used =                    " + std::to_string(num_peaks_used) + "\n";
+  answer += varname + ".total_weight =                      " + std::to_string(total_weight) + "\n";
+  return answer;
+}
+
+
 vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
                                const FinalPeakFitSettings &final_fit_settings,
                                const DataSrcInfo &src_info )
@@ -173,13 +288,14 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
                data, initial_peaks, amplitudeOnly, isHPGe );
 #endif
 
-  assert( !first_fit_peaks.empty() );
   if( first_fit_peaks.empty() )
     throw std::runtime_error( "final_peak_fit_for_roi: first_fit_peaks is empty" );
 
   const double initial_fit_chi2 = chi2_for_region_wrapper( first_fit_peaks, data, compare_lower_channel, compare_upper_channel );
   const double approx_dof = (compare_upper_channel - compare_lower_channel);
-  cout << "Initial fit chi2: " << initial_fit_chi2 << " compared to intial_chi2: " << intial_chi2 << endl;
+
+  if( PeakFitImprove::debug_printout )
+    cout << "Initial fit chi2: " << initial_fit_chi2 << " compared to intial_chi2: " << intial_chi2 << endl;
 
   // We will actually take the new ROI width, no matter what, since we are optimizing things.
 
@@ -273,7 +389,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
   }
 
   vector<tuple<PeakContinuum::OffsetType,vector<PeakDef>,double>> trial_peak_fits;
-  trial_peak_fits.push_back( make_tuple( orig_continuum->type(), pre_fit_peaks, initial_fit_chi2/approx_dof )  );
+  trial_peak_fits.push_back( make_tuple( orig_continuum->type(), first_fit_peaks, initial_fit_chi2/approx_dof )  );
 
   for( const PeakContinuum::OffsetType type : cont_types_to_check )
   {
@@ -301,11 +417,12 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 #endif
     }catch( const std::exception &e )
     {
+      // TODO/Note: It doesn look like we can get here, neither `PeakFitLM::fit_peaks_LM(...)` or `fitPeaks(...)` will through
       cout << "Error fitting peaks: " << e.what() << endl;
       continue;
     }//try / catch to fit peaks
 
-    assert( !these_fit_peaks.empty() );
+    // We could have not fint any peaks; if `fit_peaks_LM(...)` fails, it will return empty results.
     if( these_fit_peaks.empty() )
       continue;
 
@@ -318,9 +435,26 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
     return static_cast<int>(std::get<0>(a)) < static_cast<int>(std::get<0>(b));
   } );
 
+
   size_t best_index = 0;
-  for( size_t i = 1; i < trial_peak_fits.size(); ++i )
+
+  bool found_original_type = false;
+  for( size_t i = 0; i < trial_peak_fits.size(); ++i )
   {
+    if( std::get<0>(trial_peak_fits[i]) == orig_continuum->type() )
+    {
+      best_index = i;
+      found_original_type = true;
+      break;
+    }
+  }
+  assert( found_original_type );
+
+  for( size_t i = 0; i < trial_peak_fits.size(); ++i )
+  {
+    if( i == best_index )
+      continue;
+
     const bool prev_was_step = PeakContinuum::is_step_continuum( std::get<0>(trial_peak_fits[best_index]) );
     const bool this_is_step = PeakContinuum::is_step_continuum( std::get<0>(trial_peak_fits[i]) );
 
@@ -329,24 +463,41 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
     if( !prev_was_step && !this_is_step )
     {
-      if( (this_chi2 - final_fit_settings.cont_poly_order_increase_chi2dof_required) > prev_chi2 )
+      if( (this_chi2 + final_fit_settings.cont_poly_order_increase_chi2dof_required) < prev_chi2 )
         best_index = i;
     }else if( prev_was_step && !this_is_step )
     {
       assert( 0 );  // We should never get here
     }else if( (!prev_was_step && this_is_step) || (prev_was_step && this_is_step) )
     {
-      if( (this_chi2 - final_fit_settings.cont_step_type_increase_chi2dof_required) > prev_chi2 )
+      if( (this_chi2 + final_fit_settings.cont_step_type_increase_chi2dof_required) < prev_chi2 )
         best_index = i;
     }
   }//for( size_t i = 1; i < trial_peak_fits.size(); ++i )
 
   assert( std::get<0>(trial_peak_fits[0]) == orig_continuum->type() );
 
-  cout << "Post continuum type fit: Best index: " << best_index << " gives Chi2Dof: " << std::get<2>(trial_peak_fits[best_index])
-  << " (ContType: " << PeakContinuum::offset_type_str( std::get<0>(trial_peak_fits[best_index]) ) << ")"
-  << ", compared to initial Chi2Dof: " << initial_fit_chi2/approx_dof
-  << " (ContType: " << PeakContinuum::offset_type_str( std::get<0>(trial_peak_fits[0]) ) << ")" << endl;
+  if( PeakFitImprove::debug_printout && (trial_peak_fits.size() > 1) )
+  {
+    double sum_peak_area = 0.0;
+    for( const auto &peak : std::get<1>(trial_peak_fits[best_index]) )
+      sum_peak_area += peak.peakArea();
+
+    cout << "Post continuum type fit: Chosen index: " << best_index << " gives Chi2Dof: " << std::get<2>(trial_peak_fits[best_index])
+    << " (ContType: " << PeakContinuum::offset_type_str( std::get<0>(trial_peak_fits[best_index]) ) << ")"
+    << ",\n\tcompared to initial Chi2Dof: " << initial_fit_chi2/approx_dof
+    << " (ContType: " << PeakContinuum::offset_type_str( std::get<0>(trial_peak_fits[0]) ) << "),\n\t"
+    "All Chi2s: [";
+    for( size_t i = 0; i < trial_peak_fits.size(); ++i )
+    {
+      cout << "\n\t\t{" << PeakContinuum::offset_type_str( std::get<0>(trial_peak_fits[i]) )
+      << ", " << std::get<2>(trial_peak_fits[i]) << "}";
+    }//for( size_t i = 1; i < trial_peak_fits.size(); ++i )
+    cout << "\n\t]\n\tpoly_order_inc_chi2dof_req=" << final_fit_settings.cont_poly_order_increase_chi2dof_required
+    << ", and step_inc_chi2dof_req=" << final_fit_settings.cont_step_type_increase_chi2dof_required
+    << "\n\tPeaks have area: " << sum_peak_area << ".";
+    cout << endl;
+  }//if( PeakFitImprove::debug_printout && (trial_peak_fits.size() > 1) )
 
   const double after_cont_type_chi2dof = std::get<2>(trial_peak_fits[best_index]);
   const double after_cont_type_chi2 = after_cont_type_chi2dof * approx_dof;
@@ -384,7 +535,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
     const size_t right_end_channel = data->find_gamma_channel( right_upper_energy );
 
     const bool too_narrow = (((left_start_channel + 2) >= left_end_channel) || ((right_start_channel + 2) >= right_end_channel));
-    assert( !too_narrow );
+    //assert( !too_narrow );
 
     double left_residual_sum = 0.0, right_residual_sum = 0.0;
     if( !too_narrow && (most_sig_peak.skewType() == PeakDef::SkewType::NoSkew) ) //We'll only try skew, if we dont currently have a user-preffered skew type
@@ -455,22 +606,24 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
           for( const PeakDef &p : these_input_peaks )
             input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
           PeakFitLM::fit_peaks_LM( results_tmp, input_peaks_tmp, data,
-                          initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
+                                  initial_stat_threshold, initial_hypothesis_threshold,  amplitudeOnly, isHPGe );
           for( const shared_ptr<const PeakDef> &p : results_tmp )
-          these_fit_peaks.push_back( *p );
+            these_fit_peaks.push_back( *p );
 #else
           fitPeaks( these_fit_peaks, initial_stat_threshold, initial_hypothesis_threshold,
-                  data, initial_peaks, amplitudeOnly, isHPGe );
+                   data, initial_peaks, amplitudeOnly, isHPGe );
 #endif
+          if( these_fit_peaks.empty() )
+            throw runtime_error( "failed fitting" );
         }catch( const std::exception &e )
         {
-          cout << "Error adding skew to peaks: " << e.what() << endl;
-          assert( 0 );
+          if( PeakFitImprove::debug_printout )
+            cout << "Error adding skew to peaks: " << e.what()  << " for skew " << PeakDef::to_string(skew_type) << endl;
           continue;
         }//try / catch to fit peaks
 
         const double these_fit_chi2 = chi2_for_region_wrapper( these_fit_peaks, data, compare_lower_channel, compare_upper_channel );
-        trial_skew_fits.emplace_back( skew_type, these_input_peaks, these_fit_chi2/approx_dof );
+        trial_skew_fits.emplace_back( skew_type, these_fit_peaks, these_fit_chi2/approx_dof );
       }//for( const PeakDef::SkewType skew_type : skew_types_to_try )
 
       // Sort the skew fits by the skew type (I'm pretty sure they should already be sorted)
@@ -479,8 +632,24 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
       } );
 
       size_t best_skew_index = 0;
-      for( size_t i = 1; i < trial_skew_fits.size(); ++i )
+      bool found_orig_skew_index = false;
+      for( size_t i = 0; i < trial_skew_fits.size(); ++i )
       {
+        if( std::get<0>(trial_skew_fits[best_skew_index]) == most_sig_peak.skewType() )
+        {
+          best_skew_index = i;
+          found_orig_skew_index = true;
+          break;
+        }
+      }
+      assert( found_orig_skew_index );
+      assert( best_skew_index == 0 );
+
+      for( size_t i = 0; i < trial_skew_fits.size(); ++i )
+      {
+        if( i == best_skew_index )
+          continue;
+
         const double prev_chi2 = std::get<2>(trial_skew_fits[best_skew_index]);
         const double this_chi2 = std::get<2>(trial_skew_fits[i]);
 
@@ -488,11 +657,27 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
           best_skew_index = i;
       }//for( size_t i = 1; i < trial_skew_fits.size(); ++i )
 
-      cout << "Post skew fit: Best index: " << best_skew_index << " gives Chi2Dof: " << std::get<2>(trial_skew_fits[best_skew_index])
-      << " (SkewType: " << PeakDef::to_string( std::get<0>(trial_skew_fits[best_skew_index]) ) << ")"
-      << ", compared to initial Chi2Dof: " << initial_fit_chi2/approx_dof
-      << " (SkewType: " << PeakDef::to_string( std::get<0>(trial_skew_fits[0]) ) << ")" << endl;
+      if( PeakFitImprove::debug_printout && (trial_skew_fits.size() > 1) )
+      {
+        double sum_peak_area = 0.0;
+        for( const auto &peak : std::get<1>(trial_skew_fits[best_skew_index]) )
+          sum_peak_area += peak.peakArea();
 
+        cout << "Post skew fit: Chosen index: " << best_skew_index << " gives Chi2Dof: " << std::get<2>(trial_skew_fits[best_skew_index])
+        << " (SkewType: " << PeakDef::to_string( std::get<0>(trial_skew_fits[best_skew_index]) ) << ")"
+        << "\n\tcompared to initial Chi2Dof: " << initial_fit_chi2/approx_dof
+        << " (SkewType: " << PeakDef::to_string( std::get<0>(trial_skew_fits[0]) ) << ")"
+        << "\n\tAll fits: [";
+
+        for( size_t i = 0; i < trial_skew_fits.size(); ++i )
+        {
+          cout << "\n\t\t{" << PeakDef::to_string( std::get<0>(trial_skew_fits[i]) )
+          << ", " << std::get<2>(trial_skew_fits[i]) << "}, ";
+        }//for( size_t i = 1; i < trial_peak_fits.size(); ++i )
+        cout << "\n\t]\n\tskew_improve_chi2_dof_threshold=" << final_fit_settings.skew_improve_chi2_dof_threshold
+        << "\n\tPeaks have area: " << sum_peak_area << " and post_cont_max_nsigma=" << post_cont_max_nsigma;
+        cout << endl;
+      }
       answer = std::get<1>(trial_skew_fits[best_skew_index]);
     }//if( !too_narrow && (most_sig_peak.skew_type() == PeakDef::SkewType::NoSkew) )
   }//if( post_cont_type_max_nsigma > final_fit_settings.skew_nsigma )
@@ -549,7 +734,8 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
     const shared_ptr<const PeakContinuum> &this_cont = this_roi.first;
     const vector<PeakDef> &this_peaks = this_roi.second;
 
-    bool combine_for_overlap = false, combine_for_nsigma_near = false;
+    //bool combine_for_overlap = false;
+    bool combine_for_nsigma_near = false;
     const double prev_lower = prev_cont->lowerEnergy();
     const double prev_upper = prev_cont->upperEnergy();
 
@@ -564,16 +750,17 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
       const double overlap = overlap_end - overlap_start;
       assert( overlap >= 0.0 );
       const double lesser_roi_extent = std::min( (prev_upper - prev_lower), (this_upper - this_lower) );
-      combine_for_overlap = ((overlap / lesser_roi_extent) > final_fit_settings.combine_ROI_overlap_frac);
+      //combine_for_overlap = ((overlap / lesser_roi_extent) > final_fit_settings.combine_ROI_overlap_frac);
     }//if( overlap_start <= overlap_end )
 
     const PeakDef &last_prev_peak = prev_roi.second.back();
-    const PeakDef &first_this_peak = prev_roi.second.front();
+    const PeakDef &first_this_peak = this_roi.second.front();
     const double avrg_sigma = 0.5*(last_prev_peak.sigma() + first_this_peak.sigma());
     const double energy_diff = fabs( last_prev_peak.mean() - first_this_peak.mean() );
     combine_for_nsigma_near = ((energy_diff / avrg_sigma) < final_fit_settings.combine_nsigma_near);
 
-    if( combine_for_overlap || combine_for_nsigma_near )
+    if( //combine_for_overlap ||
+       combine_for_nsigma_near )
     {
       //Combine ROIs into a single ROI
       shared_ptr<PeakContinuum> new_cont = make_shared<PeakContinuum>( *prev_cont );
@@ -612,14 +799,59 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
     }//if( combine_for_overlap || combine_for_nsigma_near )
   }//for( size_t size_t roi_index = 1; roi_index < rois.size(); ++i )
 
-
-  for( const auto &cont_peaks : rois )
+  if( ns_final_peak_fit_parrallel )
   {
-    const vector<PeakDef> &in_peaks = cont_peaks.second;
+    std::mutex answer_mutex;
 
-    const vector<PeakDef> roi_answer = final_peak_fit_for_roi( in_peaks, final_fit_settings, src_info );
-    answer.insert( end(answer), begin(roi_answer), end(roi_answer) );
-  }
+    SpecUtilsAsync::ThreadPool pool;
+
+    for( const auto &cont_peaks : rois )
+    {
+      const vector<PeakDef> *in_peaks = &cont_peaks.second;
+
+      pool.post( [&answer, &answer_mutex, in_peaks, &final_fit_settings, &src_info](){
+        try
+        {
+          const vector<PeakDef> roi_answer = final_peak_fit_for_roi( *in_peaks, final_fit_settings, src_info );
+
+          std::lock_guard<std::mutex> lock( answer_mutex );
+          answer.insert( end(answer), begin(roi_answer), end(roi_answer) );
+        }catch( std::exception &e )
+        {
+          if( PeakFitImprove::debug_printout )
+          {
+            cerr << "Fit of ROI=[" << (*in_peaks)[0].continuum()->lowerEnergy() << ", "
+            << (*in_peaks)[0].continuum()->upperEnergy() << "] failed - will use input peaks as output.  Err: " << e.what()
+            << endl;
+          }
+
+          std::lock_guard<std::mutex> lock( answer_mutex );
+          answer.insert( end(answer), begin(*in_peaks), end(*in_peaks) );
+        }
+      } );
+    }//for( const auto &cont_peaks : rois )
+  }else
+  {
+    for( const auto &cont_peaks : rois )
+    {
+      const vector<PeakDef> &in_peaks = cont_peaks.second;
+
+      try
+      {
+        const vector<PeakDef> roi_answer = final_peak_fit_for_roi( in_peaks, final_fit_settings, src_info );
+        answer.insert( end(answer), begin(roi_answer), end(roi_answer) );
+      }catch( std::exception &e )
+      {
+        if( PeakFitImprove::debug_printout )
+        {
+          cerr << "Fit of ROI=[" << in_peaks[0].continuum()->lowerEnergy() << ", "
+          << in_peaks[0].continuum()->upperEnergy() << "] failed - will use input peaks as output.  Err: " << e.what()
+          << endl;
+        }
+        answer.insert( end(answer), begin(in_peaks), end(in_peaks) );
+      }
+    }
+  }//if( final_peak_fit_parrallel ) / else
 
   std::sort( begin(answer), end(answer), &PeakDef::lessThanByMean );
 
@@ -629,10 +861,11 @@ vector<PeakDef> final_peak_fit( const vector<PeakDef> &pre_fit_peaks,
 
 FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_settings,
                            const DataSrcInfo &src_info,
-                           const vector<PeakDef> &intial_peaks )
+                           const vector<PeakDef> &intial_peaks,
+                           const bool write_n42 )
 {
   FinalFitScore score;
-  const vector<PeakDef> fit_peaks = final_peak_fit( intial_peaks, final_fit_settings, src_info );
+  vector<PeakDef> fit_peaks = final_peak_fit( intial_peaks, final_fit_settings, src_info );
 
   // - Calculate score based on fit_peaks, we will judge on:
   //   - Area of each peaks
@@ -673,7 +906,7 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
   // The number of sigma away from expected, that we will use to calculate the peak area.
   const double num_sigma_contribution = 1.5;
 
-  for( const PeakDef &found_peak : fit_peaks )
+  for( PeakDef &found_peak : fit_peaks )
   {
     const double found_energy = found_peak.mean();
     const double found_fwhm = found_peak.fwhm();
@@ -695,7 +928,31 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
       }
     }//for( const ExpectedPhotopeakInfo &expected_peak : src_info.expected_photopeaks )
 
-    if( !nearest_expected_peak )
+    if( nearest_expected_peak )
+    {
+      score.num_peaks_used += 1;
+
+      const double expected_energy = nearest_expected_peak->effective_energy;
+      const double expected_fwhm = nearest_expected_peak->effective_fwhm;
+      const double expected_sigma = expected_fwhm/2.35482;
+      const double expected_area = nearest_expected_peak->peak_area;
+
+      const double area_score = fabs(found_peak.amplitude() - expected_area) / sqrt(expected_area);
+      const double width_score = fabs( expected_fwhm - found_fwhm ) / expected_sigma;
+      const double position_score = fabs(found_energy - expected_energy) / expected_sigma;
+
+      score.area_score += std::min( area_score, 20.0 );
+      score.width_score += std::min( width_score, 1.0 );
+      score.position_score += std::min( position_score, 1.5 );
+
+      if( write_n42 )
+      {
+        const double nsgima_off = (found_peak.amplitude() - expected_area) / found_peak.amplitudeUncert();
+        string label = std::format("TrueArea: {:.0f}, σ_off: {:.1f}", expected_area, nsgima_off );
+        found_peak.setUserLabel( label );
+        found_peak.setLineColor( Wt::GlobalColor::darkGreen );
+      }//if( write_n42 )
+    }else
     {
       // We found an extra peak we dont want - lets check if its a single or double escape peak
       //  and if so, ignore it; otherwise I guess we have to punish for this peak being here.
@@ -712,16 +969,23 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
 
       // If it is an escape peak, ignore it.
       if( is_escape_peak )
+      {
+        found_peak.setUserLabel( "Escape Peak" );
         continue;
+      }
 
       // If this is a significant peak, we messed up, so lets ignore it...
       const double area_uncert = found_peak.amplitudeUncert() > 0.0 ? found_peak.amplitudeUncert() : 1/sqrt(found_peak.amplitude());
-      if( found_peak.amplitude() > 8.0*area_uncert )
+      if( (found_peak.amplitude() > 8.0*area_uncert) || (fabs(found_peak.mean() - 511.0) < 5.0) )
       {
-        cout << "Found peak {mean: " << found_peak.mean()
-        << ", fwhm: " << found_peak.fwhm()
-        << ", area: " << found_peak.amplitude()
-        << ", area_uncert: " << found_peak.amplitudeUncert() << "} that is unexpected, but too large, so ignoring." << endl;
+        if( PeakFitImprove::debug_printout )
+          cout << "Found peak {mean: " << found_peak.mean()
+          << ", fwhm: " << found_peak.fwhm()
+          << ", area: " << found_peak.amplitude()
+          << ", area_uncert: " << found_peak.amplitudeUncert() << "} that is unexpected, but too large, so ignoring." << endl;
+
+        found_peak.setUserLabel( "Unexpected Large Peak" );
+        found_peak.setLineColor( Wt::GlobalColor::magenta );
         continue;
       }
 
@@ -730,30 +994,161 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
 
       score.ignored_unexpected_peaks += 1;
       score.unexpected_peaks_sum_significance += std::min( 7.5, found_peak.amplitude() / area_uncert ); //Cap at 7.5 sigma (arbitrary)
-      assert( 0 ); // To force a check here...
+
+      if( write_n42 )
+      {
+        found_peak.setUserLabel( "Unexpected Peak" );
+        found_peak.setLineColor( Wt::GlobalColor::darkRed );
+      }//if( write_n42 )
     }//if( !nearest_expected_peak )
-
-    score.num_peaks_used += 1;
-
-    const double expected_energy = nearest_expected_peak->effective_energy;
-    const double expected_fwhm = nearest_expected_peak->effective_fwhm;
-    const double expected_sigma = expected_fwhm/2.35482;
-    const double expected_area = nearest_expected_peak->peak_area;
-
-    const double area_score = fabs(found_peak.amplitude() - expected_area) / sqrt(expected_area);
-    const double width_score = fabs( expected_fwhm - found_fwhm ) / expected_sigma;
-    const double position_score = fabs(found_energy - expected_energy) / expected_sigma;
-
-    score.area_score += std::min( area_score, 20.0 );
-    score.width_score += std::min( width_score, 1.0 );
-    score.position_score += std::min( position_score, 1.5 );
-  }//for( const PeakDef &found_peak : initial_peaks )
+  }//for( PeakDef &found_peak : fit_peaks )
 
   score.total_weight = score.area_score / score.num_peaks_used;
   // TODO: we could/should add in weight for peak area_score, width_score, and position_score
 
+  if( write_n42 )
+  {
+    string outdir = "output_n42";
+    if( !SpecUtils::is_directory(outdir) && !SpecUtils::create_directory(outdir) )
+      cerr << "Failed to create directory '" << outdir << "'" << endl;
+
+    outdir = SpecUtils::append_path( outdir, src_info.detector_name );
+    if( !SpecUtils::is_directory(outdir) && SpecUtils::create_directory(outdir) )
+      cerr << "Failed to create directory '" << outdir << "'" << endl;
+
+    outdir = SpecUtils::append_path( outdir, src_info.location_name );
+    if( !SpecUtils::is_directory(outdir) && !SpecUtils::create_directory(outdir) )
+      cerr << "Failed to create directory '" << outdir << "'" << endl;
+
+    outdir = SpecUtils::append_path( outdir, src_info.live_time_name );
+    if( !SpecUtils::is_directory(outdir) && !SpecUtils::create_directory(outdir) )
+      cerr << "Failed to create directory '" << outdir << "'" << endl;
+
+    const string out_n42 = SpecUtils::append_path( outdir, src_info.src_info.src_name ) + "_final_fit.n42";
+
+    SpecMeas output;
+
+    output.add_remark( score.print( "score") );
+
+    output.set_instrument_model( src_info.detector_name );
+    if( SpecUtils::icontains(src_info.detector_name, "Detective" ) )
+      output.set_manufacturer( "ORTEC" );
+    else if( SpecUtils::icontains(src_info.detector_name, "Falcon 5000" ) )
+      output.set_manufacturer( "Canberra" );
+    else if( SpecUtils::icontains(src_info.detector_name, "Fulcrum" ) )
+      output.set_manufacturer( "PHDS" );
+
+    output.set_measurement_location_name( src_info.location_name );
+
+    shared_ptr<SpecUtils::Measurement> out_with_cand = make_shared<SpecUtils::Measurement>( *src_info.src_info.src_spectra.front() );
+    out_with_cand->set_sample_number( 1 );
+
+    const string title = src_info.detector_name + "/" + src_info.src_info.src_name;
+    out_with_cand->set_title( title + " + final fit peaks" );
+    auto now = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
+    out_with_cand->set_start_time( now );
+    output.add_measurement( out_with_cand, false );
+
+    deque<shared_ptr<const PeakDef>> peaks;
+    for( const PeakDef &p : fit_peaks )
+      peaks.push_back( make_shared<PeakDef>(p) );
+
+    output.setPeaks( peaks, {1} );
+
+    //ofstream outstrm( out_n42.c_str(), ios::out | ios::binary );
+    //if( !outstrm )
+    //  cerr << "Failed to open '" << out_n42 << "'" << endl;
+    //output.write( outstrm, output.sample_numbers(), output.detector_names(), SpecUtils::SaveSpectrumAsType::N42_2012 );
+
+    output.save2012N42File( out_n42, [=](){
+      cerr << "Failed to write '" << out_n42 << "'" << endl;
+    });
+
+    //cout << "Wrote '" << out_n42 << endl;
+  }//if( write_n42 )
+
   return score;
 }//double eval_final_peak_fit(...)
+
+
+FinalPeakFitSettings minuit_fit_final_pars( std::function<double( const FinalPeakFitSettings &)> ga_eval_fcn )
+{
+  /* Run on 20250511, using just Detective-X (14 hours on M4 - population of 100, and max of 1000 generations)
+   best_final_fit_settings.combine_nsigma_near = 13.288225;
+   //best_final_fit_settings.combine_ROI_overlap_frac = 0.802212;
+   best_final_fit_settings.cont_type_peak_nsigma_threshold = 45.340986;
+   best_final_fit_settings.cont_type_left_right_nsigma = 9.624457;
+   best_final_fit_settings.cont_poly_order_increase_chi2dof_required = 1.157370;
+   best_final_fit_settings.cont_step_type_increase_chi2dof_required = 0.549378;
+   best_final_fit_settings.skew_nsigma = 5.420989;
+   best_final_fit_settings.left_residual_sum_min_to_try_skew = 1.482605;
+   best_final_fit_settings.right_residual_sum_min_to_try_skew = 4.213049;
+   best_final_fit_settings.skew_improve_chi2_dof_threshold = 3.138754;
+   best_final_fit_settings.roi_extent_low_num_fwhm_base = 3.519398;
+   best_final_fit_settings.roi_extent_high_num_fwhm_base = 8.373682;
+   best_final_fit_settings.roi_extent_mult_type = RoiExtentMultType::Linear;
+   best_final_fit_settings.roi_extent_lower_side_stat_multiple = 0.266548;
+   best_final_fit_settings.roi_extent_upper_side_stat_multiple = 0.724294;
+   best_final_fit_settings.multi_roi_extent_lower_side_fwhm_mult = 0.613304;
+   best_final_fit_settings.multi_roi_extent_upper_side_fwhm_mult = -0.680065;
+
+   */
+
+  FitFinalPeakFitSettingsChi2 chi2Fcn( ga_eval_fcn );
+
+  ROOT::Minuit2::MnUserParameters inputPrams;
+  inputPrams.Add( "combine_nsigma_near", 13.288225, 1.25, 2.0, 25.0 );
+  //inputPrams.Add( "combine_ROI_overlap_frac", 0.802212, 0.25, -1.0, 1.0 );
+  inputPrams.Add( "cont_type_peak_nsigma_threshold", 45.340986, 5, 10.0, 100 );
+  inputPrams.Add( "cont_type_left_right_nsigma", 9.624457, 3, 1.0, 40.0 );
+  inputPrams.Add( "cont_poly_order_increase_chi2dof_required", 1.157370, 0.2, 0.0, 4.0 );
+  inputPrams.Add( "cont_step_type_increase_chi2dof_required", 0.549378, 0.2, 0.0, 4.0 );
+  inputPrams.Add( "skew_nsigma", 5.420989, 5, 0.0, 25.0 );
+  inputPrams.Add( "left_residual_sum_min_to_try_skew", 1.482605, 0.5, 0.0, 10.0 );
+  inputPrams.Add( "right_residual_sum_min_to_try_skew", 4.213049, 2.0, 0.0, 10.0 );
+  inputPrams.Add( "skew_improve_chi2_dof_threshold", 3.138754, 0.5, 0.0, 5.0 );
+  inputPrams.Add( "roi_extent_low_num_fwhm_base", 3.519398, 1.0, 0.5, 9.0 );
+  inputPrams.Add( "roi_extent_high_num_fwhm_base", 8.373682, 3.0, 0.5, 9.0 );
+  //roi_extent_mult_type = FinalPeakFitSettings::RoiExtentMultType::Linear;
+  inputPrams.Add( "roi_extent_lower_side_stat_multiple", 0.266548, 0.2, 0.0, 5.0 );
+  inputPrams.Add( "roi_extent_upper_side_stat_multiple", 0.724294, 0.25, 0.0, 4.0 );
+  inputPrams.Add( "multi_roi_extent_lower_side_fwhm_mult", 0.613304, 0.25, -1.0, 3.0 );
+  inputPrams.Add( "multi_roi_extent_upper_side_fwhm_mult", -0.680065, 0.25, -1.0, 3.0 );
+
+  cerr << "Returingin ititial paramaters..." << endl;
+  return FitFinalPeakFitSettingsChi2::params_to_settings( inputPrams.Params() );
+
+
+  ROOT::Minuit2::MnUserParameterState inputParamState( inputPrams );
+  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
+
+  const unsigned int maxFcnCall = 2000;
+  const double tolerance = 0.001;
+  ROOT::Minuit2::CombinedMinimizer fitter;
+  ROOT::Minuit2::FunctionMinimum minimum
+  = fitter.Minimize( chi2Fcn, inputParamState,
+                    strategy, maxFcnCall, tolerance );
+
+  //Not sure why Minuit2 doesnt like converging on the minumum verry well, but
+  //  rather than showing the user an error message, we'll give it anither try
+  if( minimum.IsAboveMaxEdm() )
+  {
+    ROOT::Minuit2::MnMigrad fitter( chi2Fcn, inputParamState, strategy );
+    minimum = fitter( maxFcnCall, tolerance );
+  }//if( minimum.IsAboveMaxEdm() )
+
+  if( !minimum.IsValid() )
+    throw runtime_error( Wt::WString::tr("dcw-err-failed-fit-AD").toUTF8() );
+
+  const ROOT::Minuit2::MnUserParameters params = minimum.UserState().Parameters();
+  const vector<double> pars = params.Params();
+  cerr << "Fit " << pars[0] << " g/cm2 with EDM " << minimum.Edm() << endl;
+
+
+  FinalPeakFitSettings final_settings = FitFinalPeakFitSettingsChi2::params_to_settings( pars );
+
+  return final_settings;
+}//FinalPeakFitSettings minuit_fit_final_pars( std::function<double( const FinalPeakFitSettings &)> ga_eval_fcn )
 
 
 void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_settings,
@@ -776,10 +1171,18 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
 
       auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, data, result](){
         size_t dummy1, dummy2;
-        *result = InitialFit_GA::initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, dummy1, dummy2 );
+        *result = InitialFit_GA::initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, false, dummy1, dummy2 );
       }; //fit_initial_peaks_worker
 
       pool.post( fit_initial_peaks_worker );
+
+      if( ((input_src_index % 50) == 0) && (input_src_index > 0) )
+      {
+        pool.join();
+
+        if( (input_src_index % 200) == 0 )
+          cout << "Completed " << input_src_index << " spectra of " << input_srcs.size() << " for initial peak fits." << endl;
+      }//if( (num_posted % 50) == 0 )
     }//for( loop over input_srcs )
 
     pool.join();
@@ -793,8 +1196,8 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
   }// end get initial peak fit
 
   cout << "Will use candidate and initial fit settings:" << endl;
-  candidate_settings.print( "\tcandidate_settings" );
-  initial_fit_settings.print( "\tinitial_fit_settings" );
+  cout << candidate_settings.print( "\tcandidate_settings" ) << endl;
+  cout << initial_fit_settings.print( "\tinitial_fit_settings" ) << endl;
   cout << "\n" << endl;
 
   // Now go through and setup genetic algorithm, as well implement final peak fitting code
@@ -811,24 +1214,120 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
     const vector<vector<PeakDef>> &intial_peaks_ref = *intial_peaks_ptr;
     const vector<DataSrcInfo> &data_srcs_ref = *data_srcs_ptr;
 
-   assert( intial_peaks_ref.size() == data_srcs_ref.size() );
+    assert( intial_peaks_ref.size() == data_srcs_ref.size() );
 
-    double score_sum = 0.0;
-    for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
+    FinalFitScore sum_score;
+
+    static std::mutex sm_score_mutex;
+    static FinalFitScore sm_best_score{ 0.0, 0.0, 0.0, 0u, 0.0, DBL_MAX, 0u };
+
+    if( sm_multithread_individual_spectrum_eval_in_ga_eval_fcn )
     {
-      const DataSrcInfo &info = data_srcs_ref[src_index];
-      const vector<PeakDef> &initial_peaks = intial_peaks_ref[src_index];
+      boost::asio::thread_pool pool(12);
+      sm_best_score.total_weight = DBL_MAX;
 
-      const double score = FinalFit_GA::eval_final_peak_fit( settings, info, initial_peaks ).total_weight; //Better fits have lower score
-      score_sum += score;
-    }
+      for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
+      {
+        const DataSrcInfo * const info = &(data_srcs_ref[src_index]);
+        const vector<PeakDef> * const initial_peaks = &(intial_peaks_ref[src_index]);
 
-    return score_sum; //We are optimizing the cost so that lower is better.
+        boost::asio::post(pool, [src_index,info,initial_peaks,settings,&sum_score](){
+
+          const FinalFitScore score = FinalFit_GA::eval_final_peak_fit( settings, *info, *initial_peaks, false );
+
+          std::lock_guard<std::mutex> lock( sm_score_mutex );
+          sum_score.area_score += score.area_score;
+          sum_score.width_score += score.width_score;
+          sum_score.position_score += score.position_score;
+          sum_score.ignored_unexpected_peaks += score.ignored_unexpected_peaks;
+          sum_score.unexpected_peaks_sum_significance += score.unexpected_peaks_sum_significance;
+          sum_score.total_weight += score.total_weight;//Better fits have lower score
+          sum_score.num_peaks_used += score.num_peaks_used;
+        } );
+      }//for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
+
+      pool.join();
+    }else
+    {
+      for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
+      {
+        const DataSrcInfo &info = data_srcs_ref[src_index];
+        const vector<PeakDef> &initial_peaks = intial_peaks_ref[src_index];
+
+        const FinalFitScore score = FinalFit_GA::eval_final_peak_fit( settings, info, initial_peaks, false );
+
+        sum_score.area_score += score.area_score;
+        sum_score.width_score += score.width_score;
+        sum_score.position_score += score.position_score;
+        sum_score.ignored_unexpected_peaks += score.ignored_unexpected_peaks;
+        sum_score.unexpected_peaks_sum_significance += score.unexpected_peaks_sum_significance;
+        sum_score.total_weight += score.total_weight;//Better fits have lower score
+        sum_score.num_peaks_used += score.num_peaks_used;
+      }//for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
+    }//if( do_multithread ) / else
+
+    bool is_best_so_far = false;
+
+    {//begin lock on sm_score_mutex
+      std::lock_guard<std::mutex> lock( sm_score_mutex );
+      is_best_so_far = (sum_score.total_weight < sm_best_score.total_weight);
+      if( is_best_so_far )
+      {
+        cout << "Best score of:" << endl
+        << sum_score.print( "\tbest_score_so_far" ) << endl
+        << "For current best settings:\n"
+        << settings.print("\tbest_settings_so_far") << endl
+        << "For individual " << ns_individuals_eval.load()
+        << " of gen " << ns_generation_num.load()
+        << " weight over " << data_srcs_ref.size() << " spectra.\n"
+        << "Previous best score was:\n"
+        << sm_best_score.print("\tprev_best_settings") << endl
+        << "\n(will write to N42 files)"
+        << endl << endl;
+
+        sm_best_score = sum_score;
+      }
+    }//end lock on sm_score_mutex
+
+    // If best so far, we'll write out N42 files
+    // Note however, that we arent taking a lock, so output files could be currupted garbage
+    if( is_best_so_far )
+    {
+      //Write out best peaks so far to N42 files so we can inspect, as things are optimizing
+      //we'll use a few threads to make it a little faster, but not too many, because we may be doing this from multiple threads already
+      boost::asio::thread_pool pool(4);
+
+      for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
+      {
+        const DataSrcInfo * const info = &(data_srcs_ref[src_index]);
+        const vector<PeakDef> * const initial_peaks = &(intial_peaks_ref[src_index]);
+        boost::asio::post(pool, [info,initial_peaks,&settings](){
+          FinalFit_GA::eval_final_peak_fit( settings, *info, *initial_peaks, true );
+        } );
+      }//for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
+      pool.join();
+      std::lock_guard<std::mutex> lock( sm_score_mutex );
+      cout << "Wrote output N42 files." << endl;
+    }//if( sum_score.total_weight < sm_best_score.total_weight )
+
+    //cout << "Individual " << ns_individuals_eval.load()
+    //    << " of gen " << ns_generation_num.load()
+    //    << " weight over " << data_srcs_ref.size() << " spectra:\n"
+    //    << sum_score.print("\tsum_score")
+    //    << "--------" << endl
+    //    << endl;
+
+    ns_individuals_eval += 1;
+
+    return sum_score.total_weight; //We are optimizing the cost so that lower is better.
   };// set InitialFit_GA::ns_ga_eval_fcn
 
-#if( !WRITE_ALL_SPEC_TO_HTML ) //quick hack to get to compile
+
+  //cout << "Doing minuit_fit_final_pars..." << endl;
+  //const FinalPeakFitSettings best_final_fit_settings = minuit_fit_final_pars( ga_eval_fcn );
+
+  //cerr << "\n\n\nWarning - not doign genetic optimzation!!!\n\n" << endl;
   const FinalPeakFitSettings best_final_fit_settings = FinalFit_GA::do_ga_eval( ga_eval_fcn );
-#endif
 
   //eval_candidate_settings_fcn( best_settings, best_initial_fit_settings, true );
   //cout << "Wrote N42s with best settings." << endl;
@@ -837,6 +1336,14 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
   const double end_cpu = SpecUtils::get_cpu_time();
   auto now = std::chrono::time_point_cast<std::chrono::microseconds>(std::chrono::system_clock::now());
 
+  for( size_t i = 0; i < initial_peak_fits.size(); ++i )
+  {
+    const DataSrcInfo src_info = input_srcs[i];
+    const vector<PeakDef> &intial_peaks = initial_peak_fits[i];
+
+    const bool write_n42 = true;
+    eval_final_peak_fit( best_final_fit_settings, src_info, intial_peaks, write_n42 );
+  }
 
   stringstream outmsg;
   outmsg << "Finish Time: " << SpecUtils::to_iso_string(now) << endl
@@ -877,7 +1384,7 @@ string FinalFitSolution::to_string( const string &separator ) const
 {
   return
   string("combine_nsigma_near: ") + std::to_string(combine_nsigma_near)
-  + separator + "combine_ROI_overlap_frac: " + std::to_string(combine_ROI_overlap_frac)
+  //+ separator + "combine_ROI_overlap_frac: " + std::to_string(combine_ROI_overlap_frac)
   + separator + "cont_type_peak_nsigma_threshold: " + std::to_string(cont_type_peak_nsigma_threshold)
   + separator + "cont_type_left_right_nsigma: " + std::to_string(cont_type_left_right_nsigma)
   //+ separator + "stepped_roi_extent_lower_side_stat_multiple: " + std::to_string(stepped_roi_extent_lower_side_stat_multiple)
@@ -902,25 +1409,25 @@ string FinalFitSolution::to_string( const string &separator ) const
 void init_genes(FinalFitSolution& p,const std::function<double(void)> &rnd01)
 {
   // rnd01() gives a random number in 0~1
-  p.combine_nsigma_near = 1.0 + 9.0*rnd01();  // Range 1-10
-  p.combine_ROI_overlap_frac = -1.0 + 2.0*rnd01();  // Range -1 to 1
-  p.cont_type_peak_nsigma_threshold = 5.0 + 55.0*rnd01();  // Range 5-60
+  p.combine_nsigma_near = 3.0 + 12.0*rnd01();  // Range 3-15
+  //p.combine_ROI_overlap_frac = -1.0 + 2.0*rnd01();  // Range -1 to 1
+  p.cont_type_peak_nsigma_threshold = 10.0 + 65.0*rnd01();  // Range 10-75
   p.cont_type_left_right_nsigma = 1.0 + 19.0*rnd01();  // Range 1-20
   //p.stepped_roi_extent_lower_side_stat_multiple = 0.0 + 2.0*rnd01();  // Range 0-20
   //p.stepped_roi_extent_upper_side_stat_multiple = 0.0 + 2.0*rnd01();  // Range 0-20
-  p.cont_poly_order_increase_chi2dof_required = 0.0 + 4.0*rnd01();  // Range 0-4
-  p.cont_step_type_increase_chi2dof_required = 0.0 + 4.0*rnd01();  // Range 0-4
-  p.skew_nsigma = 0.0 + 10.0*rnd01();  // Range 0-10
-  p.left_residual_sum_min_to_try_skew = 0.0 + 5.0*rnd01();  // Range 0-5 (estimated)???
-  p.right_residual_sum_min_to_try_skew = 0.0 + 5.0*rnd01();  // Range 0-5 (estimated)???
-  p.skew_improve_chi2_dof_threshold = 0.0 + 4.0*rnd01();  // Range 0-4
-  p.roi_extent_low_num_fwhm_base = 0.5 + 6.5*rnd01();  // Range 0.5-7
-  p.roi_extent_high_num_fwhm_base = 0.5 + 6.5*rnd01();  // Range 0.5-7
+  p.cont_poly_order_increase_chi2dof_required = 0.0 + 1.5*rnd01();  // Range 0-1.5
+  p.cont_step_type_increase_chi2dof_required = 0.0 + 1.5*rnd01();  // Range 0-1.5
+  p.skew_nsigma = 4.0 + 8.0*rnd01();  // Range 0-12
+  p.left_residual_sum_min_to_try_skew = 0.0 + 10.0*rnd01();  // Range 0-10
+  p.right_residual_sum_min_to_try_skew = 0.0 + 5.0*rnd01();  // Range 0-5
+  p.skew_improve_chi2_dof_threshold = 0.5 + 4.5*rnd01();  // Range 0.5-4.5
+  p.roi_extent_low_num_fwhm_base = 0.5 + 8.5*rnd01();  // Range 0.5-9
+  p.roi_extent_high_num_fwhm_base = 0.5 + 8.5*rnd01();  // Range 0.5-9
   p.roi_extent_mult_type = static_cast<int>(rnd01() < 0.5);  // 0 or 1 for Linear/Sqrt
-  p.roi_extent_lower_side_stat_multiple = 0.0 + 1.0*rnd01();  // Range 0-1
+  p.roi_extent_lower_side_stat_multiple = 0.0 + 1.5*rnd01();  // Range 0-1.5
   p.roi_extent_upper_side_stat_multiple = 0.0 + 1.0*rnd01();  // Range 0-1
   p.multi_roi_extent_lower_side_fwhm_mult = -1.0 + 3.0*rnd01();  // Range -1 to 2
-  p.multi_roi_extent_upper_side_fwhm_mult = -1.0 + 3.0*rnd01();  // Range -1 to 2
+  p.multi_roi_extent_upper_side_fwhm_mult = -2.0 + 4.0*rnd01();  // Range -1 to 2
 }
 
 
@@ -929,7 +1436,7 @@ FinalPeakFitSettings genes_to_settings( const FinalFitSolution &solution )
   FinalPeakFitSettings settings;
 
   settings.combine_nsigma_near = solution.combine_nsigma_near;
-  settings.combine_ROI_overlap_frac = solution.combine_ROI_overlap_frac;
+  //settings.combine_ROI_overlap_frac = solution.combine_ROI_overlap_frac;
   settings.cont_type_peak_nsigma_threshold = solution.cont_type_peak_nsigma_threshold;
   settings.cont_type_left_right_nsigma = solution.cont_type_left_right_nsigma;
   //settings.stepped_roi_extent_lower_side_stat_multiple = solution.stepped_roi_extent_lower_side_stat_multiple;
@@ -978,25 +1485,25 @@ FinalFitSolution mutate(
     return std::max(min_val, std::min(max_val, val));
   };
 
-  X_new.combine_nsigma_near = mutate_value(X_base.combine_nsigma_near, 1.0, 10.0);
-  X_new.combine_ROI_overlap_frac = mutate_value(X_base.combine_ROI_overlap_frac, -1.0, 1.0);
-  X_new.cont_type_peak_nsigma_threshold = mutate_value(X_base.cont_type_peak_nsigma_threshold, 5.0, 60.0);
+  X_new.combine_nsigma_near = mutate_value(X_base.combine_nsigma_near, 3.0, 15.0);
+  //X_new.combine_ROI_overlap_frac = mutate_value(X_base.combine_ROI_overlap_frac, -1.0, 1.0);
+  X_new.cont_type_peak_nsigma_threshold = mutate_value(X_base.cont_type_peak_nsigma_threshold, 10.0, 75.0);
   X_new.cont_type_left_right_nsigma = mutate_value(X_base.cont_type_left_right_nsigma, 1.0, 20.0);
   //X_new.stepped_roi_extent_lower_side_stat_multiple = mutate_value(X_base.stepped_roi_extent_lower_side_stat_multiple, 0.0, 2.0);
   //X_new.stepped_roi_extent_upper_side_stat_multiple = mutate_value(X_base.stepped_roi_extent_upper_side_stat_multiple, 0.0, 2.0);
-  X_new.cont_poly_order_increase_chi2dof_required = mutate_value(X_base.cont_poly_order_increase_chi2dof_required, 0.0, 4.0);
-  X_new.cont_step_type_increase_chi2dof_required = mutate_value(X_base.cont_step_type_increase_chi2dof_required, 0.0, 4.0);
-  X_new.skew_nsigma = mutate_value(X_base.skew_nsigma, 0.0, 10.0);
-  X_new.left_residual_sum_min_to_try_skew = mutate_value(X_base.left_residual_sum_min_to_try_skew, 0.0, 5.0);
+  X_new.cont_poly_order_increase_chi2dof_required = mutate_value(X_base.cont_poly_order_increase_chi2dof_required, 0.0, 1.5);
+  X_new.cont_step_type_increase_chi2dof_required = mutate_value(X_base.cont_step_type_increase_chi2dof_required, 0.0, 1.5);
+  X_new.skew_nsigma = mutate_value(X_base.skew_nsigma, 4.0, 12.0);
+  X_new.left_residual_sum_min_to_try_skew = mutate_value(X_base.left_residual_sum_min_to_try_skew, 0.0, 10.0);
   X_new.right_residual_sum_min_to_try_skew = mutate_value(X_base.right_residual_sum_min_to_try_skew, 0.0, 5.0);
-  X_new.skew_improve_chi2_dof_threshold = mutate_value(X_base.skew_improve_chi2_dof_threshold, 0.0, 4.0);
-  X_new.roi_extent_low_num_fwhm_base = mutate_value(X_base.roi_extent_low_num_fwhm_base, 0.5, 7.0);
-  X_new.roi_extent_high_num_fwhm_base = mutate_value(X_base.roi_extent_high_num_fwhm_base, 0.5, 7.0);
+  X_new.skew_improve_chi2_dof_threshold = mutate_value(X_base.skew_improve_chi2_dof_threshold, 0.5, 5.0);
+  X_new.roi_extent_low_num_fwhm_base = mutate_value(X_base.roi_extent_low_num_fwhm_base, 0.5, 9.0);
+  X_new.roi_extent_high_num_fwhm_base = mutate_value(X_base.roi_extent_high_num_fwhm_base, 0.5, 9.0);
   X_new.roi_extent_mult_type = (rnd01() < 0.1) ? (1 - X_base.roi_extent_mult_type) : X_base.roi_extent_mult_type;
-  X_new.roi_extent_lower_side_stat_multiple = mutate_value(X_base.roi_extent_lower_side_stat_multiple, 0.0, 1.0);
+  X_new.roi_extent_lower_side_stat_multiple = mutate_value(X_base.roi_extent_lower_side_stat_multiple, 0.0, 1.5);
   X_new.roi_extent_upper_side_stat_multiple = mutate_value(X_base.roi_extent_upper_side_stat_multiple, 0.0, 1.0);
   X_new.multi_roi_extent_lower_side_fwhm_mult = mutate_value(X_base.multi_roi_extent_lower_side_fwhm_mult, -1.0, 2.0);
-  X_new.multi_roi_extent_upper_side_fwhm_mult = mutate_value(X_base.multi_roi_extent_upper_side_fwhm_mult, -1.0, 2.0);
+  X_new.multi_roi_extent_upper_side_fwhm_mult = mutate_value(X_base.multi_roi_extent_upper_side_fwhm_mult, -2.0, 2.0);
 
   return X_new;
 }
@@ -1015,7 +1522,7 @@ FinalFitSolution crossover(
   };
 
   X_new.combine_nsigma_near = cross_value(X1.combine_nsigma_near, X2.combine_nsigma_near);
-  X_new.combine_ROI_overlap_frac = cross_value(X1.combine_ROI_overlap_frac, X2.combine_ROI_overlap_frac);
+  //X_new.combine_ROI_overlap_frac = cross_value(X1.combine_ROI_overlap_frac, X2.combine_ROI_overlap_frac);
   X_new.cont_type_peak_nsigma_threshold = cross_value(X1.cont_type_peak_nsigma_threshold, X2.cont_type_peak_nsigma_threshold);
   X_new.cont_type_left_right_nsigma = cross_value(X1.cont_type_left_right_nsigma, X2.cont_type_left_right_nsigma);
   //X_new.stepped_roi_extent_lower_side_stat_multiple = cross_value(X1.stepped_roi_extent_lower_side_stat_multiple, X2.stepped_roi_extent_lower_side_stat_multiple);
@@ -1052,11 +1559,14 @@ void SO_report_generation(
                           const EA::GenerationType<FinalFitSolution,FinalFitCost> &last_generation,
                           const FinalFitSolution& best_genes)
 {
-  cout<<"Generation ["<<generation_number<<"], ";
+  cout<<"\n\nGeneration ["<<generation_number<<"], ";
   cout<<"Best = "<<last_generation.best_total_cost<<", ";
   cout<<"Average = "<<last_generation.average_cost<<", ";
 
-  cout<<", genes = "<<best_genes.to_string(", ")<<endl;
+  cout<<", genes = "<<best_genes.to_string(",\n\t") << endl << endl;
+
+  ns_generation_num += 1;
+  ns_individuals_eval = 0;
 }
 
 
@@ -1076,10 +1586,20 @@ FinalPeakFitSettings do_ga_eval( std::function<double(const FinalPeakFitSettings
 
   GA_Type ga_obj;
   ga_obj.problem_mode = EA::GA_MODE::SOGA;
+
   ga_obj.multi_threading = true;
+  if( PeakFitImprove::debug_printout )
+  {
+    ga_obj.multi_threading = false;
+  }else
+  {
+    ga_obj.N_threads = std::min( 13u, std::thread::hardware_concurrency() );
+    cout << "Will use " << ga_obj.N_threads << " threads." << endl;
+  }
+
   ga_obj.idle_delay_us = 1; // switch between threads quickly
   ga_obj.verbose = false;
-  ga_obj.population = 40;
+  ga_obj.population = 100;
   ga_obj.generation_max = 100;
   ga_obj.calculate_SO_total_fitness = calculate_SO_total_fitness;
   ga_obj.init_genes = init_genes;

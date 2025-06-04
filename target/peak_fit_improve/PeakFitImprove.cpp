@@ -199,7 +199,7 @@ std::string InitialPeakFindSettings::print( const string &var_name ) const
 std::string FinalPeakFitSettings::print( const string &var_name ) const
 {
   return var_name + ".combine_nsigma_near = "                    + std::to_string(combine_nsigma_near)                         + ";\n"
-  + var_name + ".combine_ROI_overlap_frac = "                    + std::to_string(combine_ROI_overlap_frac)                    + ";\n"
+ // + var_name + ".combine_ROI_overlap_frac = "                    + std::to_string(combine_ROI_overlap_frac)                    + ";\n"
   + var_name + ".cont_type_peak_nsigma_threshold = "             + std::to_string(cont_type_peak_nsigma_threshold)             + ";\n"
   + var_name + ".cont_type_left_right_nsigma = "                 + std::to_string(cont_type_left_right_nsigma)                 + ";\n"
   //+ var_name + ".stepped_roi_extent_lower_side_stat_multiple = " + std::to_string(stepped_roi_extent_lower_side_stat_multiple) + ";\n"
@@ -303,12 +303,12 @@ int main( int argc, char **argv )
 
   vector<string> hpges {
     "Detective-X",
-    "Detective-EX",
-    "Detective-X_noskew",
-    "Falcon 5000",
-    "Fulcrum40h",
-    "LANL_X",
-    "HPGe_Planar_50%"
+    //"Detective-EX",
+    //"Detective-X_noskew",
+    //"Falcon 5000",
+    //"Fulcrum40h",
+    //"LANL_X",
+    //"HPGe_Planar_50%"
   };
 
   if( PeakFitImprove::debug_printout )
@@ -428,7 +428,7 @@ int main( int argc, char **argv )
     AccuracyFromCsvsStudy
   };//enum class OptimizationAction : int
   
-  const OptimizationAction action = OptimizationAction::CodeDev; //OptimizationAction::InitialFit;
+  const OptimizationAction action = OptimizationAction::FinalFit; // OptimizationAction::CodeDev; //OptimizationAction::InitialFit;
 
   switch( action )
   {
@@ -566,7 +566,7 @@ int main( int argc, char **argv )
         double score_sum = 0.0;
         for( const DataSrcInfo &info : input_srcs )
         {
-          const double score = InitialFit_GA::eval_initial_peak_find_and_fit( settings, best_settings, info ).find_weight;
+          const double score = InitialFit_GA::eval_initial_peak_find_and_fit( settings, best_settings, info, false ).find_weight;
           score_sum += score;
         }
         
@@ -1059,14 +1059,15 @@ int main( int argc, char **argv )
       for( const DataSrcInfo &info : input_srcs )
       {
         num_posted += 1;
-        pool.post( [&](){
+
+        auto worker = [&](){
           if( PeakFitImprove::debug_printout )
           {
             std::lock_guard<std::mutex> lock( score_mutex );
             cout << "Evaluating " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name << endl;
           }
 
-          const InitialFit_GA::PeakFindAndFitWeights weight = InitialFit_GA::eval_initial_peak_find_and_fit( fit_settings, best_settings, info );
+          const InitialFit_GA::PeakFindAndFitWeights weight = InitialFit_GA::eval_initial_peak_find_and_fit( fit_settings, best_settings, info, false );
 
           std::lock_guard<std::mutex> lock( score_mutex );
           sum_find_weight += weight.find_weight;
@@ -1080,7 +1081,15 @@ int main( int argc, char **argv )
           if( PeakFitImprove::debug_printout )
             cout << "For " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name
             << ", got weight=" << sum_find_weight << endl;
-        } );
+        };
+
+        if( PeakFitImprove::debug_printout )
+        {
+          worker();
+        }else
+        {
+          pool.post( std::move(worker) );
+        }
 
         if( (num_posted % 100) == 0 )
         {

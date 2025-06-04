@@ -656,6 +656,7 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
 
       if( PeakFitImprove::debug_printout )
       {
+        /*
         for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
         {
           cout << "Expected ROI: {energy: " << roi_info.effective_energy
@@ -672,6 +673,7 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
           //  cout << "{" << c.energy << "," << c.area << "}, ";
           //cout << "}" << endl;
         }//for( const ExpectedPhotopeakInfo &roi_info : detectable_clusters )
+         */
       }//if( PeakFitImprove::debug_printout )
 
 

@@ -578,7 +578,9 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         chi2_dof /= (roi_end_index - roi_begin_index);
 
         if( PeakFitImprove::debug_printout )
-          cout << "Straight-line Chi2 = " << chi2_dof << " and max_chi2=" << max_chi2 << " for energy=" << mean << endl;
+        {
+          //cout << "Straight-line Chi2 = " << chi2_dof << " and max_chi2=" << max_chi2 << " for energy=" << mean << endl;
+        }
 
         //vector<double> cont_equation{0.0, 0.0};
         //PeakContinuum::eqn_from_offsets( roi_begin_index, roi_end_index, mean, data,
@@ -598,11 +600,13 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       if( (figure_of_merit > threshold_FOM) && passed_higher_scrutiny )
       {
         if( PeakFitImprove::debug_printout )
-          cout << "Accepted: energy=" << mean << ", FOM=" << figure_of_merit
-          << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
-          << ", data_area=" << data_area << ", rougher_FOM=" << rougher_FOM
-          //<< ", min_required=" << min_required_data
-          << endl;
+        {
+         // cout << "Accepted: energy=" << mean << ", FOM=" << figure_of_merit
+         // << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
+         // << ", data_area=" << data_area << ", rougher_FOM=" << rougher_FOM
+         // //<< ", min_required=" << min_required_data
+         // << endl;
+        }
 
         results.push_back( std::tuple<float,float,float>{mean, sigma, amplitude} );
 
@@ -623,11 +627,13 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       }else
       {
        if( PeakFitImprove::debug_printout )
-        cout << "Rejected: energy=" << mean << ", FOM=" << figure_of_merit
-        << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
-        << ", data_area=" << data_area  << ", rougher_FOM=" << rougher_FOM
-        //<< ", min_required=" << min_required_data
-        << endl;
+       {
+         //cout << "Rejected: energy=" << mean << ", FOM=" << figure_of_merit
+         //<< ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
+         //<< ", data_area=" << data_area  << ", rougher_FOM=" << rougher_FOM
+         ////<< ", min_required=" << min_required_data
+         //<< endl;
+       }
       }//if( region we were just in passed_threshold )
 
       secondsum = 0.0;

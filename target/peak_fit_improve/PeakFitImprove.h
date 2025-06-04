@@ -265,10 +265,15 @@ struct FinalPeakFitSettings
 {
   /** Combine ROIs, based on how near means are, and how much initial ROIs are overlapping.
 
-   `combine_nsigma_near`: Reasonable search range of 1 to 10
-   `combine_ROI_overlap_frac`: Reasonable search range of -1 to 1
+   Reasonable search range of 1 to 10
    */
-  double combine_nsigma_near, combine_ROI_overlap_frac;
+  double combine_nsigma_near;
+
+  /** Combine ROIs, based on how much initial ROIs are overlapping.
+   
+   Reasonable search range of -1 to 1
+   */
+  //double combine_ROI_overlap_frac;
 
 
   /** How many nsigma the peak needs to be to consider modifying the continuum type; e.g., how statistically significant
