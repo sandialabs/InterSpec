@@ -1,3 +1,5 @@
+#ifndef PeakDists_imp_h
+#define PeakDists_imp_h
 
 #include <boost/math/constants/constants.hpp>
 
@@ -1220,3 +1222,5 @@ void double_sided_crystal_ball_integral( const T peak_mean,
 }//double_sided_crystal_ball_integral(...)
   
 }//namespace PeakDists
+
+#endif //PeakDists_imp_h

@@ -39,10 +39,12 @@
 #include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/DecayDataBaseServer.h"
 
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 
@@ -138,16 +140,16 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
   constexpr float energies[nbin+1] = {100.0f, 101.0f, 102.0f, 103.0f, 104.0f, 105.0f, 106.0f, 107.0f};
   constexpr float data[nbin] = {900.0f, 1090.0f, 990.0f, 1090.0f, 910.0f, 1090.0f, 950.0f};
   const PeakContinuum::OffsetType offset_type = PeakContinuum::OffsetType::Linear;
-  const int num_polynomial_terms = PeakContinuum::num_parameters( offset_type );
+  const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( offset_type ) );
   const bool step_continuum = PeakContinuum::is_step_continuum( offset_type );
   constexpr double ref_energy = energies[0];
   vector<double> continuum_coeffs(num_polynomial_terms, 0.0);
   double peak_counts[nbin];
     
-  RelActCalcAuto::fit_continuum( energies, data, nbin, num_polynomial_terms, step_continuum,
-                                  ref_energy, peaks, continuum_coeffs.data(), peak_counts );
-    
-    
+  RelActCalcAuto::fit_continuum( energies, data, nullptr, nbin, num_polynomial_terms, step_continuum,
+                                  ref_energy, peaks, false, continuum_coeffs.data(), peak_counts );
+
+
   vector<double> dummy_amps, continuum_coeffs_old, dummy_amp_uncert, continuum_uncerts;
   fit_amp_and_offset( energies, data, nbin, num_polynomial_terms,
                        step_continuum, ref_energy, {}, {}, peaks,
