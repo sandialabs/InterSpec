@@ -443,10 +443,12 @@ namespace ExportSpecFileTool_imp
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, msg.c_str() );
 #endif
-      
+
       passMessage( msg, WarningWidget::WarningMsgHigh );
       
       response.setStatus(500);
+
+      wApp->triggerUpdate();
     }//try / catch
   }//void DownloadSpectrumResource::handleRequest(...)
 
@@ -610,8 +612,14 @@ namespace ExportSpecFileTool_imp
             
             measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );
           }//for( SpecUtils::SpectrumType type : types )
-          
+
+#if( SpecUtils_D3_SUPPORT_FILE_STATIC )
           write_d3_html( output, measurements, viewer->getD3SpectrumOptions() );
+#else
+          const string ds_js_css_base_dir = SpecUtils::append_path( wApp->docRoot(), "InterSpec_resources" );
+
+          write_d3_html( output, measurements, viewer->getD3SpectrumOptions(), ds_js_css_base_dir );
+#endif
         }//if( viewer )
       }
         break;

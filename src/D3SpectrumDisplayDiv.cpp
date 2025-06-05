@@ -2031,7 +2031,7 @@ void D3SpectrumDisplayDiv::setThumbnailMode()
   // Make the x-axis (energy) text nice and small.
   const string rule_name = id() + "_ThumbnailTxt";
   WCssStyleSheet &style = wApp->styleSheet();
-  if( !m_cssRules.contains(rule_name)  )
+  if( !m_cssRules.count(rule_name)  )
     m_cssRules[rule_name] = style.addRule( "#" + id() + " .SpectrumChartD3.InterSpecD3Chart .axis text", "font-size: 6px;", rule_name );
 
   if( isRendered() )
