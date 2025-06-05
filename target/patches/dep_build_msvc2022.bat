@@ -75,15 +75,15 @@ cd %BUILD_DIR%
 set errorlevel=
 
 rem Build/install boost
-set BOOST_TAR=boost_1_84_0.zip
-set BOOST_DIR=boost_1_84_0
+set BOOST_TAR=boost_1_86_0.zip
+set BOOST_DIR=boost_1_86_0
 set BOOST_BUILT_FILE=built_%BOOST_DIR%
-set BOOST_REQUIRED_SHA256=cc77eb8ed25da4d596b25e77e4dbb6c5afaac9cddd00dc9ca947b6b268cc76a4
+set BOOST_REQUIRED_SHA256=cd20a5694e753683e1dc2ee10e2d1bb11704e65893ebcc6ced234ba68e5d8646
 
 if not exist %BOOST_BUILT_FILE% (
 
     if not exist %BOOST_TAR% (
-        curl -L https://sourceforge.net/projects/boost/files/boost/1.84.0/boost_1_84_0.zip/download --output %BOOST_TAR% && (
+        curl -L https://archives.boost.io/release/1.86.0/source/boost_1_86_0.zip --output %BOOST_TAR% && (
             echo Downloaded Boost
         ) || (
             echo Error downloading boost
@@ -128,7 +128,7 @@ if not exist %BOOST_BUILT_FILE% (
 
 
     echo "Building boost release"
-    .\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_release -j8 install && (
+    .\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 cxxstd=17 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_release -j8 install && (
         rmdir /s /q win_build_release
         echo Done building boost release
     ) || (
@@ -138,7 +138,7 @@ if not exist %BOOST_BUILT_FILE% (
 
     if defined builddebug (
         echo "Building boost debug"
-        .\b2.exe runtime-link=static link=static threading=multi variant=debug address-model=64 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_debug -j8 install && (
+        .\b2.exe runtime-link=static link=static threading=multi variant=debug address-model=64 cxxstd=17 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_debug -j8 install && (
             rmdir /s /q win_build_debug
             echo Done building boost debug
         ) || (
@@ -281,7 +281,7 @@ if not exist %WT_BUILT_FILE% (
     mkdir build_msvc2022
     cd build_msvc2022
 
-    cmake -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%MY_PREFIX%" -DBoost_INCLUDE_DIR="%MY_PREFIX%/include" -DBOOST_PREFIX="%MY_PREFIX%" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="%MY_PREFIX%" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++20" -DINSTALL_FINDWT_CMAKE_FILE=OFF -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="%MY_PREFIX%/etc/wt" -DBoost_USE_STATIC_RUNTIME=ON .. && (
+    cmake -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded$<$<CONFIG:Debug>:Debug>" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="%MY_PREFIX%" -DBoost_INCLUDE_DIR="%MY_PREFIX%/include" -DBOOST_PREFIX="%MY_PREFIX%" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="%MY_PREFIX%" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCMAKE_CXX_STANDARD=17 -DINSTALL_FINDWT_CMAKE_FILE=OFF -DCONFIGURATION=data/config/wt_config_electron.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="%MY_PREFIX%/etc/wt" -DBoost_USE_STATIC_RUNTIME=ON .. && (
         echo configured Wt
     ) || (
         echo "Failed to cmake configure Wt"
@@ -359,7 +359,7 @@ if not exist %EIGEN_BUILT_FILE% (
     mkdir build
     cd build
     
-    cmake -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DCMAKE_BUILD_TYPE=Release -DEIGEN_MPL2_ONLY=1 -DEIGEN_BUILD_SHARED_LIBS=OFF -DEIGEN_BUILD_DOC=OFF -DEIGEN_BUILD_TESTING=OFF .. && (
+    cmake -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=Release -DEIGEN_MPL2_ONLY=1 -DEIGEN_BUILD_SHARED_LIBS=OFF -DEIGEN_BUILD_DOC=OFF -DEIGEN_BUILD_TESTING=OFF .. && (
         echo Configured Eigen
     ) || (
         echo Failed to configure Eigen
@@ -452,7 +452,7 @@ if not exist %CERES_BUILT_FILE% (
     mkdir build_msvc_rel
     cd build_msvc_rel
 
-    cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DMSVC_USE_STATIC_CRT=ON .. && (
+    cmake -DCMAKE_PREFIX_PATH=%MY_PREFIX% -DCMAKE_CXX_STANDARD=17 -DCMAKE_INSTALL_PREFIX=%MY_PREFIX% -DMINIGLOG=ON -DGFLAGS=OFF -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=ON -DBUILD_TESTING=ON -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DMSVC_USE_STATIC_CRT=ON .. && (
         echo Configured Release Ceres
     ) || (
         echo Failed to configure Release ceres-solver

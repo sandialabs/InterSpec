@@ -11,3 +11,29 @@ index cf21160e..bf4710db 100644
  #include <map>
  
  #include <Wt/Render/Block.h>
+diff --git a/src/http/Configuration.h b/src/http/Configuration.h
+index 0fe20e9f..4a23938d 100644
+--- a/src/http/Configuration.h
++++ b/src/http/Configuration.h
+@@ -89,7 +89,7 @@ public:
+   boost::function<std::string (std::size_t max_length, int purpose)> sslPasswordCallback()
+   { return sslPasswordCallback_; }
+   bool hasSslPasswordCallback()
+-  { return sslPasswordCallback_; }
++  { return !!sslPasswordCallback_; }
+ 
+ private:
+   std::vector<std::string> options_;
+diff --git a/src/web/FileUtils.C b/src/web/FileUtils.C
+index 5a15b09f..6994b461 100644
+--- a/src/web/FileUtils.C
++++ b/src/web/FileUtils.C
+@@ -7,7 +7,7 @@
+ #include "web/FileUtils.h"
+ 
+ #ifndef WT_HAVE_POSIX_FILEIO
+-#include <boost/filesystem/operations.hpp>
++#include <boost/filesystem.hpp>
+ #else //WT_HAVE_POSIX_FILEIO
+ #include <sys/types.h>
+ #include <sys/stat.h>
