@@ -29,7 +29,6 @@
 #include <deque>
 #include <tuple>
 #include <chrono>
-#include <format>
 #include <thread>
 #include <limits>
 #include <cstdlib>
@@ -56,6 +55,7 @@
 #undef isnan
 #undef isfinite
 #undef isnormal
+#undef ERROR
 #endif
 
 #include "ceres/ceres.h"
@@ -93,6 +93,14 @@
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 #include "InterSpec/RelActCalc_CeresJetTraits.hpp"
+
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#undef ERROR
+#endif
 
 using namespace std;
 using namespace XmlUtils;
@@ -2622,7 +2630,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                    << " on rel eff curve " << re_eff_index << ", instead of initial estimate of " << rel_act << endl;
               rel_act = nuc.starting_rel_act.value();
             }
-            if( (rel_act < 1.0E-16) || std::isinf(rel_act) || std::isnan(rel_act) )
+            if( (rel_act < 1.0E-16) || IsInf(rel_act) || IsNan(rel_act) )
               rel_act = 1.0;
             
             lower_bounds[act_index] = (nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act;
@@ -3086,7 +3094,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
-#warning "Doing peak skew hack - fixing peak skew to preset values!"
+#pragma message( "Doing peak skew hack - fixing peak skew to preset values!" )
         assert( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall );
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
@@ -3099,7 +3107,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           upper_bounds[skew_start + i] = std::nullopt;
         }
 #elif( PEAK_SKEW_HACK == 2 ) //First fit without peak skew, then fit with
-#warning "Doing peak skew hack! - first fitting without skew, then fitting skew."
+#pragma message( "Doing peak skew hack! - first fitting without skew, then fitting skew." )
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
           cerr << "\n\n\nDoing peak skew hack! - first fitting without skew, then fitting skew.\n\n\n" << endl;

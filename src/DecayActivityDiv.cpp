@@ -900,7 +900,7 @@ class DateLengthCalculator : public WContainerWidget
       activityEdit->setTextSize( 10 );
       activityEdit->setText( actTxt );
       
-      auto doActivityUpdate = [=,this](){
+      auto doActivityUpdate = [this, activityEdit, nucinfo, actTxt](){
         if( activityEdit->validate() != WValidator::State::Valid )
         {
           activityEdit->setText( actTxt );
@@ -970,7 +970,7 @@ class DateLengthCalculator : public WContainerWidget
       ageEdit->setTextSize( 10 );
       ageEdit->setText( ageTxt );
       
-      auto doAgeUpdate = [=,this](){
+      auto doAgeUpdate = [this, ageEdit, ageTxt, nucinfo](){
         if( ageEdit->validate() != WValidator::State::Valid )
         {
           ageEdit->setText( ageTxt );
@@ -2873,7 +2873,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
   
   
    //Or the equivalent, but not compiling code is:
-  string mixtureInfo = [=,this]() -> std::string {
+  string mixtureInfo = [this, time]() -> std::string {
     using namespace SandiaDecay;
     const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
     
@@ -2888,7 +2888,7 @@ WContainerWidget *DecayActivityDiv::isotopesSummary( const double time ) const
       
       stringstream infostrm;
     
-    auto use_curry = [=,this]( const SandiaDecay::Nuclide * const initial_nuc ) -> bool {
+    auto use_curry = [this,db]( const SandiaDecay::Nuclide * const initial_nuc ) -> bool {
       for( const Nuclide &nuc : m_nuclides )
       {
         const SandiaDecay::Nuclide * const nuclide = db->nuclide( nuc.z, nuc.a, nuc.iso );
