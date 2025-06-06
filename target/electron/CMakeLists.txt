@@ -17,6 +17,7 @@ set( USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "Enable Spectrum File Query Wid
 set( USE_REMOTE_RID ON CACHE BOOL "Enables using remote RID tool" )
 set( USE_BATCH_TOOLS ON CACHE BOOL "Enables using batch tool" )
 set( USE_LEAFLET_MAP ON CACHE BOOL "Enables using map tool" )
+set( USE_REL_ACT_TOOL ON CACHE BOOL "Enables using map tool" )
 
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
