@@ -777,7 +777,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
   }catch( std::exception &e )
   {
     cout << "fit_peak_for_user_click_LM caught: " << e.what() << endl;
-    assert( 0 );
+//    assert( 0 );
   }//try / catch
 }//void fit_peak_for_user_click_LM(...)
 

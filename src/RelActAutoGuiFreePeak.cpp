@@ -64,6 +64,7 @@ RelActAutoGuiFreePeak::RelActAutoGuiFreePeak( WContainerWidget *parent )
   
   m_energy = new NativeFloatSpinBox( this );
   label->setBuddy( m_energy );
+  m_energy->setSpinnerHidden( true );
   m_energy->valueChanged().connect( this, &RelActAutoGuiFreePeak::handleEnergyChange );
   m_energy->addStyleClass( "GridSecondCol GridFirstRow" );
   

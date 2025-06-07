@@ -121,7 +121,8 @@ using namespace XmlUtils;
 namespace
 {
 const double ns_decay_act_mult = SandiaDecay::MBq;
-  
+
+
 // Forward declaration
 struct RelActAutoCostFcn;
 
@@ -1223,8 +1224,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   bool m_skip_skew; // 20250324 HACK to test fitting peak skew
 #endif
 
+  /** When m_options.additional_br_uncert we will allow each peak range (see `cluster_photopeaks(...)`) to vary within this uncertainty;
+  This variable defines the lower and upper energy of each peak range.
+   */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
-  static constexpr double sm_peak_range_uncert_par_offset = 5.0;
+
+  /** We will use a Ceres paramater to scale the yield of each peak-range.
+   The Ceres paramater is defined like:
+
+   ```
+     const T par_value = x[range_index];
+     const T num_sigma_from_nominal = (par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+     const T yield_multiple = 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert;
+   ```
+   */
+  static constexpr double sm_peak_range_uncert_offset = 1.0;
+  static constexpr double sm_peak_range_uncert_par_scale = 0.1;
+
   
   mutable std::mutex m_aged_gammas_cache_mutex;
   /** When we are fitting the age of nuclides, performing the decay can take a significant amount of the time, so we'll cache results.
@@ -1239,6 +1255,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   mutable std::map<std::pair<const void *,float>,std::shared_ptr<const std::vector<NucInputGamma::EnergyYield>>> m_aged_gammas_cache;
   
+
+  /** The initial estimate of the area of each free peak.
+
+   This is used to multiple the free peak area paramater by to get the peak amplitude.
+   */
+  vector<double> m_free_peak_area_multiples;
   
   /** Thread pool used to calculate the each ROI.
    
@@ -1323,6 +1345,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   m_peak_ranges_with_uncert{},
   m_aged_gammas_cache_mutex{},
   m_aged_gammas_cache{},
+  m_free_peak_area_multiples{},
   m_pool{ std::max(4u, std::thread::hardware_concurrency()) },
   m_cancel_calc( cancel_calc ),
   m_ncalls( 0 ),
@@ -1551,8 +1574,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( !in_a_range )
         throw runtime_error( "Free floating peak at " + std::to_string(peak.energy) + " is not in a ROI." );
+
+      assert( m_drf && m_drf->isValid() && m_drf->hasResolutionInfo() );
+      const double det_fwhm = m_drf->peakResolutionFWHM( peak.energy );
+      
+      double data_count = m_spectrum->gamma_integral(peak.energy - 0.5*det_fwhm, peak.energy + 0.5*det_fwhm);
+
+      // Enforce using a peak area estimate of least 1 count; the fit paramater will scale this, so its fine.
+      //  and we are only really concerned with really large peak areas for this scaling.
+      data_count = std::max( 0.76, data_count );
+      
+      // Assume data is entirely due to peak; mean +- 0.5*fwhm is ~76% gaussian are
+      m_free_peak_area_multiples.push_back( data_count / 0.76 );
     }//for( const auto &peak : m_options.floating_peaks )
     
+    assert( m_free_peak_area_multiples.size() == m_options.floating_peaks.size() );
     
     // TODO: Figure out a proper value to set m_rel_eff_anchor_enhancement to, like maybe largest peak area divided m_live_time, or something like that
     m_rel_eff_anchor_enhancement = 0.0;
@@ -2235,8 +2271,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size();
               const size_t c_index = b_index + 1;
               
-              pars[b_index] = 0.0;  //(energy/1000)^b - start b at 0, so term is 1.0
-              pars[c_index] = 1.0;  //c^(1000/energy) - start c at 1, so term is 1
+              pars[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b - start b at 0, so term is 1.0
+              pars[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy) - start c at 1, so term is 1
               if( !rel_eff_curve.phys_model_use_hoerl || (options.same_hoerl_for_all_rel_eff_curves && first_phys_model_curve) )
               {
                 constant_parameters.push_back( static_cast<int>(b_index) );
@@ -2250,10 +2286,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 }
               }else
               {
-                lower_bounds[b_index] = 0.0;
-                upper_bounds[b_index] = 2.0;
-                lower_bounds[c_index] = 1.0E-6;  //e.x, pow(-0.1889,1000/124.8) is NaN
-                upper_bounds[c_index] = 3.0;
+                lower_bounds[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+                lower_bounds[c_index] = (1.0E-6/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //e.x, pow(-0.1889,1000/124.8) is NaN
+                upper_bounds[c_index] = (3.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
               }
 
               if( !first_phys_model_curve )
@@ -2509,11 +2545,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }else
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[b_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                const double b_par_val = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[b_index] = b_par_val;
                 manual_index += 1;
                 
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-                parameters[c_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                const double c_par_val = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+                parameters[c_index] = c_par_val;
                 manual_index += 1;
               }
             }else
@@ -2524,8 +2562,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( parameters[c_index] == -1.0 );
               }else
               {
-                pars[b_index] = 0.0;  //(energy/1000)^b
-                pars[c_index] = 1.0;  //c^(1000/energy)
+                parameters[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b
+                parameters[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy)
               }
             }//if( manual_input.phys_model_use_hoerl ) / else
           }//if( no Physical Model ) / else
@@ -3160,17 +3198,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t amp_index = free_peak_start + 2*extra_peak_index;
       const size_t fwhm_index = amp_index + 1;
       
-      const double det_fwhm = cost_functor->fwhm( peak.energy, parameters );
-      double data_count = foreground->gamma_integral(peak.energy - 0.5*det_fwhm, peak.energy + 0.5*det_fwhm);
-      if( background )
-      {
-        const double backarea = background->gamma_integral(peak.energy - 0.5*det_fwhm, peak.energy + 0.5*det_fwhm);
-        data_count -= backarea * foreground->live_time() / background->live_time();
-        data_count = std::max( 0.0, data_count );
-      }//
-      
-      // Assume data is entirely due to peak; mean +- 0.5*fwhm is ~76% gaussian area
-      parameters[amp_index] = data_count / 0.76;
+      parameters[amp_index] = 1.0;   //See cost_functor->m_free_peak_area_multiples[extra_peak_index] for the initial peak amplitude estimate, which is what this paramater will multiply to get the actual area
       lower_bounds[amp_index] = 0.0;
       
       parameters[fwhm_index] = 1.0;
@@ -3186,6 +3214,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         upper_bounds[fwhm_index] = 4.0;
       }else
       {
+        parameters[fwhm_index] = -1.0; //so we can assert on
         constant_parameters.push_back( static_cast<int>(fwhm_index) );
       }
     }//for( size_t extra_peak_index = 0; extra_peak_index < extra_peaks.size(); ++extra_peak_index )
@@ -3200,9 +3229,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       cost_functor->m_peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
       
       const size_t num_pars = parameters.size() + cost_functor->m_peak_ranges_with_uncert.size();
-      parameters.resize( num_pars, sm_peak_range_uncert_par_offset );
+      parameters.resize( num_pars, sm_peak_range_uncert_offset );
       pars = &parameters[0];
-      lower_bounds.resize( num_pars, optional<double>(0.0) );
+                
+      const double val_with_zero_yield = sm_peak_range_uncert_offset - sm_peak_range_uncert_par_scale/options.additional_br_uncert;
+
+      lower_bounds.resize( num_pars, optional<double>(val_with_zero_yield) );
       upper_bounds.resize( num_pars );
       
       const size_t num_skew_coefs = PeakDef::num_skew_parameters( options.skew_type );
@@ -3588,7 +3620,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const bool success = covariance.GetCovarianceMatrix( const_par_blocks, row_major_covariance.data() );
         assert( success );
         if( !success )
-          throw runtime_error( "Failed to get covariance matrix - maybe didnt add all covariance blocks?" );
+          throw runtime_error( "Failed to get covariance matrix." );
         
         solution.m_covariance.resize( num_pars, vector<double>(num_pars, 0.0) );
         
@@ -3642,6 +3674,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_num_function_eval_total = static_cast<int>( cost_functor->m_ncalls );
   
     solution.m_final_parameters = parameters;
+    solution.m_parameter_scale_factors.resize( parameters.size(), 1.0 );
     
     solution.m_parameter_names.resize( parameters.size() );
     solution.m_parameter_were_fit.resize( parameters.size(), true );
@@ -3649,6 +3682,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       solution.m_parameter_names[i] = cost_functor->parameter_name( i );
       solution.m_parameter_were_fit[i] = std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) ) == end(constant_parameters);
+
+      solution.m_parameter_scale_factors[i] = cost_functor->parameter_scale_factor( i );
+      
+      assert( (solution.m_parameter_scale_factors[i] > 0.0) || !solution.m_parameter_were_fit[i] );
     }
 
 
@@ -3957,14 +3994,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//for( const RoiRangeChannels &roi : cost_functor->m_energy_ranges )
 
 
+    assert( cost_functor->m_free_peak_area_multiples.size() == cost_functor->m_options.floating_peaks.size() );
+    
     for( size_t i = 0; i < cost_functor->m_options.floating_peaks.size(); ++i )
     {
       const size_t amp_index = cost_functor->m_free_peak_par_start_index + 2*i + 0;
       const size_t fwhm_index = amp_index + 1;
+
+      const double area_multiple = cost_functor->m_free_peak_area_multiples[i];
       
       RelActCalcAuto::FloatingPeakResult peak;
       peak.energy = cost_functor->m_options.floating_peaks[i].energy;
-      peak.amplitude = parameters[amp_index];
+      peak.amplitude = parameters[amp_index] * area_multiple;
       peak.fwhm = parameters[fwhm_index];
       
       if( !cost_functor->m_options.floating_peaks[i].release_fwhm )
@@ -3985,7 +4026,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }
       }//if( we didnt let FWHM float ) / else
       
-      peak.amplitude_uncert = uncertainties[amp_index];
+      peak.amplitude_uncert = uncertainties[amp_index] * area_multiple;
       
       
       if( IsNan(peak.amplitude_uncert) )
@@ -4003,6 +4044,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_phys_model_results.clear();
     solution.m_phys_model_results.resize( num_rel_eff_curves );
     
+    size_t first_phys_model_index = num_rel_eff_curves;
+    const RelActCalcAuto::RelEffCurveInput *first_phys_model_rel_eff_curve = nullptr;
+
     for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor->m_options.rel_eff_curves[rel_eff_index];
@@ -4012,7 +4056,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
         assert( rel_eff_coefficients.size() == (2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2) );
-        
+
+        if( !first_phys_model_rel_eff_curve )
+        {
+          first_phys_model_index = rel_eff_index;
+          first_phys_model_rel_eff_curve = &rel_eff_curve;
+        }
+
         RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo phys_model_result;
         
         auto get_shield_info = [&]( const RelActCalc::PhysicalModelShieldInput &input,
@@ -4081,13 +4131,25 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const size_t c_index = b_index + 1;
           assert( c_index < rel_eff_coefficients.size() );
           
-          phys_model_result.hoerl_b = rel_eff_coefficients[b_index];
-          phys_model_result.hoerl_c = rel_eff_coefficients[c_index];
+          phys_model_result.hoerl_b = (rel_eff_coefficients[b_index] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
+          phys_model_result.hoerl_c = (rel_eff_coefficients[c_index] - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
           
           if( uncertainties.size() > (this_rel_eff_start_index + b_index) )
-            phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + b_index];
+            phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + b_index] * RelActCalc::ns_decay_hoerl_b_multiple;
+
           if( uncertainties.size() > (this_rel_eff_start_index + c_index) )
-            phys_model_result.hoerl_b_uncert = uncertainties[this_rel_eff_start_index + c_index];
+            phys_model_result.hoerl_c_uncert = uncertainties[this_rel_eff_start_index + c_index] * RelActCalc::ns_decay_hoerl_c_multiple; 
+
+          // If this isnt the first physical model, and we are using the same Hoerl function for all
+          //  then we will use the Hoerl function from the first physical model.
+          if( first_phys_model_rel_eff_curve && options.same_hoerl_for_all_rel_eff_curves && (rel_eff_index != first_phys_model_index) )
+          {
+            assert( phys_model_result.hoerl_b == solution.m_phys_model_results[first_phys_model_index]->hoerl_b );
+            assert( phys_model_result.hoerl_c == solution.m_phys_model_results[first_phys_model_index]->hoerl_c );
+            
+            phys_model_result.hoerl_b_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_b_uncert;
+            phys_model_result.hoerl_c_uncert = solution.m_phys_model_results[first_phys_model_index]->hoerl_c_uncert;
+          }
         }//if( options.phys_model_use_hoerl )
         
         solution.m_phys_model_results[rel_eff_index] = std::move(phys_model_result);
@@ -4114,7 +4176,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         const auto range = cost_functor->m_peak_ranges_with_uncert[roi_index];
         const size_t par_index = cost_functor->m_add_br_uncert_start_index + roi_index;
-        const double multiple = solution.m_final_parameters[par_index]/sm_peak_range_uncert_par_offset;
+        const double multiple = 1.0 + (solution.m_final_parameters[par_index] - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
         cout << "\t[" << setprecision(4) << setw(6) << range.first << "," << setprecision(4) << setw(5) << range.second << "]: "
         << multiple << endl;
       }
@@ -4132,6 +4194,34 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     solution.m_dof = 0;
     solution.m_warnings.push_back( "Not currently calculating DOF - need to implement" );
     //solution.m_dof = residuals.size() - ;
+    
+    
+#ifndef NDEBUG
+    // Now that have the solution filled out, lets do a few sanity checks
+    for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor->m_options.rel_eff_curves[rel_eff_index];
+      const size_t this_rel_eff_start_index = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
+      const vector<double> &rel_eff_coefficients = solution.m_rel_eff_coefficients[rel_eff_index];
+      
+      const vector<RelActCalcAuto::NuclideRelAct> &solution_rel_acts = solution.m_rel_activities[rel_eff_index];
+      const vector<NucInputGamma> &input_nuclides = cost_functor->m_nuclides[rel_eff_index];
+      assert( input_nuclides.size() == solution_rel_acts.size() );
+      
+      for( size_t act_index = 0; act_index < input_nuclides.size(); ++act_index )
+      {
+        const NucInputGamma &input_src = input_nuclides[act_index];
+        const RelActCalcAuto::NuclideRelAct &solution_src = solution_rel_acts[act_index];
+        assert( input_src.source == solution_src.source );
+        
+        const size_t solution_index = solution.source_index_of_fit_parameters( solution_src.source, rel_eff_index );
+        const size_t implementation_index = cost_functor->nuclide_parameter_index( input_src.source, rel_eff_index );
+        if( solution_index != implementation_index )
+          cout << "solution_index != implementation_index - " << solution_index << " != " << implementation_index << endl;
+        assert( solution_index == implementation_index );
+      }//for( size_t act_index = 0; act_index < input_nuclides.size(); ++act_index )
+    }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+#endif
     
     //solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
     
@@ -4518,6 +4608,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
     const size_t num_drf_par = num_parameters(m_options.fwhm_form);
     
+#ifndef NDEBUG
+    // Make sure the scale factors are 1.0 for all FWHM parameters that are not FWHM parameters
+    for( size_t i = 0; i < num_drf_par; ++i )
+    {
+      const double scale_factor = this->parameter_scale_factor( i + RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
+      assert( scale_factor == 1.0 );
+    }
+#endif
+
     return eval_fwhm( energy, m_options.fwhm_form, drf_start, num_drf_par, m_drf );
   }//float fwhm(...)
   
@@ -4848,7 +4947,160 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return "dBr" + std::to_string(mid_energy);
   }//std::string parameter_name( const size_t index ) const
   
+
+  double parameter_scale_factor( const size_t index ) const
+  {
+    assert( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars == m_fwhm_par_start_index );
+    
+    if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+    {
+      // The offset, gain, and quad adjustments are `(par/sm_energy_par_offset - 1.0) * sm_energy_cal_multiple`
+      //  This value is then added to the base paramater value.
+      return RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
+    }//if( index < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars )
+    
+    
+    if( index < m_rel_eff_par_start_index )
+    {
+      // Its a FWHM parameter
+      return 1.0;  // No scale factor for FWHM parameters currently
+    }//if( index < m_rel_eff_par_start_index )
+    
+    
+    if( index < m_acts_par_start_index )
+    {
+      size_t coef_num = m_rel_eff_par_start_index;
+
+      const size_t num_rel_eff_curves = m_options.rel_eff_curves.size();
+      size_t first_physical_model_index = num_rel_eff_curves;
+      for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+      {
+        const auto &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+        size_t num_coefs_this_rel_eff = rel_eff_curve.rel_eff_eqn_order + 1;
+        if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          num_coefs_this_rel_eff = 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2;
+
+        const size_t sub_ind = index - coef_num;
+        if( sub_ind >= num_coefs_this_rel_eff )
+        {
+          coef_num += num_coefs_this_rel_eff;
+          continue;
+        }
+
+        const string re_ind = num_rel_eff_curves > 1 ? std::to_string(rel_eff_index) : "";
+        if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          if( first_physical_model_index == num_rel_eff_curves )
+            first_physical_model_index = rel_eff_index;
+
+          if( sub_ind == 0 )
+            return RelActCalc::ns_an_ceres_mult; //Atomic number
+          if( sub_ind == 1 )
+            return 1.0; // We just use 1.0 for areal density right now
+        
+          if( sub_ind < (2 + 2*rel_eff_curve.phys_model_external_atten.size()) )
+          {
+            const size_t ext_atten_num = (sub_ind - 2) / 2;
+            if( (sub_ind % 2) == 0 )
+              return RelActCalc::ns_an_ceres_mult;
+            return 1.0; //AD
+          }
+
+          assert( sub_ind >= (2 + 2*rel_eff_curve.phys_model_external_atten.size()) );
+
+          if( !rel_eff_curve.phys_model_use_hoerl )
+            return 0.0;  // We arent using the Hoerl function, so no scale factor
+
+          if( m_options.same_hoerl_for_all_rel_eff_curves && (rel_eff_index != first_physical_model_index) )
+            return 0.0;  // We arent using the Hoerl function, so no scale factor
+
+          const size_t hoerl_num = sub_ind - 2 - 2*rel_eff_curve.phys_model_external_atten.size();
+          if( hoerl_num == 0 )
+            return rel_eff_curve.phys_model_use_hoerl ? RelActCalc::ns_decay_hoerl_b_multiple : 0.0;
+        
+          assert( hoerl_num == 1 );
+          if( hoerl_num == 1 )
+            return rel_eff_curve.phys_model_use_hoerl ? RelActCalc::ns_decay_hoerl_c_multiple : 0.0;
+        }else
+        {
+          return 1.0; // The polynomial-esque Rel. Eff. eqn coefficients are not scaled
+        }//if( physical model ) / else
+      }//for( const auto &rel_eff_curve : m_options.rel_eff_curves )
+
+      assert( 0 );
+      throw std::logic_error( "Logic for determining Physical Model coefficient name is bad." );
+    }//if( index < m_acts_par_start_index )
+    
+    if( index < m_free_peak_par_start_index )
+    {
+      // This is a nuclide activity or age parameter; each source gets two parameters, activity, and age
+      size_t coef_num = m_acts_par_start_index;
+      const size_t num_rel_eff_curves = m_options.rel_eff_curves.size();
+      for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+      {
+        const auto &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+        const size_t act_index = index - coef_num;
+        const size_t num_coefs_this_rel_eff = 2*rel_eff_curve.nuclides.size();
+        if( act_index >= num_coefs_this_rel_eff )
+        {
+          coef_num += num_coefs_this_rel_eff;
+          continue;
+        }
+
+        const string re_ind = num_rel_eff_curves > 1 ? std::to_string(rel_eff_index) : "";
+        const size_t act_num = act_index / 2;
+        assert( act_num < rel_eff_curve.nuclides.size() );
+        if( act_num >= rel_eff_curve.nuclides.size() )
+          throw runtime_error( "Logic for determining nuclide index is total whack, yo" );
+      
+        const NucInputGamma &src = m_nuclides[rel_eff_index][act_num];
+        assert( !RelActCalcAuto::is_null(rel_eff_curve.nuclides[act_num].source) );
+        if( (act_index % 2) == 0 )
+          return (src.activity_multiple > 0.0) ? src.activity_multiple : 0.0;
+        return (src.age_multiple > 0.0) ? src.age_multiple : 0.0;
+      }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+    }//if( index < m_free_peak_par_start_index )
+    
+    if( index < m_skew_par_start_index )
+    {
+      // This is a free peak parameter; each peak gets one parameter - its amplitude.
+      assert( m_free_peak_area_multiples.size() == m_options.floating_peaks.size() );
+      if( m_free_peak_area_multiples.size() != m_options.floating_peaks.size() )
+        throw std::logic_error( "Bad computing of parameter scale factor - free peak area multiples size mismatch" );  //shouldnt ever happen
+
+      const size_t index_within_free_peaks = index - m_free_peak_par_start_index;
+      const size_t free_peak_num = index_within_free_peaks / 2;
+      assert( free_peak_num < m_options.floating_peaks.size() );
+      if( free_peak_num >= m_options.floating_peaks.size() )
+        throw std::logic_error( "Bad computing of parameter scale factor - too large of index" );
+      
+      if( (index_within_free_peaks % 2) == 0 )  // We want the amplitude.
+        return m_free_peak_area_multiples[free_peak_num];
+
+      if( !m_options.floating_peaks[free_peak_num].release_fwhm ) //If not fitting FWHM, return 0.0.
+        return 0.0;
+      return 1.0;
+    }//if( index < m_skew_par_start_index )
+    
+    if( index < m_add_br_uncert_start_index )
+    {
+      return 1.0; // No scale factor for skew parameters currently
+    }//if( index < m_add_br_uncert_start_index )
+    
+    assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
+    assert( (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) == number_parameters() );
+    
+    if( m_add_br_uncert_start_index == std::numeric_limits<size_t>::max() )
+      throw runtime_error( "Whack computing of scale - things not legit." );
+    
+    if( index >= (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) )
+      throw runtime_error( "Bad computing of parameter name - too large of index" );
+    
+    //(par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+    return 1.0 / sm_peak_range_uncert_par_scale;
+  }//double parameter_scale_factor( const size_t index ) const
   
+
   template<typename T>
   T relative_activity( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index, const std::vector<T> &x ) const
   {
@@ -4867,7 +5119,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
 #ifndef NDEBUG
     {
-      nuclide_index( src, rel_eff_index ); // Will throw exception if not a nuclide in the rel eff curve
+      const size_t nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
+      const size_t nuc_index = nuclide_index( src, rel_eff_index ); // Will throw exception if not a nuclide in the rel eff curve
+      const double act_multiple = parameter_scale_factor( nuc_x_index );
+      const double age_multiple = parameter_scale_factor( nuc_x_index + 1 );
+      assert( ((m_nuclides[rel_eff_index][nuc_index].age_multiple < 0.0) && (age_multiple == 0.0)) 
+              || (age_multiple == m_nuclides[rel_eff_index][nuc_index].age_multiple) );
+      assert( ((m_nuclides[rel_eff_index][nuc_index].activity_multiple < 0.0) && (act_multiple == 0.0))
+              || (act_multiple == m_nuclides[rel_eff_index][nuc_index].activity_multiple) );
     }
 #endif
 
@@ -5177,12 +5436,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t b_index = rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size();
       const size_t c_index = b_index + 1;
       
-      //TODO: maybe should consult: phys_model_use_hoerl?
-      const T b = coeffs[b_index]; //(energy/1000)^b
-      const T c = coeffs[c_index]; //c^(1000/energy)
+      const T &b = coeffs[b_index];
+      const T &c = coeffs[c_index];
       
-      answer.hoerl_b = coeffs[b_index];
-      answer.hoerl_c = coeffs[c_index];
+      answer.hoerl_b = (b - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;  //(energy/1000)^b
+      answer.hoerl_c = (c - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;  //c^(1000/energy)
     }//if( (b != 0.0) || (c != 1.0) )
     
     return answer;
@@ -5235,7 +5493,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       return coefs;
     }
 
-    // Find first Physical Model
+    // Find first Physical Model, and adjust Hoerl B and C paramaters.
     const RelActCalcAuto::RelEffCurveInput *first_phys_model = nullptr;
     size_t first_phys_model_par_start_index = std::numeric_limits<size_t>::max();
     
@@ -5263,14 +5521,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     if( m_options.same_hoerl_for_all_rel_eff_curves )
     {
-      const size_t hoerl_b_index = first_phys_model_par_start_index + 2 + 2*first_phys_model->phys_model_external_atten.size();
-      const size_t hoerl_c_index = hoerl_b_index + 1;
-      assert( hoerl_c_index < x.size() );
-      if( hoerl_c_index >= x.size() )
-        throw std::logic_error( "make_phys_eqn_input: hoerl indices out of range" ); //shouldnt happen
+      const size_t first_hoerl_b_index = first_phys_model_par_start_index + 2 + 2*first_phys_model->phys_model_external_atten.size();
+      const size_t first_hoerl_c_index = first_hoerl_b_index + 1;
+      assert( first_hoerl_c_index < x.size() );
+      if( first_hoerl_c_index >= x.size() )
+        throw std::logic_error( "make_phys_eqn_input: first hoerl indices out of range" ); //shouldnt happen
 
-      coefs[2 + 2*first_phys_model->phys_model_external_atten.size() + 0] = x[hoerl_b_index];
-      coefs[2 + 2*first_phys_model->phys_model_external_atten.size() + 1] = x[hoerl_c_index];
+      const size_t this_hoerl_b_coefs_index = 2 + 2*rel_eff_curve.phys_model_external_atten.size();  
+      const size_t this_hoerl_c_coefs_index = this_hoerl_b_coefs_index + 1;
+      assert( this_hoerl_c_coefs_index < coefs.size() );
+      if( this_hoerl_c_coefs_index >= coefs.size() )
+        throw std::logic_error( "make_phys_eqn_input: this hoerl indices out of range" ); //shouldnt happen
+
+      assert( coefs[this_hoerl_b_coefs_index] == -1.0 );
+      assert( coefs[this_hoerl_c_coefs_index] == -1.0 );
+
+      coefs[this_hoerl_b_coefs_index] = x[first_hoerl_b_index];
+      coefs[this_hoerl_c_coefs_index] = x[first_hoerl_c_index];
     }//if( m_options.same_hoerl_for_all_rel_eff_curves )
 
     if( m_options.same_external_shielding_for_all_rel_eff_curves )
@@ -5382,7 +5649,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                  * RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple)
                               : T(0.0);
     
-    
+    assert( parameter_scale_factor(0) == (RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
+    assert( parameter_scale_factor(1) == (RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) );
+    assert( (RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars <= 2)
+         || (parameter_scale_factor(2) == (RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset)) );
+
     
     // TODO: implement and try out optimization so that if there is no adjustment to be made, skip doing the energy cal adjustment.
     //       Note: we do need to be careful we dont make the cuts so large that the steps of the
@@ -5516,8 +5787,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( !m_options.fit_energy_cal )
     {
-      assert( fabs(x[0]) < std::numeric_limits<float>::epsilon() );
-      assert( fabs(1.0 - x[1]) < std::numeric_limits<float>::epsilon() );
+      assert( fabs(x[0] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
+      assert( fabs(x[1] - RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset) < 1.0E-5 );
       
       return adjusted_energy;
     }//if( we arent fitting energy cal )
@@ -6125,9 +6396,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               
               if( (gamma.energy >= range.first) && (gamma.energy <= range.second) )
               {
-                // If `x[m_add_br_uncert_start_index + range_index]` is zero, then our amplitude is zero; if it is two, then our amplitude is doubled.
-                const T adjvalue = x[m_add_br_uncert_start_index + range_index]/sm_peak_range_uncert_par_offset - 1.0;
-                br_uncert_adj = max(T(0.0), 1.0 + adjvalue);
+                const T par_value = x[m_add_br_uncert_start_index + range_index];
+                const T num_sigma_from_nominal = (par_value - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+
+                br_uncert_adj = max(T(0.0), 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert);
                 
                 break;
               }//
@@ -6220,7 +6492,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
     
     const size_t free_peaks_start_index = m_free_peak_par_start_index;
-    
+    assert( m_free_peak_area_multiples.size() == m_options.floating_peaks.size() );
+
     for( size_t index = 0; index < m_options.floating_peaks.size(); ++index )
     {
       const RelActCalcAuto::FloatingPeak &peak = m_options.floating_peaks[index];
@@ -6230,9 +6503,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const size_t amp_index = free_peaks_start_index + 2*index + 0;
       const size_t fwhm_index = free_peaks_start_index + 2*index + 1;
       assert( fwhm_index < x.size() );
+
+      const double area_multiple = m_free_peak_area_multiples[index];
       
       num_free_peak_pars += 1;
-      const T peak_amp = x[amp_index];
+      // TODO: we should use some sort of a scale-factor for the peak amplitude
+      const T peak_amp = x[amp_index] * area_multiple;
       if( isinf(peak_amp) || isnan(peak_amp) )
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak amplitude for "
                             + std::to_string(peak.energy) + " keV extra peak.");
@@ -6245,13 +6521,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak mean for "
                             + std::to_string(peak.energy) + " keV extra peak.");
       
-      const T peak_fwhm = x[fwhm_index] * fwhm(peak_mean, x);
+      const T peak_fwhm = (peak.release_fwhm ? x[fwhm_index] : T(1.0)) * fwhm(peak_mean, x);
       
       if( isinf(peak_fwhm) || isnan(peak_fwhm) )
         throw runtime_error( "peaks_for_energy_range_imp: inf or NaN peak FWHM for "
                             + std::to_string(peak.energy) + " keV extra peak.");
       
-      assert( peak.release_fwhm || (abs(x[fwhm_index] - 1.0) < 1.0E-5) );
+      assert( peak.release_fwhm || (abs(x[fwhm_index] + 1.0) < 1.0E-5) );
       
       num_free_peak_pars += peak.release_fwhm;
       
@@ -6734,8 +7010,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( par_index < x.size() );
         
         // Normalize the parameter so nominal is 0, and a 100% change is +-1;
-        const T norm_val = x[par_index]/sm_peak_range_uncert_par_offset - 1.0;
-        residuals[residual_index] = norm_val / m_options.additional_br_uncert;
+        const T num_sigma_from_nominal = (x[par_index] - sm_peak_range_uncert_offset)/sm_peak_range_uncert_par_scale;
+        residuals[residual_index] = num_sigma_from_nominal; // m_options.additional_br_uncert;
         assert( !isnan(residuals[residual_index]) && !isinf(residuals[residual_index]) );
         ++residual_index;
       }
@@ -7454,7 +7730,7 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
       }
       break;
   }//switch( m_options.fwhm_form )
-  
+
   assert( fctntype != DetectorPeakResponse::kNumResolutionFnctForm );
   if( fctntype == DetectorPeakResponse::kNumResolutionFnctForm )
     throw runtime_error( "eval_fwhm: invalid FwhmForm" );
@@ -9121,6 +9397,11 @@ RelActAutoSolution::RelActAutoSolution()
   m_error_message( "" ),
   m_foreground{ nullptr },
   m_background{ nullptr },
+  m_final_parameters{},
+  m_final_uncertainties{},
+  m_covariance{},
+  m_parameter_names{},
+  m_parameter_were_fit{},
   m_spectrum{ nullptr },
   m_rel_eff_forms{},
   m_rel_eff_coefficients{},
@@ -10291,6 +10572,104 @@ double RelActAutoSolution::activity_ratio( const SrcVariant &numerator,
 }//double activity_ratio(...)
 
 
+size_t RelActAutoSolution::source_index_of_fit_parameters( const SrcVariant &src, const size_t rel_eff_index ) const
+{
+  // Calculate the starting index of activity parameters for this rel_eff_index
+  // This follows the same structure as in the RelActAutoCostFcn class
+  size_t acts_start_index = RelActAutoSolution::sm_num_energy_cal_pars; // Energy cal parameters
+  
+  // Add FWHM parameters
+  acts_start_index += num_parameters( m_options.fwhm_form );
+  
+  // Add relative efficiency parameters for all curves up to this one
+  for( size_t i = 0; i < m_options.rel_eff_curves.size(); ++i )
+  {
+    const auto &rel_eff_curve = m_options.rel_eff_curves[i];
+    if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      acts_start_index += (2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2); // AN + AD + external shields + hoerl b,c
+    else
+      acts_start_index += (rel_eff_curve.rel_eff_eqn_order + 1);
+  }
+  
+  // Add activity parameters for all nuclides in curves before this one
+  for( size_t i = 0; i < rel_eff_index; ++i )
+  {
+    acts_start_index += 2 * m_options.rel_eff_curves[i].nuclides.size();
+  }
+
+  const size_t nuc_index = nuclide_index( src, rel_eff_index );
+  return acts_start_index + 2 * nuc_index;
+}//size_t source_index_of_fit_parameters(...)
+
+/*
+double RelActAutoSolution::activity_ratio_uncertainty( const SrcVariant &numerator, 
+                                                        const SrcVariant &denominator, 
+                                                        const size_t rel_eff_index ) const
+{
+  // Check if covariance matrix is available
+  if( m_covariance.empty() || m_final_parameters.empty() )
+    throw std::logic_error( "activity_ratio_uncertainty: covariance matrix or parameters not available" );
+  
+  // Validate inputs
+  assert( !RelActCalcAuto::is_null(numerator) );
+  assert( !RelActCalcAuto::is_null(denominator) );
+  if( RelActCalcAuto::is_null(numerator) || RelActCalcAuto::is_null(denominator) )
+    throw std::logic_error( "activity_ratio_uncertainty: null source provided" );
+  
+  assert( rel_eff_index < m_options.rel_eff_curves.size() );
+  if( rel_eff_index >= m_options.rel_eff_curves.size() )
+    throw std::logic_error( "activity_ratio_uncertainty: invalid rel eff index" );
+  
+  Walk the chain back to get controlling nucs and stuf...
+  const size_t num_activity_param_index = source_index_of_fit_parameters( numerator, rel_eff_index );
+  const size_t den_activity_param_index = source_index_of_fit_parameters( denominator, rel_eff_index );
+  
+  // Check parameter indices are valid
+  if( num_activity_param_index >= m_final_parameters.size() || 
+      den_activity_param_index >= m_final_parameters.size() ||
+      num_activity_param_index >= m_covariance.size() ||
+      den_activity_param_index >= m_covariance.size() ||
+      (num_activity_param_index < m_covariance.size() && den_activity_param_index >= m_covariance[num_activity_param_index].size()) ||
+      (den_activity_param_index < m_covariance.size() && num_activity_param_index >= m_covariance[den_activity_param_index].size()) )
+  {
+    throw std::logic_error( "activity_ratio_uncertainty: parameter index out of bounds" );
+  }
+  blah blah blah
+  // Get the parameter values
+  const double num_activity = m_final_parameters[num_activity_param_index];
+  const double den_activity = m_final_parameters[den_activity_param_index];
+  
+  // Check denominator is not zero
+  if( fabs(den_activity) < std::numeric_limits<double>::epsilon() )
+    throw std::logic_error( "activity_ratio_uncertainty: denominator activity is zero" );
+  
+  // Get covariance elements
+  const double var_num = m_covariance[num_activity_param_index][num_activity_param_index];
+  const double var_den = m_covariance[den_activity_param_index][den_activity_param_index];
+  const double cov_num_den = m_covariance[num_activity_param_index][den_activity_param_index];
+  
+  // Check that variances are non-negative
+  if( var_num < 0.0 || var_den < 0.0 )
+    throw std::logic_error( "activity_ratio_uncertainty: negative variance in covariance matrix" );
+  
+  const double ratio_variance = (var_num - 2.0 * num_activity * cov_num_den / den_activity 
+                                + num_activity * num_activity * var_den / (den_activity * den_activity)) 
+                                / (den_activity * den_activity);
+
+  // Check for negative variance (numerical issues)
+  if( ratio_variance < 0.0 )
+  {
+    // This could happen due to numerical precision issues
+    // Return zero uncertainty in this case
+    return 0.0;
+  }
+
+  // blah blah blah blah - need to correct all this
+  
+  return std::sqrt( ratio_variance );
+}//double activity_ratio_uncertainty(...)
+*/
+
 double RelActAutoSolution::rel_activity( const SrcVariant &src, const size_t rel_eff_index ) const
 {
   assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
@@ -10391,8 +10770,11 @@ double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t r
               
               if( (energy >= range.first) && (energy <= range.second) )
               {
-                const double adjvalue = m_final_parameters[m_add_br_uncert_start_index + range_index]/RelActAutoCostFcn::sm_peak_range_uncert_par_offset - 1.0;
-                br_uncert_adj = max(0.0, 1.0 + adjvalue);
+                const size_t par_index = m_add_br_uncert_start_index + range_index;
+                const double par_value = m_final_parameters[par_index];
+                const double num_sigma_from_nominal = (par_value - RelActAutoCostFcn::sm_peak_range_uncert_offset)/RelActAutoCostFcn::sm_peak_range_uncert_par_scale;
+                
+                br_uncert_adj = max(0.0, 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert);
                 
                 break;
               }//

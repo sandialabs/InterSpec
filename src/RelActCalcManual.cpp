@@ -1239,9 +1239,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       if( (shield_index + 2) > eqn_coefficients.size() )
         throw logic_error( "make_phys_eqn_input: not enough input coefficients (5)" );
       
-      answer.hoerl_b = eqn_coefficients[shield_index];
+      answer.hoerl_b = (eqn_coefficients[shield_index] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
       shield_index += 1;
-      answer.hoerl_c = eqn_coefficients[shield_index];
+      answer.hoerl_c = (eqn_coefficients[shield_index] - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
       shield_index += 1;
     }//if( input.phys_model_use_hoerl )
     
@@ -1483,9 +1483,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       std::optional<T> b, c;
       if( m_input.phys_model_use_hoerl )
       {
-        b = x[par_num];
+        b = (x[par_num] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
         par_num += 1;
-        c = x[par_num];
+        c = (x[par_num] - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
         par_num += 1;
       }
       
@@ -2194,10 +2194,10 @@ void fit_act_to_phys_rel_eff( const RelEffInput &input,
   if( input.phys_model_use_hoerl )
   {
     assert( rel_eff_index < rel_eff_pars.size() );
-    rel_eff_pars[rel_eff_index] = 0.0; //(energy/1000)^b
+    rel_eff_pars[rel_eff_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset; //(energy/1000)^b
     rel_eff_index += 1;
     assert( rel_eff_index < rel_eff_pars.size() );
-    rel_eff_pars[rel_eff_index] = 1.0; //c^(1000/energy)
+    rel_eff_pars[rel_eff_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset; //c^(1000/energy)
     rel_eff_index += 1;
   }//if( input.phys_model_use_hoerl )
   
@@ -3703,8 +3703,9 @@ double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
         {
           const size_t expanded_b_index = 2 + 2*m_phys_model_external_atten_shields.size();
           const size_t expanded_c_index = expanded_b_index + 1;
-          const double b = expanded_pars[expanded_b_index];
-          const double c = expanded_pars[expanded_c_index];
+          const double b = (expanded_pars[expanded_b_index] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
+          const double c = (expanded_pars[expanded_c_index] - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
+
           hoerl_val = std::pow( (energy/1000.0), b) * std::pow( c, (1000.0 / energy) );
         }
         
@@ -4621,9 +4622,9 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     if( input.phys_model_use_hoerl )
     {
       // set the b and c parameters for the relative efficiency equation
-      pars[par_num] = 0.0;  //(energy/1000)^b
+      pars[par_num] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b - start b at 0, so term is 1.0
       par_num += 1;
-      pars[par_num] = 1.0;  //c^(1000/energy)
+      pars[par_num] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy) - start c at 1, so term is 1
       par_num += 1;
     }//if( input.phys_model_use_hoerl )
     
@@ -4740,13 +4741,18 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     
     if( input.phys_model_use_hoerl )
     {
+      const double b_lower = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+      const double b_upper = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
+      const double c_lower = (1.0E-6/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //e.x, pow(-0.1889,1000/124.8) is NaN
+      const double c_upper = (3.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
+      
       assert( num_parameters > 2 );
-      problem.SetParameterLowerBound( pars, static_cast<int>(index), 0.0 );
-      problem.SetParameterUpperBound( pars, static_cast<int>(index), 2.0 );
+      problem.SetParameterLowerBound( pars, static_cast<int>(index), b_lower );
+      problem.SetParameterUpperBound( pars, static_cast<int>(index), b_upper );
       index += 1;
       assert( index < num_parameters );
-      problem.SetParameterLowerBound( pars, static_cast<int>(index), 0.0 );
-      problem.SetParameterUpperBound( pars, static_cast<int>(index), 3.0 );
+      problem.SetParameterLowerBound( pars, static_cast<int>(index), c_lower );
+      problem.SetParameterUpperBound( pars, static_cast<int>(index), c_upper );
       index += 1;
     }
     

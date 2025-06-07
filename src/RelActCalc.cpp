@@ -954,6 +954,8 @@ rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<
   XmlUtils::append_bool_node( base_node, "FitArealDensity", fit_areal_density );
   XmlUtils::append_float_node( base_node, "LowerFitArealDensity", lower_fit_areal_density / PhysicalUnits::g_per_cm2 );
   XmlUtils::append_float_node( base_node, "UpperFitArealDensity", upper_fit_areal_density / PhysicalUnits::g_per_cm2 );
+
+  return base_node;
 }//rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const
   
   
