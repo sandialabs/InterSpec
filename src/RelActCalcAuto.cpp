@@ -9500,13 +9500,13 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     return out;
   
   assert( m_final_parameters.size() == m_parameter_names.size() );
-  out << "Raw Ceres par values: [";
-  for( size_t i = 0; i < m_final_parameters.size(); ++i )
-    out << ((i > 0) ? ", " : "") << "{" << m_parameter_names[i] << "=" << m_final_parameters[i] 
-        << "," << (m_parameter_were_fit[i] ? "Fit" : "NotFit") << "}";
-  out << "]\n\n";
+  //out << "Raw Ceres par values: [";
+  //for( size_t i = 0; i < m_final_parameters.size(); ++i )
+  //  out << ((i > 0) ? ", " : "") << "{" << m_parameter_names[i] << "=" << m_final_parameters[i]
+  //      << "," << (m_parameter_were_fit[i] ? "Fit" : "NotFit") << "}";
+  //out << "]\n\n";
 
-  // Rake code from RelEff
+  // Rel Eff code from RelEff
   const size_t num_rel_eff = m_options.rel_eff_curves.size();
   for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
   {
@@ -9646,9 +9646,10 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
 
         snprintf( buffer, sizeof(buffer), " (2σ: %.2f%%, %.2f%%)", neg_2sigma, pos_2sigma );
         out << buffer;
-      }catch( std::exception & )
+      }catch( std::exception &e )
       {
         // If covariance matrix couldnt be computed
+        cerr << "Failed to get enrichment 2σ for " << nuc->symbol << ": " << e.what() << endl;
       }//try / catch
 
       out << "\n";
@@ -10588,7 +10589,7 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
                           " mass fraction constraints not supported yet." );
   }
 
-  assert( m_options.rel_eff_curves < m_options.rel_eff_curves.size() );
+  assert( rel_eff_index < m_options.rel_eff_curves.size() );
   const RelEffCurveInput &re_curve = m_options.rel_eff_curves.at(rel_eff_index);
 
   // TODO: implement enrichment ranges for Pu when a Pu242 correlation method is chosen
@@ -10613,7 +10614,7 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
         el_total_mass += nuc.rel_activity / nuc_nuclide->activityPerGram();
     }
 
-    const auto &pu_corr = m_corrected_pu[rel_eff_index];
+    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> &pu_corr = m_corrected_pu[rel_eff_index];
 
     switch( nuclide->massNumber )
     {
@@ -10648,18 +10649,18 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
   assert( nuc_act_par_index < m_parameter_scale_factors.size() );
   const double nuc_scale = m_parameter_scale_factors[nuc_act_par_index];
 
-  const double cov_nuc_nuc = m_covariance[nuc_act_par_index][nuc_act_par_index];
+  const double cov_nuc_nuc = nuc_scale * nuc_scale *m_covariance[nuc_act_par_index][nuc_act_par_index];
   const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
-
+  cout << "For " << nuclide->symbol << ", sqrt_cov_nuc_nuc=" << sqrt_cov_nuc_nuc << ", " << nuc_info.rel_activity_uncertainty << endl;
   // Check that relative activity uncertainties have been computed compatible with what we are
   //  assuming here (and no funny business has happened).
-  if( (nuc_scale * sqrt_cov_nuc_nuc) != nuc_info.rel_activity_uncertainty )
+  if( fabs(sqrt_cov_nuc_nuc - nuc_info.rel_activity_uncertainty) > 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, 1.0E-3) )
   {
     cout << "nuc_scale = " << nuc_scale << ", sqrt_cov_nuc_nuc = " << sqrt_cov_nuc_nuc << " (="<< nuc_scale*sqrt_cov_nuc_nuc << ")" << endl;
     cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << nuc_info.rel_activity_uncertainty << endl;
     cout << "m_rel_activities[nuc_index].m_rel_activity = " << nuc_info.rel_activity << endl;
   }
-  assert( fabs((nuc_scale * sqrt_cov_nuc_nuc) - nuc_info.rel_activity_uncertainty) < 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, 1.0E-3) );
+  assert( fabs(sqrt_cov_nuc_nuc - nuc_info.rel_activity_uncertainty) < 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, 1.0E-3) );
 
 
 
@@ -10684,13 +10685,21 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
       const double norm_for_index = m_parameter_scale_factors[act_par_index];
       const double fit_act_for_index = loop_nuc_mult * m_final_parameters[act_par_index] * norm_for_index;
 
-      const double cov_nuc_index = loop_nuc_mult*m_covariance[nuc_act_par_index][act_par_index];
+#ifndef NDEBUG
+      const double nuc_ind = nuclide_index( nuc, rel_eff_loop_index );
+      const double known_rel_act = m_rel_activities[rel_eff_loop_index][nuc_ind].rel_activity;
+      assert( fabs(known_rel_act - norm_for_index*m_final_parameters[act_par_index]) < 1e-6*(std::max)(fabs(known_rel_act), 1.0E-3) );
+#endif
+
+      const double cov_nuc_index = loop_nuc_mult*m_covariance[nuc_act_par_index][act_par_index] * nuc_scale * norm_for_index;
       const double varied_fit_act_for_index = fit_act_for_index + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
 
-      const double rel_act = varied_fit_act_for_index * norm_for_index;
-      const double rel_mass = rel_act / nuc->activityPerGram();
+      const double rel_mass = varied_fit_act_for_index / nuc->activityPerGram();
 
       sum_rel_mass += (std::max)( rel_mass, 0.0 );
+      //cout << "mass_frac(" << nuclide->symbol << "): for nuc " << nuc->symbol << " nom_act=" << fit_act_for_index
+      //<< ", varied=" << varied_fit_act_for_index << ", cov_nuc_index=" << cov_nuc_index << ", cov_nuc_nuc=" << cov_nuc_nuc
+      //<< ", num_sigma=" << num_sigma << ", sqrt_cov_nuc_nuc=" << sqrt_cov_nuc_nuc << endl;
 
       if( (rel_eff_loop_index == rel_eff_index) && (nuclide == nuc) )
         nuc_rel_mas = rel_mass;
@@ -10700,6 +10709,8 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
   if( nuc_rel_mas < 0.0 ) // This can happen when we go down a couple sigma
     return 0.0;
 
+  //cout << "nuc_rel_mas = " << nuc_rel_mas << ", sum_rel_mass = " << sum_rel_mass << endl;
+  //cout << "nuc_rel_mas / sum_rel_mass = " << nuc_rel_mas / sum_rel_mass << endl;
   return nuc_rel_mas / sum_rel_mass;
 }//mass_enrichment_fraction
 
