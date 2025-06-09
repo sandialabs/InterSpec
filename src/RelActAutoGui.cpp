@@ -4902,11 +4902,21 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
      || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
   {
     const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
-    const double nominal = answer->mass_enrichment_fraction( iso, 0 );
-    // TODO: add errors
-    string enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4)
-                        // + "±" + SpecUtils::printCompact(100.0*error, 4)
-                         + "% " + iso->symbol;
+    const double nominal = answer->mass_enrichment_fraction( iso, 0, 0.0 );
+    string enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "%";
+
+    try
+    {
+      const double neg_2sigma = answer->mass_enrichment_fraction( iso, 0, -2.0 );
+      const double pos_2sigma = answer->mass_enrichment_fraction( iso, 0, +2.0 );
+      enrich += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%, "
+                + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%)";
+    }catch( std::exception & )
+    {
+      // Happens if covariance computation failed, or Pu with Pu242 correlation correction
+    }
+
+    enrich += " " + iso->symbol;
     chi2_title.arg( enrich );
   }else if( isotopes.size() == 2 ) // We are only considering nuclides here, not elements or reactions - not sure why
   {

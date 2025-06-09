@@ -3917,29 +3917,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             assert( !RelActCalcAuto::is_null(nuc.source) );
             const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(nuc.source);
-            if( !nuclide || (nuclide->atomicNumber < 94) )
+            if( !nuclide || (nuclide->atomicNumber != 94) )
               continue;
             
             const double rel_mass = nuc.rel_activity / nuclide->activityPerGram();
             
-            if( nuclide->atomicNumber == 94 )
+            pu_ages.insert( nuc.age );
+            pu_total_mass += rel_mass;
+            switch( nuclide->massNumber )
             {
-              pu_ages.insert( nuc.age );
-              pu_total_mass += rel_mass;
-              switch( nuclide->massNumber )
-              {
-                case 238: raw_rel_masses.pu238_rel_mass = rel_mass; break;
-                case 239: raw_rel_masses.pu239_rel_mass = rel_mass; break;
-                case 240: raw_rel_masses.pu240_rel_mass = rel_mass; break;
-                case 241: raw_rel_masses.pu241_rel_mass = rel_mass; break;
-                case 242:
-                  assert( 0 );
-                  throw std::logic_error( "Pu242 shouldnt be in the input nuclides if a Pu242"
+              case 238: raw_rel_masses.pu238_rel_mass = rel_mass; break;
+              case 239: raw_rel_masses.pu239_rel_mass = rel_mass; break;
+              case 240: raw_rel_masses.pu240_rel_mass = rel_mass; break;
+              case 241: raw_rel_masses.pu241_rel_mass = rel_mass; break;
+              case 242:
+                assert( 0 );
+                throw std::logic_error( "Pu242 shouldnt be in the input nuclides if a Pu242"
                                          " correlation correction method was specified." );
-                  break;
-                default:  raw_rel_masses.other_pu_mass = rel_mass;  break;
-              }//switch( nuclide->massNumber )
-            }//if( nuclide->atomicNumber == 94 )
+                break;
+              default:  raw_rel_masses.other_pu_mass = rel_mass;  break;
+            }//switch( nuclide->massNumber )
 
             if( pu_ages.size() == 0 )
             {
@@ -9461,6 +9458,8 @@ std::string RelActAutoSolution::rel_eff_txt( const bool html_format, const size_
 
 std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
 {
+  char buffer[128] = { '\0' };
+
   const double nsec_eval = 1.0E-6*m_num_microseconds_eval;
   
   out << "Computation took " << PhysicalUnits::printToBestTimeUnits(nsec_eval)
@@ -9541,8 +9540,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
           value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / num_chan;
         else if( i == 2 )
           value *= RelActCalcAuto::RelActAutoSolution::sm_energy_cal_multiple / (num_chan * num_chan);
-        
-        char buffer[32] = { '\0' };
+
         snprintf( buffer, sizeof(buffer), "%1.6G", value );
         out << (printed_out ? ", " : "") << label[i] << "=" << buffer << " " << post_script[i];
         printed_out = true;
@@ -9633,13 +9631,35 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       if( (nuc->atomicNumber == 94) && (nuc->massNumber == 240) )
         pu240 = nuc;
     }//for( const NuclideRelAct &nuc : m_rel_activities )
-    
+
+    const auto print_enrich = [&out,this,rel_eff_index]( const SandiaDecay::Nuclide *const nuc ){
+      char buffer[128] = { '\0' };
+      const double enrich = 100.0*mass_enrichment_fraction(nuc,rel_eff_index,0.0);
+      snprintf( buffer, sizeof(buffer), "%.2f", enrich );
+
+      out << "\nEnrichment " << buffer << "% " << nuc->symbol;
+
+      try
+      {
+        const double neg_2sigma = 100.0*mass_enrichment_fraction(nuc,rel_eff_index,-2.0);
+        const double pos_2sigma = 100.0*mass_enrichment_fraction(nuc,rel_eff_index, 2.0);
+
+        snprintf( buffer, sizeof(buffer), " (2σ: %.2f%%, %.2f%%)", neg_2sigma, pos_2sigma );
+        out << buffer;
+      }catch( std::exception & )
+      {
+        // If covariance matrix couldnt be computed
+      }//try / catch
+
+      out << "\n";
+    };//print_enrich lambda
+
     if( u235 )
-      out << "\nEnrichment " << 100.0*mass_enrichment_fraction(u235,rel_eff_index) << "% U235\n";
-    
+      print_enrich( u235 );
+
     if( pu240 )
-      out << "\nEnrichment " << 100.0*mass_enrichment_fraction(pu240,rel_eff_index) << "% Pu240\n";
-    
+      print_enrich( pu240 );
+
     assert( m_corrected_pu.size() <= m_rel_activities.size() );
     
     // For Pu, print a corrected enrichment table
@@ -9690,7 +9710,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       out << "For " << el->name << ":\n";
       for( const SandiaDecay::Nuclide *nuc : nucs )
         out << std::setw(5) << nuc->symbol << ": "
-        << std::setw(10) << std::setprecision(4) << 100.0*mass_enrichment_fraction(nuc,rel_eff_index) << "%"
+        << std::setw(10) << std::setprecision(4) << 100.0*mass_enrichment_fraction(nuc,rel_eff_index,0.0) << "%"
         << " of the " << el->name << ", by mass.\n";
     }//for( auto &v : nucs_of_element )
   }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_activities.size(); ++rel_eff_index )
@@ -9950,6 +9970,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     " <th scope=\"col\">Rel. Act.</th>"
     " <th scope=\"col\">Total Mas Frac.</th>"
     " <th scope=\"col\">Enrichment</th>"
+    " <th scope=\"col\">Enrich 2&sigma;</th>"
     " <th scope=\"col\">Det. Counts</th>"
     " </tr></thead>\n"
     "  <tbody>\n";
@@ -9975,10 +9996,20 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       {
         const double rel_mass = act.rel_activity / nuc->activityPerGram();
         results_html << "<td>" << (100.0*rel_mass/sum_rel_mass) << "%</td>"; 
-        results_html << "<td>" << (100.0*mass_enrichment_fraction(nuc,rel_eff_index)) << "%</td>";
+        results_html << "<td>" << (100.0*mass_enrichment_fraction(nuc,rel_eff_index,0.0)) << "%</td>";
+
+        try
+        {
+          const double minus_2sigma = 100.0*mass_enrichment_fraction(nuc,rel_eff_index,-2.0);
+          const double plus_2sigma = 100.0*mass_enrichment_fraction(nuc,rel_eff_index,2.0);
+          results_html << "<td>" << minus_2sigma << "%, " << plus_2sigma << "%</td>";
+        }catch( std::exception &e )
+        {
+          results_html << "<td>--</td>";
+        }
       }else
       {
-        results_html << "<td></td>" << "<td></td>";
+        results_html << "<td></td>" << "<td></td>" << "<td></td>";
       }
       
       const double nuc_counts = nuclide_counts( act.source, rel_eff_index );
@@ -10012,6 +10043,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     "<th scope=\"col\">Nuclides</th>"
     "<th scope=\"col\">Mass Ratio</th>"
     "<th scope=\"col\">Activity Ratio</th>"
+    "<th scope=\"col\">Uncertainty</th>"
     "</tr></thead>\n"
     "  <tbody>\n";
     for( size_t i = 1; i < rel_activities.size(); ++i )
@@ -10020,27 +10052,54 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       {
         const NuclideRelAct &nuc_i = rel_activities[i];
         const NuclideRelAct &nuc_j = rel_activities[j];
+
         assert( !is_null(nuc_i.source) && !is_null(nuc_j.source) );
+        if( is_null(nuc_i.source) || is_null(nuc_j.source) )
+          continue;
+
         const SandiaDecay::Nuclide * const nuc_i_nuc = nuclide(nuc_i.source);
         const SandiaDecay::Nuclide * const nuc_j_nuc = nuclide(nuc_j.source);
-        if( !nuc_i_nuc || !nuc_j_nuc )
-          continue;
 
         const double act_i = nuc_i.rel_activity;
         const double act_j = nuc_j.rel_activity;
-        const std::string name_i = nuc_i_nuc->symbol;
-        const std::string name_j = nuc_j_nuc->symbol;
-        const double mass_i = act_i / nuc_i_nuc->activityPerGram();
-        const double mass_j = act_j / nuc_j_nuc->activityPerGram();
+        const std::string name_i = to_name(nuc_i.source);
+        const std::string name_j = to_name(nuc_j.source);
 
-        snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%1.6G</td><td>%1.6G</td></tr>\n",
-                 (name_i + "/" + name_j).c_str(),
-                 (mass_i / mass_j), (act_i / act_j) );
+        string mass_i_j = "--", mass_j_i = "--";
+        if( nuc_i_nuc && nuc_j_nuc )
+        {
+          const double mass_i = act_i / nuc_i_nuc->activityPerGram();
+          const double mass_j = act_j / nuc_j_nuc->activityPerGram();
+
+          snprintf( buffer, sizeof(buffer), "%1.6G", (mass_i / mass_j) );
+          mass_i_j = buffer;
+
+          snprintf( buffer, sizeof(buffer), "%1.6G", (mass_j / mass_i) );
+          mass_j_i = buffer;
+        }
+
+        string uncert_i_j_str = "--", uncert_j_i_str = "--";
+        try
+        {
+          const double uncert_i_j = activity_ratio_uncertainty( nuc_i.source, rel_eff_index, nuc_j.source, rel_eff_index );
+          const double uncert_j_i = activity_ratio_uncertainty( nuc_j.source, rel_eff_index, nuc_i.source, rel_eff_index );
+
+          snprintf( buffer, sizeof(buffer), "%1.6G%%", 100.0*uncert_i_j/(act_i/act_j) );
+          uncert_i_j_str = buffer;
+
+          snprintf( buffer, sizeof(buffer), "%1.6G%%", 100.0*uncert_j_i/(act_j/act_i) );
+          uncert_j_i_str = buffer;
+        }catch( std::exception &e )
+        {
+          // We get here if there was an issue computing the covatriance
+        }//try / catch
+
+        snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%s</td><td>%1.6G</td><td>%s</td></tr>\n",
+                 (name_i + "/" + name_j).c_str(), mass_i_j.c_str(), (act_i / act_j), uncert_i_j_str.c_str() );
         results_html << buffer;
         
-        snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%1.6G</td><td>%1.6G</td></tr>\n",
-                   (name_j + "/" + name_i).c_str(),
-                   (mass_j / mass_i), (act_j / act_i) );
+        snprintf( buffer, sizeof(buffer), "<tr><td>%s</td><td>%s</td><td>%1.6G</td><td>%s</td></tr>\n",
+                 (name_j + "/" + name_i).c_str(), mass_j_i.c_str(), (act_j / act_i), uncert_j_i_str.c_str() );
 
         results_html << buffer;
       }//for( size_t j = 0; j < i; ++j )
@@ -10503,41 +10562,59 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 
 
 
-double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const
+double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index,
+                                                    const double num_sigma ) const
 {
-  if( !nuclide )
-    throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction: null nuclide." );
+  // This is based upon `RelEffSolution::mass_fraction( const std::string &nuclide, const double num_sigma ) const`
+  //  If any issues are found in this function, please also check that function.
 
-  assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
-  
-  assert( rel_eff_index < m_rel_activities.size() );
-  if( rel_eff_index >= m_rel_activities.size() )
-    throw std::logic_error( "mass_enrichment_fraction: invalid rel eff index" );
-  
-  const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
 
-  const bool is_pu = (nuclide->atomicNumber == 94);
-  
-  auto is_wanted_element = [is_pu,nuclide]( const SandiaDecay::Nuclide *test ) -> bool {
-    return (test->atomicNumber == nuclide->atomicNumber);
-  };//is_wanted_element lamda
-  
-  const size_t nuc_index = nuclide_index( nuclide, rel_eff_index );
-  assert( RelActCalcAuto::nuclide(rel_acts[nuc_index].source) == nuclide );
-  const double rel_mass = rel_acts[nuc_index].rel_activity / nuclide->activityPerGram();
-    
-  double el_total_mass = 0.0;
-  for( const NuclideRelAct &nuc : rel_acts )
+  if( !nuclide ) //Will be nullptr for reactions and x-rays
+    throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(nullptr, " + std::to_string(rel_eff_index)
+                         + ", " + std::to_string(num_sigma) + "): invalid nuclide" );
+
+  if( m_covariance.empty() )
+    throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(" + nuclide->symbol + ", "
+                      + std::to_string(rel_eff_index)  + ", " + std::to_string(num_sigma) + "): no valid covariance" );
+
+  const NuclideRelAct &nuc_info = nucinfo( nuclide, rel_eff_index );
+
+  for( size_t re_index = 0; re_index < m_options.rel_eff_curves.size(); ++re_index )
   {
-    const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
-    if( nuc_nuclide && is_wanted_element(nuc_nuclide) )
-      el_total_mass += nuc.rel_activity / nuc_nuclide->activityPerGram();
+    if( !m_options.rel_eff_curves[re_index].mass_fraction_constraints.empty() )
+      throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(" + nuclide->symbol + ", "
+                        + std::to_string(rel_eff_index)  + ", " + std::to_string(num_sigma) + "):"
+                          " mass fraction constraints not supported yet." );
   }
-    
+
+  assert( m_options.rel_eff_curves < m_options.rel_eff_curves.size() );
+  const RelEffCurveInput &re_curve = m_options.rel_eff_curves.at(rel_eff_index);
+
+  // TODO: implement enrichment ranges for Pu when a Pu242 correlation method is chosen
+  const bool is_pu = (nuclide->atomicNumber == 94);
   if( is_pu && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
   {
+    if( num_sigma != 0.0 )
+      throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(" + nuclide->symbol + ", "
+                          + std::to_string(rel_eff_index)  + ", " + std::to_string(num_sigma) + "):"
+                          " not implemented for Pu for non-nominal answer when a Pu242 correction method is used" );
+
+    const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
+    const size_t nuc_index = nuclide_index( nuclide, rel_eff_index );
+    assert( RelActCalcAuto::nuclide(rel_acts[nuc_index].source) == nuclide );
+    const double rel_mass = rel_acts[nuc_index].rel_activity / nuclide->activityPerGram();
+
+    double el_total_mass = 0.0;
+    for( const NuclideRelAct &nuc : rel_acts )
+    {
+      const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(nuc.source);
+      if( nuc_nuclide && (nuc_nuclide->atomicNumber == nuclide->atomicNumber) )
+        el_total_mass += nuc.rel_activity / nuc_nuclide->activityPerGram();
+    }
+
     const auto &pu_corr = m_corrected_pu[rel_eff_index];
-    
+
     switch( nuclide->massNumber )
     {
       case 238: return pu_corr->pu238_mass_frac; break;
@@ -10547,13 +10624,83 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
       case 242: return pu_corr->pu242_mass_frac; break;
       default: return (1.0 - pu_corr->pu242_mass_frac) * rel_mass / el_total_mass;
     }//switch( nuclide->massNumber )
-    
+
     assert( 0 );
-  }//if( is_pu && pu_corr )
 
-  assert( (rel_mass >= 0.0) && (rel_mass <= el_total_mass) );
+    assert( (rel_mass >= 0.0) && (rel_mass <= el_total_mass) );
 
-  return rel_mass / el_total_mass;
+    return rel_mass / el_total_mass;
+  }//if( is pu, and using Pu correction, and non-nominal answer is wanted )
+
+
+ // If this nuclide was constrained, then we need to find the ultimate controlling nuclide.
+  double nuc_mult = 1.0;
+  SrcVariant src( nuclide );
+  const bool nuc_was_constrained = walk_to_controlling_nuclide( src, rel_eff_index, nuc_mult );
+
+ #pragma message( "RelActAutoSolution: Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints (looks correct with a simple example)." )
+  if( nuc_was_constrained )
+    cerr << "RelActAutoSolution: Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints." << endl;
+
+
+  // The Covariance matrix is in terms of fit paramaters - so we need to multiple by the nuclides mutliepl to get to activity.
+  const size_t nuc_act_par_index = fit_parameters_index_for_source( src, rel_eff_index );
+  assert( nuc_act_par_index < m_parameter_scale_factors.size() );
+  const double nuc_scale = m_parameter_scale_factors[nuc_act_par_index];
+
+  const double cov_nuc_nuc = m_covariance[nuc_act_par_index][nuc_act_par_index];
+  const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
+
+  // Check that relative activity uncertainties have been computed compatible with what we are
+  //  assuming here (and no funny business has happened).
+  if( (nuc_scale * sqrt_cov_nuc_nuc) != nuc_info.rel_activity_uncertainty )
+  {
+    cout << "nuc_scale = " << nuc_scale << ", sqrt_cov_nuc_nuc = " << sqrt_cov_nuc_nuc << " (="<< nuc_scale*sqrt_cov_nuc_nuc << ")" << endl;
+    cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << nuc_info.rel_activity_uncertainty << endl;
+    cout << "m_rel_activities[nuc_index].m_rel_activity = " << nuc_info.rel_activity << endl;
+  }
+  assert( fabs((nuc_scale * sqrt_cov_nuc_nuc) - nuc_info.rel_activity_uncertainty) < 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, 1.0E-3) );
+
+
+
+  double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
+  //for( size_t rel_eff_loop_index = 0; rel_eff_loop_index < m_rel_activities.size(); ++rel_eff_loop_index )
+  {
+    const size_t rel_eff_loop_index = rel_eff_index;
+    const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_loop_index];
+    for( size_t rel_act_loop_index = 0; rel_act_loop_index < rel_acts.size(); ++rel_act_loop_index )
+    {
+      const NuclideRelAct &act = rel_acts[rel_act_loop_index];
+      SrcVariant act_src = act.source;
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(act_src);
+      if( !nuc || (nuc->atomicNumber != nuclide->atomicNumber) )
+        continue;
+
+      double loop_nuc_mult = 1.0;
+      walk_to_controlling_nuclide( act_src, rel_eff_loop_index, loop_nuc_mult );
+
+      const size_t act_par_index = fit_parameters_index_for_source( act_src, rel_eff_loop_index );
+
+      const double norm_for_index = m_parameter_scale_factors[act_par_index];
+      const double fit_act_for_index = loop_nuc_mult * m_final_parameters[act_par_index] * norm_for_index;
+
+      const double cov_nuc_index = loop_nuc_mult*m_covariance[nuc_act_par_index][act_par_index];
+      const double varied_fit_act_for_index = fit_act_for_index + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
+
+      const double rel_act = varied_fit_act_for_index * norm_for_index;
+      const double rel_mass = rel_act / nuc->activityPerGram();
+
+      sum_rel_mass += (std::max)( rel_mass, 0.0 );
+
+      if( (rel_eff_loop_index == rel_eff_index) && (nuclide == nuc) )
+        nuc_rel_mas = rel_mass;
+    }//for( size_t index = 0; index < m_rel_activities.size(); ++index )
+  }//for( size_t rel_eff_loop_index = 0; rel_eff_loop_index < m_rel_activities.size(); ++rel_eff_loop_index )
+
+  if( nuc_rel_mas < 0.0 ) // This can happen when we go down a couple sigma
+    return 0.0;
+
+  return nuc_rel_mas / sum_rel_mass;
 }//mass_enrichment_fraction
 
 

@@ -2837,6 +2837,9 @@ double RelEffSolution::mass_fraction( const std::string &nuclide ) const
   
 double RelEffSolution::mass_fraction( const std::string &nuclide, const double num_sigma ) const
 {
+  // The `double RelActAutoSolution::mass_enrichment_fraction(...)` function is similar to
+  //  this one, so if any issues are found in this function, please also check that function.
+
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   const SandiaDecay::Nuclide *wanted_nuc = db->nuclide( nuclide );
   

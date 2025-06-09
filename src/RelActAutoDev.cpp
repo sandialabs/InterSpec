@@ -495,8 +495,8 @@ void run_u02_example()
   solution.print_summary( cout );
   solution.print_html_report( out_html );
   
-  cout << "Enrichment: " << solution.mass_enrichment_fraction( db->nuclide("U235"), 0 ) << endl;
-  
+  cout << "Enrichment: " << solution.mass_enrichment_fraction( db->nuclide("U235"), 0, 0.0 ) << endl;
+
   cout << "Took:\n"
   << "\tNum Function Calls: " << solution.m_num_function_eval_solution << endl
   << "\tFcn Evals total:    " << solution.m_num_function_eval_total << endl
@@ -1659,7 +1659,7 @@ void utile_ana()
     
   for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
-    const double enrichment = solution.mass_enrichment_fraction( u235, i );
+    const double enrichment = solution.mass_enrichment_fraction( u235, i, 0.0 );
     const double u235_counts = solution.nuclide_counts( u235, i );
     const double u238_counts = solution.nuclide_counts( u238, i );
     cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment
@@ -1758,7 +1758,7 @@ void leu_heu_ana()
 
   for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
-    const double enrichment = solution.mass_enrichment_fraction( u235, i );
+    const double enrichment = solution.mass_enrichment_fraction( u235, i, 0.0 );
     const double u235_counts = solution.nuclide_counts( u235, i );
     const double u238_counts = solution.nuclide_counts( u238, i );
     cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment

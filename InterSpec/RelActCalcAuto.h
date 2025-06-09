@@ -752,15 +752,19 @@ struct RelActAutoSolution
    Throws exception if \c nuclide was not in the problem.
    
    @param nuclide The nuclide of interest.
+   @param rel_eff_index The relative efficiency index for the nuclide
+   @param num_sigma The number of sigma away from nominal you want the answer; e.g., for nominal answer use a value of 0.0.
    @returns The fraction of mass (so between 0.0 and 1.0), the input nuclide is responsible for
             in the solution.  Ex., if Eu152 is passed in, and that was the only europium isotope
             then 1.0 will be returned.  If it was a natural uranium problem, and U235 was passed
             in, then the returned value would likely be something like 0.0072
    
-   TODO: add uncertainty, via returning pair<double,double>
+   Throws exception if nuclide is not in the specified relative efficiency curve, or if `num_sigma` is not 0.0 and either the covariance matrix
+   is not present, or the nuclide is a Pu isotope and a Pu242 correlation method was chosen.
    */
-  double mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index ) const;
-  
+  double mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index,
+                                  const double num_sigma ) const;
+
   /** Returns the mass ratio of two nuclides.
    
    Throws exception if either input \c nuclide is nullptr, or was not in the problem.

@@ -683,6 +683,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
     ceres::Solver::Options options;
     options.linear_solver_type = ceres::DENSE_QR;
     options.minimizer_progress_to_stdout = false; //true;
+    options.logging_type = ceres::SILENT;
     options.num_threads = 4;
     
     // TODO: separate the peak amplitude and continuum parameters into a sub-problem to allow faster/better iteration - not really sure how to do totdally
@@ -716,7 +717,7 @@ void fit_peak_for_user_click_LM( PeakShrdVec &results,
     
     
     ceres::Covariance::Options cov_options;
-    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //
+    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD; //SPARSE_QR;
     //cov_options.num_threads = 1;
     
     vector<double> uncertainties( num_fit_pars, 0.0 );
