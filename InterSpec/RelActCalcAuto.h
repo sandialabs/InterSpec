@@ -781,11 +781,26 @@ struct RelActAutoSolution
    */
   double activity_ratio( const SrcVariant &numerator, const SrcVariant &denominator, const size_t rel_eff_index ) const;
 
+
+  /** Walks the chain of activity ratio constraints to find the controlling source.
+
+   @param [in,out] src The source to start from.
+   @param [in] rel_eff_index The relative efficiency curve index to use.
+   @param [out] multiple The multiple to multiply the activity ratio by.
+   @returns True if a controlling source was found, false otherwise.
+  
+   throws exception if \c rel_eff_index or \c src is invalid.
+  */
+  bool walk_to_controlling_nuclide( SrcVariant &src, const size_t rel_eff_index, double &multiple ) const;
+
   /** Returns the uncertainty on the activity ratio of two nuclides.
   
-  Throws exception if covariance was not able to be fit, or if either source passed in was not in the problem.
+  Throws exception if:
+  - covariance was not able to be fit
+  - either source passed in was not in the problem
   */
-  //double activity_ratio_uncertainty( const SrcVariant &numerator, const SrcVariant &denominator, const size_t rel_eff_index ) const;
+  double activity_ratio_uncertainty( SrcVariant numerator, size_t numerator_rel_eff_index, 
+                                      SrcVariant denominator, size_t denominator_rel_eff_index ) const;
   
   /** Returns the relative activity of a nuclide.
   
@@ -817,7 +832,7 @@ struct RelActAutoSolution
    
    Age is +1.
   */
-  size_t source_index_of_fit_parameters( const SrcVariant &src, const size_t rel_eff_index ) const;
+  size_t fit_parameters_index_for_source( const SrcVariant &src, const size_t rel_eff_index ) const;
   
   /** Returns result of `RelActCalc::rel_eff_eqn_js_function(...)` or
    `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
