@@ -90,9 +90,6 @@
 
 #include "js/SpecFileQueryWidget.js"
 
-#ifdef _WIN32
-#include "SpecUtils/StringAlgo.h"
-#endif
 
 #if( BUILD_AS_ELECTRON_APP )
 #include "target/electron/ElectronUtils.h"
@@ -2071,13 +2068,11 @@ void SpecFileQueryWidget::doPersistCacheChanged()
 #if( BUILD_AS_ELECTRON_APP )
 void SpecFileQueryWidget::newElectronPathSelected( std::string path )
 {
-  m_basePath = path;
   basePathChanged();
 }
 #elif( BUILD_AS_OSX_APP )
 void SpecFileQueryWidget::newMacOsPathSelected( std::string path )
 {
-  m_basePath = path;
   basePathChanged();
 }//void newMacOsPathSelected()
 #endif
@@ -2224,7 +2219,11 @@ void SpecFileQueryWidget::updateNumberFiles( const string srcdir,
     size_t nfiles = 0;
 #ifdef _WIN32
     const wstring wsrcdir = SpecUtils::convert_from_utf8_to_utf16( srcdir );
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+    boost::filesystem::recursive_directory_iterator diriter( wsrcdir, boost::filesystem::directory_options::follow_directory_symlink );
+#else
     boost::filesystem::recursive_directory_iterator diriter( wsrcdir, boost::filesystem::symlink_option::recurse );
+#endif
 #else
 #if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
     boost::filesystem::recursive_directory_iterator diriter( srcdir, boost::filesystem::directory_options::follow_directory_symlink );
@@ -2756,7 +2755,11 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     
 #ifdef _WIN32
     const std::wstring wbasedir = SpecUtils::convert_from_utf8_to_utf16( basedir );
+#if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
+    boost::filesystem::recursive_directory_iterator diriter( wbasedir, boost::filesystem::directory_options::follow_directory_symlink );
+#else
     boost::filesystem::recursive_directory_iterator diriter( wbasedir, boost::filesystem::symlink_option::recurse );
+#endif
 #else
 #if BOOST_VERSION >= 108400 && BOOST_FILESYSTEM_VERSION >= 3
     boost::filesystem::recursive_directory_iterator diriter( basedir, boost::filesystem::directory_options::follow_directory_symlink );

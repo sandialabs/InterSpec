@@ -781,6 +781,26 @@ struct RelActAutoSolution
    */
   double activity_ratio( const SrcVariant &numerator, const SrcVariant &denominator, const size_t rel_eff_index ) const;
 
+
+  /** Walks the chain of activity ratio constraints to find the controlling source.
+
+   @param [in,out] src The source to start from.
+   @param [in] rel_eff_index The relative efficiency curve index to use.
+   @param [out] multiple The multiple to multiply the activity ratio by.
+   @returns True if a controlling source was found, false otherwise.
+  
+   throws exception if \c rel_eff_index or \c src is invalid.
+  */
+  bool walk_to_controlling_nuclide( SrcVariant &src, const size_t rel_eff_index, double &multiple ) const;
+
+  /** Returns the uncertainty on the activity ratio of two nuclides.
+  
+  Throws exception if:
+  - covariance was not able to be fit
+  - either source passed in was not in the problem
+  */
+  double activity_ratio_uncertainty( SrcVariant numerator, size_t numerator_rel_eff_index, 
+                                      SrcVariant denominator, size_t denominator_rel_eff_index ) const;
   
   /** Returns the relative activity of a nuclide.
   
@@ -807,6 +827,12 @@ struct RelActAutoSolution
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
+
+  /** Returns the index of the source activity within `m_final_parameters`.
+   
+   Age is +1.
+  */
+  size_t fit_parameters_index_for_source( const SrcVariant &src, const size_t rel_eff_index ) const;
   
   /** Returns result of `RelActCalc::rel_eff_eqn_js_function(...)` or
    `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
@@ -847,6 +873,14 @@ struct RelActAutoSolution
    `m_final_parameters`.
    */
   std::vector<double> m_final_uncertainties;
+
+  /** The scale factors used between what was fit for, and and the physical values (e.g., activity, age, etc.).
+   
+   If a paramater isnt used (e.g., age of nuclide when age isnt fit), then the scale factor may be 0.0; however,
+   the scale factor may not be zero for these cases - (e.g., for energy calibration the scale factor that would 
+   be used is returned, event if it is not fit for).
+   */
+  std::vector<double> m_parameter_scale_factors;
   
   /** The covariance matrix of the fit.
  

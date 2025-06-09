@@ -61,6 +61,7 @@
 #include "InterSpec/PeakFit.h"
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakDists.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "SpecUtils/SpecUtilsAsync.h"
@@ -68,9 +69,6 @@
 #include "InterSpec/DetectorPeakResponse.h"
 
 
-#if( USE_REL_ACT_TOOL )
-#include "InterSpec/PeakFitLM.h"
-#endif
 
 using namespace std;
 
@@ -4881,16 +4879,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
    usage of Ceres), is totally untested, and hasnt been finished implementing everything.
    
    */
-#if( USE_REL_ACT_TOOL )
-#ifdef _MSC_VER
-#pragma message( "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined." )
-#else
-#warning "Not using L-M peak fit, even though USE_REL_ACT_TOOL defined."
-#endif
-#define USE_LM_PEAK_FIT 0
-#else
-#define USE_LM_PEAK_FIT 0
-#endif
+#define USE_LM_PEAK_FIT 1
 
   
 #if( !USE_LM_PEAK_FIT )
@@ -4898,6 +4887,9 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies );
 #else
+
+#ifndef NDEBUG
+  // Only debug builds get here
   PeakShrdVec mnInitialfitpeaks;
   const auto t1 = std::chrono::high_resolution_clock::now();
   fit_peak_for_user_click( mnInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
@@ -4910,7 +4902,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     << " keV, FWHM=" << std::setw(10) << mnInitialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
     << mnInitialfitpeaks[i]->amplitude() << endl;
   }
-  
+
   PeakShrdVec lmInitialfitpeaks;
   const auto t3 = std::chrono::high_resolution_clock::now();
   PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
@@ -4960,6 +4952,12 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
   
   
   PeakShrdVec initialfitpeaks = lmInitialfitpeaks;
+#else
+  PeakShrdVec initialfitpeaks;
+  PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                             mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0] );
+#endif
+
 #endif // !USE_LM_PEAK_FIT / else
   
   if( initialfitpeaks.empty() )
@@ -5015,11 +5013,16 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       
       lowerEnergies = vector<double>( 1, roiLower );
       upperEnergies = vector<double>( 1, roiUpper );
-      
+
+#if( !USE_LM_PEAK_FIT )
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies );
-      
-#if( USE_LM_PEAK_FIT )
+#else( USE_LM_PEAK_FIT )
+
+#ifndef NDEBUG
+      fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                          mean0, sigma0, area0, lowerEnergies, upperEnergies );
+
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
         cout << "OLD Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()
@@ -5037,6 +5040,11 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
         << " keV, FWHM=" << std::setw(10) << initialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
         << initialfitpeaks[i]->amplitude() << endl;
       }
+#else
+      PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                                 mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0] );
+#endif
+
 #endif  //!USE_LM_PEAK_FIT / else
     }else
     {

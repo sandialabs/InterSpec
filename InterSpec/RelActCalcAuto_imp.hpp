@@ -1,9 +1,17 @@
+#ifndef RelActCalcAuto_imp_h
+#define RelActCalcAuto_imp_h
+
 #include <vector>
 
 #include <thread>
 
 
 #include "Eigen/Dense"
+
+
+#include "SpecUtils/SpecUtilsAsync.h"
+
+#include "InterSpec/PeakDists_imp.hpp"  //for `check_jet_for_NaN(...)`
 
 
 namespace RelActCalcAuto
@@ -122,7 +130,7 @@ void fit_continuum( const float * const x,
   for( size_t row = 0; row < nbin; ++row )
   {
     const double data_counts = data[row];
-    const double data_counts_uncert = data_uncert[row];
+    const double data_counts_uncert = data_uncert ? data_uncert[row] : sqrt(data_counts);
     const double x0 = x[row];
     const double x1 = x[row+1];
     const ScalarType x0_rel = x0 - ref_energy;
@@ -243,3 +251,5 @@ void fit_continuum( const float * const x,
 }//void fit_continuum(...)
 
 }//namespace RelActCalcAuto
+
+#endif //RelActCalcAuto_imp_h

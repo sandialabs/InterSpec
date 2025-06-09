@@ -27,6 +27,14 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#undef ERROR
+#endif
+
 namespace ceres
 {
   /* dummy namespace for when using this file for only doubles, and ceres.h hasnt been included */

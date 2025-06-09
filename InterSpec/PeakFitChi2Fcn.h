@@ -30,6 +30,14 @@
 
 #include "InterSpec/PeakDef.h"
 
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#undef ERROR
+#endif
+
 #include "Math/IFunction.h"
 #include "Minuit2/FCNBase.h"
 //Roots Minuit2 includes

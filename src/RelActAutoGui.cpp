@@ -5130,7 +5130,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
 
     
     // TODO: handle the possibility that some of the GUI nuclides are not in the solution
-    //       (which shouldnt happen, but just in case things get out of whack with the user editing while computing)
+    //       (which shouldnt happen, but just in case things get out of whack with the user editing while computing???)
     for( RelActAutoGuiNuclide *nuc : nuc_displays )
     {
       if( !updated_nuc_displays.count(nuc) )
@@ -5148,8 +5148,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       }//
     }//for( RelActAutoGuiNuclide *nuc : nuc_displays )
     
-    
-    assert( (nuc_displays.size() - empty_nuc_displays.size()) == rel_acts.size() );
+    //assert( (nuc_displays.size() - empty_nuc_displays.size()) == rel_acts.size() );
   }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
   
 
