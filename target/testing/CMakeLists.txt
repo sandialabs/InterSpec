@@ -111,7 +111,7 @@ add_test( NAME TestRelEffManual
 
 add_executable( test_RelEffAuto test_RelEffAuto.cpp )
 target_link_libraries( test_RelEffAuto PRIVATE InterSpecLib )
-add_test( NAME TestRelEffManual
+add_test( NAME TestRelEffAuto
   COMMAND $<TARGET_FILE:test_RelEffAuto> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )

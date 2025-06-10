@@ -807,12 +807,74 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
         {
           //CSV, spectrum file, JSON file, etc
           NSLog(@"Will attempt to download spectrum, CSV, JSON, PNG, etc. file");
-         
-          NSURLRequest *theRequest = [NSURLRequest requestWithURL:[[request URL] absoluteURL]];
-          NSURLDownload  *theDownload = [[NSURLDownload alloc] initWithRequest:theRequest delegate:self];
-          
-          if( !theDownload )
-            NSLog(@"The download failed");  // Inform the user that the download failed.
+
+          //Using NSURLDownload is depreciated in 10.11, so instead we'll use a lot more code to do the same thing, maybe not even as well
+          //NSURLRequest *theRequest = [NSURLRequest requestWithURL:[[request URL] absoluteURL]];
+          //NSURLDownload  *theDownload = [[NSURLDownload alloc] initWithRequest:theRequest delegate:self];
+          //if( !theDownload )
+          //  NSLog(@"The download failed");  // Inform the user that the download failed.
+
+          NSURL *url = [[request URL] absoluteURL];
+          NSURLSession *session = [NSURLSession sharedSession];
+
+          // Create a download task
+          NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:url
+              completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
+                  if (error) {
+                      NSLog(@"Download failed with error: %@", error.localizedDescription);
+                  } else {
+                      NSLog(@"Download succeeded. File is located at: %@", location.path);
+
+                      // Present NSSavePanel to let the user choose where to save the file
+                      dispatch_async(dispatch_get_main_queue(), ^{
+                          NSSavePanel *savePanel = [NSSavePanel savePanel];
+                          savePanel.title = @"Save Exported File";
+                          savePanel.prompt = @"Save";
+                          savePanel.nameFieldStringValue = response.suggestedFilename ?: @"downloadedFile";
+
+                          [savePanel beginWithCompletionHandler:^(NSModalResponse result) {
+                              if (result == NSModalResponseOK) {
+                                  NSURL *destinationURL = savePanel.URL;
+                                  if (destinationURL) {
+                                      NSFileManager *fileManager = [NSFileManager defaultManager];
+                                      NSError *moveError = nil;
+                                      [fileManager moveItemAtURL:location toURL:destinationURL error:&moveError];
+
+                                      if (moveError) {
+                                        // Show an error alert to the user
+                                        dispatch_async(dispatch_get_main_queue(), ^{
+                                          NSAlert *alert = [[NSAlert alloc] init];
+                                          alert.messageText = @"Error Saving File";
+                                          alert.informativeText = moveError.localizedDescription;
+                                          alert.alertStyle = NSAlertStyleCritical;
+                                          [alert addButtonWithTitle:@"OK"];
+                                          [alert runModal];
+                                        });
+                                        NSLog(@"Failed to move file: %@", moveError.localizedDescription);
+                                      } else {
+                                          NSLog(@"File saved to: %@", destinationURL.path);
+                                      }
+                                  }
+                              } else
+                              {
+                                NSLog(@"User canceled saving the file.");
+                                // Delete the temporary file if the user cancels
+                                NSError *deleteError = nil;
+                                NSFileManager *fileManager = [NSFileManager defaultManager];
+                                [fileManager removeItemAtURL:location error:&deleteError];
+                                if (deleteError) {
+                                  NSLog(@"Failed to delete temporary file: %@", deleteError.localizedDescription);
+                                } else {
+                                  NSLog(@"Temporary file deleted.");
+                                }
+                              }
+                          }];
+                      });
+                  }
+              }];
+
+          // Start the download task
+          [downloadTask resume];
         }
       }//if( request )
       

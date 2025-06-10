@@ -2,7 +2,7 @@
 
 project(InterSpec VERSION 1.0.13)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set( CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Set PIC to make InterSpec static lib" )
 
@@ -16,7 +16,6 @@ if( CONTAINER_LIBC OR CONTAINER_MUSL)
   set( ZLIB_INCLUDE_DIR:STRING "build/_deps/zlib-build")
   set( SpecUtils_PYTHON_BINDINGS ON )
   set( InterSpec_FETCH_DEPENDENCIES ON CACHE INTERNAL "" )
-  set ( USE_REL_ACT_TOOL ON ON CACHE INTERNAL "" )
   if( CONTAINER_MUSL )
     # In Alpine, the hardening and link-time-optimization clash for `vsnprintf`, so we need to disable one
     # of these - and for serving to web, lto seems like the better one to disable.
@@ -134,7 +133,7 @@ option(
 )
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
-option(USE_REL_ACT_TOOL "Enables Relative Activity tool - experimental" ON)
+option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
 
 
 
@@ -242,10 +241,8 @@ else( InterSpec_FETCH_DEPENDENCIES )
   set(Boost_USE_MULTITHREADED ON)
   find_package(Boost 1.68 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
 
-  if( USE_REL_ACT_TOOL )
-    find_package( Eigen3 3.4 REQUIRED NO_MODULE )
-    find_package( Ceres REQUIRED )
-  endif( USE_REL_ACT_TOOL ) 
+  find_package( Eigen3 3.4 REQUIRED NO_MODULE )
+  find_package( Ceres REQUIRED )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
 
@@ -742,6 +739,8 @@ target_link_libraries(
     Boost::regex
     Boost::random
     ZLIB::ZLIB
+    Eigen3::Eigen
+    Ceres::ceres
     ${CMAKE_DL_LIBS}
 )
 
@@ -772,9 +771,7 @@ if( InterSpec_FETCH_DEPENDENCIES )
   target_link_libraries( InterSpecLib
     PUBLIC
       Boost::math Boost::scope_exit Boost::uuid Boost::iostreams Boost::assign Boost::multi_array Boost::crc Boost::process Boost::crc
-      # Boost::signals2 Boost::asio Boost::multi_index
       wt
-#      wttest
       wthttp
       wtdbosqlite3
       wtdbo
@@ -809,10 +806,6 @@ else(WIN32)
     )
 endif(WIN32)
 
-
-if( USE_REL_ACT_TOOL )
-  target_link_libraries(InterSpecLib PUBLIC Eigen3::Eigen Ceres::ceres)
-endif( USE_REL_ACT_TOOL )
 
 
 if( BUILD_AS_OSX_APP )

@@ -38,6 +38,7 @@
 #undef isnan
 #undef isfinite
 #undef isnormal
+#undef ERROR
 #endif
 
 #include "Eigen/Dense"
@@ -377,12 +378,7 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
   
   
 #if( !USE_RESIDUAL_TO_BREAK_DEGENERACY )
-  
-#ifdef _MSC_VER
 #pragma message( "Double check how measured rel eff are being pinned to 1.0 - is there a better way?  Probably is!" )
-#else
-#warning "Double check how measured rel eff are being pinned to 1.0 - is there a better way?  Probably is!"
-#endif
   
   const T sum_re = std::accumulate( begin(meas_rel_eff), end(meas_rel_eff), T(0.0) ); //Previous to 20250110, a value of 1,0 was used to initialize accumulate - not sure want that was, should probably check on this again
   const T average_re = sum_re / static_cast<double>( meas_rel_eff.size() );
@@ -1274,7 +1270,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     
     
     return [input]( double energy ){
-      return eval_physical_model_eqn_imp<T>( energy, input.self_atten, input.external_attens,
+      return RelActCalc::eval_physical_model_eqn_imp<T>( energy, input.self_atten, input.external_attens,
                                             input.det.get(), input.hoerl_b, input.hoerl_c );
     };
   }//std::function<T(double)> rel_eff_fcn( const std::vector<T> &x ) const
@@ -1493,8 +1489,8 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         par_num += 1;
       }
       
-      rel_eff_fcn = [self_atten,external_attens, det, b, c]( double energy ){
-        return eval_physical_model_eqn_imp<T>( energy, self_atten, external_attens, det, b, c );
+      rel_eff_fcn = [self_atten,external_attens, det, b, c]( double energy ) -> T {
+        return RelActCalc::eval_physical_model_eqn_imp<T>( energy, self_atten, external_attens, det, b, c );
       };
       
       assert( par_num == x.size() );
@@ -2871,7 +2867,7 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   double nuc_mult = 1.0;
   size_t nuc_index = input_nuc_index;
   const bool nuc_was_constrained = walk_to_controlling_nuclide( nuc_index, nuc_mult );
-#warning "Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints (looks correct with a simple example)."
+#pragma message( "Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints (looks correct with a simple example)." )
   if( nuc_was_constrained )
     cerr << "Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints." << endl;
 

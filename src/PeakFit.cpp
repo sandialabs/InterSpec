@@ -64,15 +64,13 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PeakDists.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 
-#if( USE_REL_ACT_TOOL )
-#include "InterSpec/PeakFitLM.h"
-#endif
 
 #include "InterSpec/PeakFit_imp.hpp"
 
@@ -5014,6 +5012,12 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 #endif //#ifndef NDEBUG
 
   PeakShrdVec initialfitpeaks = lmInitialfitpeaks;
+#else
+  PeakShrdVec initialfitpeaks;
+  PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
+                             mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0] );
+#endif
+
 #endif // !USE_LM_PEAK_FIT / else
   
   if( initialfitpeaks.empty() )

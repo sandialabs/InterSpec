@@ -196,80 +196,72 @@ if( NOT APPLE AND NOT ANDROID )
 endif( NOT APPLE AND NOT ANDROID )
 
 
-if( USE_REL_ACT_TOOL )
-# Make sure we use only MPL2 licensed (Mozillas non-copyleft) Eigen code (not LGPL-2.1)
-  add_compile_options( -DEIGEN_MPL2_ONLY )
   
-  # Set some eigen options
-  set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
-  set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
-  set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
-  set( EIGEN_BUILD_PKGCONFIG OFF )
-  #set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
-  # Check for local Eigen
-  set(LOCAL_EIGEN_DIR "${CMAKE_BINARY_DIR}/_deps/eigen-src")
-  if(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
-    message(STATUS "Using local Eigen from ${LOCAL_EIGEN_DIR}")
-    set(EIGEN_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_EIGEN_DIR}")
-  else()
-    set(EIGEN_FETCHCONTENT_SOURCE
-      GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-      GIT_TAG        9df21dc8b4b576a7aa5c0094daa8d7e8b8be60f0 # Updated 3.4 release, to pickup some CMake fixes
-    )
-  endif(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
-  FetchContent_Declare(
-    eigen
-    ${EIGEN_FETCHCONTENT_SOURCE}
-
+# Set some eigen options
+set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
+set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
+set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
+set( EIGEN_BUILD_PKGCONFIG OFF )
+#set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
+# Check for local Eigen
+set(LOCAL_EIGEN_DIR "${CMAKE_BINARY_DIR}/_deps/eigen-src")
+if(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
+  message(STATUS "Using local Eigen from ${LOCAL_EIGEN_DIR}")
+  set(EIGEN_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_EIGEN_DIR}")
+else()
+  set(EIGEN_FETCHCONTENT_SOURCE
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        2e76277bd049f7bec36b0f908c69734a42c5234f  # Get trunk version as of 20250114 to pickup some compile issues for c++20
+    EXCLUDE_FROM_ALL
+    UPDATE_DISCONNECTED TRUE # Prevent automatic updates if the tag is already present
   )
-  FetchContent_MakeAvailable( eigen )
-  #FetchContent_GetProperties( eigen )
-  #if(NOT eigen_POPULATED)
-  #  FetchContent_Populate(eigen)
-  #  add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR} EXCLUDE_FROM_ALL)
-  #endif()
+endif(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
+
+FetchContent_Declare( eigen ${EIGEN_FETCHCONTENT_SOURCE} )
+FetchContent_MakeAvailable( eigen )
+#FetchContent_GetProperties( eigen )
+#if(NOT eigen_POPULATED)
+#  FetchContent_Populate(eigen)
+#  add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR} EXCLUDE_FROM_ALL)
+#endif()
   
   # For Android and iOS, we need to force the path information for Eigen, for some reason.
-  #if( CMAKE_CROSSCOMPILING OR APPLE )
-    set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
-    set( Eigen3_DIR "${eigen_BINARY_DIR}" CACHE PATH "" FORCE )  #${eigen_SOURCE_DIR}
-  #endif( CMAKE_CROSSCOMPILING OR APPLE )
+set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
+set( Eigen3_DIR ${eigen_BINARY_DIR} CACHE PATH "Path to Eigen3Config.cmake" )  #${eigen_SOURCE_DIR}
 
   # Set some Google Ceres options; both to allow compiling without further dependencies, and
   #  avoid some things we dont need
-  set( MINIGLOG ON CACHE INTERNAL "" )
-  set( GFLAGS OFF CACHE INTERNAL "" )
-  set( ACCELERATESPARSE OFF CACHE INTERNAL "" )
-  set( USE_CUDA OFF CACHE INTERNAL "" )
-  set( EXPORT_BUILD_DIR OFF CACHE INTERNAL "" )
-  set( BUILD_TESTING OFF CACHE INTERNAL "" )
-  set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
-  set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
-  # Check for local Ceres Solver
-  set(LOCAL_CERES_DIR "${CMAKE_BINARY_DIR}/_deps/ceres-solver-src")
-  if(EXISTS "${LOCAL_CERES_DIR}/CMakeLists.txt")
-    message(STATUS "Using local Ceres Solver from ${LOCAL_CERES_DIR}")
-    set(CERES_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_CERES_DIR}")
-  else()
-    set(CERES_FETCHCONTENT_SOURCE
+set( MINIGLOG ON CACHE INTERNAL "" )
+set( GFLAGS OFF CACHE INTERNAL "" )
+set( ACCELERATESPARSE OFF CACHE INTERNAL "" )
+set( USE_CUDA OFF CACHE INTERNAL "" )
+set( EXPORT_BUILD_DIR OFF CACHE INTERNAL "" )
+set( BUILD_TESTING OFF CACHE INTERNAL "" )
+set( BUILD_EXAMPLES OFF CACHE INTERNAL "" )
+set( PROVIDE_UNINSTALL_TARGET OFF CACHE INTERNAL "" )
+# Check for local Ceres Solver
+set(LOCAL_CERES_DIR "${CMAKE_BINARY_DIR}/_deps/ceres-solver-src")
+if(EXISTS "${LOCAL_CERES_DIR}/CMakeLists.txt")
+  message(STATUS "Using local Ceres Solver from ${LOCAL_CERES_DIR}")
+  set(CERES_FETCHCONTENT_SOURCE SOURCE_DIR "${LOCAL_CERES_DIR}" EXCLUDE_FROM_ALL)
+else()
+  set(CERES_FETCHCONTENT_SOURCE
       GIT_REPOSITORY https://github.com/ceres-solver/ceres-solver.git
       GIT_TAG         85331393dc0dff09f6fb9903ab0c4bfa3e134b01 # release-2.2.0
+      UPDATE_DISCONNECTED TRUE
       GIT_SHALLOW    TRUE
       PATCH_COMMAND ${GIT_EXECUTABLE} apply --reverse --check --ignore-space-change --ignore-whitespace ${CERES_PATCH_FILE} || ${GIT_EXECUTABLE} apply --reject --ignore-space-change --ignore-whitespace ${CERES_PATCH_FILE}
-    )
-  endif()
-
-  FetchContent_Declare(
-    ceres-solver
-    ${CERES_FETCHCONTENT_SOURCE}
+      EXCLUDE_FROM_ALL
   )
-  FetchContent_MakeAvailable( ceres-solver )
-  #FetchContent_GetProperties( ceres-solver )
-  #if(NOT ceres-solver_POPULATED)
-  #  FetchContent_Populate(ceres-solver)
-  #  add_subdirectory(${ceres-solver_SOURCE_DIR} ${ceres_solver_BINARY_DIR} EXCLUDE_FROM_ALL)
-  #endif()
-endif( USE_REL_ACT_TOOL )
+endif()
+
+FetchContent_Declare( ceres-solver ${CERES_FETCHCONTENT_SOURCE} )
+FetchContent_MakeAvailable( ceres-solver )
+#FetchContent_GetProperties( ceres-solver )
+#if(NOT ceres-solver_POPULATED)
+#  FetchContent_Populate(ceres-solver)
+#  add_subdirectory(${ceres-solver_SOURCE_DIR} ${ceres_solver_BINARY_DIR} EXCLUDE_FROM_ALL)
+#endif()
 
 if( BUILD_AS_WX_WIDGETS_APP )
   set(wxBUILD_SHARED OFF CACHE BOOL "")

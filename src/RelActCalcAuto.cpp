@@ -29,7 +29,6 @@
 #include <deque>
 #include <tuple>
 #include <chrono>
-#include <format>
 #include <thread>
 #include <limits>
 #include <cstdlib>
@@ -55,6 +54,7 @@
 #undef isnan
 #undef isfinite
 #undef isnormal
+#undef ERROR
 #endif
 
 #include "ceres/ceres.h"
@@ -93,6 +93,14 @@
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 #include "InterSpec/RelActCalc_CeresJetTraits.hpp"
+
+#ifdef _MSC_VER
+#undef isinf
+#undef isnan
+#undef isfinite
+#undef isnormal
+#undef ERROR
+#endif
 
 using namespace std;
 using namespace XmlUtils;
@@ -704,9 +712,9 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       }else
       {
         // We failed to convert from one FWHM type to another
-        throw runtime_error( std::format("Failed to convert detectors efficiency functions FWHM info to"
-                                            " {} initial FWHM estimation.  Issue: {}", 
-                                            to_str(fwhm_form), e.what()) );
+        throw runtime_error( "Failed to convert detectors efficiency functions FWHM info to "
+                             + std::string(to_str(fwhm_form)) + " initial FWHM estimation."
+                            " Issue:" + string(e.what()) );
       }//if( fwhm_estimation_method == StartFromDetEffOrPeaksInSpectrum ) / else
     }//try / catch
   }//if( use_drf_fwhm )
@@ -807,7 +815,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         uncerts.swap( new_result_uncerts );
       }catch( std::exception &e )
       {
-        warnings.push_back( std::format("Failed to refine FWHM fit from data: {}.  Will use initial estimate.", e.what()) );
+        warnings.push_back( "Failed to refine FWHM fit from data: " + string(e.what()) + ".  Will use initial estimate." );
       }
     }//if( filtered_peaks->size() != all_peaks.size() )
 
@@ -818,7 +826,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   {
     paramaters.clear();
     fill_in_default_start_fwhm_pars( paramaters, 0, highres, fwhm_form );
-    warnings.push_back( std::format("Failed to estimate FWHM from data: {}.  Using default FWHM parameters.", e.what()) );
+    warnings.push_back( "Failed to estimate FWHM from data: " + string(e.what()) + ".  Using default FWHM parameters." );
   }
   
   vector<float> fwhm_pars_float( paramaters.size() );
@@ -1813,7 +1821,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                               starting_fwhm_paramaters, solution.m_warnings );
       }catch( std::exception &e )
       {
-        throw runtime_error( std::format("Failed to get initial FWHM: {}.", e.what()) );
+        throw runtime_error( "Failed to get initial FWHM: " + string(e.what()) + "." );
       }//try / catch (getting initial FWHM parameters)
 
       assert( solution.m_drf  && solution.m_drf->isValid() && solution.m_drf->hasResolutionInfo() );
@@ -2622,7 +2630,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                    << " on rel eff curve " << re_eff_index << ", instead of initial estimate of " << rel_act << endl;
               rel_act = nuc.starting_rel_act.value();
             }
-            if( (rel_act < 1.0E-16) || std::isinf(rel_act) || std::isnan(rel_act) )
+            if( (rel_act < 1.0E-16) || IsInf(rel_act) || IsNan(rel_act) )
               rel_act = 1.0;
             
             lower_bounds[act_index] = (nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act;
@@ -3086,7 +3094,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         // 20250324 HACK to test fitting peak skew
 #if( PEAK_SKEW_HACK == 1 ) //Fix the peak skew, and dont fit it
-#warning "Doing peak skew hack - fixing peak skew to preset values!"
+#pragma message( "Doing peak skew hack - fixing peak skew to preset values!" )
         assert( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall );
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
@@ -3099,7 +3107,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           upper_bounds[skew_start + i] = std::nullopt;
         }
 #elif( PEAK_SKEW_HACK == 2 ) //First fit without peak skew, then fit with
-#warning "Doing peak skew hack! - first fitting without skew, then fitting skew."
+#pragma message( "Doing peak skew hack! - first fitting without skew, then fitting skew." )
         if( options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall )
         {
           cerr << "\n\n\nDoing peak skew hack! - first fitting without skew, then fitting skew.\n\n\n" << endl;
@@ -8150,42 +8158,43 @@ void RelEffCurveInput::check_nuclide_constraints() const
     }//if( nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value() || nuc.starting_rel_act.has_value() )
     
     if( nuc.min_rel_act.has_value() && (nuc.min_rel_act.value() < 0.0) )
-      throw runtime_error( std::format( "Nuclide {} has min rel act set to {} - min rel act must be greater or equal to 0.0.",
-                                        nuc.name(), nuc.min_rel_act.value() ) );
+      throw runtime_error( "Nuclide " + nuc.name() + " has min rel act set to "
+                        + std::to_string(nuc.min_rel_act.value()) + " - min rel act must be greater or equal to 0.0." );
 
     if( nuc.max_rel_act.has_value() && (nuc.max_rel_act.value() < 0.0) )
-      throw runtime_error( std::format( "Nuclide {} has max rel act set to {} - max rel act must be greater or equal to 0.0.",
-                                        nuc.name(), nuc.max_rel_act.value() ) );
+      throw runtime_error( "Nuclide " + nuc.name() + " has max rel act set to "
+                      + std::to_string(nuc.max_rel_act.value()) + " - max rel act must be greater or equal to 0.0." );
 
     if( nuc.starting_rel_act.has_value() && (nuc.starting_rel_act.value() < 0.0) )
-      throw runtime_error( std::format( "Nuclide {} has starting rel act set to {} - starting rel act must be greater or equal to 0.0.",
-                                        nuc.name(), nuc.starting_rel_act.value() ) );  
+      throw runtime_error( "Nuclide " + nuc.name() + " has starting rel act set to "
+                          + std::to_string(nuc.starting_rel_act.value())
+                          + " - starting rel act must be greater or equal to 0.0." );
 
     //Check that if min_rel_act is set, and max_rel_act is set, then max_rel_act is greater than min_rel_act
     if( (nuc.min_rel_act.has_value() && nuc.max_rel_act.has_value())
         && (nuc.min_rel_act.value() > nuc.max_rel_act.value()) )
     {
-      const string msg = std::format( "Nuclide {} has min rel act set to {} and max rel act set to {}"
-                                      " - max rel act must be greater or equal to min rel act.",
-                                      nuc.name(), nuc.min_rel_act.value(), nuc.max_rel_act.value() );
+      const string msg = "Nuclide " + nuc.name() + " has min rel act set to " + std::to_string(nuc.min_rel_act.value())
+                         + " and max rel act set to " + std::to_string(nuc.max_rel_act.value())
+                         + " - max rel act must be greater or equal to min rel act.";
       throw runtime_error( msg );
     }
     
     if( (nuc.starting_rel_act.has_value() && nuc.min_rel_act.has_value()) 
         && (nuc.starting_rel_act.value() < nuc.min_rel_act.value()) )
     {
-      const string msg = std::format( "Nuclide {} has starting rel act set to {}"
-                                      " - starting rel act must be greater or equal to min rel act.",
-                                      nuc.name(), nuc.starting_rel_act.value() );
+      const string msg = "Nuclide " + nuc.name() + " has starting rel act set to "
+                        + std::to_string(nuc.starting_rel_act.value())
+                        + " - starting rel act must be greater or equal to min rel act.";
       throw runtime_error( msg );
     }
 
     if( (nuc.starting_rel_act.has_value() && nuc.max_rel_act.has_value()) 
         && (nuc.starting_rel_act.value() > nuc.max_rel_act.value()) )
     {
-      const string msg = std::format( "Nuclide {} has starting rel act set to {}"
-                                      " - starting rel act must be less or equal to max rel act.",
-                                      nuc.name(), nuc.starting_rel_act.value() );
+      const string msg = "Nuclide " + nuc.name() + " has starting rel act set to "
+                          + std::to_string(nuc.starting_rel_act.value())
+                          + " - starting rel act must be less or equal to max rel act.";
       throw runtime_error( msg );
     }
 
@@ -8193,42 +8202,40 @@ void RelEffCurveInput::check_nuclide_constraints() const
     if( !src_nuc )
     {
       if( nuc.age > 0.0 )
-        throw runtime_error( std::format( "non-nuclide {} has age set to {} - age must be less than or equal to 0.0.",
-                                        nuc.name(), nuc.age ) );
+        throw runtime_error( "non-nuclide " + nuc.name() + " has age set to " + std::to_string(nuc.age)
+                             + " - age must be less than or equal to 0.0." );
       if( nuc.fit_age )
-        throw runtime_error( std::format( "non-nuclide {} has fit age set to true - fit age must be false.",
-                                        nuc.name() ) );
+        throw runtime_error( "non-nuclide " + nuc.name() + " has fit age set to true - fit age must be false." );
       if( nuc.fit_age_min.has_value() || nuc.fit_age_max.has_value() )
-        throw runtime_error( std::format( "non-nuclide {} has fit age min or max set, but fit age is not set.",
-                                        nuc.name() ) );
+        throw runtime_error( "non-nuclide " + nuc.name() + " has fit age min or max set, but fit age is not set." );
     }else
     {
       if( !nuc.fit_age )
       {
         if( nuc.fit_age_min.has_value() || nuc.fit_age_max.has_value() )
-          throw runtime_error( std::format( "Nuclide {} has fit age min or max set, but fit age is not set.",
-                                            nuc.name() ) );
+          throw runtime_error( "Nuclide " + nuc.name() + " has fit age min or max set, but fit age is not set." );
       }
 
       if( nuc.age < 0.0 )
-        throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be greater or equal to 0.0.",
-                                        nuc.name(), nuc.age ) );
+        throw runtime_error( "Nuclide " + nuc.name() + " has age set to " + std::to_string(nuc.age)
+                            + " - age must be greater or equal to 0.0." );
 
       if( nuc.fit_age_min.has_value() && nuc.fit_age_max.has_value() )
       {
         if( nuc.fit_age_min.value() >= nuc.fit_age_max.value() )
-          throw runtime_error( std::format( "Nuclide {} has fit age min set to {} and fit age max set to {}"
-                                           " - fit age max must be greater or equal to fit age min.",
-                                           nuc.name(), nuc.fit_age_min.value(), nuc.fit_age_max.value() ) );
+          throw runtime_error( "Nuclide " + nuc.name() + " has fit age min set to "
+                              + std::to_string(nuc.fit_age_min.value()) + " and fit age max set to "
+                              + std::to_string(nuc.fit_age_max.value())
+                              + " - fit age max must be greater or equal to fit age min." );
       }
 
       if( nuc.fit_age_min.has_value() && nuc.age < nuc.fit_age_min.value() )
-        throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be greater or equal to fit age min.",
-                                        nuc.name(), nuc.age ) );
+        throw runtime_error( "Nuclide " + nuc.name() + " has age set to " + std::to_string(nuc.age)
+                            + " - age must be greater or equal to fit age min." );
 
       if( nuc.fit_age_max.has_value() && nuc.age > nuc.fit_age_max.value() )
-        throw runtime_error( std::format( "Nuclide {} has age set to {} - age must be less or equal to fit age max.",
-                                          nuc.name(), nuc.age ) );  
+        throw runtime_error( "Nuclide " + nuc.name() + " has age set to " + std::to_string(nuc.age)
+                            + " - age must be less or equal to fit age max." );
     }//if( !nuclide ) / else
   }//for( const NucInputInfo &nuc : nuclides )
 
@@ -8260,10 +8267,14 @@ void RelEffCurveInput::check_nuclide_constraints() const
             || (inner_nuc.fit_age_min.has_value() && (inner_nuc.fit_age_min.value() != outer_nuc.fit_age_min.value()))
             || (inner_nuc.fit_age_max.has_value() && (inner_nuc.fit_age_max.value() != outer_nuc.fit_age_max.value())) )
         {
-          const string msg = std::format( "When nucs_of_el_same_age is true, all nuclides of same element must have the same fit_age_min and fit_age_max input."
-                                          " - nuclide {} has fit_age_min set to {} and fit_age_max set to {}, but nuclide {} has fit_age_min set to {} and fit_age_max set to {}.",
-                                          inner_nuc.name(), inner_nuc.fit_age_min.value_or(0.0), inner_nuc.fit_age_max.value_or(0.0),
-                                          outer_nuc.name(), outer_nuc.fit_age_min.value_or(0.0), outer_nuc.fit_age_max.value_or(0.0) );
+          const string msg = "When nucs_of_el_same_age is true, all nuclides of same element must have the same"
+          " fit_age_min and fit_age_max input."
+          " - nuclide " + inner_nuc.name() + " has fit_age_min set to "
+          + std::to_string(inner_nuc.fit_age_min.value_or(0.0)) + " and fit_age_max set to "
+          + std::to_string(inner_nuc.fit_age_max.value_or(0.0))
+          + ", but nuclide " + outer_nuc.name() + " has fit_age_min set to "
+          + std::to_string(outer_nuc.fit_age_min.value_or(0.0))
+          + " and fit_age_max set to " + std::to_string(outer_nuc.fit_age_max.value_or(0.0)) + ".";
           throw runtime_error( msg );
         }//if( same age limits not specified for all nuclides of same element )
       }//for( const NucInputInfo &outer_nuc : nuclides )

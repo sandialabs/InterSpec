@@ -473,8 +473,8 @@ std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double>> back_decay_r
     const SandiaDecay::Nuclide * const nuc = get<0>(nuc_activity);
     const double final_act = get<1>(nuc_activity);
     assert( nuc );
-    if( !nuc )
-      return;
+    if( !nuc || (final_act <= 0.0) )
+      continue;
 
     const double decrease_factor = std::exp( -back_decay_time * nuc->decayConstant() );
     const double initial_activity = final_act / decrease_factor;
@@ -1123,7 +1123,7 @@ double eval_physical_model_eqn_uncertainty( const double energy,
                                std::optional<double> hoerl_c,
                                const std::vector<std::vector<double>> &covariance )
 {
-#warning "eval_physical_model_eqn_uncertainty not implemented."
+#pragma message( "eval_physical_model_eqn_uncertainty not implemented." )
 static int ntimeshere = 0;
 if( ntimeshere++ < 5 )  
   cerr << "eval_physical_model_eqn_uncertainty not implemented. " << endl;

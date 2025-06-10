@@ -2295,7 +2295,7 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
         
         // For peaks from a InterSpec/PeakEasy CSV file, we will re-fit the peaks, as in practice
         //  they might not be from this exact spectrum file.
-        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [=,this](){
+        Wt::WServer::instance()->ioService().boost::asio::io_service::post( std::bind( [this, currdata, candidate_peaks, orig_peaks, seessionid](){
           PeakSearchGuiUtils::fit_template_peaks( m_viewer, currdata, candidate_peaks,
                                                  orig_peaks, PeakSearchGuiUtils::PeakTemplateFitSrc::CsvFile, seessionid );
         } ) );
@@ -2681,7 +2681,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   
   if( !foreground )
     return false;
-  
+
+  bool any_new_cal_is_poly_ish = false;
   const size_t num_display_channel = currdata->num_gamma_channels();
   map<string,shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal;
   
@@ -2832,6 +2833,8 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       case SpecUtils::EnergyCalType::FullRangeFraction:
       {
+        any_new_cal_is_poly_ish = true;
+
         msg += "<p>";
         if( type == SpecUtils::EnergyCalType::FullRangeFraction )
           msg += "FullRangeFrac:";
@@ -2860,8 +2863,15 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   }else
   {
     msg += WString::tr("smm-CALp-multi-dets").arg( static_cast<int>(det_to_cal.size()) );
-  }
-  
+
+    for( const auto &name_cal : det_to_cal )
+    {
+      any_new_cal_is_poly_ish |= (name_cal.second
+                                  && name_cal.second->valid()
+                                  && (name_cal.second->type() != SpecUtils::EnergyCalType::LowerChannelEdge));
+    }
+  }//if( (det_to_cal.size() == 1) && det_to_cal.begin()->second ) / else
+
   if( !have_cal_for_all_dets )
     msg += WString::tr( (det_to_cal.size() == 1) ? "smm-warn-single-for-multi" : "smm-warn-multi-for-single" );
   
@@ -2911,8 +2921,19 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
   t = new WText( WString::tr("smm-CALp-like-to-use") );
   stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
   t->setTextAlignment( Wt::AlignCenter );
-  
-  
+
+  // Sometimes detectors that provide lower channel energy calibration wont have a consistent binning
+  //  structure, but the uploaded CALp may be assuming that, so we'll give a warning in this case.
+  if( currdata
+     && currdata->energy_calibration()
+     && (currdata->energy_calibration()->type() == SpecUtils::EnergyCalType::LowerChannelEdge)
+     && any_new_cal_is_poly_ish )
+  {
+    t = new WText( WString::tr("smm-CALp-prev-is-channel-lower-energy") );
+    stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
+    t->setTextAlignment( Wt::AlignCenter );
+  }
+
   dialog->contents()->addStyleClass( "CALp" );
   // TODO: ask if they want to update deviation pairs - maybe?
   
@@ -4421,7 +4442,7 @@ bool SpecMeasManager::checkForAndPromptUserForDisplayOptions( std::shared_ptr<Sp
       
       SimpleDialog *dialog = new SimpleDialog( WString::tr("smm-vd-load-title"), msgtxt );
       
-      auto add_button = [=,this]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
+      auto add_button = [this, dialog, header, meas, type, checkIfPreviouslyOpened, doPreviousEnergyRangeCheck]( string btn_txt, const set<string> &dets, size_t max_txt_size ){
         if( btn_txt.size() > max_txt_size )
         {
           SpecUtils::utf8_limit_str_size( btn_txt, max_txt_size - 1 );

@@ -1,3 +1,6 @@
+#ifndef RelActCalcAuto_imp_h
+#define RelActCalcAuto_imp_h
+
 #include <vector>
 
 #include <thread>
@@ -8,6 +11,11 @@
 
 #include "InterSpec/PeakDists.h"
 #include "InterSpec/PeakDists_imp.hpp"
+
+#include "SpecUtils/SpecUtilsAsync.h"
+
+#include "InterSpec/PeakDists_imp.hpp"  //for `check_jet_for_NaN(...)`
+
 
 namespace RelActCalcAuto
 {
@@ -269,3 +277,5 @@ struct PeaksForEnergyRangeImp
 
 
 }//namespace RelActCalcAuto
+
+#endif //RelActCalcAuto_imp_h

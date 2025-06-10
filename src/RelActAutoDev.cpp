@@ -439,10 +439,10 @@ void run_u02_example()
   //Sample 1 is background
   //Sample 38 is UO2_50%_50%
   assert( specfile.num_measurements() == 38 );
-  shared_ptr<const SpecUtils::Measurement> background = specfile.measurement(size_t(0));
+  shared_ptr<const SpecUtils::Measurement> background = specfile.measurement_at_index(0);
   assert( background );
   assert( background->title() == "Background" );
-  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement(size_t(37));
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index(37);
   assert( foreground );
   assert( SpecUtils::istarts_with( foreground->title(), "U02_50%_50% @ 25 cm H=100 cm" ) );
   
@@ -623,7 +623,7 @@ void czt_pu_example()
   
   
   assert( specfile.num_measurements() == 1 );
-  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( size_t(0) );
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index( size_t(0) );
   assert( foreground );
 
   
@@ -1610,10 +1610,10 @@ void utile_ana()
   assert( specfile.num_measurements() == 1 );
   assert( backfile.num_measurements() == 1 );
   
-  const shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement(size_t(0));
+  const shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index(size_t(0));
   assert( foreground );
   
-  const shared_ptr<const SpecUtils::Measurement> background = backfile.measurement(size_t(0));
+  const shared_ptr<const SpecUtils::Measurement> background = backfile.measurement_at_index(size_t(0));
   assert( background );
   
   
@@ -1711,7 +1711,7 @@ void leu_heu_ana()
 
   assert( specfile.num_measurements() == 1 );
 
-  const shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement(size_t(0));
+  const shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index(size_t(0));
   assert( foreground );
 
   const shared_ptr<const SpecUtils::Measurement> background;
@@ -1978,7 +1978,7 @@ int dev_code()
   rel_eff_curve.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( self_atten_def );
   options.rel_eff_curves.push_back( rel_eff_curve );
   
-  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement( size_t(0) );
+  shared_ptr<const SpecUtils::Measurement> foreground = specfile.measurement_at_index( size_t(0) );
   assert( foreground );
   shared_ptr<const SpecUtils::Measurement> background = nullptr;
   shared_ptr<const DetectorPeakResponse> drf = nullptr; //We dont have this
