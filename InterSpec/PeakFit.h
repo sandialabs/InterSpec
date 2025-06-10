@@ -62,11 +62,7 @@ typedef std::vector< std::shared_ptr<const PeakDef> > PeakShrdVec;
  MultiPeakFitChi2Fcn and LinearProblemSubSolveChi2Fcn classes should be removed once we are fully into moving to using Ceres based peak fitter
  The followwing functions will also need to be removed: `refitPeaksThatShareROI_imp`, `fit_peak_for_user_click`
  */
-#if( USE_REL_ACT_TOOL )
 #define USE_LM_PEAK_FIT 1
-#else
-#define USE_LM_PEAK_FIT 0
-#endif
 
 
 // 20240911: The minimum uncertainty allowed for a gamma spectrum channel.

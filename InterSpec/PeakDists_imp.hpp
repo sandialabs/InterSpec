@@ -1325,12 +1325,21 @@ void photopeak_function_integral( const T mean,
 }//void photopeak_function_integral(...)
 
 
-template<typename ContType, typename T>
+#if( __cplusplus >= 202002L )
 void offset_integral( const ContType &cont,
                      const float *energies,
                      T *channels,
                      const size_t nchannel,
                      const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType,T>
+#else
+template <typename ContType, typename T>
+typename std::enable_if<ContinuumTypeConcept<ContType, T>::value, void>::type
+offset_integral(const ContType& cont,
+                const float* energies,
+                T* channels,
+                const size_t nchannel,
+                const std::shared_ptr<const SpecUtils::Measurement>& data)
+#endif
 {
   // This function should give the same answer as
   //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel

@@ -5012,12 +5012,6 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 #endif //#ifndef NDEBUG
 
   PeakShrdVec initialfitpeaks = lmInitialfitpeaks;
-#else
-  PeakShrdVec initialfitpeaks;
-  PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
-                             mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0] );
-#endif
-
 #endif // !USE_LM_PEAK_FIT / else
   
   if( initialfitpeaks.empty() )
