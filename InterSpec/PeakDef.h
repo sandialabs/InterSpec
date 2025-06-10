@@ -106,7 +106,13 @@ struct PeakContinuum
     
     BiLinearStep,
     
-    /** A continuum is determined algorithmically for the entire spectrum; not recommended to use. */
+    /** A continuum is determined algorithmically for the entire spectrum; not recommended to use.
+
+     It use the Sensitive Nonlinear Iterative Peak (SNIP) clipping algorithm to estimate the background.
+     It works by iteratively comparing each data point with the average of its neighboring points and replacing it with
+     the smaller value. This process is repeated with increasing window sizes, effectively smoothing out peaks and
+     revealing the underlying background. 
+     */
     External
   };//enum OffsetType
   

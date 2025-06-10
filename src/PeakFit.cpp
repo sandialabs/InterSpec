@@ -5017,7 +5017,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 #if( !USE_LM_PEAK_FIT )
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies );
-#else( USE_LM_PEAK_FIT )
+#else
 
 #ifndef NDEBUG
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
