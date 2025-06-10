@@ -679,7 +679,8 @@ void get_exemplar_spectrum_and_peaks(
             std::shared_ptr<const SpecUtils::Measurement> &exemplar_spectrum,
             std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &exemplar_peaks,
             std::set<int> &exemplar_sample_nums,
-            const std::shared_ptr<const SpecMeas> &exemplar_n42 )
+            const std::shared_ptr<const SpecMeas> &exemplar_n42,
+            const bool require_peaks )
 {
   const vector<string> det_names = exemplar_n42->detector_names();
   const set<set<int>> withPeakSampleNums = exemplar_n42->sampleNumsWithPeaks();
@@ -696,7 +697,7 @@ void get_exemplar_spectrum_and_peaks(
     exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
     exemplar_spectrum = exemplar_n42->sum_measurements( exemplar_sample_nums, det_names, nullptr );
       
-    if( !exemplar_peaks || exemplar_peaks->empty() || !exemplar_spectrum )
+    if( !exemplar_peaks || (require_peaks && exemplar_peaks->empty()) || !exemplar_spectrum )
       throw runtime_error( "The specified exemplar sample numbers did not have peaks, or spectra couldnt be summed." );
   }else if( exemplar_n42->measurements().size() == 1 )
   {
@@ -706,7 +707,7 @@ void get_exemplar_spectrum_and_peaks(
       
     exemplar_sample_nums.insert( exemplar_spectrum->sample_number() );
     exemplar_peaks = exemplar_n42->peaks( exemplar_sample_nums );
-    if( !exemplar_peaks || exemplar_peaks->empty() )
+    if( require_peaks && (!exemplar_peaks || exemplar_peaks->empty()) )
       throw logic_error( "Exemplar spectrum did not contain any peaks." );
   }else
   {
@@ -818,11 +819,24 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
   
   std::shared_ptr<const SpecUtils::Measurement> exemplar_spectrum;
   std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> exemplar_peaks;
-  if( exemplar_n42 )
+
+  if( options.fit_all_peaks && !options.use_exemplar_energy_cal )
+  {
+    // Nothing to do here
+  }else if( options.fit_all_peaks )
+  {
+    // We want to use the exemplar energy cal
+    if( !exemplar_n42 )
+      throw runtime_error( "Exemplar file not provided, but using its energy cal was requested." );
+
+    get_exemplar_spectrum_and_peaks( exemplar_spectrum, exemplar_peaks,
+                                    exemplar_sample_nums, exemplar_n42, false );
+
+  }else if( exemplar_n42 )
   {
     get_exemplar_spectrum_and_peaks( exemplar_spectrum, exemplar_peaks,
-                                    exemplar_sample_nums, exemplar_n42 );
-    
+                                    exemplar_sample_nums, exemplar_n42, true );
+
     assert( exemplar_peaks );
     assert( exemplar_spectrum );
     if( !exemplar_peaks || !exemplar_spectrum )
@@ -837,14 +851,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     
     if( exemplar_spectrum->num_gamma_channels() < 64  )
       throw runtime_error( "Exemplar spectrum doesnt have enough gamma channels." );
+
+    assert( !exemplar_n42 || exemplar_spectrum );
+    assert( !exemplar_n42 || (exemplar_peaks && !exemplar_peaks->empty()) );
   }//if( exemplar_is_n42 )
-
-
-  assert( !exemplar_n42 || exemplar_spectrum );
-  assert( !exemplar_n42 || (exemplar_peaks && !exemplar_peaks->empty()) );
-  
-  
-
 
   BatchPeakFitResult results;
   results.file_path = exemplar_filename;

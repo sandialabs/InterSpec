@@ -596,16 +596,14 @@ void BatchGuiPeakFitWidget::optionsChanged()
 {
   const bool fit_all_peaks = m_fit_all_peaks->isChecked();
   m_refit_energy_cal->setHidden( fit_all_peaks );
-  // m_exemplar_input->setHidden( fit_all_peaks );
+  m_exemplar_input->setHidden( fit_all_peaks && !m_use_exemplar_energy_cal->isChecked() );
   // m_use_exemplar_energy_cal->setHidden( fit_all_peaks );
   m_background_input->setHidden( fit_all_peaks );
   m_show_nonfit_peaks->setHidden( fit_all_peaks );
   m_use_existing_background_peaks->setHidden( fit_all_peaks );
   m_use_exemplar_energy_cal_for_background->setHidden( fit_all_peaks );
-  m_peak_stat_threshold_container->setHidden(
-    fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
-  m_peak_hypothesis_threshold_container->setHidden(
-    fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
+  m_peak_stat_threshold_container->setHidden( fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
+  m_peak_hypothesis_threshold_container->setHidden( fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
 
   const bool use_current_fore = m_use_current_foreground->isChecked();
   m_exemplar_file_drop->setHidden( use_current_fore );

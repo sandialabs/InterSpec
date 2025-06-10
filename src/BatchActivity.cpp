@@ -1018,7 +1018,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     try
     {
       BatchPeak::get_exemplar_spectrum_and_peaks( exemplar_spectrum, exemplar_peaks,
-                                                 exemplar_sample_nums, cached_exemplar_n42 );
+                                                 exemplar_sample_nums, cached_exemplar_n42, true );
       if( !exemplar_spectrum )
         throw runtime_error( "Couldnt determine exemplar spectrum" );
       
