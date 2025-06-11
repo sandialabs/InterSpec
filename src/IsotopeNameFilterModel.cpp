@@ -527,9 +527,6 @@ void IsotopeNameFilterModel::suggestNuclides(
   
   for( const SandiaDecay::Element *el : candidate_elements )
   {
-    if( el->xrays.empty() )
-      continue;
-    
     bool is_exact_element = false;
     if( numericstrs.empty() )
     {
@@ -541,11 +538,12 @@ void IsotopeNameFilterModel::suggestNuclides(
     
     if( numericstrs.empty() && !is_exact_element )
     {
-      suggest_elements.push_back( el );
+      if( !el->xrays.empty() )
+        suggest_elements.push_back( el );
     }else
     {
       //Add in just the element name, and then all the isotopes below
-      if( numericstrs.empty() && is_exact_element )
+      if( numericstrs.empty() && is_exact_element && !el->xrays.empty() )
         suggest_elements.push_back( el );
       
       const vector<const SandiaDecay::Nuclide *> nuclides = db->nuclides( el );
