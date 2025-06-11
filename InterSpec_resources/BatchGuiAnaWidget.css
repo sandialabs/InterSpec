@@ -36,7 +36,7 @@
 .BatchGuiWidget .BatchGuiAnaWidget
 {
   overflow-y: auto;
-  height: 180px;
+  /* height: 180px; */
 
   display: flex;
   flex-direction: column;
@@ -245,11 +245,12 @@
   gap: 10px;
   align-items: center;
   overflow-y: hidden;
+  height: 100%;
 }
 
 .BatchGuiWidget .FileConvertOpts .SideMenuHolder
 {
-  height: 180px;
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
 }

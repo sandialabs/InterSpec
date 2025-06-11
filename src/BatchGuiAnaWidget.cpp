@@ -496,6 +496,8 @@ void BatchGuiPeakFitWidget::handleFileUpload( WContainerWidget *dropArea, FileDr
   input->remove_self_request().connect(
     boost::bind( &BatchGuiPeakFitWidget::handle_remove_exemplar_upload, this, boost::placeholders::_1 ) );
 
+  input->preview_created_signal().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+
   // Cleanup all uploads we wont use - dont expect this to actually happen
   for( size_t i = 1; i < spooled.size(); ++i )
   {
@@ -737,11 +739,63 @@ tuple<shared_ptr<SpecMeas>, string, set<int>> BatchGuiPeakFitWidget::get_exempla
         shared_ptr<SpecMeas> spec_copy = make_shared<SpecMeas>();
         spec_copy->uniqueCopyContents( *meas );
         meas = spec_copy;
-      }
+
+        //Find the sample with peaks.
+        const set<set<int>> samples_with_peaks = meas->sampleNumsWithPeaks();
+        if( samples_with_peaks.empty() )
+        {
+          // No peaks
+        }else if( samples_with_peaks.size() == 1 )
+        {
+          samples = *begin(samples_with_peaks);
+        }else
+        {
+          // Find the foreground with peaks
+          for( const set<int> &peak_samples : samples_with_peaks )
+          {
+            bool is_back = false, is_fore = false;
+            for( const int sample : peak_samples )
+            {
+              vector<shared_ptr<const SpecUtils::Measurement>> meass = meas->sample_measurements(sample);
+              for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+              {
+                switch( m->source_type() )
+                {
+                  case SpecUtils::SourceType::IntrinsicActivity:
+                  case SpecUtils::SourceType::Calibration:
+                    break;
+
+                  case SpecUtils::SourceType::Background:
+                    is_back = true;
+                    break;
+
+                  case SpecUtils::SourceType::Foreground:
+                  case SpecUtils::SourceType::Unknown:
+                    is_fore = true;
+                    break;
+                }//switch( m->source_type() )
+              }//for( const shared_ptr<const Measurement> &m : meass )
+
+              if( is_fore && !is_back )
+              {
+                samples = peak_samples;
+                break;
+              }
+            }//for( const int sample : samples )
+          }//for( const set<int> &samples : samples_with_peaks )
+        }//for( const set<int> &peak_samples : samples_with_peaks )
+
+        if( samples.empty() )
+        {
+          //It is ambigous.
+          // TODO: Put more effort into trying to divine what set of sample numbers is intended to be the foreground.
+          //  Right now we'll just leave `samples` empty, and the user will get an error message that there are now peaks in exemplar...
+        }
+      }//if( meas )
 
       if( meas )
         break;
-    }
+    }//for( Wt::WWidget *child : m_exemplar_file_drop->children() )
   }// if( m_use_current_foreground->isChecked() ) / else
 
 
