@@ -46,6 +46,11 @@
 #include "InterSpec/PeakDists_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 
+// Undefine isnan and isinf macros
+#undef isnan
+#undef isinf
+
+
 using namespace std;
 
 namespace
@@ -456,7 +461,7 @@ struct PeakFitDiffCostFunction
         sigma_uncert = uncertainties ? (uncertainties[sigma_index] * m_max_initial_sigma) : T(0.0);
 
 
-        if( (isnan)(sigma) || (isinf)(sigma) )
+        if( isnan(sigma) || isinf(sigma) )
         {
           if constexpr ( !std::is_same_v<T, double> )
           {
@@ -517,7 +522,7 @@ struct PeakFitDiffCostFunction
           }
         }//if( num_sigmas_fit > 1 )
 
-        if( (isnan)(sigma) || (isinf)(sigma) )
+        if( isnan(sigma) || isinf(sigma) )
         {
           if constexpr ( !std::is_same_v<T, double> )
           {
@@ -782,7 +787,7 @@ struct PeakFitDiffCostFunction
         assert( i >= 1 );
         const T dist = abs(peaks[i-1].mean() - peaks[i].mean());
         T reldist = dist / sigma;
-        if( (reldist < 0.01) || (isinf)(reldist) || (isnan)(reldist) )
+        if( (reldist < 0.01) || isinf(reldist) || isnan(reldist) )
         {
           if constexpr ( !std::is_same_v<T, double> )
           {

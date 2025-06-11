@@ -453,9 +453,12 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
     wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiWidget.css" );
     wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/RefSpectraWidget.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiAnaWidget.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
     // anything else relevant?

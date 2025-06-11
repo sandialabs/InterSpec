@@ -101,7 +101,7 @@ BatchGuiDialog::BatchGuiDialog( FileDragUploadResource *uploadResource, const Wt
   } else if( ( interspec->renderedWidth() > 100 ) && ( interspec->renderedHeight() > 50 ) )
   {
     double dialogWidth = std::min( 750.0, 0.95 * interspec->renderedWidth() );
-    double dialogHeight = std::min( 500.0, 0.95 * interspec->renderedHeight() );
+    double dialogHeight = std::min( 650.0, 0.95 * interspec->renderedHeight() );
 
     m_widget->setWidth( dialogWidth - 30 );
     m_widget->setHeight( dialogHeight - 90 );
