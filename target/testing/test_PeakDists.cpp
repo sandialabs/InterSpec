@@ -860,7 +860,7 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
   
   {
     // Check Gaussian component of DSCB is normalized correctly
-    double gaus_limit_norm = DSCB_norm( 10, 5, 10, 5 );
+    double gaus_limit_norm = DSCB_norm( 10.0, 5.0, 10.0, 5.0 );
     double gause_com = DSCB_gauss_indefinite_non_norm_t( 10 )
                         - DSCB_gauss_indefinite_non_norm_t( -10 );
     
