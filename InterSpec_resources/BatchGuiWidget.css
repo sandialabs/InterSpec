@@ -194,3 +194,9 @@
 .BatchGuiWidget .DirectorySelector
 {
 } 
+
+
+.BatchGuiWidget .ReasonCantAnalyzeMsg
+{
+  color: orange;
+}

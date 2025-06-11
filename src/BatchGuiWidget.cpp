@@ -143,6 +143,7 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   m_file_convert_opts( nullptr ),
   m_input_files_container( nullptr ),
   m_output_dir( nullptr ),
+  m_input_status_error( nullptr ),
   m_can_do_analysis( false ),
   m_canDoAnalysis( this )
 {
@@ -209,6 +210,10 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
 
   m_uploadResource->fileDrop().connect( this, &BatchGuiWidget::handleFileDrop );
 
+  m_input_status_error = new WText( this );
+  m_input_status_error->addStyleClass( "ReasonCantAnalyzeMsg" );
+  m_input_status_error->hide();
+
   addInputFiles( m_uploadResource->takeSpooledFiles() );
 }// BatchGuiWidget constructor
 
@@ -264,9 +269,27 @@ void BatchGuiWidget::updateCanDoAnalysis()
 
   BatchGuiAnaWidget *const batch_ana_widget = dynamic_cast<BatchGuiAnaWidget *>( m_options_stack->currentWidget() );
 
-  const bool can_do_analysis =
-    ( num_input_files > 0 ) && m_output_dir->isPathValid() && ( batch_ana_widget && batch_ana_widget->canDoAnalysis() );
-  if( can_do_analysis != m_can_do_analysis )
+  const pair<bool,WString> ana_status = batch_ana_widget ? batch_ana_widget->canDoAnalysis() : make_pair(false, WString());
+
+  bool can_do_analysis = ana_status.first;
+  WString error_msg = ana_status.second;
+  if( can_do_analysis && ( num_input_files == 0 ) )
+  {
+    can_do_analysis = false;
+    error_msg = WString::tr("bgw-no-ana-no-input-files");
+  }
+
+  if( can_do_analysis && !m_output_dir->isPathValid() )
+  {
+    can_do_analysis = false;
+    error_msg = WString::tr("bgw-no-ana-invalid-output-path");
+  }
+
+  m_input_status_error->setHidden( can_do_analysis );
+  if( error_msg != m_input_status_error->text() )
+    m_input_status_error->setText( error_msg );
+
+  if( (can_do_analysis != m_can_do_analysis) )
   {
     m_can_do_analysis = can_do_analysis;
     m_canDoAnalysis.emit( can_do_analysis );

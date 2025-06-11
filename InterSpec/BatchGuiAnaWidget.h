@@ -66,7 +66,7 @@ namespace SpecUtils
 class BatchGuiAnaWidget : public Wt::WContainerWidget
 {
 protected:
-  Wt::Signal<bool> m_canDoAnalysis;
+  Wt::Signal<bool,Wt::WString> m_canDoAnalysis;
 
 public:
   BatchGuiAnaWidget( Wt::WContainerWidget *parent );
@@ -74,11 +74,13 @@ public:
   virtual void performAnalysis( const std::vector<std::tuple<std::string, std::string, std::shared_ptr<const SpecMeas>>> &input_files,
                                 const std::string &output_dir ) = 0;
 
-  virtual bool canDoAnalysis() const = 0;
+  /** Returns if analysis can proceed, and if it cant, an explanation as to why not. */
+  virtual std::pair<bool,Wt::WString> canDoAnalysis() const = 0;
 
   virtual void optionsChanged() = 0;
 
-  Wt::Signal<bool> &canDoAnalysisSignal();
+  /** Gives if analysis can proceed, and if it cant, an explanation as to why not. */
+  Wt::Signal<bool,Wt::WString> &canDoAnalysisSignal();
 };
 
 class BatchGuiPeakFitWidget : public BatchGuiAnaWidget
@@ -161,7 +163,7 @@ public:
   virtual void performAnalysis( const std::vector<std::tuple<std::string, std::string, std::shared_ptr<const SpecMeas>>> &input_files,
                                 const std::string &output_dir ) override;
 
-  virtual bool canDoAnalysis() const override;
+  virtual std::pair<bool,Wt::WString> canDoAnalysis() const override;
 };
 
 class BatchGuiActShieldAnaWidget : public BatchGuiPeakFitWidget
@@ -196,7 +198,7 @@ public:
   virtual void performAnalysis( const std::vector<std::tuple<std::string, std::string, std::shared_ptr<const SpecMeas>>> &input_files,
                                 const std::string &output_dir ) override;
 
-  virtual bool canDoAnalysis() const override;
+  virtual std::pair<bool,Wt::WString> canDoAnalysis() const override;
 
   virtual void optionsChanged() override;
 
@@ -235,8 +237,8 @@ public:
   virtual void performAnalysis( const std::vector<std::tuple<std::string, std::string, std::shared_ptr<const SpecMeas>>> &input_files,
                                const std::string &output_dir ) override;
   
-  virtual bool canDoAnalysis() const override;
-  
+  virtual std::pair<bool,Wt::WString> canDoAnalysis() const override;
+
   virtual void optionsChanged() override;
 };//class FileConvertOpts
 
