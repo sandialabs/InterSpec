@@ -113,6 +113,7 @@ namespace SpecUtils{ class Measurement; }
 namespace SpecUtils{ enum class SpectrumType : int; }
 namespace SpecUtils{ enum class DetectorType : int; }
 namespace SpecUtils{ enum class OccupancyStatus : int; }
+namespace PeakSearchGuiUtils{ enum class RefitPeakType : int; }
 
 
 namespace DataBaseUtils
@@ -1063,8 +1064,9 @@ protected:
   void rightClickMenuClosed();
   
   void peakEditFromRightClick();
-  void refitPeakFromRightClick();
-  void refitPeakWithDrfFwhm();
+  
+  void refitPeakFromRightClick( const PeakSearchGuiUtils::RefitPeakType type );
+  
   void setMeanToRefPhotopeak();
   void deletePeakFromRightClick();
   void addPeakFromRightClick();
@@ -1086,13 +1088,14 @@ protected:
   void setPeakNuclide( const std::shared_ptr<const PeakDef> peak,
                        std::string nuclide );
   
-  std::shared_ptr<const PeakDef> nearestPeak( const double energy ) const;
-  
   void setIsotopeSearchEnergy( double energy );
   
 //If we are using D3 to render the spectrum chart, we need to have feature markers available
 //  to be able to display/hide them on the chart
 public:
+
+  std::shared_ptr<const PeakDef> nearestPeak( const double energy ) const;
+
   //Tracking of which feature markers are being shown on the c++ side of things
   //  is currently only used for export to the D3 chart...
   
@@ -1134,7 +1137,8 @@ public:
   //searchForHintPeaks(): launches the job to search for peaks (single threaded)
   //  which will call setHintPeaks(...) when done.
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
-                           const std::set<int> &samples );
+                           const std::set<int> &samples,
+                          const bool isHPGe );
   
   //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and
   //  SpecMeas::m_autoSearchInitialPeaks) if spectrum.lock() yeilds a valid ptr.
@@ -1148,16 +1152,6 @@ public:
   
   
   void excludePeaksFromRange( double x0, double x1 );
-  
-  //guessIsotopesForPeaks(): makes a best guess for which isotopes are
-  //  responsible for the identified photopeaks.  Does not modify peaks which
-  //  have already been assigned an isotope.
-  //If you wish to perform the work outside of the event loop (e./g. in a
-  //  background thread), you should pass in the WApplication pointer, however
-  //  the work takes an application lock, so gui will become unresponsive anyway
-  //  The InterSpec pointer is actually only necessary for the
-  //  DetectorPeakResponse.
-  void guessIsotopesForPeaks( Wt::WApplication *app );
   
   /** Returns if detected this is a mobile device, based on user-agent string, or compile-time
    options.
@@ -1439,8 +1433,9 @@ protected:
   enum RightClickItems
   {
     kPeakEdit,
-    kRefitPeak,
-    kRefitROI,
+    kRefitPeakStandard,
+    kRefitRoiStandard,
+    kRefitRoiAgressive,
     kRefitPeakWithDrfFwhm,
     kSetMeanToRefPhotopeak,
     kChangeNuclide,

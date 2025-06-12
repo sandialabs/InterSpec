@@ -123,6 +123,7 @@ public:
     std::shared_ptr<const SpecUtils::Measurement> displayed_measurement;
     std::shared_ptr<SpecMeas> foreground;
     std::set<int> foreground_samplenums;
+    bool isHPGe;
     std::vector< std::vector<IsotopeMatch> > matches;
     std::string error_msg;
     Column sortColumn;

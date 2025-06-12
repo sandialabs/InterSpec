@@ -158,6 +158,8 @@ function BatchInputDropUploadSetup( target, uploadURL )
 
         if( file.name && (file.name.length > 3) ){
           let fspath = null;
+          const filename_uri = encodeURIComponent(file.name);
+
           if( (typeof file.path === "string") && file.path.length > 3 ){
             fspath = file.path;
           }else{
@@ -167,7 +169,7 @@ function BatchInputDropUploadSetup( target, uploadURL )
                 if( encodeURIComponent(fns.filenames[i]).endsWith(filename_uri) ){
                   fspath = fns.filenames[i];
                   //remove this filename from the array, incase there are multiple files with same leaf-name, but diff paths
-                  fns.filenames = fns.filenames.splice(i,i);
+                  fns.filenames.splice(i,1);
                   if( fns.filenames.length === 0 )
                     $(document).data('dragOverFilePaths', null);
                   break;
@@ -185,7 +187,6 @@ function BatchInputDropUploadSetup( target, uploadURL )
             xhr.setRequestHeader("Content-type", "application/x-spectrum");
 
             // Filename may have non-ISO-8859-1 code points, so we need to URI encode it
-            const filename_uri = encodeURIComponent(file.name);
             xhr.setRequestHeader("X-File-Name", filename_uri);
 
             console.log( 'Will send native file-system path, instead of actual file; path: ', fspath );

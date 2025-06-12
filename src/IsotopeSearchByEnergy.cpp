@@ -58,6 +58,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -1159,7 +1160,7 @@ void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &
   if( append_categories(def_xml) <= 0 )
     throw runtime_error( "Failed to load default NuclideSearchCatagories.xml" );
 
-#if( !BUILD_FOR_WEB_DEPLOYMENT )
+#if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   // Load user specific category info
   const string user_data_dir = InterSpec::writableDataDirectory();
   const std::string user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
@@ -2386,6 +2387,7 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   workingspace->windows = windows;
   workingspace->sortColumn = m_model->sortColumn();
   workingspace->sortOrder = m_model->sortOrder();
+  workingspace->isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
   workingspace->undoSentry = getDisableUndoRedoSentry(); //m_undo_redo_sentry.lock();
   
   std::shared_ptr<SpecMeas> foreground = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );

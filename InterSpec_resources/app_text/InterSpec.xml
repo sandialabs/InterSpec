@@ -402,7 +402,12 @@
   <message id="rclick-mi-tt-use-drf-fwhm">Fixes the peaks FWHM to what the detector response function predicts, and then refits the peak.</message>
   <message id="rclick-mi-fix-mean">Set mean to photopeak</message>
   <message id="rclick-mi-tt-fix-mean">Fixes the peak centroid to the assigned gamma energy, or if no source has been assigned, to likely reference photopeak line.  After setting the centroid, the other peak parameters will be refit</message>
+  
+  
   <message id="rclick-mi-refit-roi">Refit ROI</message>
+  <message id="rclick-mi-tt-refit-roi">Refits ROI enforcing a reasonable linear relationship for the FWHMs across the ROI, for all FWHMs that are not fixed.</message>
+  <message id="rclick-mi-refit-roi-aggressive">Refit ROI (aggressive)</message>
+  <message id="rclick-mi-tt-refit-roi-aggressive">Refits the ROI, allowing the FWHM of each peak to independently vary, unless they have been fixed int the <em>Peak Editor</em></message>
   <message id="rclick-mi-delete-peak">Delete Peak</message>
   <message id="rclick-mi-change-nuc">Change Nuclide</message>
   <message id="rclick-mi-change-cont">Change Continuum</message>

@@ -2781,7 +2781,7 @@ std::shared_ptr<const SpecMeas> ExportSpecFileTool::generateFileToSave()
              const double lowE = newspec->gamma_energy_min();
              const double upE = newspec->gamma_energy_max();
              
-             refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, {}, true );
+             refit_peaks = fitPeaksInRange( lowE, upE, 0.0, 0.0, 0.0, input_peaks, newspec, true );
              
              std::deque<std::shared_ptr<const PeakDef> > peakdeque;
              for( const auto &p : refit_peaks )

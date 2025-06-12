@@ -1598,7 +1598,7 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     
     if( energies.empty() )
     {
-      WServer::instance()->post(  appid, updatefcn );
+      WServer::instance()->post( appid, updatefcn );
       return;
     }//if( energies.empty() )
     
@@ -1638,12 +1638,16 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
       const auto data = workingspace->displayed_measurement;
       auto userpeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(user_peaks), end(user_peaks) );
       const bool singleThreaded = false;
-      auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, workingspace->detector_response_function, userpeaksdeque, singleThreaded );
+      const bool isHPGe = workingspace->isHPGe;
+      auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, workingspace->detector_response_function, userpeaksdeque, singleThreaded, isHPGe );
       
-      
-      const std::set<int> samplenums = workingspace->foreground_samplenums;
+      std::shared_ptr<SpecMeas> foreground = workingspace->foreground;
+      const set<int> samplenums = workingspace->foreground_samplenums;
       auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(auto_peaks), end(auto_peaks) );
-      workingspace->foreground->setAutomatedSearchPeaks( samplenums, autopeaksdeque );
+      
+      WServer::instance()->post( appid, std::bind( [foreground,samplenums,autopeaksdeque](){
+        foreground->setAutomatedSearchPeaks( samplenums, autopeaksdeque );
+      }) );
     }//
     
     const auto &meas = workingspace->displayed_measurement;

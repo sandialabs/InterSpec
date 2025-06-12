@@ -46,6 +46,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/MakeDrfFit.h"
+#include "InterSpec/PeakFitUtils.h"
 
 
 using namespace std;
@@ -203,13 +204,17 @@ double peak_width_chi2( double predicted_sigma, const PeakDef &peak )
 
 double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
                            const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
-                            const bool highres,
                            const int sqrtEqnOrder,
                            std::vector<float> &answer,
                            std::vector<float> &uncerts )
 {
   if( !peaks || peaks->empty() )
     throw runtime_error( "MakeDrfFit::performResolutionFit(...): no input peaks" );
+  
+  const vector<shared_ptr<const PeakDef>> peakv( begin(*peaks), end(*peaks) );
+  const PeakFitUtils::CoarseResolutionType coarse_type
+                            = PeakFitUtils::coarse_resolution_from_peaks( peakv );
+  const bool highres = (coarse_type == PeakFitUtils::CoarseResolutionType::High);
   
   bool fit_using_lls = false;
   double a_initial, b_initial, c_initial;
@@ -219,23 +224,15 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
   {
     case DetectorPeakResponse::kGadrasResolutionFcn:
     {
-      if( highres )
-      {
-        lowerA = 0.75*1.0;
-        upperA = 2.0*1.77;
-        lowerB = 0.75*0.20028;
-        upperB = 2.0*0.27759;
-        lowerC = 0.75*0.31;
-        upperC = 1.5*0.57223;
-      }else
-      {
-        lowerA = 1.5*-7.0;
-        upperA = 1.5*7.44000;
-        lowerB = 0.75*2.13000;
-        upperB = 1.5*8.50000;
-        lowerC = 0.75*0.20000;
-        upperC = 1.25*0.70000;
-      }
+      // The following min/max arguments are (high-res, low-res) - we will allow the fits
+      //  to go anywhere in the range, because we could be wrong about the detector being
+      //  high-resolution
+      lowerA = std::min( 0.75*1.0, 1.5*-7.0);
+      upperA = std::max( 2.0*1.77, 1.5*7.44000);
+      lowerB = std::min( 0.75*0.20028, 0.75*2.13000 );
+      upperB = std::max( 2.0*0.27759, 1.5*8.50000 );
+      lowerC = std::min( 0.75*0.31, 0.75*0.20000 );
+      upperC = std::max( 1.5*0.57223, 1.25*0.70000 );
       
       if( answer.size() == 3 )
       { //caller has provided some default values, lets use them
@@ -262,35 +259,17 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       
     case DetectorPeakResponse::kSqrtEnergyPlusInverse:
     {
-      if( highres )
-      {
-        //Based on pretty much nothing
-        a_initial = 2.6;
-        lowerA = -2.5;
-        upperA = 7.5;
-        
-        b_initial = 1.0;
-        lowerB = -5.0;
-        upperB = 5.0;
-        
-        c_initial = 0;
-        lowerC = -5.0;
-        upperC = 5.0;
-      }else
-      {
-        //Based on zero detectors so far
-        a_initial = 100;
-        lowerA = -100;
-        upperA = 400;
-        
-        b_initial = 3600.0 / 0.661;
-        lowerB = 0.0;
-        upperB = 180*180 / 0.661;
-        
-        c_initial = 0;
-        lowerC = -10000.0;
-        upperC = 10000.0;
-      }//if( highres ) / else
+      a_initial = highres ? 2.6 : 100;
+      lowerA = std::min( -2.5, -100.0 );
+      upperA = std::max( 7.5, 400.0 );
+      
+      b_initial = highres ? 1.0 : (3600.0 / 0.661);
+      lowerB = std::min( -5.0, 0.0);
+      upperB = std::max( 5.0, (180*180 / 0.661) );
+      
+      c_initial = 0.0;
+      lowerC = std::min( -5.0, -10000.0);
+      upperC = std::max( 5.0, 10000.0);
       
       try
       {
@@ -309,8 +288,9 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
         fit_using_lls = true;
       }catch( std::exception &e )
       {
+#ifndef NDEBUG
         cerr << "MakeDrfFit::fit_sqrt_poly_fwhm_lls threw exception: " << e.what() << endl;
-        
+#endif
       }//try / catch
       
       break;
@@ -319,27 +299,14 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
       
     case DetectorPeakResponse::kConstantPlusSqrtEnergy:
     {
-      if( highres )
-      {
-        //Based on pretty much nothing
-        a_initial = 1;
-        lowerA = -10.0;
-        upperA = 10.0;
-        
-        b_initial = 0.035;
-        lowerB = 0.0;
-        upperB = 5.0;
-      }else
-      {
-        //Based on zero detectors so far
-        a_initial = 0;
-        lowerA = -25.0;
-        upperA = 50.0;
-        
-        b_initial = 2.0;
-        lowerB = 0.0;
-        upperB = 50;
-      }//if( highres ) / else
+      //Based on pretty much nothing
+      a_initial = highres ? 1 : 0;
+      lowerA = std::min( -10.0, -25.0 );
+      upperA = std::max( 10.0, 50.0 );
+      
+      b_initial = highres ? 0.035 : 2.0;
+      lowerB = std::min( 0.0, 0.0 );
+      upperB = std::max( 5.0, 50.0 );
       
       try
       {
@@ -362,36 +329,19 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
     {
       if( sqrtEqnOrder < 1 )
         throw runtime_error( "performResolutionFit: sqrt eqn order should be at least 1" );
-        
-      if( highres )
-      {
-        //Based on pretty much nothing
-        a_initial = 2.6;
-        lowerA = -2.5;
-        upperA = 7.5;
-        
-        b_initial = 1.0;
-        lowerB = -5.0;
-        upperB = 5.0;
-        
-        c_initial = 0;
-        lowerC = -5.0;
-        upperC = 5.0;
-      }else
-      {
-        //Based on zero detectors so far
-        a_initial = 100;
-        lowerA = -100;
-        upperA = 400;
-        
-        b_initial = 3600.0 / 0.661;
-        lowerB = 0.0;
-        upperB = 180*180 / 0.661;
-        
-        c_initial = 0;
-        lowerC = -3600.0/(0.661*0.661);
-        upperC = 3600.0/(0.661*0.661);
-      }//if( highres ) / else
+       
+      //Based on pretty much nothing
+      a_initial = highres ? 2.6 : 100.0;
+      lowerA = std::min( -2.5, -100.0 );
+      upperA = std::max( 7.5, 400.0 );
+      
+      b_initial = highres ? 1.0 : (3600.0 / 0.661);
+      lowerB = std::min( -5.0, 0.0 );
+      upperB = std::max( 5.0, (180*180 / 0.661) );
+      
+      c_initial = 0;
+      lowerC = std::min( -5.0, (-3600.0/(0.661*0.661)) );
+      upperC = std::max( 5.0, (3600.0/(0.661*0.661)) );
       
       try
       {
@@ -407,8 +357,9 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
         fit_using_lls = true;
       }catch( std::exception &e )
       {
+#ifndef NDEBUG
         cerr << "MakeDrfFit::fit_sqrt_poly_fwhm_lls threw exception: " << e.what() << endl;
-        
+#endif
       }//try / catch
       
       break;
@@ -643,7 +594,9 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
     << endl;
     if( minimum.IsAboveMaxEdm() )
       msg << "\t\tEDM=" << minimum.Edm() << endl;
+#ifndef NDEBUG
     cerr << endl << msg.str() << endl;
+#endif
     throw std::runtime_error( msg.str() );
   }//if( !minimum.IsValid() )
   
@@ -685,8 +638,10 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
                                std::vector<float> &coeffs,
                                std::vector<float> &coeff_uncerts )
 {
-  const size_t nbin = peaks.size();
-  
+  size_t nbin = 0;
+  for( size_t i = 0; i < peaks.size(); ++i )
+    nbin += (peaks[i] && peaks[i]->gausPeak() ? 1 : 0);
+    
   if( num_fit_coefficients < 1 )
     throw runtime_error( "fit_sqrt_poly_fwhm_lls: num_fit_coefficients must be >= 1" );
   
@@ -697,18 +652,22 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
     throw runtime_error( "fit_sqrt_poly_fwhm_lls: must have at least as many peaks as coefficients to fit to" );
   
   //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3, where x is energy in MeV
-  vector<float> x, widths, widths_uncert;
-  x.resize( peaks.size() );
-  widths.resize( peaks.size() );
-  widths_uncert.resize( peaks.size() );
-  for( size_t i = 0; i < peaks.size(); ++i )
+  vector<float> x( nbin, 0.0f ), widths( nbin, 0.0f ), widths_uncert( nbin, 0.0f );
+  
+  for( size_t i = 0, peak_num = 0; i < peaks.size(); ++i )
   {
-    if( peaks[i]->gausPeak() )
+    const shared_ptr<const PeakDef> &peak = peaks[i];
+    if( peak && peak->gausPeak() )
     {
-      x[i] = peaks[i]->mean() / (include_inv_term ? 1.0f : 1000.0f);
-      widths[i] = peaks[i]->fwhm();
-      widths_uncert[i] = 2.35482*((peaks[i]->sigmaUncert() > 0.0) ? std::max( peaks[i]->sigmaUncert(), 0.01*widths[i]) : 0.05*widths[i]);
-    }
+      x[peak_num] = peak->mean() / (include_inv_term ? 1.0f : 1000.0f);
+      widths[peak_num] = peak->fwhm();
+      widths_uncert[peak_num] = 2.35482*((peak->sigmaUncert() > 0.0) 
+                                          ? std::max( peak->sigmaUncert(), 0.01*widths[peak_num])
+                                          : 0.05*widths[peak_num]);
+      peak_num += 1;
+      
+      assert( peak_num <= nbin );
+    }//if( valid peak we can use )
   }//for( size_t i = 0; i < peaks.size(); ++i )
   
   //General Linear Least Squares fit
@@ -749,7 +708,7 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
     }else
     {
       for( int col = 0; col < num_fit_coefficients; ++col )
-        A(row,col) = std::pow( x[row], double(col)) / data_y_uncert;
+        A(row,col) = std::pow( x[row], static_cast<double>(col)) / data_y_uncert;
     }
   }//for( int col = 0; col < num_fit_coefficients; ++col )
   

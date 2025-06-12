@@ -1,8 +1,15 @@
 #ifndef PeakDists_imp_h
 #define PeakDists_imp_h
 
-#include <boost/math/constants/constants.hpp>
+#include <vector>
+#include <numeric>
+#include <algorithm>
+#include <exception>
 
+#include <boost/math/constants/constants.hpp>
+#include <unsupported/Eigen/SpecialFunctions>
+
+#include "SpecUtils/SpecFile.h" //Needed for `offset_integral(...)`
 
 // Had a little trouble with the auto-derivative when using Jet - so will define some functions
 //  here to help find the issues - but make them be no-ops for non-debug builds
@@ -83,25 +90,77 @@ void gaussian_integral( const T peak_mean,
     return;
     
   const double sqrt2 = boost::math::constants::root_two<double>();
-    
+  const T sqrt2sigma = sqrt2 * peak_sigma;
+  const T amp_mult = 0.5 * peak_amplitude;
+
+
+  // TODO: it looks like Eigen might support vectorized `erf`; should update to take advantage of.
+  //       In which case we could maybe vectorize this function.  However, on Apple NEON there is
+  //       apparently a bug (although maybe I'm mis-reading the Eigen source code), so it isnt
+  //       supported there.  But for for x64, should try and see if this could speed things up.
+
+  // We will keep track of the channels lower value of erf, so we dont have to re-compute
+  //  it for each channel (this is the who advantage of )
+  T erfarg = (static_cast<double>(energies[channel]) - peak_mean) / sqrt2sigma;
+
+
   // We will keep track of the channels lower value of erf, so we dont have to re-compute
   //  it for each channel (this is the who advantage of )
   T erflow;
   if constexpr ( !std::is_same_v<T, double> )
-    erflow = erf( (static_cast<double>(energies[channel]) - peak_mean)/(sqrt2*peak_sigma) );
-  else
-    erflow = boost_erf_imp( (energies[channel] - peak_mean)/(sqrt2*peak_sigma) );
-    
+  {
+    erflow = erf( erfarg );
+  }else
+  {
+    // `Eigen::numext::erf<float>(erfarg)` is a little faster than `boost_erf_imp(erfarg)`,
+    //    but a little less accurate (it even clamps values to +-1 outside of fabs(erfarg) of 4),
+    //    so we'll only use it where we wont notice this slight reduction of accuracy
+    erflow = (amp_mult > 1.0E5)
+                          ? boost_erf_imp(erfarg)
+                          : static_cast<double>( Eigen::numext::erf(static_cast<float>(erfarg)) );
+  }
+
+#ifndef NDEBUG
+  double boost_erflow, eigen_erflow;
+  if constexpr ( std::is_same_v<T, double> )
+  {
+    // We'll check that things area as accurate as we expect
+    // Should maybe enable this check using PERFORM_DEVELOPER_CHECKS
+    boost_erflow = boost_erf_imp(erfarg);
+    eigen_erflow = Eigen::numext::erf(static_cast<float>(erfarg));
+  }
+#endif
+
   while( (channel < nchannel) && (energies[channel] < stop_energy) )
   {
-    const T erfhigharg = (static_cast<double>(energies[channel+1]) - peak_mean)/(sqrt2*peak_sigma);
+    erfarg = (static_cast<double>(energies[channel+1]) - peak_mean)/(sqrt2*peak_sigma);
+
+#ifndef NDEBUG
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      const double boost_erfhigh = boost_erf_imp( erfarg );
+      const double eigen_erfhigh = Eigen::numext::erf(static_cast<float>(erfarg));
+      const double boost_val = amp_mult * (boost_erfhigh - boost_erflow);
+      const double eigen_val = amp_mult * (eigen_erfhigh - eigen_erflow);
+
+      assert( fabs(boost_val - eigen_val) < 1.0E-5*abs(amp_mult) || fabs(boost_val - eigen_val) < 0.001 );
+
+      boost_erflow = boost_erfhigh;
+      eigen_erflow = eigen_erfhigh;
+    }//if constexpr ( std::is_same_v<T, double> )
+#endif
+
     T erfhigh;
     if constexpr ( !std::is_same_v<T, double> )
-      erfhigh = erf( erfhigharg );
-    else
-      erfhigh = boost_erf_imp( erfhigharg );
-    
-    channels[channel] += 0.5 * peak_amplitude * (erfhigh - erflow);
+    {
+      erfhigh = erf( erfarg );
+    }else
+    {
+      erfhigh = (amp_mult > 1.0E5) ? boost_erf_imp( erfarg )
+                                   : static_cast<double>( Eigen::numext::erf(static_cast<float>(erfarg)) );
+    }
+
+    channels[channel] += amp_mult * (erfhigh - erflow);
     channel += 1;
     erflow = erfhigh;
   }//while( (channel < nchannel) && (energies[channel] < stop_energy) )
@@ -1220,7 +1279,283 @@ void double_sided_crystal_ball_integral( const T peak_mean,
 
   check_jet_array_for_NaN( channels, nchannel );
 }//double_sided_crystal_ball_integral(...)
-  
+
+
+template<typename T>
+void photopeak_function_integral( const T mean,
+                                  const T sigma,
+                                  const T amp,
+                                  const PeakDef::SkewType skew_type,
+                                  const T * const skew_parameters,
+                                  const size_t nchannel,
+                                  const float * const energies,
+                                  T *channels )
+{
+  assert( (skew_type == PeakDef::SkewType::NoSkew) || skew_parameters );
+
+  switch( skew_type )
+  {
+    case PeakDef::SkewType::NoSkew:
+      gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::Bortel:
+      bortel_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::CrystalBall:
+      crystal_ball_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::DoubleSidedCrystalBall:
+      double_sided_crystal_ball_integral( mean, sigma, amp,
+                                         skew_parameters[0], skew_parameters[1],
+                                         skew_parameters[2], skew_parameters[3],
+                                         energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::GaussExp:
+      gauss_exp_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
+      break;
+
+    case PeakDef::SkewType::ExpGaussExp:
+      exp_gauss_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
+      break;
+  }//switch( skew_type )
+}//void photopeak_function_integral(...)
+
+
+#if( __cplusplus >= 202002L )
+void offset_integral( const ContType &cont,
+                     const float *energies,
+                     T *channels,
+                     const size_t nchannel,
+                     const std::shared_ptr<const SpecUtils::Measurement> &data ) requires ContinuumTypeConcept<ContType,T>
+#else
+template <typename ContType, typename T>
+typename std::enable_if<ContinuumTypeConcept<ContType, T>::value, void>::type
+offset_integral(const ContType& cont,
+                const float* energies,
+                T* channels,
+                const size_t nchannel,
+                const std::shared_ptr<const SpecUtils::Measurement>& data)
+#endif
+{
+  // This function should give the same answer as
+  //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel
+  //  basis, just be a little faster computationally, especially for stepped continua.
+
+  using namespace std;
+
+  assert( nchannel > 0 );
+  if( !nchannel )
+    return;
+
+  const T reference_energy = cont.referenceEnergy();
+
+  const auto &pars = cont.parameters();
+
+  const PeakContinuum::OffsetType cont_type = cont.type();
+
+  switch( cont_type )
+  {
+    case PeakContinuum::OffsetType::NoOffset:
+      return;
+
+    case PeakContinuum::OffsetType::Constant:
+    case PeakContinuum::OffsetType::Linear:
+    case PeakContinuum::OffsetType::Quadratic:
+    case PeakContinuum::OffsetType::Cubic:
+    {
+      for( size_t i = 0; i < nchannel; ++i )
+      {
+        const T x0 = static_cast<double>(energies[i]) - reference_energy;
+        const T x1 = static_cast<double>(energies[i+1]) - reference_energy;
+
+        T answer(0.0);
+        switch( cont_type )
+        {
+          case PeakContinuum::OffsetType::NoOffset:
+          case PeakContinuum::OffsetType::External:
+          case PeakContinuum::OffsetType::FlatStep:
+          case PeakContinuum::OffsetType::LinearStep:
+          case PeakContinuum::OffsetType::BiLinearStep:
+            assert( 0 );
+
+          case PeakContinuum::OffsetType::Cubic:
+            assert( pars.size() >= 4 );
+            answer += 0.25*pars[3]*(x1*x1*x1*x1 - x0*x0*x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Quadratic:
+            assert( pars.size() >= 3 );
+            answer += 0.333333333333333*pars[2]*(x1*x1*x1 - x0*x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Linear:
+            assert( pars.size() >= 2 );
+            answer += 0.5*pars[1]*(x1*x1 - x0*x0);
+            //fall-through intentional
+
+          case PeakContinuum::OffsetType::Constant:
+            assert( pars.size() >= 1 );
+            answer += pars[0]*(x1 - x0);
+            break;
+        };//switch( type )
+
+        if constexpr ( std::is_same_v<T, double> )
+        {
+          assert( std::max(answer,0.0) == cont.offset_eqn_integral( &(pars[0]), cont_type, energies[i], energies[i+1], reference_energy ) );
+        }
+
+        channels[i] += max( answer, T(0.0) );
+      }//for( size_t i = 0; i < nchannel; ++i )
+
+      break;
+    }//case Constant: case Linear: case Quadratic: case Cubic:
+
+
+    case PeakContinuum::OffsetType::FlatStep:
+    case PeakContinuum::OffsetType::LinearStep:
+    case PeakContinuum::OffsetType::BiLinearStep:
+    {
+      if( !data || !data->num_gamma_channels() )
+        throw std::runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
+
+      // To be consistent with how fit_amp_and_offset(...) handles things, we will do our own
+      //  summing here, rather than calling Measurement::gamma_integral.
+      double lowerEnergy, upperEnergy;
+
+      if constexpr ( std::is_same_v<T, double> )
+      {
+        lowerEnergy = cont.lowerEnergy();
+        upperEnergy = cont.upperEnergy();
+      }else
+      {
+        lowerEnergy = cont.lowerEnergy().a;
+        upperEnergy = cont.upperEnergy().a;
+      }
+
+      const size_t roi_lower_channel = data->find_gamma_channel( lowerEnergy );
+      const size_t roi_upper_channel = data->find_gamma_channel( upperEnergy );
+
+      //const double roi_lower = data->gamma_channel_lower(roi_lower_channel);
+      //const double roi_upper = data->gamma_channel_upper(roi_upper_channel);
+
+      const std::vector<float> &counts = *data->gamma_counts();
+
+      assert( roi_lower_channel < counts.size() );
+      assert( roi_upper_channel < counts.size() );
+
+
+      const double roi_data_sum = std::accumulate( begin(counts) + roi_lower_channel, begin(counts) + roi_upper_channel + 1,  0.0 );
+      // Might be able to take advantage of vectorized sum using something like:
+      //const double roi_data_sum = Eigen::VectorXf::Map( &(counts[roi_lower_channel]), (1 + roi_upper_channel - roi_lower_channel) ).sum();
+
+
+      const size_t begin_channel = data->find_gamma_channel( energies[0] );
+      assert( energies[0] == data->gamma_channel_lower(begin_channel) );
+      const size_t end_channel = begin_channel + nchannel; //one past last channel we want
+
+      // Lets check that `energies` points into the lower channel energies of `data`.
+      //  We actually only care that the values of the array are the same, but we'll be
+      //  a little tighter for development.
+      const std::vector<float> &data_energies = *data->channel_energies();
+
+      if( (energies[0] != data->gamma_channel_lower(begin_channel))
+         || (energies[nchannel] != data->gamma_channel_lower(begin_channel+nchannel)) )
+        throw std::logic_error( "PeakContinuum::offset_integral: for stepped continua" );
+
+      double cumulative_data = 0.0;
+
+      // Incase we are starting
+      if( begin_channel > roi_lower_channel )
+      {
+        for( size_t i = begin_channel; i < begin_channel; ++i )
+          cumulative_data += counts[i];
+      }//if( begin_channel > lower_channel )
+
+
+      for( size_t i = begin_channel; i < end_channel; ++i )
+      {
+        const size_t input_index = i - begin_channel;
+        assert( data_energies[i] == energies[input_index] );
+
+        const T x0_rel = static_cast<double>(data_energies[i]) - reference_energy;
+        const T x1_rel = static_cast<double>(data_energies[i+1]) - reference_energy;
+
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5*counts[i];
+
+        const double frac_data = cumulative_data / roi_data_sum;
+
+        switch( cont_type )
+        {
+          case PeakContinuum::OffsetType::FlatStep:
+          case PeakContinuum::OffsetType::LinearStep:
+          {
+            const T offset = pars[0]*(x1_rel - x0_rel);
+            const T linear = ((cont_type == PeakContinuum::OffsetType::FlatStep) ? T(0.0) :  0.5*pars[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
+            const size_t step_index = ((cont_type == PeakContinuum::OffsetType::FlatStep) ? 1 : 2);
+            const T step_contribution = pars[step_index] * frac_data * (x1_rel - x0_rel);
+
+            const T answer = max( T(0.0), offset + linear + step_contribution );
+
+            if constexpr ( std::is_same_v<T, double> )
+            {
+              assert( answer == cont.offset_integral( data_energies[i], data_energies[i+1], data ) );
+            }
+
+            channels[input_index] += answer;
+            break;
+          }//case FlatStep: case LinearStep:
+
+          case PeakContinuum::OffsetType::BiLinearStep:
+          {
+            assert( pars.size() == 4 );
+            const T left_poly = pars[0]*(x1_rel - x0_rel) + 0.5*pars[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const T right_poly = pars[2]*(x1_rel - x0_rel) + 0.5*pars[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const T contrib = std::max( T(0.0), ((1.0 - frac_data) * left_poly) + (frac_data * right_poly) );
+
+            if constexpr ( std::is_same_v<T, double> )
+            {
+              assert( contrib == cont.offset_integral( data_energies[i], data_energies[i+1], data ) );
+            }
+
+            channels[input_index] += contrib;
+            break;
+          }//case BiLinearStep:
+
+          case PeakContinuum::OffsetType::NoOffset:
+          case PeakContinuum::OffsetType::Constant:
+          case PeakContinuum::OffsetType::Linear:
+          case PeakContinuum::OffsetType::Quadratic:
+          case PeakContinuum::OffsetType::Cubic:
+          case PeakContinuum::OffsetType::External:
+            assert( 0 );
+            break;
+        }//switch( cont_type )
+
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5*counts[i];
+      }//for( size_t i = 0; i < channels; ++i )
+
+      break;
+    }//case FlatStep/LinearStep/BiLinearStep
+
+    case PeakContinuum::OffsetType::External:
+    {
+      std::shared_ptr<const SpecUtils::Measurement> ext_cont = cont.externalContinuum();
+      assert( ext_cont );
+      if( !ext_cont )
+        break;
+
+      for( size_t i = 0; i < nchannel; ++i )
+        channels[i] += ext_cont ? ext_cont->gamma_integral( energies[i], energies[i+1] ) : 0.0;
+      break;
+    }//case PeakContinuum::OffsetType::External:
+  }//switch( cont_type )
+}//void PeakContinuum::offset_integral( ... ) const
 }//namespace PeakDists
 
 #endif //PeakDists_imp_h

@@ -2128,8 +2128,6 @@ void MakeDrf::handleSourcesUpdates()
   
   const bool is_fixed_geometry = (m_geometry->currentIndex() != 0);
   
-  bool highres = false;
-  
   bool detDiamInvalid = false;
   double diameter = 0.0; //2.54*PhysicalUnits::cm;
   if( !is_fixed_geometry )
@@ -2192,9 +2190,7 @@ void MakeDrf::handleSourcesUpdates()
         {
           auto m = meas->measurement( samplenum, det );
           if( m && m->num_gamma_channels() > 7 )
-          {
-            highres = (highres || PeakFitUtils::is_high_res(m));
-            
+          { 
             minenergy = std::min( m->gamma_energy_min(), minenergy );
             maxenergy = std::max( m->gamma_energy_max(), maxenergy );
           }
@@ -2550,7 +2546,7 @@ void MakeDrf::handleSourcesUpdates()
   
   
   fitEffEqn( effpoints );
-  fitFwhmEqn( peaks, highres );
+  fitFwhmEqn( peaks );
   
   wApp->triggerUpdate();
 }//void handleSourcesUpdates()
@@ -2667,8 +2663,7 @@ void MakeDrf::peakPreviewShown( DrfPeak *peak )
 }//void peakPreviewShown( DrfPeak *peak )
 
 
-void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
-                          const bool isHighResolution )
+void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks )
 {
   ++m_fwhmFitId;
   
@@ -2711,7 +2706,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
   
   const string thisid = id();
   
-  auto worker = [sessionId,fnctnlForm,peaks,isHighResolution,sqrtEqnOrder,updater,thisid]() {
+  auto worker = [sessionId,fnctnlForm,peaks,sqrtEqnOrder,updater,thisid]() {
     try
     {
       auto peakdequ = std::make_shared<std::deque< std::shared_ptr<const PeakDef> > >( peaks.begin(), peaks.end() );
@@ -2719,7 +2714,7 @@ void MakeDrf::fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
       //Takes between 5 and 500ms for a HPGe detector
       const double start_time = SpecUtils::get_wall_time();
       vector<float> fwhm_coefs, fwhm_coefs_uncert;
-      const double chi2 = MakeDrfFit::performResolutionFit( peakdequ, fnctnlForm, isHighResolution, sqrtEqnOrder, fwhm_coefs, fwhm_coefs_uncert );
+      const double chi2 = MakeDrfFit::performResolutionFit( peakdequ, fnctnlForm, sqrtEqnOrder, fwhm_coefs, fwhm_coefs_uncert );
     
       const double end_time = SpecUtils::get_wall_time();
     

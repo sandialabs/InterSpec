@@ -533,7 +533,7 @@ void refit_peaks(  )
     if( inputPeak.size() > 1 )
     {
       const shared_ptr<const DetectorPeakResponse> &detector = foreground->detector();
-      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, 0.25 );
+      const PeakShrdVec result = refitPeaksThatShareROI( data, detector, peaksInRoi, PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
       
       if( result.size() == inputPeak.size() )
       {

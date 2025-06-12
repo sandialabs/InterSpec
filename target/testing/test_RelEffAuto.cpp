@@ -25,6 +25,8 @@
 #include <string>
 #include <iostream>
 
+#include "InterSpec/RelActCalcAuto_imp.hpp"
+
 #include "rapidxml/rapidxml.hpp"
 
 //#define BOOST_TEST_DYN_LINK
@@ -46,7 +48,7 @@
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
-#include "InterSpec/RelActCalcAuto_imp.hpp"
+#include "InterSpec/PeakFit_imp.hpp"
 
 
 using namespace std;
@@ -146,7 +148,7 @@ BOOST_AUTO_TEST_CASE( FitContinuum )
   vector<double> continuum_coeffs(num_polynomial_terms, 0.0);
   double peak_counts[nbin];
     
-  RelActCalcAuto::fit_continuum( energies, data, nullptr, nbin, num_polynomial_terms, step_continuum,
+  PeakFit::fit_continuum( energies, data, nullptr, nbin, num_polynomial_terms, step_continuum,
                                   ref_energy, peaks, false, continuum_coeffs.data(), peak_counts );
 
 

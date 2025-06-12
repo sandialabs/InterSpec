@@ -429,7 +429,10 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
   //  does something like:
   //      window.webkit.messageHandlers.interOp.postMessage({"action": "DoSomething"});
   [webConfig.userContentController addScriptMessageHandler: self name:@"interOp"];
-  
+
+  // Add a script message handler
+  [webConfig.userContentController addScriptMessageHandler:self name:@"jsErrorHandler"];
+
   //Some additional settings we may want to set:
   //  see more at http://jonathanblog2000.blogspot.com/2016/11/understanding-ios-wkwebview.html
   //[prefs setValue:@YES forKey:@"allowFileAccessFromFileURLs"];
@@ -618,6 +621,20 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
     
     // WkWebView registers _window for registerForDraggedTypes; if it didnt, we could use the following line
     //[_window registerForDraggedTypes: [NSArray arrayWithObjects:NSFilenamesPboardType, NSURLPboardType, nil]];
+    
+    /*
+     //Right now drag-n-drop from Outlook does not work - should investigate this:
+     // Probably need to sub-class WKWebView, and then do something like
+     //https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/DragandDrop/Tasks/acceptingdrags.html#//apple_ref/doc/uid/20000993-BABHHIHC
+     */
+    
+    
+    
+    
+
+    //[_window registerForDraggedTypes: [NSArray arrayWithObjects:NSFilenamesPboardType, NSURLPboardType, nil]]; //requires macOS >=10.13, which is the lowest we target anyway
+    [_window registerForDraggedTypes: [NSArray arrayWithObjects:NSPasteboardTypeFileURL, NSPasteboardTypeURL, NSFileContentsPboardType, nil]]; //requires macOS >=10.13, which is the lowest we target anyway
+    
     
     //if( [_InterSpecWebView respondsToSelector:@selector(mainFrame)])
     //[[_InterSpecWebView mainFrame] loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:actualURL]]];
@@ -1165,16 +1182,41 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
 // This method is for WKScriptMessageHandler, and is triggered each time 'interOp' is sent a
 //    message from the JavaScript code with something like:
 //      window.webkit.messageHandlers.interOp.postMessage({"val": 1});
+//      window.webkit.messageHandlers.jsErrorHandler.postMessage({"message": message, "source": source, ...} );
 - (void)userContentController:(WKUserContentController *)userContentController
       didReceiveScriptMessage:(WKScriptMessage *)message{
   NSDictionary *sentData = (NSDictionary*)message.body;
-  
+
   if( sentData == nil )
   {
     NSLog( @"didReceiveScriptMessage: got nil dictionary" );
     return;
   }
-  
+
+  if ([message.name isEqualToString:@"jsErrorHandler"]) {
+    NSString *errorMessage = sentData[@"message"];
+    NSString *source = sentData[@"source"];
+    NSNumber *lineNumber = sentData[@"lineno"];
+    NSNumber *columnNumber = sentData[@"colno"];
+    NSString *errorDetails = sentData[@"error"];
+
+    // Create the alert
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"JavaScript Error";
+    alert.informativeText = [NSString stringWithFormat:@"Unexpected JavaScript Error - please consider reporting to InterSpec@sandia.gov and restarting app:\n\nMessage: %@\nSource: %@\nLine: %@\nColumn: %@\nDetails: %@",
+       errorMessage ?: @"Unknown",
+       source ?: @"Unknown",
+       lineNumber ?: @0,
+       columnNumber ?: @0,
+       errorDetails ?: @"No additional details"];
+    alert.alertStyle = NSAlertStyleWarning;
+
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+
+    return;
+  }//if( a JS error )
+
   id val = [sentData objectForKey: @"action"];
   if( val != (id)[NSNull null] )
   {

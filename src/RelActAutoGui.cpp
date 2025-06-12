@@ -1589,7 +1589,9 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       det = meas ? meas->detector() : nullptr;
     }//if( solution didnt have DRF )
     
-    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det );
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
+    
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, isHPGe );
     
     // If we didnt fit a peak, and we dont
     double lower_energy = energy - 10;
@@ -1614,8 +1616,8 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       //  (We could check on auto-searched peaks and estimate from those, but
       //   really, at this point, its not worth the effort as things are probably
       //   low quality)
-      const bool highres = PeakFitUtils::is_high_res(m_foreground);
-      if( highres )
+      const bool isHPGe = PeakFitUtils::is_high_res(m_foreground);
+      if( isHPGe )
       {
         lower_energy = energy - 5;
         upper_energy = energy + 5;
@@ -3615,6 +3617,14 @@ void RelActAutoGui::setPeaksToForeground()
       for( const PeakDef &peak : solution_peaks )
         rois[peak.continuum()].push_back( make_shared<PeakDef>(peak) );
       
+      
+      vector<shared_ptr<const PeakDef>> solution_peaks_ptrs;
+      for( const PeakDef &p : solution_peaks )
+        solution_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
+      const auto resType = PeakFitUtils::coarse_resolution_from_peaks(solution_peaks_ptrs);
+      
+      const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High); //Shouldnt matter since peaks all have defined ROIs, but JIC
+      
       vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
       
       SpecUtilsAsync::ThreadPool pool;
@@ -3623,7 +3633,7 @@ void RelActAutoGui::setPeaksToForeground()
       {
         const vector<shared_ptr<const PeakDef>> *peaks = &(cont_peaks.second);
         
-        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf](){
+        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, isHPGe](){
           
           // If two peaks are near each other, we wont be able to resolve them in the fit,
           //  so just get rid of the smaller amplitude peak
@@ -3669,15 +3679,16 @@ void RelActAutoGui::setPeaksToForeground()
           
           std::sort( begin(peaks_to_refit), end(peaks_to_refit), &PeakDef::lessThanByMeanShrdPtr );
           
+          WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+          fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly; //Arbitrary
           
-          const double meanSigmaVary = 0.25; //arbitrary
-          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, meanSigmaVary );
+          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, fit_options );
           
           if( fit_peaks[roi_num].size() != peaks_to_refit.size() )
           {
             cout << "refitPeaksThatShareROI gave " << fit_peaks[roi_num].size() << " peaks, while"
             << " we wanted " << peaks->size() << ", will try fitPeaksInRange(...)" << endl;
-            vector<PeakDef> input_peaks, fixed_peaks;
+            vector<PeakDef> input_peaks;
             for( const auto &p : peaks_to_refit )
               input_peaks.push_back( *p );
             
@@ -3687,10 +3698,12 @@ void RelActAutoGui::setPeaksToForeground()
             const double ncausality = 10;
             const double stat_threshold = 0.5;
             const double hypothesis_threshold = -1.0;
+            Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+            fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //THe peaks should be pretty close, so we'll only allow small changes to mean, so we dont fit into someunrelated peak...
             
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, fixed_peaks, true );
+                                                          foreground, fit_options, isHPGe );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )

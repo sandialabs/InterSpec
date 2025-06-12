@@ -253,12 +253,16 @@ namespace BatchPeak
    @param [in|out] exemplar_sample_nums Sample numbers to use in the exemplar file.  If non-empty, these sample
           number will be used to retrieve the spectrum to use.  Contents will be set to the used sample numbers.
    @param [in] exemplar_n42 The spectrum file to retrieve the spectrum/peaks for
+   @param [in] require_peaks If true, and there are no peaks for the specified measurement, an exception will be thrown.
+
+   Throws exception on error (not a valid measurmeent specification, possibly no peaks, etc).
    */
   void get_exemplar_spectrum_and_peaks(
                                        std::shared_ptr<const SpecUtils::Measurement> &exemplar_spectrum,
                                        std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &exemplar_peaks,
                                        std::set<int> &exemplar_sample_nums,
-                                       const std::shared_ptr<const SpecMeas> &exemplar_n42 );
+                                       const std::shared_ptr<const SpecMeas> &exemplar_n42,
+                                       const bool require_peaks );
 }//namespace BatchPeak
 
 #endif //BatchPeak_h

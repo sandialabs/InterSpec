@@ -44,7 +44,6 @@
 
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <boost/math/distributions/normal.hpp>
 
 #include "Wt/WDateTime"
 #include "Wt/WApplication"
@@ -89,7 +88,8 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
-#include "InterSpec/PeakDists_imp.hpp"
+
+#include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/RelActCalc_imp.hpp"
 #include "InterSpec/RelActCalcAuto_imp.hpp"
 #include "InterSpec/RelActCalc_CeresJetTraits.hpp"
@@ -692,7 +692,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     try
     {
       vector<float> new_sigma_coefs, sigma_coef_uncerts;
-      MakeDrfFit::performResolutionFit( fake_peaks, formToFit, highres, static_cast<int>(num_fwhm_pars),
+      MakeDrfFit::performResolutionFit( fake_peaks, formToFit, static_cast<int>(num_fwhm_pars),
                                           new_sigma_coefs, sigma_coef_uncerts );
       
       assert( new_sigma_coefs.size() == num_fwhm_pars );
@@ -766,7 +766,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
     
     vector<float> fwhm_paramatersf, uncerts;
     auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(all_peaks), end(all_peaks));
-    MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, highres, fit_order, fwhm_paramatersf, uncerts );
+    MakeDrfFit::performResolutionFit( peaks_deque, form_to_fit, fit_order, fwhm_paramatersf, uncerts );
       
     vector<pair<double,shared_ptr<const PeakDef>>> distances;
     for( const auto &p : *peaks_deque )
@@ -810,7 +810,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
       try
       {
         vector<float> new_result, new_result_uncerts;
-        MakeDrfFit::performResolutionFit( filtered_peaks, form_to_fit, highres,
+        MakeDrfFit::performResolutionFit( filtered_peaks, form_to_fit,
                                           fit_order, new_result, new_result_uncerts );
         fwhm_paramatersf = new_result;
         uncerts.swap( new_result_uncerts );
@@ -1828,7 +1828,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double live_time = spectrum->live_time();
     
       if( (!cancel_calc || !cancel_calc->load()) && all_peaks.empty() )
-        all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false );
+        all_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, nullptr, {}, false, highres );
       solution.m_spectrum_peaks = all_peaks;
     
       vector<shared_ptr<const PeakDef>> peaks_in_rois;
@@ -5888,215 +5888,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     return adjusted_energy;
   }//double un_apply_energy_cal_adjustment( double energy, const std::vector<double> &x ) const
-  
-  
-  /** A stand-in for the `PeakDef` class to allow auto-differentiation, and also simplify things  */
-  template<typename T>
-  struct PeakDefImp
-  {
-    T m_mean = T(0.0);
-    T m_sigma = T(0.0);
-    T m_amplitude = T(0.0);
-    T m_skew_pars[4] = { T(0.0), T(0.0), T(0.0), T(0.0) };
-    
-    const SandiaDecay::Nuclide *m_parent_nuclide = nullptr;
-    const SandiaDecay::Transition *m_transition = nullptr;
-    size_t m_rad_particle_index = 0;
-    
-    const SandiaDecay::Element *m_xray_element = nullptr;
-    const ReactionGamma::Reaction *m_reaction = nullptr;
-    
-    /** True energy of the source gamma or x-ray. */
-    double m_src_energy = 0.0;
-    
-    PeakDef::SkewType m_skew_type = PeakDef::SkewType::NoSkew;
-    PeakDef::SourceGammaType m_gamma_type = PeakDef::SourceGammaType::NormalGamma;
-    
-    size_t m_rel_eff_index = std::numeric_limits<size_t>::max();
-    
-    const T &mean() const { return m_mean; }
-    
-    inline void setSkewType( const PeakDef::SkewType &type )
-    {
-      m_skew_type = type;
-    }
-    
-    inline void set_coefficient( T val, const PeakDef::CoefficientType &coef )
-    {
-      const int index = static_cast<int>( coef - PeakDef::CoefficientType::SkewPar0 );
-      assert( (index >= 0) && (index < 4) );
-      m_skew_pars[index] = val;
-    }
-    
-    void gauss_integral( const float *energies, T *channels, const size_t nchannel ) const
-    {
-      check_jet_array_for_NaN( channels, nchannel );
 
-      switch( m_skew_type )
-      {
-        case PeakDef::SkewType::NoSkew:
-          PeakDists::gaussian_integral( m_mean, m_sigma, m_amplitude, energies, channels, nchannel );
-          break;
-          
-        case PeakDef::SkewType::Bortel:
-          PeakDists::bortel_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], energies, channels, nchannel );
-          break;
-          
-        case PeakDef::SkewType::CrystalBall:
-          PeakDists::crystal_ball_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], energies, channels, nchannel );
-          break;
-          
-        case PeakDef::SkewType::DoubleSidedCrystalBall:
-          PeakDists::double_sided_crystal_ball_integral( m_mean, m_sigma, m_amplitude,
-                                             m_skew_pars[0], m_skew_pars[1],
-                                             m_skew_pars[2], m_skew_pars[3],
-                                             energies, channels, nchannel );
-          break;
-          
-        case PeakDef::SkewType::GaussExp:
-          PeakDists::gauss_exp_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], energies, channels, nchannel );
-          break;
-          
-        case PeakDef::SkewType::ExpGaussExp:
-          PeakDists::exp_gauss_exp_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], energies, channels, nchannel );
-          break;
-      }//switch( skew_type )
-
-      check_jet_array_for_NaN( channels, nchannel );
-    }//void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const
-
-
-    /** Gives lower and upper energies that contain `1.0 - missing_frac` of the peak,
-
-     For skewed distributions, particularly Crystal Bal, the energy range given by the desired
-     peak coverage can get huge, so you can also specify the max number of FWHM to use, which will
-     truncate the range in these cases of very large skew.
-
-     @param missing_frac The fraction of the peaks area you are okay not including; half this
-            amount will be missing from both lower and upper distribution tails.
-            A typical value might be like 1.0E-4 to get 99.99% of the peak.
-     @param max_num_fwhm If greater than zero, the energy range will be truncated to be this
-            amount of FWHMs from the mean, if the coverage would have the energy range go really
-            far out.
-     */
-    pair<double,double> peak_coverage_limits( const double missing_frac, const double max_num_fwhm )
-    {
-      double skew_pars[4] = { 0.0 };
-
-      double mean, sigma;
-      if constexpr ( !std::is_same_v<T, double> )
-      {
-        mean = m_mean.a;
-        sigma = m_sigma.a;
-      }else
-      {
-        mean = m_mean;
-        sigma = m_sigma;
-      }
-
-      const size_t nskew_par = PeakDef::num_skew_parameters(m_skew_type);
-      for( size_t i = 0; i < nskew_par; ++i )
-      {
-        if constexpr ( !std::is_same_v<T, double> )
-          skew_pars[i] = m_skew_pars[i].a;
-        else
-          skew_pars[i] = m_skew_pars[i];
-      }
-
-
-      pair<double,double> vis_limits;
-
-      switch( m_skew_type )
-      {
-        case PeakDef::SkewType::NoSkew:
-        {
-          const boost::math::normal_distribution gaus_dist( 1.0 );
-          vis_limits.first = mean +  sigma*boost::math::quantile( gaus_dist, 0.5*missing_frac );
-          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - 0.5*missing_frac );
-          break;
-        }
-
-        case PeakDef::SkewType::Bortel:
-          vis_limits = PeakDists::bortel_coverage_limits( mean, sigma, skew_pars[0], missing_frac );
-          break;
-
-        case PeakDef::SkewType::GaussExp:
-          vis_limits = PeakDists::gauss_exp_coverage_limits( mean, sigma, skew_pars[0], missing_frac );
-          break;
-
-        case PeakDef::SkewType::CrystalBall:
-          try
-        {
-          vis_limits = PeakDists::crystal_ball_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], missing_frac );
-        }catch( std::exception & )
-        {
-          // CB dist can have really long tail, causing the coverage limits to fail, because
-          //  of unreasonable values - in this case we'll just go way out
-          vis_limits.first = mean - 15.0*sigma;
-
-          const boost::math::normal_distribution gaus_dist( 1.0 );
-          vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
-        }
-          break;
-
-        case PeakDef::SkewType::ExpGaussExp:
-          vis_limits = PeakDists::exp_gauss_exp_coverage_limits( mean, sigma, skew_pars[0],
-                                                                skew_pars[1], missing_frac );
-          break;
-
-        case PeakDef::SkewType::DoubleSidedCrystalBall:
-          try
-        {
-          vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma, skew_pars[0],
-                                                                            skew_pars[1], skew_pars[2], skew_pars[3], missing_frac );
-        }catch( std::exception & )
-        {
-          // CB dist can have really long tail, causing the coverage limits to fail, because
-          //  of unreasonable values - in this case we'll just go way out
-          vis_limits.first  = mean - 15.0*sigma;
-          vis_limits.second = mean + 15.0*sigma;
-        }//try / catch
-          break;
-      }//switch( m_skew_type )
-
-      if( max_num_fwhm > 0.0 )
-      {
-        vis_limits.first = std::max( vis_limits.first, mean - 2.35482*max_num_fwhm*sigma );
-        vis_limits.second = std::min( vis_limits.second, mean + 2.35482*max_num_fwhm*sigma );
-      }//if( max_num_fwhm > 0.0 )
-
-      return vis_limits;
-    }//pair<double,double> peak_coverage_limits( const double missing_frac = 1.0E-6 )
-
-  };//struct PeakDefImp
-  
-  template<typename T>
-  struct PeakContinuumImp
-  {
-    PeakContinuum::OffsetType m_type = PeakContinuum::OffsetType::NoOffset;
-    
-    T m_lower_energy = T(0.0);
-    T m_upper_energy = T(0.0);
-    T m_reference_energy = T(0.0);
-    std::array<T,5> m_values = { T(0.0), T(0.0), T(0.0), T(0.0), T(0.0) };
-  };//struct PeakContinuumImp
-  
-  
-  template<typename T>
-  struct PeaksForEnergyRangeImp
-  {
-    std::vector<PeakDefImp<T>> peaks;
-    
-    PeakContinuumImp<T> continuum;
-    
-    size_t first_channel;
-    size_t last_channel;
-    bool no_gammas_in_range;
-    bool forced_full_range;
-    
-    /** Peak plus continuum counts for [first_channel, last_channel] */
-    std::vector<T> peak_counts;
-  };//struct PeaksForEnergyRangeImp
   
   
   /** Computes peaks for a ROI range, given current paramaters
@@ -6105,7 +5897,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    @param multithread Wether to use a single, or multiple threads to comput the peaks
    */
   template<typename T>
-  PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
+  RelActCalcAuto::PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
                                                        const std::vector<T> &x,
                                                        const bool multithread ) const
   {
@@ -6134,7 +5926,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
 
     // Throws lambda if any peak quantities are NaN or Inf
-    auto check_peak_reasonable = [this,&x]( const PeakDefImp<T> &peak, const double gamma_energy ){
+    auto check_peak_reasonable = [this,&x]( const RelActCalcAuto::PeakDefImp<T> &peak, const double gamma_energy ){
       const T &peak_sigma = peak.m_sigma;
 
       double fwhm;
@@ -6194,7 +5986,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //  above and below the ROI (in principle we should search around, but its not too important).
     //
     //  TODO: We are including peaks such that 1E-4 of them make it into the ROI - this is totally arbitrary, and instead we should take into account the peak area.
-    PeakDefImp<T> lower_range_peak, upper_range_peak;
+    RelActCalcAuto::PeakDefImp<T> lower_range_peak, upper_range_peak;
     lower_range_peak.m_mean = T(range.lower_energy);
     lower_range_peak.m_sigma = fwhm( T(range.lower_energy), x ) / 2.35482;
     lower_range_peak.m_amplitude = T(1.0);
@@ -6228,14 +6020,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     size_t num_free_peak_pars = 0;
     set<const void *> nuclides_used;
     
-    PeaksForEnergyRangeImp<T> answer;
+    RelActCalcAuto::PeaksForEnergyRangeImp<T> answer;
     answer.first_channel = first_channel;
     answer.last_channel = last_channel;
     answer.no_gammas_in_range = false;
     answer.forced_full_range = range.force_full_range;
     
-    vector<PeakDefImp<T>> &peaks = answer.peaks;
-    
+    vector<RelActCalcAuto::PeakDefImp<T>> &peaks = answer.peaks;
+
     // Go through and create peaks based on rel act, eff, etc
     for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
     {
@@ -6462,7 +6254,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const T peak_fwhm = fwhm( T(gamma.energy), x );
 
 
-          PeakDefImp<T> peak;
+          RelActCalcAuto::PeakDefImp<T> peak;
           peak.m_mean = peak_mean;
           peak.m_sigma = peak_fwhm/2.35482;
           peak.m_amplitude = peak_amplitude;
@@ -6540,7 +6332,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       num_free_peak_pars += peak.release_fwhm;
       
       //cout << "peaks_for_energy_range_imp: free peak at " << peak.energy << " has a FWHM=" << peak_fwhm << " and AMP=" << peak_amp << endl;
-      PeakDefImp<T> imp_peak;
+      RelActCalcAuto::PeakDefImp<T> imp_peak;
       imp_peak.m_mean = peak_mean;
       imp_peak.m_sigma = peak_fwhm/2.35482;
       imp_peak.m_amplitude = peak_amp;
@@ -6565,7 +6357,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         middle_fwhm = T(1.0); //arbitrary
       
       
-      PeakDefImp<T> peak;
+      RelActCalcAuto::PeakDefImp<T> peak;
       peak.m_mean = T(middle_energy);
       peak.m_sigma = T(middle_fwhm/2.35482);
       peak.m_amplitude = T(0.0);
@@ -6599,10 +6391,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     peak_counts.resize( num_channels, T(0.0) );
     T *continuum_coeffs = answer.continuum.m_values.data();
 
-    vector<PeakDefImp<T>> dummy;
+    vector<RelActCalcAuto::PeakDefImp<T>> dummy;
 
-
-    RelActCalcAuto::fit_continuum( energies, data, data_uncerts, num_channels, num_polynomial_terms,
+    PeakFit::fit_continuum( energies, data, data_uncerts, num_channels, num_polynomial_terms,
                                   is_step_continuum, ref_energy, peaks, multithread,
                                   continuum_coeffs,
                                   peak_counts.data() );
@@ -6709,13 +6500,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                              const std::vector<double> &x,
                                              const std::set<size_t> &rel_eff_indices ) const
   {
-    PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
+    RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
 
     
     if( !rel_eff_indices.empty() )
     {
-      vector<PeakDefImp<double>> filtered_peaks;
-      for( const PeakDefImp<double> &p : computed_peaks.peaks )
+      vector<RelActCalcAuto::PeakDefImp<double>> filtered_peaks;
+      for( const RelActCalcAuto::PeakDefImp<double> &p : computed_peaks.peaks )
       {
         if( rel_eff_indices.count(p.m_rel_eff_index) )
           filtered_peaks.push_back( p );
@@ -6731,7 +6522,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     for( size_t i = 0; i < computed_peaks.peaks.size(); ++i )
     {
-      const PeakDefImp<double> &comp_peak = computed_peaks.peaks[i];
+      const RelActCalcAuto::PeakDefImp<double> &comp_peak = computed_peaks.peaks[i];
       PeakDef peak( comp_peak.m_mean, comp_peak.m_sigma, comp_peak.m_amplitude );
       peak.setSkewType( comp_peak.m_skew_type );
       const size_t num_skew = PeakDef::num_skew_parameters( comp_peak.m_skew_type );
@@ -6761,7 +6552,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         shared_ptr<PeakContinuum> cont = peak.continuum();
         assert( cont );
-        const PeakContinuumImp<double> &comp_cont = computed_peaks.continuum;
+        const RelActCalcAuto::PeakContinuumImp<double> &comp_cont = computed_peaks.continuum;
         cont->setRange( comp_cont.m_lower_energy, comp_cont.m_upper_energy );
         cont->setType( comp_cont.m_type );
         const size_t npar = PeakContinuum::num_parameters( comp_cont.m_type );
@@ -6847,9 +6638,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //  actually seems to be reasonably effective in filling up the CPU cores during fitting.
     //  (setting ceres_options.num_threads >1 doesnt seem to do much (any?) good)
     
-    vector<PeaksForEnergyRangeImp<T>> peaks_in_ranges_imp( m_energy_ranges.size() );
-    
-    // TODO: multi-thread computation needs to be looked at more hollistically, both here and in `RelActCalcAuto::fit_continuum(...)`, and possibly in peaks_for_energy_range_imp
+    vector<RelActCalcAuto::PeaksForEnergyRangeImp<T>> peaks_in_ranges_imp( m_energy_ranges.size() );
+
+    // TODO: multi-thread computation needs to be looked at more hollistically, both here and in `PeakFit::fit_continuum(...)`, and possibly in peaks_for_energy_range_imp
     const bool multhread_each_roi = (m_energy_ranges.size() < 6);
     
     // Calling `m_pool.join()` puts the threadpool in a state where it will no longer work,
@@ -6912,8 +6703,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         double nuc_counts = 0.0;
         for( size_t erange_index = 0; erange_index < m_energy_ranges.size(); ++erange_index )
         {
-          const PeaksForEnergyRangeImp<T> &peaks = peaks_in_ranges_imp[erange_index];
-          for( const PeakDefImp<T> &peak : peaks.peaks )
+          const RelActCalcAuto::PeaksForEnergyRangeImp<T> &peaks = peaks_in_ranges_imp[erange_index];
+          for( const RelActCalcAuto::PeakDefImp<T> &peak : peaks.peaks )
           {
             if( (peak.m_parent_nuclide == nuclide(nuc.source))
                && (peak.m_xray_element == element(nuc.source))
@@ -6952,8 +6743,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t roi_index = 0; roi_index < m_energy_ranges.size(); ++roi_index )
     {
       const RoiRangeChannels &energy_range = m_energy_ranges[roi_index];
-      const PeaksForEnergyRangeImp<T> &info = peaks_in_ranges_imp[roi_index];
-      
+      const RelActCalcAuto::PeaksForEnergyRangeImp<T> &info = peaks_in_ranges_imp[roi_index];
+
       assert( info.peaks.size() );
       assert( info.first_channel < m_channel_counts.size() );
       assert( info.last_channel < m_channel_counts.size() );

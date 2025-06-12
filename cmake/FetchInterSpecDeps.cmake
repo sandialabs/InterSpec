@@ -202,6 +202,7 @@ set( EIGEN_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
 set( EIGEN_BUILD_DOC OFF CACHE INTERNAL "" )
 set( EIGEN_BUILD_TESTING OFF CACHE INTERNAL "" )
 set( EIGEN_BUILD_PKGCONFIG OFF )
+set( EIGEN_BUILD_CMAKE_PACKAGE ON CACHE INTERNAL "" )
 #set( Eigen3_DIR "${FETCHCONTENT_BASE_DIR}/..." CACHE INTERNAL "" )
 # Check for local Eigen
 set(LOCAL_EIGEN_DIR "${CMAKE_BINARY_DIR}/_deps/eigen-src")
@@ -212,7 +213,6 @@ else()
   set(EIGEN_FETCHCONTENT_SOURCE
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG        2e76277bd049f7bec36b0f908c69734a42c5234f  # Get trunk version as of 20250114 to pickup some compile issues for c++20
-    EXCLUDE_FROM_ALL
     UPDATE_DISCONNECTED TRUE # Prevent automatic updates if the tag is already present
   )
 endif(EXISTS "${LOCAL_EIGEN_DIR}/CMakeLists.txt")
@@ -227,7 +227,7 @@ FetchContent_MakeAvailable( eigen )
   
   # For Android and iOS, we need to force the path information for Eigen, for some reason.
 set( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${eigen_BINARY_DIR}" CACHE STRING "Modules for CMake" FORCE )
-set( Eigen3_DIR ${eigen_BINARY_DIR} CACHE PATH "Path to Eigen3Config.cmake" )  #${eigen_SOURCE_DIR}
+set( Eigen3_DIR "${eigen_BINARY_DIR}/share/eigen3/cmake/" CACHE PATH "Path to Eigen3Config.cmake" )  #${eigen_SOURCE_DIR}
 
   # Set some Google Ceres options; both to allow compiling without further dependencies, and
   #  avoid some things we dont need

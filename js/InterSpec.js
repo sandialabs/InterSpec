@@ -143,7 +143,7 @@ function()
                 if( encodeURIComponent(fns.filenames[i]).endsWith(filename_uri) ){
                   fspath = fns.filenames[i];
                   //remove this filename from the array, incase there are multiple files with same leaf-name, but diff paths
-                  fns.filenames = fns.filenames.splice(i,i);
+                  fns.filenames.splice(i,1);
                   console.log( "Matched filenames: ", file.name, " vs ", fspath );
                   console.log( "Remaining files: ", fns.filenames );
                   if( fns.filenames.length === 0 )

@@ -48,6 +48,7 @@ namespace Wt
   class WCheckBox;
   class WLineEdit;
   class WPushButton;
+  class WSplitButton;
   class WSuggestionPopup;
 }//namespace Wt
 
@@ -163,7 +164,24 @@ protected:
    */
   bool checkNuclideForDiffColors();
   
-  void refit();
+  enum class RefitOption : int
+  {
+    /** For refitting a single peak, or if multiple peaks doing a peak fit cooresponding to PeakFitLM::PeakFitLMOptions of zero
+     (e.g., peak FWHM linearly related), and no constraints on keeping non-fixed peak means near where they are at.
+     */
+    Normal,
+    
+    /** For ROIs with multiple peaks, lets each peaks FWHM vary independently. */
+    RoiIndependentFwhms,
+    
+    /** PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent */
+    RoiSmallRefinement,
+    
+    /** PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent and PeakFitLM::PeakFitLMOptions::SmallRefinementOnly */
+    RoiSmallRefinementIndependentFwhm
+  };//enum RefitOption
+  
+  void refit( const RefitOption type );
   void apply();  //throws if an input is invalid
   void accept();
   void cancel();
@@ -221,7 +239,7 @@ protected:
   Wt::WPushButton *m_apply;
   Wt::WPushButton *m_accept;
   Wt::WPushButton *m_cancel;
-  Wt::WPushButton *m_refit;
+  Wt::WSplitButton *m_refit;
   
   Wt::WContainerWidget *m_otherPeaksDiv;
   Wt::WText *m_otherPeakTxt;

@@ -66,6 +66,9 @@
   <message id="ect-set-dev-pair-err">There was an error setting deviation pairs for this detector.</message>
   <message id="ect-dev-applied-dets-samples">Deviation pairs applied only to the '{1}' detector, but to all sample numbers{2}.</message>
   <message id="ect-dev-applied-to-samples">Deviation pairs applied to all sample numbers{1}.</message>
+  <message id="ect-of-the-fore"> of the foreground.</message>
+  <message id="ect-of-the-sec"> of the secondary.</message>
+  <message id="ect-of-the-back"> of the background.</message>
   <message id="ect-err-not-enough-peaks">Can not fit calibration coefficients right now.  You must select at least as many peaks for fitting as coefficients you have selected to fit for.</message>
   <message id="ect-no-peaks">No peaks available.</message>
   <message id="ect-select-cal-of-disp-det">Please select calibration of a displayed detector</message>

@@ -253,21 +253,46 @@ button.Wt-btn.LightButton, .btn-group.LightButton
   align-items: center;
 }
 
-.btn-group.LightButton > button.Wt-btn
+.modal-footer .btn-group
+{
+  display: inline-flex;
+}
+
+.btn-group > button.Wt-btn
 {
   border-top: none;
   border-bottom: none;
 }
 
-.btn-group.LightButton > button.Wt-btn.dropdown-toggle.LightButton
+.btn-group > button.Wt-btn.dropdown-toggle
 {
   border-right: none;
   border-radius: 0px;
+  margin-left: 0px;
+  margin-right: 0px;
+  height: 21px;
+  border-top-right-radius: 5px;
+  border-bottom-right-radius: 5px;
 }
 
-.btn-group.LightButton > button.Wt-btn.with-label.LightButton
+.btn-group > button.Wt-btn.LightButton
 {
+  height: 19px;
+}
+
+.btn-group > button.Wt-btn.with-label
+{
+  margin-left: 0px;
+  margin-right: 0px;
   border: none;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  height: 21px;
+}
+
+.modal-footer .btn-group
+{
+  display: inline-flex;
 }
 
 .btn-group > .Wt-btn.dropdown-toggle

@@ -10,6 +10,10 @@
   <message id="pe-peak-model-data">Data Region</message>
   <message id="pe-skew-type">Skew Type</message>
   <message id="pe-btn-refit">Refit</message>
+  <message id="pe-btn-refit-roi-standard">Refit ROI: related FWHMs</message>
+  <message id="pe-btn-refit-roi-independent">Refit ROI: independent FWHMs</message>
+  <message id="pe-btn-refit-roi-fine">Refit ROI: small refinements</message>
+  <message id="pe-btn-refit-roi-independent-fine">Refit ROI: refine with indep. FWHMs</message>
   
   <message id="pe-label-centroid">Centroid</message>
   <message id="pe-label-drf-fwhm">DRF Pred. FWHM</message>

@@ -78,9 +78,22 @@
   height: 220px;
 }
 
+@media screen and (min-height: 651px) {
+  .BatchGuiWidget .TypeSelectContainer {
+    height: 250px;
+  }
+}
+
+@media screen and (min-height: 801px) {
+  .BatchGuiWidget .TypeSelectContainer {
+    height: 300px;
+  }
+}
+
 .BatchGuiWidget .TypeSelectContainer ul.AnaTypeMenu.VerticalNavMenu
 {
   width: 55px;
+  height: 100%;
   overflow-x: hidden;
 
   padding-inline-start: 0px;
@@ -116,6 +129,9 @@
 {
   flex-grow: 1;
   flex-shrink: 1;
+
+  height: 100%;
+  overflow-y: auto;
 }
 
 .BatchGuiWidget .InputFilesContainer
@@ -194,3 +210,9 @@
 .BatchGuiWidget .DirectorySelector
 {
 } 
+
+
+.BatchGuiWidget .ReasonCantAnalyzeMsg
+{
+  color: orange;
+}

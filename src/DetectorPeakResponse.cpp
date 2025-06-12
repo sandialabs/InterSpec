@@ -3646,8 +3646,8 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       energy /= PhysicalUnits::MeV;
       //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
       
-      double val = 0.0;
-      for( size_t i = 0; i < pars.size(); ++i )
+      double val = pars[0];
+      for( size_t i = 1; i < pars.size(); ++i )
         val += pars[i] * pow(energy, static_cast<float>(i) );
       return sqrt( val );
     }//case kSqrtPolynomial:
@@ -3731,12 +3731,10 @@ void DetectorPeakResponse::fitResolution( DetectorPeakResponse::PeakInput_t peak
   else if( peaks->size() < 3 )
     sqrtEqnOrder = static_cast<int>( peaks->size() );
   
-  const bool highres = PeakFitUtils::is_high_res(meas);
-  
   vector<float> coefficients = m_resolutionCoeffs, uncerts;
-  MakeDrfFit::performResolutionFit( peaks, fnctnlForm, highres, sqrtEqnOrder, coefficients, uncerts );
+  MakeDrfFit::performResolutionFit( peaks, fnctnlForm, sqrtEqnOrder, coefficients, uncerts );
   peaks = removeOutlyingWidthPeaks( peaks, fnctnlForm, coefficients );
-  MakeDrfFit::performResolutionFit( peaks, fnctnlForm, highres, sqrtEqnOrder, coefficients, uncerts );
+  MakeDrfFit::performResolutionFit( peaks, fnctnlForm, sqrtEqnOrder, coefficients, uncerts );
   
   m_resolutionCoeffs = coefficients;
   m_resolutionForm = fnctnlForm;

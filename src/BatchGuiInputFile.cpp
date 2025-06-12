@@ -194,7 +194,7 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
         *status_ptr = is_csv ? 2 : 3;
       }// if( parsed as spectrum file ) / else
 
-      WServer::instance()->post( sessionid, updateGuiCallback );
+      WServer::instance()->schedule( 250, sessionid, updateGuiCallback );
     } );
 }// BatchGuiInputSpectrumFile constructor
 
@@ -299,7 +299,7 @@ void BatchGuiInputSpectrumFile::set_spectrum( std::shared_ptr<SpecMeas> spec_mea
       spec->resize( WLength( 100, WLength::Percentage ), WLength( 100, WLength::Percentage ) );
 
       // We dont currently need to explicitly set the color theme, as all color theme styling for
-      //   D3SpectrumDisplayDiv is globablly applied...
+      //   D3SpectrumDisplayDiv is globally applied...
       // InterSpec *interspec = InterSpec::instance();
       // spec->applyColorTheme( interspec->getColorTheme() );
       // interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, spec,

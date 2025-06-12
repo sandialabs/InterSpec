@@ -453,9 +453,12 @@ void InterSpecApp::setupDomEnvironment()
     wApp->useStyleSheet( "InterSpec_resources/DrfSelect.css" );
     wApp->useStyleSheet( "InterSpec_resources/SimpleDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiWidget.css" );
     wApp->useStyleSheet( "InterSpec_resources/ExportSpecFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GammaCountDialog.css" );
     wApp->useStyleSheet( "InterSpec_resources/RefSpectraWidget.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiAnaWidget.css" );
+    wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
     wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
     wApp->useStyleSheet( "InterSpec_resources/MoreNuclideInfoDisplay.css" );
     // anything else relevant?
@@ -511,14 +514,27 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
     delete m_viewer;
     m_viewer = nullptr;
   }
-  
+
   if( m_layout )
   {
     delete m_layout;
     root()->clear();
   }
-  
-  
+
+
+#if( BUILD_AS_OSX_APP )
+  // Inject JavaScript to catch errors, that the objective-c will then recieve.
+  const string jsErrorCode = "window.onerror = function(message, source, lineno, colno, error) {\n"
+  "  console.error( 'JS Error:', message, ', from source:', source, ', lineno:', lineno, ', error:', error );\n"
+  "  window.webkit.messageHandlers.jsErrorHandler.postMessage({\n"
+  "    message: message, source: source, lineno: lineno, colno: colno, error: error ? error.toString() : null\n"
+  "  });\n"
+  "};";
+
+  doJavaScript( jsErrorCode );
+#endif // #if( BUILD_AS_OSX_APP )
+
+
   try
   {
     m_viewer = new InterSpec();

@@ -48,7 +48,6 @@ namespace MakeDrfFit
   */
   double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks,
                              const DetectorPeakResponse::ResolutionFnctForm fnctnlForm,
-                             const bool highResolution,
                              const int sqrtEqnOrder,
                              std::vector<float> &result,
                              std::vector<float> &uncerts );
