@@ -9690,7 +9690,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       if( nuclides.count( "Pu239" ) )
         out << "\tPu239: " << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4) << "\n";
       if( nuclides.count( "Pu240" ) )
-        out << "\tPu40: " << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "\n";
+        out << "\tPu240: " << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "\n";
       if( nuclides.count( "Pu241" ) )
         out << "\tPu241: " << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4) << "\n";
       out << "\tPu242 (by corr): " << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4) << "\n";
@@ -9902,7 +9902,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
         << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4)
         << "</td></tr>\n";
       if( pu_nuclides.count( "Pu240" ) )
-        results_html << "  <tr><td>Pu40</td><td>"
+        results_html << "  <tr><td>Pu240</td><td>"
         << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4)
         << "</td></tr>\n";
       if( pu_nuclides.count( "Pu241" ) )
