@@ -28,6 +28,7 @@
 #include <chrono>
 
 #include <Wt/WMenu>
+#include <Wt/WServer>
 #include <Wt/WGroupBox>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
@@ -35,6 +36,7 @@
 #include <Wt/WStackedWidget>
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/Filesystem.h"
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
@@ -214,7 +216,35 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   m_input_status_error->addStyleClass( "ReasonCantAnalyzeMsg" );
   m_input_status_error->hide();
 
-  addInputFiles( m_uploadResource->takeSpooledFiles() );
+  
+  const vector<tuple<string,string,bool>> spooled_files = m_uploadResource->takeSpooledFiles();
+  
+  // We will load the initial spectrum files, after giving the widget a second to fully load.
+  //  I'm not quite sure why, but without doing this, sometimes we can get a JS exception,
+  //  maybe because the JS is somehow getting out of order?
+  //addInputFiles( m_uploadResource->takeSpooledFiles() );
+  
+  boost::function<void()> load_files
+                = wApp->bind( boost::bind( &BatchGuiWidget::addInputFiles, this, spooled_files ) );
+  boost::function<void()> worker = [load_files](){
+    load_files();
+    wApp->triggerUpdate();
+  };
+  
+  // Fallback function to clean the files up, incase this session is no longer alive
+  //  BUT note that there is a path where if this widget is deleted, before the worker is called,
+  //  then the files wont be cleaned up any way.
+  boost::function<void()> fall_back = [spooled_files](){
+    for( const tuple<string, string, bool> &file : spooled_files )
+    {
+      const string &path_to_file = std::get<1>( file );
+      const bool should_delete = std::get<2>( file );
+      if( should_delete )
+        SpecUtils::remove_file( path_to_file );
+    }
+  };//fall_back
+  
+  WServer::instance()->schedule( 500, wApp->sessionId(), worker, fall_back );
 }// BatchGuiWidget constructor
 
 BatchGuiWidget::~BatchGuiWidget()

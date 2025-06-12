@@ -2878,8 +2878,9 @@ D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
   WCssStyleSheet &style = wApp->styleSheet();
   for( const auto name_rule : m_cssRules )
   {
-    if( !name_rule.first.empty() && style.isDefined(name_rule.first) )
-      style.removeRule( name_rule.second );
+    cout << "Not remove style rule '" << name_rule.first << "' since it messes things up - need to implement applying chart rules globally, instead of for each instance." << endl;
+    //if( !name_rule.first.empty() && style.isDefined(name_rule.first) )
+    //  style.removeRule( name_rule.second );
   }
 }//~D3SpectrumDisplayDiv()
 
