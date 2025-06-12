@@ -1737,8 +1737,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_fwhm_form = options.fwhm_form;
       for( const auto &rel_eff_curve : options.rel_eff_curves )
         solution.m_rel_eff_forms.push_back( rel_eff_curve.rel_eff_eqn_type );
-    
-    
+
+      if( !foreground )
+        throw runtime_error( "Not valid foreground provided." );
+
+      if( (foreground->live_time() < 0.01) || (foreground->real_time() < 0.01) )
+        throw runtime_error( "Foreground must have non-zero live and real times." );
+
       const auto check_rel_eff_form = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
         switch( rel_eff_curve.rel_eff_eqn_type )
         {
@@ -10588,7 +10593,7 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
                           " mass fraction constraints not supported yet." );
   }
 
-  assert( m_options.rel_eff_curves < m_options.rel_eff_curves.size() );
+  assert( rel_eff_index < m_options.rel_eff_curves.size() );
   const RelEffCurveInput &re_curve = m_options.rel_eff_curves.at(rel_eff_index);
 
   // TODO: implement enrichment ranges for Pu when a Pu242 correlation method is chosen
