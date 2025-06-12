@@ -324,6 +324,12 @@ public:
    */
   void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );
 
+  /** Sets the current color, as if the user had manually selected it.
+
+   Passing default color will cause `m_userHasPickedColor` to be set to false.
+   */
+  void setCurrentColor( Wt::WColor &color );
+
   
   bool showingGammaLines() const;
   void setShowGammaLines( const bool show );

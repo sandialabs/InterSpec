@@ -3592,3 +3592,20 @@ void ReferencePhotopeakDisplay::updateColorCacheForSource( const std::string &so
   else
     m_previouslyPickedSourceColors[source] = color;
 }//void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );
+
+
+void ReferencePhotopeakDisplay::setCurrentColor( Wt::WColor &color )
+{
+  m_userHasPickedColor = !color.isDefault();
+  m_currentlyShowingNuclide.m_input.m_color = color;
+  m_colorSelect->setColor( color );
+
+  if( m_currentlyShowingNuclide.m_validity != ReferenceLineInfo::InputValidity::Blank )
+  {
+    const string &src = m_currentlyShowingNuclide.m_input.m_input_txt;
+    updateColorCacheForSource( src, color );
+  }
+
+  refreshLinesDisplayedToGui();
+}//void setCurrentColor( Wt::WColor &color )
+
