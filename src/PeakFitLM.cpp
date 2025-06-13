@@ -671,7 +671,7 @@ struct PeakFitDiffCostFunction
 
     assert( !!m_data->gamma_counts() );
     const vector<float> &counts_vec = *m_data->gamma_counts();
-    assert( counts_vec.size() > (m_lower_channel + nchannel) );
+    assert( energies_ptr->size() > (m_lower_channel + nchannel) );
 
     vector<T> peak_counts( nchannel, T(0.0) );
     const float * const energies = energies_ptr->data() + m_lower_channel;
