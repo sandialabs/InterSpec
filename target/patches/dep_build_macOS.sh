@@ -202,10 +202,10 @@ if [ -f "${working_directory}/libpng.installed" ]; then
 else
   # libpng is only necessary if you are going to build the macOS packaged app, with the Quick Look utility that provides previews of spectrum files in the Finder and various places throughout the OS.
   # We will build once for arm64, and then x86_64 and lipo the libraries together to create a fat library.
-  file_url="http://prdownloads.sourceforge.net/libpng/libpng-1.6.37.tar.gz"
-  file_name="libpng-1.6.37.tar.gz"
-  expected_sha256="daeb2620d829575513e35fecc83f0d3791a620b9b93d800b763542ece9390fb4"
-  src_dir="libpng-1.6.37"
+  file_url="http://prdownloads.sourceforge.net/libpng/libpng-1.6.48.tar.gz"
+  file_name="libpng-1.6.48.tar.gz"
+  expected_sha256="68f3d83a79d81dfcb0a439d62b411aa257bb4973d7c67cd1ff8bdf8d011538cd"
+  src_dir="libpng-1.6.48"
 
   download_file "${file_url}" "${file_name}" "${expected_sha256}"
 
@@ -227,12 +227,13 @@ else
   cd build
 
   # First build for arm64 (-DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" doesnt seem to work)
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_SHARED=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_OSX_ARCHITECTURES="arm64" -DPNG_ARM_NEON=on ..
+  # For linking, when built on x86, you may get linking errors on ARM, so you can add -DPNG_HARDWARE_OPTIMIZATIONS=OFF to fix this up (and remove -DPNG_ARM_NEON=on)
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_SHARED=OFF -DPNG_HARDWARE_OPTIMIZATIONS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_OSX_ARCHITECTURES="arm64" ..
   make -j10 install
   rm -rf ./*
 
   # Then build for x86_64
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_SHARED=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_OSX_ARCHITECTURES="x86_64" ..
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DPNG_SHARED=OFF -DPNG_HARDWARE_OPTIMIZATIONS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_OSX_ARCHITECTURES="x86_64" ..
   make -j10
 
   # And now lipo the libraries together
