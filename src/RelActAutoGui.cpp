@@ -5078,10 +5078,19 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     vector<bool> use_rel_acts( rel_acts.size(), false );
 
     // A lambda to set GUI info from NuclideRelAct
-    auto set_info_to_widget = [&rel_acts]( RelActAutoGuiNuclide *src_widget, const RelActCalcAuto::NuclideRelAct &fit_nuc ){
-      const RelActCalcAuto::SrcVariant src = src_widget ? src_widget->source() : RelActCalcAuto::SrcVariant();
-      
-      const string rel_act_str = SpecUtils::printCompact(fit_nuc.rel_activity, 4);
+    auto set_info_to_widget = [&rel_acts,this,rel_eff_index]( RelActAutoGuiNuclide *src_widget, const RelActCalcAuto::NuclideRelAct &fit_nuc ){
+      assert( src_widget );
+      assert( this->m_solution );
+      if( !src_widget || !this->m_solution )
+        return;
+
+      const RelActCalcAuto::SrcVariant src = src_widget->source();
+
+      // We will use the solution calculated Rel Act, because Pu242 correlation may effect things.
+      //const double rel_act = fit_nuc.rel_activity;
+      const double rel_act = this->m_solution->rel_activity(src, rel_eff_index);
+
+      const string rel_act_str = SpecUtils::printCompact(rel_act, 4);
       string summary_text = "Rel. Act=" + rel_act_str;
       
       
@@ -5094,21 +5103,25 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       if( const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(src) )
       {
         size_t num_same_z = 0;
-        double total_rel_mass = 0.0;
+        //double total_rel_mass = 0.0;
         for( const RelActCalcAuto::NuclideRelAct &other_nuc : rel_acts )
         {
           const SandiaDecay::Nuclide * const other_nuc_nuclide = RelActCalcAuto::nuclide(other_nuc.source);
           if( other_nuc_nuclide && (nuc_nuclide->atomicNumber == other_nuc_nuclide->atomicNumber) )
           {
             ++num_same_z;
-            total_rel_mass += (other_nuc.rel_activity / other_nuc_nuclide->activityPerGram());
+            //total_rel_mass += (other_nuc.rel_activity / other_nuc_nuclide->activityPerGram());
           }
         }//for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities )
         
         if( num_same_z > 1 )
         {
-          const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
-          const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
+          // We will use the solutions calculated enrichment, and not our local version, because we may be correcting
+          //  for Pu242 correlation
+          //const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
+          //const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
+          const double rel_mass_percent = 100.0 * m_solution->mass_enrichment_fraction( nuc_nuclide, rel_eff_index, 0.0 );
+
           const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
           const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
           const string el_symbol = el ? el->symbol : "?";
