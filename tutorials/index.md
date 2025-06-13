@@ -9,10 +9,10 @@ into account peak and data shape.
 
 ## Batch Analysis (Oct 2024)
 When you have many similar spectra to fit peaks and/or activities/shielding with, 
-there is now a batch analysis tool starting with [InterSpec v1.0.13_rc2](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.13_rc2), or if you are on Windows, the [Bleeding Edge build](https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge) is recommended.  
+there is now a batch analysis tool starting with [InterSpec v1.0.13](https://github.com/sandialabs/InterSpec/releases/tag/v1.0.13); however this version only has the "command line" version of the analysis.  The "GUI" version of this batch tool is avaiable for Windows and Linux using the [Bleeding Edge build](https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge) build of InterSpec.  
 
 This presentation and example spectra will get you started using this capability.
-* [20240930_InterSpec_batch_processing_instructions_UUR.pptx](batch_analysis/20240930_InterSpec_batch_processing_instructions_UUR.pptx) (8 MB)
+* [20250611_InterSpec_batch_processing_instructions_rev2.pdf](batch_analysis/20250611_InterSpec_batch_processing_instructions_rev2.pdf) (8 MB)
 * [in-situ_example.zip](batch_analysis/in-situ_example.zip)
 
 
