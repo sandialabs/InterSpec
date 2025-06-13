@@ -1510,8 +1510,14 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
         src = p->reaction()->name();
       else
         continue;
+
       vector<WColor> &colors = answer[src];
-      if( std::find(begin(colors), end(colors), color) == end(colors) )
+
+      auto pos = std::find_if( begin(colors), end(colors), [&color]( const WColor &rhs ){
+        return ((color.red() == rhs.red()) && (color.green() == rhs.green()) && (color.blue() == rhs.blue()) );
+      } );
+
+      if( pos == end(colors) )
         colors.push_back( color );
     }//for( const auto &p : *peaks )
   }//if( peaks )
@@ -1522,7 +1528,13 @@ std::map<std::string,std::vector<Wt::WColor>> ReferencePhotopeakDisplay::current
       continue;
     
     vector<WColor> &colors = answer[p.m_input.m_input_txt];
-    if( std::find(begin(colors), end(colors), p.m_input.m_color) == end(colors) )
+
+    const WColor &c = p.m_input.m_color;
+    auto pos = std::find_if( begin(colors), end(colors), [&c]( const WColor &rhs ){
+      return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+    } );
+
+    if( pos == end(colors) )
       colors.push_back( p.m_input.m_color );
   }//for( const auto &p : m_persisted )
   
@@ -2351,7 +2363,9 @@ Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src 
       {
         for( const auto &c : p.second )
         {
-          auto pos = std::find( begin(colorcopy), end(colorcopy), c );
+          auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
+            return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+          } );
           if( pos != end(colorcopy) )
             colorcopy.erase(pos);
         }
@@ -2359,7 +2373,12 @@ Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src 
       
       for( const auto &p : m_persisted )
       {
-        auto pos = std::find( begin(colorcopy), end(colorcopy), p.m_input.m_color );
+        const WColor &c = p.m_input.m_color;
+        auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
+          return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+        } );
+
+
         if( pos != end(colorcopy) )
           colorcopy.erase(pos);
       }//for( const auto &p : m_persisted )
@@ -3573,3 +3592,20 @@ void ReferencePhotopeakDisplay::updateColorCacheForSource( const std::string &so
   else
     m_previouslyPickedSourceColors[source] = color;
 }//void updateColorCacheForSource( const std::string &source, const Wt::WColor &color );
+
+
+void ReferencePhotopeakDisplay::setCurrentColor( Wt::WColor &color )
+{
+  m_userHasPickedColor = !color.isDefault();
+  m_currentlyShowingNuclide.m_input.m_color = color;
+  m_colorSelect->setColor( color );
+
+  if( m_currentlyShowingNuclide.m_validity != ReferenceLineInfo::InputValidity::Blank )
+  {
+    const string &src = m_currentlyShowingNuclide.m_input.m_input_txt;
+    updateColorCacheForSource( src, color );
+  }
+
+  refreshLinesDisplayedToGui();
+}//void setCurrentColor( Wt::WColor &color )
+

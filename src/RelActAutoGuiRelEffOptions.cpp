@@ -545,7 +545,7 @@ void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelE
     //  rely on `updateDuringRenderForNuclideChange()` to input all the actual options
     m_pu_corr_method->clear();
     m_pu_corr_method->addItem( RelActCalc::to_description(rel_eff.pu242_correlation_method) );
-    m_pu_corr_method->setCurrentIndex( 0 ); 
+    m_pu_corr_method->setCurrentIndex( m_pu_corr_method->count() - 1 );
   }
 
   updatePuCorrelationOptions( rel_eff.nuclides );
@@ -587,7 +587,7 @@ void RelActAutoGuiRelEffOptions::updatePuCorrelationOptions( const vector<RelAct
   if( nentries != nentries_needed )
   {
     string current_txt;
-    if( !m_pu_corr_method->count() )
+    if( m_pu_corr_method->count() )
       current_txt = m_pu_corr_method->currentText().toUTF8();
       
     m_pu_corr_method->clear();

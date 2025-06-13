@@ -1737,8 +1737,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_fwhm_form = options.fwhm_form;
       for( const auto &rel_eff_curve : options.rel_eff_curves )
         solution.m_rel_eff_forms.push_back( rel_eff_curve.rel_eff_eqn_type );
-    
-    
+
+      if( !foreground )
+        throw runtime_error( "Not valid foreground provided." );
+
+      if( (foreground->live_time() < 0.01) || (foreground->real_time() < 0.01) )
+        throw runtime_error( "Foreground must have non-zero live and real times." );
+
       const auto check_rel_eff_form = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
         switch( rel_eff_curve.rel_eff_eqn_type )
         {
@@ -9686,7 +9691,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       if( nuclides.count( "Pu239" ) )
         out << "\tPu239: " << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4) << "\n";
       if( nuclides.count( "Pu240" ) )
-        out << "\tPu40: " << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "\n";
+        out << "\tPu240: " << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "\n";
       if( nuclides.count( "Pu241" ) )
         out << "\tPu241: " << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4) << "\n";
       out << "\tPu242 (by corr): " << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4) << "\n";
@@ -9898,7 +9903,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
         << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4)
         << "</td></tr>\n";
       if( pu_nuclides.count( "Pu240" ) )
-        results_html << "  <tr><td>Pu40</td><td>"
+        results_html << "  <tr><td>Pu240</td><td>"
         << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4)
         << "</td></tr>\n";
       if( pu_nuclides.count( "Pu241" ) )

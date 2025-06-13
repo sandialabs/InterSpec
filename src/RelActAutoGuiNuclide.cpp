@@ -905,7 +905,10 @@ Wt::WColor RelActAutoGuiNuclide::getColorForSource( const RelActCalcAuto::SrcVar
         continue;
 
       const Wt::WColor c = WColor( other_nuc.peak_color_css );
-      const auto pos = std::find( begin(def_line_colors), end(def_line_colors), c );
+      const auto pos = std::find_if( begin(def_line_colors), end(def_line_colors), [&c]( const WColor &rhs ){
+        return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+      } );
+
       if( pos != end(def_line_colors) )
         def_line_colors.erase( pos );
     }
@@ -1425,8 +1428,8 @@ RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
   // TODO: Not implemented: vector<double> gammas_to_exclude;
   //nuc_info.gammas_to_exclude = ;
   
-  nuc_info.peak_color_css = m_color_select->color().cssText();
-  
+  nuc_info.peak_color_css = m_color_select->color().cssText(false);
+
   return nuc_info;
 }//RelActCalcAuto::RoiRange toRoiRange() const
 

@@ -2567,6 +2567,8 @@ void RelActAutoGui::handleNuclidesChanged()
 
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::UpdateRefGammaLines;
+
   scheduleRender();
 }//void handleNuclidesChanged()
 
@@ -2576,6 +2578,7 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
   DoWorkOnDestruct do_work( [&](){
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::UpdateRefGammaLines;
     scheduleRender();
   } );
     
@@ -2615,6 +2618,7 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
   DoWorkOnDestruct do_work( [&](){
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateCalculations;
+    m_render_flags |= RenderActions::UpdateRefGammaLines;
     scheduleRender();
   } );
 
@@ -2881,8 +2885,11 @@ RelActAutoGuiNuclide *RelActAutoGui::addNuclideForRelEffCurve( const int rel_eff
       for( RelActAutoGuiNuclide *src_widget : src_widgets )
       {
         const WColor color = src_widget->color();
-        if( std::find( begin(colors), end(colors), color ) != end(colors) )
-          colors.erase( std::find( begin(colors), end(colors), color ) );
+        const auto pos = std::find_if( begin(colors), end(colors), [&color]( const WColor &rhs ){
+          return ((color.red() == rhs.red()) && (color.blue() == rhs.blue()) && (color.green() == rhs.green()));
+        } );
+        if( pos != end(colors) )
+          colors.erase( pos );
       }
     }
     
@@ -3329,6 +3336,8 @@ void RelActAutoGui::handleRemoveNuclide( Wt::WWidget *w )
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateNuclidesPresent;
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::UpdateRefGammaLines;
+
   scheduleRender();
 }//void handleRemoveNuclide( Wt::WWidget *w )
 
@@ -3776,6 +3785,8 @@ void RelActAutoGui::handleDetectorChange()
   m_cached_all_peaks.clear();
 
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::UpdateRefGammaLines;
+
   scheduleRender();
 }//void RelActAutoGui::handleDetectorChange()
 
@@ -3862,6 +3873,8 @@ void RelActAutoGui::handleAddRelEffCurve()
   updateMultiPhysicalModelUI( nullptr, rel_eff_curve );
 
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::UpdateRefGammaLines;
+
   scheduleRender();
 }//void handleAddRelEffCurve( RelActAutoGuiRelEffOptions *curve )
 
@@ -3940,6 +3953,8 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   updateMultiPhysicalModelUI( nullptr, nullptr );
   
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::UpdateRefGammaLines;
+
   scheduleRender();
 }//void handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
 
@@ -4534,7 +4549,7 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
     //  will over-ride the colors we are about to set, but this is a minor detail to ignore at
     //  the moment.
     m_photopeak_widget->setColorsForSpecificSources( nuclide_colors );
-    
+
     for( size_t i = 0; i < nuclides.size(); ++i )
     {
       const RelActCalcAuto::NucInputInfo &src = nuclides[i];
@@ -4553,8 +4568,14 @@ void RelActAutoGui::updateDuringRenderForRefGammaLineChange()
       else if( src_rxn )
         m_photopeak_widget->setReaction( src_rxn );
       else { assert( 0 ); }
+
+      const string name = RelActCalcAuto::to_name(src.source);
+      const auto color_pos = nuclide_colors.find(name);
+      if( color_pos != end(nuclide_colors) )
+        m_photopeak_widget->setCurrentColor( color_pos->second ); //Override any peaks showing in the spectrum
     }//for( size_t i = 0; i < nuclides.size(); ++i )
   }//if( !show_ref_lines ) / else
+
 }//void updateDuringRenderForRefGammaLineChange()
 
 
