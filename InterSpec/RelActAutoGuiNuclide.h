@@ -125,7 +125,8 @@ public:
   Wt::Signal<RelActAutoGuiNuclide *,bool> &fit_age_changed();
   
   Wt::Signal<RelActAutoGuiNuclide *> &age_changed();
-  
+
+  void addRelActRangeConstraint( std::optional<double> min_rel_act, std::optional<double> max_rel_act );
   void addActRatioConstraint( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint );
   void addMassFractionConstraint( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint );
   

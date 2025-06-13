@@ -1917,17 +1917,35 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
 
     // Add the nuclides to the GUI for this Rel Eff curve
     const vector<RelActCalcAuto::NucInputInfo> &nuclides = options.rel_eff_curves[curve_index].nuclides;
+    vector<RelActAutoGuiNuclide *> nuc_widgets( nuclides.size(), nullptr );
     for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
     {
       const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
       
       RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, content );
+      nuc_widgets[nuc_index] = nuc_widget;
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
       nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
       nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
       nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
       nuc_widget->fromNucInputInfo( nuc );
+    }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
+
+    // We are adding the constraints after adding all the nuclides, because otherwise some constraints wont be
+    //  valid until multiple nuclides are added, but when there is only one GUI nuclide and the constraint is set,
+    //  it will be discarded because it is not valid - so we have two loops.
+    for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
+    {
+      const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
+
+      RelActAutoGuiNuclide * const nuc_widget = nuc_widgets[nuc_index];
+      assert( nuc_widget );
+
+      if( nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value() )
+      {
+        nuc_widget->addRelActRangeConstraint( nuc.min_rel_act, nuc.max_rel_act );
+      }
 
       assert( curve_index < options.rel_eff_curves.size() );
       const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[curve_index];
@@ -1943,9 +1961,9 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
         {
           if( constraint.nuclide == nuc_nuclide )
             nuc_widget->addMassFractionConstraint( constraint );
-        }//for( const auto &constraint : nuc.mass_fraction_constraints )  
+        }//for( const auto &constraint : nuc.mass_fraction_constraints )
       }//if( nuc_nuclide )
-    }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
+    }//for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
   }//for( loop over curve_index )
 
   

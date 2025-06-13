@@ -6215,9 +6215,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               assert( gamma_index < forward_diff_gammas->size() );
               const NucInputGamma::EnergyYield &gamma_forward = (*forward_diff_gammas)[gamma_index];
               assert( gamma_forward.energy == gamma.energy );
-              assert( gamma_forward.transition_index == gamma.transition_index );
+              // The `transition_index` can actually change with age.
+              //  `decay_gammas(...)` notes "We will assign the transition to the largest yield", so since the yield
+              //  changes with age, the transition may change.  It does really matter to us, since the yield was
+              //  summed in `decay_gammas(..)` anyway.
+              //assert( gamma_forward.transition_index == gamma.transition_index );
+              //assert( gamma_forward.transition == gamma.transition );
               assert( gamma_forward.gamma_type == gamma.gamma_type );
-              assert( gamma_forward.transition == gamma.transition );
               const double forward_yield = gamma_forward.yield;
               const double forward_derivative = (forward_yield - yield.a) / (forward_diff_nuc_age_val - nuc_age_val);
 
@@ -6226,9 +6230,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 assert( gamma_index < backward_diff_gammas->size() );
                 const NucInputGamma::EnergyYield &gamma_backward = (*backward_diff_gammas)[gamma_index];
                 assert( gamma_backward.energy == gamma.energy );
-                assert( gamma_backward.transition_index == gamma.transition_index );
+                //See note above about why this next assert is commented out
+                //assert( gamma_backward.transition_index == gamma.transition_index );
+                //assert( gamma_backward.transition == gamma.transition );
                 assert( gamma_backward.gamma_type == gamma.gamma_type );
-                assert( gamma_backward.transition == gamma.transition );
                 
                 const double f_x = yield.a;
                 const double f_plus = gamma_forward.yield;
