@@ -1442,21 +1442,17 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
                                                          boost::placeholders::_2,
                                                          SpectrumType::Background ) );
   
-  m_foregroundDragNDrop->setUploadProgress( true );
   m_foregroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Foreground ) );
   
-  m_secondForegroundDragNDrop->setUploadProgress( true );
   m_secondForegroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::SecondForeground ) );
   
-  m_backgroundDragNDrop->setUploadProgress( true );
   m_backgroundDragNDrop->dataReceived().connect( boost::bind( &SpecMeasManager::handleDataRecievedStatus, this,
                                       boost::placeholders::_1, boost::placeholders::_2, SpectrumType::Background ) );
 
 #if( USE_BATCH_TOOLS )
   m_batchDragNDrop = new FileDragUploadResource( this );
-  m_batchDragNDrop->setUploadProgress( true );
   m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
 #endif
 }// SpecMeasManager
@@ -3769,9 +3765,11 @@ void SpecMeasManager::showBatchDialog()
 {
   if( m_batchDialog )
     return;
-  
-  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
-  m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+
+   m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
+   m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+   m_batchDialog->show();
+   wApp->triggerUpdate();
 }//void showBatchDialog()
 
 void SpecMeasManager::handleBatchDialogFinished()

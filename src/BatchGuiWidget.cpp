@@ -222,29 +222,30 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   // We will load the initial spectrum files, after giving the widget a second to fully load.
   //  I'm not quite sure why, but without doing this, sometimes we can get a JS exception,
   //  maybe because the JS is somehow getting out of order?
-  //addInputFiles( m_uploadResource->takeSpooledFiles() );
+  addInputFiles( spooled_files );
   
-  boost::function<void()> load_files
-                = wApp->bind( boost::bind( &BatchGuiWidget::addInputFiles, this, spooled_files ) );
-  boost::function<void()> worker = [load_files](){
-    load_files();
-    wApp->triggerUpdate();
-  };
+  //boost::function<void()> load_files
+  //              = wApp->bind( boost::bind( &BatchGuiWidget::addInputFiles, this, spooled_files ) );
+  //boost::function<void()> worker = [load_files](){
+  //  load_files();
+  //  wApp->triggerUpdate();
+  //};
   
   // Fallback function to clean the files up, incase this session is no longer alive
   //  BUT note that there is a path where if this widget is deleted, before the worker is called,
   //  then the files wont be cleaned up any way.
-  boost::function<void()> fall_back = [spooled_files](){
-    for( const tuple<string, string, bool> &file : spooled_files )
-    {
-      const string &path_to_file = std::get<1>( file );
-      const bool should_delete = std::get<2>( file );
-      if( should_delete )
-        SpecUtils::remove_file( path_to_file );
-    }
-  };//fall_back
+  //boost::function<void()> fall_back = [spooled_files](){
+  //  for( const tuple<string, string, bool> &file : spooled_files )
+  //  {
+  //    const string &path_to_file = std::get<1>( file );
+  //    const bool should_delete = std::get<2>( file );
+  //    if( should_delete )
+  //      SpecUtils::remove_file( path_to_file );
+  //  }
+  //};//fall_back
   
-  WServer::instance()->schedule( 500, wApp->sessionId(), worker, fall_back );
+  //WServer::instance()->schedule( 1, wApp->sessionId(), worker, fall_back );
+  wApp->triggerUpdate();
 }// BatchGuiWidget constructor
 
 BatchGuiWidget::~BatchGuiWidget()
@@ -261,7 +262,11 @@ Wt::Signal<bool> &BatchGuiWidget::canDoAnalysis()
 
 void BatchGuiWidget::handleFileDrop( const std::string &, const std::string & )
 {
-  addInputFiles( m_uploadResource->takeSpooledFiles() );
+  const vector<tuple<string, string, bool>> dropped_files = m_uploadResource->takeSpooledFiles();
+  //addInputFiles( dropped_files );
+  auto worker = wApp->bind( boost::bind( &BatchGuiWidget::addInputFiles, this, dropped_files ) );
+  WServer::instance()->schedule( 25, wApp->sessionId(), worker );
+  wApp->triggerUpdate();
 }
 
 void BatchGuiWidget::addInputFiles( const std::vector<std::tuple<std::string, std::string, bool>> &files )
@@ -278,6 +283,8 @@ void BatchGuiWidget::addInputFiles( const std::vector<std::tuple<std::string, st
     input_file->remove_self_request().connect(
       boost::bind( &BatchGuiWidget::handle_remove_input_file, this, boost::placeholders::_1 ) );
   }
+
+  wApp->triggerUpdate();
 }// void BatchGuiWidget::addInputFiles()
 
 void BatchGuiWidget::handle_remove_input_file( BatchGuiInputSpectrumFile *input )
