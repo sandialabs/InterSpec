@@ -248,6 +248,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     spectrumLayout->addWidget( m_snapshotModel, 0, 0 );
 #endif
     
+    const string docroot = wApp->docRoot();
+    
     ///-----Sample -----
     m_messageModelSample = new Wt::WStandardItemModel( 0, 3, this );
     
@@ -255,7 +257,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     parserType->setData(SpecUtils::ParserType::N42_2006); //SpeIaea
     vector<WStandardItem *> message( 3 );
     message[0] = new Wt::WStandardItem("Ba-133 (16k bin N42)");
-    message[1] = new Wt::WStandardItem("example_spectra/ba133_source_640s_20100317.n42");
+    message[1] = new Wt::WStandardItem( SpecUtils::append_path(docroot, "example_spectra/ba133_source_640s_20100317.n42") );
     message[2] = parserType;
     m_messageModelSample->appendRow(message);
     
@@ -263,7 +265,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     parserType = new WStandardItem();
     parserType->setData(SpecUtils::ParserType::N42_2006); //SpeIaea
     message[0] = new Wt::WStandardItem("Passthrough (16k bin, 8 det, 1064 meas N42)");
-    message[1] = new Wt::WStandardItem("example_spectra/passthrough.n42");
+    message[1] = new Wt::WStandardItem( SpecUtils::append_path(docroot, "example_spectra/passthrough.n42" ));
     message[2] = parserType;
     m_messageModelSample->appendRow(message);
   
@@ -271,7 +273,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     parserType = new WStandardItem();
     parserType->setData(SpecUtils::ParserType::N42_2006); //SpeIaea
     message[0] = new Wt::WStandardItem("Background (16k bin N42)");
-    message[1] = new Wt::WStandardItem("example_spectra/background_20100317.n42");
+    message[1] = new Wt::WStandardItem( SpecUtils::append_path(docroot, "example_spectra/background_20100317.n42") );
     message[2] = parserType;
     m_messageModelSample->appendRow(message);
     
@@ -1336,8 +1338,7 @@ void UseInfoWindow::loadSample( const Wt::WModelIndex index )
   
   SpecMeasManager* manager = m_viewer->fileManager();
   
-  const string docroot = wApp->docRoot();
-  string filepath = SpecUtils::append_path( docroot, val.toUTF8() );
+  const string filepath = val.toUTF8();
   
   cout << "Will try to load '" << filepath << "'" << endl;
   
