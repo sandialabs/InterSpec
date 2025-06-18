@@ -59,18 +59,18 @@
 using namespace Wt;
 using namespace std;
 
-/*
- * See also: http://www.webtoolkit.eu/wt/blog/2010/03/02/javascript_that_is_c__
- */
-#define INLINE_JAVASCRIPT(...) #__VA_ARGS__
-
 
 FileDragUploadResource::FileDragUploadResource( WObject *parent  )
     : WResource( parent ),
       m_fileDrop( this )
 {
   setUploadProgress( true );
-  setTakesUpdateLock( true );
+
+  //If we enable this next call, then we dont get immediate action to
+  //  the event loop when we upload a file, as we would expect.
+  //  Not sure why.
+  //  But this is fine as `handleRequest(...)` explicitly takes a `WApplication::UpdateLock`
+  //setTakesUpdateLock( true );
 }
 
 
