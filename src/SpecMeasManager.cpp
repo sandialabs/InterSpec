@@ -3766,10 +3766,9 @@ void SpecMeasManager::showBatchDialog()
   if( m_batchDialog )
     return;
 
-   m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
-   m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
-   m_batchDialog->show();
-   wApp->triggerUpdate();
+  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
+  m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+  wApp->triggerUpdate();
 }//void showBatchDialog()
 
 void SpecMeasManager::handleBatchDialogFinished()

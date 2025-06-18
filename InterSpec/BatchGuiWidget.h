@@ -53,6 +53,13 @@ class DirectorySelector;
 class FileDragUploadResource;
 class BatchGuiInputSpectrumFile;
 
+
+/* TODO items:
+ - Add callback to batch act/shield and peak fit ana to display progress to user
+ - 
+ */
+
+
 class BatchGuiDialog : public SimpleDialog
 {
 public:

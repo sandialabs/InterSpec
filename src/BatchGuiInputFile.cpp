@@ -188,14 +188,19 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
           {
           }
 
-          is_csv = SpecUtils::icontains( line, "Centroid" ) && SpecUtils::icontains( line, "Net_Area" ) &&
-                   SpecUtils::icontains( line, "FWHM" );
+          is_csv = (SpecUtils::icontains( line, "Centroid" )
+                   && SpecUtils::icontains( line, "Net_Area" )
+                   && SpecUtils::icontains( line, "FWHM" ));
         }// if( in_file )
 
         *status_ptr = is_csv ? 2 : 3;
       }// if( parsed as spectrum file ) / else
 
-      WServer::instance()->schedule( 25, sessionid, updateGuiCallback );
+      //If this next call uses a timeout below about 50, we get JS errors on macOS app.
+      //  Not quite sure why; elements arent being found in the JS to set their contents.
+      //  The obvious thing is that its something to do with us being in a SimpleDialog.
+      //  TODO: figure out why we need this next timeout!
+      WServer::instance()->schedule( 1000, sessionid, updateGuiCallback );
     } );
 }// BatchGuiInputSpectrumFile constructor
 

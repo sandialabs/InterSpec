@@ -217,13 +217,13 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   m_input_status_error->hide();
 
   
-  const vector<tuple<string,string,bool>> spooled_files = m_uploadResource->takeSpooledFiles();
-  
+  //const vector<tuple<string,string,bool>> spooled_files = m_uploadResource->takeSpooledFiles();
+
   // We will load the initial spectrum files, after giving the widget a second to fully load.
   //  I'm not quite sure why, but without doing this, sometimes we can get a JS exception,
   //  maybe because the JS is somehow getting out of order?
-  addInputFiles( spooled_files );
-  
+  //addInputFiles( spooled_files );
+
   //boost::function<void()> load_files
   //              = wApp->bind( boost::bind( &BatchGuiWidget::addInputFiles, this, spooled_files ) );
   //boost::function<void()> worker = [load_files](){
@@ -245,6 +245,9 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   //};//fall_back
   
   //WServer::instance()->schedule( 1, wApp->sessionId(), worker, fall_back );
+
+  handleFileDrop( "", "" );
+
   wApp->triggerUpdate();
 }// BatchGuiWidget constructor
 
