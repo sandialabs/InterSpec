@@ -360,6 +360,12 @@ protected:
   
   Wt::WCheckBox *m_fit_energy_cal;
   Wt::WCheckBox *m_background_subtract;
+
+  /** This variable should always match the visibility state of `m_same_z_age`, but is necassary since we cant use
+   the visibility state of the widget to track validity of this settings, because `isVisisble()` will return false when we
+   are saving the state while closiing the RelActAuto tool.
+   */
+  bool m_same_z_age_enabled;
   Wt::WCheckBox *m_same_z_age;
   
   

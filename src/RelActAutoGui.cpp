@@ -425,6 +425,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_fwhm_estimation_method( nullptr ),
   m_fit_energy_cal( nullptr ),
   m_background_subtract( nullptr ),
+  m_same_z_age_enabled( false ),
   m_same_z_age( nullptr ),
   m_skew_type( nullptr ),
   m_add_uncert( nullptr ),
@@ -885,7 +886,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_same_z_age->addStyleClass( "SameZAgeCb CbNoLineBreak" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
-  
+  m_same_z_age_enabled = true;
+
   //WText *energy_header = new WText( "Energy Ranges", energiesHolder );
   //energy_header->addStyleClass( "EnergyNucHeader" );
   
@@ -1145,7 +1147,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     rel_eff_curve.nuclides = getNucInputInfo( rel_eff_curve_index );
     rel_eff_curve.act_ratio_constraints = getActRatioConstraints( rel_eff_curve_index );
     rel_eff_curve.mass_fraction_constraints = getMassFractionConstraints( rel_eff_curve_index );
-    rel_eff_curve.nucs_of_el_same_age = (m_same_z_age->isVisible() && m_same_z_age->isChecked());
+    rel_eff_curve.nucs_of_el_same_age = (m_same_z_age_enabled && m_same_z_age->isChecked());
     rel_eff_curve.rel_eff_eqn_type = opts->rel_eff_eqn_form();
     rel_eff_curve.rel_eff_eqn_order = opts->rel_eff_eqn_order();
     rel_eff_curve.phys_model_self_atten = opts->phys_model_self_atten();
@@ -2484,7 +2486,7 @@ void RelActAutoGui::handleSameAgeChanged()
   } );
 
 
-  if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+  if( !m_same_z_age_enabled || !m_same_z_age->isChecked() )
     return;
 
   // Go through and set the the ages of all nuclides of each element to the same value.
@@ -2605,7 +2607,7 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
   if( !nuc )
     return;
 
-  if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+  if( !m_same_z_age_enabled || !m_same_z_age->isChecked() )
     return;
 
   const RelActCalcAuto::SrcVariant src_info = nuc->source();
@@ -2643,7 +2645,7 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
   } );
 
   
-  if( !nuc || !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+  if( !nuc || !m_same_z_age_enabled || !m_same_z_age->isChecked() )
     return;
 
   const RelActCalcAuto::SrcVariant src_info = nuc->source();
@@ -4514,8 +4516,9 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
     }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
-  if( m_same_z_age->isVisible() != has_multiple_nucs_of_z )
+  if( (m_same_z_age->isVisible() != has_multiple_nucs_of_z) || (m_same_z_age_enabled != has_multiple_nucs_of_z) )
   {
+    m_same_z_age_enabled = has_multiple_nucs_of_z;
     m_same_z_age->setHidden( !has_multiple_nucs_of_z );
     if( !has_multiple_nucs_of_z )
       m_same_z_age->setChecked( false );
