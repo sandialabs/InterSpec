@@ -134,7 +134,7 @@ public:
   
   void updateSearchResults( std::shared_ptr<SearchWorkingSpace> workingspace );
   static void setSearchEnergies( std::shared_ptr<SearchWorkingSpace> workingspace,
-                                const double minbr,
+                                const double min_rel_br,
                                 const double minHalfLife,
                                 Wt::WFlags<RadSource> radiation,
                                 const std::vector<const SandiaDecay::Element *> &elements,

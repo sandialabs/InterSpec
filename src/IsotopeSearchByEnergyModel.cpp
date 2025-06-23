@@ -32,22 +32,22 @@
 #include <Wt/WServer>
 #include <Wt/WApplication>
 
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
-#include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/IsotopeSearchByEnergyModel.h"
-
-
-#include "SandiaDecay/SandiaDecay.h"
 
 
 using namespace Wt;
@@ -134,7 +134,7 @@ namespace
       specified energy ranges, with at least the minimum branching ratio and
       half-lives specified.
    */
-  NuclideMatches filter_nuclides( const double minbr,
+  NuclideMatches filter_nuclides( const double min_relative_br,
                                   const double minHalfLife,
                                   const bool no_progeny,
                                   const vector<double> &energies,
@@ -147,12 +147,12 @@ namespace
     NuclideMatches filteredNuclides;
     
     //Get isotopes with gammas in all ranges...
-    EnergyToNuclideServer::setLowerLimits( minHalfLife, minbr );
-    
+    EnergyToNuclideServer::setLowerLimits( minHalfLife, min_relative_br );
+
     auto nucnuc = EnergyToNuclideServer::energyToNuclide();
     if( !nucnuc )
       throw runtime_error( "Couldnt get EnergyToNuclideServer" );
-    
+
     for( size_t i = 0; i < energies.size(); ++i )
     {
       const float minenergy = static_cast<float>(energies[i] - windows[i]);
@@ -209,13 +209,66 @@ namespace
             if( nuc->halfLife < minHalfLife )
               continue;
             
-            if( (minbr <= 0.0) || (nuc->branchRatioToDecendant(pos->nuclide)*transbr >= minbr) )
-              filteredNuclides[nuc].insert( energies[i] );
+            filteredNuclides[nuc].insert( energies[i] );
           }
         }//if( !no_progeny )
       }//for( pos = begin; pos != end; ++pos )
     }//for( size_t i = 0; i < energies.size(); ++i )
-    
+
+    if( min_relative_br > 0.0 )
+    {
+      //Age each nuclide to default nuclide age; find its max rel intensity line, then divide each gamma by that
+      //  and re-due the above.  This pathway is a lot slower since we are doing the full decay calculation, so we'll
+      //  try to use multiple threads.
+      SpecUtilsAsync::ThreadPool pool;
+      for( NuclideMatches::value_type &nuc_matches : filteredNuclides )
+      {
+        const SandiaDecay::Nuclide * const nuc = nuc_matches.first;
+        set<double> * const matched_energies = &(nuc_matches.second);
+
+        pool.post( [min_relative_br, nuc, no_progeny, matched_energies, &energies, &windows](){
+          matched_energies->clear();
+          const double age = no_progeny ? 0.0 : PeakDef::defaultDecayTime( nuc );
+          SandiaDecay::NuclideMixture mixture;
+          mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuc,1.0E4) );
+          const vector<SandiaDecay::EnergyRatePair> photons
+                                        = mixture.photons(age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy);
+          double max_intensity = 0.0;
+          for( const SandiaDecay::EnergyRatePair &energy_rate : photons )
+            max_intensity = std::max( max_intensity, energy_rate.numPerSecond );
+
+          if( (max_intensity <= 0.0) || IsNan(max_intensity) || IsInf(max_intensity) )
+            max_intensity = 1.0; //JIC
+
+          for( size_t window_index = 0; window_index < energies.size(); ++window_index )
+          {
+            const double min_energy = energies[window_index] - fabs(windows[window_index]);
+            const double max_energy = energies[window_index] + fabs(windows[window_index]);
+
+            const auto photon_begin = lower_bound( begin(photons), end(photons), min_energy,
+              []( const SandiaDecay::EnergyRatePair &el, const double value ){
+                return el.energy < value;
+            } );
+
+            const auto photon_end = upper_bound( begin(photons), end(photons), max_energy,
+              []( const double value, const SandiaDecay::EnergyRatePair &el ){
+                return value < el.energy;
+            } );
+
+            auto max_in_range_iter = photon_end;
+            for( auto iter = photon_begin; iter != photon_end; ++iter )
+            {
+              if( (max_in_range_iter == photon_end) || (iter->numPerSecond > max_in_range_iter->numPerSecond) )
+                max_in_range_iter = iter;
+            }
+            if( (max_in_range_iter != photon_end) && ( (max_in_range_iter->numPerSecond/max_intensity) >= min_relative_br) )
+              matched_energies->insert( max_in_range_iter->energy );
+          }//for( size_t window_index = 0; window_index < energies.size(); ++window_index )
+        } );
+      }//for( const auto &nuc_matches : filteredNuclides )
+      pool.join();
+    }//if( we are filtering on BRs )
+
     return filteredNuclides;
   }//filter_nuclides( )
 
@@ -900,7 +953,7 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
             const IsotopeSearchByEnergyModel::NucToEnergiesMap &filteredNuclides,
             const vector<double> &energies,
             const vector<double> &windows,
-            const double minBR,
+            const double min_rel_br,
             const bool no_progeny,
             const std::shared_ptr<const DetectorPeakResponse> detector_response_function,
             const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
@@ -941,9 +994,8 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
         up = nm.second.upper_bound( energy + de );
         bool found = false;
         for( iter = lb; iter != up; ++iter )
-        found |= (fabs((*iter)-energy) <= de);
-        
-        
+          found |= (fabs((*iter)-energy) <= de);
+
         if( !found && (energy < 125.0*PhysicalUnits::keV) )
         {//lets look through the fluorescent x-rays for this element
           double minxraydist = 999.9;
@@ -985,7 +1037,7 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
     
     if( !hasAll )
       continue;
-    
+
     double dist = 0.0;
     vector<IsotopeMatch> nucmatches;
     for( size_t i = 0; i < energies.size(); ++i )
@@ -1082,7 +1134,6 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           }//switch( sourceGammaType )
           
           match.m_age = no_progeny ? 0.0 : PeakDef::defaultDecayTime( nm.first );
-          
           SandiaDecay::NuclideMixture mixture;
           mixture.addNuclide( SandiaDecay::NuclideActivityPair(nm.first,1.0) );
           const vector<SandiaDecay::EnergyRatePair> photons
@@ -1109,9 +1160,9 @@ void IsotopeSearchByEnergyModel::nuclidesWithAllEnergies(
           
           match.m_branchRatio = nearestAbun / maxAbund;
           
-          if( (match.m_branchRatio < minBR) || (match.m_branchRatio <= 0.0) )
+          if( (match.m_branchRatio < min_rel_br) || (match.m_branchRatio <= 0.0) )
             continue;
-          
+
           match.m_displayData[ParentIsotope] = match.m_nuclide->symbol;
           
           if( match.m_sourceGammaType == PeakDef::AnnihilationGamma )
@@ -1573,7 +1624,7 @@ void IsotopeSearchByEnergyModel::updateSearchResults(
 
 void IsotopeSearchByEnergyModel::setSearchEnergies(
                                                    std::shared_ptr<SearchWorkingSpace> workingspace,
-                                                   const double minbr,
+                                                   const double min_rel_br,
                                                    const double minHalfLife,
                                                    Wt::WFlags<IsotopeSearchByEnergyModel::RadSource> srcs,
                                                    const std::vector<const SandiaDecay::Element *> &elements,
@@ -1598,7 +1649,8 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     
     if( energies.empty() )
     {
-      WServer::instance()->post( appid, updatefcn );
+      if( updatefcn )
+        WServer::instance()->post( appid, updatefcn );
       return;
     }//if( energies.empty() )
     
@@ -1664,8 +1716,8 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     {
       // nuclidesWithAllEnergies probably wont throw - it will discard any sub-results that cause
       //  unexpected (and there really are none expected) exceptions.
-      NuclideMatches filteredNuclides = filter_nuclides( minbr, minHalfLife, no_progeny, energies, windows );
-      
+      NuclideMatches filteredNuclides = filter_nuclides( min_rel_br, minHalfLife, no_progeny, energies, windows );
+
       if( !nuclides.empty() )
       {
         NuclideMatches valid_matches;
@@ -1680,7 +1732,7 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
         valid_matches.swap( filteredNuclides );
       }//if( !nuclides.empty() )
       
-      nuclidesWithAllEnergies( filteredNuclides, energies, windows, minbr, no_progeny,
+      nuclidesWithAllEnergies( filteredNuclides, energies, windows, min_rel_br, no_progeny,
                               drf, meas, user_peaks, auto_peaks, matches );
     }//if( srcs & RadSource::NuclideGammaOrXray )
     
@@ -1718,8 +1770,9 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
     
     cerr << msg.str() << endl;
   }//try / catch
-  
-  WServer::instance()->post(  appid, updatefcn );
+
+  if( updatefcn )
+    WServer::instance()->post(  appid, updatefcn );
 }//void setSearchEnergies( const vector<double> &energies, const double window )
 
 

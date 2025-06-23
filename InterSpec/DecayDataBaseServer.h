@@ -89,14 +89,14 @@ public:
 
   static void unintialize();
   
-  static void setLowerLimits( const double halfLife, const double branchRatio );
+  static void setLowerLimits( const double halfLife, const double minRelativeBranchRatio );
   static double minHalfLife();
   static double minBranchingRatio();
   
 private:
   static std::mutex sm_mutex;
   static double sm_halfLife;
-  static double sm_branchRatio;
+  static double sm_minRelativeBranchRatio;
   static std::shared_ptr< const EnergyNuclidePairVec > sm_energyToNuclide;
 
 
@@ -119,14 +119,16 @@ public:
   //min_halflife specifies not just the minimum halflife of the nuclide the
   //  transition is from, but of all of its forbeares (eg if a grandparent
   //  nuclide has halfLife > min_halflife, then transition is kept)
-  //min_gamma_intensity ranges from 0 to 1.0 and specifies the minimum fraction
-  //  of gammas a photopeak must have before it is included (<=0.0 includes all,
-  //  >1.0 excludes all)
+  //min_gamma_rel_br ranges from 0 to 1.0 and specifies the minimum relative
+  //  branching ratio (e.g., the gammas br, divided by max br of that nuclide)
+  //  that should be included.  Note that this applies to an individual decay
+  //  of a nuclide, not relative to a parent nuclide - so let more things through
+  //  than you will want for a long decay chain, so think of it as a pre-filter.
   static void initGammaToNuclideMatches( const SandiaDecay::SandiaDecayDataBase *database,
                                  EnergyNuclidePairVec &results,
                                  const double min_halflife,
-                                 const double min_gamma_intensity );
-  
+                                 const double min_gamma_rel_br );
+
   //nuclidesWithGammaInRange(...) returns nuclides with gammas in the specified
   //  range.  Note that the range are inclusive, and it is assumed gammaToNuc
   //  is sorted.
