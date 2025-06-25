@@ -84,6 +84,14 @@
   height: 100%;
 }
 
+.RelActAutoGui .RelActTxtResults
+{
+  /* Let this text be selectable so user can copy/paste. */
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
+}
+
 .RelActAutoGui .UpperMenu,
 .RelActAutoGui .RelEffCurveOptsMenu,
 .RelActAutoGui .RelEffNuclidesMenu
@@ -639,6 +647,11 @@ padding-bottom: 1px;
   overflow: hidden;
   margin-left: 5px;
   flex: 1 1 auto;
+
+  /* Let this text be selectable so user can copy/paste. */
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
 }
 
 .RelActAutoGui .RelActAutoGuiNuclide .UpperRow,
