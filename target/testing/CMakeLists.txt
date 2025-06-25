@@ -86,6 +86,15 @@ add_test( NAME FindCharacteristicNuclides
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+
+add_executable( test_nuclideSearch test_nuclideSearch.cpp )
+target_link_libraries( test_nuclideSearch PRIVATE InterSpecLib )
+add_test( NAME NuclideSearch
+  COMMAND $<TARGET_FILE:test_nuclideSearch> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 add_executable( test_RefLines test_RefLines.cpp )
 target_link_libraries( test_RefLines PRIVATE InterSpecLib )
 add_test( NAME TesRefLines
