@@ -525,6 +525,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #if( BUILD_AS_OSX_APP )
   // Inject JavaScript to catch errors, that the objective-c will then recieve.
   const string jsErrorCode = "window.onerror = function(message, source, lineno, colno, error) {\n"
+  "if(message.includes('ResizeObserver') || message.includes('V(a).curve')) return true;\n" // Suppress these specific errors; returning true prevents the error from being logged
   "  console.error( 'JS Error:', message, ', from source:', source, ', lineno:', lineno, ', error:', error );\n"
   "  window.webkit.messageHandlers.jsErrorHandler.postMessage({\n"
   "    message: message, source: source, lineno: lineno, colno: colno, error: error ? error.toString() : null\n"

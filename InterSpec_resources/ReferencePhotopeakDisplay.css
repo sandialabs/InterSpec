@@ -73,7 +73,21 @@
     padding-left: 5px;
     padding: 5px;
     margin: 0px; /* Overide ToolTabTitledColumnContent */
-    overflow-y: auto;
+    overflow-y: auto; /* The list of options may become long enough to show y-scroll bars. */
+    overflow-x: hidden; /* But we dont want x-scrollbars because the y-scroll bars */
+}
+
+@supports (scrollbar-gutter: stable) {
+  .RefLinesOptions .ToolTabTitledColumnContent  {
+    /* scrollbar-gutter: stable; */ /* Use scrollbar-gutter if supported */
+    scrollbar-gutter: stable both-edges; /* not really sure `both-edges` does anything */
+  }
+}
+
+@supports not (scrollbar-gutter: stable) {
+  .RefLinesOptions .ToolTabTitledColumnContent {
+    padding-right: 16px; /* Fallback for browsers without scrollbar-gutter */
+  }
 }
 
 .RefLinesOptions .ToolTabTitledColumnContent > label {
