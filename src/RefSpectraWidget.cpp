@@ -223,7 +223,9 @@ RefSpectraWidget::RefSpectraWidget( Wt::WContainerWidget *parent )
   m_showAsComboBox( nullptr ),
   m_baseDirectories{},
   m_fileSelectionChangedSignal( this ),
-  m_lastCollapsedIndex{}
+  m_lastCollapsedIndex{},
+  m_lastExpandedIndex{},
+  m_lastExpandTime{}
 {
   setupUI();
   initBaseDirs();
@@ -355,6 +357,7 @@ void RefSpectraWidget::setupUI()
   m_treeView->setModel( m_treeModel );
   m_treeView->selectionChanged().connect( this, &RefSpectraWidget::handleSelectionChanged );
   m_treeView->collapsed().connect( boost::bind( &RefSpectraWidget::handleCollapsed, this, boost::placeholders::_1 ) );
+  m_treeView->expanded().connect( boost::bind( &RefSpectraWidget::handleExpanded, this, boost::placeholders::_1 ) );
   m_treeView->setSelectable( true );
   m_treeView->setSelectionMode( Wt::SelectionMode::SingleSelection );
   m_treeView->setColumnWidth( 0, WLength(250, WLength::Pixel) );
@@ -727,6 +730,9 @@ void RefSpectraWidget::handleSelectionChanged()
   if( selectedIndexes.empty() )
   {
     m_lastCollapsedIndex = WModelIndex();
+    m_lastExpandedIndex = WModelIndex();
+    m_lastExpandTime = std::chrono::time_point<std::chrono::steady_clock>{};
+
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
     m_deleteDirButton->setHidden( true );
     m_showInExplorerButton->setHidden( true );
@@ -884,7 +890,29 @@ void RefSpectraWidget::handleSelectionChanged()
 
 void RefSpectraWidget::handleCollapsed( const Wt::WModelIndex &index )
 {
+  // Check if this collapse is almost immediately after an exand of the node, and if so
+  //  undo the collapse - this happens when the user uses the "+" icon to expand a node;
+  //  not sure if its soemthing we are doing, or a Wt issue, but this works around it.
+  if( (index == m_lastExpandedIndex)
+     && ((chrono::steady_clock::now() - m_lastExpandTime) < chrono::milliseconds(500)) )
+  {
+    m_treeView->expand( index );
+    m_lastCollapsedIndex = WModelIndex();
+    return;
+  }//
+
   m_lastCollapsedIndex = index;
+
+  // The collapse wasnt a near instant collapse after exanding - we can clear ou the following
+  m_lastExpandedIndex = WModelIndex();
+  m_lastExpandTime = std::chrono::time_point<std::chrono::steady_clock>{};
+}//void handleCollapsed( const Wt::WModelIndex &index )
+
+
+void RefSpectraWidget::handleExpanded( const Wt::WModelIndex &index )
+{
+  m_lastExpandedIndex = index;
+  m_lastExpandTime = std::chrono::steady_clock::now();
 }
 
 

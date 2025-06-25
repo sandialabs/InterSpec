@@ -149,6 +149,11 @@ div.RefSpectraWidget .AddDirBtn.Wt-disabled, div.RefSpectraWidget .DeleteDirBtn.
   width: 300px;
 }
 
+.RefSpectraAddDirDialog.simple-dialog .body.RefSpectraAddDirDialogContents
+{
+  overflow-y: hidden;
+}
+
 .RefSpectraAddDirDialogContents
 {
   display: flex;

@@ -26,6 +26,7 @@
 
 #include "InterSpec_config.h"
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -121,6 +122,7 @@ public:
 protected:
   void handleSelectionChanged();
   void handleCollapsed( const Wt::WModelIndex &index );
+  void handleExpanded( const Wt::WModelIndex &index );
   void tryExpandNode( const Wt::WModelIndex &index );
   void handleLayoutAboutToBeChanged();
   void handleLayoutChanged();
@@ -162,6 +164,14 @@ private:
    * but avoid expanding nodes that *just* got collapsed (colapsing them causes them to be selected).
    */
   Wt::WModelIndex m_lastCollapsedIndex;
+
+  /** If the user uses the little "+" icon to expand a folder, the node will quickly open then collapse;
+   not sure if its something I'm doing to cause this (probably), or Wt, but as a workaround, when we
+   get the signal that a node is collapsed, if its `m_lastExpandedIndex` and its been less than
+   half a second (arbitrary), then we will re-expand it.
+   */
+  Wt::WModelIndex m_lastExpandedIndex;
+  std::chrono::time_point<std::chrono::steady_clock> m_lastExpandTime;
 
   void setupUI();
   void createTreeModel();
