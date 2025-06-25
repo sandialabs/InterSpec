@@ -1182,6 +1182,23 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
 
 struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 {
+  /** How to perform differentiation for jacobians; either "auto" or numeric.
+
+   We should use auto-diff generally, since it is faster, and should be less-error-prone, but to check on
+   things, you can choose to use numeric differentiation.
+   */
+  static const bool sm_use_auto_diff = true;
+
+  /** Ceres uses a compile time constant for the number of parameters it performs for "auto" differentiation for; this
+   variable constrols how many parameters will be differentiated at a time.
+
+   It looks like using Jets<double,32> is fastest for an example problem, however it really
+   doesnt seem to matter much (Wall times of {0.1728, 0.1789, 0.1665, 0.1608}, for strides of
+   {4, 8, 16, 32}, respectively
+  */
+  static const size_t sm_auto_diff_stride_size = 32;
+
+
   RelActCalcAuto::Options m_options;
   std::vector<std::vector<NucInputGamma>> m_nuclides; //has same number of entries as `m_options.rel_eff_curves`
   std::vector<RoiRangeChannels> m_energy_ranges;
@@ -3320,18 +3337,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     test_gradients( cost_functor.get(), parameters );
 #endif
-    
-    // We should use auto-diff generally, since it is faster, and should be less-error-prone, but to check on
-    //  things, you can choose to use numeric differentiation.
-    const bool use_auto_diff = true;
 
-    if( use_auto_diff )
+    if( sm_use_auto_diff )
     {
-      // It looks like using Jets<double,32> is fastest for an example problem, however it really
-      //  doesnt seem to matter much (Wall times of {0.1728, 0.1789, 0.1665, 0.1608}, for strides of
-      //  {4, 8, 16, 32}, respectively
-      ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32> *dyn_auto_diff_cost_function
-            = new ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32>( cost_functor.get(),
+      ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,sm_auto_diff_stride_size> *dyn_auto_diff_cost_function
+            = new ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,sm_auto_diff_stride_size>( cost_functor.get(),
                                                                       ceres::DO_NOT_TAKE_OWNERSHIP );
       dyn_auto_diff_cost_function->SetNumResiduals( static_cast<int>(cost_functor->number_residuals()) );
       dyn_auto_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
@@ -3348,8 +3358,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       dyn_num_diff_cost_function->AddParameterBlock( static_cast<int>(cost_functor->number_parameters()) );
 
       cost_function = dyn_num_diff_cost_function;
-    }//if( use_auto_diff ) / else
-    
+    }//if( sm_use_auto_diff ) / else
+
     
     //auto cost_function = new ceres::DynamicNumericDiffCostFunction<RelActAutoCostFcn>( cost_functor.get(),
     //                                                                ceres::DO_NOT_TAKE_OWNERSHIP );
@@ -3459,7 +3469,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION;
     ceres_options.max_num_iterations = 50000;
 #ifndef NDEBUG
-    ceres_options.max_solver_time_in_seconds = 300.0;
+    ceres_options.max_solver_time_in_seconds = 600.0; //10 minutes!
 #else
     ceres_options.max_solver_time_in_seconds = 120.0;
 #endif
@@ -3614,6 +3624,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       //add_cov_block( acts_start, num_acts_par );
       //add_cov_block( fwhm_start, num_fwhm_pars );
       solution.m_covariance.clear();
+      solution.m_phys_units_cov.clear();
       solution.m_final_uncertainties.clear();
       
       if( !covariance.Compute(covariance_blocks, &problem) )
@@ -3699,6 +3710,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( (solution.m_parameter_scale_factors[i] > 0.0) || !solution.m_parameter_were_fit[i] );
     }
 
+    if( !solution.m_covariance.empty() )
+    {
+      solution.m_phys_units_cov = solution.m_covariance;
+
+      for( size_t row = 0; row < num_pars; ++row )
+      {
+        const optional<double> row_mass_mult = cost_functor->mass_constraint_multiple(row,parameters);
+        const double row_mult = row_mass_mult.has_value() ? *row_mass_mult : solution.m_parameter_scale_factors[row];
+
+        for( size_t col = 0; col < num_pars; ++col )
+        {
+          const optional<double> col_mass_mult = cost_functor->mass_constraint_multiple(col,parameters);
+          const double col_mult = col_mass_mult.has_value() ? *col_mass_mult : solution.m_parameter_scale_factors[row];
+
+          solution.m_phys_units_cov[row][col] *= row_mult*col_mult;
+        }//for( size_t col = 0; col < num_pars; ++col )
+      }//for( size_t row = 0; row < num_pars; ++row )
+    }//if( !solution.m_covariance.empty() )
 
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       solution.m_energy_cal_adjustments[i] = parameters[i];
@@ -5254,7 +5283,112 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return nuc_info.activity_multiple * x[parent_nuc_par_index];
   }//double relative_activity(...)
   
-  
+
+  /** If the passed in index is the RelativeActivity index of a mass-constrained nuclide, will return the
+   multiple from the parameter value, to the relative activity value; this is useful for convertering the uncertainties
+   of the parameter into RelativeActivity uncertainty, or correlations between relative activiies.
+
+   @param cost_functor The cost functor used to solve the problem.
+   @param index The index, in `x` parametes, that you want the multiple of.
+   @param parameters The solved, or current, parameters of the problem; the returned value will depend on the current parameters.
+   @returns If `index` is Rel. Act. index of a nuclide that is mass-constrained, returns `d{RelAct}/d{parameter[index]}`, otherwise returns `nullopt`
+  */
+  std::optional<double> mass_constraint_multiple( const size_t index, const vector<double> &parameters ) const
+  {
+    const RelActAutoCostFcn *cost_functor = this;
+    assert( index < parameters.size() );
+    // First check if `index` refers to the relative activity of a source.
+    if( (index < cost_functor->m_acts_par_start_index)
+       || (index >= cost_functor->m_free_peak_par_start_index) )
+    {
+      return std::nullopt;
+    }
+
+    // Get the rel eff curve index and source `index` refers to
+    for( size_t rel_eff_index = 0; rel_eff_index < cost_functor->m_options.rel_eff_curves.size(); ++rel_eff_index )
+    {
+      const size_t relact_begin = cost_functor->rel_act_start_parameter( rel_eff_index );
+      const size_t relact_end = relact_begin + cost_functor->rel_act_num_parameters( rel_eff_index );
+
+      if( (index < relact_begin) || (index >= relact_end) )
+        continue;
+
+      if( ((index - relact_begin) % 2) != 0 )
+        return std::nullopt;
+
+      const RelActCalcAuto::RelEffCurveInput &rel_effs = cost_functor->m_options.rel_eff_curves[rel_eff_index];
+      if( rel_effs.mass_fraction_constraints.empty() )
+        return std::nullopt; //common case; skip looping over sources below
+
+      for( size_t src_index = 0; src_index < rel_effs.nuclides.size(); src_index += 1 )
+      {
+        const RelActCalcAuto::SrcVariant &src = rel_effs.nuclides[src_index].source;
+        const size_t src_par_index = cost_functor->nuclide_parameter_index( src, rel_eff_index );
+        if( index != src_par_index )
+          continue;
+
+        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(src);
+        if( !nuc )
+          return std::nullopt; //non-nucs dont have mass-fraction constraints.
+
+        for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_effs.mass_fraction_constraints )
+        {
+          if( constraint.nuclide != nuc )
+            continue;
+
+          // If we are here, we have a constraint for this source.
+          //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper:
+          // i.e.: rel_mass = (1.0 - rel_dist)*mass_constraint->lower_mass_fraction + rel_dist*mass_constraint->upper_mass_fraction;
+          //  So we will multiple by d{RelAct}/d{Par[index]} to convert to the multiple for Rel. Act.
+          double derivative = std::numeric_limits<double>::infinity();
+          const double rel_act = cost_functor->relative_activity(src, rel_eff_index, parameters);
+          if( sm_use_auto_diff )
+          {
+            vector<ceres::Jet<double,sm_auto_diff_stride_size>> input_jets( parameters.size() );
+            for( size_t i = 0; i < parameters.size(); ++i )
+              input_jets[i] = ceres::Jet<double,sm_auto_diff_stride_size>( parameters[i] );
+            input_jets[index].v[0] = 1.0; //It doesnt matter which element of `v` we use to get the derivative, so we'll just use the first one.
+            ceres::Jet<double,sm_auto_diff_stride_size> rel_act_jet = cost_functor->relative_activity(src, rel_eff_index, input_jets);
+            assert( (rel_act < 1.0E-12) || (fabs(rel_act - rel_act_jet.a) < 1.0E-8*rel_act) );
+            derivative = rel_act_jet.v[0];
+          }else
+          {
+            // We dont really need this, as we always use auto diff - but will leave this in here to potentually use as a check in this future.
+            const double step_size = 1.0E-3;
+            vector<double> local_pars = parameters;
+            if( ((parameters[index] - step_size) > 0.5) && ((parameters[index] + step_size) < 1.5) )
+            {
+              local_pars[index] = parameters[index] - step_size;
+              const double lower_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
+              local_pars[index] = parameters[index] + step_size;
+              const double upper_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
+              derivative = (upper_act - lower_act) / (2*step_size);
+            }else if( (parameters[index] - step_size) > 0.5 )
+            {
+              local_pars[index] = parameters[index] - step_size;
+              const double lower_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
+              derivative = (rel_act - lower_act) / step_size;
+            }else
+            {
+              local_pars[index] = parameters[index] + step_size;
+              const double upper_act = cost_functor->relative_activity(src, rel_eff_index, local_pars);
+              derivative = (upper_act - rel_act) / step_size;
+            }
+          }//if( we can use auto-diff ) / else numeric diff
+
+
+          return derivative;
+        }//for( const RelEffCurveInput::MassFractionConstraint &constraint : rel_effs.mass_fraction_constraints )
+
+        return std::nullopt; //Didnt have the constraint
+      }//for( size_t src_index = 0; src_index < rel_effs.nuclides.size(); src_index += 1 )
+    }//for( loop over rel eff curves )
+
+    assert( 0 );
+    throw std::logic_error( "Failed to find expected source to check for constraint" );
+    return std::nullopt;
+  };//mass_constraint_multiple lambda
+
   //template<typename T>
   //T relative_activity( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index, const std::vector<T> &x ) const
   //{
@@ -9434,14 +9568,14 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     }//for( const NuclideRelAct &nuc : m_rel_activities )
 
     const auto print_enrich = [&out,this,rel_eff_index]( const SandiaDecay::Nuclide *const nuc ){
-      char buffer[128] = { '\0' };
-      const double enrich = 100.0*mass_enrichment_fraction(nuc,rel_eff_index,0.0);
-      snprintf( buffer, sizeof(buffer), "%.2f", enrich );
-
-      out << "\nEnrichment " << buffer << "% " << nuc->symbol;
-
       try
       {
+        char buffer[128] = { '\0' };
+        const double enrich = 100.0*mass_enrichment_fraction(nuc,rel_eff_index,0.0);
+        snprintf( buffer, sizeof(buffer), "%.2f", enrich );
+
+        out << "\nEnrichment " << buffer << "% " << nuc->symbol;
+
         const double neg_2sigma = 100.0*mass_enrichment_fraction(nuc,rel_eff_index,-2.0);
         const double pos_2sigma = 100.0*mass_enrichment_fraction(nuc,rel_eff_index, 2.0);
 
@@ -9510,9 +9644,18 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       
       out << "For " << el->name << ":\n";
       for( const SandiaDecay::Nuclide *nuc : nucs )
-        out << std::setw(5) << nuc->symbol << ": "
-        << std::setw(10) << std::setprecision(4) << 100.0*mass_enrichment_fraction(nuc,rel_eff_index,0.0) << "%"
-        << " of the " << el->name << ", by mass.\n";
+      {
+        try
+        {
+          const double frac = mass_enrichment_fraction(nuc,rel_eff_index,0.0);
+          out << std::setw(5) << nuc->symbol << ": "
+          << std::setw(10) << std::setprecision(4) << (100.0*frac) << "%"
+          << " of the " << el->name << ", by mass.\n";
+        }catch( std::exception & )
+        {
+          assert( 0 ); //shouldnt throw, I dont thing
+        }
+      }
     }//for( auto &v : nucs_of_element )
   }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_activities.size(); ++rel_eff_index )
   
@@ -9796,8 +9939,15 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       if( nuc )
       {
         const double rel_mass = act.rel_activity / nuc->activityPerGram();
-        results_html << "<td>" << (100.0*rel_mass/sum_rel_mass) << "%</td>"; 
-        results_html << "<td>" << (100.0*mass_enrichment_fraction(nuc,rel_eff_index,0.0)) << "%</td>";
+        results_html << "<td>" << (100.0*rel_mass/sum_rel_mass) << "%</td>";
+        try
+        {
+          const double frac = mass_enrichment_fraction(nuc,rel_eff_index,0.0);
+          results_html << "<td>" << (100.0*frac) << "%</td>";
+        }catch( std::exception &e )
+        {
+          results_html << "<td>--</td>";
+        }
 
         try
         {
@@ -10375,19 +10525,11 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
     throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(nullptr, " + std::to_string(rel_eff_index)
                          + ", " + std::to_string(num_sigma) + "): invalid nuclide" );
 
-  if( m_covariance.empty() )
+  if( m_phys_units_cov.empty() && (num_sigma != 0.0) )
     throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(" + nuclide->symbol + ", "
                       + std::to_string(rel_eff_index)  + ", " + std::to_string(num_sigma) + "): no valid covariance" );
 
   const NuclideRelAct &nuc_info = nucinfo( nuclide, rel_eff_index );
-
-  for( size_t re_index = 0; re_index < m_options.rel_eff_curves.size(); ++re_index )
-  {
-    if( !m_options.rel_eff_curves[re_index].mass_fraction_constraints.empty() )
-      throw runtime_error( "RelActAutoSolution::mass_enrichment_fraction(" + nuclide->symbol + ", "
-                        + std::to_string(rel_eff_index)  + ", " + std::to_string(num_sigma) + "):"
-                          " mass fraction constraints not supported yet." );
-  }
 
   assert( rel_eff_index < m_options.rel_eff_curves.size() );
   const RelEffCurveInput &re_curve = m_options.rel_eff_curves.at(rel_eff_index);
@@ -10447,22 +10589,21 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
   // The Covariance matrix is in terms of fit paramaters - so we need to multiple by the nuclides mutliepl to get to activity.
   const size_t nuc_act_par_index = fit_parameters_index_for_source( src, rel_eff_index );
   assert( nuc_act_par_index < m_parameter_scale_factors.size() );
-  const double nuc_scale = m_parameter_scale_factors[nuc_act_par_index];
 
-  const double cov_nuc_nuc = m_covariance[nuc_act_par_index][nuc_act_par_index];
+  const double cov_nuc_nuc = m_phys_units_cov[nuc_act_par_index][nuc_act_par_index];
   const double sqrt_cov_nuc_nuc = sqrt(cov_nuc_nuc);
 
+#ifndef NDEBUG
   // Check that relative activity uncertainties have been computed compatible with what we are
   //  assuming here (and no funny business has happened).
-  if( (nuc_scale * sqrt_cov_nuc_nuc) != nuc_info.rel_activity_uncertainty )
+  if( fabs(sqrt_cov_nuc_nuc - nuc_info.rel_activity_uncertainty) > 1.0E-6*(std::max)(sqrt_cov_nuc_nuc, nuc_info.rel_activity_uncertainty) )
   {
-    cout << "nuc_scale = " << nuc_scale << ", sqrt_cov_nuc_nuc = " << sqrt_cov_nuc_nuc << " (="<< nuc_scale*sqrt_cov_nuc_nuc << ")" << endl;
+    cout << "sqrt_cov_nuc_nuc = " << sqrt_cov_nuc_nuc << " (="<< sqrt_cov_nuc_nuc << ")" << endl;
     cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << nuc_info.rel_activity_uncertainty << endl;
     cout << "m_rel_activities[nuc_index].m_rel_activity = " << nuc_info.rel_activity << endl;
   }
-  assert( fabs((nuc_scale * sqrt_cov_nuc_nuc) - nuc_info.rel_activity_uncertainty) < 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, 1.0E-3) );
-
-
+  assert( fabs(sqrt_cov_nuc_nuc - nuc_info.rel_activity_uncertainty) < 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, 1.0E-3) );
+#endif 
 
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
   //for( size_t rel_eff_loop_index = 0; rel_eff_loop_index < m_rel_activities.size(); ++rel_eff_loop_index )
@@ -10482,13 +10623,27 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
 
       const size_t act_par_index = fit_parameters_index_for_source( act_src, rel_eff_loop_index );
 
-      const double norm_for_index = m_parameter_scale_factors[act_par_index];
-      const double fit_act_for_index = loop_nuc_mult * m_final_parameters[act_par_index] * norm_for_index;
+      const double rel_act_scale_factor = m_parameter_scale_factors[act_par_index];
+      double fit_act_for_index = loop_nuc_mult * rel_act_scale_factor * m_final_parameters[act_par_index];
 
-      const double cov_nuc_index = loop_nuc_mult*m_covariance[nuc_act_par_index][act_par_index];
+      // Need to check if mass-fraction constrained nuc, and if so, correct `fit_act_for_index`.
+      const RelActCalcAuto::RelEffCurveInput &input = m_options.rel_eff_curves[rel_eff_index];
+      const vector<RelEffCurveInput::MassFractionConstraint> &mass_frac_consts = input.mass_fraction_constraints;
+      for( const RelEffCurveInput::MassFractionConstraint &constraint : mass_frac_consts )
+      {
+        if( constraint.nuclide == nuc )
+        {
+          fit_act_for_index = rel_activity( act_src, rel_eff_index );
+          break;
+        }//if( constraint.nuclide == nuc )
+      }//for( const MassFractionConstraint &constraint : mass_frac_consts )
+
+      assert( fabs(fit_act_for_index - rel_activity(act_src, rel_eff_index)) < 1.0E-6*fit_act_for_index );
+
+      const double cov_nuc_index = loop_nuc_mult*m_phys_units_cov[nuc_act_par_index][act_par_index];
       const double varied_fit_act_for_index = fit_act_for_index + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
 
-      const double rel_act = varied_fit_act_for_index * norm_for_index;
+      const double rel_act = varied_fit_act_for_index;
       const double rel_mass = rel_act / nuc->activityPerGram();
 
       sum_rel_mass += (std::max)( rel_mass, 0.0 );
@@ -10645,7 +10800,7 @@ double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, siz
                                                       SrcVariant denominator, size_t denominator_rel_eff_index ) const
 {
   // Check if covariance matrix is available
-  if( m_covariance.empty() || m_final_parameters.empty() )
+  if( m_phys_units_cov.empty() || m_final_parameters.empty() )
     throw std::logic_error( "activity_ratio_uncertainty: covariance matrix or parameters not available" );
   
   // Validate inputs
@@ -10689,27 +10844,7 @@ double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, siz
     } );
     return (pos != end_iter) ? &(*pos) : nullptr;
   };
-  
-  const RelEffCurveInput::MassFractionConstraint *numerator_mfc = mass_frac_constraint( numerator, num_rel_eff_curve );
-  const RelEffCurveInput::MassFractionConstraint *denominator_mfc = mass_frac_constraint( denominator, denom_rel_eff_curve );
-    
-  if( !numerator_mfc && !denominator_mfc )
-  {
-    // Neither nuclide is mass fraction constrained - nothing to do here
-  }else if( numerator_mfc && denominator_mfc )
-  {
-      // Both nuclides are mass fraction constrained.
-#pragma message( "TODO: RelActAutoSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when both nuclides are mass fraction constrained." )
-      cerr << "RelActAutoSolution::activity_ratio_uncert: both nuclides are mass fraction constrained - calculating activity_ratio_uncert is not implemented." << endl;
-      throw runtime_error( "RelActAutoSolution::activity_ratio_uncert: both nuclides are mass fraction constrained - calculating activity_ratio_uncert is not implemented." );
-  }else if( numerator_mfc || denominator_mfc )
-  {
-      // Only one isotope is mass fraction constrained.
-#pragma message( "TODO: RelActAutoSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when only one isotope is mass fraction constrained." )
-      cerr << "RelActAutoSolution::activity_ratio_uncert: only one isotope is mass fraction constrained - calculating activity_ratio_uncert is not implemented." << endl;
-      throw runtime_error( "RelActAutoSolution::activity_ratio_uncert: only one isotope is mass fraction constrained - calculating activity_ratio_uncert is not implemented." );
-  }
-  
+
 
   const size_t num_activity_param_index = fit_parameters_index_for_source( numerator, numerator_rel_eff_index );
   const size_t den_activity_param_index = fit_parameters_index_for_source( denominator, denominator_rel_eff_index );
@@ -10718,10 +10853,10 @@ double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, siz
   // Check parameter indices are valid
   if( (num_activity_param_index >= m_final_parameters.size())
      || (den_activity_param_index >= m_final_parameters.size())
-     || (num_activity_param_index >= m_covariance.size())
-     || (den_activity_param_index >= m_covariance.size())
-     || ((num_activity_param_index < m_covariance.size()) && (den_activity_param_index >= m_covariance[num_activity_param_index].size())) 
-     || ((den_activity_param_index < m_covariance.size()) && (num_activity_param_index >= m_covariance[den_activity_param_index].size())) 
+     || (num_activity_param_index >= m_phys_units_cov.size())
+     || (den_activity_param_index >= m_phys_units_cov.size())
+     || ((num_activity_param_index < m_phys_units_cov.size()) && (den_activity_param_index >= m_phys_units_cov[num_activity_param_index].size()))
+     || ((den_activity_param_index < m_phys_units_cov.size()) && (num_activity_param_index >= m_phys_units_cov[den_activity_param_index].size()))
      || (num_activity_param_index >= m_parameter_scale_factors.size())
      || (den_activity_param_index >= m_parameter_scale_factors.size())
      )
@@ -10729,23 +10864,36 @@ double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, siz
     throw std::logic_error( "activity_ratio_uncertainty: parameter index out of bounds" );
   }
 
-  const double num_scale_factor = m_parameter_scale_factors[num_activity_param_index];
-  const double den_scale_factor = m_parameter_scale_factors[den_activity_param_index];
-  
   // Get the parameter values
-  const double num_activity = m_final_parameters[num_activity_param_index] * num_scale_factor;
-  const double den_activity = m_final_parameters[den_activity_param_index] * den_scale_factor;
+  const double num_activity = rel_activity( numerator, numerator_rel_eff_index );
+  const double den_activity = rel_activity( denominator, denominator_rel_eff_index );
 
   #ifndef NDEBUG
   {// Begin make sure we are handling `m_parameter_scale_factors` correctly
-    const double num_actual_rel_act = m_rel_activities[numerator_rel_eff_index][nuclide_index(numerator, numerator_rel_eff_index)].rel_activity;
-    const double den_actual_rel_act = m_rel_activities[denominator_rel_eff_index][nuclide_index(denominator, denominator_rel_eff_index)].rel_activity;
-    //cout << to_name(numerator) << ": num_activity=" << num_activity << ", num_actual_rel_act=" << num_actual_rel_act << endl;
-    //cout << to_name(denominator) << ": den_activity=" << den_activity << ", den_actual_rel_act=" << den_actual_rel_act << endl;
-    assert( ((std::max)(num_activity, num_actual_rel_act) < 1.0E-6) 
-            || (fabs(num_activity - num_actual_rel_act) < 1e-6*(std::max)(num_activity, num_actual_rel_act)) );
-    assert( ((std::max)(den_activity, den_actual_rel_act) < 1.0E-6) 
-            || (fabs(den_activity - den_actual_rel_act) < 1e-6*(std::max)(den_activity, den_actual_rel_act)) );
+    const RelEffCurveInput::MassFractionConstraint *numerator_mfc = mass_frac_constraint( numerator, num_rel_eff_curve );
+    const RelEffCurveInput::MassFractionConstraint *denominator_mfc = mass_frac_constraint( denominator, denom_rel_eff_curve );
+
+    if( !numerator_mfc )
+    {
+      const double num_scale_factor = m_parameter_scale_factors[num_activity_param_index];
+      const double num_activity_other_calc = m_final_parameters[num_activity_param_index] * num_scale_factor;
+      const double num_actual_rel_act = m_rel_activities[numerator_rel_eff_index][nuclide_index(numerator, numerator_rel_eff_index)].rel_activity;
+      assert( ((std::max)(num_activity_other_calc, num_actual_rel_act) < 1.0E-6)
+              || (fabs(num_activity_other_calc - num_actual_rel_act) < 1e-6*(std::max)(num_activity_other_calc, num_actual_rel_act)) );
+      assert( ((std::max)(num_activity_other_calc, num_activity) < 1.0E-6)
+              || (fabs(num_activity_other_calc - num_activity) < 1e-6*(std::max)(num_activity_other_calc, num_activity)) );
+    }
+
+    if( !denominator_mfc )
+    {
+      const double den_scale_factor = m_parameter_scale_factors[den_activity_param_index];
+      const double den_activity_other_calc = m_final_parameters[den_activity_param_index] * den_scale_factor;
+      const double den_actual_rel_act = m_rel_activities[denominator_rel_eff_index][nuclide_index(denominator, denominator_rel_eff_index)].rel_activity;
+      assert( ((std::max)(den_activity_other_calc, den_actual_rel_act) < 1.0E-6)
+              || (fabs(den_activity_other_calc - den_actual_rel_act) < 1e-6*(std::max)(den_activity_other_calc, den_actual_rel_act)) );
+      assert( ((std::max)(den_activity, den_actual_rel_act) < 1.0E-6)
+              || (fabs(den_activity - den_actual_rel_act) < 1e-6*(std::max)(den_activity, den_actual_rel_act)) );
+    }
   }// End make sure we are handling `m_parameter_scale_factors` correctly
   #endif
   
@@ -10754,26 +10902,60 @@ double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, siz
     throw std::logic_error( "activity_ratio_uncertainty: denominator activity is zero" );
   
   // Get covariance elements
-  const double var_num = m_covariance[num_activity_param_index][num_activity_param_index] * num_scale_factor * num_scale_factor;
-  const double var_den = m_covariance[den_activity_param_index][den_activity_param_index] * den_scale_factor * den_scale_factor;
-  const double cov_num_den = m_covariance[num_activity_param_index][den_activity_param_index] * num_scale_factor * den_scale_factor;
-  
+  const double var_num = m_phys_units_cov[num_activity_param_index][num_activity_param_index];
+  const double var_den = m_phys_units_cov[den_activity_param_index][den_activity_param_index];
+  const double cov_num_den = m_phys_units_cov[num_activity_param_index][den_activity_param_index];
+
   // Check that variances are non-negative
   if( var_num < 0.0 || var_den < 0.0 )
     throw std::logic_error( "activity_ratio_uncertainty: negative variance in covariance matrix" );
   
-  const double ratio_variance = (var_num - 2.0 * num_activity * cov_num_den / den_activity 
-                                + num_activity * num_activity * var_den / (den_activity * den_activity)) 
-                                / (den_activity * den_activity);
+  //const double ratio_variance = (var_num - 2.0 * num_activity * cov_num_den / den_activity
+  //                              + num_activity * num_activity * var_den / (den_activity * den_activity))
+  //                              / (den_activity * den_activity);
+
+  //const double ratio_variance = (var_num
+  //                                + ((num_activity*num_activity*var_den)/(den_activity*den_activity))
+  //                                - ((2.0*num_activity*cov_num_den)/den_activity))
+  //                              / (den_activity*den_activity);
+
+  const double ratio_2 = std::pow( num_activity / den_activity, 2.0 );
+  const double uncert_frac_2_num = (var_num/(num_activity*num_activity));
+  const double uncert_frac_2_den = (var_den/(den_activity*den_activity));
+  const double corr_term_2 = (2.0*cov_num_den)/(num_activity*den_activity);
+
+  const double ratio_variance = ratio_2 * (uncert_frac_2_num + uncert_frac_2_den - corr_term_2);
 
   // Check for negative variance (numerical issues)
   if( ratio_variance < 0.0 )
   {
-    // This could happen due to numerical precision issues
-    // Return zero uncertainty in this case
+    // This could happen for a few reasons
+    //  - Numerical precision issues - we are out of luck anyway
+    //  - the Covariance matrix is calculated incorrectly; like if there is some spurious correlation - again out of luck.
+    //  - Small denominator; the square or cube, or whatever of these valuse amplifies contributions of
+    //    correlation too much.  In this case we can calc the uncertainty of the inverse ratio, and then convert
+    //    this to what we want - but this is a bit sketch, and probably means the ratio in nearly meaningless anyway
+    //    maybe.
+    if( fabs(den_activity) < fabs(num_activity) )
+    {
+      const double inv_ratio_2 = std::pow( den_activity / num_activity, 2.0 );
+      const double cov_den_num = m_phys_units_cov[den_activity_param_index][num_activity_param_index];
+      const double inv_corr_term_2 = (2.0*cov_den_num)/(num_activity*den_activity);
+      const double inv_ratio_variance = inv_ratio_2 * (uncert_frac_2_den + uncert_frac_2_num - inv_corr_term_2);
+      if( inv_ratio_variance > 0.0 )
+      {
+        const double inv_ratio_uncert = sqrt( inv_ratio_variance );
+        const double inv_ratio_val = den_activity / num_activity;
+        const double orig_ratio_val = num_activity / den_activity;
+        const double inv_inv_uncert = orig_ratio_val * (inv_ratio_uncert / inv_ratio_val);
+
+        return inv_inv_uncert;
+      }//if( inv_ratio_variance > 0.0 )
+    }//if( den_activity < num_activity )
+
     return 0.0;
-  }
-  
+  }//if( ratio_variance < 0.0 )
+
   return std::sqrt( ratio_variance );
 }//double activity_ratio_uncertainty(...)
 

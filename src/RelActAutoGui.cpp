@@ -4957,15 +4957,17 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
      || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
   {
     const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
-    const double nominal = answer->mass_enrichment_fraction( iso, 0, 0.0 );
-    string enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "%";
+    string enrich;
 
     try
     {
+      const double nominal = answer->mass_enrichment_fraction( iso, 0, 0.0 );
+      enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "%";
+
       const double neg_2sigma = answer->mass_enrichment_fraction( iso, 0, -2.0 );
       const double pos_2sigma = answer->mass_enrichment_fraction( iso, 0, +2.0 );
       enrich += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%, "
-                + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%)";
+                + SpecUtils::printCompact(100.0*pos_2sigma, 4) + "%)";
     }catch( std::exception & )
     {
       // Happens if covariance computation failed, or Pu with Pu242 correlation correction
@@ -5123,12 +5125,18 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
           //  for Pu242 correlation
           //const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
           //const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
-          const double rel_mass_percent = 100.0 * m_solution->mass_enrichment_fraction( nuc_nuclide, rel_eff_index, 0.0 );
-
-          const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-          const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
-          const string el_symbol = el ? el->symbol : "?";
-          summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+          try
+          {
+            const double rel_mass_percent = 100.0 * m_solution->mass_enrichment_fraction( nuc_nuclide, rel_eff_index, 0.0 );
+            const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+            const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
+            const string el_symbol = el ? el->symbol : "?";
+            summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+          }catch( std::exception & )
+          {
+            // We shouldnt get here
+            assert( 0 );
+          }//try / catch
         }//if( num_same_z > 1 )
       }//if( RelActCalcAuto::nuclide(src) )
       
