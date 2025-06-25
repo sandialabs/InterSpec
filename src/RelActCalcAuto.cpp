@@ -3866,13 +3866,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         if( is_mass_constrained )
         {
-          // TODO: properly calculate relative activity for mass-constrained nuclides...
-#ifdef _MSC_VER
-#pragma message( "TODO: properly calculate relative activity for mass-constrained nuclides..." )
-#else
-#warning "TODO: properly calculate relative activity for mass-constrained nuclides..."
-#endif
-          nuc_output.rel_activity_uncertainty = -1.0;
+          // We'll multiple the uncertainty of mass-fraction paramater, by the derivative of RelAct
+
+          nuc_output.rel_activity_uncertainty = -1;
+          if( sm_use_auto_diff )
+          {
+            try
+            {
+              const size_t rel_act_index = cost_functor->nuclide_parameter_index( nuc_output.source, rel_eff_index );
+              vector<ceres::Jet<double,sm_auto_diff_stride_size>> input_jets( begin(parameters), end(parameters) );
+              input_jets[rel_act_index].v[0] = 1.0; //It doesnt matter which element of `v` we use to get the derivative, so we'll just use the first one.
+              ceres::Jet<double,sm_auto_diff_stride_size> rel_act_jet = cost_functor->relative_activity(nuc_output.source, rel_eff_index, input_jets);
+              assert( (nuc_output.rel_activity < 1.0E-12) || (fabs(nuc_output.rel_activity - rel_act_jet.a) < 1.0E-6*nuc_output.rel_activity) );
+              const double derivative = rel_act_jet.v[0];
+              nuc_output.rel_activity_uncertainty = uncertainties[rel_act_index] * derivative;
+            }catch( std::exception & )
+            {
+
+            }//try / catch
+          }else
+          {
+            //We wont bother implementing this, since we never plan to use numerical differentiation
+#pragma message( "Calculating rel-act uncert when not using auto-diff is not implementing")
+          }
+
         }else
         {
           nuc_output.rel_activity_uncertainty = cost_functor->relative_activity( nuc_input.source, rel_eff_index, uncertainties );
@@ -5344,9 +5361,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const double rel_act = cost_functor->relative_activity(src, rel_eff_index, parameters);
           if( sm_use_auto_diff )
           {
-            vector<ceres::Jet<double,sm_auto_diff_stride_size>> input_jets( parameters.size() );
-            for( size_t i = 0; i < parameters.size(); ++i )
-              input_jets[i] = ceres::Jet<double,sm_auto_diff_stride_size>( parameters[i] );
+            vector<ceres::Jet<double,sm_auto_diff_stride_size>> input_jets( begin(parameters), end(parameters) );
             input_jets[index].v[0] = 1.0; //It doesnt matter which element of `v` we use to get the derivative, so we'll just use the first one.
             ceres::Jet<double,sm_auto_diff_stride_size> rel_act_jet = cost_functor->relative_activity(src, rel_eff_index, input_jets);
             assert( (rel_act < 1.0E-12) || (fabs(rel_act - rel_act_jet.a) < 1.0E-8*rel_act) );
@@ -6261,7 +6276,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           const SandiaDecay::Transition * const transition = gamma.transition;
           const PeakDef::SourceGammaType gamma_type = gamma.gamma_type;
           
-          assert( !transition || (transition_index < transition->products.size()) );
+          assert( !transition || transition->products.empty() || (transition_index < transition->products.size()) );
           assert( !nuc || (transition || (gamma_type == PeakDef::SourceGammaType::AnnihilationGamma)) );
           assert( !nuc
                  || !transition
@@ -10602,7 +10617,7 @@ double RelActAutoSolution::mass_enrichment_fraction( const SandiaDecay::Nuclide 
     cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << nuc_info.rel_activity_uncertainty << endl;
     cout << "m_rel_activities[nuc_index].m_rel_activity = " << nuc_info.rel_activity << endl;
   }
-  assert( fabs(sqrt_cov_nuc_nuc - nuc_info.rel_activity_uncertainty) < 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, 1.0E-3) );
+  assert( fabs(sqrt_cov_nuc_nuc - nuc_info.rel_activity_uncertainty) < 1.0E-6*(std::max)(nuc_info.rel_activity_uncertainty, sqrt_cov_nuc_nuc) );
 #endif 
 
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
