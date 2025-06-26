@@ -124,7 +124,8 @@ InterSpecApp::InterSpecApp( const WEnvironment &env )
   :  WApplication( env ),
     m_viewer( 0 ),
     m_layout( nullptr ),
-    m_lastAccessTime( std::chrono::steady_clock::now() ),
+    m_startTime( std::chrono::steady_clock::now() ),
+    m_lastAccessTime( m_startTime ),
     m_activeTimeInSession{ std::chrono::seconds(0) },
     m_activeTimeSinceDbUpdate{ std::chrono::seconds(0) },
     m_hotkeySignal( domRoot(), "hotkey", false )
@@ -1060,6 +1061,11 @@ InterSpec *InterSpecApp::viewer()
   return m_viewer;
 }//InterSpec* viewer()
 
+
+std::chrono::steady_clock::time_point InterSpecApp::startTime() const
+{
+  return m_startTime;
+}
 
 std::chrono::steady_clock::time_point::duration InterSpecApp::activeTimeInCurrentSession() const
 {
