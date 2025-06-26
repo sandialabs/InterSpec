@@ -202,8 +202,9 @@ struct ManualActRatioConstraint
 struct MassFractionConstraint
 {
   std::string m_nuclide;
-  double m_mass_fraction;
-  
+  double m_mass_fraction_lower;
+  double m_mass_fraction_upper;
+
   /** You must specify the specific activities of each nuclide for this same element,
    including for this nuclide itself.
    */

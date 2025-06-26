@@ -2449,7 +2449,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             // Manual mass fraction constraints only accept a single fixed mass fraction for an isotope.
             RelActCalcManual::MassFractionConstraint manual_constraint;
             manual_constraint.m_nuclide = RelActCalcAuto::to_name(constraint.nuclide);
-            manual_constraint.m_mass_fraction = 0.5*(constraint.lower_mass_fraction + constraint.upper_mass_fraction);
+            manual_constraint.m_mass_fraction_lower = constraint.lower_mass_fraction;
+            manual_constraint.m_mass_fraction_upper = constraint.upper_mass_fraction;
 
             for( const RelActCalcAuto::NucInputInfo &nuc : rel_eff_curve.nuclides )
             {
@@ -2679,6 +2680,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             {
               parameters[act_index] = 1.0;
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = nuc.min_rel_act.value();
+              assert( cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple > 0.0 );
               constant_parameters.push_back( static_cast<int>(act_index) );
               cout << "Fixing " << nuc.name() << " rel act to " << nuc.min_rel_act.value() << " for rel eff curve " << re_eff_index << endl;
               continue;
@@ -2701,7 +2703,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                    << parameters[act_index] << " to " << rel_act << endl;          
             
             cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act;
-            
+            assert( rel_act > 0.0 );
+
             parameters[act_index] = 1.0;
           }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
           
@@ -2957,6 +2960,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               if( is_constrained )
               {
                 parameters[act_index] = 1.0;
+                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
                 cout << "Setting par " << act_index << " to 1.0 for " << nuc.name() << endl;
 
                 if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
@@ -3029,7 +3033,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               rel_act_mult = std::min( rel_act_mult, nuc.max_rel_act.value() );
 
             parameters[act_index] = 1.0;
-            cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act_mult; 
+            cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act_mult;
+            assert( rel_act_mult > 0.0 );
 
             
             {// begin debug input
@@ -3707,8 +3712,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       solution.m_parameter_scale_factors[i] = cost_functor->parameter_scale_factor( i );
       
-      assert( (solution.m_parameter_scale_factors[i] > 0.0) || !solution.m_parameter_were_fit[i] );
-    }
+      assert( (solution.m_parameter_scale_factors[i] > 0.0)
+             || !solution.m_parameter_were_fit[i]
+             || cost_functor->mass_constraint_multiple(i,parameters).has_value() );
+    }//for( size_t i = 0; i < parameters.size(); ++i )
 
     if( !solution.m_covariance.empty() )
     {
@@ -4969,7 +4976,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
         assert( !RelActCalcAuto::is_null(rel_eff_curve.nuclides[act_num].source) );
         if( (act_index % 2) == 0 )
+        {
+          //Check if mass fraction constraint for nuclide, and if so
+          const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(rel_eff_curve.nuclides[act_num].source);
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *constraint = nullptr;
+          if( nuc )
+          {
+            const auto start_iter = begin(rel_eff_curve.mass_fraction_constraints);
+            const auto end_iter = end(rel_eff_curve.mass_fraction_constraints);
+            const auto pos = std::find_if( start_iter, end_iter, [nuc]( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mfc ){
+              return mfc.nuclide == nuc;
+            } );
+            if( pos != end_iter )
+              constraint = &(*pos);
+          }
+
+          if( constraint )
+            return "MFrac" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
+
           return "Act" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
+        }
         return "Age" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
       }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     }//if( index < m_free_peak_par_start_index )
@@ -6843,50 +6869,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     assert( SpecUtilsAsync::num_logical_cpu_cores() > 0 );
 
-    
-#define print_debug_each_call 0
-#if( print_debug_each_call )
-    // Print out some debug info to try to help figure whats going on
-    
-    cout << "For RelActAutoCostFcn::eval call " << m_ncalls << ", have:" << endl;
-    cout << "\tRelActs:" << endl;
-    for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
-    {
-      for( const NucInputGamma &nuc : m_nuclides[rel_eff_index] )
-      {
-        double nuc_counts = 0.0;
-        for( size_t erange_index = 0; erange_index < m_energy_ranges.size(); ++erange_index )
-        {
-          const RelActCalcAuto::PeaksForEnergyRangeImp<T> &peaks = peaks_in_ranges_imp[erange_index];
-          for( const RelActCalcAuto::PeakDefImp<T> &peak : peaks.peaks )
-          {
-            if( (peak.m_parent_nuclide == nuclide(nuc.source))
-               && (peak.m_xray_element == element(nuc.source))
-               && (peak.m_reaction == reaction(nuc.source)) )
-            {
-              if constexpr ( std::is_same_v<T, double> )
-              {
-                nuc_counts += peak.m_amplitude;
-              }else
-              {
-                nuc_counts += peak.m_amplitude.a;
-              }
-            }
-          }
-        }//
-        
-        double rel_act;
-        if constexpr ( std::is_same_v<T, double> )
-          rel_act = relative_activity(nuclide.source, rel_eff_index, x);
-        else
-          rel_act = relative_activity(nuclide.source, rel_eff_index, x).a;
-        
-        cout << "\t\t" << nuc.name() << ": " << rel_act << ", giving " << nuc_counts << " counts." << endl;
-      }
-    }
-    cout << "\n\n";
-#endif //print_debug_each_call
-    
+
     
     assert( peaks_in_ranges_imp.size() == m_energy_ranges.size() );
     

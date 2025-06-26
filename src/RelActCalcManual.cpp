@@ -1046,6 +1046,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
   template<typename T>
   T relative_activity( const std::string &iso, const vector<T> &x ) const
   {
+    const size_t index = iso_index( iso );
+    assert( index < x.size() );
+
     int constraint_index = -1;
     for( size_t i = 0; ((constraint_index < 0) && (i < m_input.act_ratio_constraints.size())); ++i )  
       if( m_input.act_ratio_constraints[i].m_constrained_nuclide == iso )
@@ -1067,10 +1070,6 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     {
       if( constraint.m_nuclide == iso )
       {
-#ifndef NDEBUG
-        const size_t index = iso_index( iso );
-        assert( (abs(x[index] - -1.0) < 1.0E-6) || (abs(x[index] - 0.0) < 1.0E-6) );
-#endif
         // Now what we need to do is get the mass fraction of the non mass-fraction-constrained isotopes.
         const std::map<std::string, double> &specific_activities_for_el = constraint.m_specific_activities;
         const auto this_nuc_pos = specific_activities_for_el.find( iso );
@@ -1081,11 +1080,14 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         // Sum the relative masses of the other nuclides of this element
         // and sum the mass-constrained portion of this element.
         T sum_unconstrained_rel_mass_of_el( 0.0 ); //Note this is rel act divide by specific activity, and does not add up to one
-        double sum_constrained_frac_rel_mass_of_el = 0.0; // This will include `constraint.m_nuclide`, and be less than 1.0
+        T sum_constrained_frac_rel_mass_of_el( 0.0 ); // This will include `constraint.m_nuclide`, and be less than 1.0
 
 
-        for( const auto &[iso, specific_act] : specific_activities_for_el )
+        for( const std::map<std::string, double>::value_type &iso_act : specific_activities_for_el )
         {
+          const string &iso = iso_act.first;
+          const double specific_act = iso_act.second;
+
           auto constraint_pos = std::find_if( begin(m_input.mass_fraction_constraints), end(m_input.mass_fraction_constraints),
             [&iso]( const RelActCalcManual::MassFractionConstraint &c ) -> bool {
               return c.m_nuclide == iso;
@@ -1098,17 +1100,48 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           }else
           {
             // `iso` is mass-constrained
-            sum_constrained_frac_rel_mass_of_el += constraint_pos->m_mass_fraction;
+            T mass_fraction;
+            assert( constraint_pos->m_mass_fraction_lower >= 0.0 );
+            assert( constraint_pos->m_mass_fraction_lower <= 1.0 );
+            assert( constraint_pos->m_mass_fraction_upper >= 0.0 );
+            assert( constraint_pos->m_mass_fraction_upper <= 1.0 );
+
+            if( constraint_pos->m_mass_fraction_lower == constraint_pos->m_mass_fraction_upper )
+            {
+              assert( abs(x[index] - -1.0) < 1.0E-6 );
+              mass_fraction = T(constraint_pos->m_mass_fraction_lower);
+            }else
+            {
+              const T dist = x[index] - 0.5;
+              assert( (dist > -0.02) && (dist < 1.02) ); //should be between 0 and 1, but will leave some room for numerical diff
+              mass_fraction = constraint_pos->m_mass_fraction_lower
+                   + dist * (constraint_pos->m_mass_fraction_upper - constraint_pos->m_mass_fraction_lower);
+            }
+
+            sum_constrained_frac_rel_mass_of_el += mass_fraction;
           }
         }//for( [ const string &iso, const double &activity] : element_specific_activities )
           
 
-        assert( sum_constrained_frac_rel_mass_of_el <= 1.00000001 );
-        assert( sum_constrained_frac_rel_mass_of_el >= 0.0 );
-        const double unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
-        
+        assert( sum_constrained_frac_rel_mass_of_el <= 1.00001 );
+        assert( sum_constrained_frac_rel_mass_of_el >= -0.00001 );
+        const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
+
+        T iso_mass_fraction;
+        if( constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper )
+        {
+          assert( abs(x[index] - -1.0) < 1.0E-6 );
+          iso_mass_fraction = T(constraint.m_mass_fraction_lower);
+        }else
+        {
+          const T dist = x[index] - 0.5;
+          assert( (dist > -0.02) && (dist < 1.02) ); //should be between 0 and 1, but will leave some room for numerical diff
+          iso_mass_fraction = constraint.m_mass_fraction_lower
+               + dist * (constraint.m_mass_fraction_upper - constraint.m_mass_fraction_lower);
+        }
+
         const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;
-        const T this_rel_mass = total_rel_mass * constraint.m_mass_fraction;
+        const T this_rel_mass = total_rel_mass * iso_mass_fraction;
         const T this_rel_act = this_rel_mass * this_nuc_pos->second;
 
         return this_rel_act;
@@ -1116,8 +1149,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     }//for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
 #endif
 
-    const size_t index = iso_index( iso );
-    assert( index < x.size() );
+
     return m_rel_act_norms[index] * x[index];
   }
   
@@ -2475,12 +2507,24 @@ void RelEffInput::check_nuclide_constraints() const
     if( constraint.m_nuclide.empty() )
       throw logic_error( "RelEffInput: Mass fraction constraint nuclide is empty." );
 
-    if( constraint.m_mass_fraction <= 0.0 )
-      throw logic_error( "RelEffInput: Mass fraction constraint is less than or equal to 0." );
+    if( constraint.m_mass_fraction_lower < 0.0 )
+      throw logic_error( "RelEffInput: Mass fraction lower constraint is less than 0." );
 
-    if( constraint.m_mass_fraction >= 1.0 )
-      throw logic_error( "RelEffInput: Mass fraction constraint is greater than or equal to 1." );
+    if( constraint.m_mass_fraction_lower > 1.0 )
+      throw logic_error( "RelEffInput: Mass fraction lower constraint is greater than 1." );
 
+    if( constraint.m_mass_fraction_upper < 0.0 )
+      throw logic_error( "RelEffInput: Mass fraction upper constraint is less than 0." );
+
+    if( constraint.m_mass_fraction_upper > 1.0 )
+      throw logic_error( "RelEffInput: Mass fraction upper constraint is greater than 1." );
+
+    if( (constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper)
+       && ((constraint.m_mass_fraction_lower == 0.0) || (constraint.m_mass_fraction_lower == 1.0)))
+      throw logic_error( "RelEffInput: Mass fraction is fixed and equal to 0 or 1 - not allowed." );
+
+    if( constraint.m_mass_fraction_lower > constraint.m_mass_fraction_upper )
+      throw logic_error( "RelEffInput: Mass fraction constraint upper value is less than lower value." );
 
     // Check that the nuclide is in the nuclides list
     // Check that the constrained nuclide is a nuclide in this RelEffCurve
@@ -2547,13 +2591,12 @@ void RelEffInput::check_nuclide_constraints() const
     }//for( const RelActCalcManual::MassFractionConstraint &other_constraint : mass_fraction_constraints )
 
 
-    // Check that there is at least one nuclide in `constraint.m_specific_activities` that is not mass-fraction-consrained.
+    // Check that there is at least one nuclide in `constraint.m_specific_activities` that is not mass-fraction-constrained.
     // Check that the summ of mass-fraction-constrained nuclides for this element is less than 1.0
     size_t num_not_mass_frac_constrained = 0;
-    double sum_mass_frac_constrained = 0.0;
+    double sum_lower_mass_frac_constrained = 0.0;
     for( const auto &specific_activity : constraint.m_specific_activities )
     {
-      sum_mass_frac_constrained += specific_activity.second;
       const auto mass_frac_pos = std::find_if( begin(mass_fraction_constraints), end(mass_fraction_constraints),
         [&]( const RelActCalcManual::MassFractionConstraint &mfc )
         {
@@ -2562,13 +2605,15 @@ void RelEffInput::check_nuclide_constraints() const
         
       if( mass_frac_pos == end(mass_fraction_constraints) )
         ++num_not_mass_frac_constrained;
+      else
+        sum_lower_mass_frac_constrained += mass_frac_pos->m_mass_fraction_lower;
     }//for( const auto &specific_activity : constraint.m_specific_activities )
     
     if( num_not_mass_frac_constrained == 0 )
       throw logic_error( "RelEffInput: There is no elements nuclide that is not mass fraction constrainted." );
 
-    if( fabs(sum_mass_frac_constrained - 1.0) > 1.0e-6 )
-      throw logic_error( "RelEffInput: The sum of mass fraction constrained nuclides is not 1.0." );
+    if( sum_lower_mass_frac_constrained >= 1.0 )
+      throw logic_error( "RelEffInput: The sum of lower mass fraction constraints is greater than 1.0." );
   }//for( const RelActCalcManual::MassFractionConstraint &constraint : mass_fraction_constraints )
 
 #endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
@@ -4553,10 +4598,11 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   //  get the same answers, but auto diff is faster, and requires a lot fewer evaluations, so
   //  we'll just always use auto differentiation.
   const bool use_auto_diff = true;
+  const int auto_diff_stride = 8;
   if( use_auto_diff )
   {
-    ceres::DynamicAutoDiffCostFunction<ManualGenericRelActFunctor> *dyn_auto_diff_cost_function
-          = new ceres::DynamicAutoDiffCostFunction<ManualGenericRelActFunctor>( cost_functor,
+    ceres::DynamicAutoDiffCostFunction<ManualGenericRelActFunctor,auto_diff_stride> *dyn_auto_diff_cost_function
+          = new ceres::DynamicAutoDiffCostFunction<ManualGenericRelActFunctor,auto_diff_stride>( cost_functor,
                                                                           ceres::TAKE_OWNERSHIP );
     // The number of residuals is the number of peaks, unless USE_RESIDUAL_TO_BREAK_DEGENERACY then
     //  we add one more residual to clamp the relative efficiency curve to 1.0 at the lowest energy.
@@ -4657,16 +4703,22 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   {
     assert( num_nuclides == cost_functor->m_isotopes.size() );
 
-    for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
+    if( constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper )
     {
-      if( constraint.m_nuclide == cost_functor->m_isotopes[i] )
+      for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
       {
-        assert( std::find( begin(constant_parameters), end(constant_parameters), i ) == end(constant_parameters) );
-        constant_parameters.push_back( i );
-        pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
-        break;
-      }
-    }//for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
+        if( constraint.m_nuclide == cost_functor->m_isotopes[i] )
+        {
+          assert( std::find( begin(constant_parameters), end(constant_parameters), i ) == end(constant_parameters) );
+          constant_parameters.push_back( i );
+          pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
+          break;
+        }
+      }//for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
+    }else
+    {
+
+    }//if( fixed mass fraction ) / else
   }//for( const ManualMassFractionConstraint &constraint : input.mass_fraction_constraints )
 #endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
   
@@ -4679,23 +4731,36 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   // Set a lower bound on relative activities to be 0, unless it is constrained
   for( size_t i = 0; i < num_nuclides; ++i )
   {
-    bool is_constrained = false;
+    bool is_fixed = false, is_mass_frac_constrained = false;
     for( const auto &constraint : input.act_ratio_constraints )
     {
       if( constraint.m_constrained_nuclide == cost_functor->m_isotopes[i] )
-        is_constrained = true;
+        is_fixed = true;
     }
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
     for( const auto &constraint : input.mass_fraction_constraints )
     {
       if( constraint.m_nuclide == cost_functor->m_isotopes[i] )
-        is_constrained = true;
-    }
+      {
+        if( constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper )
+        {
+          is_fixed = true;
+        }else
+        {
+          pars[i] = 1.0;
+          is_mass_frac_constrained = true;
+          problem.SetParameterLowerBound( pars, static_cast<int>(i), 0.5 );
+          problem.SetParameterUpperBound( pars, static_cast<int>(i), 1.5 );
+        }
+
+        break;
+      }//if( constraint.m_nuclide == cost_functor->m_isotopes[i] )
+    }//for( const auto &constraint : input.mass_fraction_constraints )
 #endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
-    if( is_constrained )
+    if( is_fixed )
       pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
-    else
+    else if( !is_mass_frac_constrained )
       problem.SetParameterLowerBound( pars, static_cast<int>(i), 0.0 );
   }//for( size_t i = 0; i < num_nuclides; ++i )
   
@@ -4980,24 +5045,56 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
           is_constrained = (input.act_ratio_constraints[j].m_constrained_nuclide == iso);
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-        for( size_t j = 0; !is_constrained && (j < input.mass_fraction_constraints.size()); ++j )
-          is_constrained = (input.mass_fraction_constraints[j].m_nuclide == iso);
+        const MassFractionConstraint *mass_frac_constraint = nullptr;
+        for( size_t j = 0; j < input.mass_fraction_constraints.size(); ++j )
+        {
+          if( input.mass_fraction_constraints[j].m_nuclide == iso )
+          {
+            mass_frac_constraint = &(input.mass_fraction_constraints[j]);
+            is_constrained = true;
+            break;
+          }
+        }//for( size_t j = 0; j < input.mass_fraction_constraints.size(); ++j )
 #endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
         
         if( !is_constrained )
         {
           const double rel_act_norm = cost_functor->m_rel_act_norms[i];
           rel_act.m_rel_activity_uncert = rel_act_norm * std::sqrt( solution.m_nonlin_covariance[i][i] );
-        }else
+        }
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+        else if( mass_frac_constraint )
+        {
+          if( mass_frac_constraint->m_mass_fraction_lower == mass_frac_constraint->m_mass_fraction_upper )
+          {
+            rel_act.m_rel_activity_uncert = 0.0; //TODO: is there maybe somehow some actual uncert here?
+          }else
+          {
+            if( use_auto_diff )
+            {
+              vector<ceres::Jet<double,auto_diff_stride>> input_jets( begin(parameters), end(parameters) );
+              input_jets[i].v[0] = 1.0; //It doesnt matter which element of `v` we use to get the derivative, so we'll just use the first one.
+              ceres::Jet<double,auto_diff_stride> rel_act_jet = cost_functor->relative_activity(iso, input_jets);
+              assert( (rel_act.m_rel_activity < 1.0E-12) || (fabs(rel_act.m_rel_activity - rel_act_jet.a) < 1.0E-6*rel_act.m_rel_activity) );
+              const double derivative = rel_act_jet.v[0];
+              const double par_uncert = std::sqrt( solution.m_nonlin_covariance[i][i] );
+              rel_act.m_rel_activity_uncert = par_uncert * derivative;
+            }else
+            {
+              // dont expect to ever not use auto-diff, so wont worry about this case
+              rel_act.m_rel_activity_uncert = -1.0;
+            }
+          }
+        }
+#endif
+        else
         {
           assert( fabs(parameters[i] - -1.0) < 1.0E-6 );
           assert( parameters.size() == solution.m_nonlin_covariance.size() );
 
-          vector<double> uncerts( parameters.size(), 0.0 );
-          for( size_t j = 0; j < parameters.size(); ++j )
-            uncerts[j] = std::sqrt( solution.m_nonlin_covariance[j][j] );
+          const double par_uncert = std::sqrt( solution.m_nonlin_covariance[i][i] );
 
-          rel_act.m_rel_activity_uncert = cost_functor->relative_activity( iso, uncerts );
+          rel_act.m_rel_activity_uncert = cost_functor->m_rel_act_norms[i] * par_uncert;
         }//if( input.act_ratio_constraints.empty() ) / else
       }//if( input.act_ratio_constraints.empty() ) / else
       
