@@ -232,6 +232,11 @@ padding-bottom: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+
+  /* Let this text be selectable so user can copy/paste. */
+  user-select: auto;
+  -moz-user-select: auto;
+  -webkit-user-select: auto;
 }
 
 .RelActAutoGui .RelActAutoErrMsg
