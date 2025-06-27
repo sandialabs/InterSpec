@@ -10577,9 +10577,13 @@ void InterSpec::handleToolTabChanged( int tab )
     
     if( focus && (current_tab == calibtab) )
     {
+      const InterSpecApp * const app = dynamic_cast<InterSpecApp *>( wApp );
+
       if( !m_infoNotificationsMade.count("recal-tab")
          && UserPreferences::preferenceValue<bool>( "ShowTooltips", this )
-         && !isMobile() )
+         && !isMobile()
+         //Dont display this message at app startup - its a bit noisy to the user
+         && (!app || (abs(std::chrono::steady_clock::now() - app->startTime()) > std::chrono::seconds(5))) )
       {
         m_infoNotificationsMade.insert( "recal-tab" );
         passMessage( WString::tr("info-recal-tab-selected"), WarningWidget::WarningMsgInfo );

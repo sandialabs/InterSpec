@@ -62,6 +62,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_rel_eff_eqn_order_label(nullptr),
       m_rel_eff_eqn_order(nullptr),
       m_rel_eff_curve_name(nullptr),
+      m_pu_corr_enabled( false ),
       m_pu_corr_div(nullptr),
       m_pu_corr_method(nullptr),
       m_phys_model_opts(nullptr),
@@ -181,7 +182,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   
   tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
   HelpSystem::attachToolTipOn( {m_eqn_order_div}, tooltip, showToolTips );
-  
+
   m_pu_corr_div = new WContainerWidget( this );
   m_pu_corr_div->addStyleClass( "PuCorrDiv" );
   
@@ -195,7 +196,8 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   "  This form allows you to select the correction method.";
   HelpSystem::attachToolTipOn( {m_pu_corr_div}, tooltip, showToolTips );
   m_pu_corr_div->hide();
-  
+  m_pu_corr_enabled = false;
+
   
     
   m_phys_model_opts = new WContainerWidget( this );
@@ -578,6 +580,7 @@ void RelActAutoGuiRelEffOptions::updatePuCorrelationOptions( const vector<RelAct
   
   const bool show_pu_corr = (can_bignan || can_239only);
   m_pu_corr_div->setHidden( !show_pu_corr );
+  m_pu_corr_enabled = show_pu_corr;
 
   if( !show_pu_corr )
     return;
@@ -900,7 +903,7 @@ void RelActAutoGuiRelEffOptions::setPhysModelUseHoerl( const bool use_hoerl )
 
 RelActCalc::PuCorrMethod RelActAutoGuiRelEffOptions::pu242_correlation_method() const
 {
-  if( !m_pu_corr_div->isVisible() ) 
+  if( !m_pu_corr_enabled )
     return RelActCalc::PuCorrMethod::NotApplicable;
 
   

@@ -92,6 +92,8 @@ public:
 
   InterSpec *viewer();
 
+  std::chrono::steady_clock::time_point startTime() const;
+
   std::chrono::steady_clock::time_point::duration activeTimeInCurrentSession() const;
   
   /** Returns the amount of use-time since `InterSpecUser::totalTimInApp()` has been updated. */
@@ -289,9 +291,19 @@ protected:
 #if( !BUILD_FOR_WEB_DEPLOYMENT )
   Wt::Signal<const InterSpecApp *> m_destructing;
 #endif
-  
+
+  /** When the application session was created. */
+  const std::chrono::steady_clock::time_point m_startTime;
+
+  /** Tracks the last time the `notify(...)` function is called with a `Wt::UserEvent`  event.
+   */
   std::chrono::steady_clock::time_point m_lastAccessTime;
+
+  /** When the `notify(...)` function is called with a user event, if its been less than 1 minute (arbitrary)
+   since the last call with a user event, then the amount of time between calls will be accumulated to this variable.
+   */
   std::chrono::steady_clock::time_point::duration m_activeTimeInSession;
+
   /** We will occasionally update the use duration in the database - this field tracks how long of
    active use since the database was last updated.
    */
