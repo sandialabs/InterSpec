@@ -202,8 +202,9 @@ struct ManualActRatioConstraint
 struct MassFractionConstraint
 {
   std::string m_nuclide;
-  double m_mass_fraction;
-  
+  double m_mass_fraction_lower;
+  double m_mass_fraction_upper;
+
   /** You must specify the specific activities of each nuclide for this same element,
    including for this nuclide itself.
    */
@@ -508,7 +509,9 @@ struct RelEffSolution
    relative activities, in the same index ordering as \p m_rel_activities. 
    But also see `m_activity_norms`, as you need to multiple the relative activities by these
    scale factors before using with this covariance matrix.
-   
+   If a activity was constrained to a non-zero mass-fraction range, then the row and column of that nuclides
+   activity will be d(RelAct)/d(par).
+
    If the equation form is `RelActCalc::RelEffEqnForm::PhysicalModel`, then the following
    indeices are for the shielding parameters:
    - {self-atten AN}
@@ -575,6 +578,10 @@ struct RelEffSolution
    The entries in this vector correspond to \p m_rel_activities on an index-by-index basis.
    
    To state it another way, these are the relative activities if the relative efficiency curve is 1.0.
+
+   If a nuclide is controlled by another nuclide, its value will be -1.
+   If the mass-fraction is fixed to a specific value, its value in this entry will be -1.0
+   If the mass-fraction is constrained to a non-zero range, its value in this entry will be 1.0
    */
   std::vector<double> m_activity_norms;
   

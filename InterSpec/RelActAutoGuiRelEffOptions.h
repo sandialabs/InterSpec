@@ -110,6 +110,11 @@ protected:
   Wt::WLabel *m_rel_eff_eqn_order_label;
   Wt::WComboBox *m_rel_eff_eqn_order;
   Wt::WInPlaceEdit *m_rel_eff_curve_name;
+  /** This variable should always match the visibility state of `m_pu_corr_div`, but is necassary since we cant use
+   the visibility state of the widget to track validity of this settings, because `isVisisble()` will return false when we
+   are saving the state while closiing the RelActAuto tool.
+   */
+  bool m_pu_corr_enabled;
   Wt::WContainerWidget *m_pu_corr_div;
   Wt::WComboBox *m_pu_corr_method;
   Wt::WContainerWidget *m_phys_model_opts;

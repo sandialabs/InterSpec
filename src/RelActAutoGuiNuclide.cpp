@@ -146,7 +146,7 @@ public:
           m_min_rel_act_edit = new NativeFloatSpinBox( container );
           label->setBuddy( m_min_rel_act_edit );
           m_min_rel_act_edit->setSpinnerHidden( true );
-          m_min_rel_act_edit->setMinimum( std::numeric_limits<float>::min() );
+          m_min_rel_act_edit->setMinimum( 0.0f );
           m_min_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
           m_min_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
 
@@ -155,7 +155,7 @@ public:
           label->setBuddy( m_max_rel_act_edit );
           m_max_rel_act_edit->setSpinnerHidden( true );
           m_max_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
-          m_max_rel_act_edit->setMinimum( std::numeric_limits<float>::min() );
+          m_max_rel_act_edit->setMinimum( 0.0f );
           m_max_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
           break;
         }//case NucConstraintType::RelActRange
@@ -168,7 +168,8 @@ public:
           label->setBuddy( m_min_mass_frac_edit );
           m_min_mass_frac_edit->setSpinnerHidden( true );
           m_min_mass_frac_edit->setWidth( WLength(35.0, WLength::Pixel) );
-          m_min_mass_frac_edit->setRange( 0.0, 1.0 );
+          m_min_mass_frac_edit->setRange( 0.0f, 1.0f );
+          m_min_mass_frac_edit->setValue( 0.0f );
           m_min_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
 
           label = new WLabel( "max:", container );
@@ -177,6 +178,7 @@ public:
           m_max_mass_frac_edit->setSpinnerHidden( true );
           m_max_mass_frac_edit->setWidth( WLength(35.0, WLength::Pixel) );
           m_max_mass_frac_edit->setRange( 0.0, 1.0 );
+          m_max_mass_frac_edit->setValue( 1.0f );
           m_max_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
           break;
         }//case NucConstraintType::MassFraction

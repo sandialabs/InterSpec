@@ -890,8 +890,18 @@ struct RelActAutoSolution
  
    Will be empty if computation of the covariance failed.
    the rows/columns have same size and ordering as `m_final_parameters`.
+
+   Indexed as `m_covariance[row][col]`, by convention.
    */
   std::vector<std::vector<double>> m_covariance;
+
+  /** The covariance matrix, converted to physical units - i.e., multiplied by parameter scale factors, or converted to physical units.
+
+   Will be empty if computation of the covariance failed.
+
+   Indexed as `m_phys_units_cov[row][col]`, by convention.
+   */
+  std::vector<std::vector<double>> m_phys_units_cov;
 
   /** The short names of the parameters. */
   std::vector<std::string> m_parameter_names;
