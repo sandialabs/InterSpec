@@ -116,6 +116,8 @@ protected:
 protected:
   InterSpec *m_interspec;
   
+  bool m_currently_searching;
+  
   bool m_refit_scheduled;
   bool m_undo_redo_scheduled;
   

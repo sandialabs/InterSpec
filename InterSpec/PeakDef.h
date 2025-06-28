@@ -106,7 +106,13 @@ struct PeakContinuum
     
     BiLinearStep,
     
-    /** A continuum is determined algorithmically for the entire spectrum; not recommended to use. */
+    /** A continuum is determined algorithmically for the entire spectrum; not recommended to use.
+
+     It use the Sensitive Nonlinear Iterative Peak (SNIP) clipping algorithm to estimate the background.
+     It works by iteratively comparing each data point with the average of its neighboring points and replacing it with
+     the smaller value. This process is repeated with increasing window sizes, effectively smoothing out peaks and
+     revealing the underlying background. 
+     */
     External
   };//enum OffsetType
   
@@ -201,12 +207,35 @@ struct PeakContinuum
   
   //offset_integral: returns the area of the continuum from x0 to x1.  If m_type
   //  is NoOffset, then will return 0.  If a polynomial, then the integral of
-  //  the contonuum density will be returned.  If globally defined continuum,
+  //  the continuum density will be returned.  If globally defined continuum,
   //  then the integral will be returned, using linear interpolation for
   //  ranges not exactly on the bin edges.
-  //  If FlatStep, then data histogram is necassary
+  //  If FlatStep, then data histogram is necessary
+  //  If possible, consider calling the other overload of this function to compute all
+  //  channels in the ROI in one function call, as it is a lot more efficient for stepped continua.
   double offset_integral( const double x0, const double x1,
                           const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+  
+  /** Computes the channel-by-channel continua for the entire ROI at once.
+ 
+   Adds each channels continuum component to the `channels` array.
+   
+   For stepped continua, using this overload, rather than calling `offset_integral(double,double,data)` in
+   `PeakFitChi2Fcn::chi2(const double *)`, makes fitting peaks a factor of 5 faster! (and even makes fitting
+   peaks with linear continua 34% faster).
+   
+   \param energies Array of lower channel energies; must have at least one more entry than
+          `nchannel`.  For stepped continua (FlatStep, LinearStep, BiLinearStep), this must point
+          into the energy calibration energies array of `data`.
+   \param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+          will not be zeroed); must have at least `nchannel` entries
+   \param nchannel The number of channels to do the integration over.
+   \param data The spectrum (only used for stepped continua).
+   */
+   void offset_integral( const float *energies, double *channels, const size_t nchannel,
+                        const std::shared_ptr<const SpecUtils::Measurement> &data ) const;
+   
+  
   
   /** Returns true if a _valid_ polynomial, step, or external continuum type.
    Where valid polynomial and step continuums means any of the coefficients are non zero, not that they actually make sense.
@@ -326,7 +355,7 @@ protected:
 
 //findROILimit(...): returns the channel number that should be the extent of the
 //  region of interest, for the peak with the given mean and sigma.  If
-//  high==true, then the bin higher in energy than the mean will be returned,
+//  upper_side==true, then the bin higher in energy than the mean will be returned,
 //  otherwise it will be the bin on the lower energy side of the mean.
 //  The basic idea is to include a maximum of 11.75 sigma away from the mean
 //  of the peak, but then start at ~1.5 sigma from mean, and try to detect if
@@ -339,14 +368,19 @@ protected:
 //  This is kinda similar in principle to how PCGAP does it, but with further
 //  modifications, and I'm sure some differences; see,
 //  http://www.inl.gov/technicalpublications/Documents/3318133.pdf
-size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &data, bool high);
+size_t findROILimit( const PeakDef &peak, 
+                    const std::shared_ptr<const SpecUtils::Measurement> &data,
+                    const bool upper_side,
+                    const bool isHPGe );
 
 
 //findROIEnergyLimits(...): a convience function that calls findROILimit(...)
 //  inorder to set 'lowerEnengy' and 'upperEnergy'.  IF data is an invalid
 //  pointer, then PeakDef::lowerX() and PeakDef::upperX() are used.
 void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
-                         const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &data );
+                         const PeakDef &peak, 
+                         const std::shared_ptr<const SpecUtils::Measurement> &data,
+                         const bool isHPGe );
 
 //Returns if area from start2 to end2 is greater than or equal to the
 //  area of (start1 to end1 minus nsigma).
@@ -359,8 +393,11 @@ bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
 //If a polynomial continuum and the peakdoesnt specify the range, then it
 //  will look at the data histogram for when data starts increasing, and set
 //  this as the limit.
+//  `isHPGe` is only used if the peak does not have the energy range already defined.
 //Does nothing if the histogram is null.
-void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+void estimatePeakFitRange( const PeakDef &peak, 
+                          const std::shared_ptr<const SpecUtils::Measurement> &dataH,
+                          const bool isHPGe,
                           size_t &lower_channel, size_t &upper_channel );
 
 
@@ -572,7 +609,7 @@ public:
 //  const PeakDef &operator=( const PeakDef &rhs );
 
   //continuum(): access the continuum
-  std::shared_ptr<PeakContinuum> continuum();
+  const std::shared_ptr<PeakContinuum> &continuum();
   std::shared_ptr<const PeakContinuum> continuum() const;
   
   //getContinuum(): garunteed to be a valid pointer

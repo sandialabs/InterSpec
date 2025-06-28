@@ -32,6 +32,8 @@
     "node-addon-api": "^6.1.0"
   },
   "binary": {
-    "napi_versions": [4]
+    "napi_versions": [
+      4
+    ]
   }
 }

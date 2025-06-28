@@ -33,7 +33,9 @@
 #include <Wt/WComboBox>
 #include <Wt/WCheckBox>
 #include <Wt/WLineEdit>
+#include <Wt/WPopupMenu>
 #include <Wt/WPushButton>
+#include <Wt/WSplitButton>
 #include <Wt/WApplication>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WDoubleValidator>
@@ -45,11 +47,14 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PeakEdit.h"
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -547,11 +552,11 @@ void PeakEdit::init()
   
   
   m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );//new WPushButton( "Cancel", m_footer );
-  m_refit  = new WPushButton( WString::tr("pe-btn-refit"),  m_footer );
+  m_refit  = new WSplitButton( WString::tr("pe-btn-refit"), m_footer );
   m_apply  = new WPushButton( WString::tr("Apply"),  m_footer );
   m_accept = new WPushButton( WString::tr("Accept"), m_footer );
-  if( m_viewer && !m_viewer->isMobile() )
-    m_accept->setIcon( "InterSpec_resources/images/accept.png" );
+  //if( m_viewer && !m_viewer->isMobile() )
+  //  m_accept->setIcon( "InterSpec_resources/images/accept.png" );
   
   //Add class to give padding on left side (or modify current style class)
   
@@ -559,7 +564,7 @@ void PeakEdit::init()
 //  deleteButton->setFloatSide( Wt::Right );
   
   m_cancel->clicked().connect( this, &PeakEdit::cancel );
-  m_refit->clicked().connect(  this, &PeakEdit::refit  );
+  m_refit->actionButton()->clicked().connect( boost::bind( &PeakEdit::refit, this, RefitOption::Normal ) );
   m_apply->clicked().connect(  this, &PeakEdit::apply  );
   m_accept->clicked().connect( this, &PeakEdit::accept );
   deleteButton->clicked().connect( this, &PeakEdit::deletePeak );
@@ -568,6 +573,41 @@ void PeakEdit::init()
   m_peakModel->layoutChanged().connect( this, &PeakEdit::refreshPeakInfo );
   m_peakModel->rowsRemoved().connect( this, &PeakEdit::peakModelRowsRemoved );
   m_peakModel->rowsInserted().connect( this, &PeakEdit::peakModelRowsAdded );
+  
+  
+  // Add ROI refit options to `m_refit`.
+  if( m_viewer->isMobile() )
+  {
+    WPopupMenu *menu = new WPopupMenu();
+    
+    WMenuItem *item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
+    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::Normal ) );
+    item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-independent") );
+    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiIndependentFwhms ) );
+    item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-fine") );
+    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiSmallRefinement ) );
+    item = menu->addItem( Wt::WString::tr("pe-btn-refit-roi-independent-fine") );
+    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiSmallRefinementIndependentFwhm ) );
+    
+    m_refit->setMenu( menu );
+  }else
+  {
+    PopupDivMenu *menu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
+    
+    PopupDivMenuItem *item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-standard") );
+    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::Normal ) );
+    item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-independent") );
+    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiIndependentFwhms ) );
+    item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-fine") );
+    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiSmallRefinement ) );
+    item = menu->addMenuItem( Wt::WString::tr("pe-btn-refit-roi-independent-fine") );
+    item->triggered().connect( boost::bind( &PeakEdit::refit, this, RefitOption::RoiSmallRefinementIndependentFwhm ) );
+    
+    m_refit->setMenu( menu );
+  }//if( mobile ) / else
+  
+  if( m_refit->dropDownButton() )
+    m_refit->dropDownButton()->hide();
 }//void init()
 
 
@@ -695,8 +735,10 @@ void PeakEdit::changePeak( const double energy )
   
   double lowerx(0.0), upperx(0.0);
   if( nearPeak )
-    findROIEnergyLimits( lowerx, upperx, *nearPeak,
-                         m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground) );
+  {
+    lowerx = nearPeak->lowerX();
+    upperx = nearPeak->upperX();
+  }
   
   if( nearPeak && (energy<lowerx || energy>upperx) )
     nearPeak.reset();
@@ -937,6 +979,7 @@ void PeakEdit::refreshPeakInfo()
     m_accept->disable();
     
     m_otherPeaksDiv->hide();
+    m_refit->dropDownButton()->hide();
     m_otherPeakTxt->setText( "" );
     
     m_drfFwhm->setText( "" );
@@ -1017,13 +1060,23 @@ void PeakEdit::refreshPeakInfo()
             
             if( data )
             {
-              size_t lower_channel, upper_channel;
-              estimatePeakFitRange( m_currentPeak, data, lower_channel, upper_channel );
-              val = data->gamma_channels_sum( lower_channel, upper_channel );
-              
-              // \TODO: The next line I think would be equivalent (or maybe more correct) than
-              //        previous line, but I think edge-cases need checking
-              //val = data->gamma_integral( m_currentPeak.lowerX(), m_currentPeak.upperX() );
+              assert( m_currentPeak.continuum()->energyRangeDefined() );
+              if( m_currentPeak.continuum()->energyRangeDefined() )
+              {
+                const size_t lower_channel = data->find_gamma_channel( m_currentPeak.lowerX() );
+                const size_t upper_channel = data->find_gamma_channel( m_currentPeak.upperX() - 0.00001 );
+                const double dataArea = data->gamma_channels_sum( lower_channel, upper_channel );
+                
+                val = data->gamma_channels_sum( lower_channel, upper_channel );
+                
+                // \TODO: The next line I think would be equivalent (or maybe more correct) than
+                //        previous line, but I think edge-cases need checking
+                //val = data->gamma_integral( m_currentPeak.lowerX(), m_currentPeak.upperX() );
+              }else
+              {
+                assert( 0 );
+                val = -1;
+              }
             }else
             {
               val = 0.0;
@@ -1126,6 +1179,7 @@ void PeakEdit::refreshPeakInfo()
       case PeakEdit::RangeStartEnergy:
       case PeakEdit::RangeEndEnergy:
         uncert = 0.0;
+        assert( continuum->energyRangeDefined() );
         
         if( continuum->energyRangeDefined() )
         {
@@ -1133,14 +1187,18 @@ void PeakEdit::refreshPeakInfo()
                                     : continuum->lowerEnergy();
         }else
         {
-          const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+          // We shouldnt ever get here, I dont think
+          const shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
 
           if( data )
           {
+            const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
+            
             size_t lower_channel, upper_channel;
-            estimatePeakFitRange( m_currentPeak, data, lower_channel, upper_channel );
+            estimatePeakFitRange( m_currentPeak, data, isHPGe, lower_channel, upper_channel );
+            
             if( t == PeakEdit::RangeEndEnergy )
-              val += data->gamma_channel_upper( upper_channel );
+              val = data->gamma_channel_upper( upper_channel );
             else
               val = data->gamma_channel_lower( lower_channel );
           }//if( data )
@@ -1289,6 +1347,7 @@ void PeakEdit::refreshPeakInfo()
   {
     m_otherPeaksDiv->hide();
     m_otherPeakTxt->setText( "" );
+    m_refit->dropDownButton()->hide();
   }else
   {
     const size_t npeak = peaksInRoi.size();
@@ -1296,6 +1355,7 @@ void PeakEdit::refreshPeakInfo()
     m_nextPeakInRoi->setHidden( thispeak == (npeak-1) );
     
     m_otherPeaksDiv->show();
+    m_refit->dropDownButton()->show();
     WString txt = WString::tr("pe-multipeak-in-roi")
         .arg( static_cast<int>(thispeak+1) )
         .arg( static_cast<int>(npeak) );
@@ -1308,7 +1368,7 @@ void PeakEdit::refreshPeakInfo()
 //  m_accept->disable();
   m_accept->enable();
   m_cancel->enable();
-  m_refit->setEnabled( m_currentPeak.type() == PeakDef::GaussianDefined );
+  m_refit->setDisabled( m_currentPeak.type() != PeakDef::GaussianDefined );
 }//void refreshPeakInfo()
 
 
@@ -2201,7 +2261,7 @@ bool PeakEdit::nuclideInfoIsDirty() const
 }//bool nuclideInfoIsDirty() const
 
 
-void PeakEdit::refit()
+void PeakEdit::refit( const PeakEdit::RefitOption type )
 {
   try
   {
@@ -2212,7 +2272,7 @@ void PeakEdit::refit()
     return;
   }
   
-  vector<PeakDef> inputPeak, fixedPeaks, outputPeak;
+  vector<PeakDef> inputPeak, peaks_outside_roi, outputPeak;
   vector< std::shared_ptr<const PeakDef> > inpkptrs;
   
   const std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
@@ -2237,7 +2297,9 @@ void PeakEdit::refit()
       inputPeak.push_back( *p );
       inpkptrs.push_back( p );
     }else
-      fixedPeaks.push_back( *p );
+    {
+      peaks_outside_roi.push_back( *p );
+    }
   }//for( int peak = 0; peak < npeak; ++peak )
 
   if( inputPeak.size() > 1 )  //JIC
@@ -2252,20 +2314,43 @@ void PeakEdit::refit()
   const double hypothesis_threshold = 0.0;
   
   
-  //if peak
-  if( (inputPeak.size()>1) && thispeak->continuum()->isPolynomial() && !!data )
+  if( inputPeak.size() > 1 )
   {
     const std::shared_ptr<DetectorPeakResponse> &detector
                                 = m_viewer->measurment(SpecUtils::SpectrumType::Foreground)->detector();
-    const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs, 0.25 );
+    
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+    switch( type )
+    {
+      case RefitOption::Normal:
+        // Use default fitting options
+        break;
+        
+      case RefitOption::RoiIndependentFwhms:
+        fit_options |= PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent;
+        break;
+        
+      case RefitOption::RoiSmallRefinement:
+        fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly;
+        break;
+        
+      case RefitOption::RoiSmallRefinementIndependentFwhm:
+        fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly;
+        fit_options |= PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent;
+        break;
+    }//switch( type )
+    
+    
+    const PeakShrdVec outp = refitPeaksThatShareROI( data, detector, inpkptrs, fit_options );
     for( size_t i = 0; i < outp.size(); ++i )
       outputPeak.push_back( *outp[i] );
   }else
   {
-    const bool isRefit = true;
+    assert( type == RefitOption::Normal ); //
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;  //No options - full refit...
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
     outputPeak = fitPeaksInRange( lowE, upE, ncausalitysigma, stat_threshold,
-                                  hypothesis_threshold, inputPeak, data,
-                                  fixedPeaks, isRefit );
+                                  hypothesis_threshold, inputPeak, data, fit_options, isHPGe );
   }
   
   
@@ -2282,62 +2367,38 @@ void PeakEdit::refit()
   shared_ptr<const deque< PeakModel::PeakShrdPtr > > prev_peaks_ptr = m_peakModel->peaks();
   if( prev_peaks_ptr )
     prev_peaks.insert( end(prev_peaks), begin(*prev_peaks_ptr), end(*prev_peaks_ptr) );
-  
-  /*
-  if( inputPeak.size() > 1 )
-  {
-   */
-    fixedPeaks.insert( fixedPeaks.end(), outputPeak.begin(), outputPeak.end() );
-    std::sort( fixedPeaks.begin(), fixedPeaks.end(), &PeakDef::lessThanByMean );
+
+  vector<PeakDef> all_peaks = peaks_outside_roi;
+  all_peaks.insert( end(all_peaks), begin(outputPeak), end(outputPeak) );
+  std::sort( begin(all_peaks), end(all_peaks), &PeakDef::lessThanByMean );
+
+  m_energy = newEnergy;
+  m_peakModel->setPeaks( all_peaks );
+  changePeak( m_energy );
     
-    m_energy = newEnergy;
-    m_peakModel->setPeaks( fixedPeaks );
-    changePeak( m_energy );
+  auto undo = [prev_peaks,origEnergy](){
+    PeakEdit *edit = get_session_peak_editor();
+    if( !edit )
+      return;
+    edit->m_peakModel->setPeaks( prev_peaks );
+    edit->changePeak( origEnergy );
+  };//undo
     
-    auto undo = [prev_peaks,origEnergy](){
-      PeakEdit *edit = get_session_peak_editor();
-      if( !edit )
-        return;
-      edit->m_peakModel->setPeaks( prev_peaks );
-      edit->changePeak( origEnergy );
-    };//undo
+  auto redo = [newEnergy,all_peaks](){
+    PeakEdit *edit = get_session_peak_editor();
+    if( !edit )
+      return;
+
+    edit->m_energy = newEnergy;
+    edit->m_peakModel->setPeaks( all_peaks );
+    edit->changePeak( newEnergy );
+  };
     
-    auto redo = [newEnergy,fixedPeaks](){
-      PeakEdit *edit = get_session_peak_editor();
-      if( !edit )
-        return;
-      
-      edit->m_energy = newEnergy;
-      edit->m_peakModel->setPeaks( fixedPeaks );
-      edit->changePeak( newEnergy );
-    };
-    
-    UndoRedoManager *undo_manager = m_viewer->undoRedoManager();
-    if( undo_manager )
-      undo_manager->addUndoRedoStep( undo, redo, "Peak refit." );
-  /*
-  }else
-  {
-    // 20230423: This should have already been taken care of by PeakDef::inheritUserSelectedOptions
-    //for( PeakDef::CoefficientType t = PeakDef::CoefficientType(0);
-    //    t < PeakDef::NumCoefficientTypes;
-    //    t = PeakDef::CoefficientType(t+1) )
-    //{
-    //  outputPeak[0].setFitFor(t, m_currentPeak.fitFor(t));
-    //}//for( loop over PeakDef::CoefficientType )
-    
-    m_currentPeak = outputPeak[0];
-    m_energy = m_currentPeak.mean();
-    m_blockInfoRefresh = true;
-    m_peakModel->removePeak( m_peakIndex );
-    m_peakIndex   = m_viewer->addPeak( m_currentPeak, false );
-    m_currentPeak = *m_peakModel->peak( m_peakIndex );
-    m_blockInfoRefresh = false;
-    
-    refreshPeakInfo();
-  }//if( inputPeak.size() > 1 )
-   */
+  UndoRedoManager *undo_manager = m_viewer->undoRedoManager();
+  if( undo_manager )
+    undo_manager->addUndoRedoStep( undo, redo, "Peak refit." );
 }//void refit()
+
 
 void PeakEdit::setAmplitudeForDataDefinedPeak()
 {
@@ -2693,9 +2754,7 @@ void PeakEdit::apply()
           if( !continuum->energyRangeDefined() )
           {
             std::shared_ptr<const Measurement> data = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-            double lowe, highe;
-            findROIEnergyLimits( lowe, highe, m_currentPeak, data );
-            continuum->setRange( lowe, highe );
+            continuum->setRange( m_currentPeak.lowerX(), m_currentPeak.upperX() );
           }//if( !m_currentPeak.xRangeDefined() )
           
           const double middle = 0.5*(m_currentPeak.lowerX() + m_currentPeak.upperX() );

@@ -1791,9 +1791,9 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
           peak_json["SourceName"] = p->parentNuclide()->symbol;
           
           const SandiaDecay::Transition *trans = p->nuclearTransition();
-          if( trans->parent )
+          if( trans && trans->parent )
             peak_json["SourceGammaParent"] = trans->parent->symbol;
-          if( trans->child )
+          if( trans && trans->child )
             peak_json["SourceGammaChild"] = trans->child->symbol;
         }else if( p->xrayElement() )
         {

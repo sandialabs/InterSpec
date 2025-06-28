@@ -51,6 +51,9 @@ namespace PeakDists
    so not switching to it yet.
    
    Surprisingly, the erf() function is the major bottleneck for peak fitting.
+   
+   Another alternative is to use `Eigen::numext::erf(...)`, but it is slightly slower than
+   this function, for the double case, but slightly faster if we use float
    */
   double boost_erf_imp( double z )
   {
@@ -304,47 +307,10 @@ namespace PeakDists
    */
   
 
-  void photopeak_function_integral( const double mean,
-                                          const double sigma,
-                                          const double amp,
-                                          const PeakDef::SkewType skew_type,
-                                          const double * const skew_parameters,
-                                          const size_t nchannel,
-                                          const float * const energies,
-                                          double *channels )
-  {
-    assert( (skew_type == PeakDef::SkewType::NoSkew) || skew_parameters );
-    
-    switch( skew_type )
-    {
-      case PeakDef::SkewType::NoSkew:
-        gaussian_integral( mean, sigma, amp, energies, channels, nchannel );
-        break;
-        
-      case PeakDef::SkewType::Bortel:
-        bortel_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
-        break;
-        
-      case PeakDef::SkewType::CrystalBall:
-        crystal_ball_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
-        break;
-        
-      case PeakDef::SkewType::DoubleSidedCrystalBall:
-        double_sided_crystal_ball_integral( mean, sigma, amp,
-                                           skew_parameters[0], skew_parameters[1],
-                                           skew_parameters[2], skew_parameters[3],
-                                           energies, channels, nchannel );
-        break;
-        
-      case PeakDef::SkewType::GaussExp:
-        gauss_exp_integral( mean, sigma, amp, skew_parameters[0], energies, channels, nchannel );
-        break;
-        
-      case PeakDef::SkewType::ExpGaussExp:
-        exp_gauss_exp_integral( mean, sigma, amp, skew_parameters[0], skew_parameters[1], energies, channels, nchannel );
-        break;
-    }//switch( skew_type )
-  }//void photopeak_function_integral(...)
+// Explicit instantiation definition for the `double` version of `photopeak_function_integral(...)`
+template void photopeak_function_integral<double>( const double, const double,const double,
+                         const PeakDef::SkewType, const double * const, const size_t, const float * const, double * );
+
   
   /** Returns the PDF for a unit-area Bortel function.
    */
@@ -794,6 +760,8 @@ namespace PeakDists
           low_low_limit = mean - current_dx;
           const double y = lower_fcn( low_low_limit );
           found_lower = (y < 0.0);
+          if( low_low_limit < 0.0 )
+            break;
         }//for( look for x where pdf has gone below limit )
         
         // If we didnt find the lower limit, `boost::math::tools::bisect(...)` will throw exception
@@ -806,8 +774,9 @@ namespace PeakDists
           + " for double_sided_crystal_ball_coverage_limits( "
           + std::to_string(mean) + ", " + std::to_string(sigma) + ", " + std::to_string(left_skew)
           + ", " + std::to_string(left_n) + ", " + std::to_string(right_skew) + ", "
-          + std::to_string(right_n) + ", " + std::to_string(p) + " )";
-          
+          + std::to_string(right_n) + ", " + std::to_string(p) + " )."
+          "  lower_fcn(" + std::to_string(low_low_limit) + ")=" + std::to_string( lower_fcn(low_low_limit) ) + ")";
+
           log_developer_error( __func__, msg.c_str() );
         }//if( !found_upper )
 #endif

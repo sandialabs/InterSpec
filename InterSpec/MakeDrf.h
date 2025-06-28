@@ -149,8 +149,7 @@ protected:
   
   void peakPreviewShown( DrfPeak *peak );
   
-  void fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks,
-                   const bool isHighResolution );
+  void fitFwhmEqn( std::vector< std::shared_ptr<const PeakDef> > peaks );
   void updateFwhmEqn( std::vector<float> coefs, std::vector<float> uncerts,
                       const double chi2,
                       const int functionalForm, //see DetectorPeakResponse::ResolutionFnctForm

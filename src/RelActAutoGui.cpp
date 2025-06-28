@@ -425,6 +425,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_fwhm_estimation_method( nullptr ),
   m_fit_energy_cal( nullptr ),
   m_background_subtract( nullptr ),
+  m_same_z_age_enabled( false ),
   m_same_z_age( nullptr ),
   m_skew_type( nullptr ),
   m_add_uncert( nullptr ),
@@ -885,7 +886,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_same_z_age->addStyleClass( "SameZAgeCb CbNoLineBreak" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
-  
+  m_same_z_age_enabled = true;
+
   //WText *energy_header = new WText( "Energy Ranges", energiesHolder );
   //energy_header->addStyleClass( "EnergyNucHeader" );
   
@@ -1145,7 +1147,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     rel_eff_curve.nuclides = getNucInputInfo( rel_eff_curve_index );
     rel_eff_curve.act_ratio_constraints = getActRatioConstraints( rel_eff_curve_index );
     rel_eff_curve.mass_fraction_constraints = getMassFractionConstraints( rel_eff_curve_index );
-    rel_eff_curve.nucs_of_el_same_age = (m_same_z_age->isVisible() && m_same_z_age->isChecked());
+    rel_eff_curve.nucs_of_el_same_age = (m_same_z_age_enabled && m_same_z_age->isChecked());
     rel_eff_curve.rel_eff_eqn_type = opts->rel_eff_eqn_form();
     rel_eff_curve.rel_eff_eqn_order = opts->rel_eff_eqn_order();
     rel_eff_curve.phys_model_self_atten = opts->phys_model_self_atten();
@@ -1589,7 +1591,9 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       det = meas ? meas->detector() : nullptr;
     }//if( solution didnt have DRF )
     
-    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det );
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
+    
+    const auto found_peaks = searchForPeakFromUser( energy, pixPerKeV, m_foreground, {}, det, isHPGe );
     
     // If we didnt fit a peak, and we dont
     double lower_energy = energy - 10;
@@ -1614,8 +1618,8 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
       //  (We could check on auto-searched peaks and estimate from those, but
       //   really, at this point, its not worth the effort as things are probably
       //   low quality)
-      const bool highres = PeakFitUtils::is_high_res(m_foreground);
-      if( highres )
+      const bool isHPGe = PeakFitUtils::is_high_res(m_foreground);
+      if( isHPGe )
       {
         lower_energy = energy - 5;
         upper_energy = energy + 5;
@@ -1915,17 +1919,35 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
 
     // Add the nuclides to the GUI for this Rel Eff curve
     const vector<RelActCalcAuto::NucInputInfo> &nuclides = options.rel_eff_curves[curve_index].nuclides;
+    vector<RelActAutoGuiNuclide *> nuc_widgets( nuclides.size(), nullptr );
     for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
     {
       const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
       
       RelActAutoGuiNuclide *nuc_widget = new RelActAutoGuiNuclide( this, content );
+      nuc_widgets[nuc_index] = nuc_widget;
       nuc_widget->updated().connect( this, &RelActAutoGui::handleNuclidesChanged );
       nuc_widget->remove().connect( boost::bind( &RelActAutoGui::handleRemoveNuclide,
                                               this, static_cast<WWidget *>(nuc_widget) ) );
       nuc_widget->fit_age_changed().connect( this, &RelActAutoGui::handleNuclideFitAgeChanged );
       nuc_widget->age_changed().connect( boost::bind( &RelActAutoGui::handleNuclideAgeChanged, this, boost::placeholders::_1 ) );
       nuc_widget->fromNucInputInfo( nuc );
+    }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
+
+    // We are adding the constraints after adding all the nuclides, because otherwise some constraints wont be
+    //  valid until multiple nuclides are added, but when there is only one GUI nuclide and the constraint is set,
+    //  it will be discarded because it is not valid - so we have two loops.
+    for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
+    {
+      const RelActCalcAuto::NucInputInfo &nuc = nuclides[nuc_index];
+
+      RelActAutoGuiNuclide * const nuc_widget = nuc_widgets[nuc_index];
+      assert( nuc_widget );
+
+      if( nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value() )
+      {
+        nuc_widget->addRelActRangeConstraint( nuc.min_rel_act, nuc.max_rel_act );
+      }
 
       assert( curve_index < options.rel_eff_curves.size() );
       const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[curve_index];
@@ -1941,9 +1963,9 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
         {
           if( constraint.nuclide == nuc_nuclide )
             nuc_widget->addMassFractionConstraint( constraint );
-        }//for( const auto &constraint : nuc.mass_fraction_constraints )  
+        }//for( const auto &constraint : nuc.mass_fraction_constraints )
       }//if( nuc_nuclide )
-    }//for( const size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
+    }//for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
   }//for( loop over curve_index )
 
   
@@ -2464,7 +2486,7 @@ void RelActAutoGui::handleSameAgeChanged()
   } );
 
 
-  if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+  if( !m_same_z_age_enabled || !m_same_z_age->isChecked() )
     return;
 
   // Go through and set the the ages of all nuclides of each element to the same value.
@@ -2585,7 +2607,7 @@ void RelActAutoGui::handleNuclideFitAgeChanged( RelActAutoGuiNuclide *nuc, bool 
   if( !nuc )
     return;
 
-  if( !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+  if( !m_same_z_age_enabled || !m_same_z_age->isChecked() )
     return;
 
   const RelActCalcAuto::SrcVariant src_info = nuc->source();
@@ -2623,7 +2645,7 @@ void RelActAutoGui::handleNuclideAgeChanged( RelActAutoGuiNuclide *nuc )
   } );
 
   
-  if( !nuc || !m_same_z_age->isVisible() || !m_same_z_age->isChecked() )
+  if( !nuc || !m_same_z_age_enabled || !m_same_z_age->isChecked() )
     return;
 
   const RelActCalcAuto::SrcVariant src_info = nuc->source();
@@ -3615,6 +3637,14 @@ void RelActAutoGui::setPeaksToForeground()
       for( const PeakDef &peak : solution_peaks )
         rois[peak.continuum()].push_back( make_shared<PeakDef>(peak) );
       
+      
+      vector<shared_ptr<const PeakDef>> solution_peaks_ptrs;
+      for( const PeakDef &p : solution_peaks )
+        solution_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
+      const auto resType = PeakFitUtils::coarse_resolution_from_peaks(solution_peaks_ptrs);
+      
+      const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High); //Shouldnt matter since peaks all have defined ROIs, but JIC
+      
       vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
       
       SpecUtilsAsync::ThreadPool pool;
@@ -3623,7 +3653,7 @@ void RelActAutoGui::setPeaksToForeground()
       {
         const vector<shared_ptr<const PeakDef>> *peaks = &(cont_peaks.second);
         
-        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf](){
+        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, isHPGe](){
           
           // If two peaks are near each other, we wont be able to resolve them in the fit,
           //  so just get rid of the smaller amplitude peak
@@ -3669,15 +3699,16 @@ void RelActAutoGui::setPeaksToForeground()
           
           std::sort( begin(peaks_to_refit), end(peaks_to_refit), &PeakDef::lessThanByMeanShrdPtr );
           
+          WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+          fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly; //Arbitrary
           
-          const double meanSigmaVary = 0.25; //arbitrary
-          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, meanSigmaVary );
+          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, fit_options );
           
           if( fit_peaks[roi_num].size() != peaks_to_refit.size() )
           {
             cout << "refitPeaksThatShareROI gave " << fit_peaks[roi_num].size() << " peaks, while"
             << " we wanted " << peaks->size() << ", will try fitPeaksInRange(...)" << endl;
-            vector<PeakDef> input_peaks, fixed_peaks;
+            vector<PeakDef> input_peaks;
             for( const auto &p : peaks_to_refit )
               input_peaks.push_back( *p );
             
@@ -3687,10 +3718,12 @@ void RelActAutoGui::setPeaksToForeground()
             const double ncausality = 10;
             const double stat_threshold = 0.5;
             const double hypothesis_threshold = -1.0;
+            Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+            fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //THe peaks should be pretty close, so we'll only allow small changes to mean, so we dont fit into someunrelated peak...
             
             const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
                                                           hypothesis_threshold, input_peaks,
-                                                          foreground, fixed_peaks, true );
+                                                          foreground, fit_options, isHPGe );
             
             if( (retry_peak.size() == peaks_to_refit.size())
                || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )
@@ -4483,8 +4516,9 @@ void RelActAutoGui::updateDuringRenderForNuclideChange()
     }//for( const RelActCalcAuto::NucInputInfo &nuc : nuclides )
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
-  if( m_same_z_age->isVisible() != has_multiple_nucs_of_z )
+  if( (m_same_z_age->isVisible() != has_multiple_nucs_of_z) || (m_same_z_age_enabled != has_multiple_nucs_of_z) )
   {
+    m_same_z_age_enabled = has_multiple_nucs_of_z;
     m_same_z_age->setHidden( !has_multiple_nucs_of_z );
     if( !has_multiple_nucs_of_z )
       m_same_z_age->setChecked( false );
@@ -4923,15 +4957,17 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
      || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
   {
     const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
-    const double nominal = answer->mass_enrichment_fraction( iso, 0, 0.0 );
-    string enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "%";
+    string enrich;
 
     try
     {
+      const double nominal = answer->mass_enrichment_fraction( iso, 0, 0.0 );
+      enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "%";
+
       const double neg_2sigma = answer->mass_enrichment_fraction( iso, 0, -2.0 );
       const double pos_2sigma = answer->mass_enrichment_fraction( iso, 0, +2.0 );
       enrich += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%, "
-                + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%)";
+                + SpecUtils::printCompact(100.0*pos_2sigma, 4) + "%)";
     }catch( std::exception & )
     {
       // Happens if covariance computation failed, or Pu with Pu242 correlation correction
@@ -5047,10 +5083,19 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     vector<bool> use_rel_acts( rel_acts.size(), false );
 
     // A lambda to set GUI info from NuclideRelAct
-    auto set_info_to_widget = [&rel_acts]( RelActAutoGuiNuclide *src_widget, const RelActCalcAuto::NuclideRelAct &fit_nuc ){
-      const RelActCalcAuto::SrcVariant src = src_widget ? src_widget->source() : RelActCalcAuto::SrcVariant();
-      
-      const string rel_act_str = SpecUtils::printCompact(fit_nuc.rel_activity, 4);
+    auto set_info_to_widget = [&rel_acts,this,rel_eff_index]( RelActAutoGuiNuclide *src_widget, const RelActCalcAuto::NuclideRelAct &fit_nuc ){
+      assert( src_widget );
+      assert( this->m_solution );
+      if( !src_widget || !this->m_solution )
+        return;
+
+      const RelActCalcAuto::SrcVariant src = src_widget->source();
+
+      // We will use the solution calculated Rel Act, because Pu242 correlation may effect things.
+      //const double rel_act = fit_nuc.rel_activity;
+      const double rel_act = this->m_solution->rel_activity(src, rel_eff_index);
+
+      const string rel_act_str = SpecUtils::printCompact(rel_act, 4);
       string summary_text = "Rel. Act=" + rel_act_str;
       
       
@@ -5063,25 +5108,35 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       if( const SandiaDecay::Nuclide * const nuc_nuclide = RelActCalcAuto::nuclide(src) )
       {
         size_t num_same_z = 0;
-        double total_rel_mass = 0.0;
+        //double total_rel_mass = 0.0;
         for( const RelActCalcAuto::NuclideRelAct &other_nuc : rel_acts )
         {
           const SandiaDecay::Nuclide * const other_nuc_nuclide = RelActCalcAuto::nuclide(other_nuc.source);
           if( other_nuc_nuclide && (nuc_nuclide->atomicNumber == other_nuc_nuclide->atomicNumber) )
           {
             ++num_same_z;
-            total_rel_mass += (other_nuc.rel_activity / other_nuc_nuclide->activityPerGram());
+            //total_rel_mass += (other_nuc.rel_activity / other_nuc_nuclide->activityPerGram());
           }
         }//for( const RelActCalcAuto::NuclideRelAct &other_nuc : m_solution->m_rel_activities )
         
         if( num_same_z > 1 )
         {
-          const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
-          const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
-          const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-          const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
-          const string el_symbol = el ? el->symbol : "?";
-          summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+          // We will use the solutions calculated enrichment, and not our local version, because we may be correcting
+          //  for Pu242 correlation
+          //const double this_rel_mass = (fit_nuc.rel_activity / nuc_nuclide->activityPerGram());
+          //const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
+          try
+          {
+            const double rel_mass_percent = 100.0 * m_solution->mass_enrichment_fraction( nuc_nuclide, rel_eff_index, 0.0 );
+            const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+            const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
+            const string el_symbol = el ? el->symbol : "?";
+            summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+          }catch( std::exception & )
+          {
+            // We shouldnt get here
+            assert( 0 );
+          }//try / catch
         }//if( num_same_z > 1 )
       }//if( RelActCalcAuto::nuclide(src) )
       

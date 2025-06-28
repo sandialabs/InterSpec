@@ -750,10 +750,10 @@ void RelActManualGui::init()
   m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(row, 0) );
   m_backgroundSubtract->addStyleClass( "BackSub CbNoLineBreak" );
   optionsList->elementAt(row, 0)->setColumnSpan( 2 );
-  m_backgroundSubtractHolder = optionsList->rowAt(5);
+  m_backgroundSubtractHolder = optionsList->rowAt(row);
+
   m_backgroundSubtract->checked().connect( this, &RelActManualGui::backgroundSubtractChanged );
   m_backgroundSubtract->unChecked().connect( this, &RelActManualGui::backgroundSubtractChanged );
-  m_backgroundSubtractHolder = optionsList->rowAt(row);
 
   
   WContainerWidget *btndiv = new WContainerWidget();

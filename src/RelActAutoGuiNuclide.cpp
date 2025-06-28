@@ -146,7 +146,7 @@ public:
           m_min_rel_act_edit = new NativeFloatSpinBox( container );
           label->setBuddy( m_min_rel_act_edit );
           m_min_rel_act_edit->setSpinnerHidden( true );
-          m_min_rel_act_edit->setMinimum( std::numeric_limits<float>::min() );
+          m_min_rel_act_edit->setMinimum( 0.0f );
           m_min_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
           m_min_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
 
@@ -155,7 +155,7 @@ public:
           label->setBuddy( m_max_rel_act_edit );
           m_max_rel_act_edit->setSpinnerHidden( true );
           m_max_rel_act_edit->setWidth( WLength(35.0, WLength::Pixel) );
-          m_max_rel_act_edit->setMinimum( std::numeric_limits<float>::min() );
+          m_max_rel_act_edit->setMinimum( 0.0f );
           m_max_rel_act_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleRelActRangeChange );
           break;
         }//case NucConstraintType::RelActRange
@@ -168,7 +168,8 @@ public:
           label->setBuddy( m_min_mass_frac_edit );
           m_min_mass_frac_edit->setSpinnerHidden( true );
           m_min_mass_frac_edit->setWidth( WLength(35.0, WLength::Pixel) );
-          m_min_mass_frac_edit->setRange( 0.0, 1.0 );
+          m_min_mass_frac_edit->setRange( 0.0f, 1.0f );
+          m_min_mass_frac_edit->setValue( 0.0f );
           m_min_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
 
           label = new WLabel( "max:", container );
@@ -177,6 +178,7 @@ public:
           m_max_mass_frac_edit->setSpinnerHidden( true );
           m_max_mass_frac_edit->setWidth( WLength(35.0, WLength::Pixel) );
           m_max_mass_frac_edit->setRange( 0.0, 1.0 );
+          m_max_mass_frac_edit->setValue( 1.0f );
           m_max_mass_frac_edit->valueChanged().connect( this, &RelActAutoGuiNuclideConstraint::handleMassFractionChange );
           break;
         }//case NucConstraintType::MassFraction
@@ -317,6 +319,61 @@ public:
     m_changed.emit();
   }
 
+  map<NucConstraintType,int> constraintTypeRowsForTypes() const
+  {
+    map<NucConstraintType,int> answer;
+    WAbstractItemModel *model = m_constraint_type->model();
+    assert( model );
+    if( !model )
+      return answer;
+
+    for( int row = 0; row < model->rowCount(); ++row )
+    {
+      const WModelIndex index = model->index( row, 0 );
+      assert( index.isValid() );
+      if( !index.isValid() )
+        continue;
+
+      const boost::any any_data = model->data( index, Wt::ItemDataRole::UserRole );
+      try
+      {
+        const NucConstraintType data_type = boost::any_cast<NucConstraintType>(any_data);
+        answer[data_type] = row;
+      }catch( std::exception & )
+      {
+        assert( 0 );
+        continue;
+      }
+    }//for( int row = 0; row < model->rowCount(); ++row )
+
+    return answer;
+  }//map<NucConstraintType,int> constraintTypeRowsForTypes() const
+
+
+  void setConstraintType( const NucConstraintType type )
+  {
+    map<NucConstraintType,int> type_to_index = constraintTypeRowsForTypes();
+    if( !type_to_index.count(type) )
+    {
+      set<NucConstraintType> types;
+      for( const auto &t : type_to_index )
+        types.insert( t.first );
+      types.insert( NucConstraintType::None ); //JIC
+      types.insert( type );
+
+      setAvailableConstraintTypes( types );
+      type_to_index = constraintTypeRowsForTypes();
+    }//if( the wanted constraint isnt avaiable in the GUI yet (we are probably de-serializing) )
+
+    assert( type_to_index.count(type) );
+    if( type_to_index.count(type) )
+    {
+      m_constraint_type->setCurrentIndex( type_to_index[type] );
+      m_stacked_widget->setCurrentIndex( static_cast<int>(type) );
+    }
+  }//void setConstraintType( NucConstraintType &type )
+
+
   NucConstraintType constraintType() const
   {
     if( m_constraint_type->count() == 0 )
@@ -367,13 +424,16 @@ public:
 
   void setRelActRange( std::optional<double> min_rel_act, std::optional<double> max_rel_act )
   {
+    if( min_rel_act.has_value() || max_rel_act.has_value() )
+      setConstraintType( NucConstraintType::RelActRange );
+
     if( min_rel_act.has_value() )
-      m_min_rel_act_edit->setText( WString::fromUTF8(PhysicalUnitsLocalized::printToBestTimeUnits(min_rel_act.value(), 6)) );
+      m_min_rel_act_edit->setValue( min_rel_act.value() );
     else
       m_min_rel_act_edit->setText( "" );
 
     if( max_rel_act.has_value() )
-      m_max_rel_act_edit->setText( WString::fromUTF8(PhysicalUnitsLocalized::printToBestTimeUnits(max_rel_act.value(), 6)) );
+      m_max_rel_act_edit->setValue( max_rel_act.value() );
     else
       m_max_rel_act_edit->setText( "" );
   }
@@ -406,8 +466,8 @@ public:
     if( constrained_to_controlled_activity_ratio <= 0.0 )
       throw runtime_error( "Invalid ActRatioConstraint - constrained to controlled activity ratio must be > 0.0" );
 
-    m_constraint_type->setCurrentIndex( static_cast<int>(NucConstraintType::ActRatio) );
-    m_stacked_widget->setCurrentIndex( static_cast<int>(NucConstraintType::ActRatio) );
+
+    setConstraintType( NucConstraintType::ActRatio );
 
     const int rel_eff_curve_index = m_nuc->relEffCurveIndex(); //May throw exception
 
@@ -483,8 +543,7 @@ public:
 
   void setMassFraction( const double lower_mass_fraction, const double upper_mass_fraction )
   {
-    m_constraint_type->setCurrentIndex( static_cast<int>(NucConstraintType::MassFraction) );
-    m_stacked_widget->setCurrentIndex( static_cast<int>(NucConstraintType::MassFraction) );
+    setConstraintType( NucConstraintType::MassFraction );
     
     const SandiaDecay::Nuclide *nuc = m_nuc->nuclide();
     assert( nuc );
@@ -1511,8 +1570,16 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     m_fit_age_min_edit->setText( "" );
     m_fit_age_max_edit->setText( "" );
   }//if( info.nuclide )
-  
-  m_constraint->setRelActRange( info.min_rel_act, info.max_rel_act );
+
+  if( info.min_rel_act.has_value() || info.max_rel_act.has_value() )
+  {
+    addRelActRangeConstraint( info.min_rel_act, info.max_rel_act );
+  }else
+  {
+    m_constraint->hide();
+    m_add_constraint_btn->show();
+    m_constraint->setRelActRange( info.min_rel_act, info.max_rel_act );
+  }
   
   WString min_age_str, max_age_str;
   if( info.fit_age_min.has_value() )
@@ -1624,10 +1691,26 @@ void RelActAutoGuiNuclide::setSummaryText( const Wt::WString &text )
 }
 
 
+void RelActAutoGuiNuclide::addRelActRangeConstraint( std::optional<double> min_rel_act, std::optional<double> max_rel_act )
+{
+  if( min_rel_act.has_value() || min_rel_act.has_value() )
+  {
+    m_constraint->show();
+    m_add_constraint_btn->hide();
+  }else
+  {
+    m_constraint->hide();
+    m_add_constraint_btn->show();
+  }
+
+  m_constraint->setRelActRange( min_rel_act, max_rel_act );
+}//void addRelActRangeConstraint( std::optional<double> min_rel_act, std::optional<double> max_rel_act )
+
+
 void RelActAutoGuiNuclide::addActRatioConstraint( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint )
 {
   m_constraint->show();
-  m_add_constraint_btn->show();
+  m_add_constraint_btn->hide();
 
   assert( !RelActCalcAuto::is_null(constraint.constrained_source) );
   assert( !RelActCalcAuto::is_null(constraint.controlling_source) );
@@ -1649,7 +1732,7 @@ void RelActAutoGuiNuclide::addActRatioConstraint( const RelActCalcAuto::RelEffCu
 void RelActAutoGuiNuclide::addMassFractionConstraint( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint )
 {
   m_constraint->show();
-  m_add_constraint_btn->show();
+  m_add_constraint_btn->hide();
 
   const SandiaDecay::Nuclide *nuc = nuclide();  
   assert( constraint.nuclide == nuc );

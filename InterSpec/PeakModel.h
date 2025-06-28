@@ -156,6 +156,7 @@ public:
   //addPeaks(...): adds multiple peaks to the model.
   //  Does not assign currently showing reference gamma lines to peaks
   void addPeaks( const std::vector<PeakDef> &peaks );
+  void addPeaks( const std::vector<std::shared_ptr<const PeakDef>> &peaks );
   
   //setPeaks(...): removes all old peaks and adds peaks passed in
   void setPeaks( std::vector<PeakDef> peaks );

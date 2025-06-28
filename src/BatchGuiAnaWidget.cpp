@@ -210,7 +210,7 @@ BatchGuiAnaWidget::BatchGuiAnaWidget( Wt::WContainerWidget *parent )
   interspec->useMessageResourceBundle( "BatchGuiAnaWidget" );
 }
 
-Wt::Signal<bool> &BatchGuiAnaWidget::canDoAnalysisSignal()
+Wt::Signal<bool,Wt::WString> &BatchGuiAnaWidget::canDoAnalysisSignal()
 {
   return m_canDoAnalysis;
 }
@@ -496,6 +496,8 @@ void BatchGuiPeakFitWidget::handleFileUpload( WContainerWidget *dropArea, FileDr
   input->remove_self_request().connect(
     boost::bind( &BatchGuiPeakFitWidget::handle_remove_exemplar_upload, this, boost::placeholders::_1 ) );
 
+  input->preview_created_signal().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+
   // Cleanup all uploads we wont use - dont expect this to actually happen
   for( size_t i = 1; i < spooled.size(); ++i )
   {
@@ -596,16 +598,14 @@ void BatchGuiPeakFitWidget::optionsChanged()
 {
   const bool fit_all_peaks = m_fit_all_peaks->isChecked();
   m_refit_energy_cal->setHidden( fit_all_peaks );
-  // m_exemplar_input->setHidden( fit_all_peaks );
+  m_exemplar_input->setHidden( fit_all_peaks && !m_use_exemplar_energy_cal->isChecked() );
   // m_use_exemplar_energy_cal->setHidden( fit_all_peaks );
   m_background_input->setHidden( fit_all_peaks );
   m_show_nonfit_peaks->setHidden( fit_all_peaks );
   m_use_existing_background_peaks->setHidden( fit_all_peaks );
   m_use_exemplar_energy_cal_for_background->setHidden( fit_all_peaks );
-  m_peak_stat_threshold_container->setHidden(
-    fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
-  m_peak_hypothesis_threshold_container->setHidden(
-    fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
+  m_peak_stat_threshold_container->setHidden( fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
+  m_peak_hypothesis_threshold_container->setHidden( fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
 
   const bool use_current_fore = m_use_current_foreground->isChecked();
   m_exemplar_file_drop->setHidden( use_current_fore );
@@ -689,7 +689,8 @@ void BatchGuiPeakFitWidget::optionsChanged()
     m_summary_custom_report_container->addStyleClass( "EmptyReportUpload" );
 
   // Emit signal to parent that analysis capability may have changed
-  m_canDoAnalysis.emit( canDoAnalysis() );
+  const pair<bool,WString> ana_stat = canDoAnalysis();
+  m_canDoAnalysis.emit( ana_stat.first, ana_stat.second );
 }// void optionsChanged()
 
 tuple<shared_ptr<SpecMeas>, string, set<int>> BatchGuiPeakFitWidget::get_exemplar() const
@@ -738,11 +739,63 @@ tuple<shared_ptr<SpecMeas>, string, set<int>> BatchGuiPeakFitWidget::get_exempla
         shared_ptr<SpecMeas> spec_copy = make_shared<SpecMeas>();
         spec_copy->uniqueCopyContents( *meas );
         meas = spec_copy;
-      }
+
+        //Find the sample with peaks.
+        const set<set<int>> samples_with_peaks = meas->sampleNumsWithPeaks();
+        if( samples_with_peaks.empty() )
+        {
+          // No peaks
+        }else if( samples_with_peaks.size() == 1 )
+        {
+          samples = *begin(samples_with_peaks);
+        }else
+        {
+          // Find the foreground with peaks
+          for( const set<int> &peak_samples : samples_with_peaks )
+          {
+            bool is_back = false, is_fore = false;
+            for( const int sample : peak_samples )
+            {
+              vector<shared_ptr<const SpecUtils::Measurement>> meass = meas->sample_measurements(sample);
+              for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+              {
+                switch( m->source_type() )
+                {
+                  case SpecUtils::SourceType::IntrinsicActivity:
+                  case SpecUtils::SourceType::Calibration:
+                    break;
+
+                  case SpecUtils::SourceType::Background:
+                    is_back = true;
+                    break;
+
+                  case SpecUtils::SourceType::Foreground:
+                  case SpecUtils::SourceType::Unknown:
+                    is_fore = true;
+                    break;
+                }//switch( m->source_type() )
+              }//for( const shared_ptr<const Measurement> &m : meass )
+
+              if( is_fore && !is_back )
+              {
+                samples = peak_samples;
+                break;
+              }
+            }//for( const int sample : samples )
+          }//for( const set<int> &samples : samples_with_peaks )
+        }//for( const set<int> &peak_samples : samples_with_peaks )
+
+        if( samples.empty() )
+        {
+          //It is ambigous.
+          // TODO: Put more effort into trying to divine what set of sample numbers is intended to be the foreground.
+          //  Right now we'll just leave `samples` empty, and the user will get an error message that there are now peaks in exemplar...
+        }
+      }//if( meas )
 
       if( meas )
         break;
-    }
+    }//for( Wt::WWidget *child : m_exemplar_file_drop->children() )
   }// if( m_use_current_foreground->isChecked() ) / else
 
 
@@ -1003,10 +1056,22 @@ void BatchGuiPeakFitWidget::performAnalysis(
       SimpleDialog *warnings_dialog = new SimpleDialog( WString::tr( "bgw-warning-title" ) );
       warnings_dialog->addStyleClass( "BatchAnalysisWarningDialog" );
 
+      InterSpec *interspec = InterSpec::instance();
+      const int app_width = interspec->renderedWidth();
+      const double warn_width = std::min( 450, (app_width > 100) ? app_width : 450 );
+      warnings_dialog->setMinimumSize( WLength(warn_width,WLength::Pixel), WLength::Auto );
+
       WContainerWidget *contents = warnings_dialog->contents();
       contents->setList( true, false );
+      set<string> seen_warnings;
+
       for( const string &warn_msg : results->warnings )
       {
+        // Avoid duplicate warnings
+        if( seen_warnings.count(warn_msg) )
+          continue;
+        seen_warnings.insert( warn_msg );
+
         WContainerWidget *item = new WContainerWidget( contents );
         new WText( warn_msg, item );
       }
@@ -1047,7 +1112,7 @@ void BatchGuiPeakFitWidget::performAnalysis(
   WServer::instance()->ioService().boost::asio::io_service::post( do_work_fcn );
 }// performAnalysis(...)
 
-bool BatchGuiPeakFitWidget::canDoAnalysis() const
+std::pair<bool,Wt::WString> BatchGuiPeakFitWidget::canDoAnalysis() const
 {
   if( !m_fit_all_peaks->isVisible() || !m_fit_all_peaks->isChecked() )
   {
@@ -1058,7 +1123,7 @@ bool BatchGuiPeakFitWidget::canDoAnalysis() const
       const set<int> &exemplar_samples = get<2>( exemplar_info );
       std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks = exemplar->peaks( exemplar_samples );
       if( !peaks || peaks->empty() )
-        return false;
+        return {false, Wt::WString::tr("bgw-no-ana-peak-fit-no-peaks") };
     } else
     {
       // Might be a peaks CSV file
@@ -1072,10 +1137,10 @@ bool BatchGuiPeakFitWidget::canDoAnalysis() const
           has_peaks_csv = true;
           break;
         }
-      }
+      }//for( Wt::WWidget *child : m_exemplar_file_drop->children() )
 
       if( !has_peaks_csv )
-        return false;
+        return {false, Wt::WString::tr("bgw-no-ana-peak-fit-need-peaks") };
     }// if( exemplar ) / else
   }// if( !m_fit_all_peaks->isVisible() || !m_fit_all_peaks->isChecked() )
 
@@ -1097,10 +1162,10 @@ bool BatchGuiPeakFitWidget::canDoAnalysis() const
   }
 
   if( !back_status_okay )
-    return false;
+    return {false, Wt::WString::tr("bgw-no-ana-peak-fit-bad-background") };
 
-  return true;
-}
+  return {true, WString()};
+}//std::pair<bool,Wt::WString> BatchGuiPeakFitWidget::canDoAnalysis() const
 
 BatchGuiActShieldAnaWidget::BatchGuiActShieldAnaWidget( Wt::WContainerWidget *parent )
 : BatchGuiPeakFitWidget( parent ),
@@ -1404,41 +1469,42 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   WServer::instance()->ioService().boost::asio::io_service::post( do_work_fcn );
 }// performAnalysis(...)
 
-bool BatchGuiActShieldAnaWidget::canDoAnalysis() const
+pair<bool,Wt::WString> BatchGuiActShieldAnaWidget::canDoAnalysis() const
 {
-  if( !BatchGuiPeakFitWidget::canDoAnalysis() )
-    return false;
+  const pair<bool,Wt::WString> peak_fit_status = BatchGuiPeakFitWidget::canDoAnalysis();
+  if( !peak_fit_status.first )
+    return peak_fit_status;
 
   const shared_ptr<const DetectorPeakResponse> det = detector();
   if( !det )
-    return false;
+    return {false, WString::tr("bgw-no-ana-act-shield-no-drf")};
 
   // `BatchGuiPeakFitWidget::canDoAnalysis()` should have already checked for the exemplar,
   //   and that it has peaks, but peaks analysis will allow the exemplar to be a peaks CSV file.
   const tuple<shared_ptr<SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
   const shared_ptr<SpecMeas> &exemplar = get<0>( exemplar_info );
   if( !exemplar )
-    return false;
+    return {false, WString::tr("bgw-no-ana-act-shield-no-exemplar")};
 
   const set<int> &exemplar_samples = get<2>( exemplar_info );
   std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks = exemplar->peaks( exemplar_samples );
   if( !peaks || peaks->empty() )
-    return false;
+    return {false, WString::tr("bgw-no-ana-act-shield-no-peaks-in-exemplar")};
 
   const rapidxml::xml_document<char> *shielding_source_model = exemplar->shieldingSourceModel();
   if( !shielding_source_model )
-    return false;
+    return {false, WString::tr("bgw-no-ana-act-shield-no-act-fit-model")};
 
   if( !m_no_background->isChecked() )
   {
     const tuple<shared_ptr<const SpecMeas>, string, set<int>> background_info = get_background();
     const shared_ptr<const SpecMeas> &background = get<0>( background_info );
     if( !background )
-      return false;
+      return {false, WString::tr("bgw-no-ana-act-shield-invalid-background")};
   }// if( !m_no_background->isChecked() )
 
-  return true;
-}
+  return {true, WString()};
+}//pair<bool,Wt::WString> BatchGuiActShieldAnaWidget::canDoAnalysis() const
 
 void BatchGuiActShieldAnaWidget::optionsChanged()
 {
@@ -1718,20 +1784,24 @@ FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
   
   WContainerWidget *opts = new WContainerWidget( this );
   opts->addStyleClass( "FileConvertOptsOptions" );
-  
-  m_overwrite_output = new WCheckBox( "Overwrite output", opts );
+
+  WText *txt = new WText( WString::tr("bgw-info-will-convert-file-type"), opts );
+  txt->setInline( false );
+  txt->addStyleClass( "FileConvertOptsTitle" );
+
+
+  m_overwrite_output = new WCheckBox( WString::tr("bgw-overwrite-output-cb"), opts );
   m_overwrite_output->addStyleClass( "CbNoLineBreak" );
   m_overwrite_output->checked().connect( this, &FileConvertOpts::optionsChanged );
   
-  m_sum_for_single_output_types = new WCheckBox( "Sum files with multiple records to single record", opts );
+  m_sum_for_single_output_types = new WCheckBox( WString::tr("bgw-sum-multirecord-to-single"), opts );
   m_sum_for_single_output_types->addStyleClass( "CbNoLineBreak" );
   m_sum_for_single_output_types->hide();
   m_sum_for_single_output_types->checked().connect( this, &FileConvertOpts::optionsChanged );
-  
-  
-  WText *txt = new WText( "Input files will be converted to selected output spectrum file type.", opts );
-  txt->setInline( false );
-  
+
+  WText *spacer = new WText( "&nbsp;", opts );
+  spacer->addStyleClass( "FileOptSpacer" );
+
   m_format_menu->select( 0 );
   handleFormatChange();
 }//
@@ -1877,13 +1947,15 @@ void FileConvertOpts::performAnalysis( const vector<tuple<string, string, shared
 }//void FileConvertOpts::performAnalysis(...)
 
   
-bool FileConvertOpts::canDoAnalysis() const
+pair<bool,Wt::WString> FileConvertOpts::canDoAnalysis() const
 {
-  return true;
-}//bool FileConvertOpts::canDoAnalysis() const
-  
+  return {true, ""};
+}//pair<bool,Wt::WString> FileConvertOpts::canDoAnalysis() const
+
 
 void FileConvertOpts::optionsChanged()
 {
-  m_canDoAnalysis.emit( canDoAnalysis() );
+  const pair<bool,WString> ana_stat = canDoAnalysis();
+
+  m_canDoAnalysis.emit( ana_stat.first, ana_stat.second );
 }//void optionsChanged()

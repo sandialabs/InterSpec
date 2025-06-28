@@ -63,7 +63,7 @@ namespace
   //  table, and causing newly selected state to not be visible.  A way to fix this is to always
   //  have the time/description take up space via a "&nbsp;", but I'm not sure I like all this
   //  wasted space, so we'll leave this kinda wierdness alone for now
-  const char * const ns_empty_descrip_label = ""; //"&nbsp;"
+  const char * const ns_empty_descrip_label = "";// "&nbsp;";
 }//namespace
 
 
@@ -860,6 +860,8 @@ void SnapshotBrowser::selectionChanged()
       m_editWindow = nullptr;
       //else //is edit dialog, in which case just delete the dialog
     }
+    
+    
   }else if( dbfile ) //UserFileDB clicked
   {
     const Wt::WDateTime serializeTime = dbfile->serializeTime.addSecs(secondsOffset);

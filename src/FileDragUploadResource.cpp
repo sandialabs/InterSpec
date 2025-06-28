@@ -69,6 +69,8 @@ FileDragUploadResource::FileDragUploadResource( WObject *parent  )
     : WResource( parent ),
       m_fileDrop( this )
 {
+  setUploadProgress( true );
+  setTakesUpdateLock( true );
 }
 
 

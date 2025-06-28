@@ -27,6 +27,12 @@
   <message id="bgw-peak-stat-threshold-label">Peak stat threshold:</message>
   <message id="bgw-peak-hypothesis-threshold-label">Peak hypothesis threshold:</message>
   
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">Overwrite output</message>
+  <message id="bgw-sum-multirecord-to-single">Sum files with multiple records to single record</message>
+  <message id="bgw-info-will-convert-file-type">Files will be converted to selected type.</message>
+  
+  
   <!-- Reports group -->
   <message id="bgw-reports-grp-title">Reports to Write</message>
   <message id="bgw-reports-write-html">HTML</message>
@@ -37,6 +43,19 @@
   <message id="bgw-reports-write-custom-per-file-tooltip">Upload a custom report template to use for each file.</message>
   <message id="bgw-reports-write-custom-summary">Custom Summary</message>
   <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">No peaks present in exemplar.</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">Need exemplar spectrum with peaks, or a peaks CSV file.</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">Need valid background</message>
+  <message id="bgw-no-ana-act-shield-no-drf">No detector efficiency available.</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">No exemplar spectrum selected.</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">No peaks in selected exemplar spectrum.</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">No Act/Shield fit model present in exemplar.</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">Invalid background</message>
+  <message id="bgw-no-ana-no-input-files">No input files.</message>
+  <message id="bgw-no-ana-invalid-output-path">Please select a valid output directory.</message>
+
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Performing Work</message>

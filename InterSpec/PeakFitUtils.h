@@ -25,9 +25,13 @@
 
 #include "InterSpec_config.h"
 
+#include <deque>
 #include <memory>
+#include <vector>
 
 // Forward declarations
+class PeakDef;
+class InterSpec;
 namespace SpecUtils
 {
   class Measurement;
@@ -37,6 +41,38 @@ namespace SpecUtils
 namespace PeakFitUtils
 {
 
+/** Gives approximate nominal FWHM for a CsI or NaI detector */
+float nai_fwhm_fcn( const float energy );
+
+/** Gives approximate nominal FWHM for a LaBr3 or CZT detector */
+float labr_fwhm_fcn( const float energy );
+
+/** Gives approximate nominal FWHM for a HPGe detector */
+float hpge_fwhm_fcn( const float energy );
+  
+  
+enum class CoarseResolutionType : int
+{
+  /** Csi, NaI*/
+  Low,
+  
+  /** LaBr, CZT */
+  Medium,
+  
+  /** HPGe */
+  High,
+  
+  /** Unknown */
+  Unknown
+};//enum class CoarseResolutionType
+
+  
+CoarseResolutionType coarse_resolution_from_peaks( const std::vector<std::shared_ptr<const PeakDef>> &peaks );
+
+/** Convenience function */
+CoarseResolutionType coarse_resolution_from_peaks( const std::deque<std::shared_ptr<const PeakDef>> &peaks );
+  
+  
 /** Tries to guess if the passed in spectrum is from a high-resolution system (i.e., HPGe), or a lower resolution system.
  
  Primarily intended to determine defaults for peak-fitting.
@@ -44,10 +80,17 @@ namespace PeakFitUtils
  Currently looks at number of channels and/or average channel width, but may look at actual spectrum features for ambiguous cases
  in the future.
  
-
+ TODO: return an enum from this function, and everywhere `isHPGe` or `highres` is used.
  */
 bool is_high_res( const std::shared_ptr<const SpecUtils::Measurement> &meas );
 
+  
+/** Tries to determine if the current foreground spectrum is from a high-resolution system (i.e., HPGe), or a lower resolution system.
+ Must only be called from the Wt application thread.
+ 
+ TODO: return an enum from this function, and everywhere `isHPGe` or `highres` is used.
+ */
+bool is_likely_high_res( InterSpec *viewer );
 }//namespace PeakFitUtils
 
 #endif //PeakFitUtils_h

@@ -665,6 +665,27 @@ void czt_pu_example()
   }
 
 
+  //det->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm );
+  state.options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_4;
+  state.options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
+
+  // Check serialization to/from XML
+#if( PERFORM_DEVELOPER_CHECKS )
+  {
+    rapidxml::xml_document<char> doc;
+    rapidxml::xml_node<char> *base_node = doc.allocate_node( rapidxml::node_element, "State" );
+    doc.append_node( base_node );
+
+    rapidxml::xml_node<char> *state_node = state.serialize( base_node );
+    assert( state_node );
+
+    RelActCalcAuto::RelActAutoGuiState state_cpy;
+    state_cpy.deSerialize( state_node, &matdb );
+
+    RelActCalcAuto::RelActAutoGuiState::equalEnough( state, state_cpy );
+  } 
+#endif
+  
   vector<shared_ptr<const PeakDef>> all_peaks{};
   const RelActCalcAuto::RelActAutoSolution solution = RelActCalcAuto::solve( state.options,
                                                                             foreground, nullptr, det, all_peaks, nullptr );

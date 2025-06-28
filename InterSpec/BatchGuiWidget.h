@@ -37,6 +37,7 @@
 
 namespace Wt 
 {
+  class WText;
   class WComboBox;
   class WTreeView;
   class WCheckBox;
@@ -113,6 +114,8 @@ protected:
   Wt::WContainerWidget *m_input_files_container;
 
   DirectorySelector *m_output_dir;
+
+  Wt::WText *m_input_status_error;
 
   bool m_can_do_analysis;
 

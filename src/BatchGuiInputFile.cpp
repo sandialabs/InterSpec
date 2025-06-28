@@ -132,6 +132,7 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
   m_display_name( display_name ),
   m_should_cleanup( should_cleanup ),
   m_preview_container( nullptr ),
+  m_spectrum( nullptr ),
   m_preview_created( false ),
   m_spec_meas( nullptr ),
   m_is_peaks_csv( false ),
@@ -194,7 +195,7 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
         *status_ptr = is_csv ? 2 : 3;
       }// if( parsed as spectrum file ) / else
 
-      WServer::instance()->post( sessionid, updateGuiCallback );
+      WServer::instance()->schedule( 25, sessionid, updateGuiCallback );
     } );
 }// BatchGuiInputSpectrumFile constructor
 
@@ -292,18 +293,22 @@ void BatchGuiInputSpectrumFile::set_spectrum( std::shared_ptr<SpecMeas> spec_mea
 
     if( preview_meas )
     {
-      D3SpectrumDisplayDiv *spec = new D3SpectrumDisplayDiv( m_preview_container );
-      spec->clicked().preventPropagation();
-      spec->setThumbnailMode();
-      spec->setData( preview_meas, false );
-      spec->resize( WLength( 100, WLength::Percentage ), WLength( 100, WLength::Percentage ) );
+      if( !m_spectrum )
+      {
+        m_spectrum = new D3SpectrumDisplayDiv( m_preview_container );
+        m_spectrum->clicked().preventPropagation();
+        m_spectrum->setThumbnailMode();
+        m_spectrum->resize( WLength( 100, WLength::Percentage ), WLength( 100, WLength::Percentage ) );
 
-      // We dont currently need to explicitly set the color theme, as all color theme styling for
-      //   D3SpectrumDisplayDiv is globablly applied...
-      // InterSpec *interspec = InterSpec::instance();
-      // spec->applyColorTheme( interspec->getColorTheme() );
-      // interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, spec,
-      // boost::placeholders::_1 ) );
+        // We dont currently need to explicitly set the color theme, as all color theme styling for
+        //   D3SpectrumDisplayDiv is globally applied...
+        // InterSpec *interspec = InterSpec::instance();
+        // spec->applyColorTheme( interspec->getColorTheme() );
+        // interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, spec,
+        // boost::placeholders::_1 ) );
+      }//if( !m_spectrum )
+      
+      m_spectrum->setData( preview_meas, false );
     } else
     {
       WText *preview = new WText( m_preview_container );

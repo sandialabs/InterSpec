@@ -98,6 +98,14 @@
   <message id="smm-CALp-cb-apply-to-back">Apply to background</message>
   <message id="smm-CALp-cb-apply-to-second">Apply to secondary</message>
   <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">Would you like to use it?</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      Note: current energy calibration is lower-channel energies;<br />
+      you may want to linearize the spectrum before applying this<br />
+      energy calibration.
+    </p>
+  </message>
+
   <message id="smm-CALp-err-applying-single">There was an error applying calibration:
     <br />
     {1}

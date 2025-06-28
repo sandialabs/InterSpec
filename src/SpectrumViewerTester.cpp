@@ -56,19 +56,23 @@
 #include <Wt/Dbo/backend/Sqlite3>
 #include <Wt/Test/WTestEnvironment>
 
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/PeakEdit.h"
-#include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpec.h"
-#include "SpecUtils/Filesystem.h"
+#include "InterSpec/GammaXsGui.h"
 #include "InterSpec/DecayWindow.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/UseInfoWindow.h"
@@ -82,7 +86,6 @@
 #include "InterSpec/GammaCountDialog.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/UnitsConverterTool.h"
-#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/CompactFileManager.h"
@@ -94,7 +97,6 @@
 #endif
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
-#include "InterSpec/GammaXsGui.h"
 
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -1381,11 +1383,13 @@ SpectrumViewerTester::Score SpectrumViewerTester::testAutomatedPeakSearch()
 
   peakModel->setPeaks( std::vector<PeakDef>() );
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer );
+  
   shared_ptr<const SpecUtils::Measurement> data = m_viewer->m_spectrum->data();
   try
   {
     //This will take a minute, and app will look paused, but whatever.
-    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false );
+    auto resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, nullptr, nullptr, false, isHPGe );
     
     for( const auto &p : resultpeaks )
       testpeaks.push_back( *p );

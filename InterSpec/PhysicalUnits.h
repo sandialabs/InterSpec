@@ -129,6 +129,8 @@ namespace PhysicalUnits
   // TODO: consider making user literals, for example to write something like 25.0_cm, define:
   // long double operator"" _cm ( long double dist ){ return dist * PhysicalUnits::cm; }
 
+  /** The number of Gaussian sigmas in a Full-Width at Half-maximum, for the normal distribution. */
+  static const float fwhm_nsigma = 2.35482f;
 
   //sm_distanceRegex: a javascript regex string to validate user input distances
   //  stringToDistance.  Allows positive and negative values.

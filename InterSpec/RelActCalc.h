@@ -336,9 +336,9 @@ const double ns_an_ceres_mult = 50;
   c = (x[c_index] - ns_decay_hoerl_c_offset) * ns_decay_hoerl_c_multiple
  */
 const double ns_decay_hoerl_b_offset = 1.0;   
-const double ns_decay_hoerl_b_multiple = 1.0; 
-const double ns_decay_hoerl_c_offset = 0.0;  
-const double ns_decay_hoerl_c_multiple = 1.0; 
+const double ns_decay_hoerl_b_multiple = 1.0;
+const double ns_decay_hoerl_c_offset = 0.0;
+const double ns_decay_hoerl_c_multiple = 1.0;
 
 
 template<typename T = double>

@@ -620,10 +620,18 @@ protected:
    */
   std::vector<std::string> m_pendingJs;
   
-  
+  /** Some variables to track when users drag the ROI edge. */
   std::chrono::steady_clock::time_point m_last_drag_time;
   std::shared_ptr<const PeakContinuum> m_continuum_being_drug;
   std::vector<std::shared_ptr<const PeakDef>> m_last_being_drug_peaks;
+  
+  /** A variable to track when users are CNTRL/ALT-dragging to ad aROI - these peaks are the ones currently
+   being shown to the user.
+   
+   Will be cleared when `performDragCreateRoiWork(...)` is called with `isfinal == true`, but if the
+   user hits escape to cancel the operation, no call will be made, so this variable wont be cleared.
+   */
+  std::vector<std::shared_ptr<const PeakDef>> m_last_being_added_peaks;
   
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;

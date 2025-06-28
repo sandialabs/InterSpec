@@ -25,6 +25,7 @@
 
 #include <regex>
 #include <memory>
+#include <numeric>
 #include <iostream>
 
 #include <boost/math/constants/constants.hpp>
@@ -55,6 +56,8 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+
+#include "InterSpec/PeakDists_imp.hpp"
 
 using namespace std;
 using SpecUtils::Measurement;
@@ -144,7 +147,9 @@ namespace
 
 
 void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
-                         const PeakDef &peak, const std::shared_ptr<const Measurement> &data )
+                         const PeakDef &peak, 
+                         const std::shared_ptr<const Measurement> &data,
+                         const bool isHPGe )
 {
   std::shared_ptr<const PeakContinuum> continuum = peak.continuum();
   if( continuum->energyRangeDefined() )
@@ -161,8 +166,8 @@ void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
     return;
   }//if( !data )
   
-  const size_t lowbin = findROILimit( peak, data, false );
-  const size_t upbin  = findROILimit( peak, data, true );
+  const size_t lowbin = findROILimit( peak, data, false, isHPGe );
+  const size_t upbin  = findROILimit( peak, data, true, isHPGe );
   if( lowbin == 0 )
     lowerEnengy = data->gamma_channel_center( lowbin );
   else
@@ -172,8 +177,6 @@ void findROIEnergyLimits( double &lowerEnengy, double &upperEnergy,
     upperEnergy = data->gamma_channel_center( std::min(upbin,data->num_gamma_channels()-1) );
   else
     upperEnergy = data->gamma_channel_upper( upbin );
-  
-
 }//void findROIEnergyLimits(...)
 
 
@@ -310,7 +313,10 @@ size_t findROILimitHighRes( const PeakDef &peak, const std::shared_ptr<const Mea
 }//findROILimitHighRes(...)
  
 
-size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH, bool high )
+size_t findROILimit( const PeakDef &peak, 
+                    const std::shared_ptr<const Measurement> &dataH,
+                    const bool high,
+                    const bool isHPGe )
 {
   if( !peak.gausPeak() )
     return dataH->find_gamma_channel( (high ? peak.upperX() : peak.lowerX()) );
@@ -339,9 +345,6 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( nchannel<128 )
     throw runtime_error( "findROILimit(...): Invalid input" );
   
-  const bool highres = PeakFitUtils::is_high_res(dataH);
-  
-  
   const vector<float> &contents = *dataH->gamma_channel_contents();
   
   
@@ -354,7 +357,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
   if( definedRange )
     return dataH->find_gamma_channel( (high ? (highxrange-0.00001) : lowxrange) );
   
-  if( PeakFitUtils::is_high_res(dataH) )
+  if( isHPGe )
     return findROILimitHighRes( peak, dataH, high );
   
   
@@ -406,7 +409,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
     assert( channel < (dataH->num_gamma_channels() + 100) );
     const float val = contents[channel];
     
-    if( val <= minVal && (!highres || (contents[channel+direction] <= minVal)) )
+    if( val <= minVal && (!isHPGe || (contents[channel+direction] <= minVal)) )
     {
       minVal = val;
       minChannel = channel;
@@ -437,7 +440,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
       //  the lower ROI range for peaks on a falling continuum can be much to short.
       //  (not tested for HPGe)
 
-      if( (nbackbin > 2) && !highres && channel > nbackbin )
+      if( (nbackbin > 2) && !isHPGe && channel > nbackbin )
       {
         try
         {
@@ -477,7 +480,7 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
       
       
       
-      if( val > max_allowable && (!highres || contents[channel+direction] > max_allowable) )
+      if( val > max_allowable && (!isHPGe || contents[channel+direction] > max_allowable) )
       {
         //XXX - the below 3 is purely empircal, and meant to help avoid
         //      contamination due to the new feature
@@ -583,8 +586,8 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
     //  ROI.  It could probably be done for low resolution spectra, but I havent
     //  tested if (since single lowres peaks ROIs typically get calculated by
     //  find_roi_for_2nd_deriv_candidate(...) anyway
-    if( (val>max_allowable && (!highres ||nextval>max_allowable))
-        || (val<min_allowable && (!highres || nextval<min_allowable)) )
+    if( (val>max_allowable && (!isHPGe ||nextval>max_allowable))
+        || (val<min_allowable && (!isHPGe || nextval<min_allowable)) )
     {
 #if( PRINT_ROI_DEBUG_INFO )
       if( debug_this_peak )
@@ -658,6 +661,10 @@ size_t findROILimit( const PeakDef &peak, const std::shared_ptr<const Measuremen
     //    }
   }//if( abs(lastbin-mean_bin) > abs(good_cont_bin-mean_bin) )
   
+  if( lastchannel < 0 )
+    lastchannel = 0;
+  else if( lastchannel >= static_cast<indexing_t>(dataH->num_gamma_channels()) )
+    lastchannel = static_cast<indexing_t>(dataH->num_gamma_channels()) - 1;
   
   float val = dataH->gamma_channel_center(lastchannel);
   if( direction < 0 )
@@ -720,6 +727,7 @@ bool isStatisticallyGreaterOrEqual( const size_t start1, const size_t end1,
 
 
 void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Measurement> &dataH,
+                           const bool isHPGe,
                            size_t &lower_channel, size_t &upper_channel )
 {
   const size_t nchannel = dataH ? dataH->num_gamma_channels() : size_t(0);
@@ -756,8 +764,8 @@ void estimatePeakFitRange( const PeakDef &peak, const std::shared_ptr<const Meas
   const bool polyContinuum = continuum->isPolynomial();
   if( polyContinuum )
   {
-    lower_channel = findROILimit( peak, dataH, false );
-    upper_channel = findROILimit( peak, dataH, true );
+    lower_channel = findROILimit( peak, dataH, false, isHPGe );
+    upper_channel = findROILimit( peak, dataH, true, isHPGe );
   }else
   {
     lower_channel = dataH->find_gamma_channel( mean - 4.0*sigma );
@@ -2957,6 +2965,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           case NoSkew:
             vis_limits.first = p.mean() - 5.0*p.sigma();
             vis_limits.second = p.mean() + 5.0*p.sigma();
+            //const boost::math::normal_distribution gaus_dist( 1.0 );
+            //vis_limits.first = mean +  sigma*boost::math::quantile( gaus_dist, 0.5*hidden_frac );
+            //vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - 0.5*hidden_frac );
             break;
             
           case Bortel:
@@ -3223,7 +3234,7 @@ string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks
 }//string peak_json( inpeaks )
 #endif //#if( SpecUtils_ENABLE_D3_CHART )
 
-std::shared_ptr<PeakContinuum> PeakDef::continuum()
+const std::shared_ptr<PeakContinuum> &PeakDef::continuum()
 {
   return m_continuum;
 }
@@ -4562,6 +4573,42 @@ void PeakContinuum::setParameters( double referenceEnergy,
 }//void setParameters(...)
 
 
+void PeakContinuum::setParameters( double referenceEnergy,
+                                   const double *parameters,
+                                   const double *uncertainties )
+{
+  if( !parameters )
+    throw runtime_error( "PeakContinuum::setParameters invalid parameters" );
+  
+  switch( m_type )
+  {
+    case NoOffset: case External:
+      throw runtime_error( "PeakContinuum::setParameters(): called for external or no-offset continuum - not allowed" );
+      
+    case Constant:   case Linear:
+    case Quadratic: case Cubic:
+    case FlatStep:
+    case LinearStep:
+    case BiLinearStep:
+    {
+      const size_t npar = num_parameters(m_type);
+      
+      m_values.resize( npar );
+      m_uncertainties.resize( npar );
+      m_fitForValue.resize( npar, true );
+      m_referenceEnergy = referenceEnergy;
+      
+      for( size_t i = 0; i < npar; ++i )
+      {
+        m_values[i] = parameters[i];
+        m_uncertainties[i] = uncertainties ? uncertainties[i] : 0.0;
+      }
+      
+      break;
+    }//case - polynomial continuum
+  };//switch( m_type )
+}//setParameters
+
 
 bool PeakContinuum::setPolynomialCoefFitFor( size_t polyCoefNum, bool fit )
 {
@@ -4591,38 +4638,6 @@ bool PeakContinuum::setPolynomialUncert( size_t polyCoef, double val )
   m_uncertainties[polyCoef] = val;
   return true;
 }
-
-void PeakContinuum::setParameters( double referenceEnergy,
-                                   const double *parameters,
-                                   const double *uncertainties )
-{
-  if( !parameters )
-    throw runtime_error( "PeakContinuum::setParameters invalid parameters" );
-  
-  vector<double> uncerts, values;
-  
-  switch( m_type )
-  {
-    case NoOffset: case External:
-      throw runtime_error( "PeakContinuum::setParameters invalid m_type" );
-      
-    case Constant:   case Linear:
-    case Quadratic: case Cubic:
-    case FlatStep:
-    case LinearStep:
-    case BiLinearStep:
-    {
-      const size_t npar = num_parameters(m_type);
-      values.insert( end(values), parameters, parameters + npar );
-      if( uncertainties )
-        uncerts.insert( end(uncerts), uncertainties, uncertainties + npar );
-      
-      break;
-    }
-  };//switch( m_type )
-  
-  setParameters( referenceEnergy, values, uncerts );
-}//setParameters
 
 
 void PeakContinuum::setExternalContinuum( const std::shared_ptr<const Measurement> &data )
@@ -4908,12 +4923,9 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       if( !data || !data->num_gamma_channels() )
         throw runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
       
-      // If you change any of this, make sure you update fit_amp_and_offset(...) as well
-      
-      // TODO: this is not efficient, tested, or correct if integration limits do not correspond to channel limits
-#ifndef _WIN32  
-      #warning "TODO: Flat/Linear/BiLinear-Step offset_integral is not efficient, tested, or correct"
-#endif
+      // If you change any of this, make sure you update fit_amp_and_offset(...), as well as
+      //  the as well `PeakContinuum::offset_integral( const float *, double *, size_t, data )`.
+
       double roi_lower, roi_upper, cumulative_data, roi_data_sum;
       integrate_for_step( roi_lower, roi_upper, cumulative_data, roi_data_sum );
       
@@ -4950,7 +4962,7 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
       
       const double contrib = ((1.0 - frac_data) * left_poly) + (frac_data * right_poly);
       
-      return contrib;
+      return std::max( 0.0, contrib );
     }//case BiLinearStep:
       
     case External:
@@ -4963,6 +4975,187 @@ double PeakContinuum::offset_integral( const double x0, const double x1,
   return 0.0;
 }//double offset_integral( const double x0, const double x1 ) const
 
+
+
+void PeakContinuum::offset_integral( const float *energies, double *channels, const size_t nchannel,
+                     const std::shared_ptr<const SpecUtils::Measurement> &data ) const
+{
+  // This function should give the same answer as
+  //  `PeakContinuum::offset_integral( double x0, const double x1, data)`, on a channel-by-channel
+  //  basis, just be a little faster computationally, especially for stepped continua.
+  PeakDists::offset_integral<PeakContinuum,double>( *this, energies, channels, nchannel, data );
+
+  /*
+  assert( nchannel > 0 );
+  if( !nchannel )
+    return;
+  
+  switch( m_type )
+  {
+    case NoOffset:
+      return;
+      
+    case Constant: case Linear: case Quadratic: case Cubic:
+    {
+      for( size_t i = 0; i < nchannel; ++i )
+      {
+        const double x0 = energies[i] - m_referenceEnergy;
+        const double x1 = energies[i+1] - m_referenceEnergy;
+        
+        double answer = 0.0;
+        switch( m_type )
+        {
+          case NoOffset: case External: case FlatStep: case LinearStep: case BiLinearStep:
+            assert( 0 );
+            
+          case Cubic:
+            assert( m_values.size() == 4 );
+            answer += 0.25*m_values[3]*(x1*x1*x1*x1 - x0*x0*x0*x0);
+            //fall-through intentional
+            
+          case Quadratic:
+            assert( m_values.size() >= 3 );
+            answer += 0.333333333333333*m_values[2]*(x1*x1*x1 - x0*x0*x0);
+            //fall-through intentional
+            
+          case Linear:
+            assert( m_values.size() >= 2 );
+            answer += 0.5*m_values[1]*(x1*x1 - x0*x0);
+            //fall-through intentional
+            
+          case Constant:
+            assert( m_values.size() >= 1 );
+            answer += m_values[0]*(x1 - x0);
+            break;
+        };//switch( type )
+        
+        assert( std::max(answer,0.0) == offset_eqn_integral( &(m_values[0]), m_type, energies[i], energies[i+1], m_referenceEnergy ) );
+        
+        channels[i] += std::max( answer, 0.0 );
+      }//for( size_t i = 0; i < nchannel; ++i )
+      
+      break;
+    }//case Constant: case Linear: case Quadratic: case Cubic:
+      
+      
+    case FlatStep:
+    case LinearStep:
+    case BiLinearStep:
+    {
+      if( !data || !data->num_gamma_channels() )
+        throw runtime_error( "PeakContinuum::offset_integral: invalid data spectrum passed in" );
+      
+      // To be consistent with how fit_amp_and_offset(...) handles things, we will do our own
+      //  summing here, rather than calling Measurement::gamma_integral.
+      const size_t roi_lower_channel = data->find_gamma_channel( m_lowerEnergy );
+      const size_t roi_upper_channel = data->find_gamma_channel( m_upperEnergy );
+      
+      //const double roi_lower = data->gamma_channel_lower(roi_lower_channel);
+      //const double roi_upper = data->gamma_channel_upper(roi_upper_channel);
+      
+      const vector<float> &counts = *data->gamma_counts();
+      
+      assert( roi_lower_channel < counts.size() );
+      assert( roi_upper_channel < counts.size() );
+      
+      
+      const double roi_data_sum = std::accumulate( begin(counts) + roi_lower_channel, begin(counts) + roi_upper_channel + 1,  0.0 );
+      // Might be able to take advantage of vectorized sum using something like:
+      //const double roi_data_sum = Eigen::VectorXf::Map( &(counts[roi_lower_channel]), (1 + roi_upper_channel - roi_lower_channel) ).sum();
+      
+      
+      const size_t begin_channel = data->find_gamma_channel( energies[0] );
+      assert( energies[0] == data->gamma_channel_lower(begin_channel) );
+      const size_t end_channel = begin_channel + nchannel; //one past last channel we want
+      
+      // Lets check that `energies` points into the lower channel energies of `data`.
+      //  We actually only care that the values of the array are the same, but we'll be
+      //  a little tighter for development.
+      const vector<float> &data_energies = *data->channel_energies();
+      
+      if( (energies[0] != data->gamma_channel_lower(begin_channel))
+         || (energies[nchannel] != data->gamma_channel_lower(begin_channel+nchannel)) )
+        throw std::logic_error( "PeakContinuum::offset_integral: for stepped continua" );
+      
+      double cumulative_data = 0.0;
+      
+      // Incase we are starting
+      if( begin_channel > roi_lower_channel )
+      {
+        for( size_t i = begin_channel; i < begin_channel; ++i )
+          cumulative_data += counts[i];
+      }//if( begin_channel > lower_channel )
+      
+      
+      for( size_t i = begin_channel; i < end_channel; ++i )
+      {
+        const size_t input_index = i - begin_channel;
+        assert( data_energies[i] == energies[input_index] );
+        
+        const double x0_rel = data_energies[i] - m_referenceEnergy;
+        const double x1_rel = data_energies[i+1] - m_referenceEnergy;
+        
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5*counts[i];
+        
+        const double frac_data = cumulative_data / roi_data_sum;
+        
+        switch( m_type )
+        {
+          case FlatStep:
+          case LinearStep:
+          {
+            const double offset = m_values[0]*(x1_rel - x0_rel);
+            const double linear = ((m_type == FlatStep) ? 0.0 :  0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel));
+            const size_t step_index = ((m_type == FlatStep) ? 1 : 2);
+            const double step_contribution = m_values[step_index] * frac_data * (x1_rel - x0_rel);
+            
+            const double answer = std::max( 0.0, offset + linear + step_contribution );
+            
+            assert( answer == offset_integral( data_energies[i], data_energies[i+1], data ) );
+            
+            channels[input_index] += answer;
+            break;
+          }//case FlatStep: case LinearStep:
+            
+          case BiLinearStep:
+          {
+            assert( m_values.size() == 4 );
+            const double left_poly = m_values[0]*(x1_rel - x0_rel) + 0.5*m_values[1]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const double right_poly = m_values[2]*(x1_rel - x0_rel) + 0.5*m_values[3]*(x1_rel*x1_rel - x0_rel*x0_rel);
+            const double contrib = std::max( 0.0, ((1.0 - frac_data) * left_poly) + (frac_data * right_poly) );
+            
+            assert( contrib == offset_integral( data_energies[i], data_energies[i+1], data ) );
+            
+            channels[input_index] += contrib;
+            break;
+          }//case BiLinearStep:
+            
+          case NoOffset: case Constant: case Linear: case Quadratic: case Cubic: case External:
+            assert( 0 );
+            break;
+        }//switch( m_type )
+        
+        if( i >= roi_lower_channel && i <= roi_upper_channel )
+          cumulative_data += 0.5*counts[i];
+      }//for( size_t i = 0; i < channels; ++i )
+      
+      break;
+    }//case FlatStep/LinearStep/BiLinearStep
+      
+    case External:
+    {
+      assert( m_externalContinuum );
+      if( !m_externalContinuum )
+        break;
+      
+      for( size_t i = 0; i < nchannel; ++i )
+        channels[i] += gamma_integral( m_externalContinuum, energies[i], energies[i+1] );
+      break;
+    }//case External:
+  }//switch( m_type )
+  */
+}//void PeakContinuum::offset_integral( ... ) const
 
 
 void PeakContinuum::eqn_from_offsets( size_t lowchannel,
@@ -5135,7 +5328,7 @@ double PeakContinuum::offset_eqn_integral( const double *coefs,
   x0 -= peak_mean;
   x1 -= peak_mean;
   
-  //Explicitly evaluating the ppolynomial speeds up peak fitting by about a factor of two - suprising!
+  //Explicitly evaluating the polynomial speeds up peak fitting by about a factor of two - suprising!
   //const int maxorder = static_cast<int>( type );
   //for( int order = 0; order < maxorder; ++order )
   //{

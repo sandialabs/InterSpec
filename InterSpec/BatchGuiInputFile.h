@@ -34,6 +34,7 @@
 // Forward declarations
 class SpecMeas;
 class NativeFloatSpinBox;
+class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
 class FileDragUploadResource;
 
@@ -45,6 +46,11 @@ namespace Wt
   class WLineEdit;
 }
 
+namespace SpecUtils
+{
+  class Measurement;
+}
+
 class BatchGuiInputSpectrumFile : public Wt::WContainerWidget
 {
 protected:
@@ -53,6 +59,7 @@ protected:
   const bool m_should_cleanup;
   
   Wt::WContainerWidget *m_preview_container;
+  D3SpectrumDisplayDiv *m_spectrum;
   
   bool m_preview_created;
   std::shared_ptr<SpecMeas> m_spec_meas;

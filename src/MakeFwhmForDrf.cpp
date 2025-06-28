@@ -447,6 +447,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
                Wt::WContainerWidget *parent )
  : WContainerWidget( parent ),
   m_interspec( viewer ),
+  m_currently_searching( false ),
   m_refit_scheduled( false ),
   m_undo_redo_scheduled( false ),
   m_orig_drf( drf ),
@@ -663,6 +664,8 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     
   vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
   
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_interspec );
+  
   //The results of the peak search will be placed into the vector pointed to by searchresults
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
     
@@ -677,6 +680,8 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
   if( !server )
     return;
   
+  m_currently_searching = true;
+  
   const string seshid = wApp->sessionId();
   const shared_ptr<const DetectorPeakResponse> drf = m_orig_drf;
     
@@ -685,7 +690,7 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     auto existingPeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
     existingPeaks->insert( end(*existingPeaks), begin(user_peaks), end(user_peaks) );
     
-    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread );
+    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, isHPGe );
     
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
@@ -706,9 +711,18 @@ void MakeFwhmForDrf::doRefitWork()
   m_parameters.clear();
   m_uncertainties.clear();
   
+  bool error_because_searching = false;
+  
   try
   {
     vector<shared_ptr<const PeakDef>> peaks = m_model->peaks_to_use();
+    
+    if( m_currently_searching && peaks.empty() )
+    {
+      error_because_searching = true;
+      throw runtime_error( "Still searching" );
+    }
+    
     auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>();
     peaks_deque->insert( end(*peaks_deque), begin(peaks), end(peaks) );
     
@@ -747,10 +761,9 @@ void MakeFwhmForDrf::doRefitWork()
     }//switch( fwhm_type )
     
     auto meas = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-    const bool highres = PeakFitUtils::is_high_res(meas);
     
     vector<float> result, uncerts;
-    const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type, highres,
+    const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type,
                                                          sqrtEqnOrder, result, uncerts );
     
     m_parameters = result;
@@ -830,7 +843,11 @@ void MakeFwhmForDrf::doRefitWork()
       sb->setText( "" );
     }
     
-    m_error->setText( WString::tr("mffd-err-fail-fit").arg(e.what()) );
+    if( error_because_searching )
+      m_error->setText( WString::tr("mffd-err-waiting-for-search") );
+    else
+      m_error->setText( WString::tr("mffd-err-fail-fit").arg(e.what()) );
+    
     m_validationChanged.emit(false);
   }//try / catch
   
@@ -910,6 +927,8 @@ void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> u
 {
   assert( auto_search_peaks );
   
+  m_currently_searching = false;
+  
   // `auto_search_peaks` will contain both the original users peaks, as well as the auto-fit
   //  peaks, but we want to keep them separate to indicate to the user, so we'll just remove
   //  the peaks in `auto_search_peaks` that overlap with the user peaks.  Not perfect, but
@@ -945,10 +964,9 @@ void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> u
       const auto fwhm_type = DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial;
       
       auto meas = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-      const bool highres = PeakFitUtils::is_high_res(meas);
       
       vector<float> result, uncerts;
-      const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type, highres,
+      const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type,
                                                             sqrt_eqn_order, result, uncerts );
       
       vector<pair<double,shared_ptr<const PeakDef>>> distances;
