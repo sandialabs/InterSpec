@@ -548,6 +548,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActAutoGuiEnergyRange.cpp
         src/RelActAutoGuiNuclide.cpp
         src/RelActAutoGuiFreePeak.cpp
+        src/RelActAutoReport.cpp
         src/RelActAutoDev.cpp
   )
   
@@ -567,6 +568,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActAutoGuiEnergyRange.h
         InterSpec/RelActAutoGuiNuclide.h
         InterSpec/RelActAutoGuiFreePeak.h
+        InterSpec/RelActAutoReport.h
         InterSpec/RelActAutoDev.h
   )
 endif( USE_REL_ACT_TOOL )

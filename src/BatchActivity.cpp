@@ -394,10 +394,12 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     
     if( fit_results.m_foreground )
     {
-      BatchInfoLog::add_hist_to_json( data, false, fit_results.m_foreground,
+      auto &spec_obj = data["foreground"];
+      
+      BatchInfoLog::add_hist_to_json( spec_obj, false, fit_results.m_foreground,
                        fit_results.m_foreground_file,
                        fit_results.m_foreground_sample_numbers, fit_results.m_filename,
-                       fit_results.m_peak_fit_results.get() );
+                       (fit_results.m_peak_fit_results ? &(fit_results.m_peak_fit_results->fit_peaks) : nullptr) );
     }//if( fit_results.m_foreground )
     
     if( fit_results.m_background && !fit_results.m_options.hard_background_sub )
@@ -409,10 +411,11 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       shared_ptr<const SpecMeas> back_file = (fit_results.m_background_file != fit_results.m_foreground_file)
                                                       ? fit_results.m_background_file : nullptr;
       
-      BatchInfoLog::add_hist_to_json( data, true, fit_results.m_background,
+      auto &spec_obj = data["background"];
+      BatchInfoLog::add_hist_to_json( spec_obj, true, fit_results.m_background,
                        back_file,
                        fit_results.m_background_sample_numbers, filename,
-                       fit_results.m_background_peak_fit_results.get() );
+                       (fit_results.m_background_peak_fit_results ? &(fit_results.m_background_peak_fit_results->fit_peaks) : nullptr) );
       
       data["background"]["Normalization"] = fit_results.m_foreground->live_time() / fit_results.m_background->live_time();
     }//if( fit_results.m_background )

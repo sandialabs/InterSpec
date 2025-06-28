@@ -1213,13 +1213,13 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   }//void shield_src_fit_results_to_json()
   
   
-  void add_hist_to_json( nlohmann::json &data,
-                       const bool is_background,
+  void add_hist_to_json( nlohmann::json &spec_obj,
+                        const bool is_background,
                        const shared_ptr<const SpecUtils::Measurement> &spec_ptr,
                        const shared_ptr<const SpecMeas> &spec_file,
                        const std::set<int> &sample_numbers,
                        const string &filename,
-                       const BatchPeak::BatchPeakFitResult * const peak_fit )
+                        const deque<std::shared_ptr<const PeakDef>> * const peak_fit )
   {
     if( !spec_ptr )
       return;
@@ -1235,8 +1235,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     D3SpectrumExport::D3SpectrumOptions spec_json_options;
     if( peak_fit )
     {
-      const BatchPeak::BatchPeakFitResult &fit_res = *peak_fit;
-      const deque<std::shared_ptr<const PeakDef>> &fore_peaks = fit_res.fit_peaks;
+      const deque<std::shared_ptr<const PeakDef>> &fore_peaks = *peak_fit;
       const vector<shared_ptr<const PeakDef> > inpeaks( begin(fore_peaks), end(fore_peaks) );
       spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr );
     }//if( fit_results.m_peak_fit_results )
@@ -1267,9 +1266,6 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       << "\n\nJSON: " << spectrum_json_str << endl << endl;
       assert( 0 );
     }
-    
-    const char * const label = is_background ? "background" : "foreground";
-    auto &spec_obj = data[label];
     
     spec_obj["LiveTime"] = lt_str;
     spec_obj["RealTime"] = rt_str;
@@ -1504,11 +1500,14 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     if( fit_results.spectrum )
     {
       fit_results.spectrum->set_title( SpecUtils::filename(fit_results.file_path) );
-      add_hist_to_json( data, false, fit_results.spectrum,
+      
+      auto &spec_obj = data["foreground"];
+      
+      add_hist_to_json( spec_obj, true, fit_results.spectrum,
                        fit_results.measurement,
                        fit_results.sample_numbers,
                        SpecUtils::filename(fit_results.file_path),
-                       &fit_results );
+                       &(fit_results.fit_peaks) );
     }//if( fit_results.spectrum )
     
     
@@ -1849,7 +1848,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     // For peak searches, background subtraction are always a hard channel-by-channel subtraction,
     //  and `fit_results.spectrum` is after the subtraction
     //if( fit_results.background )
-    //  add_hist_to_json( data, true, fit_results.background, ... );
+    //  add_hist_to_json( data["foreground"], true, fit_results.background, ... );
     //options.background_subtract_file;
     
      //std::shared_ptr<const SpecMeas> exemplar;

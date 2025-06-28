@@ -1,0 +1,101 @@
+{{ spectrum_title | default("Relative Activity Analysis Report") | upper }}
+{% for i in range(spectrum_title | default("Relative Activity Analysis Report") | length) %}={% endfor %}
+
+{% if status.success -%}
+✓ ANALYSIS COMPLETED SUCCESSFULLY
+   χ² = {{ "%.3f" | format(chi2) }}
+   DOF = {{ dof }}
+   χ²/DOF = {{ "%.3f" | format(chi2_per_dof) }}
+
+{% else -%}
+✗ ANALYSIS FAILED
+   Error: {{ status.error_message }}
+
+{% endif -%}
+
+{% if rel_eff_curves -%}
+RELATIVE EFFICIENCY EQUATIONS
+-----------------------------
+{% for curve in rel_eff_curves -%}
+Rel. Eff. Eqn{% if have_multiple_rel_eff %} {{ curve.index }}{% endif %}: y = {{ curve.equation_text }}
+{% endfor -%}
+
+{% endif -%}
+
+{% if plutonium_corrections -%}
+PLUTONIUM MASS FRACTIONS
+------------------------
+{% for pu_data in plutonium_corrections -%}
+{% if have_multiple_rel_eff %}Rel. Eff. Curve {{ pu_data.curve_index }}:{% endif %}
+   Pu-238: {{ "%.4f" | format(pu_data.mass_fractions.pu238 * 100) }}% mass
+   Pu-239: {{ "%.4f" | format(pu_data.mass_fractions.pu239 * 100) }}% mass
+   Pu-240: {{ "%.4f" | format(pu_data.mass_fractions.pu240 * 100) }}% mass
+   Pu-241: {{ "%.4f" | format(pu_data.mass_fractions.pu241 * 100) }}% mass
+   Pu-242 (by correlation): {{ "%.4f" | format(pu_data.mass_fractions.pu242 * 100) }}% mass
+
+{% endfor -%}
+{% endif -%}
+
+{% if relative_activities -%}
+RELATIVE ACTIVITIES AND MASS FRACTIONS
+---------------------------------------
+{% for curve_data in relative_activities -%}
+{% if have_multiple_rel_eff %}=== Rel. Eff. Curve {{ curve_data.curve_index }} ==={% endif %}
+{% for nuclide in curve_data.nuclides -%}
+{{ nuclide.name }}:
+   Relative Activity: {{ nuclide.rel_activity | scientific(6) }} ± {{ nuclide.rel_activity_uncertainty | scientific(6) }}
+   {% if nuclide.age_was_fit -%}Age: {{ "%.2f" | format(nuclide.age / (365.25 * 24 * 3600)) }} ± {{ "%.2f" | format(nuclide.age_uncertainty / (365.25 * 24 * 3600)) }} years{% endif %}
+   {% if nuclide.total_mass_fraction -%}Total Mass Fraction: {{ "%.3f" | format(nuclide.total_mass_fraction * 100) }}%{% endif %}
+   {% if nuclide.enrichment -%}Enrichment: {{ "%.3f" | format(nuclide.enrichment * 100) }}%{% endif %}
+   {% if nuclide.enrichment_minus_2sigma and nuclide.enrichment_plus_2sigma -%}   2σ Enrichment Range: {{ "%.3f" | format(nuclide.enrichment_minus_2sigma * 100) }}%–{{ "%.3f" | format(nuclide.enrichment_plus_2sigma * 100) }}%{% endif %}
+   {% if nuclide.detector_counts -%}Detector Counts: {{ nuclide.detector_counts | scientific(6) }}{% endif %}
+
+{% endfor -%}
+{% endfor -%}
+{% endif -%}
+
+{% if ratios -%}
+MASS AND ACTIVITY RATIOS
+------------------------
+{% for curve_data in ratios -%}
+{% if have_multiple_rel_eff %}=== Rel. Eff. Curve {{ curve_data.curve_index }} ==={% endif %}
+{% for pair in curve_data.pairs -%}
+{{ pair.numerator }}/{{ pair.denominator }}:
+   Mass Ratio: {% if pair.mass_ratio %}{{ pair.mass_ratio | scientific(6) }}{% else %}N/A{% endif %}
+   Activity Ratio: {{ pair.activity_ratio | scientific(6) }}{% if pair.activity_ratio_uncertainty_percent %} (±{{ "%.2f" | format(pair.activity_ratio_uncertainty_percent) }}%){% endif %}
+
+{{ pair.denominator }}/{{ pair.numerator }}:
+   Mass Ratio: {% if pair.mass_ratio %}{{ (1.0 / pair.mass_ratio) | scientific(6) }}{% else %}N/A{% endif %}
+   Activity Ratio: {{ (1.0 / pair.activity_ratio) | scientific(6) }}{% if pair.activity_ratio_uncertainty_percent %} (±{{ "%.2f" | format(pair.activity_ratio_uncertainty_percent) }}%){% endif %}
+
+{% endfor -%}
+{% endfor -%}
+{% endif -%}
+
+{% if energy_calibration.was_fit and energy_calibration.adjustments -%}
+ENERGY CALIBRATION ADJUSTMENTS
+------------------------------
+{% for adj in energy_calibration.adjustments -%}
+{{ adj.type | title }} adjustment: {{ "%.4f" | format(adj.physical_value) }} {{ adj.units }}
+{% endfor -%}
+
+{% endif -%}
+
+{% if warnings -%}
+WARNINGS
+--------
+{% for warning in warnings -%}
+⚠ {{ warning }}
+{% endfor -%}
+
+{% endif -%}
+
+ANALYSIS INFORMATION
+-------------------
+{% if timing -%}
+Computation Time: {{ timing.duration_formatted }}
+Function Evaluations: {{ timing.function_eval_solution }} (solution) + {{ timing.function_eval_total - timing.function_eval_solution }} (covariance)
+{% endif -%}
+
+Report Generated: {{ timestamps.local }}{% if timestamps.utc %} ({{ timestamps.utc }} UTC){% endif %}
+Software: InterSpec RelActCalcAuto module 
