@@ -118,12 +118,17 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
           
           // Enrichment calculations
           try {
-            nuc_info["enrichment"] = solution.mass_enrichment_fraction(nuc, curve_idx, 0.0);
-            try {
-              nuc_info["enrichment_minus_2sigma"] = solution.mass_enrichment_fraction(nuc, curve_idx, -2.0);
-              nuc_info["enrichment_plus_2sigma"] = solution.mass_enrichment_fraction(nuc, curve_idx, 2.0);
-            } catch (...) {
-              // Uncertainty calculation failed
+            pair<double,optional<double>> enrich = solution.mass_enrichment_fraction(nuc, curve_idx );
+            nuc_info["enrichment"] = enrich.first;
+            if( enrich.second.has_value() )
+            {
+              nuc_info["has_enrichment_uncert"] = true;
+              nuc_info["enrichment_uncert"] = *enrich.second;
+              nuc_info["enrichment_minus_2sigma"] = enrich.first - 2.0*enrich.second.value();
+              nuc_info["enrichment_plus_2sigma"] = enrich.first + 2.0*enrich.second.value();
+            }else
+            {
+              nuc_info["has_enrichment_uncert"] = false;
             }
           } catch (const std::exception& e) {
             nuc_info["enrichment_error"] = e.what();
