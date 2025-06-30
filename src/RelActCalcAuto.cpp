@@ -8907,8 +8907,8 @@ void RelEffCurveInput::MassFractionConstraint::fromXml( const ::rapidxml::xml_no
     upper_mass_fraction_value = XmlUtils::get_float_node_value( parent, "UpperMassFraction" );
   }
   
-  if( lower_mass_fraction_value <= 0.0 || lower_mass_fraction_value > 1.0 )
-    throw runtime_error( "Lower mass fraction must be greater than 0.0 and less than or equal to 1.0." );
+  if( lower_mass_fraction_value < 0.0 || lower_mass_fraction_value >= 1.0 )
+    throw runtime_error( "Lower mass fraction must be at least 0.0 and less than 1.0." );
 
   if( upper_mass_fraction_value <= 0.0 || upper_mass_fraction_value > 1.0 )
     throw runtime_error( "Upper mass fraction must be greater than 0.0 and less than or equal to 1.0." );
