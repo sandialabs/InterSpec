@@ -3720,7 +3720,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           const size_t rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(rel_eff_index);
           const size_t num_rel_eff_par = cost_functor->rel_eff_eqn_num_parameters(rel_eff_index);
-          get_cov_block( rel_eff_start, num_rel_eff_par, solution.m_rel_eff_covariance[rel_eff_index] );
+          vector<vector<double>> &cov = solution.m_rel_eff_covariance[rel_eff_index];
+          
+          get_cov_block( rel_eff_start, num_rel_eff_par, cov );
+          
+          for( size_t par_index = 0; par_index < num_rel_eff_par; ++par_index )
+          {
+            const double scale = cost_functor->parameter_scale_factor(rel_eff_start + par_index);
+            for( size_t row = 0; row < num_rel_eff_par; ++row )
+              cov[row][par_index] *= scale;
+            for( size_t col = 0; col < num_rel_eff_par; ++col )
+              cov[par_index][col] *= scale;
+          }
         
           const size_t acts_start = cost_functor->rel_act_start_parameter( rel_eff_index );
           const size_t num_acts_par = cost_functor->rel_act_num_parameters( rel_eff_index );
@@ -5756,6 +5767,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//make_phys_eqn_input(...)
   
 
+  /** Returns the parameters for the specified relative efficiency curve.
+   Note: scale factors have not been applied, as `make_phys_eqn_input(...)` will apply them, or for non-physical
+   models, no scale factors are used.
+   */
   template<typename T>
   vector<T> pars_for_rel_eff_curve( const size_t rel_eff_index, const std::vector<T> &x ) const
   {
@@ -5776,6 +5791,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( (rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
       || (!m_options.same_hoerl_for_all_rel_eff_curves && !m_options.same_external_shielding_for_all_rel_eff_curves) )
     {
+      // The polynomial-esque Rel. Eff. eqn coefficients are not scaled
+      //  and `make_phys_eqn_input(...)` applies the scale factors for physical model.
+      // For non-physical model, we'll test first/last paramater scale is 1.0.
+      assert( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+             || (parameter_scale_factor(rel_eff_start_index) == 1.0) );
+      assert( (rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+             || (parameter_scale_factor(rel_eff_start_index + num_rel_eff_par - 1) == 1.0) );
+      
       return coefs;
     }
 
@@ -7777,6 +7800,19 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
   //return
   const T answer = peakResolutionFWHM( energy, fctntype, pars, num_pars );
 
+  if( isnan(answer) || isinf(answer) )
+    throw runtime_error( "eval_fwhm: inf/NaN result." );
+  
+  if constexpr ( !std::is_same_v<T, double> )
+  {
+    if( answer.a <= 0.0 )
+      throw runtime_error( "eval_fwhm: negative result." );
+  }else
+  {
+    if( answer <= 0.0 )
+      throw runtime_error( "eval_fwhm: negative result." );
+  }
+  
 #ifndef NDEBUG
   float energy_kev;
   vector<float> drf_pars;
@@ -7799,7 +7835,7 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
 #endif
 
   return answer;
-}//float eval_fwhm( const float energy, const FwhmForm form, const vector<float> &drfx )
+}//T eval_fwhm( const T energy, const FwhmForm form, ... )
 
 
 void RoiRange::toXml( ::rapidxml::xml_node<char> *parent ) const
@@ -11461,7 +11497,88 @@ double RelActAutoSolution::relative_efficiency( const double energy, const size_
                                               phys_model_result->hoerl_b, phys_model_result->hoerl_c );
 }//double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
 
+  
+pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const
+{
+  typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
+  
+  assert( rel_eff_index < m_rel_eff_forms.size() );
+  if( rel_eff_index >= m_rel_eff_forms.size() )
+    throw std::logic_error( "relative_efficiency: invalid rel eff index" );
+  
+  if( m_covariance.empty() || (m_covariance.size() != m_final_parameters.size()) )
+    throw runtime_error( "relative_efficiency_with_uncert: no valid covariance matrix." );
+  
+  const size_t num_par = m_final_parameters.size();
+  double rel_eff = -1.0;
+  vector<double> jacobian( num_par, 0.0 );
+  for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+  {
+    vector<Jet> x_local( begin(m_final_parameters), end(m_final_parameters) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+      x_local[i+j].v[j] = 1.0;
+    
+    const Jet rel_eff_jet = m_cost_functor->relative_eff(energy, rel_eff_index, x_local);
+    
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_par); ++j )
+      jacobian[i+j] = rel_eff_jet.v[j];
+    rel_eff = rel_eff_jet.a;
+  }
+  
+  double uncertainty = 0.0;
+  for( size_t i = 0; i < num_par; ++i )
+  {
+    assert( m_covariance[i].size() == num_par );
+    
+    if( m_covariance[i].size() != num_par )
+      throw logic_error( "relative_efficiency_with_uncert: invalid Rel. Eff. covariance matrix row." );
+    
+    for( size_t j = 0; j < num_par; ++j )
+      uncertainty += jacobian[i]*m_covariance[i][j]*jacobian[j];
+  }
+  
+  uncertainty = std::sqrt( uncertainty );
+  
+#ifndef NDEBUG
+  // We can double-check this rel eff calc, but more importantly, for non-physical models, we
+  //  can check the uncertainty calculated with auto-differentiation (ie, above), against an
+  //  analytical solution.
+  const double manual_rel_eff = RelActAutoSolution::relative_efficiency( energy, rel_eff_index );
+  const double releff_diff = fabs(manual_rel_eff - rel_eff);
+  assert( (releff_diff < 1.0E-8) || (releff_diff < 1.0E-6*(std::max)(manual_rel_eff, rel_eff)) );
+  
+  if( m_rel_eff_forms[rel_eff_index] != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
+    const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
+    assert( !m_rel_eff_covariance.empty() );
+    assert( m_rel_eff_covariance.size() == m_rel_eff_coefficients.size() );
+    if( rel_eff_index >= m_rel_eff_covariance.size() )
+      throw runtime_error( "relative_efficiency_with_uncert: no valid Rel. Eff. covariance matrix." );
+    const vector<vector<double>> &cov = m_rel_eff_covariance[rel_eff_index];
+    assert( cov.empty() || (cov.size() == coeffs.size()) );
+    if( cov.size() != coeffs.size() )
+      throw logic_error( "relative_efficiency_with_uncert: invalid Rel. Eff. covariance matrix." );
+    
+    const double manual_uncert = RelActCalc::eval_eqn_uncertainty( energy, eqn_form, coeffs, cov );
+    const double diff = fabs(manual_uncert - uncertainty);
+    assert( (diff < 1.0E-8) || (diff < 1.0E-6*(std::max)(manual_uncert, uncertainty)) );
+  }//if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+#endif //NDEBUG
+  
+  if( IsNan(rel_eff) || IsInf(rel_eff) )
+    throw runtime_error( "relative_efficiency_with_uncert: invalid rel eff value." );
+  
+  if( IsNan(uncertainty) || IsInf(uncertainty) )
+    throw runtime_error( "relative_efficiency_with_uncert: invalid uncertainty." );
+  
+  return {rel_eff, uncertainty};
+}//pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const
 
+  
+  
 size_t RelActAutoSolution::nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const
 {
   assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
@@ -11509,6 +11626,117 @@ string RelActAutoSolution::rel_eff_eqn_js_function( const size_t rel_eff_index )
   return RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
                             input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
 }//string rel_eff_eqn_js_function() const
+  
+  
+string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn( const size_t rel_eff_index ) const
+{ 
+  if( m_final_roi_ranges.empty() )
+    return "null";
+  
+  vector<RelActCalcAuto::RoiRange> rois = m_final_roi_ranges;
+  
+  std::sort( begin(rois), end(rois), []( const RelActCalcAuto::RoiRange &lhs, const RelActCalcAuto::RoiRange &rhs ){
+    return lhs.lower_energy < rhs.lower_energy;
+  } );
+
+  vector<PeakDef> fit_peaks = m_fit_peaks;
+  std::sort( begin(fit_peaks), end(fit_peaks), []( const PeakDef &lhs, const PeakDef &rhs ){
+    return lhs.mean() < rhs.mean();
+  } );
+  
+  double lower_energy = std::min( rois.front().lower_energy, fit_peaks.empty() ? 3000.0 : fit_peaks.front().mean() );
+  double upper_energy = std::max( rois.back().upper_energy, fit_peaks.empty() ? 3000.0 : fit_peaks.back().mean() );
+  
+  if( lower_energy > 100 )
+    lower_energy -=15;
+  else if( lower_energy > 10 )
+    lower_energy -= 5;
+  else if( lower_energy > 1 )
+    lower_energy -= 1;
+
+  vector<double> energies;
+  double current_energy = lower_energy;
+  for( const PeakDef &peak : m_fit_peaks )
+  {
+    upper_energy = std::max( upper_energy, peak.mean() );
+
+    double min_dx = 1.0;
+    if( current_energy < 130 )
+      min_dx = 1.0;
+    else if( current_energy < 300 )
+      min_dx = 5.0;
+    else
+      min_dx = 15.0;
+
+    // We'll try to get in at least ~10 points between each peak
+    if( peak.mean() > current_energy )
+      min_dx = std::min( min_dx, 0.1*(peak.mean() - current_energy) );
+    min_dx = std::max( min_dx, 1.0 ); //but less than a keV between points is just to small.
+    
+    for( ; current_energy < peak.mean(); current_energy += min_dx )
+      energies.push_back( current_energy );
+    
+    if( !energies.empty() && (energies.back() < peak.mean()) )
+      current_energy = peak.mean();
+  }//for( const PeakDef &peak : m_fit_peaks )
+  
+  for( ; current_energy < upper_energy; current_energy += 15 )
+    energies.push_back( current_energy );
+  
+  size_t num_points = 0;
+  string fcn = "function(x){\n"
+  "  const points = [";
+  bool is_first_point = true;
+  
+  //cout << "RelEff: [";
+  for( double x : energies )
+  {
+    try
+    {
+      const std::pair<double,double> rel_eff_uncert = relative_efficiency_with_uncert( x, rel_eff_index );
+      //const double y = rel_eff_uncert.first;
+      const double unc = rel_eff_uncert.second;
+      //cout << "{" << rel_eff_uncert.first << ", " << unc << "}, ";
+
+      //assert( (y >= 0.0) && !IsNan(y) && !IsInf(y) ); //Can happen when we are out of bounds of the physical model
+      if( isnan(unc) || isinf(unc) )
+        continue;
+      
+      fcn += is_first_point ? "" : ",";
+      fcn += "[" + SpecUtils::printCompact(x, 4) + "," + SpecUtils::printCompact(unc, 4) + "]";
+      
+      num_points += 1;
+      is_first_point = false;
+    }catch( std::exception &e )
+    {
+      // This can happen when we are out of bounds of the physical model
+    }
+  }//for( double x : energies )
+  
+  //cout << "]" << endl;
+  
+  if( num_points < 2 )
+    return "null";
+  
+  fcn += "];\n"
+  "  if( x <= points[0][0] )\n"
+  "    return points[0][1];\n"
+  "  if( x >= points[points.length - 1][0] )\n"
+  "    return points[points.length - 1][1];\n"
+  "  for (let i = 0; i < points.length - 1; i++) {\n"
+  "    const [x1, y1] = points[i];\n"
+  "    const [x2, y2] = points[i + 1];\n"
+  "    if( x >= x1 && x <= x2) {\n"
+  "      const t = (x - x1) / (x2 - x1);\n"
+  "      return y1 + t * (y2 - y1);\n"
+  "    }\n"
+  "  }\n"
+  "console.assert(0,'Shouldnt get here in interpolating');\n"
+  "return points[points.length - 1][1];"
+  "}";
+  
+  return fcn;
+}//string RelActAutoSolution::rel_eff_eqn_js_uncert_fcn(i)
   
   
 std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_energy_cal() const

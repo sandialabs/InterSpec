@@ -5032,6 +5032,8 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
     info.rel_acts = answer->m_rel_activities[i];
     info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
+    info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
+    
     info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves[i].name );
 
     try

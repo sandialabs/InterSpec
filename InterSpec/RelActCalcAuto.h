@@ -824,6 +824,13 @@ struct RelActAutoSolution
   /**  Gives the relative efficiency for a given energy. 
   */
   double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
+  
+  /** Gives the relative efficiency for a given energy, as well as the uncertainty.
+   
+   Throws exception if covariance matrix is invalid.
+   */
+  std::pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const;
+  
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
@@ -838,6 +845,9 @@ struct RelActAutoSolution
    `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
    */
   std::string rel_eff_eqn_js_function( const size_t rel_eff_index ) const;
+  
+  /** Returns JS function that represents the error bars of RelEffEqn, or "null" string if they arent avaiable. */
+  std::string rel_eff_eqn_js_uncert_fcn( const size_t rel_eff_index ) const;
   
   /** Returns the updated energy calibration.
    
