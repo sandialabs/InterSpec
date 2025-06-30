@@ -4961,13 +4961,18 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
 
     try
     {
-      const double nominal = answer->mass_enrichment_fraction( iso, 0, 0.0 );
+      pair<double,optional<double>> enrich_val = answer->mass_enrichment_fraction( iso, 0 );
+      
+      const double nominal = enrich_val.first;
       enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "%";
 
-      const double neg_2sigma = answer->mass_enrichment_fraction( iso, 0, -2.0 );
-      const double pos_2sigma = answer->mass_enrichment_fraction( iso, 0, +2.0 );
-      enrich += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%, "
-                + SpecUtils::printCompact(100.0*pos_2sigma, 4) + "%)";
+      if( enrich_val.second.has_value() )
+      {
+        const double neg_2sigma = nominal - 2.0*enrich_val.second.value();
+        const double pos_2sigma = nominal + 2.0*enrich_val.second.value();
+        enrich += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%, "
+        + SpecUtils::printCompact(100.0*pos_2sigma, 4) + "%)";
+      }
     }catch( std::exception & )
     {
       // Happens if covariance computation failed, or Pu with Pu242 correlation correction
@@ -5027,6 +5032,8 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
     info.rel_acts = answer->m_rel_activities[i];
     info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
+    info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
+    
     info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves[i].name );
 
     try
@@ -5127,7 +5134,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
           //const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
           try
           {
-            const double rel_mass_percent = 100.0 * m_solution->mass_enrichment_fraction( nuc_nuclide, rel_eff_index, 0.0 );
+            pair<double,optional<double>> enrich_val = m_solution->mass_enrichment_fraction( nuc_nuclide, rel_eff_index);
+            
+            const double rel_mass_percent = 100.0 * enrich_val.first;
             const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
             const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
             const string el_symbol = el ? el->symbol : "?";
