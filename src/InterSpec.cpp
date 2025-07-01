@@ -1376,7 +1376,15 @@ InterSpec::~InterSpec() noexcept(true)
   {
     cerr << "Caught exception closing shielding source window - shouldnt have happened" << endl;
   }
-  
+
+#if( USE_REL_ACT_TOOL )
+  if( m_relActAutoGui )
+    handleRelActAutoClose();
+  if( m_relActManualGui )
+    handleRelActManualClose();
+#endif
+
+
   if( m_peakInfoDisplay )
   {
     if( m_toolsTabs && m_toolsTabs->indexOf(m_peakInfoDisplay)>=0 )
@@ -1421,7 +1429,7 @@ InterSpec::~InterSpec() noexcept(true)
   
   deletePeakEdit();
   deleteGammaCountDialog();
-  
+
   // The following may be parented by app->domRoot()
   del_ptr_set_null( m_mobileMenuButton );
   del_ptr_set_null( m_mobileBackButton );
@@ -3578,6 +3586,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   {
     //Essentially reset the state of the app
     closeShieldingSourceFit();
+#if( USE_REL_ACT_TOOL )
+    if( m_relActAutoGui )
+      handleRelActAutoClose();
+    if( m_relActManualGui )
+      handleRelActManualClose();
+#endif
     programmaticallyCloseMultimediaWindow();
     assert( !m_multimedia );
     
@@ -9487,7 +9501,7 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
       return m_relActAutoGui;
       
     m_relActAutoGui = widgets.first;
-    m_relActAutoWindow  = widgets.second;
+    m_relActAutoWindow = widgets.second;
     
     m_relActAutoWindow->finished().connect( boost::bind( &InterSpec::handleRelActAutoClose, this ) );
     
@@ -9512,6 +9526,16 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
       
       //assert( 0 );
     }//try / catch
+
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      auto undo = [this](){ handleRelActAutoClose(); };
+      auto redo = [this](){ showRelActAutoWindow(); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show 'Isotopics from nuclides' tool" );
+    }//if( m_undo && !m_undo->canAddUndoRedoNow() )
+
+    // Since we dont have undo/redo implemented for RelActAuto - we will block it entirely
+    new UndoRedoManager::BlockGuiUndoRedo( m_relActAutoGui );
   }else
   {
     const double windowWidth = 0.95 * renderedWidth();
@@ -9525,7 +9549,6 @@ RelActAutoGui *InterSpec::showRelActAutoWindow()
   
   assert( m_relActAutoMenuItem );
   m_relActAutoMenuItem->disable();
-  
   
   return m_relActAutoGui;
 }//RelActAutoGui *showRelActAutoWindow()
@@ -9546,6 +9569,13 @@ void InterSpec::handleRelActAutoClose()
   delete m_relActAutoWindow;
   m_relActAutoGui = nullptr;
   m_relActAutoWindow = nullptr;
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ showRelActAutoWindow(); };
+    auto redo = [this](){ handleRelActAutoClose(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close 'Isotopics from nuclides' tool" );
+  }//if( m_undo && !m_undo->canAddUndoRedoNow() )
 }//void handleRelActAutoClose()
 
 

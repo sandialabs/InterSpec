@@ -1346,12 +1346,14 @@ void D3SpectrumDisplayDiv::setDisplayScaleFactor( const float sf,
       
     case SpecUtils::SpectrumType::SecondForeground:
       m_secondaryScale = sf;
-      scheduleUpdateSecondData();
+      if( m_secondary )
+        scheduleUpdateSecondData();
       break;
       
     case SpecUtils::SpectrumType::Background:
       m_backgroundScale = sf;
-      scheduleUpdateBackground();
+      if( m_background )
+        scheduleUpdateBackground();
       break;
   }//switch( spectrum_type )
 }//void setDisplayScaleFactor(...)
@@ -1377,10 +1379,17 @@ float D3SpectrumDisplayDiv::displayScaleFactor( const SpecUtils::SpectrumType sp
 
 void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> background )
 {
+  // If we currently dont have a background, and we're not setting a background, lets
+  //  skip triggering an update to the client.
+  if( !m_background && !background )
+    return;
+
   m_background = background;
   doBackgroundLiveTimeNormalization();
+
   if( !background && m_backgroundSubtract )
     setBackgroundSubtract( false );
+
   scheduleUpdateBackground();
 }//void D3SpectrumDisplayDiv::setBackground(...);
 

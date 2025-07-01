@@ -621,7 +621,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_status_indicator->hide();
   
   // We'll take care of the options that apply to all types of Rel Eff curves now.
-  WGroupBox *generalOptionsDiv = new WGroupBox( "Peak Fitting Options", this );
+  WGroupBox *generalOptionsDiv = new WGroupBox( "Spectrum and Peak Options", this );
   generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
 
   m_fit_energy_cal = new WCheckBox( "Fit Energy Cal.", generalOptionsDiv );
@@ -2473,6 +2473,7 @@ void RelActAutoGui::handleBackgroundSubtractChanged()
 
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::UpdateShowHideBack;
   scheduleRender();
 }
 
@@ -4871,7 +4872,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     {
       m_back_sub_foreground = nullptr;
       m_spectrum->setData( m_foreground, true );
-      m_spectrum->setBackground( m_background );
+      m_spectrum->setBackground( m_showing_background ? m_background : nullptr );
       m_spectrum->setDisplayScaleFactor( m_background_sf, SpecUtils::SpectrumType::Background );
     }else
     {
