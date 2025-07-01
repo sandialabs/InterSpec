@@ -36,11 +36,15 @@
   height: 100%;
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   
   align-items: center;
   /* justify-content: space-between; */
+
+  /* --- Container Query Setup --- */
+  container-type: inline-size;
+  container-name: rel-eff-curve-opt-container;
 }
 
 .RelActAutoGui .RelEffCurveOptions .RelEffCurveName
@@ -347,6 +351,13 @@ padding-bottom: 1px;
   text-align: center;
   
   flex: 1 1 auto;
+}
+
+/* We will hide Rel. Eff. curve display text, unless our display is really wide... this is a hack, for the moment */
+@container rel-eff-curve-opt-container (max-width: 1300px) {
+  .RelActAutoGui .RelEffCurveOptions .RelEffEqnTxt {
+    font-size: 0px;
+  }
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow
@@ -657,6 +668,11 @@ padding-bottom: 1px;
   user-select: auto;
   -moz-user-select: auto;
   -webkit-user-select: auto;
+}
+
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutGuiNuclideColorSelect
+{
+  width: 35px;
 }
 
 .RelActAutoGui .RelActAutoGuiNuclide .UpperRow,

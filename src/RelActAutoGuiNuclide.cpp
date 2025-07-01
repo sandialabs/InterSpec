@@ -778,7 +778,8 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui, WContainerWidget
   
   m_color_select = new ColorSelect( ColorSelect::PrefferNative, upper_container );
   m_color_select->setColor( ns_default_color );
-  
+  m_color_select->addStyleClass( "RelActAutGuiNuclideColorSelect" );
+
   m_color_select->cssColorChanged().connect( this, &RelActAutoGuiNuclide::handleColorChange );
   
   
