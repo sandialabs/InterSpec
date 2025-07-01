@@ -3109,7 +3109,82 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             }
           }//if( !succesfully_estimated_re_and_ra )
         }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
-        
+
+
+        // If we have multiple mass-fraction constraints for this element, we need to make sure thier initial
+        //  values sum to less than 1.0.
+        // Sum starting mass fractions for all constraints in this Rel Eff curve
+        map<short int,double> elements_starting_mass_fracs, elements_lower_mass_fracs, elements_fixed_mass_frac;
+        for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+        {
+          const SandiaDecay::Nuclide *nuc = constraint.nuclide;
+          const size_t act_index = cost_functor->nuclide_parameter_index( nuc, re_eff_index );
+          const double starting_dist = parameters[act_index] - 0.5;
+
+          const double lower_frac = constraint.lower_mass_fraction;
+          const double upper_frac = constraint.upper_mass_fraction;
+          const double starting_mass_frac = lower_frac + starting_dist*(upper_frac - lower_frac);
+
+          elements_lower_mass_fracs[nuc->atomicNumber] += lower_frac;
+          if( lower_frac == upper_frac )
+            elements_fixed_mass_frac[nuc->atomicNumber] += lower_frac;
+
+          elements_starting_mass_fracs[nuc->atomicNumber] += starting_mass_frac;
+        }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+
+        //Now go threw and check if any sum is greater than or equal to 1.0
+        for( const map<short int,double>::value_type &an_sum : elements_starting_mass_fracs )
+        {
+          const short int atomic_number = an_sum.first;
+          const double starting_mass_frac = an_sum.second;
+          if( starting_mass_frac < 1.0 )
+            continue;
+
+          // If we're here, we have need to reduce the mass fractions for this element
+          const double lower_allowed_frac = elements_lower_mass_fracs[atomic_number];
+
+          assert( lower_allowed_frac < 1.0 ); //`RelEffCurveInput::check_nuclide_constraints()` should have already checked this
+          if( lower_allowed_frac >= 1.0 )
+            throw std::logic_error( "Mass fraction constraint sums to over 1 - please fix `RelEffCurveInput::check_nuclide_constraints()` to catch this." );
+
+          const double fixed_fraction = elements_fixed_mass_frac[atomic_number];
+          const double initial_variable_amount = starting_mass_frac - fixed_fraction;
+          const double target_var_frac = 0.5*((1.0 - fixed_fraction) + lower_allowed_frac);  //halfway between the smallest and largest amount allowed
+          const double amount_need_reduced = initial_variable_amount - target_var_frac;
+          const double frac_variable_reduce = amount_need_reduced / (initial_variable_amount - lower_allowed_frac);
+          const double updated_variable_frac = initial_variable_amount - amount_need_reduced;
+
+          //Example starting mass fraction 1.25, with 0.5 fixed, and lowest variable amount of 0.1
+          //  fixed_fraction = 0.5
+          //  starting_mass_frac = 1.25
+          //  lower_allowed_frac = 0.1
+          //  initial_variable_amount = 1.25 - 0.5 = 0.75
+          //  target_var_frac = 0.5*((1.0 - 0.5) + 0.1) = 0.3;
+          //  amount_need_reduced = 0.75 - 0.3 = 0.45;
+          //  frac_variable_reduce = 0.45 / (0.75 - 0.1) = 0.6923;
+          //  updated_variable_frac = 0.75 - 0.45 = 0.3;
+          //So then 0.5 fixed, 0.3 variable, and 0.2 "other"
+
+          assert( initial_variable_amount > 0.0 );
+          assert( amount_need_reduced >= 0.0 );
+          assert( (frac_variable_reduce > 0.0) && (frac_variable_reduce < 1.0) );
+
+          double check_var_frac = 0.0;
+          for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &c : rel_eff_curve.mass_fraction_constraints )
+          {
+            if( (c.nuclide->atomicNumber != atomic_number) || (c.lower_mass_fraction == c.upper_mass_fraction) )
+              continue;
+
+            const size_t act_index = cost_functor->nuclide_parameter_index( c.nuclide, re_eff_index );
+            parameters[act_index] = 0.5 + ((1.0 - frac_variable_reduce)*(parameters[act_index] - 0.5));
+            assert( (parameters[act_index] >= 0.5) && (parameters[act_index] <= 1.5) );
+
+            check_var_frac += (c.lower_mass_fraction + (parameters[act_index] - 0.5)*(c.upper_mass_fraction - c.lower_mass_fraction));
+          }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
+
+          assert( fabs(check_var_frac - updated_variable_frac) < 0.0001 );
+        }//for( const map<short int,double>::value_type &an_sum : elements_starting_mass_fracs )
+
         num_re_nucs_seen += rel_eff_curve.nuclides.size();
         if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
           num_re_curve_pars_seen += rel_eff_curve.rel_eff_eqn_order + 1;
