@@ -1836,7 +1836,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         {
           const double fore_counts = (channel_counts[i] < 0.0f) ? 0.0 : channel_counts[i];
           const double back_counts = (background_counts[i] < 0.0f) ? 0.0f : background_counts[i];
-          const double uncert_2 = fore_counts*fore_counts + lt_sf*lt_sf*back_counts*back_counts;
+          const double uncert_2 = fore_counts + lt_sf*lt_sf*back_counts;
           const double sub_val = fore_counts - lt_sf*back_counts;
         
           channel_counts[i] = static_cast<float>( std::max(sub_val,0.0) );
