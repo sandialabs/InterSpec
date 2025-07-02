@@ -4078,7 +4078,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // If we want to correct for Pu242, we wont alter solution.m_rel_activities, but place the
     //  corrected Pu mass fractions in solution.m_corrected_pu
     solution.m_corrected_pu.clear();
+    solution.m_uncorrected_pu.clear();
     solution.m_corrected_pu.resize( num_rel_eff_curves );
+    solution.m_uncorrected_pu.resize( num_rel_eff_curves );
     for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor->m_options.rel_eff_curves[rel_eff_index];
@@ -4137,6 +4139,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           raw_rel_masses.pu240_rel_mass /= pu_total_mass;
           raw_rel_masses.pu241_rel_mass /= pu_total_mass;
           raw_rel_masses.other_pu_mass  /= pu_total_mass;
+          
+          solution.m_uncorrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationInput<double>(raw_rel_masses) );
           
           const RelActCalc::Pu242ByCorrelationOutput<double> corr_output
           = RelActCalc::correct_pu_mass_fractions_for_pu242( raw_rel_masses,
@@ -9910,6 +9914,8 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       print_enrich( pu240 );
 
     assert( m_corrected_pu.size() <= m_rel_activities.size() );
+    assert( m_uncorrected_pu.size() <= m_rel_activities.size() );
+    assert( m_uncorrected_pu.size() == m_corrected_pu.size() );
     
     // For Pu, print a corrected enrichment table
     const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> pu_corr = (m_corrected_pu.size() > rel_eff_index)
@@ -10116,9 +10122,11 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
     shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> pu_corr = (rel_eff_index >= m_corrected_pu.size())
                                                                    ? nullptr : m_corrected_pu[rel_eff_index];
+    shared_ptr<const RelActCalc::Pu242ByCorrelationInput<double>> uncorrected_pu
+                = (rel_eff_index >= m_corrected_pu.size()) ? nullptr : m_uncorrected_pu[rel_eff_index];
     
     // For Pu, print a corrected enrichment table
-    if( pu_corr )
+    if( pu_corr && uncorrected_pu )
     {
       results_html << "<table class=\"nuctable resulttable\">\n"
       "  <caption>Plutonium mass fractions"
@@ -10126,6 +10134,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       << "</caption>\n"
       "  <thead><tr>"
       " <th scope=\"col\">Nuclide</th>"
+      " <th scope=\"col\">Uncorrected % Pu Mass</th>"
       " <th scope=\"col\">% Pu Mass</th>"
       " </tr></thead>\n"
       "  <tbody>\n";
@@ -10148,24 +10157,29 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       }//for( const auto &act : rel_activities )
       
       if( pu_nuclides.count( "Pu238" ) )
-        results_html << "  <tr><td>Pu238</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4)
-        << "</td></tr>\n";
+        results_html << "  <tr><td>Pu238</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu238_rel_mass, 4) << "</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4) << "</td>"
+        << "</tr>\n";
       if( pu_nuclides.count( "Pu239" ) )
-        results_html << "  <tr><td>Pu239</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4)
-        << "</td></tr>\n";
+        results_html << "  <tr><td>Pu239</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu239_rel_mass, 4) << "</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4) << "</td>"
+        << "</tr>\n";
       if( pu_nuclides.count( "Pu240" ) )
-        results_html << "  <tr><td>Pu240</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4)
-        << "</td></tr>\n";
+        results_html << "  <tr><td>Pu240</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu240_rel_mass, 4) << "</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "</td>"
+        << "</tr>\n";
       if( pu_nuclides.count( "Pu241" ) )
-        results_html << "  <tr><td>Pu241</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4)
-        << "</td></tr>\n";
-      results_html << "  <tr><td>Pu242 (by corr)</td><td>"
-      << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4)
-      << "</td></tr>\n";
+        results_html << "  <tr><td>Pu241</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu241_rel_mass, 4) << "</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4) << "</td>"
+        << "</tr>\n";
+      results_html << "  <tr><td>Pu242 (by corr)</td>"
+      << "<td>--</td>"
+      << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4) << "</td>"
+      << "</tr>\n";
       results_html << "  </tbody>\n"
       << "</table>\n\n";
 
