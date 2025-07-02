@@ -733,76 +733,7 @@ Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelation
 
 
 
-void test_pu242_by_correlation()
-{
-  // We will first roughly test PuCorrMethod::ByPu239Only to data given in paper.
-  //
-  // Fig 3 in Swinhoe 2010 gives Pu239 content vs Pu242 content; I manually
-  //  extracted the following values from the fit line in the PDF.
-  const vector<pair<double,double>> swinhoe_approx_fig_3_data = {
-    {0.55496, 0.06998},
-    {0.55894, 0.06821},
-    {0.56438, 0.06619},
-    {0.57073, 0.06399},
-    {0.57829, 0.06154},
-    {0.58453, 0.05952},
-    {0.59068, 0.05756},
-    {0.59471, 0.05634},
-    {0.59844, 0.05524},
-    {0.60146, 0.05444},
-    {0.60579, 0.05322},
-    {0.61526, 0.05077},
-    {0.62101, 0.04906},
-    {0.62605, 0.04802},
-    {0.63088, 0.04691},
-    {0.63542, 0.04594},
-    {0.6402, 0.0449}
-  };//swinhoe_approx_fig_3_data
-  
-  
-  for( const auto x_y : swinhoe_approx_fig_3_data )
-  {
-    const double x = x_y.first;
-    const double y = x_y.second;
-    const double gamma_spec_pu239 = x / (1.0 - y);
-    const double gamma_spec_pu_other = (1.0 - x - y)/(1.0 - y);
-    
-    // gamma_spec_pu239 plus gamma_spec_pu_other should sum to 1.0
-    assert( fabs(1.0 - (gamma_spec_pu239 + gamma_spec_pu_other)) < 0.001 );
-    
-    Pu242ByCorrelationInput input;
-    input.pu_age = 0.0;
-    input.pu238_rel_mass = gamma_spec_pu_other;
-    input.pu239_rel_mass = gamma_spec_pu239;
-    // Pu240, and Pu241/Am241 are irrelevant, all that
-    
-    Pu242ByCorrelationOutput output = correct_pu_mass_fractions_for_pu242( input, PuCorrMethod::ByPu239Only );
-    
-    //cout << "For Swinhoe [" << x << ", " << y << "]: Pu239: " << output.pu239_mass_frac
-    //     << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";
-    
-    assert( fabs(output.pu239_mass_frac - x) < 0.005 );
-    assert( fabs(output.pu242_mass_frac - y) < 0.0005 );
-  }//for( const auto x_y : swinhoe_approx_fig_3_data )
-  
-  
-  // For PuCorrMethod::Bignan95_BWR and PuCorrMethod::Bignan95_PWR, we dont have nearly as good
-  //  of comparison data
-  Pu242ByCorrelationInput input;
-  input.pu_age = 0.0;
-  input.pu238_rel_mass = 0.0120424;
-  input.pu239_rel_mass = 0.6649628;
-  input.pu240_rel_mass = 0.2327493;
-  input.pu241_rel_mass = 0.0501864;
-  //input.pu241_rel_mass = 0.0361259;
-  Pu242ByCorrelationOutput output = correct_pu_mass_fractions_for_pu242( input, PuCorrMethod::Bignan95_BWR );
-  cout << "For Bignan95_BWR: Pu239: " << output.pu239_mass_frac
-       << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";
-  
-  output = correct_pu_mass_fractions_for_pu242( input, PuCorrMethod::Bignan95_PWR );
-  cout << "For Bignan95_PWR: Pu239: " << output.pu239_mass_frac
-       << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";
-}//void test_pu242_by_correlation()
+
 
 
 double mass_ratio_to_act_ratio( const SandiaDecay::Nuclide * const numerator_nuclide, 

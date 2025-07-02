@@ -248,7 +248,7 @@ const std::string &to_description( const PuCorrMethod method );
  */
 Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput input, PuCorrMethod method );
 
-void test_pu242_by_correlation();
+
     
 
 /** Convert a mass ratio to an activity ratio.
