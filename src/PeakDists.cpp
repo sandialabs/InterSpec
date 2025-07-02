@@ -760,8 +760,8 @@ template void photopeak_function_integral<double>( const double, const double,co
           low_low_limit = mean - current_dx;
           const double y = lower_fcn( low_low_limit );
           found_lower = (y < 0.0);
-          if( low_low_limit < 0.0 )
-            break;
+          //if( (low_low_limit < 0.0) && (low_low_limit < (mean - 1000.0*sigma)) )
+          //  break;
         }//for( look for x where pdf has gone below limit )
         
         // If we didnt find the lower limit, `boost::math::tools::bisect(...)` will throw exception
