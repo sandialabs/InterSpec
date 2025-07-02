@@ -287,6 +287,7 @@ T eval_physical_model_eqn_imp( const double energy,
 Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput<T> input, PuCorrMethod method )
 {
   using namespace std;
+  using namespace ceres;
   
   // First, lets normalize the the input relative mass, jic it isnt already
   const bool corr_for_age = (input.pu_age > 0.0);
@@ -303,22 +304,22 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
     assert( db );
     assert( pu238 && pu239 && pu240 && pu241 );
 
-    vector<tuple<const SandiaDecay::Nuclide *,double>> input_nuclide_rel_acts;
-    if( input.pu238_rel_mass > 0.0f )
+    vector<tuple<const SandiaDecay::Nuclide *,T>> input_nuclide_rel_acts;
+    if( input.pu238_rel_mass > 0.0 )
       input_nuclide_rel_acts.emplace_back( pu238, input.pu238_rel_mass * pu238->activityPerGram() );
-    if( input.pu239_rel_mass > 0.0f )
+    if( input.pu239_rel_mass > 0.0 )
       input_nuclide_rel_acts.emplace_back( pu239, input.pu239_rel_mass * pu239->activityPerGram() );
-    if( input.pu240_rel_mass > 0.0f )
+    if( input.pu240_rel_mass > 0.0 )
       input_nuclide_rel_acts.emplace_back( pu240, input.pu240_rel_mass * pu240->activityPerGram() );
-    if( input.pu240_rel_mass > 0.0f )
+    if( input.pu240_rel_mass > 0.0 )
       input_nuclide_rel_acts.emplace_back( pu241, input.pu241_rel_mass * pu241->activityPerGram() );
 
-    const vector<tuple<const SandiaDecay::Nuclide *,double,double>> time_zero_vals
+    const vector<tuple<const SandiaDecay::Nuclide *,T,T>> time_zero_vals
                                   = back_decay_relative_activities( input.pu_age, input_nuclide_rel_acts );
-    for( const tuple<const SandiaDecay::Nuclide *,double,double> &nuc_act_mass : time_zero_vals )
+    for( const tuple<const SandiaDecay::Nuclide *,T,T> &nuc_act_mass : time_zero_vals )
     {
       const SandiaDecay::Nuclide * const nuc = get<0>(nuc_act_mass);
-      const double rel_act = get<1>(nuc_act_mass);
+      const T rel_act = get<1>(nuc_act_mass);
       if( nuc == pu238 )
         input.pu238_rel_mass = rel_act / nuc->activityPerGram();
       else if( nuc == pu239 )
@@ -360,7 +361,7 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
       const T c_0 = ((method == PuCorrMethod::Bignan95_PWR) ? T(1.313) : T(1.117));
       const T pu238_to_pu239 = input.pu238_rel_mass / input.pu239_rel_mass;
       const T pu240_to_pu239 = input.pu240_rel_mass / input.pu239_rel_mass;
-      const T pu242_to_pu239 = c_0 * std::pow( pu238_to_pu239, T(0.33) ) * std::pow( pu240_to_pu239, T(1.7) );
+      const T pu242_to_pu239 = c_0 * pow( pu238_to_pu239, T(0.33) ) * pow( pu240_to_pu239, T(1.7) );
       
       pu242_mass_frac = pu242_to_pu239 * input.pu239_rel_mass;
       break;
@@ -371,7 +372,7 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
       const T A = T(9.66E-3);
       const T C = T(-3.83);
       
-      pu242_mass_frac = A * std::pow( input.pu239_rel_mass, C );
+      pu242_mass_frac = A * pow( input.pu239_rel_mass, C );
       break;
     }//case PuCorrMethod::ByPu239Only:
       
@@ -400,11 +401,11 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
     const T pre_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
                                                 + input.pu241_rel_mass + answer.pu242_mass_frac;
 
-    answer.pu238_mass_frac *= std::exp( -input.pu_age * pu238->decayConstant() );
-    answer.pu239_mass_frac *= std::exp( -input.pu_age * pu239->decayConstant() );
-    answer.pu240_mass_frac *= std::exp( -input.pu_age * pu240->decayConstant() );
-    answer.pu241_mass_frac *= std::exp( -input.pu_age * pu241->decayConstant() );
-    answer.pu242_mass_frac *= std::exp( -input.pu_age * pu242->decayConstant() );
+    answer.pu238_mass_frac *= exp( -input.pu_age * pu238->decayConstant() );
+    answer.pu239_mass_frac *= exp( -input.pu_age * pu239->decayConstant() );
+    answer.pu240_mass_frac *= exp( -input.pu_age * pu240->decayConstant() );
+    answer.pu241_mass_frac *= exp( -input.pu_age * pu241->decayConstant() );
+    answer.pu242_mass_frac *= exp( -input.pu_age * pu242->decayConstant() );
 
 
     const T post_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
@@ -473,6 +474,47 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
   
   return answer;
 }//correct_pu_mass_fractions_for_pu242( ... )
+
+template<typename T>
+std::vector<std::tuple<const SandiaDecay::Nuclide *,T,T>> back_decay_relative_activities(
+    const T back_decay_time,
+    std::vector<std::tuple<const SandiaDecay::Nuclide *,T>> &nuclide_rel_acts )
+{
+  using namespace std;
+  using namespace ceres;
+  
+  assert( back_decay_time >= T(0.0) );
+  std::vector<std::tuple<const SandiaDecay::Nuclide *,T,T>> answer;
+
+  T rel_mass_sum = T(0.0);
+  for( const auto &nuc_activity : nuclide_rel_acts )
+  {
+    const SandiaDecay::Nuclide * const nuc = std::get<0>(nuc_activity);
+    const T final_act = std::get<1>(nuc_activity);
+    assert( nuc );
+    if( !nuc || (final_act <= T(0.0)) )
+      continue;
+
+    const T decrease_factor = exp( -back_decay_time * static_cast<T>(nuc->decayConstant()) );
+    const T initial_activity = final_act / decrease_factor;
+
+    answer.emplace_back( nuc, initial_activity, T(0.0) );
+
+    const T initial_rel_mass = initial_activity / static_cast<T>(nuc->activityPerGram());
+    rel_mass_sum += initial_rel_mass;
+  }
+
+  for( size_t i = 0; i < answer.size(); ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = std::get<0>(answer[i]);
+    const T initial_activity = std::get<1>(answer[i]);
+    const T initial_rel_mass = initial_activity / static_cast<T>(nuc->activityPerGram());
+
+    std::get<2>(answer[i]) = initial_rel_mass / rel_mass_sum;
+  }
+
+    return answer;
+}
 
 }//namespace RelActCalc
 

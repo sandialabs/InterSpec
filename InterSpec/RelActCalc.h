@@ -138,9 +138,11 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
 
  Returns vector of `{nuclide, RelActivityAtTimeZero, RelMassAtTimeZero}`, where the RelativeMasses are as a fraction of all nuclides passed in.
  */
-std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double>> back_decay_relative_activities(
-                                    const double back_decay_time,
-                                    std::vector<std::tuple<const SandiaDecay::Nuclide *,double>> &nuclide_rel_acts );
+// Implemented in RelActCalc_imp.hpp
+template<typename T>
+inline std::vector<std::tuple<const SandiaDecay::Nuclide *,T,T>> back_decay_relative_activities(
+                                    const T back_decay_time,
+                                    std::vector<std::tuple<const SandiaDecay::Nuclide *,T>> &nuclide_rel_acts );
 
 
 /** A struct to specify the relative masses of the Pu and Am241 nuclides that
@@ -204,8 +206,8 @@ enum class PuCorrMethod : int
    80% 239Pu
    
    From paper referenced below:
-   In FRAM, this function is the equivalent of setting ‘‘Pu242-correlation’’ value to  9.66E-03 and
-   the ‘‘Pu239_exponent’’ to -3.83 and the other coefficients to zero.
+   In FRAM, this function is the equivalent of setting 'Pu242-correlation' value to  9.66E-03 and
+   the 'Pu239_exponent' to -3.83 and the other coefficients to zero.
    
    See:
    M.T. Swinhoe, T. Iwamoto, T. Tamura
@@ -248,6 +250,8 @@ const std::string &to_description( const PuCorrMethod method );
 /** Given the isotopics determined from gamma-spec, returns mass fractions of those
  isotopes, as well as Pu242, as determined from the specified correlation estimate
  method.
+
+ This function is implemented in RelActCalc_imp.hpp, so you will need to include that if you would like to use it.
  */
 template<typename T>
 Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput<T> input, PuCorrMethod method );
@@ -360,14 +364,6 @@ double eval_physical_model_eqn( const double energy,
                                const DetectorPeakResponse * const drf,
                                std::optional<double> hoerl_b,
                                std::optional<double> hoerl_c );
-  
-double eval_physical_model_eqn_uncertainty( const double energy,
-                               const std::optional<PhysModelShield<double>> &self_atten,
-                               const std::vector<PhysModelShield<double>> &external_attens,
-                               const DetectorPeakResponse * const drf,
-                               std::optional<double> hoerl_b,
-                               std::optional<double> hoerl_c,
-                               const std::vector<std::vector<double>> &covariance );
   
 /** Please note, that the
  */

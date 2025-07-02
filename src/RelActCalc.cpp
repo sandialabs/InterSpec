@@ -460,45 +460,6 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
 }//double eval_eqn_uncertainty(...)
 
 
-std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double>> back_decay_relative_activities(
-                                            const double back_decay_time,
-                                            std::vector<std::tuple<const SandiaDecay::Nuclide *,double>> &nuclide_rel_acts )
-{
-  assert( back_decay_time >= 0.0 );
-  vector<tuple<const SandiaDecay::Nuclide *,double,double>> answer;
-
-  double rel_mass_sum = 0.0;
-  for( const tuple<const SandiaDecay::Nuclide *,double> &nuc_activity : nuclide_rel_acts )
-  {
-    const SandiaDecay::Nuclide * const nuc = get<0>(nuc_activity);
-    const double final_act = get<1>(nuc_activity);
-    assert( nuc );
-    if( !nuc || (final_act <= 0.0) )
-      continue;
-
-    const double decrease_factor = std::exp( -back_decay_time * nuc->decayConstant() );
-    const double initial_activity = final_act / decrease_factor;
-
-    answer.emplace_back( nuc, initial_activity, 0.0 );
-
-    const double initial_rel_mass = initial_activity / nuc->activityPerGram();
-    rel_mass_sum += initial_rel_mass;
-  }//for( const tuple<const SandiaDecay::Nuclide *,double> &nuc_activity : nuclide_rel_acts )
-
-
-  for( size_t i = 0; i < answer.size(); ++i )
-  {
-    const SandiaDecay::Nuclide * const nuc = get<0>(answer[i]);
-    const double initial_activity = get<1>(answer[i]);
-    const double initial_rel_mass = initial_activity / nuc->activityPerGram();
-
-    get<2>(answer[i]) = initial_rel_mass / rel_mass_sum;
-  }
-
-  return answer;
-}//back_decay_relative_activities(...)
-
-
 const std::string &to_str( const PuCorrMethod method )
 {
   const static std::string s_Bignan95_PWR{ "Bignan95_PWR" };
@@ -856,21 +817,6 @@ double eval_physical_model_eqn( const double energy,
 }//eval_physical_model_eqn(...)
   
     
-double eval_physical_model_eqn_uncertainty( const double energy,
-                               const std::optional<PhysModelShield<double>> &self_atten,
-                               const std::vector<PhysModelShield<double>> &external_attens,
-                               const DetectorPeakResponse * const drf,
-                               std::optional<double> hoerl_b,
-                               std::optional<double> hoerl_c,
-                               const std::vector<std::vector<double>> &covariance )
-{
-#pragma message( "eval_physical_model_eqn_uncertainty not implemented." )
-static int ntimeshere = 0;
-if( ntimeshere++ < 5 )  
-  cerr << "eval_physical_model_eqn_uncertainty not implemented. " << endl;
-return 0.0;
-}
-  
 std::function<double(double)> physical_model_eff_function( const std::optional<PhysModelShield<double>> &self_atten,
                                                           const std::vector<PhysModelShield<double>> &external_attens,
                                                           const std::shared_ptr<const DetectorPeakResponse> &drf,

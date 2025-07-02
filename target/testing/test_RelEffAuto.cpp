@@ -228,13 +228,13 @@ BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
     // gamma_spec_pu239 plus gamma_spec_pu_other should sum to 1.0
     BOOST_CHECK( fabs(1.0 - (gamma_spec_pu239 + gamma_spec_pu_other)) < 0.001 );
     
-    RelActCalc::Pu242ByCorrelationInput input;
+    RelActCalc::Pu242ByCorrelationInput<double> input;
     input.pu_age = 0.0;
     input.pu238_rel_mass = gamma_spec_pu_other;
     input.pu239_rel_mass = gamma_spec_pu239;
     // Pu240, and Pu241/Am241 are irrelevant, all that
     
-    RelActCalc::Pu242ByCorrelationOutput output = RelActCalc::correct_pu_mass_fractions_for_pu242( input, RelActCalc::PuCorrMethod::ByPu239Only );
+    RelActCalc::Pu242ByCorrelationOutput<double> output = RelActCalc::correct_pu_mass_fractions_for_pu242( input, RelActCalc::PuCorrMethod::ByPu239Only );
     
     //cout << "For Swinhoe [" << x << ", " << y << "]: Pu239: " << output.pu239_mass_frac
     //     << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";
@@ -246,14 +246,14 @@ BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
   
   // For PuCorrMethod::Bignan95_BWR and PuCorrMethod::Bignan95_PWR, we dont have nearly as good
   //  of comparison data
-  RelActCalc::Pu242ByCorrelationInput input;
+  RelActCalc::Pu242ByCorrelationInput<double> input;
   input.pu_age = 0.0;
   input.pu238_rel_mass = 0.0120424;
   input.pu239_rel_mass = 0.6649628;
   input.pu240_rel_mass = 0.2327493;
   input.pu241_rel_mass = 0.0501864;
   //input.pu241_rel_mass = 0.0361259;
-  RelActCalc::Pu242ByCorrelationOutput output = RelActCalc::correct_pu_mass_fractions_for_pu242( input, RelActCalc::PuCorrMethod::Bignan95_BWR );
+  RelActCalc::Pu242ByCorrelationOutput<double> output = RelActCalc::correct_pu_mass_fractions_for_pu242( input, RelActCalc::PuCorrMethod::Bignan95_BWR );
   //cout << "For Bignan95_BWR: Pu239: " << output.pu239_mass_frac
   //     << ", Pu242: " << output.pu242_mass_frac << " +- " << 100.0*output.pu242_uncert << "%\n";
   //For Bignan95_BWR: Pu239: 0.668767, Pu242: 0.0345679 +- 14%
@@ -269,3 +269,4 @@ BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
   BOOST_CHECK( fabs(output.pu242_mass_frac - 0.0406335) < 0.0001 );
   BOOST_CHECK( fabs(output.pu242_uncert - 0.06) < 0.0001 );
 }//BOOST_AUTO_TEST_CASE( test_pu242_by_correlation )
+
