@@ -3489,9 +3489,26 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     if( !constant_parameters.empty() )
     {
+      bool has_duplicate = false;
+      std::sort( begin(constant_parameters), end(constant_parameters) );
+      for( size_t i = 1; i < constant_parameters.size(); ++i )
+      {
+        if( constant_parameters[i-1] == constant_parameters[i] )
+        {
+          const string msg = "Programming logic error: duplicate const par: " + to_string(constant_parameters[i-1])
+                 + ", named '" + cost_functor->parameter_name(i) + "'";
+          solution.m_warnings.push_back( msg );
+          cerr << msg << endl;
+          assert( constant_parameters[i-1] != constant_parameters[i] );
+          has_duplicate = true;
+        }
+      }//for( size_t i = 1; i < constant_parameters.size(); ++i )
+      if( has_duplicate )
+        constant_parameters.erase(std::unique(begin(constant_parameters), end(constant_parameters)), end(constant_parameters));
+
       ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
       problem.SetManifold( pars, subset_manifold );
-    }
+    }//if( !constant_parameters.empty() )
     
     
     for( size_t i = 0; i < num_pars; ++i )
@@ -7882,10 +7899,14 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
   {
     if( answer.a <= 0.0 )
       throw runtime_error( "eval_fwhm: negative result." );
+    if( answer.a > energy )
+      throw runtime_error( "eval_fwhm: unreasonably large result." );
   }else
   {
     if( answer <= 0.0 )
       throw runtime_error( "eval_fwhm: negative result." );
+    if( answer > energy )
+      throw runtime_error( "eval_fwhm: unreasonably large result." );
   }
   
 #ifndef NDEBUG
