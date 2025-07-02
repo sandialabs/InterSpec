@@ -4088,7 +4088,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         try
         {
-          RelActCalc::Pu242ByCorrelationInput raw_rel_masses;
+          RelActCalc::Pu242ByCorrelationInput<double> raw_rel_masses;
 
           set<double> pu_ages;
           double pu_total_mass = 0.0, raw_rel_mass = 0.0;
@@ -4138,7 +4138,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           raw_rel_masses.pu241_rel_mass /= pu_total_mass;
           raw_rel_masses.other_pu_mass  /= pu_total_mass;
           
-          const RelActCalc::Pu242ByCorrelationOutput corr_output
+          const RelActCalc::Pu242ByCorrelationOutput<double> corr_output
           = RelActCalc::correct_pu_mass_fractions_for_pu242( raw_rel_masses,
                                                             rel_eff_curve.pu242_correlation_method );
           
@@ -4146,7 +4146,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             solution.m_warnings.push_back( "The fit Pu enrichment is outside range validated in the"
                                           " literature for the Pu242 correlation." );
           
-          solution.m_corrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationOutput(corr_output) );
+          solution.m_corrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationOutput<double>(corr_output) );
         }catch( std::exception &e )
         {
           solution.m_warnings.push_back( "Correcting for Pu242 content failed: " + string(e.what()) );
@@ -9837,7 +9837,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     assert( m_corrected_pu.size() <= m_rel_activities.size() );
     
     // For Pu, print a corrected enrichment table
-    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> pu_corr = (m_corrected_pu.size() > rel_eff_index)
+    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> pu_corr = (m_corrected_pu.size() > rel_eff_index)
     ? m_corrected_pu[rel_eff_index]
     : nullptr;
     if( pu_corr )
@@ -10039,7 +10039,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
     const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
     
-    shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> pu_corr = (rel_eff_index >= m_corrected_pu.size())
+    shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> pu_corr = (rel_eff_index >= m_corrected_pu.size())
                                                                    ? nullptr : m_corrected_pu[rel_eff_index];
     
     // For Pu, print a corrected enrichment table
@@ -10849,7 +10849,7 @@ pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( cons
         el_total_mass += nuc.rel_activity / nuc_nuclide->activityPerGram();
     }
 
-    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> &pu_corr = m_corrected_pu[rel_eff_index];
+    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> &pu_corr = m_corrected_pu[rel_eff_index];
 
     switch( nuclide->massNumber )
     {

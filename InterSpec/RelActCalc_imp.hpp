@@ -23,6 +23,8 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <tuple>
+#include <vector>
 #include <optional>
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -280,6 +282,198 @@ T eval_physical_model_eqn_imp( const double energy,
   return answer;
 }//eval_physical_model_eqn_imp(...)
   
+
+  template<typename T>
+Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput<T> input, PuCorrMethod method )
+{
+  using namespace std;
+  
+  // First, lets normalize the the input relative mass, jic it isnt already
+  const bool corr_for_age = (input.pu_age > 0.0);
+  const SandiaDecay::SandiaDecayDataBase * const db = corr_for_age ? DecayDataBaseServer::database() : nullptr;
+  const SandiaDecay::Nuclide * const pu238 = corr_for_age ? db->nuclide( "Pu238" ) : nullptr;
+  const SandiaDecay::Nuclide * const pu239 = corr_for_age ? db->nuclide( "Pu239" ) : nullptr;
+  const SandiaDecay::Nuclide * const pu240 = corr_for_age ? db->nuclide( "Pu240" ) : nullptr;
+  const SandiaDecay::Nuclide * const pu241 = corr_for_age ? db->nuclide( "Pu241" ) : nullptr;
+  const SandiaDecay::Nuclide * const pu242 = corr_for_age ? db->nuclide( "Pu242" ) : nullptr;
+
+  if( corr_for_age )
+  {
+    //Need to back-decay to T=0, to apply correction.  We will then re-decay to the final age for the answer.
+    assert( db );
+    assert( pu238 && pu239 && pu240 && pu241 );
+
+    vector<tuple<const SandiaDecay::Nuclide *,double>> input_nuclide_rel_acts;
+    if( input.pu238_rel_mass > 0.0f )
+      input_nuclide_rel_acts.emplace_back( pu238, input.pu238_rel_mass * pu238->activityPerGram() );
+    if( input.pu239_rel_mass > 0.0f )
+      input_nuclide_rel_acts.emplace_back( pu239, input.pu239_rel_mass * pu239->activityPerGram() );
+    if( input.pu240_rel_mass > 0.0f )
+      input_nuclide_rel_acts.emplace_back( pu240, input.pu240_rel_mass * pu240->activityPerGram() );
+    if( input.pu240_rel_mass > 0.0f )
+      input_nuclide_rel_acts.emplace_back( pu241, input.pu241_rel_mass * pu241->activityPerGram() );
+
+    const vector<tuple<const SandiaDecay::Nuclide *,double,double>> time_zero_vals
+                                  = back_decay_relative_activities( input.pu_age, input_nuclide_rel_acts );
+    for( const tuple<const SandiaDecay::Nuclide *,double,double> &nuc_act_mass : time_zero_vals )
+    {
+      const SandiaDecay::Nuclide * const nuc = get<0>(nuc_act_mass);
+      const double rel_act = get<1>(nuc_act_mass);
+      if( nuc == pu238 )
+        input.pu238_rel_mass = rel_act / nuc->activityPerGram();
+      else if( nuc == pu239 )
+        input.pu239_rel_mass = rel_act / nuc->activityPerGram();
+      else if( nuc == pu240 )
+        input.pu240_rel_mass = rel_act / nuc->activityPerGram();
+      else if( nuc == pu241 )
+        input.pu241_rel_mass = rel_act / nuc->activityPerGram();
+      else { assert( 0 ); }
+    }//for( loop over back-decayed nuclides )
+
+    // We will just let `input.other_pu_mass` stay the same - we dont expect to use it anyway
+  }//if( input.pu_age > 0.0 )
+
+  T sum_input_mass = T(0.0);
+  sum_input_mass += input.pu238_rel_mass;
+  sum_input_mass += input.pu239_rel_mass;
+  sum_input_mass += input.pu240_rel_mass;
+  sum_input_mass += input.pu241_rel_mass;
+  sum_input_mass += input.other_pu_mass;
+
+  input.pu238_rel_mass /= sum_input_mass;
+  input.pu239_rel_mass /= sum_input_mass;
+  input.pu240_rel_mass /= sum_input_mass;
+  input.pu241_rel_mass /= sum_input_mass;
+  input.other_pu_mass  /= sum_input_mass;
+
+  T pu242_mass_frac = T(0.0), fractional_uncert = T(0.0);
+  switch( method )
+  {
+    case PuCorrMethod::Bignan95_PWR:
+    case PuCorrMethod::Bignan95_BWR:
+    {
+      // Note: Bignan 98 provides a nice "database" in Table 1 that could be used to improve
+      //  the value of c_0 used, based on ratios of Pu238, Pu240, and Pu242 to Pu239, but
+      //  realistically this is way to fine-meshed for the calculations we could hope to do
+      //  in InterSpec
+      
+      const T c_0 = ((method == PuCorrMethod::Bignan95_PWR) ? T(1.313) : T(1.117));
+      const T pu238_to_pu239 = input.pu238_rel_mass / input.pu239_rel_mass;
+      const T pu240_to_pu239 = input.pu240_rel_mass / input.pu239_rel_mass;
+      const T pu242_to_pu239 = c_0 * std::pow( pu238_to_pu239, T(0.33) ) * std::pow( pu240_to_pu239, T(1.7) );
+      
+      pu242_mass_frac = pu242_to_pu239 * input.pu239_rel_mass;
+      break;
+    }//case PuCorrMethod::Bignan95_BWR:
+    
+    case PuCorrMethod::ByPu239Only:
+    {
+      const T A = T(9.66E-3);
+      const T C = T(-3.83);
+      
+      pu242_mass_frac = A * std::pow( input.pu239_rel_mass, C );
+      break;
+    }//case PuCorrMethod::ByPu239Only:
+      
+    case PuCorrMethod::NotApplicable:
+      pu242_mass_frac = T(0.0);
+      break;
+  }//switch( method )
+  
+  
+  Pu242ByCorrelationOutput<T> answer;
+  
+  // We need to correct for the Pu242 mass fraction.
+  //  See equation 8-14 (page 249) in:
+  //    "Plutonium Isotopic Composition by Gamma-Ray Spectroscopy"
+  //    T. E. Sampson
+  // https://www.lanl.gov/org/ddste/aldgs/sst-training/_assets/docs/PANDA/Plutonium%20Isotopic%20Composition%20by%20Gamma-Ray%20Spectroscopy%20Ch.%208%20p.%20221-272.pdf
+  
+  answer.pu238_mass_frac = input.pu238_rel_mass * (T(1.0) - pu242_mass_frac);
+  answer.pu239_mass_frac = input.pu239_rel_mass * (T(1.0) - pu242_mass_frac);
+  answer.pu240_mass_frac = input.pu240_rel_mass * (T(1.0) - pu242_mass_frac);
+  answer.pu241_mass_frac = input.pu241_rel_mass * (T(1.0) - pu242_mass_frac);
+  answer.pu242_mass_frac = pu242_mass_frac;
+
+  if( input.pu_age > 0.0 )
+  {
+    const T pre_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
+                                                + input.pu241_rel_mass + answer.pu242_mass_frac;
+
+    answer.pu238_mass_frac *= std::exp( -input.pu_age * pu238->decayConstant() );
+    answer.pu239_mass_frac *= std::exp( -input.pu_age * pu239->decayConstant() );
+    answer.pu240_mass_frac *= std::exp( -input.pu_age * pu240->decayConstant() );
+    answer.pu241_mass_frac *= std::exp( -input.pu_age * pu241->decayConstant() );
+    answer.pu242_mass_frac *= std::exp( -input.pu_age * pu242->decayConstant() );
+
+
+    const T post_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
+                                              + input.pu241_rel_mass + answer.pu242_mass_frac;
+
+    const T overall_decay = pre_decay_sum_mass_frac / post_decay_sum_mass_frac;
+    answer.pu238_mass_frac *= overall_decay;
+    answer.pu239_mass_frac *= overall_decay;
+    answer.pu240_mass_frac *= overall_decay;
+    answer.pu241_mass_frac *= overall_decay;
+    answer.pu242_mass_frac *= overall_decay;
+  }//if( input.pu_age > 0.0 )
+
+  
+  switch( method )
+  {
+    case PuCorrMethod::Bignan95_PWR:
+    case PuCorrMethod::Bignan95_BWR:
+    {
+      const T pu238_pu239 = answer.pu238_mass_frac / answer.pu239_mass_frac;
+      const T pu240_pu239 = answer.pu240_mass_frac / answer.pu239_mass_frac;
+      const T pu242_pu239 = answer.pu242_mass_frac / answer.pu239_mass_frac;
+      
+      answer.is_within_range = ((pu238_pu239 >= T(0.007851)) && (pu238_pu239 <= T(0.02952)))
+                                && ((pu240_pu239 >= T(0.2688)) && (pu240_pu239 <= T(0.4586)))
+                                && ((pu242_pu239 >= T(0.03323)) && (pu242_pu239 <= T(0.1152)));
+      
+      if( method == PuCorrMethod::Bignan95_PWR )
+        answer.pu242_uncert = T(0.03);
+      else
+        answer.pu242_uncert = T(0.07);
+      
+      break;
+    }//case PuCorrMethod::Bignan95_BWR:
+      
+    case PuCorrMethod::ByPu239Only:
+    {
+      answer.is_within_range = (answer.pu239_mass_frac >= T(0.55)) && (answer.pu239_mass_frac <= T(0.80));
+      
+      if( (answer.pu239_mass_frac >= T(0.55)) && (answer.pu239_mass_frac <= T(0.64)) )
+        answer.pu242_uncert = T(0.012);
+      else if( answer.pu239_mass_frac < T(0.55) )
+        answer.pu242_uncert = T(0.05); //totally made up
+      else if( answer.pu239_mass_frac < T(0.70) )
+        answer.pu242_uncert = T(0.01);
+      else if( answer.pu239_mass_frac < T(0.80) )
+        answer.pu242_uncert = T(0.04);
+      else
+        answer.pu242_uncert = T(0.05); //totally made up
+      
+      break;
+    }//case PuCorrMethod::ByPu239Only
+      
+    case PuCorrMethod::NotApplicable:
+      answer.is_within_range = true;
+      answer.pu242_uncert = T(0.0);
+    break;
+  }//switch( method )
+
+  // Except for the totally made up uncertainties (which are out of validated ranges), the
+  //  actual errors are likely much larger than reported in the paper, as their data probably
+  //  came from similar sources, or at least dont include nearly all the ways Pu is made, so
+  //  we'll throw an arbitrary factor of 2 onto the uncertainty.
+  const T engineering_uncert_multiple = T(2.0);
+  answer.pu242_uncert *= engineering_uncert_multiple;
+  
+  return answer;
+}//correct_pu_mass_fractions_for_pu242( ... )
+
 }//namespace RelActCalc
 
 #endif //RelActCalc_imp_hpp

@@ -33,6 +33,7 @@
 
 // Forward declarations
 struct Material;
+class MaterialDB;
 class DetectorPeakResponse;
 
 namespace rapidxml
@@ -148,30 +149,32 @@ std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double>> back_decay_r
  Masses do not need to be normalized to 1, but their ratios to each other do
  need to be correct.
  */
+template<typename T>
 struct Pu242ByCorrelationInput
 {
-  float pu238_rel_mass = 0.0f;
-  float pu239_rel_mass = 0.0f;
-  float pu240_rel_mass = 0.0f;
-  float pu241_rel_mass = 0.0f;
+  T pu238_rel_mass = T(0.0);
+  T pu239_rel_mass = T(0.0);
+  T pu240_rel_mass = T(0.0);
+  T pu241_rel_mass = T(0.0);
   /** A value to capture all other non-Pu242 plutonium isotopes (I dont expect to ever be used) */
-  float other_pu_mass  = 0.0f;
+  T other_pu_mass  = T(0.0);
 
   /** The age of the Pu, so this way the mass fractions can be back-corrected to T=0, to ever so slightly increase the accuracy of the correction. */
-  double pu_age = 0.0;
+  T pu_age = T(0.0);
 };//struct Pu242ByCorrelationInput
 
 
 /** The nuclide mass fractions (so between 0 and 1 - with all nuclides summing to 1.0)
  as determined after accounting for the predicted amount (by correlation) of Pu242.
  */
+template<typename T>
 struct Pu242ByCorrelationOutput
 {
-  float pu238_mass_frac;
-  float pu239_mass_frac;
-  float pu240_mass_frac;
-  float pu241_mass_frac;
-  float pu242_mass_frac;
+  T pu238_mass_frac;
+  T pu239_mass_frac;
+  T pu240_mass_frac;
+  T pu241_mass_frac;
+  T pu242_mass_frac;
   
   /** If enrichment is within literatures specified range.
    This is a very coarse indicator if its a valid method.
@@ -183,7 +186,7 @@ struct Pu242ByCorrelationOutput
    wild guess, but I guess better than nothing.  Does not cover additional
    uncerts from using the method outside the literatures specified conditions.
    */
-  float pu242_uncert;
+  T pu242_uncert;
 };//struct Pu242ByCorrelationOutput
 
 
@@ -246,7 +249,8 @@ const std::string &to_description( const PuCorrMethod method );
  isotopes, as well as Pu242, as determined from the specified correlation estimate
  method.
  */
-Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput input, PuCorrMethod method );
+template<typename T>
+Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput<T> input, PuCorrMethod method );
 
 
     

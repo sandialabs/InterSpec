@@ -34,7 +34,7 @@
 #include <optional>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
-
+#include "InterSpec/RelActCalc.h"
 
 // Forward declarations
 class DetectorPeakResponse;
@@ -61,8 +61,8 @@ namespace RelActCalc
 {
   enum class PuCorrMethod : int;
   enum class RelEffEqnForm : int;
-  struct Pu242ByCorrelationOutput;
   struct PhysicalModelShieldInput;
+  template<typename T> struct Pu242ByCorrelationOutput;
 }//namespace RelActCalc
 
 namespace RelActCalcAutoImp
@@ -1024,7 +1024,7 @@ struct RelActAutoSolution
    Note: this is a shared ptr just to avoid creating a copy constructor that would be needed
          if we make it a unique ptr...
    */
-  std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput>> m_corrected_pu;
+  std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>>> m_corrected_pu;
   
   /** We will allow corrections to the first following number of energy calibration coefficients.
  
