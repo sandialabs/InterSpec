@@ -115,7 +115,20 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   "<tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>"
   "<tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>"
   "<tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>"
-  "<tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>"
+  "<tr><th>Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>"
+  "<tr><th>Physical:</th>             <th>"
+  "  y = <span style=\"display: inline-block; vertical-align: middle;\">"
+  "        <span style=\"display: block; text-align: center;\">"
+  "         (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))"
+  "        </span>"
+  "        <span style=\"display: block; border-top: 1px solid black; text-align: center;\">"
+  "          (AD<sub>0</sub>*μ<sub>0</sub>)"
+  "        </span>"
+  "      </span>"
+  "       * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]"
+  "       * [Det. Eff.]"
+  "       * [E<sup>b</sup> * C<sup>1/E</sup>]"
+  "  </th></tr>"
   "</table>";
   HelpSystem::attachToolTipOn( {eqnTypeDiv}, tooltip, showToolTips );
   

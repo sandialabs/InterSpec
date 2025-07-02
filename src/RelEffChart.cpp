@@ -159,13 +159,14 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
     const vector<PeakDef> &fit_peaks = info.fit_peaks;
     const std::vector<RelActCalcAuto::NuclideRelAct> &rel_acts = info.rel_acts;
     const std::string &relEffEqn = info.js_rel_eff_eqn;
+    const std::string &relEffUncertEqn = info.js_rel_eff_uncert_eqn;
     const WString &re_name = info.re_curve_name;
     const WString &chi2_title_str = info.re_curve_eqn_txt;
     
     RelEffChartDataset dataset;
     dataset.relEffEqn = relEffEqn;
     dataset.chi2_title_str = chi2_title_str;
-    dataset.relEffEqnUncert = "null"; // Default value
+    dataset.relEffEqnUncert = relEffUncertEqn.empty() ? "null" : relEffUncertEqn;
     
     std::vector<RelActCalcManual::GenericPeakInfo> peaks;
     map<string,pair<double,string>> relActsColors;

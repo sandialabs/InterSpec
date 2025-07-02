@@ -1087,7 +1087,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         if( this_nuc_pos == end(specific_activities_for_el) )
           throw std::logic_error( "ManualGenericRelActFunctor: missing nuclide in constraint.m_specific_activities???" );
 
-        // Next we'll check that the sum od mass fractions for this element is less than 1.0
+        // Next we'll check that the sum of mass fractions for this element is less than 1.0
         T el_constrained_sum( 0.0 );
         for( const map<std::string, double>::value_type &nucs_sa : specific_activities_for_el )
         {
@@ -1105,20 +1105,21 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           if( !inner_constraint )
             continue;
 
-          if( inner_constraint->m_mass_fraction_lower == inner_constraint->m_mass_fraction_upper )
+          const double &lower_frac = inner_constraint->m_mass_fraction_lower;
+          const double &upper_frac = inner_constraint->m_mass_fraction_upper;
+
+          if( lower_frac == upper_frac )
           {
-            el_constrained_sum += inner_constraint->m_mass_fraction_lower;
+            el_constrained_sum += lower_frac;
           }else
           {
             const size_t inner_index = iso_index( inner_nuc );
             const T frac = x[inner_index] - 0.5;
             assert( (frac > -0.0002) && (frac < 1.0001) );
-            const double &lower_frac = inner_constraint->m_mass_fraction_lower;
-            const double &upper_frac = inner_constraint->m_mass_fraction_upper;
-
             el_constrained_sum += lower_frac + frac*(upper_frac - lower_frac);
           }//if( inner_constraint->m_mass_fraction_lower == inner_constraint->m_mass_fraction_upper )
         }//for( const map<std::string, double>::value_type &nucs_sa : specific_activities_for_el )
+
         if( (el_constrained_sum < 0.0) || (el_constrained_sum > 1.0) )
           throw runtime_error( "Invalid paramaters - mass-fraction sum over 1." );
 
@@ -1145,24 +1146,27 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           }else
           {
             // `iso` is mass-constrained
+            const size_t src_index = iso_index( iso );
+
             T mass_fraction;
             assert( constraint_pos->m_mass_fraction_lower >= 0.0 );
             assert( constraint_pos->m_mass_fraction_lower <= 1.0 );
             assert( constraint_pos->m_mass_fraction_upper >= 0.0 );
             assert( constraint_pos->m_mass_fraction_upper <= 1.0 );
 
-            if( constraint_pos->m_mass_fraction_lower == constraint_pos->m_mass_fraction_upper )
+            const double &lower_frac = constraint_pos->m_mass_fraction_lower;
+            const double &upper_frac = constraint_pos->m_mass_fraction_upper;
+
+            if( lower_frac == upper_frac )
             {
-              assert( abs(x[index] - -1.0) < 1.0E-6 );
-              mass_fraction = T(constraint_pos->m_mass_fraction_lower);
+              assert( abs(x[src_index] - -1.0) < 1.0E-6 );
+              mass_fraction = T(lower_frac);
             }else
             {
-              const T dist = x[index] - 0.5;
+              const T dist = x[src_index] - 0.5;
               assert( (dist > -0.02) && (dist < 1.02) ); //should be between 0 and 1, but will leave some room for numerical diff
-              mass_fraction = constraint_pos->m_mass_fraction_lower
-                   + dist * (constraint_pos->m_mass_fraction_upper - constraint_pos->m_mass_fraction_lower);
+              mass_fraction = lower_frac + dist*(upper_frac - lower_frac);
             }
-
             sum_constrained_frac_rel_mass_of_el += mass_fraction;
           }
         }//for( [ const string &iso, const double &activity] : element_specific_activities )
@@ -1170,6 +1174,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
 
         assert( sum_constrained_frac_rel_mass_of_el <= 1.00001 );
         assert( sum_constrained_frac_rel_mass_of_el >= -0.00001 );
+        assert( sum_constrained_frac_rel_mass_of_el == el_constrained_sum );
         const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
 
         T iso_mass_fraction;

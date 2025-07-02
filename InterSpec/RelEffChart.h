@@ -32,6 +32,7 @@ public:
     std::vector<PeakDef> fit_peaks;
     std::vector<RelActCalcAuto::NuclideRelAct> rel_acts;
     std::string js_rel_eff_eqn;
+    std::string js_rel_eff_uncert_eqn;
     Wt::WString re_curve_name;
     Wt::WString re_curve_eqn_txt;
   };//struct ReCurveInfo

@@ -176,7 +176,7 @@ namespace BatchInfoLog
                        const std::shared_ptr<const SpecMeas> &spec_file,
                        const std::set<int> &sample_numbers,
                        const std::string &filename,
-                       const BatchPeak::BatchPeakFitResult * const peak_fit );
+                       const std::deque<std::shared_ptr<const PeakDef>> * const peak_fit );
   
   void add_energy_cal_json( nlohmann::basic_json<> &data,
                            const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal );

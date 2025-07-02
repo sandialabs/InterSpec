@@ -293,8 +293,7 @@
     Also contains capabilities to determine nuclide ages, contamination concentrations, or enrichments.
   </message>
   <message id="app-mi-tools-iso-by-nuc">Isotopics by nuclides</message>
-  <message id="app-mi-tt-tools-iso-by-nuc">UNDER DEVELOPMENT.
-    <br />
+  <message id="app-mi-tt-tools-iso-by-nuc">
     Automatically fits nuclides peaks to allow determining the relative
     activities of nuclides.  Does not require knowing the detector
    response or shielding information.

@@ -65,7 +65,10 @@ namespace RelActCalc
   struct PhysicalModelShieldInput;
 }//namespace RelActCalc
 
-
+namespace RelActCalcAutoImp
+{
+  struct RelActAutoCostFcn;
+}
 
 /*
  Further things to consider:
@@ -84,8 +87,6 @@ namespace RelActCalc
     gamma-x-ray coincidences (or is it the case we can just assume constant fraction between any
     gamma and any nuclide?), so we might need two parameters, one for gamams, one for gamma-neutrons
     and I guess maybe xray-xray?
- - Should add option to give each branching-ratio an independent uncertainty (like 1% or something),
-   as well the same for FWHM
  */
 
 namespace RelActCalcAuto
@@ -555,9 +556,7 @@ struct RelEffCurveInput
    */
   void check_nuclide_constraints() const; 
 
-  // TODO: add a element mass fraction constraint.  Accepts just a single element, and a mass fraction - for that one element.
-  //       Will require adding some logic to `RelActAutoCostFcn::relative_activity(...)` to handle this.
-
+  
   static const int sm_xmlSerializationVersion = 0;
 
   /** Puts this object to XML
@@ -747,23 +746,20 @@ struct RelActAutoSolution
   /** Prints the txt version of relative eff eqn. */
   std::string rel_eff_txt( const bool html_format, const size_t rel_eff_index ) const;
   
-  /** Returns the fractional amount of an element (by mass), the nuclide composes.
-   
-   Throws exception if \c nuclide was not in the problem.
+  /** Returns the fractional amount of an element (by mass), the nuclide composes, as well as (hopefully) the uncertainty.
    
    @param nuclide The nuclide of interest.
    @param rel_eff_index The relative efficiency index for the nuclide
-   @param num_sigma The number of sigma away from nominal you want the answer; e.g., for nominal answer use a value of 0.0.
    @returns The fraction of mass (so between 0.0 and 1.0), the input nuclide is responsible for
-            in the solution.  Ex., if Eu152 is passed in, and that was the only europium isotope
+            in the solution, as well as the uncertainty, if the covariance matrix is defined.
+            Ex., if Eu152 is passed in, and that was the only europium isotope
             then 1.0 will be returned.  If it was a natural uranium problem, and U235 was passed
             in, then the returned value would likely be something like 0.0072
    
-   Throws exception if nuclide is not in the specified relative efficiency curve, or if `num_sigma` is not 0.0 and either the covariance matrix
-   is not present, or the nuclide is a Pu isotope and a Pu242 correlation method was chosen.
+   Throws exception if \c nuclide was not in the specified relative efficiency curve, or other errors encountered.
    */
-  double mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide, const size_t rel_eff_index,
-                                  const double num_sigma ) const;
+  std::pair<double,std::optional<double>> mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide,
+                                                                   const size_t rel_eff_index ) const;
 
   /** Returns the mass ratio of two nuclides.
    
@@ -828,6 +824,13 @@ struct RelActAutoSolution
   /**  Gives the relative efficiency for a given energy. 
   */
   double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
+  
+  /** Gives the relative efficiency for a given energy, as well as the uncertainty.
+   
+   Throws exception if covariance matrix is invalid.
+   */
+  std::pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const;
+  
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
@@ -842,6 +845,9 @@ struct RelActAutoSolution
    `RelActCalc::physical_model_rel_eff_eqn_js_function(...)`
    */
   std::string rel_eff_eqn_js_function( const size_t rel_eff_index ) const;
+  
+  /** Returns JS function that represents the error bars of RelEffEqn, or "null" string if they arent avaiable. */
+  std::string rel_eff_eqn_js_uncert_fcn( const size_t rel_eff_index ) const;
   
   /** Returns the updated energy calibration.
    
@@ -865,6 +871,8 @@ struct RelActAutoSolution
   std::vector<std::string> m_warnings;
   
   Options m_options;
+  
+  std::shared_ptr<const RelActCalcAutoImp::RelActAutoCostFcn> m_cost_functor;
   
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   std::shared_ptr<const SpecUtils::Measurement> m_background;

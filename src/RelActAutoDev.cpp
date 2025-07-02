@@ -495,7 +495,11 @@ void run_u02_example()
   solution.print_summary( cout );
   solution.print_html_report( out_html );
   
-  cout << "Enrichment: " << solution.mass_enrichment_fraction( db->nuclide("U235"), 0, 0.0 ) << endl;
+  pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( db->nuclide("U235"), 0);
+  
+  cout << "Enrichment: " << enrich.first
+  << " +- " << (enrich.second.has_value() ? std::to_string(enrich.second.value()) : string("UncertCalcError"))
+  << endl;
 
   cout << "Took:\n"
   << "\tNum Function Calls: " << solution.m_num_function_eval_solution << endl
@@ -1680,10 +1684,13 @@ void utile_ana()
     
   for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
-    const double enrichment = solution.mass_enrichment_fraction( u235, i, 0.0 );
+    pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( u235, i );
+    const double enrichment = enrich.first;
     const double u235_counts = solution.nuclide_counts( u235, i );
     const double u238_counts = solution.nuclide_counts( u238, i );
-    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment
+    cout << "Enrichment " << i << std::left << ": "
+    << setprecision(6) << setw(11) << enrichment
+    << " +- " << setw(11) << (enrich.second.has_value() ? enrich.second.value() : -999.0)
       << ", counts(u235)=" << setw(11) << u235_counts
       << ", counts(u238)=" << setw(11) << u238_counts << endl;
   }
@@ -1779,12 +1786,15 @@ void leu_heu_ana()
 
   for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
-    const double enrichment = solution.mass_enrichment_fraction( u235, i, 0.0 );
+    pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( u235, i );
+    const double enrichment = enrich.first;
     const double u235_counts = solution.nuclide_counts( u235, i );
     const double u238_counts = solution.nuclide_counts( u238, i );
-    cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment
-      << ", counts(u235)=" << setw(11) << u235_counts
-      << ", counts(u238)=" << setw(11) << u238_counts << endl;
+    cout << "Enrichment " << i << std::left << ": "
+    << setprecision(6) << setw(11) << enrichment
+    << " +- " << setw(11) << (enrich.second.has_value() ? enrich.second.value() : -999.0)
+    << ", counts(u235)=" << setw(11) << u235_counts
+    << ", counts(u238)=" << setw(11) << u238_counts << endl;
   }
 }//void leu_heu_ana()
 
