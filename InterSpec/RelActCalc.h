@@ -33,6 +33,7 @@
 
 // Forward declarations
 struct Material;
+class MaterialDB;
 class DetectorPeakResponse;
 
 namespace rapidxml
@@ -137,9 +138,11 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
 
  Returns vector of `{nuclide, RelActivityAtTimeZero, RelMassAtTimeZero}`, where the RelativeMasses are as a fraction of all nuclides passed in.
  */
-std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double>> back_decay_relative_activities(
-                                    const double back_decay_time,
-                                    std::vector<std::tuple<const SandiaDecay::Nuclide *,double>> &nuclide_rel_acts );
+// Implemented in RelActCalc_imp.hpp
+template<typename T>
+inline std::vector<std::tuple<const SandiaDecay::Nuclide *,T,T>> back_decay_relative_activities(
+                                    const T back_decay_time,
+                                    std::vector<std::tuple<const SandiaDecay::Nuclide *,T>> &nuclide_rel_acts );
 
 
 /** A struct to specify the relative masses of the Pu and Am241 nuclides that
@@ -148,30 +151,32 @@ std::vector<std::tuple<const SandiaDecay::Nuclide *,double,double>> back_decay_r
  Masses do not need to be normalized to 1, but their ratios to each other do
  need to be correct.
  */
+template<typename T>
 struct Pu242ByCorrelationInput
 {
-  float pu238_rel_mass = 0.0f;
-  float pu239_rel_mass = 0.0f;
-  float pu240_rel_mass = 0.0f;
-  float pu241_rel_mass = 0.0f;
+  T pu238_rel_mass = T(0.0);
+  T pu239_rel_mass = T(0.0);
+  T pu240_rel_mass = T(0.0);
+  T pu241_rel_mass = T(0.0);
   /** A value to capture all other non-Pu242 plutonium isotopes (I dont expect to ever be used) */
-  float other_pu_mass  = 0.0f;
+  T other_pu_mass  = T(0.0);
 
   /** The age of the Pu, so this way the mass fractions can be back-corrected to T=0, to ever so slightly increase the accuracy of the correction. */
-  double pu_age = 0.0;
+  T pu_age = T(0.0);
 };//struct Pu242ByCorrelationInput
 
 
 /** The nuclide mass fractions (so between 0 and 1 - with all nuclides summing to 1.0)
  as determined after accounting for the predicted amount (by correlation) of Pu242.
  */
+template<typename T>
 struct Pu242ByCorrelationOutput
 {
-  float pu238_mass_frac;
-  float pu239_mass_frac;
-  float pu240_mass_frac;
-  float pu241_mass_frac;
-  float pu242_mass_frac;
+  T pu238_mass_frac;
+  T pu239_mass_frac;
+  T pu240_mass_frac;
+  T pu241_mass_frac;
+  T pu242_mass_frac;
   
   /** If enrichment is within literatures specified range.
    This is a very coarse indicator if its a valid method.
@@ -183,7 +188,7 @@ struct Pu242ByCorrelationOutput
    wild guess, but I guess better than nothing.  Does not cover additional
    uncerts from using the method outside the literatures specified conditions.
    */
-  float pu242_uncert;
+  T pu242_uncert;
 };//struct Pu242ByCorrelationOutput
 
 
@@ -201,8 +206,8 @@ enum class PuCorrMethod : int
    80% 239Pu
    
    From paper referenced below:
-   In FRAM, this function is the equivalent of setting ‘‘Pu242-correlation’’ value to  9.66E-03 and
-   the ‘‘Pu239_exponent’’ to -3.83 and the other coefficients to zero.
+   In FRAM, this function is the equivalent of setting 'Pu242-correlation' value to  9.66E-03 and
+   the 'Pu239_exponent' to -3.83 and the other coefficients to zero.
    
    See:
    M.T. Swinhoe, T. Iwamoto, T. Tamura
@@ -245,10 +250,13 @@ const std::string &to_description( const PuCorrMethod method );
 /** Given the isotopics determined from gamma-spec, returns mass fractions of those
  isotopes, as well as Pu242, as determined from the specified correlation estimate
  method.
- */
-Pu242ByCorrelationOutput correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput input, PuCorrMethod method );
 
-void test_pu242_by_correlation();
+ This function is implemented in RelActCalc_imp.hpp, so you will need to include that if you would like to use it.
+ */
+template<typename T>
+Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput<T> input, PuCorrMethod method );
+
+
     
 
 /** Convert a mass ratio to an activity ratio.
@@ -356,14 +364,6 @@ double eval_physical_model_eqn( const double energy,
                                const DetectorPeakResponse * const drf,
                                std::optional<double> hoerl_b,
                                std::optional<double> hoerl_c );
-  
-double eval_physical_model_eqn_uncertainty( const double energy,
-                               const std::optional<PhysModelShield<double>> &self_atten,
-                               const std::vector<PhysModelShield<double>> &external_attens,
-                               const DetectorPeakResponse * const drf,
-                               std::optional<double> hoerl_b,
-                               std::optional<double> hoerl_c,
-                               const std::vector<std::vector<double>> &covariance );
   
 /** Please note, that the
  */

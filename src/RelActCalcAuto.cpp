@@ -4095,7 +4095,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // If we want to correct for Pu242, we wont alter solution.m_rel_activities, but place the
     //  corrected Pu mass fractions in solution.m_corrected_pu
     solution.m_corrected_pu.clear();
+    solution.m_uncorrected_pu.clear();
     solution.m_corrected_pu.resize( num_rel_eff_curves );
+    solution.m_uncorrected_pu.resize( num_rel_eff_curves );
     for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = cost_functor->m_options.rel_eff_curves[rel_eff_index];
@@ -4105,7 +4107,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         try
         {
-          RelActCalc::Pu242ByCorrelationInput raw_rel_masses;
+          RelActCalc::Pu242ByCorrelationInput<double> raw_rel_masses;
 
           set<double> pu_ages;
           double pu_total_mass = 0.0, raw_rel_mass = 0.0;
@@ -4155,7 +4157,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           raw_rel_masses.pu241_rel_mass /= pu_total_mass;
           raw_rel_masses.other_pu_mass  /= pu_total_mass;
           
-          const RelActCalc::Pu242ByCorrelationOutput corr_output
+          solution.m_uncorrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationInput<double>(raw_rel_masses) );
+          
+          const RelActCalc::Pu242ByCorrelationOutput<double> corr_output
           = RelActCalc::correct_pu_mass_fractions_for_pu242( raw_rel_masses,
                                                             rel_eff_curve.pu242_correlation_method );
           
@@ -4163,7 +4167,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             solution.m_warnings.push_back( "The fit Pu enrichment is outside range validated in the"
                                           " literature for the Pu242 correlation." );
           
-          solution.m_corrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationOutput(corr_output) );
+          solution.m_corrected_pu[rel_eff_index].reset( new RelActCalc::Pu242ByCorrelationOutput<double>(corr_output) );
         }catch( std::exception &e )
         {
           solution.m_warnings.push_back( "Correcting for Pu242 content failed: " + string(e.what()) );
@@ -5489,6 +5493,87 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     // Check for a source constraint
     const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[rel_eff_index];
+    
+    // If this is a plutonium source, we need to correct for the correlation between Pu239 and Pu242
+    if( (nuclide->atomicNumber == 94)
+       && (rel_eff_curve.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable) )
+    {
+      RelActCalc::Pu242ByCorrelationInput<T> raw_rel_masses;
+      
+      set<T> pu_ages;
+      T pu_total_mass(0.0), nuc_rel_mass(0.0);
+      
+      for( const RelActCalcAuto::NucInputInfo &nuclide_info : rel_eff_curve.nuclides )
+      {
+        const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuclide_info.source);
+        if( !nuc || (nuc->atomicNumber != 94) )
+          continue;
+        
+        const T rel_act = relative_activity( nuclide_info.source, rel_eff_index, x );
+        const T rel_mass = rel_act / nuc->activityPerGram();
+        const T nuc_age = this->age( nuclide_info, rel_eff_index, x );
+        
+        pu_ages.insert( nuc_age );
+        pu_total_mass += rel_mass;
+        
+        if( nuc == nuclide )
+          nuc_rel_mass = rel_mass;
+        
+        switch( nuc->massNumber )
+        {
+          case 238: raw_rel_masses.pu238_rel_mass = rel_mass; break;
+          case 239: raw_rel_masses.pu239_rel_mass = rel_mass; break;
+          case 240: raw_rel_masses.pu240_rel_mass = rel_mass; break;
+          case 241: raw_rel_masses.pu241_rel_mass = rel_mass; break;
+          case 242:
+            assert( 0 );
+            throw std::logic_error( "Pu242 shouldnt be in the input nuclides if a Pu242"
+                                   " correlation correction method was specified." );
+            break;
+          default:  raw_rel_masses.other_pu_mass = rel_mass;  break;
+        }//switch( nuc->massNumber )
+      }//for( const RelActCalcAuto::NucInputInfo &nuclide_info : rel_eff_curve.nuclides )
+      
+      if( pu_ages.size() == 0 )
+      {
+        assert( pu_total_mass == 0.0 );
+      }else if( pu_ages.size() == 1 )
+      {
+        raw_rel_masses.pu_age = *begin(pu_ages);
+      }else
+      {
+        const vector<T> ages( begin(pu_ages), end(pu_ages) );
+        raw_rel_masses.pu_age = ages[ages.size() / 2]; //just take the median age...
+      }
+      
+      // We dont have to divide by `pu_total_mass`, but we will, just for debugging.
+      raw_rel_masses.pu238_rel_mass /= pu_total_mass;
+      raw_rel_masses.pu239_rel_mass /= pu_total_mass;
+      raw_rel_masses.pu240_rel_mass /= pu_total_mass;
+      raw_rel_masses.pu241_rel_mass /= pu_total_mass;
+      raw_rel_masses.other_pu_mass  /= pu_total_mass;
+      
+      const RelActCalc::PuCorrMethod method = rel_eff_curve.pu242_correlation_method;
+      const RelActCalc::Pu242ByCorrelationOutput<T> corr_output = RelActCalc::correct_pu_mass_fractions_for_pu242( raw_rel_masses, method );
+      
+      // Return the corrected mass fraction for the specific nuclide
+      switch( nuclide->massNumber )
+      {
+        case 238: return corr_output.pu238_mass_frac;
+        case 239: return corr_output.pu239_mass_frac;
+        case 240: return corr_output.pu240_mass_frac;
+        case 241: return corr_output.pu241_mass_frac;
+        case 242: return corr_output.pu242_mass_frac;
+        default:
+          // For other Pu isotopes, return the corrected mass fraction
+          // This is the same logic used in the other parts of the codebase
+          return (T(1.0) - corr_output.pu242_mass_frac) * nuc_rel_mass / pu_total_mass;
+      }//switch( nuclide->massNumber )
+      
+      assert( 0 );
+      throw std::logic_error( "Failed to find expected Pu nuclide." );
+      return nuc_rel_mass / pu_total_mass;
+    }//if( (nuclide->atomicNumber == 94) && (m_options.pu_corr_method != RelActCalc::PuCorrMethod::NotApplicable) )
 
     // Check for mass fraction constraints
     for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_frac_constraint : rel_eff_curve.mass_fraction_constraints )
@@ -5525,9 +5610,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( nuc_rel_mass < T(0.0) )
       return T(0.0);
-    
-    
-    
     
     return nuc_rel_mass / sum_rel_mass;
   }//T mass_enrichment_fraction(...)
@@ -5996,10 +6078,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   template<typename T>
   T apply_energy_cal_adjustment( double energy, const std::vector<T> &x ) const
-  {
-    // TODO: Auto differentiation doesnt _seem_ to capture effects of energy calibration
-    //assert( std::is_same_v<T, double> );
-    
+  { 
     assert( x.size() > RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars );
     assert( 0 == m_energy_cal_par_start_index );
     
@@ -9856,9 +9935,11 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       print_enrich( pu240 );
 
     assert( m_corrected_pu.size() <= m_rel_activities.size() );
+    assert( m_uncorrected_pu.size() <= m_rel_activities.size() );
+    assert( m_uncorrected_pu.size() == m_corrected_pu.size() );
     
     // For Pu, print a corrected enrichment table
-    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> pu_corr = (m_corrected_pu.size() > rel_eff_index)
+    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> pu_corr = (m_corrected_pu.size() > rel_eff_index)
     ? m_corrected_pu[rel_eff_index]
     : nullptr;
     if( pu_corr )
@@ -10060,11 +10141,13 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
     const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
     
-    shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> pu_corr = (rel_eff_index >= m_corrected_pu.size())
+    shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> pu_corr = (rel_eff_index >= m_corrected_pu.size())
                                                                    ? nullptr : m_corrected_pu[rel_eff_index];
+    shared_ptr<const RelActCalc::Pu242ByCorrelationInput<double>> uncorrected_pu
+                = (rel_eff_index >= m_corrected_pu.size()) ? nullptr : m_uncorrected_pu[rel_eff_index];
     
     // For Pu, print a corrected enrichment table
-    if( pu_corr )
+    if( pu_corr && uncorrected_pu )
     {
       results_html << "<table class=\"nuctable resulttable\">\n"
       "  <caption>Plutonium mass fractions"
@@ -10072,6 +10155,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       << "</caption>\n"
       "  <thead><tr>"
       " <th scope=\"col\">Nuclide</th>"
+      " <th scope=\"col\">Uncorrected % Pu Mass</th>"
       " <th scope=\"col\">% Pu Mass</th>"
       " </tr></thead>\n"
       "  <tbody>\n";
@@ -10094,24 +10178,29 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       }//for( const auto &act : rel_activities )
       
       if( pu_nuclides.count( "Pu238" ) )
-        results_html << "  <tr><td>Pu238</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4)
-        << "</td></tr>\n";
+        results_html << "  <tr><td>Pu238</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu238_rel_mass, 4) << "</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4) << "</td>"
+        << "</tr>\n";
       if( pu_nuclides.count( "Pu239" ) )
-        results_html << "  <tr><td>Pu239</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4)
-        << "</td></tr>\n";
+        results_html << "  <tr><td>Pu239</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu239_rel_mass, 4) << "</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4) << "</td>"
+        << "</tr>\n";
       if( pu_nuclides.count( "Pu240" ) )
-        results_html << "  <tr><td>Pu240</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4)
-        << "</td></tr>\n";
+        results_html << "  <tr><td>Pu240</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu240_rel_mass, 4) << "</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "</td>"
+        << "</tr>\n";
       if( pu_nuclides.count( "Pu241" ) )
-        results_html << "  <tr><td>Pu241</td><td>"
-        << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4)
-        << "</td></tr>\n";
-      results_html << "  <tr><td>Pu242 (by corr)</td><td>"
-      << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4)
-      << "</td></tr>\n";
+        results_html << "  <tr><td>Pu241</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu241_rel_mass, 4) << "</td>"
+        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4) << "</td>"
+        << "</tr>\n";
+      results_html << "  <tr><td>Pu242 (by corr)</td>"
+      << "<td>--</td>"
+      << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4) << "</td>"
+      << "</tr>\n";
       results_html << "  </tbody>\n"
       << "</table>\n\n";
 
@@ -10417,58 +10506,24 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       const double rel_act = nuc_info->rel_activity;
       const double cps_over_yield = info.amplitude() / (yield * live_time);
       const double meas_rel_eff = info.amplitude() / (yield * rel_act * live_time);
-      double fit_rel_eff = -1.0;
-        
-      if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      
+      double fit_rel_eff = -1.0, fit_rel_eff_uncert = -1.0;
+      try
       {
-        fit_rel_eff = RelActCalc::eval_eqn( energy, rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
-      }else
-      {
-        assert( m_drf );
-          
-        const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef input
-        = RelActCalcAutoImp::RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, m_rel_eff_coefficients[rel_eff_index], 0 );
-          
-        fit_rel_eff = RelActCalc::eval_physical_model_eqn( energy, input.self_atten,
-                                                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
-      }//if( m_options.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-        
-      //assert( fabs(meas_rel_eff - fit_rel_eff) < 0.1*std::max(meas_rel_eff,fit_rel_eff) );
-      double fit_rel_eff_uncert = -1.0;
-        
-      if( m_rel_eff_covariance.size() )
+        // First we'll try to get RelEff with uncert - and then if that fails we'll skip the uncert.
+        const pair<double,double> rel_eff_uncert = relative_efficiency_with_uncert( energy, rel_eff_index );
+        fit_rel_eff = rel_eff_uncert.first;
+        fit_rel_eff_uncert = rel_eff_uncert.second / rel_eff_uncert.first;
+      }catch( std::exception & )
       {
         try
         {
-          //TODO: should implement `rel_eff_eqn_uncert(energy)` member function, and get rid of manually calling functions
-          //fit_rel_eff_uncert = rel_eff_eqn_uncert( energy );
-          //fit_rel_eff_uncert /= fit_rel_eff;
-            
-          vector<vector<double>> cov;
-          if( m_rel_eff_covariance.size() > rel_eff_index )
-            cov = m_rel_eff_covariance[rel_eff_index];
-          const vector<double> &rel_eff_pars = m_rel_eff_coefficients[rel_eff_index];
-          if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          {
-            fit_rel_eff_uncert = RelActCalc::eval_eqn_uncertainty( energy, rel_eff.rel_eff_eqn_type,
-                                                                    rel_eff_pars, cov );
-              
-          }else
-          {
-            const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef input
-              = RelActCalcAutoImp::RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, rel_eff_pars, 0 );
-              
-            fit_rel_eff_uncert = RelActCalc::eval_physical_model_eqn_uncertainty( energy,
-                                                                                   input.self_atten, input.external_attens, input.det.get(),
-                                                                                   input.hoerl_b, input.hoerl_c, cov );
-              
-            fit_rel_eff_uncert /= fit_rel_eff;
-          }
-        }catch( std::exception &e )
+          fit_rel_eff = relative_efficiency( energy, rel_eff_index );
+        }catch( std::exception & )
         {
-            cerr << "Error calling RelActCalc::eval_eqn_uncertainty: " << e.what() << endl;
+          
         }
-      }//if( m_rel_eff_covariance.size() )
+      }//try / catch
         
       std::string format_str = "  <tr>"s
                  "<td>%.2f</td>"    // energy
@@ -10870,7 +10925,7 @@ pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( cons
         el_total_mass += nuc.rel_activity / nuc_nuclide->activityPerGram();
     }
 
-    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput> &pu_corr = m_corrected_pu[rel_eff_index];
+    const shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>> &pu_corr = m_corrected_pu[rel_eff_index];
 
     switch( nuclide->massNumber )
     {
