@@ -2832,6 +2832,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_chi2Model( nullptr ),
     m_chi2Graphic( nullptr ),
     m_multiIsoPerPeak( nullptr ),
+    m_clusterWidth( nullptr ),
     m_attenForAir( nullptr ),
     m_backgroundPeakSub( nullptr ),
     m_sameIsotopesAge( nullptr ),
@@ -3201,13 +3202,31 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_multiIsoPerPeak = new WCheckBox( WString::tr("ssd-multi-iso-per-peak"), lineDiv );
   m_multiIsoPerPeak->addStyleClass( "CbNoLineBreak" );
-  //lineDiv->setToolTip( WString::tr("ssd-tt-multi-iso-per-peak") );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
                                       showToolTips, HelpSystem::ToolTipPosition::Right );
   m_multiIsoPerPeak->setChecked();
   m_multiIsoPerPeak->checked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   
+  lineDiv = new WContainerWidget();
+  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  lineDiv->addStyleClass( "NumInputOptLine" );
+  WLabel *clusterWidthLabel = new WLabel( WString::tr("ssd-cluster-width-label"), lineDiv );
+  lineDiv->addWidget( clusterWidthLabel );
+  m_clusterWidth = new NativeFloatSpinBox( lineDiv );
+  m_clusterWidth->addStyleClass( "CbNoLineBreak" );
+  m_clusterWidth->setRange( 0.0f, 10.0f );
+  m_clusterWidth->setWidth( 50 );
+  m_clusterWidth->setSpinnerHidden();
+  clusterWidthLabel->setBuddy( m_clusterWidth );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-cluster-width"),
+                                showToolTips, HelpSystem::ToolTipPosition::Right );
+  m_clusterWidth->setValue( m_photopeak_cluster_sigma );
+  m_clusterWidth->valueChanged().connect( this, &ShieldingSourceDisplay::clusterWidthChanged );
+  m_clusterWidth->setDisabled( !m_multiIsoPerPeak->isChecked() );
+  if( m_clusterWidth->label() )
+    m_clusterWidth->label()->setDisabled( !m_multiIsoPerPeak->isChecked() );
+
   lineDiv = new WContainerWidget();
   optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
   m_attenForAir = new WCheckBox( WString::tr("ssd-cb-atten-for-air"), lineDiv );
@@ -3536,6 +3555,7 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
 {
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   const bool fixed_geom = (det && det->isFixedGeometry());
+  assert( (m_photopeak_cluster_sigma - m_photopeak_cluster_sigma) < 1.0E-6 );
   
   ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   options.multiple_nucs_contribute_to_peaks = m_multiIsoPerPeak->isChecked();
@@ -4975,10 +4995,45 @@ void ShieldingSourceDisplay::multiNucsPerPeakChanged()
     undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Multiple nuclides per peak changed" );
   }//if( undoRedo )
   
+  m_clusterWidth->setDisabled( !m_multiIsoPerPeak->isChecked() );
+  if( m_clusterWidth->label() )
+    m_clusterWidth->label()->setDisabled( !m_multiIsoPerPeak->isChecked() );
   
   updateChi2Chart();
 }//void multiNucsPerPeakChanged()
 
+
+void ShieldingSourceDisplay::clusterWidthChanged()
+{
+  const double prev_width = m_photopeak_cluster_sigma;
+
+  const double new_width = std::min( 10.0, std::max( 0.0, static_cast<double>(m_clusterWidth->value()) ) );
+  if( new_width == m_clusterWidth->value() )
+    m_clusterWidth->setValue( new_width );
+
+  m_photopeak_cluster_sigma = new_width;
+
+  
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    auto undo_redo = [prev_width, new_width]( const bool undo ){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_photopeak_cluster_sigma = undo ? prev_width : new_width;
+        display->m_clusterWidth->setValue( display->m_photopeak_cluster_sigma );
+        display->updateChi2Chart();
+      }
+    };
+    
+    undoRedo->addUndoRedoStep( [undo_redo](){undo_redo(true);},
+                              [undo_redo](){undo_redo(false);},
+                              "Cluster width changed" );
+  }//if( undoRedo )
+
+  updateChi2Chart();
+}//void clusterWidthChanged()
 
 void ShieldingSourceDisplay::attenuateForAirChanged()
 {
@@ -7152,6 +7207,11 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   m_geometrySelect->setCurrentIndex( static_cast<int>(geom_type) );
   
   m_multiIsoPerPeak->setChecked( options.multiple_nucs_contribute_to_peaks );
+  m_clusterWidth->setValue( options.photopeak_cluster_sigma );
+  m_clusterWidth->setDisabled( !options.multiple_nucs_contribute_to_peaks );
+  if( m_clusterWidth->label() )
+    m_clusterWidth->label()->setDisabled( !m_multiIsoPerPeak->isChecked() );
+  m_photopeak_cluster_sigma = options.photopeak_cluster_sigma;
   m_attenForAir->setChecked( options.attenuate_for_air );
   m_backgroundPeakSub->setChecked( options.background_peak_subtract );
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );

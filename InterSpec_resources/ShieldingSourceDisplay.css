@@ -75,8 +75,18 @@
   left: 75px;
 }
 
-table.TruthValueTable
+.ShieldingSourceDisplay table.TruthValueTable
 {
   border-collapse: separate;
   border-spacing: 5px 5px;
+}
+
+
+.ShieldingSourceDisplay .NumInputOptLine
+{
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: 5px;
+  padding-left: 17px;
 }
