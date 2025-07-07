@@ -979,7 +979,7 @@ a:hover { color:#E88400; border-bottom:none; }
   }
   
   
-  .HideSpinners .HideSpinners
+  .HideSpinners
   {
     width: 8em;
     /* remove the up/down spinbox for Firefox - if you re-enable this, also re-enable the c++ code to set step size */
