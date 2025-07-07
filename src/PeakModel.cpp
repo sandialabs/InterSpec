@@ -2289,13 +2289,18 @@ boost::any PeakModel::data( const WModelIndex &index, int role ) const
     {
       switch( peak->sourceGammaType() )
       {
+        case PeakDef::XrayGamma:
+          if( peak->parentNuclide() )
+            return peak->useForManualRelEff();
+          return boost::any();
+        break;
+
         case PeakDef::NormalGamma:
         case PeakDef::AnnihilationGamma:
           if( !peak->parentNuclide() && !peak->reaction() )
             return boost::any();
           break;
-          
-        case PeakDef::XrayGamma:
+
         case PeakDef::SingleEscapeGamma:
         case PeakDef::DoubleEscapeGamma:
           return boost::any();
@@ -3218,8 +3223,10 @@ bool PeakModel::setData( const WModelIndex &index,
             const bool has_parent = (new_peak.parentNuclide() || new_peak.reaction());
             const bool is_gamma = ((new_peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma)
                                    || (new_peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma) );
-            
-            if( !has_parent || !is_gamma )
+            const bool is_decay_xray = (new_peak.parentNuclide()
+                                        && (new_peak.sourceGammaType() == PeakDef::SourceGammaType::XrayGamma));
+
+            if( (!has_parent || !is_gamma) && !is_decay_xray )
                passMessage( WString::tr("pm-err-use-rel-act-no-nuc"), WarningWidget::WarningMsgHigh );
           }//if( use )
           
