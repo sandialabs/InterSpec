@@ -5191,6 +5191,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     if( index < m_acts_par_start_index )
     {
+      //This is a relative efficiency curve values
       size_t coef_num = m_rel_eff_par_start_index;
 
       const size_t num_rel_eff_curves = m_options.rel_eff_curves.size();
@@ -9732,11 +9733,6 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
 
   const double nsec_eval = 1.0E-6*m_num_microseconds_eval;
   
-  out << "Computation took " << PhysicalUnits::printToBestTimeUnits(nsec_eval)
-  << " with " << m_num_function_eval_solution << " function calls to solve, and "
-  << (m_num_function_eval_total - m_num_function_eval_solution)
-  << " more for covariance\n";
-  
   switch( m_status )
   {
     case Status::Success:
@@ -9761,11 +9757,15 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   }//switch( m_status )
   
   if( m_error_message.size() )
-    out << "Error: " << m_error_message << "\n";
-  
+    out << "\nError: " << m_error_message << "\n";
+
+  if( !m_warnings.empty() )
+    out << "\n";
   for( const string &warning: m_warnings )
     out << "Warning: " << warning << "\n";
-  
+  if( !m_warnings.empty() )
+    out << "\n";
+
   if( m_status != Status::Success )
     return out;
   
@@ -9824,8 +9824,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
   {
     const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
-    if( rel_eff_index )
-      out << "\n";
+    out << "\n";
     out << "Activity ratios" << ((num_rel_eff > 1) ? (" " + std::to_string(rel_eff_index)) : string()) << ":\n";
     for( size_t i = 1; i < rel_acts.size(); ++i )
     {
@@ -9955,16 +9954,47 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
           nuclides.insert( act.name() );
         }
       }//for( const auto &act : rel_acts )
-      
-      if( nuclides.count( "Pu238" ) )
-        out << "\tPu238: " << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4) << "\n";
-      if( nuclides.count( "Pu239" ) )
-        out << "\tPu239: " << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4) << "\n";
-      if( nuclides.count( "Pu240" ) )
-        out << "\tPu240: " << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "\n";
-      if( nuclides.count( "Pu241" ) )
-        out << "\tPu241: " << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4) << "\n";
-      out << "\tPu242 (by corr): " << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4) << "\n";
+
+      const auto print_iso_line = [&]( string iso ){
+        const SandiaDecay::Nuclide * const nuc = db->nuclide( iso );
+        assert( nuc );
+        if( !nuc || (!nuclides.count( iso ) && (nuc->massNumber != 242)) )
+          return;
+
+        double mass_frac = -1.0, mass_frac_uncert = -1.0;
+        try
+        {
+          const pair<double,optional<double>> val = mass_enrichment_fraction( nuc, rel_eff_index );
+          mass_frac = val.first;
+          if( val.second.has_value() )
+            mass_frac_uncert = val.second.value();
+        }catch( std::exception & )
+        {
+          //dont really expect this to happen
+          if( nuc->massNumber == 238 )      mass_frac = pu_corr->pu239_mass_frac;
+          else if( nuc->massNumber == 239 ) mass_frac = pu_corr->pu239_mass_frac;
+          else if( nuc->massNumber == 240 ) mass_frac = pu_corr->pu240_mass_frac;
+          else if( nuc->massNumber == 241 ) mass_frac = pu_corr->pu241_mass_frac;
+          else if( nuc->massNumber == 242 )
+          {
+            mass_frac = pu_corr->pu242_mass_frac;
+            mass_frac_uncert = mass_frac * pu_corr->pu242_uncert;
+          }
+        }//
+
+        out << "    " << iso << ((nuc->massNumber == 242) ? " (by corr): " : ": ");
+        out << setw(9) << SpecUtils::printCompact(100.0*mass_frac, 4) << "%";
+        if( mass_frac_uncert >= 0.0 )
+          out << " ± " << setw(9) << SpecUtils::printCompact(100.0*mass_frac_uncert, 4) << "%";
+        out << "\n";
+      };//print_iso_line(...)
+
+
+      print_iso_line( "Pu238" );
+      print_iso_line( "Pu239" );
+      print_iso_line( "Pu240" );
+      print_iso_line( "Pu241" );
+      print_iso_line( "Pu242" );
       out << "\n";
     }//if( pu_corr )
     
@@ -10027,7 +10057,12 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       }//for( loop over further RE curves )
     }//for( const NuclideRelAct &outer_act : m_rel_activities[outer_re_index] )
   }//for( loop over Rel Eff curves print out ratios of activities between curves )
-  
+
+  out << "\nComputation took " << PhysicalUnits::printToBestTimeUnits(nsec_eval)
+  << " with " << m_num_function_eval_solution << " function calls to solve, and "
+  << (m_num_function_eval_total - m_num_function_eval_solution)
+  << " more for covariance\n";
+
   return out;
 }//RelActAutoSolution::print_summary(...)
 
@@ -10149,100 +10184,134 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     // For Pu, print a corrected enrichment table
     if( pu_corr && uncorrected_pu )
     {
-      results_html << "<table class=\"nuctable resulttable\">\n"
-      "  <caption>Plutonium mass fractions"
-      << (have_multiple_rel_eff ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
-      << "</caption>\n"
-      "  <thead><tr>"
-      " <th scope=\"col\">Nuclide</th>"
-      " <th scope=\"col\">Uncorrected % Pu Mass</th>"
-      " <th scope=\"col\">% Pu Mass</th>"
-      " </tr></thead>\n"
-      "  <tbody>\n";
-
-      double pu239_act = 0.0; //We will need this to convert Pu242 rel mass, to a matching rel act
-      set<string> pu_nuclides;
-      set<double> pu_nuclide_ages;
-      vector<tuple<const SandiaDecay::Nuclide *,double>> pu_rel_acts;
-      for( const NuclideRelAct &act : rel_activities )
+      try
       {
-        const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(act.source);
-        if( nuc && (nuc->atomicNumber == 94) )
-        {
-          if( nuc->massNumber == 239 )
-            pu239_act = act.rel_activity;
-          pu_nuclides.insert( act.name() );
-          pu_nuclide_ages.insert( act.age );
-          pu_rel_acts.emplace_back( nuc, act.rel_activity );
-        }
-      }//for( const auto &act : rel_activities )
-      
-      if( pu_nuclides.count( "Pu238" ) )
-        results_html << "  <tr><td>Pu238</td>"
-        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu238_rel_mass, 4) << "</td>"
-        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu238_mass_frac, 4) << "</td>"
-        << "</tr>\n";
-      if( pu_nuclides.count( "Pu239" ) )
-        results_html << "  <tr><td>Pu239</td>"
-        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu239_rel_mass, 4) << "</td>"
-        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu239_mass_frac, 4) << "</td>"
-        << "</tr>\n";
-      if( pu_nuclides.count( "Pu240" ) )
-        results_html << "  <tr><td>Pu240</td>"
-        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu240_rel_mass, 4) << "</td>"
-        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu240_mass_frac, 4) << "</td>"
-        << "</tr>\n";
-      if( pu_nuclides.count( "Pu241" ) )
-        results_html << "  <tr><td>Pu241</td>"
-        << "<td>" << SpecUtils::printCompact(100.0*uncorrected_pu->pu241_rel_mass, 4) << "</td>"
-        << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu241_mass_frac, 4) << "</td>"
-        << "</tr>\n";
-      results_html << "  <tr><td>Pu242 (by corr)</td>"
-      << "<td>--</td>"
-      << "<td>" << SpecUtils::printCompact(100.0*pu_corr->pu242_mass_frac, 4) << "</td>"
-      << "</tr>\n";
-      results_html << "  </tbody>\n"
-      << "</table>\n\n";
-
-      {//Begin put pu242 into `pu_rel_acts`
-        const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-        assert( db );
-        const SandiaDecay::Nuclide * const pu239 = db->nuclide("Pu239");
-        const SandiaDecay::Nuclide * const pu242 = db->nuclide("Pu242");
-        assert( pu239 && pu242 );
-        const double pu242_rel_act = pu239_act * (pu_corr->pu242_mass_frac * pu242->activityPerGram())
-                                                     / (pu_corr->pu239_mass_frac * pu239->activityPerGram());
-
-        pu_rel_acts.emplace_back( pu242, pu242_rel_act );
-      }//End put pu242 into `pu_rel_acts`
-
-      if( (pu_nuclide_ages.size() == 1) && (pu_nuclides.size() > 1) )
-      {
-        const double back_decay_time = *begin(pu_nuclide_ages);
-        vector<tuple<const SandiaDecay::Nuclide *,double,double>> nuc_act_massfrac_at_t0
-                                          = RelActCalc::back_decay_relative_activities( back_decay_time, pu_rel_acts );
-        std::sort( begin(nuc_act_massfrac_at_t0), end(nuc_act_massfrac_at_t0), []( const auto &lhs, const auto &rhs ) -> bool {
-          return (get<0>(lhs)->symbol < get<0>(rhs)->symbol);
-        } );
-
-        results_html << "<table class=\"nuctable resulttable\">\n"
-        "  <caption>Plutonium mass fractions at T=0"
+        stringstream pu_table;
+        pu_table << "<table class=\"nuctable resulttable\">\n"
+        "  <caption>Plutonium mass fractions"
         << (have_multiple_rel_eff ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
         << "</caption>\n"
         "  <thead><tr>"
         " <th scope=\"col\">Nuclide</th>"
+        " <th scope=\"col\">Uncor. % Pu Mass</th>"
         " <th scope=\"col\">% Pu Mass</th>"
+        " <th scope=\"col\">1-σ Uncert</th>"
         " </tr></thead>\n"
         "  <tbody>\n";
-        for( tuple<const SandiaDecay::Nuclide *,double,double> nuc_act_mass : nuc_act_massfrac_at_t0 )
+
+        double pu239_act = 0.0; //We will need this to convert Pu242 rel mass, to a matching rel act
+        set<string> pu_nuclides;
+        set<double> pu_nuclide_ages;
+        vector<tuple<const SandiaDecay::Nuclide *,double>> pu_rel_acts;
+        for( const NuclideRelAct &act : rel_activities )
         {
-          results_html << "  <tr><td>" << get<0>(nuc_act_mass)->symbol << "</td><td>"
-          << SpecUtils::printCompact(100.0*get<2>(nuc_act_mass), 4)
-          << "</td></tr>\n";
-        }
-        results_html << "  </tbody>\n"
+          const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(act.source);
+          if( nuc && (nuc->atomicNumber == 94) )
+          {
+            if( nuc->massNumber == 239 )
+              pu239_act = act.rel_activity;
+            pu_nuclides.insert( act.name() );
+            pu_nuclide_ages.insert( act.age );
+            pu_rel_acts.emplace_back( nuc, act.rel_activity );
+          }
+        }//for( const auto &act : rel_activities )
+
+        auto write_iso_line = [&]( string iso, const double uncorr_frac ){
+          const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+          const SandiaDecay::Nuclide * const nuc = db->nuclide( iso );
+          assert( nuc );
+
+          if( !nuc || (!pu_nuclides.count(iso) && (nuc->massNumber != 242)) )
+            return;
+
+          pu_table << "  <tr><td>" << nuc->symbol << ((nuc->massNumber == 242) ? " (by corr)" : "") << "</td>";
+          if( nuc->massNumber == 242 )
+            pu_table << "<td></td>";
+          else
+            pu_table << "<td>" << SpecUtils::printCompact(100.0*uncorr_frac, 4) << "</td>";
+
+          double mass_frac = -1.0, mass_frac_uncert = -1.0;
+          try
+          {
+            const pair<double,optional<double>> val = mass_enrichment_fraction( nuc, rel_eff_index );
+            mass_frac = val.first;
+            if( val.second.has_value() )
+              mass_frac_uncert = val.second.value();
+          }catch( std::exception & )
+          {
+            //dont really expect this to happen
+            if( nuc->massNumber == 238 )      mass_frac = pu_corr->pu239_mass_frac;
+            else if( nuc->massNumber == 239 ) mass_frac = pu_corr->pu239_mass_frac;
+            else if( nuc->massNumber == 240 ) mass_frac = pu_corr->pu240_mass_frac;
+            else if( nuc->massNumber == 241 ) mass_frac = pu_corr->pu241_mass_frac;
+            else if( nuc->massNumber == 242 ) mass_frac = pu_corr->pu242_mass_frac;
+          }//
+
+          pu_table << "<td>" << SpecUtils::printCompact(100.0*mass_frac, 4) << "</td>";
+          if( mass_frac_uncert >= 0.0 )
+            pu_table << "<td>" << SpecUtils::printCompact(100.0*mass_frac_uncert, 4) << "</td>";
+          else
+            pu_table << "<td></td>";
+
+          pu_table << "</tr>\n";
+        };//write_iso_line
+
+        write_iso_line( "Pu238", uncorrected_pu->pu238_rel_mass );
+        write_iso_line( "Pu239", uncorrected_pu->pu239_rel_mass );
+        write_iso_line( "Pu240", uncorrected_pu->pu240_rel_mass );
+        write_iso_line( "Pu241", uncorrected_pu->pu241_rel_mass );
+        write_iso_line( "Pu242", 0.0 );
+
+        pu_table << "  </tbody>\n"
         << "</table>\n\n";
-      }//if( (pu_nuclide_ages.size() == 1) && (pu_nuclides.size() > 1) )
+
+        {//Begin put pu242 into `pu_rel_acts`
+          const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+          assert( db );
+          const SandiaDecay::Nuclide * const pu239 = db->nuclide("Pu239");
+          const SandiaDecay::Nuclide * const pu242 = db->nuclide("Pu242");
+          assert( pu239 && pu242 );
+          const double pu242_rel_act = pu239_act * (pu_corr->pu242_mass_frac * pu242->activityPerGram())
+          / (pu_corr->pu239_mass_frac * pu239->activityPerGram());
+
+          pu_rel_acts.emplace_back( pu242, pu242_rel_act );
+        }//End put pu242 into `pu_rel_acts`
+
+        if( (pu_nuclide_ages.size() == 1) && (pu_nuclides.size() > 1) )
+        {
+          const double back_decay_time = *begin(pu_nuclide_ages);
+          vector<tuple<const SandiaDecay::Nuclide *,double,double>> nuc_act_massfrac_at_t0
+          = RelActCalc::back_decay_relative_activities( back_decay_time, pu_rel_acts );
+          std::sort( begin(nuc_act_massfrac_at_t0), end(nuc_act_massfrac_at_t0), []( const auto &lhs, const auto &rhs ) -> bool {
+            return (get<0>(lhs)->symbol < get<0>(rhs)->symbol);
+          } );
+
+          pu_table << "<table class=\"nuctable resulttable\">\n"
+          "  <caption>Plutonium mass fractions at T=0"
+          << (have_multiple_rel_eff ? (" Rel. Eff. " + std::to_string(rel_eff_index)) : string())
+          << "</caption>\n"
+          "  <thead><tr>"
+          " <th scope=\"col\">Nuclide</th>"
+          " <th scope=\"col\">% Pu Mass</th>"
+          " </tr></thead>\n"
+          "  <tbody>\n";
+          for( tuple<const SandiaDecay::Nuclide *,double,double> nuc_act_mass : nuc_act_massfrac_at_t0 )
+          {
+            pu_table << "  <tr><td>" << get<0>(nuc_act_mass)->symbol << "</td><td>"
+            << SpecUtils::printCompact(100.0*get<2>(nuc_act_mass), 4)
+            << "</td></tr>\n";
+          }
+          pu_table << "  </tbody>\n"
+          << "</table>\n\n";
+        }//if( (pu_nuclide_ages.size() == 1) && (pu_nuclides.size() > 1) )
+
+        results_html << pu_table.str();
+      }catch( std::exception &e )
+      {
+        // We dont expect this to happen, so dont put in a lot of effort to it
+        results_html << "\n\n<div color=\"red\">Error getting Pu mass fractions: <pre>" << e.what() << "</pre></div>\n\n";
+      }//try / catch to write Pu enrichment
+
     }//if( pu_corr )
 
 
@@ -10266,6 +10335,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     " <th scope=\"col\">Enrichment</th>"
     " <th scope=\"col\">Enrich 2&sigma;</th>"
     " <th scope=\"col\">Det. Counts</th>"
+    " <th scope=\"col\">Age</th>"
     " </tr></thead>\n"
     "  <tbody>\n";
     
@@ -10314,6 +10384,29 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       
       const double nuc_counts = nuclide_counts( act.source, rel_eff_index );
       results_html << "<td>" << nuc_counts << "</td>";
+
+
+      if( nuc )
+      {
+        const PhysicalUnits::UnitNameValuePair time_units = PhysicalUnits::bestTimeUnit( act.age );
+
+        results_html << "<td>";
+        const string &units = time_units.first;
+        const double age_units = act.age / time_units.second;
+        const double age_uncert_units = act.age_uncertainty/time_units.second;
+
+        if( act.age_was_fit )
+          results_html << PhysicalUnits::printValueWithUncertainty( age_units, age_uncert_units, 5 ) << " " << units;
+        else if( act.age == 0.0 )
+          results_html << "0";
+        else
+          results_html << SpecUtils::printCompact(age_units, 5) << " " << units;
+        results_html << "</td>";
+      }else
+      {
+        results_html << "<td> -- </td>";
+      }
+
       results_html << "</tr>\n";
     }//for( const auto &act : rel_activities )
     
@@ -10885,7 +10978,14 @@ pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( cons
   }
     
   uncertainty = sqrt( uncertainty );
-    
+
+  if( nuclide && (nuclide->atomicNumber == 94) && (nuclide->massNumber == 242)
+     && (m_corrected_pu.size() > rel_eff_index) && m_corrected_pu[rel_eff_index] )
+  {
+    const double corr_uncert = enrichment * m_corrected_pu[rel_eff_index]->pu242_uncert;
+    uncertainty = sqrt(uncertainty*uncertainty + corr_uncert*corr_uncert);
+  }
+
   return {enrichment, uncertainty};
 #else
   static_assert( 0, "RelActAutoSolution::mass_enrichment_fraction(...): this implementation needs a little work to return both nominal answer, as well as uncertainty." );
