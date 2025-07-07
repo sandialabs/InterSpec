@@ -45,7 +45,8 @@
 
 
 .ShieldingSourceDisplay .PeakView,
-.ShieldingSourceDisplay .SourceView
+.ShieldingSourceDisplay .SourceView,
+.ShieldingSourceDisplay .FitOptions
 {
 /*   height: 100%; */
    border:2px solid #e1e1e1; 
@@ -82,11 +83,59 @@
 }
 
 
+.ShieldingSourceDisplay .FitOptions
+{
+  font-size: 10px;
+  
+  margin-top: -5px;
+  margin-inline-start: 0px;
+  margin-inline-end: 0px;
+  padding-block-start: 0px;
+  padding-inline-start: 5px;
+  padding-inline-end: 0px;
+  padding-block-end: 0px;
+  
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 10px;
+  flex-direction: row;
+}
+
+
+.IsPhone.Portrait .ShieldingSourceDisplay .FitOptions
+{
+  margin-top: 5px;
+  
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  row-gap: 5px;
+  flex-direction: column;
+}
+
+.FitOptionsRow
+{
+  
+}
+
+
+.ShieldingSourceDisplay .AllPeaksCb
+{
+  font-size: 10px;
+  float: right;
+  margin-right: 5px;
+}
+
 .ShieldingSourceDisplay .NumInputOptLine
 {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   column-gap: 5px;
+}
+
+.IsPhone.Portrait .ShieldingSourceDisplay .NumInputOptLine
+{
   padding-left: 17px;
 }

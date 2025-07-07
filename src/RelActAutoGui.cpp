@@ -882,7 +882,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   // same_z_age is something that _could_ be a per-relative-efficiency option, 
   //  but it's a little cleaner and maybe clearer to have it here, near the nuclides
   //  (and we are currently forcing nuclides to be same age between RelEff curves...)
-  m_same_z_age = new WCheckBox( "Same El. Same Age", nuc_footer );
+  m_same_z_age = new WCheckBox( "Same Z same age", nuc_footer );
   m_same_z_age->addStyleClass( "SameZAgeCb CbNoLineBreak" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );

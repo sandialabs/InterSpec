@@ -49,6 +49,7 @@
 #include <Wt/WBorder>
 #include <Wt/WServer>
 #include <Wt/WPainter>
+#include <Wt/WGroupBox>
 #include <Wt/WTextArea>
 #include <Wt/WRectArea>
 #include <Wt/WResource>
@@ -3178,28 +3179,22 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showChiOnChart->checked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
   m_showChiOnChart->unChecked().connect( this, &ShieldingSourceDisplay::showGraphicTypeChanged );
   
-  
-  m_optionsDiv = new WContainerWidget();
-  WGridLayout* optionsLayout = new WGridLayout();
-  m_optionsDiv->setLayout(optionsLayout);
-  optionsLayout->setContentsMargins(0, 0, 0, 0);
-  
-  WContainerWidget *allpeaksDiv = new WContainerWidget();
-  WCheckBox *allpeaks = new WCheckBox( WString::tr("ssd-cb-all-peaks"), allpeaksDiv );
-  allpeaks->setAttributeValue( "style", "white-space:nowrap;margin-right:5px;float:right;" + allpeaks->attributeValue("style") );
-  optionsLayout->addWidget( allpeaksDiv, optionsLayout->rowCount(), 0 );
+  WContainerWidget *allPeaksDiv = new WContainerWidget();
+  WCheckBox *allpeaks = new WCheckBox( WString::tr("ssd-cb-all-peaks"), allPeaksDiv );
+  allpeaks->addStyleClass( "CbNoLineBreak AllPeaksCb" );
   allpeaks->setTristate( true );
   allpeaks->changed().connect( boost::bind( &ShieldingSourceDisplay::toggleUseAll, this, allpeaks ) );
-  m_peakModel->dataChanged().connect(
-                                     boost::bind( &ShieldingSourceDisplay::updateAllPeaksCheckBox, this, allpeaks ) );
+  m_peakModel->dataChanged().connect( boost::bind( &ShieldingSourceDisplay::updateAllPeaksCheckBox, this, allpeaks ) );
   updateAllPeaksCheckBox( allpeaks ); //initialize
   
   
-  m_optionsDiv->setOverflow( WContainerWidget::OverflowHidden );
+  m_optionsDiv = new WGroupBox( WString::tr("ssd-options-title") );
+  m_optionsDiv->addStyleClass( "FitOptions" );
+      
   //The ToolTip of WCheckBoxes is a bit finicky, and only works over the
   //  checkbox itself, so lets make it work over the label to, via lineDiv
-  WContainerWidget *lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  WContainerWidget *lineDiv = new WContainerWidget( m_optionsDiv );
+  lineDiv->addStyleClass( "FitOptionsRow" );
   m_multiIsoPerPeak = new WCheckBox( WString::tr("ssd-multi-iso-per-peak"), lineDiv );
   m_multiIsoPerPeak->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
@@ -3208,9 +3203,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_multiIsoPerPeak->checked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   
-  lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
-  lineDiv->addStyleClass( "NumInputOptLine" );
+  lineDiv = new WContainerWidget( m_optionsDiv );
+  lineDiv->addStyleClass( "NumInputOptLine FitOptionsRow" );
   WLabel *clusterWidthLabel = new WLabel( WString::tr("ssd-cluster-width-label"), lineDiv );
   lineDiv->addWidget( clusterWidthLabel );
   m_clusterWidth = new NativeFloatSpinBox( lineDiv );
@@ -3227,8 +3221,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   if( m_clusterWidth->label() )
     m_clusterWidth->label()->setDisabled( !m_multiIsoPerPeak->isChecked() );
 
-  lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  lineDiv = new WContainerWidget( m_optionsDiv );
+  lineDiv->addStyleClass( "FitOptionsRow" );
   m_attenForAir = new WCheckBox( WString::tr("ssd-cb-atten-for-air"), lineDiv );
   m_attenForAir->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-atten-for-air") );
@@ -3239,8 +3233,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_attenForAir->unChecked().connect( this, &ShieldingSourceDisplay::attenuateForAirChanged );
   
   
-  lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  lineDiv = new WContainerWidget( m_optionsDiv );
+  lineDiv->addStyleClass( "FitOptionsRow" );
   m_backgroundPeakSub = new WCheckBox( WString::tr("ssd-cb-sub-back-peaks"), lineDiv );
   m_backgroundPeakSub->addStyleClass( "CbNoLineBreak" );
   lineDiv->setToolTip( WString::tr("ssd-tt-sub-back-peaks") );
@@ -3250,8 +3244,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_backgroundPeakSub->unChecked().connect( this, &ShieldingSourceDisplay::backgroundPeakSubChanged );
   
   
-  lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  lineDiv = new WContainerWidget( m_optionsDiv );
+  lineDiv->addStyleClass( "FitOptionsRow" );
   m_sameIsotopesAge = new WCheckBox( WString::tr("ssd-cb-same-el-same-age"), lineDiv );
   m_sameIsotopesAge->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-same-el-same-age") );
@@ -3263,8 +3257,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_sameIsotopesAge->unChecked().connect( this, &ShieldingSourceDisplay::sameIsotopesAgeChanged );
 
       
-  lineDiv = new WContainerWidget();
-  optionsLayout->addWidget( lineDiv, optionsLayout->rowCount(), 0 );
+  lineDiv = new WContainerWidget( m_optionsDiv );
+  lineDiv->addStyleClass( "FitOptionsRow" );
   m_decayCorrect = new WCheckBox( WString::tr("ssd-cb-corr-for-decay"), lineDiv );
   m_decayCorrect->addStyleClass( "CbNoLineBreak" );
   //lineDiv->setToolTip( WString::tr("ssd-tt-corr-for-decay") );
@@ -3320,31 +3314,39 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   WContainerWidget *peakDiv = new WContainerWidget();
   
   WGridLayout *peakGrid = new Wt::WGridLayout();
-  peakGrid->setRowStretch(0, 1);
-  peakGrid->setColumnStretch(0, 1);
-  peakDiv->setLayout(peakGrid);
-  peakGrid->addWidget(m_peakView,0,0);
+  peakGrid->setContentsMargins( 0, 0, 0, 0 );
+  peakGrid->setVerticalSpacing( 0 );
+  peakGrid->setHorizontalSpacing( 0 );
+  peakGrid->setRowStretch( 0, 1 );
+  peakGrid->setColumnStretch( 0, 1 );
+  peakDiv->setLayout( peakGrid );
+  peakGrid->addWidget( m_peakView, 0, 0 );
+  peakGrid->addWidget( allPeaksDiv, 1, 0 );
+      
   
   m_layout = new WGridLayout();
   m_layout->setContentsMargins( 0, 0, 0, 0 );
   setLayout( m_layout );
   
-  WContainerWidget *bottomLeftDiv = new WContainerWidget();
-  WGridLayout *bottomLeftLayout = new WGridLayout();
-  bottomLeftDiv->setLayout(bottomLeftLayout);
-  bottomLeftLayout->addWidget( peakDiv, 0, 0 );
-  bottomLeftLayout->addWidget( m_optionsDiv, 1, 0 );
-  bottomLeftLayout->setRowStretch( 0, 1 );
-  bottomLeftLayout->setVerticalSpacing( 0 );
-  bottomLeftLayout->setHorizontalSpacing( 0 );
-  bottomLeftLayout->setContentsMargins( 0, 0, 0, 0 );
-  
+  WContainerWidget *peaksDiv = new WContainerWidget();
+  WGridLayout *peaksLayout = new WGridLayout();
+  peaksDiv->setLayout(peaksLayout);
+  peaksLayout->addWidget( peakDiv, 0, 0 );
+  peaksLayout->setRowStretch( 0, 1 );
+  peaksLayout->setVerticalSpacing( 0 );
+  peaksLayout->setHorizontalSpacing( 0 );
+  peaksLayout->setContentsMargins( 0, 0, 0, 0 );
+      
   WContainerWidget *sourceDiv = new WContainerWidget();
   WGridLayout *sourceGrid = new Wt::WGridLayout();
   sourceGrid->setRowStretch(0, 1);
   sourceGrid->setColumnStretch(0, 1);
   sourceDiv->setLayout(sourceGrid);
   sourceGrid->addWidget(m_sourceView,0,0);
+  sourceGrid->setContentsMargins( 0, 0, 0, 0 );
+  sourceGrid->setVerticalSpacing( 0 );
+  sourceGrid->setHorizontalSpacing( 0 );
+      
   
   if( m_specViewer->isPhone() )
   {
@@ -3364,7 +3366,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_layout->setColumnStretch( 0, 1 );
     m_layout->setRowStretch( 0, 1 );
     
-    tab->addTab(bottomLeftDiv, WString::tr("ssd-phone-tab-source-peaks"), Wt::WTabWidget::PreLoading);
+    tab->addTab(peaksDiv, WString::tr("ssd-phone-tab-source-peaks"), Wt::WTabWidget::PreLoading);
     tab->addTab(sourceDiv, WString::tr("ssd-phone-tab-source-isotopes"), Wt::WTabWidget::PreLoading);
     tab->addTab(detectorDiv, WString::tr("ssd-phone-tab-shielding"), Wt::WTabWidget::PreLoading);
     
@@ -3381,9 +3383,10 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     chartLayout->addWidget( m_chi2Graphic,          1, 0, 1, 2 );
     m_showChiOnChart->setWidth( 130 );
     chartLayout->addWidget( m_showChiOnChart,       2, 1, AlignRight );
-    chartLayout->addWidget( m_fitModelButton,       3, 0, 1, 2, AlignCenter );
-    chartLayout->addWidget( m_fitProgressTxt,       4, 0, 1, 2, AlignCenter );
-    chartLayout->addWidget( m_cancelfitModelButton, 5, 0, 1, 2, AlignCenter );
+    chartLayout->addWidget( m_optionsDiv,           3, 0, 1, 2 );
+    chartLayout->addWidget( m_fitModelButton,       4, 0, 1, 2, AlignCenter );
+    chartLayout->addWidget( m_fitProgressTxt,       5, 0, 1, 2, AlignCenter );
+    chartLayout->addWidget( m_cancelfitModelButton, 6, 0, 1, 2, AlignCenter );
     
     chartLayout->setRowStretch(1, 1);
     tab->addTab(chartDiv,"Fit", Wt::WTabWidget::PreLoading);
@@ -3412,16 +3415,14 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     detectorLayout->setVerticalSpacing( 0 );
     detectorLayout->setContentsMargins( 1, 1, 1, 1 );
     
-    WGridLayout *bottomMiddleLayout = new WGridLayout();
+    WGridLayout *tablesLayout = new WGridLayout();
     
-    bottomMiddleLayout->addWidget( bottomLeftDiv,   0, 0 );
-    bottomMiddleLayout->addWidget( sourceDiv, 0, 1 );
-    bottomMiddleLayout->setColumnResizable( 0, true, WLength(340,WLength::Pixel) ); //335px seems to be the limit where the peak table will get horizontal scroll-bars
-    bottomMiddleLayout->setHorizontalSpacing( 5 );
-    bottomMiddleLayout->setVerticalSpacing( 5 );
-    bottomMiddleLayout->setContentsMargins( 0, 0, 0, 0 );
-    
-    WGridLayout *leftLayout = new WGridLayout();
+    tablesLayout->addWidget( peaksDiv,   0, 0 );
+    tablesLayout->addWidget( sourceDiv, 0, 1 );
+    tablesLayout->setColumnResizable( 0, true, WLength(340,WLength::Pixel) ); //335px seems to be the limit where the peak table will get horizontal scroll-bars
+    tablesLayout->setHorizontalSpacing( 5 );
+    tablesLayout->setVerticalSpacing( 0 );
+    tablesLayout->setContentsMargins( 0, 0, 0, 0 );
     
     
     // We will put the chart in a div that will also hold the Rel/Chi switch; its a bit of a hack
@@ -3444,10 +3445,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     chartLayout->addWidget( switchHolder, 1, 0, AlignRight );
     chartLayout->setRowStretch( 0, 1 );
     
-    
-    leftLayout->addWidget( chartHolder,      0, 0 );
-    leftLayout->addLayout( bottomMiddleLayout,   1, 0 );
+    WGridLayout *leftLayout = new WGridLayout();
+    leftLayout->addWidget( chartHolder,    0, 0 );
+    leftLayout->addLayout( tablesLayout,   1, 0 );
+    leftLayout->addWidget( m_optionsDiv,   2, 0 );
     leftLayout->setRowResizable( 0, true, WLength(40.0,WLength::Percentage) );
+    leftLayout->setRowStretch( 1, 1 );
     leftLayout->setHorizontalSpacing( 5 );
     leftLayout->setVerticalSpacing( 5 );
     leftLayout->setContentsMargins( 0, 0, 0, 0 );
