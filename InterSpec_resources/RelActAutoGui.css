@@ -536,6 +536,11 @@ padding-bottom: 1px;
   height: 21px;
 }
 
+.RelActAutoGui .SortEneRanges
+{
+  opacity: 0.35; /* Looks to thick, compared to rest of lines otherwise. */
+}
+
 .RelActAutoGui .AddEnergyRangeOrNuc:hover,
 .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
 .RelActAutoGui .ToIndividualRois:hover,

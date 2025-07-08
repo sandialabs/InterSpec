@@ -2879,10 +2879,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
           const bool is_rel_act_constr = (nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value());
 
-          const bool do_rough_act_est = (!act_is_const && !src_act_ratio_constr && !src_mass_frac_constr)
-                                        && (!succesfully_estimated_re_and_ra
-                                            || (!nuc.starting_rel_act.has_value() && (nuc_info.activity_multiple < 1.5)));
-
+          const bool do_rough_act_est = (!succesfully_estimated_re_and_ra
+                                          || (!nuc.starting_rel_act.has_value() && (nuc_info.activity_multiple < 1.5)));
 
           if( do_rough_act_est )
           {
@@ -2969,58 +2967,43 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             } );
             
 
-            bool is_constrained = false;
-            for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+            if( src_act_ratio_constr )
             {
-              is_constrained = (nuc_constraint.constrained_source == nuc.source);
-              if( is_constrained )
-              {
-                parameters[act_index] = -1.0;
-                cout << "Setting par " << act_index << " to -1.0 for " << nuc.name() << endl;
+              const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint = *src_act_ratio_constr;
+              assert( nuc_constraint.constrained_source == nuc.source );
 
+              parameters[act_index] = -1.0;
+              cout << "Setting par " << act_index << " to -1.0 for " << nuc.name() << endl;
+
+              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
+              constant_parameters.push_back( static_cast<int>(act_index) );
+
+              continue;
+            }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
+
+            if( src_mass_frac_constr )
+            {
+              const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = *src_mass_frac_constr;
+              assert( (constraint.nuclide == nuc_nuclide) && nuc_nuclide );
+
+              parameters[act_index] = 1.0;
+              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              cout << "Setting par " << act_index << " to 1.0 for " << nuc.name() << endl;
+
+              if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
+              {
                 cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
-                break;
-              }
-            }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
-
-            for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints ) 
-            {
-              if( !nuc_nuclide )
-                break;
-
-              if( is_constrained )
+              }else
               {
-                assert( constraint.nuclide != nuc_nuclide );
-                break;
+                lower_bounds[act_index] = 0.5;
+                upper_bounds[act_index] = 1.5;
               }
 
-              assert( constraint.nuclide );
-              is_constrained = (constraint.nuclide == nuc_nuclide);
-              if( is_constrained )
-              {
-                parameters[act_index] = 1.0;
-                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
-                cout << "Setting par " << act_index << " to 1.0 for " << nuc.name() << endl;
-
-                if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
-                {
-                  cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
-                  assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
-                  constant_parameters.push_back( static_cast<int>(act_index) );
-                }else
-                {
-                  lower_bounds[act_index] = 0.5;
-                  upper_bounds[act_index] = 1.5;
-                }
-                break;
-              }//if( is_constrained ) 
-            }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
-
-            if( is_constrained )
               continue;
-              
+            }//if( src_mass_frac_constr )
 
             assert( cost_functor->m_nuclides[re_eff_index][nuc_num].source == nuc.source );
 
