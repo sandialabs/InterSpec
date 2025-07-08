@@ -2997,10 +2997,8 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     
     const IsotopeRelativeActivity &act = m_rel_activities[index];
     const SandiaDecay::Nuclide * const nuc = db->nuclide( act.m_isotope );
-    assert( nuc );
-    if( !nuc )
+    if( !nuc ) //For example when an x-ray or reaction
       continue;
-
 
     double loop_nuc_mult = 1.0;
     const bool was_constrolled = walk_to_controlling_nuclide( index, loop_nuc_mult );

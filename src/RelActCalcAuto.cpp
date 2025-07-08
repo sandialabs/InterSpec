@@ -2624,79 +2624,68 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             assert( cost_functor->m_nuclides[re_eff_index][nuc_num].source == nuc.source );
 
             bool is_constrained = false;
-            for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint : rel_eff_curve.act_ratio_constraints )
-            {
-              assert( !RelActCalcAuto::is_null(nuc_constraint.constrained_source) );
-              assert( !RelActCalcAuto::is_null(nuc_constraint.controlling_source) );
+            const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint * const act_ratio_constraint
+                                                    = cost_functor->activity_ratio_constraint(nuc.source, re_eff_index);
+            const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const mass_frac_constraint
+                                                    = cost_functor->mass_fraction_constraint(nuc.source, re_eff_index);
+            // Make sure only one constraint or the other, or neither
+            assert( (!act_ratio_constraint && !mass_frac_constraint)
+                    || ((!!act_ratio_constraint) != (!!mass_frac_constraint)) );
 
-              is_constrained = (nuc_constraint.constrained_source == nuc.source); 
-              if( is_constrained )
+            if( act_ratio_constraint )
+            {
+              assert( act_ratio_constraint->constrained_source == nuc.source );
+              is_constrained = true;
+              parameters[act_index] = -1.0;
+              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              assert( std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(act_index) ) == end(constant_parameters) );
+              constant_parameters.push_back( static_cast<int>(act_index) );
+            }//if( act_ratio_constraint )
+
+            if( mass_frac_constraint )
+            {
+              assert( mass_frac_constraint->nuclide == RelActCalcAuto::nuclide(nuc.source) );
+              is_constrained = true;
+
+              //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper values
+              //  If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
+              //  solution gives the sum of all the mass fractions to be greater than 1.0, we will just return a say
+              //  that particular set of parameters is invalid, even though we could maybe do something more intelligent.
+
+              //TODO: To model mass-fraction constraints, should switch to a paramter that gives total RelAct of an element, and then use a ceres::Manifold to make all the nuclides of the element add up to 1.0 (eg, on a surface).
+
+              parameters[act_index] = 1.0;
+              if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
               {
-                parameters[act_index] = -1.0;
-                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+                try
+                {
+                  const double mf = manual_solution.mass_fraction( mass_frac_constraint->nuclide->symbol );
+                  double frac = (mf - mass_frac_constraint->lower_mass_fraction) / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
+                  assert( frac > -0.0002 && frac < 1.0002 );
+                  frac = std::min( 1.0, std::max( frac, 0.0 ) );
+                  parameters[act_index] = 0.5 + 0.5*frac;
+                  cerr << "\n\nStill having trouble navigating to global minima\n\nHacked mass fraction to be halfway in the range it should!\n\n" << endl;
+#pragma message("Still having trouble navigating to global minima for RelActAuto. Hacked mass fraction to be halfway in the range it should! - should undo this (but seems to help for some problems).")
+                }catch( std::exception & )
+                {
+                  cerr << "Warning: failed to get initial manual solution rel-eff fraction" << endl;
+                }
+              }//if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
+
+              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+
+              //If the lower and upper mass fractions are the same, we can just fix the rel act to 1.0
+              if( fabs(mass_frac_constraint->lower_mass_fraction - mass_frac_constraint->upper_mass_fraction)
+                  <= 1.0E-6*std::max(mass_frac_constraint->lower_mass_fraction, mass_frac_constraint->upper_mass_fraction) )
+              {
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
-                break;
-              }
-            }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
-
-            for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
-            {
-              if( !RelActCalcAuto::nuclide(nuc.source) )
-                break;
-                
-              if( is_constrained )
+              }else
               {
-                assert( constraint.nuclide != RelActCalcAuto::nuclide(nuc.source) ); //We shouldnt have this nuclide controlled by another nuclide, and constrain its mass fraction
-                break;
+                lower_bounds[act_index] = 0.5;
+                upper_bounds[act_index] = 1.5;
               }
-
-              assert( !RelActCalcAuto::is_null(constraint.nuclide) );
-              is_constrained = (RelActCalcAuto::SrcVariant(constraint.nuclide) == nuc.source);
-              if( is_constrained )
-              {
-                //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper values
-                //  If there are multiple mass fraction constraints on the same nuclide, and a particular Ceres parameter
-                //  solution gives the sum of all the mass fractions to be greater than 1.0, we will just return a say
-                //  that particular set of parameters is invalid, even though we could maybe do something more intelligent.
-
-                //TODO: To model mass-fraction constraints, should switch to a paramter that gives total RelAct of an element, and then use a ceres::Manifold to make all the nuclides of the element add up to 1.0 (eg, on a surface).
-
-                parameters[act_index] = 1.0;
-                if( constraint.lower_mass_fraction != constraint.upper_mass_fraction )
-                {
-                  try
-                  {
-                    const double mf = manual_solution.mass_fraction( constraint.nuclide->symbol );
-                    double frac = (mf - constraint.lower_mass_fraction) / (constraint.upper_mass_fraction - constraint.lower_mass_fraction);
-                    assert( frac > -0.0002 && frac < 1.0002 );
-                    frac = std::min( 1.0, std::max( frac, 0.0 ) );
-                    parameters[act_index] = 0.5 + 0.5*frac;
-                    cerr << "\n\nStill having trouble navigating to global minima\n\nHacked mass fraction to be halfway in the range it should!\n\n." << endl;
-#pragma message("Still having trouble navigating to global minima for RelActAuto. Hacked mass fraction to be halfway in the range it should! - should undo this (but seems to help for some problems).") 
-                  }catch( std::exception & )
-                  {
-                    cerr << "Warning: failed to get initial manual solution rel-eff fraction" << endl;
-                  }
-                }//if( constraint.lower_mass_fraction != constraint.upper_mass_fraction )
-
-                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
-                
-                //If the lower and upper mass fractions are the same, we can just fix the rel act to 1.0
-                if( fabs(constraint.lower_mass_fraction - constraint.upper_mass_fraction) 
-                    <= 1.0E-6*std::max(constraint.lower_mass_fraction, constraint.upper_mass_fraction) )
-                {
-                  assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
-                  constant_parameters.push_back( static_cast<int>(act_index) );
-                }else
-                {
-                  lower_bounds[act_index] = 0.5;
-                  upper_bounds[act_index] = 1.5;
-                }
-                break;
-              }//if( is_constrained )
-            }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
-
+            }//if( mass_frac_constraint )
 
             if( is_constrained )
               continue;
@@ -2872,8 +2861,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           {
             constant_parameters.push_back( static_cast<int>(age_index) );
           }
-          
-          if( !succesfully_estimated_re_and_ra )
+
+          // If the `RelActCalcManual` solution failed, we will need to somehow make a coarse estimate
+          //  for the initial value of the relative activities.
+          // Or, if (NucInputGamma::activity_multiple == 1.0), it probably means the `RelActCalcManual` claimed
+          //  to have worked, but really didnt fit any activity - so we should also do a coarse estimate
+          // However, if a starting value for relative activity was provided, or it is a constant parameter,
+          //  or if there is a `ActRatioConstraint` or `MassFractionConstraint` for this source, then we dont
+          //  need to do this rough estimate.
+
+          const bool act_is_const = (find(begin(constant_parameters), end(constant_parameters), act_index)
+                                      != end(constant_parameters));
+          const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint *src_act_ratio_constr
+                                                  = cost_functor->activity_ratio_constraint( nuc.source, re_eff_index );
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *src_mass_frac_constr
+                                                  = cost_functor->mass_fraction_constraint( nuc.source, re_eff_index );
+
+          const bool is_rel_act_constr = (nuc.min_rel_act.has_value() || nuc.max_rel_act.has_value());
+
+          const bool do_rough_act_est = (!act_is_const && !src_act_ratio_constr && !src_mass_frac_constr)
+                                        && (!succesfully_estimated_re_and_ra
+                                            || (!nuc.starting_rel_act.has_value() && (nuc_info.activity_multiple < 1.5)));
+
+
+          if( do_rough_act_est )
           {
             // Now do a very rough initial activity estimate; there are two obvious ideas
             //  1) Either take in user peaks, or auto-search peaks, and try to match up.  However, we may
@@ -5120,19 +5131,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( (act_index % 2) == 0 )
         {
           //Check if mass fraction constraint for nuclide, and if so
-          const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(rel_eff_curve.nuclides[act_num].source);
-          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *constraint = nullptr;
-          if( nuc )
-          {
-            const auto start_iter = begin(rel_eff_curve.mass_fraction_constraints);
-            const auto end_iter = end(rel_eff_curve.mass_fraction_constraints);
-            const auto pos = std::find_if( start_iter, end_iter, [nuc]( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mfc ){
-              return mfc.nuclide == nuc;
-            } );
-            if( pos != end_iter )
-              constraint = &(*pos);
-          }
-
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *constraint
+                                    = mass_fraction_constraint(rel_eff_curve.nuclides[act_num].source, rel_eff_index );
           if( constraint )
             return "MFrac" + re_ind + "(" + rel_eff_curve.nuclides[act_num].name() + ")";
 
@@ -5324,6 +5324,42 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//double parameter_scale_factor( const size_t index ) const
   
 
+  const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint *activity_ratio_constraint(
+                                                                          const RelActCalcAuto::SrcVariant &src,
+                                                                          const size_t rel_eff_index ) const
+  {
+    assert( (rel_eff_index < m_nuclides.size()) && (rel_eff_index < m_options.rel_eff_curves.size()) );
+    if( rel_eff_index >= m_nuclides.size() )
+      return nullptr;
+
+    const vector<RelActCalcAuto::RelEffCurveInput::ActRatioConstraint> &c
+                                                        = m_options.rel_eff_curves[rel_eff_index].act_ratio_constraints;
+
+    const auto pos = std::find_if( begin(c), end(c), [src]( const auto &a ){
+      assert( !RelActCalcAuto::is_null(a.constrained_source) );
+      assert( !RelActCalcAuto::is_null(a.controlling_source) );
+      return a.constrained_source == src;
+    } );
+    return (pos != end(c)) ? &(*pos) : nullptr;
+  }//activity_ratio_constraint(...)
+
+
+  const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *mass_fraction_constraint(
+                                                                            const RelActCalcAuto::SrcVariant &src,
+                                                                            const size_t rel_eff_index ) const
+  {
+    assert( (rel_eff_index < m_nuclides.size()) && (rel_eff_index < m_options.rel_eff_curves.size()) );
+    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(src);
+    if( !nuc || (rel_eff_index >= m_nuclides.size()) )
+      return nullptr;
+
+    const vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> &c
+                                                  = m_options.rel_eff_curves[rel_eff_index].mass_fraction_constraints;
+    const auto pos = std::find_if( begin(c), end(c), [nuc]( const auto &m ){ return m.nuclide == nuc; } );
+    return (pos != end(c)) ? &(*pos) : nullptr;
+  }//const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *mass_fraction_constraint( nuc.source, re_eff_index )
+
+
   template<typename T>
   T relative_activity( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index, const std::vector<T> &x ) const
   {
@@ -5365,7 +5401,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const T rel_act_x_val = x[nuc_x_index];
         // rel_act_x_val should be fixed to -1.0, but numeric differentiator may still vary a little, 
         //  or if we pass in paramater uncertainties, then the value will be 0.0.
-        assert( rel_act_x_val <= 0.0 ); 
+        assert( rel_act_x_val <= 0.0 );
+        assert( activity_ratio_constraint(src, rel_eff_index) == (&nuc_constraint) );
 #endif
 
         const double act_ratio = nuc_constraint.constrained_to_controlled_activity_ratio;
@@ -5388,6 +5425,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         // If we are here, `src.nuclide` is a mass-constrained nuclide.
 
+        assert( mass_fraction_constraint(src,rel_eff_index) == (&mass_frac_constraint) );
+
         // Sum the relative masses of the other nuclides of this element
         // and sum the mass-constrained portion of this element.
         T sum_unconstrained_rel_mass_of_el( 0.0 ); //Note this is rel act divide by specific activity, and does not add up to one
@@ -5398,15 +5437,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( !nuclide_nuc || (nuclide_nuc->atomicNumber != src_nuc->atomicNumber) )
             continue;
           
-          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint *mass_constraint = nullptr;  
-          for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &other_constraint : rel_eff_curve.mass_fraction_constraints )
-          {
-            if( other_constraint.nuclide == nuclide_nuc )
-            {
-              mass_constraint = &other_constraint;
-              break;
-            }
-          }
+          const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const mass_constraint
+                                                               = mass_fraction_constraint(nuclide.source,rel_eff_index);
               
           if( mass_constraint )
           {
@@ -11406,10 +11438,66 @@ bool RelActAutoSolution::walk_to_controlling_nuclide( SrcVariant &src, const siz
 double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, size_t numerator_rel_eff_index,
                                                       SrcVariant denominator, size_t denominator_rel_eff_index ) const
 {
+  typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+
   // Check if covariance matrix is available
-  if( m_phys_units_cov.empty() || m_final_parameters.empty() )
+  if( m_phys_units_cov.empty() || m_final_parameters.empty() || !m_cost_functor )
     throw std::logic_error( "activity_ratio_uncertainty: covariance matrix or parameters not available" );
-  
+
+  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
+
+  assert( numerator_rel_eff_index < m_rel_eff_forms.size() );
+  if( numerator_rel_eff_index >= m_rel_eff_forms.size() )
+    throw std::logic_error( "activity_ratio_uncertainty: invalid numerator rel eff index" );
+
+  assert( denominator_rel_eff_index < m_rel_eff_forms.size() );
+  if( denominator_rel_eff_index >= m_rel_eff_forms.size() )
+    throw std::logic_error( "activity_ratio_uncertainty: invalid denominator rel eff index" );
+
+
+  const size_t num_par = m_final_parameters.size();
+  double act_ratio = -1.0;
+  vector<double> jacobian( num_par, 0.0 );
+  for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+  {
+    vector<Jet> x_local( begin(m_final_parameters), end(m_final_parameters) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+      x_local[i+j].v[j] = 1.0;
+
+    const Jet numerator_jet = m_cost_functor->relative_activity(numerator, numerator_rel_eff_index, x_local);
+    const Jet denominator_jet = m_cost_functor->relative_activity(denominator, denominator_rel_eff_index, x_local);
+    const Jet act_ratio_jet = numerator_jet / denominator_jet;
+
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_par); ++j )
+      jacobian[i+j] = act_ratio_jet.v[j];
+    act_ratio = act_ratio_jet.a;
+  }
+
+  double uncertainty_2 = 0.0;
+  for( size_t i = 0; i < num_par; ++i )
+  {
+    assert( m_covariance[i].size() == num_par );
+    if( m_covariance[i].size() != num_par )
+      throw logic_error( "activity_ratio_uncertainty: invalid act ratio covariance matrix row." );
+
+    for( size_t j = 0; j < num_par; ++j )
+      uncertainty_2 += jacobian[i]*m_covariance[i][j]*jacobian[j];
+  }
+
+  if( (uncertainty_2 < 0.0) || IsNan(uncertainty_2) || IsInf(uncertainty_2) )
+    throw std::logic_error( "activity_ratio_uncertainty: negative variance in covariance matrix" );
+
+  const double uncertainty = std::sqrt( uncertainty_2 );
+  return uncertainty;
+
+  // The below is the previous implementation - we can probably remove
+  /*
+  cerr << "activity_ratio_uncertainty: Got NaN uncert (uncert2=" << uncertainty_2 << ")" << endl;
+  assert( !IsNan(uncertainty) && !IsInf(uncertainty) );
+
+  // TODO: I think we can remove the rest of the code from this function.
+
   // Validate inputs
   assert( !RelActCalcAuto::is_null(numerator) );
   assert( !RelActCalcAuto::is_null(denominator) );
@@ -11564,6 +11652,7 @@ double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, siz
   }//if( ratio_variance < 0.0 )
 
   return std::sqrt( ratio_variance );
+  */
 }//double activity_ratio_uncertainty(...)
 
 
