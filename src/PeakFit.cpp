@@ -6832,7 +6832,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
       //cout << "  " << amplitudes[i] << "+-" << amplitudes_uncerts[i] << "\t\t" << dummy_amplitudes[i] << "+-" << dummy_amplitudes_uncerts[i] << endl;
     }
 
-
+/*
     //cout << "For fit, comparison of continuum coeffs:" << endl << "Prev\t\tNew\n";
     for( size_t i = 0; i < continuum_coeffs.size(); ++i )
     {
@@ -6844,6 +6844,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
              || (abs(continuum_coeffs_uncerts[i] - dummy_continuum_coeffs_uncerts[i]) < 1.0E-6) );
       //cout << "  " << continuum_coeffs[i] << "+-" << continuum_coeffs_uncerts[i] << "\t\t" << dummy_continuum_coeffs[i] << "+-" << dummy_continuum_coeffs_uncerts[i] << endl;
     }
+ */
     //cout << "And prev Chi2=" << chi2 << ", with new Chi2=" << dummy_chi2 << endl<< endl<< endl;
     //assert( abs(chi2 - dummy_chi2) < 0.01*max(chi2,dummy_chi2) );
     if( (abs(chi2 - dummy_chi2) > 0.01*max(chi2,dummy_chi2)) && (abs(chi2 - dummy_chi2) > 1.0E-9) )
