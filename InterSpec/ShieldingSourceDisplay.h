@@ -599,6 +599,7 @@ public:
                                            int firstRow, int lastRow );
 
   void multiNucsPerPeakChanged();
+  void clusterWidthChanged();
   void attenuateForAirChanged();
   void backgroundPeakSubChanged();
   void sameIsotopesAgeChanged();
@@ -694,12 +695,14 @@ protected:
   
 
   Wt::WCheckBox  *m_multiIsoPerPeak;
+  NativeFloatSpinBox *m_clusterWidth;
   Wt::WCheckBox  *m_attenForAir;
   Wt::WCheckBox  *m_backgroundPeakSub;
   Wt::WCheckBox  *m_sameIsotopesAge;
   Wt::WCheckBox  *m_decayCorrect;
   SwitchCheckbox *m_showChiOnChart;
   Wt::WContainerWidget *m_optionsDiv;
+  /** This variable should be set to the same value as `m_clusterWidth`, but is around for undo/redo support. */
   double m_photopeak_cluster_sigma;
   bool m_multithread_computation;
   

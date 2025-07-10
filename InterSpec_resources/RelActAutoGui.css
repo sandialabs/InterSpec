@@ -495,9 +495,10 @@ padding-bottom: 1px;
 .RelActAutoGui .EnergyNucContent
 {
   flex: 1 1 auto;
-
   overflow-x: auto;
   overflow-y: auto;
+
+  border: 1px solid #e1e1e1;
 }
 
 .RelActAutoGui .EnergyNucFooter
@@ -520,7 +521,8 @@ padding-bottom: 1px;
 .RelActAutoGui .DeleteEnergyRangeOrNuc, .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
 .RelActAutoGui .ToIndividualRois, .RelActAutoGui .ToIndividualRois:hover,
 .RelActAutoGui .AddRelEffCurve, .RelActAutoGui .AddRelEffCurve:hover,
-.RelActAutoGui .DelRelEffCurve, .RelActAutoGui .DelRelEffCurve:hover
+.RelActAutoGui .DelRelEffCurve, .RelActAutoGui .DelRelEffCurve:hover,
+.RelActAutoGui .SortEneRanges, .RelActAutoGui .SortEneRanges:hover
 {
   opacity: 0.6;
   
@@ -534,11 +536,17 @@ padding-bottom: 1px;
   height: 21px;
 }
 
+.RelActAutoGui .SortEneRanges
+{
+  opacity: 0.35; /* Looks to thick, compared to rest of lines otherwise. */
+}
+
 .RelActAutoGui .AddEnergyRangeOrNuc:hover,
 .RelActAutoGui .DeleteEnergyRangeOrNuc:hover,
 .RelActAutoGui .ToIndividualRois:hover,
 .RelActAutoGui .AddRelEffCurve:hover,
-.RelActAutoGui .DelRelEffCurve:hover
+.RelActAutoGui .DelRelEffCurve:hover,
+.RelActAutoGui .SortEneRanges:hover
 {
   opacity: 1.0;
 }
@@ -588,6 +596,16 @@ padding-bottom: 1px;
 .RelActAutoGui .DeleteEnergyRangeOrNuc:hover
 {
   justify-self: end;
+}
+
+.RelActAutoGui .SortEneRanges.Ascend
+{
+
+}
+
+.RelActAutoGui .SortEneRanges.Decend
+{
+  transform: scaleY(-1);
 }
 
 

@@ -127,6 +127,7 @@ public:
   /** Will return nullptr of invalid `rel_eff_index` passed in; otherwise retuns created widget. */
   RelActAutoGuiNuclide *addNuclideForRelEffCurve( const int rel_eff_index );
   void handleAddEnergy();
+  void handleSortEnergyRanges();
   void handleClearAllEnergyRanges();
   void handleShowFreePeaks();
   void handleHideFreePeaks();
@@ -392,6 +393,7 @@ protected:
 
   
   Wt::WPushButton *m_clear_energy_ranges;
+  Wt::WPushButton *m_sort_energy_ranges;
   Wt::WPushButton *m_show_free_peak;
   Wt::WContainerWidget *m_free_peaks_container;
   

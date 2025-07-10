@@ -352,77 +352,68 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     m_moreInfoBtn[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
     m_moreInfoBtn[typeindex]->clicked().connect( boost::bind(&InterSpec::createFileParameterWindow, m_interspec, type) );
     m_moreInfoBtn[typeindex]->hide();
+    
+    //Lets add in a few more customizations based on the display type
+    switch( type )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+      {
+        WContainerWidget *foregroundBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        foregroundBtns->addStyleClass( "CompactManagerButtons" );
+        
+        //Foreground, add in Manager and Library buttons for quick access
+        WContainerWidget *helpBtn = new WContainerWidget( foregroundBtns );
+        helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
+        helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
+        
+        WPushButton *fileManagerBtn = new WPushButton( WString::tr("app-mi-file-manager"), foregroundBtns );
+        fileManagerBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
+        fileManagerBtn->addStyleClass( "LinkBtn" );
+#if( USE_DB_TO_STORE_SPECTRA )
+        WPushButton *prevSpectraBtn = new WPushButton( WString::tr("app-mi-file-prev"), foregroundBtns );
+        prevSpectraBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
+        prevSpectraBtn->addStyleClass( "LinkBtn" );
+#endif
+        break;
+      }//case SpecUtils::SpectrumType::Foreground:
+      
+      case SpecUtils::SpectrumType::SecondForeground:
+      {
+        WContainerWidget *secondaryBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        secondaryBtns->addStyleClass( "SecondForegroundBtns" );
+        
+        m_swapSecondaryWithForegroundBtn = new WPushButton( WString::tr("cfm-swap-secondary-with-foreground-btn"), secondaryBtns );
+        HelpSystem::attachToolTipOn( m_swapSecondaryWithForegroundBtn, WString::tr("cfm-tt-swap-secondary-with-foreground-btn"), showToolTips );
+        m_swapSecondaryWithForegroundBtn->clicked().connect( boost::bind( &CompactFileManager::handleSwapWithForeground, this, SpecUtils::SpectrumType::SecondForeground ) );
+        m_swapSecondaryWithForegroundBtn->addStyleClass( "LinkBtn" );
+        m_swapSecondaryWithForegroundBtn->hide();
+        
+        WContainerWidget *stretcher = new WContainerWidget( secondaryBtns );
+        stretcher->addStyleClass( "StretcherRow" );
+        
+        WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), secondaryBtns );
+        refSpectraBtn->clicked().connect( this, &CompactFileManager::handleCreateReferenceSpectrumDialog );
+        
+        refSpectraBtn->addStyleClass( "LinkBtn" );
+        
+        break;
+      }//case SpecUtils::SpectrumType::SecondForeground:
+          
+      case SpecUtils::SpectrumType::Background:
+      {
+        WContainerWidget *backgroundBtns = new WContainerWidget( (m_displayMode == LeftToRight) ? this : wrapper );
+        backgroundBtns->addStyleClass( "BackgroundBtns" );
+        
+        m_swapBackgroundWithForegroundBtn = new WPushButton( WString::tr("cfm-swap-back-with-foreground-btn"), backgroundBtns );
+        HelpSystem::attachToolTipOn( m_swapBackgroundWithForegroundBtn, WString::tr("cfm-tt-swap-back-with-foreground-btn"), showToolTips );
+        m_swapBackgroundWithForegroundBtn->clicked().connect( boost::bind( &CompactFileManager::handleSwapWithForeground, this, SpecUtils::SpectrumType::Background ) );
+        m_swapBackgroundWithForegroundBtn->addStyleClass( "LinkBtn" );
+        m_swapBackgroundWithForegroundBtn->hide();
+        break;
+      }
+    }//switch( type )
   }//for( int j = 0; j < 3; ++j )
   
-  
-  //Lets add in a few more customizations based on the display type
-  switch( m_displayMode )
-  {
-    case LeftToRight:
-    {
-      //Foreground, add in Manager and Library buttons for quick access
-      WContainerWidget *foregroundBtns = new WContainerWidget( this );
-      foregroundBtns->addStyleClass( "CompactManagerButtons" );
-      
-      WContainerWidget *helpBtn = new WContainerWidget( foregroundBtns );
-      helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
-      helpBtn->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, "compact-file-manager" ) );
-      
-      WPushButton *fileManagerBtn = new WPushButton( WString::tr("app-mi-file-manager"), foregroundBtns );
-      fileManagerBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::startSpectrumManager );
-      fileManagerBtn->addStyleClass( "LinkBtn" );
-#if( USE_DB_TO_STORE_SPECTRA )
-      WPushButton *prevSpectraBtn = new WPushButton( WString::tr("app-mi-file-prev"), foregroundBtns );
-      prevSpectraBtn->clicked().connect( m_interspec->fileManager(), &SpecMeasManager::browsePrevSpectraAndStatesDb );
-      prevSpectraBtn->addStyleClass( "LinkBtn" );
-#endif
-      
-      WContainerWidget *backgroundBtns = new WContainerWidget( this );
-      backgroundBtns->addStyleClass( "BackgroundBtns" );
-      
-      m_swapBackgroundWithForegroundBtn = new WPushButton( WString::tr("cfm-swap-back-with-foreground-btn"), backgroundBtns );
-      HelpSystem::attachToolTipOn( m_swapBackgroundWithForegroundBtn, WString::tr("cfm-tt-swap-back-with-foreground-btn"), showToolTips );
-      m_swapBackgroundWithForegroundBtn->clicked().connect( boost::bind( &CompactFileManager::handleSwapWithForeground, this, SpecUtils::SpectrumType::Background ) );
-      m_swapBackgroundWithForegroundBtn->addStyleClass( "LinkBtn" );
-      m_swapBackgroundWithForegroundBtn->hide();
-      
-      WContainerWidget *secondaryBtns = new WContainerWidget( this );
-      secondaryBtns->addStyleClass( "SecondForegroundBtns" );
-
-
-      m_swapSecondaryWithForegroundBtn = new WPushButton( WString::tr("cfm-swap-secondary-with-foreground-btn"), secondaryBtns );
-      HelpSystem::attachToolTipOn( m_swapSecondaryWithForegroundBtn, WString::tr("cfm-tt-swap-secondary-with-foreground-btn"), showToolTips );
-      m_swapSecondaryWithForegroundBtn->clicked().connect( boost::bind( &CompactFileManager::handleSwapWithForeground, this, SpecUtils::SpectrumType::SecondForeground ) );
-      m_swapSecondaryWithForegroundBtn->addStyleClass( "LinkBtn" );
-      m_swapSecondaryWithForegroundBtn->hide();
-
-      WContainerWidget *stretcher = new WContainerWidget( secondaryBtns );
-      stretcher->addStyleClass( "StretcherRow" );      
-
-      WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), secondaryBtns );
-      refSpectraBtn->clicked().connect( this, &CompactFileManager::handleCreateReferenceSpectrumDialog );
-      
-      refSpectraBtn->addStyleClass( "LinkBtn" );
-    break;
-    }//case LeftToRight:
-      
-    case Tabbed:
-    {
-      //Add in a link to open files in the database, as
-#if( USE_DB_TO_STORE_SPECTRA )
-      WContainerWidget *buttons = new WContainerWidget();
-      WPushButton *button = new WPushButton( WString::tr("cfm-db-spec"), buttons );
-      button->clicked().connect( fileManager, &SpecMeasManager::browsePrevSpectraAndStatesDb );
-
-      WPushButton *refSpectraBtn = new WPushButton( WString::tr("cfm-ref-spectra-btn"), buttons );
-      refSpectraBtn->clicked().connect( boost::bind( &RefSpectraDialog::createDialog, RefSpectraInitialBehaviour::LastUserSelectedSpectra, SpecUtils::SpectrumType::SecondForeground ) );
-      refSpectraBtn->addStyleClass( "LinkBtn" );
-
-      tabbedLayout->addWidget( buttons, 1, 0 );
-#endif
-      break;
-    }//case Tabbed:
-  }//switch( m_displayMode )
     
   // Then actually pull in the available files. If there are none, say so.
   refreshContents();

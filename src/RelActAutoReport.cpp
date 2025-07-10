@@ -196,6 +196,8 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
     
     // Plutonium correction data
     if (!solution.m_corrected_pu.empty()) {
+      assert( solution.m_corrected_pu.size() == solution.m_uncorrected_pu.size() );
+      
       json_data["plutonium_corrections"] = nlohmann::json::array();
       for (size_t i = 0; i < solution.m_corrected_pu.size(); ++i) {
         if (solution.m_corrected_pu[i]) {
@@ -207,8 +209,21 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
             {"pu239", pu_corr.pu239_mass_frac},
             {"pu240", pu_corr.pu240_mass_frac},
             {"pu241", pu_corr.pu241_mass_frac},
-            {"pu242", pu_corr.pu242_mass_frac}
+            {"pu242", pu_corr.pu242_mass_frac},
+            {"IsWithinRange", pu_corr.is_within_range},
+            {"pu242Uncert", pu_corr.pu242_uncert}
           };
+          if( (i < solution.m_uncorrected_pu.size()) && solution.m_uncorrected_pu[i] ) {
+            pu_data["uncorrected_mass_fractions"] = {
+              {"pu238", solution.m_uncorrected_pu[i]->pu238_rel_mass},
+              {"pu239", solution.m_uncorrected_pu[i]->pu239_rel_mass},
+              {"pu240", solution.m_uncorrected_pu[i]->pu240_rel_mass},
+              {"pu241", solution.m_uncorrected_pu[i]->pu241_rel_mass},
+              {"puOther", solution.m_uncorrected_pu[i]->other_pu_mass},
+              {"Age", PhysicalUnits::printToBestTimeUnits(solution.m_uncorrected_pu[i]->pu_age,6) },
+              {"AgeSeconds", solution.m_uncorrected_pu[i]->pu_age }
+            };
+          }
           json_data["plutonium_corrections"].push_back(pu_data);
         }
       }

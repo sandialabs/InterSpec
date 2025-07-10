@@ -1470,7 +1470,9 @@ RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
   }//if( std::holds_alternative<const SandiaDecay::Nuclide *>(nuc_input) )
   
 
-  switch(  m_constraint->constraintType() )
+  const NucConstraintType constraint_type = m_constraint->isVisible() ? m_constraint->constraintType()
+                                                                      : NucConstraintType::None;
+  switch( constraint_type )
   {
     case NucConstraintType::None:
     case NucConstraintType::NumTypes:

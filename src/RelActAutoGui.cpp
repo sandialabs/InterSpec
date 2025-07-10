@@ -439,6 +439,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_showing_background( false ),
   m_photopeak_widget(),
   m_clear_energy_ranges( nullptr ),
+  m_sort_energy_ranges( nullptr ),
   m_show_free_peak( nullptr ),
   m_free_peaks_container( nullptr ),
   m_rel_eff_nuclides_menu( nullptr ),
@@ -873,7 +874,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   add_nuc_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_nuc_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclideForCurrentRelEffCurve );
-  tooltip = "Add a nuclide.";
+  tooltip = "Add a source.";
   HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
 
   spacer = new WContainerWidget( nuc_footer );
@@ -882,7 +883,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   // same_z_age is something that _could_ be a per-relative-efficiency option, 
   //  but it's a little cleaner and maybe clearer to have it here, near the nuclides
   //  (and we are currently forcing nuclides to be same age between RelEff curves...)
-  m_same_z_age = new WCheckBox( "Same El. Same Age", nuc_footer );
+  m_same_z_age = new WCheckBox( "Same Z same age", nuc_footer );
   m_same_z_age->addStyleClass( "SameZAgeCb CbNoLineBreak" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
@@ -904,7 +905,17 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   tooltip = "Add an energy range.";
   HelpSystem::attachToolTipOn( add_energy_icon, tooltip, showToolTips );
-  
+
+
+  m_sort_energy_ranges = new WPushButton( energies_footer );
+  m_sort_energy_ranges->setStyleClass( "SortEneRanges Decend Wt-icon" );
+  m_sort_energy_ranges->setIcon("InterSpec_resources/images/sort_decend_icon.svg");
+  m_sort_energy_ranges->clicked().connect( this, &RelActAutoGui::handleSortEnergyRanges );
+  tooltip = "Sort energy ranges.";
+  HelpSystem::attachToolTipOn( m_sort_energy_ranges, tooltip, showToolTips );
+  m_sort_energy_ranges->hide();
+
+
   spacer = new WContainerWidget( energies_footer );
   spacer->addStyleClass( "RelActAutoSpacer" );
 
@@ -918,7 +929,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   tooltip = "Removes all energy ranges.";
   HelpSystem::attachToolTipOn( m_clear_energy_ranges, tooltip, showToolTips );
   m_clear_energy_ranges->hide();
-  
+  m_sort_energy_ranges->hide();
+
   //WText *free_peaks_header = new WText( "Free Peaks", m_free_peaks_container );
   //free_peaks_header->addStyleClass( "EnergyNucHeader" );
   m_free_peaks = new WContainerWidget( m_free_peaks_container );
@@ -2970,6 +2982,36 @@ void RelActAutoGui::handleAddEnergy()
 }//void handleAddEnergy()
 
 
+void RelActAutoGui::handleSortEnergyRanges()
+{
+  const bool ascend = m_sort_energy_ranges->hasStyleClass( "Ascend" );
+  m_sort_energy_ranges->removeStyleClass( ascend ? "Ascend" : "Decend" );
+  m_sort_energy_ranges->addStyleClass( ascend ? "Decend" : "Ascend" );
+
+  const vector<WWidget *> &kids = m_energy_ranges->children();
+  vector<RelActAutoGuiEnergyRange *> ranges;
+  for( WWidget *w : kids )
+  {
+    RelActAutoGuiEnergyRange *roi = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
+    assert( roi );
+    if( roi )
+      ranges.push_back( roi );
+  }//for( WWidget *w : kids )
+
+  std::sort( begin(ranges), end(ranges), [ascend]( RelActAutoGuiEnergyRange *lhs, RelActAutoGuiEnergyRange *rhs ){
+    return ascend ? (rhs->lowerEnergy() < lhs->lowerEnergy()) : (lhs->lowerEnergy() < rhs->lowerEnergy());
+  } );
+
+  for( RelActAutoGuiEnergyRange *range : ranges )
+    m_energy_ranges->removeWidget( range );  //Does not delete widget
+
+  for( RelActAutoGuiEnergyRange *range : ranges )
+    m_energy_ranges->addWidget( range );
+
+  // No need to update calculation... I think
+}//void handleSortEnergyRanges()
+
+
 void RelActAutoGui::handleClearAllEnergyRanges()
 {
   SimpleDialog *dialog = new SimpleDialog( "Clear energy ranges?", "&nbsp;" );
@@ -4665,6 +4707,10 @@ void RelActAutoGui::updateDuringRenderForEnergyRangeChange()
   const bool show_clear_ranges = (m_energy_ranges->count() > 0);
   if( m_clear_energy_ranges->isVisible() != show_clear_ranges )
     m_clear_energy_ranges->setHidden( !show_clear_ranges );
+
+  const bool show_sort_ranges = (m_energy_ranges->count() > 1);
+  if( m_sort_energy_ranges->isVisible() != show_sort_ranges )
+    m_sort_energy_ranges->setHidden( !show_sort_ranges );
 }//void updateDuringRenderForEnergyRangeChange()
 
 
@@ -4906,6 +4952,14 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       m_error_msg->show();
 
       m_txt_results->setNoResults();
+
+      // If the computation got far-enough to compute auto-fit peaks, and we havent cached them yet,
+      //  lets cac
+      if( !m_cached_drf && m_cached_all_peaks.empty() && answer->m_drf && !answer->m_spectrum_peaks.empty() )
+      {
+        m_cached_drf = answer->m_drf;
+        m_cached_all_peaks = answer->m_spectrum_peaks;
+      }
 
       setOptionsForNoSolution();
       

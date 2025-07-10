@@ -34,7 +34,7 @@
 #include <optional>
 
 #include "InterSpec/PeakDef.h" //for PeakContinuum::OffsetType and PeakDef::SkewType
-
+#include "InterSpec/RelActCalc.h"
 
 // Forward declarations
 class DetectorPeakResponse;
@@ -61,8 +61,8 @@ namespace RelActCalc
 {
   enum class PuCorrMethod : int;
   enum class RelEffEqnForm : int;
-  struct Pu242ByCorrelationOutput;
   struct PhysicalModelShieldInput;
+  template<typename T> struct Pu242ByCorrelationOutput;
 }//namespace RelActCalc
 
 namespace RelActCalcAutoImp
@@ -450,8 +450,7 @@ struct RelEffCurveInput
    Pu isotopics).
    
    When specified #RelActAutoSolution::m_corrected_pu will be filled-out (unless an error occurred
-   while doing the correction - which shouldnt really ever happen); this will then be used by the
-   #RelActAutoSolution::mass_enrichment_fraction function, and activity ratio function.
+   while doing the correction - which shouldnt really ever happen).
    
    Defaults to #PuCorrMethod::NotApplicable; if any other value is specified, and sufficient
    plutonium isotopes for that method are not in the problem, then finding the solution will
@@ -756,6 +755,9 @@ struct RelActAutoSolution
             then 1.0 will be returned.  If it was a natural uranium problem, and U235 was passed
             in, then the returned value would likely be something like 0.0072
    
+   Note: if input is a Pu nuclide, and a Pu242-by-correlation is being applied, the returned value will take this into account; however,
+   the uncertainty in Pu242 amount will not be accounted for (currently).
+   
    Throws exception if \c nuclide was not in the specified relative efficiency curve, or other errors encountered.
    */
   std::pair<double,std::optional<double>> mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide,
@@ -1024,7 +1026,14 @@ struct RelActAutoSolution
    Note: this is a shared ptr just to avoid creating a copy constructor that would be needed
          if we make it a unique ptr...
    */
-  std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput>> m_corrected_pu;
+  std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationOutput<double>>> m_corrected_pu;
+  
+  /** Provides the input to Pu242 corrections, so you can compare against corrected values.
+   
+   Note that `mass_enrichment_fraction(...)` returns the corrected Pu fractions, so this is the only way to
+   access the uncorrected mass fractions (unless you manually compute from relative activities)
+   */
+  std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationInput<double>>> m_uncorrected_pu;
   
   /** We will allow corrections to the first following number of energy calibration coefficients.
  

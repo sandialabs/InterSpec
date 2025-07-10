@@ -39,13 +39,21 @@
   <message id="ssd-to-small-for-chart">(make window taller to show χ<sup>2</sup>)</message>
   <message id="ssd-tt-chi2-switch">Show the Chi of each peak for the current model on the chart, or the relative peak area multiple between current model and observed peak.</message>
   <message id="ssd-cb-all-peaks">All Peaks</message>
-  <message id="ssd-multi-iso-per-peak">Multiple nuclides contribute to peak</message>
+  <message id="ssd-multi-iso-per-peak">Interference correct</message>
+  <message id="ssd-options-title">Options</message>
   <message id="ssd-tt-multi-iso-per-peak">Checking this option will allow other nuclides being fit for, other that the one assigned to a peak, to contribute to the expected counts in a observed peak.  This could for instance be useful when fitting for both Ho166m and U235 that both have a peak near 185 keV.</message>
+  <message id="ssd-cluster-width-label">Interference width (num σ):</message>
+  <message id="ssd-tt-cluster-width">The number of sigma away from the mean of the peak that gamma lines,
+    from any nuclide, will be summed and attributed to the peak. The default value is 1.25 sigma, but if the peak is
+    obviously widened due to interferences, or its a poor fit, you may wish to increase this value.
+    Decreasing it to 0.0 will cause only the gammas associated with the peak to be used
+    (same as unchecking \"Multiple nuclides contribute to peak\").
+  </message>
   <message id="ssd-cb-atten-for-air">Attenuate for air</message>
   <message id="ssd-tt-atten-for-air">When checked attenuation due to air between the source, or outer shielding, and detector will be accounted for in the calculations.</message>
-  <message id="ssd-cb-sub-back-peaks">Subtract Background Peaks</message>
+  <message id="ssd-cb-sub-back-peaks">Subtract background peaks</message>
   <message id="ssd-tt-sub-back-peaks">This forces the isotopes of a element to all be the same age in the fit.</message>
-  <message id="ssd-cb-same-el-same-age">Isotopes of same element same age</message>
+  <message id="ssd-cb-same-el-same-age">Same Z same age</message>
   <message id="ssd-tt-same-el-same-age">Enforce isotopes for the same element should all have the same age.</message>
   <message id="ssd-cb-corr-for-decay">Correct for decay during meas.</message>
   <message id="ssd-tt-corr-for-decay">Corrects for decay and in-growth effects that happen during the time the measurement is being taken.  Resulting activities correspond to the start time of the measurement. May take take additional computation time to find solution.</message>
