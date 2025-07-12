@@ -763,6 +763,7 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   const double pi = PhysicalUnits::pi;
   
   const int ndim = (ndimptr ? (*ndimptr) : 3);
+  assert( (ndim == 2) || (ndim == 3) );
 
   const double source_inner_rad = ((m_materialIndex>0)
                             ? std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1])[0]

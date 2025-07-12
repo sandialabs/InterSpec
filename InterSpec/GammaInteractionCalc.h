@@ -47,6 +47,10 @@ class PeakDef;
 struct Material;
 class DetectorPeakResponse;
 
+namespace SpecUtils
+{
+  class Measurement;
+}
 
 namespace GammaInteractionCalc
 {
@@ -316,6 +320,14 @@ struct DistributedSrcCalc
   //Right now this struct assumes sources are solid, in terms of the attenuation
   //  calculation
   DistributedSrcCalc();
+  
+  /** Evaluates the probability of gamma originating at specified coordinates making it to the detector.
+   
+   @param [in] xx Array of coordinates for the location to evaluate.  The coordinates are specified on interval [0,1] (which this function maps to physical location)
+   @param [in] ndimptr A pointer that specifies how many dimensions is being integrated over.  The integer value must either be 2, or three.  If 2 then the corrdinates coorespond to {radius, theta}, and if 3 then {radius, theta, phi}, where the input coordinate values of [0,1] are mapped to go from [0 to sphere_rad], [0, pi] and optionally [0 to 2pi].
+   @par [out] ff Pointer to where the result is placed.
+   @par ncompptr unused.
+   */
   void eval_spherical( const double xx[], const int *ndimptr,
                        double ff[], const int *ncompptr ) const;
   
