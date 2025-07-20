@@ -221,7 +221,11 @@ function( divid, parentid, additional_filters )
       41: 'IdentiFinder-R425-NaI',
       42: 'IdentiFinder-R425-LaBr',
       43: 'Sam-950',
-      44: 'Unknown'
+      44: 'KromekD5',
+      45: 'KromekGR1',
+      46: 'Raysid',
+
+      47: 'Unknown'
     },
     operators: ['equal']
   },{

@@ -1197,11 +1197,13 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
   
   try
   {
-    const string name = fields[0] + " (" + fields[1] + ")";
-    
+    string name = fields[0] + " (" + fields[1] + ")";
+    SpecUtils::ireplace_all( name, "%20", " " );
+    SpecUtils::trim( name );
+
     vector<float> coefs;
     for( int i = 3; i < 11; ++i )
-    coefs.push_back( static_cast<float>( std::stod( fields[i] ) ) );
+      coefs.push_back( static_cast<float>( std::stod( fields[i] ) ) );
     
     //Get rid of the zero coefficients
     for( size_t i = coefs.size()-1; i > 0; --i )
@@ -1218,6 +1220,8 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
     const float eunits = static_cast<float>( PhysicalUnits::MeV );
     
     string description = fields[2] + " - from Relative Eff. File";
+    SpecUtils::ireplace_all( description, "%20", " " );
+    SpecUtils::trim( description );
     det.reset( new DetectorPeakResponse( name, description ) );
     det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, EffGeometryType::FarField );
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
@@ -1868,7 +1872,13 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   
   if( parts.count("DESC") )
     desc = parts["DESC"];
-  
+
+  SpecUtils::ireplace_all( name, "%20", " " );
+  SpecUtils::trim( name );
+
+  SpecUtils::ireplace_all( desc, "%20", " " );
+  SpecUtils::trim( desc );
+
   if( parts.count("FIXGEOM") )
   {
     // This is vestigial code that can probably be deleted - it was only used between

@@ -230,6 +230,9 @@ bool is_likely_high_res( InterSpec *viewer )
     case SpecUtils::DetectorType::VerifinderLaBr:
     case SpecUtils::DetectorType::KromekD3S:
     case SpecUtils::DetectorType::Sam950:
+    case SpecUtils::DetectorType::KromekD5:
+    case SpecUtils::DetectorType::KromekGR1:
+    case SpecUtils::DetectorType::Raysid:
       return false;
       
     case SpecUtils::DetectorType::Falcon5000: //Any Canberra/Mirion system will be classified as a Falcon 5k
