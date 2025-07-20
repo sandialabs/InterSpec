@@ -129,55 +129,55 @@ namespace
 {
   // A simple structure to represent a 2D point.
   struct Point {
-    double x, y;
+    long double x, y;
   };
   
   /**
    * @brief Finds the intersection points of a line and a circle centered at the origin.
-   * The points are ordered by their distance from p1.
-   * @param p1 The first point defining the line.
-   * @param p2 The second point defining the line.
+   * The points are ordered by their distance from source.
+   * @param source The first point defining the line.
+   * @param detector The second point defining the line.
    * @param r The radius of the circle.
    * @return A pair of intersection points.
    * @throws std::runtime_error if there are no intersections.
    */
-  std::pair<Point, Point> findIntersections(Point p1, Point p2, double r) {
-    // Line parametrically: P(t) = p1 + t*(p2-p1)
-    // x = p1.x + t*(p2.x - p1.x)
-    // y = p1.y + t*(p2.y - p1.y)
+  std::pair<Point, Point> findIntersections(Point source, Point detector, double r) {
+    // Line parametrically: P(t) = source + t*(detector-source)
+    // x = source.x + t*(detector.x - source.x)
+    // y = source.y + t*(detector.y - source.y)
     
-    double dx = p2.x - p1.x;
-    double dy = p2.y - p1.y;
+    long double dx = detector.x - source.x;
+    long double dy = detector.y - source.y;
     
     // Substitute into circle equation x² + y² = r²:
-    // (p1.x + t*dx)² + (p1.y + t*dy)² = r²
-    // 
+    // (source.x + t*dx)² + (source.y + t*dy)² = r²
+    //
     // Expanding and rearranging into quadratic form: at² + bt + c = 0
-    double a = dx*dx + dy*dy;
-    double b = 2.0*(p1.x*dx + p1.y*dy);
-    double c = p1.x*p1.x + p1.y*p1.y - r*r;
+    long double a = dx*dx + dy*dy;
+    long double b = 2.0*(source.x*dx + source.y*dy);
+    long double c = source.x*source.x + source.y*source.y - r*r;
     
     // Calculate discriminant
-    double discriminant = b*b - 4.0*a*c;
+    long double discriminant = b*b - 4.0*a*c;
     
     if (discriminant < 0) {
       throw std::runtime_error("No intersection points found between line and circle");
     }
     
     // Calculate the parameter values for intersection points
-    double sqrt_discriminant = sqrt(discriminant);
-    double t1 = (-b - sqrt_discriminant) / (2.0*a);
-    double t2 = (-b + sqrt_discriminant) / (2.0*a);
+    long double sqrt_discriminant = sqrt(discriminant);
+    long double t1 = (-b - sqrt_discriminant) / (2.0*a);
+    long double t2 = (-b + sqrt_discriminant) / (2.0*a);
     
     // Calculate intersection points
-    Point point1 = {p1.x + t1*dx, p1.y + t1*dy};
-    Point point2 = {p1.x + t2*dx, p1.y + t2*dy};
+    Point point1 = {source.x + t1*dx, source.y + t1*dy};
+    Point point2 = {source.x + t2*dx, source.y + t2*dy};
     
-    // Calculate distances from p1 to order the points
-    double dist1_sq = (point1.x - p1.x)*(point1.x - p1.x) + (point1.y - p1.y)*(point1.y - p1.y);
-    double dist2_sq = (point2.x - p1.x)*(point2.x - p1.x) + (point2.y - p1.y)*(point2.y - p1.y);
+    // Calculate distances from source to order the points
+    long double dist1_sq = (point1.x - source.x)*(point1.x - source.x) + (point1.y - source.y)*(point1.y - source.y);
+    long double dist2_sq = (point2.x - source.x)*(point2.x - source.x) + (point2.y - source.y)*(point2.y - source.y);
     
-    // Return points ordered by distance from p1 (closest first)
+    // Return points ordered by distance from source (closest first)
     if (dist1_sq <= dist2_sq) {
       return std::make_pair(point1, point2);
     } else {
@@ -435,10 +435,10 @@ BOOST_AUTO_TEST_CASE( CylinderLineIntersection )
   BOOST_CHECK_EQUAL( dist, 2.5 );
   
   dist = cylinder_line_intersection( radius, half_length, start_point, detector_xyz, CylExitDir::TowardDetector, exit_point );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] + 1.0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(dist - 2.0), 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[0] + 1.0, 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[1] - 0, 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[2] - 0, 1.0E-12 );
+  BOOST_CHECK_SMALL( dist - 2.0, 1.0E-12 );
   
   
   
@@ -454,10 +454,10 @@ BOOST_AUTO_TEST_CASE( CylinderLineIntersection )
   BOOST_CHECK_EQUAL( dist, 0.5 );
   
   dist = cylinder_line_intersection( radius, half_length, start_point, detector_xyz, CylExitDir::TowardDetector, exit_point );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 1.0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(dist - 2.0), 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[0] - 1.0, 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[1] - 0, 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[2] - 0, 1.0E-12 );
+  BOOST_CHECK_SMALL( dist - 2.0, 1.0E-12 );
   
   
   // Test on boundaries
@@ -471,24 +471,26 @@ BOOST_AUTO_TEST_CASE( CylinderLineIntersection )
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::TowardDetector, exit_point );
   pair<Point, Point> intersections = findIntersections({source_xyz[0],source_xyz[1]}, {detector_xyz[0],detector_xyz[1]}, radius);
   
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - intersections.second.x), 1.0E-5 ); //0.999998998585
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - intersections.second.y), 1.0E-5 ); //0.001415
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0), 1.0E-9 );
-  double test_dist = sqrt(pow( (source_xyz[0] - intersections.second.x), 2.0 ) + pow( (source_xyz[1] - intersections.second.y), 2.0 ));
-  BOOST_CHECK_SMALL( fabs(dist - test_dist), 1.0E-5 );
+  long double tollerance = 1.0E-6;
+  BOOST_CHECK_SMALL( exit_point[0] - intersections.second.x, tollerance ); //0.999998998585
+  BOOST_CHECK_SMALL( exit_point[1] - intersections.second.y, tollerance ); //0.001415
+  BOOST_CHECK_SMALL( exit_point[2] - 0, 1.0E-9 );
+  long double test_dist = sqrt(pow( (source_xyz[0] - intersections.second.x), 2.0 ) + pow( (source_xyz[1] - intersections.second.y), 2.0 ));
+  BOOST_CHECK_SMALL( dist - test_dist, tollerance );
   
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::AwayFromDetector, exit_point );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - intersections.first.x), 1.0E-6 ); //0.999999001413
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - intersections.first.y), 1.0E-5 ); //-0.001413
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0), 1.0E-9 );
-  test_dist = sqrt(pow( (detector_xyz[0] - intersections.second.x), 2.0 ) + pow( (detector_xyz[1] - intersections.second.y), 2.0 ));
-  BOOST_CHECK_SMALL( fabs(dist - test_dist), 1.0E-5 );
+  BOOST_CHECK_SMALL( exit_point[0] - intersections.first.x, tollerance ); //0.999999001413
+  BOOST_CHECK_SMALL( exit_point[1] - intersections.first.y, tollerance ); //-0.001413
+  BOOST_CHECK_SMALL( exit_point[2] - 0, 1.0E-9 );
+  test_dist = sqrt(pow( (source_xyz[0] - intersections.first.x), 2.0 ) + pow( (source_xyz[1] - intersections.first.y), 2.0 ));
+  BOOST_CHECK_SMALL( dist - test_dist, tollerance );
   
   dist = cylinder_line_intersection( radius, half_length, exit_point, detector_xyz, CylExitDir::TowardDetector, exit_point );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - intersections.first.x), 3.0E-6 );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - intersections.first.y), 3.0E-5 );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 0), 3.0E-6 );
-  BOOST_CHECK_SMALL( fabs(dist), 3.0E-5 );
+  BOOST_CHECK_SMALL( exit_point[0] - intersections.second.x, tollerance );
+  BOOST_CHECK_SMALL( exit_point[1] - intersections.second.y, tollerance );
+  BOOST_CHECK_SMALL( exit_point[2] - 0, 1.0E-6 );
+  test_dist = sqrt(pow( (intersections.first.x - intersections.second.x), 2.0 ) + pow( (intersections.first.y - intersections.second.y), 2.0 ));
+  BOOST_CHECK_SMALL( dist - test_dist, tollerance );
 
   
   radius = 1;
@@ -496,16 +498,16 @@ BOOST_AUTO_TEST_CASE( CylinderLineIntersection )
   source_xyz[0] = 1.0; source_xyz[1] = 0; source_xyz[2] = -5;
   detector_xyz[0] = 1.0; detector_xyz[1] = 0; detector_xyz[2] = 5;
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::AwayFromDetector, exit_point );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 1.0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - -1.0), 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[0] - 1.0, 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[1] - 0, 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[2] - -1.0, 1.0E-12 );
   BOOST_CHECK_EQUAL( dist, 4.0 );
   
   
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::TowardDetector, exit_point );
-  BOOST_CHECK_SMALL( fabs(exit_point[0] - 1.0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(exit_point[1] - 0), 1.0E-12 );
-  BOOST_CHECK_SMALL( fabs(exit_point[2] - 1.0), 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[0] - 1.0, 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[1] - 0, 1.0E-12 );
+  BOOST_CHECK_SMALL( exit_point[2] - 1.0, 1.0E-12 );
   BOOST_CHECK_EQUAL( dist, 6.0 );
   
    
@@ -551,10 +553,10 @@ BOOST_AUTO_TEST_CASE( CylinderLineIntersection )
   detector_xyz[0] = 269.23999999999995; detector_xyz[1] = 0 ;detector_xyz[2] = 0;
   
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::TowardDetector, exit_point );
-  BOOST_CHECK_SMALL( fabs( radius - sqrt(exit_point[0]*exit_point[0] + exit_point[1]*exit_point[1]) ), 1.0E-9*std::max(1.0,radius) );
+  BOOST_CHECK_SMALL( radius - sqrt(exit_point[0]*exit_point[0] + exit_point[1]*exit_point[1]), 1.0E-9*std::max(1.0,radius) );
   
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::AwayFromDetector, exit_point );
-  BOOST_CHECK_SMALL( fabs( exit_point[2] - half_length ), 1.0E-9*std::max(1.0,half_length) ); //exit on end
+  BOOST_CHECK_SMALL( exit_point[2] - half_length, 1.0E-9*std::max(1.0,half_length) ); //exit on end
 }
 
 BOOST_AUTO_TEST_CASE( RectangularIntersections )

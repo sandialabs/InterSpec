@@ -1090,6 +1090,13 @@ double cylinder_line_intersection( const double radius, const double half_length
   // Lets find x, y, and z
   if( detector[0] != source[0] )
   {
+    //The original implementation of finding the x,y intersection is, I believe, less numerically stable than
+    //  the newer one (20250719).  And actually, the original implementation is a little upgraded for one
+    //  egrogiously unstable aspect where previous to 20250709, the `y_exit` computation used what is
+    //  now used for `y_exit_direct` - and was quite bad for some test cases where lines just glanced the circle.
+#define USE_ORIG_CYL_INTERSECT 0
+    
+#if( USE_ORIG_CYL_INTERSECT )
     //(1 + m2)x2 + 2cmx + c2 – r2 = 0
     const double m = unit[1] / unit[0];
     assert( fabs( m - ((detector[1] - source[1]) / (detector[0] - source[0])) ) < std::max(1.0E-6,1.0E-6 * m) );
@@ -1133,6 +1140,64 @@ double cylinder_line_intersection( const double radius, const double half_length
     // Choose the sign that matches the expected direction
     if( y_exit_direct < 0.0 )
       y_exit = -y_exit;
+#else
+    double other_x_exit;
+    
+    {// begin scope to solve for x,y of intersection
+      // Line parametrically: P(t) = source + t*(detector-source)
+      // x = source.x + t*(detector.x - source.x)
+      // y = source.y + t*(detector.y - source.y)
+      
+      const double dx = detector[0] - source[0];
+      const double dy = detector[1] - source[1];
+      
+      // Substitute into circle equation x² + y² = r²:
+      // (source.x + t*dx)² + (source.y + t*dy)² = r²
+      //
+      // Expanding and rearranging into quadratic form: at² + bt + c = 0
+      const double a = dx*dx + dy*dy;
+      const double b = 2.0*(source[0]*dx + source[1]*dy);
+      const double c = source[0]*source[0] + source[1]*source[1] - radius*radius;
+      
+      // Calculate discriminant
+      const double discriminant = b*b - 4.0*a*c;
+      
+      if( discriminant < 0 )
+        return handle_line_outside_volume();
+      
+      // Calculate the parameter values for intersection points
+      const double sqrt_discriminant = sqrt(discriminant);
+      const double t1 = (-b - sqrt_discriminant) / (2.0*a);
+      const double t2 = (-b + sqrt_discriminant) / (2.0*a);
+      
+      // Calculate intersection points
+      const double point1[2] = {source[0] + t1*dx, source[1] + t1*dy};
+      const double point2[2] = {source[0] + t2*dx, source[1] + t2*dy};
+      
+      // Calculate distances from source to order the points
+      const double dist1_sq = (point1[0] - detector[0])*(point1[0] - detector[0]) + (point1[1] - detector[1])*(point1[1] - detector[1]);
+      const double dist2_sq = (point2[0] - detector[0])*(point2[0] - detector[0]) + (point2[1] - detector[1])*(point2[1] - detector[1]);
+      
+      
+      // Pick the solution towards/away-from the detector
+      const bool sol_1_toward = (dist1_sq < dist2_sq);
+      
+      switch( direction )
+      {
+        case CylExitDir::TowardDetector:
+          x_exit       = sol_1_toward ? point1[0] : point2[0];
+          y_exit       = sol_1_toward ? point1[1] : point2[1];
+          other_x_exit = sol_1_toward ? point2[0] : point1[0];
+          break;
+          
+        case CylExitDir::AwayFromDetector:
+          x_exit       = sol_1_toward ? point2[0] : point1[0];
+          y_exit       = sol_1_toward ? point2[1] : point1[1];
+          other_x_exit = sol_1_toward ? point1[0] : point2[0];
+          break;
+      }//switch( direction )
+    }// end scope to solve for x,y of intersection
+#endif //if USE_ORIG_CYL_INTERSECT / else
     
     
     // Now find the z corresponding to {x_exit, y_exit}.
