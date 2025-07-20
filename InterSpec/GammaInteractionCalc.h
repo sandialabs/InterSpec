@@ -158,13 +158,6 @@ void example_integration();
 // When debugging we will grab a static mutex so we dont get jumbled stdout
 #define DEBUG_RAYTRACE_CALCS 0
 
-#if( DEBUG_RAYTRACE_CALCS )
-/** Runs some test cases for #cylinder_line_intersection, and cause assert(0) on error. */
-void test_cylinder_line_intersection();
-
-/** Run some test cases for rectangular geometry intersection/exit functions; causes assert(0) or error. */
-void test_rectangular_intersections();
-#endif
 
 /** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_spherical .
  @param userdata must be pointer to a DistributedSrcCalc object.
