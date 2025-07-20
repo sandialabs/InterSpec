@@ -1127,7 +1127,12 @@ double cylinder_line_intersection( const double radius, const double half_length
     }// end scope to solve for x of intersection
     
     
-    y_exit = m*x_exit + c;
+    y_exit = sqrt( radius*radius - x_exit*x_exit );
+    // y_exit could need multiplying by -1
+    const double y_exit_direct = m*x_exit + c; //This can be numerically quite unstable for lines just glancing the cylinder
+    // Choose the sign that matches the expected direction
+    if( y_exit_direct < 0.0 )
+      y_exit = -y_exit;
     
     
     // Now find the z corresponding to {x_exit, y_exit}.
