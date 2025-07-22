@@ -3655,10 +3655,20 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
 
       energy /= PhysicalUnits::MeV;
       //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
-      
-      double val = pars[0];
+
+      // Use Horner's method to evaluate the polynomial - more stable.
+      double val = pars.back();
+      for( int i = static_cast<int>(pars.size()) - 2; i >= 0; i -= 1 )
+        val = val * energy + pars[i]; // Multiply by x and add the next coefficient
+
+#ifndef NDEBUG
+      double nonstable_val = pars[0];
       for( size_t i = 1; i < pars.size(); ++i )
-        val += pars[i] * pow(energy, static_cast<float>(i) );
+        nonstable_val += pars[i] * pow(static_cast<double>(energy), static_cast<double>(i) );
+      const double diff = fabs(nonstable_val - val);
+      assert( (diff < 1.0E-4) || (diff < 1.0E-3*max(fabs(nonstable_val), fabs(val))) );
+#endif
+
       return sqrt( val );
     }//case kSqrtPolynomial:
       

@@ -7920,10 +7920,20 @@ T peakResolutionFWHM( T energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
       
       energy /= PhysicalUnits::MeV;
       //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
-      
-      T val(0.0);
+
+      // Use Horner's method to evaluate the polynomial - more stable.
+      T val = pars[num_pars - 1];
+      for( int i = static_cast<int>(num_pars) - 2; i >= 0; i -= 1 )
+        val = val * energy + pars[i];
+
+#ifndef NDEBUG
+      T unstable_val(0.0);
       for( size_t i = 0; i < num_pars; ++i )
-        val += pars[i] * pow(energy, static_cast<double>(i) );
+        unstable_val += pars[i] * pow(energy, static_cast<double>(i) );
+      const T diff = abs(unstable_val - val);
+      assert( (diff < 1.0E-4) || (diff < 1.0E-3*max(abs(unstable_val), abs(val))) );
+#endif
+
       return sqrt( val );
     }//case kSqrtPolynomial:
       
@@ -8022,7 +8032,7 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
 
   const double drf_answer = DetectorPeakResponse::peakResolutionFWHM( energy_kev, fctntype, drf_pars );
 
-  assert( (abs(answer - drf_answer) < 0.01) || (abs(answer - drf_answer) < 0.01*max(answer,T(drf_answer))) );
+  assert( (abs(answer - drf_answer) < 0.01) || (abs(answer - drf_answer) < 0.01*max(abs(answer),abs(T(drf_answer)))) );
 #endif
 
   return answer;
