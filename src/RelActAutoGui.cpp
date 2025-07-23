@@ -1175,8 +1175,22 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
         phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
       same_ext_shieldings = (same_ext_shieldings || opts->physModelSameExtShieldAllCurves());
       same_hoerl_all_curves = (same_hoerl_all_curves || opts->physModelSameHoerlOnAllCurves());
-    }
-    
+
+      if( opts->physModelShieldedByOtherCurves() )
+      {
+        for( int outer_index = 0; outer_index < num_rel_eff_curves; ++outer_index )
+        {
+          if( outer_index == rel_eff_curve_index )
+            continue;
+          const RelActAutoGuiRelEffOptions *outer_opts = getRelEffCurveOptions( outer_index );
+          if( !outer_opts )
+            throw runtime_error( "Failed to get outer RelActAutoGuiRelEffOptions" );
+          if( outer_opts->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+            rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.insert( outer_index );
+        }//for( int outer_index = 0; outer_index < num_rel_eff_curves; ++outer_index )
+      }//if( opts->physModelShieldedByOtherCurves() )
+    }//if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
     options.rel_eff_curves.push_back( rel_eff_curve );
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
@@ -2419,6 +2433,10 @@ void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEf
   {
     RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
     assert( options );
+
+    if( options && same_shield )
+      options->setPhysModelShieldedByOtherCurves( false );
+
     if( !options || (options == rel_eff_curve_gui) )
       continue;
     
@@ -2434,6 +2452,36 @@ void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEf
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+
+
+void RelActAutoGui::handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+{
+  assert( rel_eff_curve_gui );
+  if( !rel_eff_curve_gui )
+    return;
+
+  const bool shielded_by_others = rel_eff_curve_gui->physModelShieldedByOtherCurves();
+  if( shielded_by_others )
+  {
+    rel_eff_curve_gui->setPhysModelSameExtShieldAllCurves( false );
+
+    for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+    {
+      WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+      RelActAutoGuiRelEffOptions *this_curve = dynamic_cast<RelActAutoGuiRelEffOptions *>( this_item->contents() );
+      assert( this_curve );
+      if( this_curve && (this_curve != rel_eff_curve_gui) )
+      {
+        this_curve->setPhysModelShieldedByOtherCurves( false );
+        this_curve->setPhysModelSameExtShieldAllCurves( false );
+      }
+    }
+  }//if( shielded_by_others )
+
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
 
 void RelActAutoGui::handleRelEffEqnOrderChanged()
@@ -3907,6 +3955,8 @@ void RelActAutoGui::handleAddRelEffCurve()
   rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameHoerlOnAllCurvesChanged, this, boost::placeholders::_1 ) );
   rel_eff_curve->sameExternalShieldingChanged().connect( boost::bind( &RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged, this, boost::placeholders::_1 ) );
 
+  rel_eff_curve->shieldedByOtherCurvesChanged().connect( boost::bind( &RelActAutoGui::handleShieldedByOtherCurvesChanged, this, boost::placeholders::_1 ) );
+
   const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
 
   m_rel_eff_opts_menu->setHidden( single_curve );
@@ -4741,7 +4791,7 @@ void RelActAutoGui::startUpdatingCalculation()
       RelActAutoGuiNuclide *nuclide = dynamic_cast<RelActAutoGuiNuclide *>( child );
       assert( nuclide );
       if( nuclide )
-        nuclide->setSummaryText( "" );
+        nuclide->setSummaryText( "", "" );
     }//for( WWidget *child : this_content->children() )
   }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
 
@@ -4992,14 +5042,10 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
 
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio
-  set<const SandiaDecay::Nuclide *> isotopes;
-  for( const auto &relact : answer->m_rel_activities[0] )
-  {
-    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(relact.source);
-    if( nuc )
-      isotopes.insert( nuc );
-  }
-  
+  size_t num_curves_with_enrich = 0;
+  set<const SandiaDecay::Nuclide *> unique_enrich_isos;
+  vector<const SandiaDecay::Nuclide *> enrich_iso;
+  vector<set<const SandiaDecay::Nuclide *>> curve_isotopes;
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   assert( db );
   const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
@@ -5007,75 +5053,122 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   const SandiaDecay::Nuclide * const pu239 = db->nuclide( "Pu239" );
   const SandiaDecay::Nuclide * const pu240 = db->nuclide( "Pu240" );
   assert( u235 && u238 && pu239 && pu240 );
-  
-  if( (isotopes.count(u235) && isotopes.count(u238) && !isotopes.count(pu239))
-     || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
+
+  for( size_t rel_eff_index = 0; rel_eff_index < answer->m_rel_activities.size(); ++rel_eff_index )
   {
-    const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
-    string enrich;
-
-    try
+    set<const SandiaDecay::Nuclide *> isotopes;
+    for( const auto &relact : answer->m_rel_activities[rel_eff_index] )
     {
-      pair<double,optional<double>> enrich_val = answer->mass_enrichment_fraction( iso, 0 );
-      
-      const double nominal = enrich_val.first;
-      enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "%";
-
-      if( enrich_val.second.has_value() )
-      {
-        const double neg_2sigma = nominal - 2.0*enrich_val.second.value();
-        const double pos_2sigma = nominal + 2.0*enrich_val.second.value();
-        enrich += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%, "
-        + SpecUtils::printCompact(100.0*pos_2sigma, 4) + "%)";
-      }
-    }catch( std::exception & )
-    {
-      // Happens if covariance computation failed, or Pu with Pu242 correlation correction
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(relact.source);
+      if( nuc )
+        isotopes.insert( nuc );
     }
 
-    enrich += " " + iso->symbol;
-    chi2_title.arg( enrich );
-  }else if( isotopes.size() == 2 ) // We are only considering nuclides here, not elements or reactions - not sure why
-  {
-    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities.at(0);
-    const RelActCalcAuto::NuclideRelAct *num_rel_act = nullptr, *denom_rel_act = nullptr;
-    for( size_t i = 0; i < rel_acts.size(); ++i )
+    const bool u_enrich = (isotopes.count(u235) && isotopes.count(u238) && !isotopes.count(pu239));
+    const bool pu_enrich = (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235));
+
+    num_curves_with_enrich += (u_enrich || pu_enrich);
+    if( u_enrich )
     {
-      // We only want nuclides here
-      if( RelActCalcAuto::nuclide(rel_acts[i].source) )
-      {
-        if( !num_rel_act )
-          num_rel_act = &(rel_acts[i]);
-        else
-          denom_rel_act = &(rel_acts[i]);
-      }
-    }//for( size_t i = 0; i < rel_acts.size(); ++i )
-    
-    assert( num_rel_act && denom_rel_act );
-    
-    if( num_rel_act && denom_rel_act )
+      enrich_iso.push_back( u235 );
+      unique_enrich_isos.insert( u235 );
+    }else if( pu_enrich )
     {
-      if( num_rel_act->rel_activity > denom_rel_act->rel_activity )
-        std::swap( num_rel_act, denom_rel_act );
-      
-      const string num_name = RelActCalcAuto::to_name(num_rel_act->source);
-      const string den_name = RelActCalcAuto::to_name(denom_rel_act->source);
-      
-      const double ratio = answer->activity_ratio( num_rel_act->source, denom_rel_act->source, 0 );
-      // TODO: add errors
-      string ratio_txt = ", act(" + num_name + "/" + den_name + ")="
-      + SpecUtils::printCompact(ratio, 4);
-      
-      chi2_title.arg( ratio_txt );
+      enrich_iso.push_back( pu239 );
+      unique_enrich_isos.insert( pu239 );
     }else
     {
-      chi2_title.arg( "" );
+      enrich_iso.push_back( nullptr );
     }
-  }else
-  {
-    chi2_title.arg( "" );
-  }
 
+    curve_isotopes.push_back( isotopes );
+  }//for( loop over enrich )
+
+  assert( enrich_iso.size() == answer->m_rel_activities.size() );
+  assert( curve_isotopes.size() == answer->m_rel_activities.size() );
+
+  string chi2_info_arg;
+  if( num_curves_with_enrich == 0 )
+  {
+    // We are only considering nuclides here, not elements or reactions - not sure why
+    if( (answer->m_rel_activities.size() == 1) && (curve_isotopes[0].size() == 2) )
+    {
+      const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities.at(0);
+      const RelActCalcAuto::NuclideRelAct *num_rel_act = nullptr, *denom_rel_act = nullptr;
+      for( size_t i = 0; i < rel_acts.size(); ++i )
+      {
+        // We only want nuclides here
+        if( RelActCalcAuto::nuclide(rel_acts[i].source) )
+        {
+          if( !num_rel_act )
+            num_rel_act = &(rel_acts[i]);
+          else
+            denom_rel_act = &(rel_acts[i]);
+        }
+      }//for( size_t i = 0; i < rel_acts.size(); ++i )
+
+      assert( num_rel_act && denom_rel_act );
+
+      if( num_rel_act && denom_rel_act )
+      {
+        if( num_rel_act->rel_activity > denom_rel_act->rel_activity )
+          std::swap( num_rel_act, denom_rel_act );
+
+        const string num_name = RelActCalcAuto::to_name(num_rel_act->source);
+        const string den_name = RelActCalcAuto::to_name(denom_rel_act->source);
+
+        const pair<double,optional<double>> ratio = answer->activity_ratio( num_rel_act->source, 0, denom_rel_act->source, 0 );
+
+        string ratio_txt = ", act(" + num_name + "/" + den_name + ")="
+                       + SpecUtils::printCompact(ratio.first, 4);
+        if( ratio.second.has_value() )
+          ratio_txt += "±" + SpecUtils::printCompact(ratio.second.value(), 4);
+
+        chi2_info_arg = ratio_txt;
+      }
+    }//if( isotopes.size() == 2 )
+  }else //if( num_curves_with_enrich == 0 )
+  {
+    size_t enrich_num = 0;
+    for( size_t rel_eff_index = 0; rel_eff_index < enrich_iso.size(); ++rel_eff_index )
+    {
+      const SandiaDecay::Nuclide * const iso = enrich_iso[rel_eff_index];
+      if( !iso )
+        continue;
+
+      try
+      {
+        const size_t precision = (num_curves_with_enrich > 1) ? 3 : 4;
+        pair<double,optional<double>> enrich_val = answer->mass_enrichment_fraction( iso, rel_eff_index );
+
+        const double nominal = enrich_val.first;
+        chi2_info_arg += ", " + SpecUtils::printCompact(100.0*nominal, precision) + "%";
+
+        if( enrich_val.second.has_value() )
+        {
+          if( num_curves_with_enrich == 1 )
+          {
+            const double neg_2sigma = nominal - 2.0*enrich_val.second.value();
+            const double pos_2sigma = nominal + 2.0*enrich_val.second.value();
+            chi2_info_arg += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, precision) + "%, "
+            + SpecUtils::printCompact(100.0*pos_2sigma, precision) + "%)";
+          }else
+          {
+            chi2_info_arg += " ± " + SpecUtils::printCompact(100.0*enrich_val.second.value(), precision) + "%";
+          }
+        }
+      }catch( std::exception & )
+      {
+        // Shouldnt normally happen
+      }
+
+      enrich_num += 1;
+      if( (unique_enrich_isos.size() > 1) || (enrich_num == enrich_iso.size()) )
+        chi2_info_arg += " " + iso->symbol;
+    }//for( size_t rel_eff_index = 0; rel_eff_index < enrich_iso.size(); ++rel_eff_index )
+  }//if( num_curves_with_enrich == 0 ) / else
+
+  chi2_title.arg( chi2_info_arg );
 
   assert( answer->m_fit_peaks_for_each_curve.size() == answer->m_rel_activities.size() );
   
@@ -5157,9 +5250,20 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       //const double rel_act = fit_nuc.rel_activity;
       const double rel_act = this->m_solution->rel_activity(src, rel_eff_index);
 
+
       const string rel_act_str = SpecUtils::printCompact(rel_act, 4);
       string summary_text = "Rel. Act=" + rel_act_str;
-      
+      string tooltip_text = summary_text;
+
+      try
+      {
+        const pair<double,double> act_uncert = this->m_solution->rel_activity_with_uncert(src, rel_eff_index);
+        assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act)) );
+        tooltip_text += " ± " + SpecUtils::printCompact(act_uncert.second, 4);
+      }catch( std::exception &e )
+      {
+      }
+
       
       if( fit_nuc.age_was_fit )
       {
@@ -5195,7 +5299,14 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
             const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
             const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
             const string el_symbol = el ? el->symbol : "?";
-            summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+            const string mass_frac_str = ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+            summary_text += mass_frac_str;
+
+            if( enrich_val.second.has_value() )
+            {
+              const double rel_mass_uncert_percent = 100.0 * enrich_val.second.value();
+              tooltip_text += (mass_frac_str + " ± " +  SpecUtils::printCompact(rel_mass_uncert_percent, 3));
+            }
           }catch( std::exception & )
           {
             // We shouldnt get here
@@ -5204,7 +5315,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
         }//if( num_same_z > 1 )
       }//if( RelActCalcAuto::nuclide(src) )
       
-      src_widget->setSummaryText( summary_text );
+      src_widget->setSummaryText( summary_text, tooltip_text );
     };//set_info_to_widget lambda
     
      // Update the rel. act., and if applicable, mass fraction for the nuclide displays
@@ -5290,7 +5401,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
           continue;
         
         //Maybe remove the GUI component for this source.
-        nuc->setSummaryText( "" );
+        nuc->setSummaryText( "", "" );
         
         RelActCalcAuto::NucInputInfo info;
         info.peak_color_css = nuc->color().cssText(false);

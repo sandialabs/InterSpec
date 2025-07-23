@@ -136,7 +136,7 @@ public:
 
   void updateAllowedConstraints();
 
-  void setSummaryText( const Wt::WString &text );
+  void setSummaryText( const Wt::WString &text, const Wt::WString &tooltip );
 protected:
   RelActAutoGui *m_gui;
 

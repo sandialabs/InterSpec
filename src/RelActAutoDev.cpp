@@ -1581,6 +1581,105 @@ void check_auto_hoerl_and_ext_shield_checks()
     // We are suppoest to get here
   }
 
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = true;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.shielded_by_other_phys_model_curve_shieldings.insert( 1 );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+    cerr << "Failed to throw an error for same_external_shielding_for_all_rel_eff_curves with one curve shielding another" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield ) );
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
+    rel_eff_curve_cpy2.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy2.shielded_by_other_phys_model_curve_shieldings.insert( 0 );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    // We are suppoest to get here
+  }catch( std::exception &e )
+  {
+    cerr << "Eroneously threw for shielded_by_other_phys_model_curve_shieldings" << endl;
+    assert( 0 );
+  }
+
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield ) );
+    rel_eff_curve_cpy.shielded_by_other_phys_model_curve_shieldings.insert( 1 );
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
+    rel_eff_curve_cpy2.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy2.shielded_by_other_phys_model_curve_shieldings.insert( 0 );
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    cerr << "Didnt throw for cyclical curves shielding eachother" << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
+  try
+  {
+    RelActCalcAuto::Options options_cpy = options;
+    options_cpy.same_hoerl_for_all_rel_eff_curves = true;
+    options_cpy.same_external_shielding_for_all_rel_eff_curves = false;
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.phys_model_self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+    rel_eff_curve_cpy.phys_model_external_atten.push_back( make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield ) );
+    rel_eff_curve_cpy.shielded_by_other_phys_model_curve_shieldings.insert( 1 );
+
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy );
+
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy2 = rel_eff_curve;
+    options_cpy.rel_eff_curves.push_back( rel_eff_curve_cpy2 );
+
+    options_cpy.check_same_hoerl_and_external_shielding_specifications();
+
+    cerr << "Didnt throw for shielding curve not having any shieldings defined." << endl;
+    assert( 0 );
+  }catch( std::exception &e )
+  {
+    // We are suppoest to get here
+  }
+
   cout << "All auto hoerl and ext shield checks passed" << endl;
 }//void check_auto_hoerl_and_ext_shield_checks()
 
@@ -1802,9 +1901,9 @@ void leu_heu_ana()
 int dev_code()
 {
   check_auto_nuclide_constraints_checks();
-  //check_manual_nuclide_constraints_checks();
-  //check_auto_hoerl_and_ext_shield_checks();
-  //return 1;
+  check_manual_nuclide_constraints_checks();
+  check_auto_hoerl_and_ext_shield_checks();
+  return 1;
   
   //check_auto_state_xml_serialization();
 
