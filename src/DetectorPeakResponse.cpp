@@ -1197,11 +1197,13 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
   
   try
   {
-    const string name = fields[0] + " (" + fields[1] + ")";
-    
+    string name = fields[0] + " (" + fields[1] + ")";
+    SpecUtils::ireplace_all( name, "%20", " " );
+    SpecUtils::trim( name );
+
     vector<float> coefs;
     for( int i = 3; i < 11; ++i )
-    coefs.push_back( static_cast<float>( std::stod( fields[i] ) ) );
+      coefs.push_back( static_cast<float>( std::stod( fields[i] ) ) );
     
     //Get rid of the zero coefficients
     for( size_t i = coefs.size()-1; i > 0; --i )
@@ -1218,6 +1220,8 @@ std::shared_ptr<DetectorPeakResponse> DetectorPeakResponse::parseSingleCsvLineRe
     const float eunits = static_cast<float>( PhysicalUnits::MeV );
     
     string description = fields[2] + " - from Relative Eff. File";
+    SpecUtils::ireplace_all( description, "%20", " " );
+    SpecUtils::trim( description );
     det.reset( new DetectorPeakResponse( name, description ) );
     det->fromExpOfLogPowerSeriesAbsEff( coefs, {}, dist, diam, eunits, 0.0f, 0.0f, EffGeometryType::FarField );
     det->setDrfSource( DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf );
@@ -1868,7 +1872,13 @@ void DetectorPeakResponse::fromAppUrl( std::string url_query )
   
   if( parts.count("DESC") )
     desc = parts["DESC"];
-  
+
+  SpecUtils::ireplace_all( name, "%20", " " );
+  SpecUtils::trim( name );
+
+  SpecUtils::ireplace_all( desc, "%20", " " );
+  SpecUtils::trim( desc );
+
   if( parts.count("FIXGEOM") )
   {
     // This is vestigial code that can probably be deleted - it was only used between
@@ -3645,10 +3655,20 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
 
       energy /= PhysicalUnits::MeV;
       //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
-      
-      double val = pars[0];
+
+      // Use Horner's method to evaluate the polynomial - more stable.
+      double val = pars.back();
+      for( int i = static_cast<int>(pars.size()) - 2; i >= 0; i -= 1 )
+        val = val * energy + pars[i]; // Multiply by x and add the next coefficient
+
+#ifndef NDEBUG
+      double nonstable_val = pars[0];
       for( size_t i = 1; i < pars.size(); ++i )
-        val += pars[i] * pow(energy, static_cast<float>(i) );
+        nonstable_val += pars[i] * pow(static_cast<double>(energy), static_cast<double>(i) );
+      const double diff = fabs(nonstable_val - val);
+      assert( (diff < 1.0E-4) || (diff < 1.0E-3*max(fabs(nonstable_val), fabs(val))) );
+#endif
+
       return sqrt( val );
     }//case kSqrtPolynomial:
       

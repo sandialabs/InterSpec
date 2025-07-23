@@ -2222,13 +2222,57 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( cost_functor->m_nuclides.size() != num_rel_eff_curves )
         throw logic_error( "Number of nuclides in cost functor does not match number of relative efficiency curves." );
 
-      // Loop over each relative efficiency curve and estimate the starting parameters for the "auto" fit
+
+      // We will next loop over each relative efficiency curve and estimate the starting parameters for the "auto" fit
       //  by doing a rough/course/poor manual fit.
-      const RelActCalcAuto::RelEffCurveInput *first_phys_model_curve = nullptr; //We'll track this for sharing external shielding and Hoerl function, if the user has selected it
-      size_t first_phys_model_par_start = std::numeric_limits<size_t>::max();
-      size_t num_re_nucs_seen = 0, num_re_curve_pars_seen = 0; // To help us keep track of rel eff and act/age index in parameters vector
+      //
+      //  However, because some Physical model curves may shield others, we may need to evaluate the "outer"
+      //  curves first.  So we
+
+
+      // The Physical curves may share Hoerl and/or external shielding; the first Physical curve in
+      //   options.rel_eff_curves defines these shared things, so we will find them now (we need to do
+      //   this now, because we will
+      const RelActCalcAuto::RelEffCurveInput *first_phys_model_curve = nullptr;
+      size_t first_phys_model_par_start = numeric_limits<size_t>::max();
+
       for( size_t re_eff_index = 0; re_eff_index < num_rel_eff_curves; ++re_eff_index )
       {
+        const auto &rel_eff_curve = options.rel_eff_curves[re_eff_index];
+        if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          first_phys_model_curve = &(rel_eff_curve);
+          first_phys_model_par_start = cost_functor->rel_eff_eqn_start_parameter(re_eff_index);
+          break;
+        }
+      }//for( size_t re_eff_index = 0; re_eff_index < num_rel_eff_curves; ++re_eff_index )
+
+      // If a physical curve is shielded by other physical curves, we want to evaluate the outer curves first, so we can
+      //  use the computed thickenses for the inner curves.  So here we'll figure out this order
+      deque<size_t> rel_eff_indices;
+      for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+      {
+        const auto index_pos = std::find( begin(rel_eff_indices), end(rel_eff_indices), rel_eff_index );
+        if( index_pos == end(rel_eff_indices) )
+          rel_eff_indices.push_back( rel_eff_index );
+
+        const auto &rel_eff_curve = options.rel_eff_curves[rel_eff_index];
+        if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          continue;
+
+        for( const size_t shielding_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+        {
+          const auto shield_index_pos = std::find( begin(rel_eff_indices), end(rel_eff_indices), shielding_index );
+          if( shield_index_pos == end(rel_eff_indices) )
+            rel_eff_indices.push_front( shielding_index );
+        }
+      }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff_curves; ++rel_eff_index )
+
+      assert( rel_eff_indices.size() == num_rel_eff_curves );
+
+      for( size_t re_eff_index_index = 0; re_eff_index_index < rel_eff_indices.size(); ++re_eff_index_index )
+      {
+        const size_t re_eff_index = rel_eff_indices[re_eff_index_index];
         const double base_rel_eff_uncert = 1.0;
         
         const auto &rel_eff_curve = options.rel_eff_curves[re_eff_index];
@@ -2240,7 +2284,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const bool correct_for_decay = false;
         
         const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(re_eff_index);
-        assert( this_rel_eff_start == (cost_functor->m_rel_eff_par_start_index + num_re_curve_pars_seen) );
         
         const std::vector<NucInputGamma> &nucs = cost_functor->m_nuclides[re_eff_index];
         
@@ -2306,12 +2349,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               
               pars[b_index] = (0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;  //(energy/1000)^b - start b at 0, so term is 1.0
               pars[c_index] = (1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //c^(1000/energy) - start c at 1, so term is 1
-              if( !rel_eff_curve.phys_model_use_hoerl || (options.same_hoerl_for_all_rel_eff_curves && first_phys_model_curve) )
+              if( !rel_eff_curve.phys_model_use_hoerl
+                 || (options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve))) )
               {
                 constant_parameters.push_back( static_cast<int>(b_index) );
                 constant_parameters.push_back( static_cast<int>(c_index) );
                 
-                if( options.same_hoerl_for_all_rel_eff_curves && first_phys_model_curve )
+                if( options.same_hoerl_for_all_rel_eff_curves && (first_phys_model_curve != &(rel_eff_curve)) )
                 {
                   // This is just so we can assert on the values later, as a double check
                   pars[b_index] = -1.0;
@@ -2323,12 +2367,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 upper_bounds[b_index] = (2.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset;
                 lower_bounds[c_index] = (1.0E-6/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;  //e.x, pow(-0.1889,1000/124.8) is NaN
                 upper_bounds[c_index] = (3.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset;
-              }
-
-              if( !first_phys_model_curve )
-              {
-                first_phys_model_curve = &rel_eff_curve;
-                first_phys_model_par_start = this_rel_eff_start;
               }
 
               break;
@@ -2414,13 +2452,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                         && manual_input.phys_model_use_hoerl
                                         && (first_phys_model_curve != (&rel_eff_curve)));
 
-
           if( use_first_ext_shield )
           {
             for( size_t i = 0; i < manual_input.phys_model_external_attens.size(); ++i )
             {
-              //assert( 0 ); // this has not been checked as of 20250317
-
               const size_t ext_att_index = first_phys_model_par_start + 2 + 2*i;
               const shared_ptr<const RelActCalc::PhysicalModelShieldInput> orig_ext_att = manual_input.phys_model_external_attens[i];
               assert( orig_ext_att );
@@ -2433,8 +2468,92 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               
               manual_input.phys_model_external_attens[i] = updated_ext_att;
             }
-          }//if( use_first_ext_shield )
-          
+          }else if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+          {
+            for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+            {
+              assert( outer_curve_index < options.rel_eff_curves.size() );
+              const RelActCalcAuto::RelEffCurveInput &outer_curve = options.rel_eff_curves[outer_curve_index];
+
+              assert( outer_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+              if( outer_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+                continue;
+
+              // For only two curves, with one shielding the other, we should be totally fine, but for more complex
+              //  dependencies there could be an issue that we arent evaluating things in the correct order; this is
+              //  fixable, but since it is such an edge case, we'll just put in a warning for now.
+              bool has_been_computed = false;
+
+              for( size_t index = 0; index < re_eff_index_index; ++index )
+                has_been_computed |= (rel_eff_indices[index] == outer_curve_index);
+
+              if( !has_been_computed )
+              {
+                // if all parameters are fixed for `outer_curve_index` shielding, then we will consider it computed
+                has_been_computed = true;
+                if( outer_curve.phys_model_self_atten )
+                  has_been_computed = (!outer_curve.phys_model_self_atten->fit_atomic_number
+                                        && !outer_curve.phys_model_self_atten->fit_areal_density);
+                for( size_t ext_shield_index = 0;
+                    has_been_computed && (ext_shield_index < outer_curve.phys_model_external_atten.size());
+                    ++ext_shield_index )
+                {
+                  const auto &ext_shield_ptr = outer_curve.phys_model_external_atten[ext_shield_index];
+                  assert( ext_shield_ptr );
+                  if( ext_shield_ptr )
+                    has_been_computed = (!ext_shield_ptr->fit_atomic_number && !ext_shield_ptr->fit_areal_density);
+                }
+              }//if( !has_been_computed )
+
+              if( !has_been_computed )
+              {
+                solution.m_warnings.push_back( "For starting parameter estimates, not having some curves be shielded, "
+                                              "as intended, by other curves, due to order-of-operations issues" );
+                continue;
+              }
+
+              const size_t outer_shield_start_index = cost_functor->rel_eff_eqn_start_parameter(outer_curve_index);
+              if( outer_curve.phys_model_self_atten )
+              {
+                shared_ptr<RelActCalc::PhysicalModelShieldInput> input
+                      = make_shared<RelActCalc::PhysicalModelShieldInput>( *outer_curve.phys_model_self_atten );
+
+                if( !input->material && input->fit_atomic_number )
+                  input->atomic_number = parameters[outer_shield_start_index + 0] * RelActCalc::ns_an_ceres_mult;
+                if( input->fit_areal_density)
+                  input->areal_density = parameters[outer_shield_start_index + 1] * PhysicalUnits::g_per_cm2;
+
+                input->fit_areal_density = false;
+                input->fit_atomic_number = false;
+
+                manual_input.phys_model_external_attens.push_back( input );
+              }//if( outer_curve.phys_model_self_atten )
+
+              for( size_t ext_index = 0; ext_index < outer_curve.phys_model_external_atten.size(); ++ext_index )
+              {
+                const auto &ext_shield = outer_curve.phys_model_external_atten[ext_index];
+                assert( ext_shield );
+                if( !ext_shield )
+                  continue;
+
+                shared_ptr<RelActCalc::PhysicalModelShieldInput> input
+                                       = make_shared<RelActCalc::PhysicalModelShieldInput>( *ext_shield );
+
+                const size_t an_index = outer_shield_start_index + 2 + 2*ext_index;
+
+                if( !input->material && input->fit_atomic_number )
+                  input->atomic_number = parameters[an_index + 0] * RelActCalc::ns_an_ceres_mult;
+                if( input->fit_areal_density)
+                  input->areal_density = parameters[an_index + 1] * PhysicalUnits::g_per_cm2;
+
+                input->fit_areal_density = false;
+                input->fit_atomic_number = false;
+
+                manual_input.phys_model_external_attens.push_back( input );
+              }//
+            }//for( const size_t other_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+          }//if( use_first_ext_shield ) / else is shielded by other curves
+
           for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint : rel_eff_curve.act_ratio_constraints )
           {
             RelActCalcManual::ManualActRatioConstraint manual_constraint;
@@ -3025,13 +3144,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               //  for this; the other Rel Eff equations we will assume a starting flat line at 1.0.
               if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
               {
-                //const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter(re_eff_index);
-                //const RelActAutoCostFcn::PhysModelRelEqnDef<double> re_input
-                //          = RelActAutoCostFcn::make_phys_eqn_input( rel_eff_curve, cost_functor->m_drf,
-                //                                                   parameters, this_rel_eff_start );
-                //const double rel_eff = RelActCalc::eval_physical_model_eqn_imp( energy, re_input.self_atten,
-                //                                           re_input.external_attens, re_input.det.get(),
-                //                                           re_input.hoerl_b, re_input.hoerl_c );
                 const double energy = std::get<0>( representative_act );
                 const double rel_eff = cost_functor->relative_eff( energy, re_eff_index, parameters );
                 assert( !IsNan(rel_eff) && !IsInf(rel_eff) );
@@ -3178,12 +3290,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
           assert( fabs(check_var_frac - updated_variable_frac) < 0.0001 );
         }//for( const map<short int,double>::value_type &an_sum : elements_starting_mass_fracs )
-
-        num_re_nucs_seen += rel_eff_curve.nuclides.size();
-        if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-          num_re_curve_pars_seen += rel_eff_curve.rel_eff_eqn_order + 1;
-        else
-          num_re_curve_pars_seen += 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2;
       }//for( const auto &rel_eff_curve : options.rel_eff_curves )
         
       // The parameters will have entries for two sets of peak-skew parameters; one for
@@ -4252,7 +4358,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
-        assert( rel_eff_coefficients.size() == (2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2) );
+        assert( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty()
+               || (rel_eff_coefficients.size() == (2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2)) );
 
         if( !first_phys_model_rel_eff_curve )
         {
@@ -4263,8 +4370,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo phys_model_result;
         
         auto get_shield_info = [&]( const RelActCalc::PhysicalModelShieldInput &input,
+                                   const vector<double> &these_rel_eff_coefficients,
                                    const size_t start_index )
           -> RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo {
+
+          assert( (start_index + 2) <= these_rel_eff_coefficients.size() );
 
           RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo answer;
           
@@ -4273,14 +4383,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           if( input.fit_atomic_number )
           {
             assert( !input.material );
-            answer.atomic_number = rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult;
+            answer.atomic_number = these_rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult;
             assert( (answer.atomic_number >= 1.0) && (answer.atomic_number <= 98.0) );
             
             if( uncertainties.size() > (this_rel_eff_start_index + start_index) )
               answer.atomic_number_uncert = uncertainties[this_rel_eff_start_index + start_index + 0] * RelActCalc::ns_an_ceres_mult;
           }else if( !input.material )
           {
-            assert( (rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult)
+            assert( (these_rel_eff_coefficients[start_index + 0] * RelActCalc::ns_an_ceres_mult)
                    == input.atomic_number );
             answer.atomic_number = input.atomic_number;
             assert( (answer.atomic_number >= 1.0) && (answer.atomic_number <= 98.0) );
@@ -4292,14 +4402,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           answer.areal_density_was_fit = input.fit_areal_density;
           if( input.fit_areal_density )
           {
-            answer.areal_density = rel_eff_coefficients[start_index + 1] * PhysicalUnits::g_per_cm2;
+            answer.areal_density = these_rel_eff_coefficients[start_index + 1] * PhysicalUnits::g_per_cm2;
             assert( answer.areal_density >= 0.0 );
             
             if( uncertainties.size() > (this_rel_eff_start_index + start_index + 1) )
               answer.areal_density_uncert = uncertainties[this_rel_eff_start_index + start_index + 1] * PhysicalUnits::g_per_cm2; //or sqrt( m_rel_eff_covariance[start_index + 1][start_index + 1] )
           }else
           {
-            assert( rel_eff_coefficients[start_index + 1] == (input.areal_density / PhysicalUnits::g_per_cm2) );
+            assert( these_rel_eff_coefficients[start_index + 1] == (input.areal_density / PhysicalUnits::g_per_cm2) );
             answer.areal_density = input.areal_density;
           }
           
@@ -4312,15 +4422,41 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                || ((rel_eff_curve.phys_model_self_atten->atomic_number >= 1.0) && (rel_eff_curve.phys_model_self_atten->atomic_number <= 98.0))
                || rel_eff_curve.phys_model_self_atten->fit_atomic_number ) )
         {
-          phys_model_result.self_atten = get_shield_info( *rel_eff_curve.phys_model_self_atten, 0 );
+          phys_model_result.self_atten = get_shield_info( *rel_eff_curve.phys_model_self_atten, rel_eff_coefficients, 0 );
         }//if( options.phys_model_self_atten )
         
         for( size_t ext_ind = 0; ext_ind < rel_eff_curve.phys_model_external_atten.size(); ++ext_ind )
         {
-          auto res = get_shield_info( *rel_eff_curve.phys_model_external_atten[ext_ind], 2 + 2*ext_ind );
+          auto res = get_shield_info( *rel_eff_curve.phys_model_external_atten[ext_ind], rel_eff_coefficients, 2 + 2*ext_ind );
           phys_model_result.ext_shields.push_back( std::move(res) );
         }//for( loop over external attens )
-        
+
+        for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+        {
+          assert( outer_curve_index != rel_eff_index );
+          assert( outer_curve_index < cost_functor->m_options.rel_eff_curves.size() );
+          if( (outer_curve_index == rel_eff_index)
+             || (outer_curve_index >= cost_functor->m_options.rel_eff_curves.size()) )
+          {
+            continue;
+          }
+
+          const RelActCalcAuto::RelEffCurveInput &outer_curve = cost_functor->m_options.rel_eff_curves[outer_curve_index];
+          const size_t re_start_index = cost_functor->rel_eff_eqn_start_parameter(outer_curve_index);
+
+          if( outer_curve.phys_model_self_atten )
+          {
+            auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index );
+            phys_model_result.shields_from_other_curves.push_back( res );
+          }
+          for( size_t i = 0; i < outer_curve.phys_model_external_atten.size(); ++i )
+          {
+            auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index + 2 + 2*i );
+            phys_model_result.shields_from_other_curves.push_back( res );
+          }
+        }//for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+        //shields_from_other_curves
+
         if( rel_eff_curve.phys_model_use_hoerl )
         {
           // Modified Hoerl corrections only present if fitting the Hoerl function was selected
@@ -5871,15 +6007,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
   
   template<typename T>
-  static PhysModelRelEqnDef<T> make_phys_eqn_input( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve,
+  static PhysModelRelEqnDef<T> make_phys_eqn_input_no_other_curve_shielding( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve,
                                                 std::shared_ptr<const DetectorPeakResponse> drf,
                                                 const std::vector<T> &coeffs,
                                                 const size_t rel_eff_start )
   {
+    //Note: `rel_eff_curve` may not be a curve in `m_options.rel_eff_curves` - it could be a copy where shieldings from
+    //      other curves added into external shieldings, with `coeffs` appropriately modified
+    assert( rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() );
+    if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+      throw std::logic_error( "make_phys_eqn_input_no_other_curve_shielding: you can-not have other curves shielding this one." );
+
     assert( (rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2) <= coeffs.size() );
     if( (rel_eff_start + 2 + 2*rel_eff_curve.phys_model_external_atten.size() + 2) > coeffs.size() )
-      throw std::logic_error( "make_phys_eqn_input: whack number of inputs." );
-    
+      throw std::logic_error( "make_phys_eqn_input_no_other_curve_shielding: whack number of inputs." );
+
     PhysModelRelEqnDef<T> answer;
     answer.det = drf;
     
@@ -5931,8 +6073,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }//if( (b != 0.0) || (c != 1.0) )
     
     return answer;
-  }//static PhysModelRelEqnDef make_phys_eqn_input(...)
-  
+  }//static PhysModelRelEqnDef make_phys_eqn_input_no_other_curve_shielding(...)
+
 
   template<typename T>
   PhysModelRelEqnDef<T> make_phys_eqn_input( const size_t rel_eff_curve_index, const std::vector<T> &x ) const 
@@ -5948,18 +6090,55 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     const size_t rel_eff_start = rel_eff_eqn_start_parameter(rel_eff_curve_index);
 
-    if( (!m_options.same_hoerl_for_all_rel_eff_curves && !m_options.same_external_shielding_for_all_rel_eff_curves) )
-      return make_phys_eqn_input( rel_eff_curve, m_drf, x, rel_eff_start );
+    if( !m_options.same_hoerl_for_all_rel_eff_curves
+       && !m_options.same_external_shielding_for_all_rel_eff_curves
+       && rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, x, rel_eff_start );
+    }
 
     const vector<T> coefs = pars_for_rel_eff_curve( rel_eff_curve_index, x );
 
-    return make_phys_eqn_input( rel_eff_curve, m_drf, coefs, 0 );
+    if( rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+      return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve, m_drf, coefs, 0 );
+
+    // If we are here, we are being shielded by other curves, so we have to make a copy of the RelEff curve, and then
+    //  add the shieldings from the other curves to this one.
+    RelActCalcAuto::RelEffCurveInput rel_eff_curve_cpy = rel_eff_curve;
+    rel_eff_curve_cpy.shielded_by_other_phys_model_curve_shieldings.clear();
+
+    for( const size_t outer_re_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+    {
+      assert( outer_re_index < m_options.rel_eff_curves.size() );
+      assert( outer_re_index != rel_eff_curve_index );
+
+      if( (outer_re_index >= m_options.rel_eff_curves.size()) || (outer_re_index == rel_eff_curve_index) )
+        continue;
+
+      const RelActCalcAuto::RelEffCurveInput &outer_curve = m_options.rel_eff_curves[outer_re_index];
+      assert( outer_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+      if( outer_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        continue;
+
+      if( outer_curve.phys_model_self_atten )
+        rel_eff_curve_cpy.phys_model_external_atten.push_back( outer_curve.phys_model_self_atten );
+      for( shared_ptr<const RelActCalc::PhysicalModelShieldInput> outer_ext : outer_curve.phys_model_external_atten )
+      {
+        assert( outer_ext );
+        if( outer_ext )
+          rel_eff_curve_cpy.phys_model_external_atten.push_back( outer_ext );
+      }
+    }//for( const size_t outer_re_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+
+    return make_phys_eqn_input_no_other_curve_shielding( rel_eff_curve_cpy, m_drf, coefs, 0 );
   }//make_phys_eqn_input(...)
   
 
   /** Returns the parameters for the specified relative efficiency curve.
    Note: scale factors have not been applied, as `make_phys_eqn_input(...)` will apply them, or for non-physical
    models, no scale factors are used.
+
+   If this rel. eff. curve is being shielded by another curve, the parameters for the other curves shieldings will come before the Hoerl parameters.
    */
   template<typename T>
   vector<T> pars_for_rel_eff_curve( const size_t rel_eff_index, const std::vector<T> &x ) const
@@ -5979,7 +6158,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     vector<T> coefs( begin(x) + rel_eff_start_index, begin(x) + rel_eff_start_index + num_rel_eff_par );
 
     if( (rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel)
-      || (!m_options.same_hoerl_for_all_rel_eff_curves && !m_options.same_external_shielding_for_all_rel_eff_curves) )
+      || (!m_options.same_hoerl_for_all_rel_eff_curves
+          && !m_options.same_external_shielding_for_all_rel_eff_curves
+          && rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty()) )
     {
       // The polynomial-esque Rel. Eff. eqn coefficients are not scaled
       //  and `make_phys_eqn_input(...)` applies the scale factors for physical model.
@@ -6001,7 +6182,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = m_options.rel_eff_curves[i];
       if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
-        if( rel_eff_index == i )
+        if( (rel_eff_index == i) && (rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty()) )
           return coefs;
 
         first_phys_model = &rel_eff_curve;
@@ -6013,10 +6194,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( first_phys_model );
     if( !first_phys_model )
       throw std::logic_error( "make_phys_eqn_input: no physical model found" );
-
-    assert( (2 + 2*first_phys_model->phys_model_external_atten.size() + 2) <= coefs.size() );
-    if( (2 + 2*first_phys_model->phys_model_external_atten.size() + 2) > coefs.size() )
-      throw std::logic_error( "make_phys_eqn_input: inconsistent number of rel eff parameters - shouldnt have happened - programming logic error." ); //shouldnt happen
 
     if( m_options.same_hoerl_for_all_rel_eff_curves )
     {
@@ -6048,6 +6225,48 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         coefs[2 + 2*i + 1] = x[atten_index + 1];  //AD
       }
     }//if( m_options.same_external_shielding_for_all_rel_eff_curves )
+
+    if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      assert( coefs.size() > 2 ); //actually should be at least 4
+      const size_t this_hoerl_b_coefs_index = 2 + 2*rel_eff_curve.phys_model_external_atten.size();
+      const size_t this_hoerl_c_coefs_index = this_hoerl_b_coefs_index + 1;
+      assert( this_hoerl_c_coefs_index == (coefs.size() - 1) );
+      const T hoerl_b_val = coefs[this_hoerl_b_coefs_index];
+      const T hoerl_c_val = coefs[this_hoerl_c_coefs_index];
+      coefs.resize( coefs.size() - 2 );
+
+      for( const size_t outer_re_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+      {
+        assert( outer_re_index < m_options.rel_eff_curves.size() );
+        assert( outer_re_index != rel_eff_index );
+        if( (outer_re_index >= m_options.rel_eff_curves.size()) || (outer_re_index == rel_eff_index) )
+          continue;
+
+        const RelActCalcAuto::RelEffCurveInput &outer_curve = m_options.rel_eff_curves[outer_re_index];
+        assert( outer_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+        if( outer_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          continue;
+
+        const size_t outer_start_index = rel_eff_eqn_start_parameter(outer_re_index);
+        if( outer_curve.phys_model_self_atten )
+        {
+          assert( x.size() >= (outer_start_index + 2) );
+          coefs.push_back( x.at(outer_start_index + 0) );
+          coefs.push_back( x.at(outer_start_index + 1) );
+        }
+        for( size_t ext_index = 0; ext_index < outer_curve.phys_model_external_atten.size(); ++ext_index )
+        {
+          assert( outer_curve.phys_model_external_atten[ext_index] );
+          assert( x.size() >= (outer_start_index + 2 + 2*ext_index + 2) );
+          coefs.push_back( x.at(outer_start_index + 2 + 2*ext_index + 0) );
+          coefs.push_back( x.at(outer_start_index + 2 + 2*ext_index + 1) );
+        }
+      }//for( const size_t outer_rel_eff_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+
+      coefs.push_back( hoerl_b_val );
+      coefs.push_back( hoerl_c_val );
+    }//if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
 
     return coefs;
   }//pars_for_rel_eff_curve( const size_t rel_eff_index, const std::vector<T> &x )
@@ -7920,10 +8139,20 @@ T peakResolutionFWHM( T energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
       
       energy /= PhysicalUnits::MeV;
       //return  A1 + A2*std::pow( energy + A3*energy*energy, A4 );
-      
-      T val(0.0);
+
+      // Use Horner's method to evaluate the polynomial - more stable.
+      T val = pars[num_pars - 1];
+      for( int i = static_cast<int>(num_pars) - 2; i >= 0; i -= 1 )
+        val = val * energy + pars[i];
+
+#ifndef NDEBUG
+      T unstable_val(0.0);
       for( size_t i = 0; i < num_pars; ++i )
-        val += pars[i] * pow(energy, static_cast<double>(i) );
+        unstable_val += pars[i] * pow(energy, static_cast<double>(i) );
+      const T diff = abs(unstable_val - val);
+      assert( (diff < 1.0E-4) || (diff < 1.0E-3*max(abs(unstable_val), abs(val))) );
+#endif
+
       return sqrt( val );
     }//case kSqrtPolynomial:
       
@@ -8022,7 +8251,7 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
 
   const double drf_answer = DetectorPeakResponse::peakResolutionFWHM( energy_kev, fctntype, drf_pars );
 
-  assert( (abs(answer - drf_answer) < 0.01) || (abs(answer - drf_answer) < 0.01*max(answer,T(drf_answer))) );
+  assert( (abs(answer - drf_answer) < 0.01) || (abs(answer - drf_answer) < 0.01*max(abs(answer),abs(T(drf_answer)))) );
 #endif
 
   return answer;
@@ -8368,7 +8597,20 @@ void Options::check_same_hoerl_and_external_shielding_specifications() const
 
   if( same_external_shielding_for_all_rel_eff_curves )
   {
-    // Check at least 
+    for( const auto &rel_eff_curve : rel_eff_curves )
+    {
+      if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+      {
+        if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          throw logic_error( "You can not specify 'same_external_shielding_for_all_rel_eff_curves' and"
+                                 " specify one physical model to shield another.");
+        else
+          throw logic_error( "A non-physical model efficiency function can not be shielded by other Rel. Eff. curves"
+                            " - and the 'same_external_shielding_for_all_rel_eff_curves' option was specified." );
+      }//if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+    }//for( const auto &rel_eff_curve : rel_eff_curves )
+
+    // Check at least
     size_t num_external_shielding_curves = 0;
     const RelActCalcAuto::RelEffCurveInput *first_phys_model = nullptr;
     for( const auto &rel_eff_curve : rel_eff_curves )
@@ -8457,7 +8699,45 @@ void Options::check_same_hoerl_and_external_shielding_specifications() const
     if( num_external_shielding_curves < 2 )
       throw logic_error( "If using the same external shielding for all relative efficiency curves, "
                         "you must have at least two relative efficiency curves with the external shielding enabled." );
-  }//if( same_external_shielding_for_all_rel_eff_curves )
+  }else //if( same_external_shielding_for_all_rel_eff_curves )
+  {
+    // TODO: when there are more than 2 curves, we could enforce a little more consistency, like if curve 1 is shielded by {2,3}, and 2 is by {3,4}, then 1 should also be shielded by 4
+    for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff_curve = rel_eff_curves[rel_eff_index];
+      if( rel_eff_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        // With some minor coding, we could release this next constraint, but we wont because people probably wont
+        //  intend to use this potential option (it could make sense, rarely, maybe)
+        if( !rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.empty() )
+          throw logic_error( "A non-physical model efficiency function can not be shielded by other Rel. Eff. curves." );
+        continue;
+      }
+
+      for( const size_t shielding_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+      {
+        if( shielding_curve_index == rel_eff_index )
+          throw logic_error( "A physical model rel. eff. curve can not shield itself. " );
+        if( shielding_curve_index >= rel_eff_curves.size() )
+          throw logic_error( "An invalid index was specified in 'shielded_by_other_phys_model_curve_shieldings'." );
+
+        const RelActCalcAuto::RelEffCurveInput &shielding_curve = rel_eff_curves[shielding_curve_index];
+        if( shielding_curve.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+          throw logic_error( "A non-physical model rel eff curve can not shield another curve." );
+
+        if( !shielding_curve.phys_model_self_atten && shielding_curve.phys_model_external_atten.empty() )
+          throw logic_error( "The physical model curve shielding another curve doesnt have any shielding defined." );
+
+        for( const size_t other_curve_index : shielding_curve.shielded_by_other_phys_model_curve_shieldings )
+        {
+          // The calculations would work if tow Rel. Eff. curves shielded each other, but I dont know what this would
+          //  mean physically, so we wont allow it.
+          if( other_curve_index == rel_eff_index )
+            throw logic_error( "Two physical model curves can not shield each other." );
+        }
+      }//for( size_t shielding_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
+    }//for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index
+  }//if( same_external_shielding_for_all_rel_eff_curves ) / else
 }//void Options::check_same_hoerl_and_external_shielding_specifications() const
 
 
@@ -8679,6 +8959,7 @@ RelEffCurveInput::RelEffCurveInput()
   rel_eff_eqn_order( 0 ),
   phys_model_self_atten( nullptr ),
   phys_model_external_atten{},
+  shielded_by_other_phys_model_curve_shieldings{},
   phys_model_use_hoerl( true ),
   pu242_correlation_method( RelActCalc::PuCorrMethod::NotApplicable )
 {
@@ -9307,7 +9588,15 @@ rapidxml::xml_node<char> *RelEffCurveInput::toXml( ::rapidxml::xml_node<char> *p
       for( const auto &ext : phys_model_external_atten )
         ext->toXml( ext_atten_node );
     }//if( !phys_model_external_atten.empty() )
-    
+
+    if( !shielded_by_other_phys_model_curve_shieldings.empty() )
+    {
+      xml_node<char> *shield_by_node = doc->allocate_node( node_element, "ShieldedByCurves" );
+      phys_node->append_node( shield_by_node );
+      for( const size_t curve_index : shielded_by_other_phys_model_curve_shieldings )
+        XmlUtils::append_int_node( shield_by_node, "RelEffCurveIndex", curve_index );
+    }//if( shielded_by_other_phys_model_curve_shieldings.empty() )
+
     XmlUtils::append_bool_node( phys_node, "PhysModelUseHoerl", phys_model_use_hoerl );
   }//if( phys_model_self_atten || !phys_model_external_atten.empty() )
 
@@ -9395,6 +9684,7 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
   phys_model_use_hoerl = true;
   phys_model_self_atten.reset();
   phys_model_external_atten.clear();
+  shielded_by_other_phys_model_curve_shieldings.clear();
   const rapidxml::xml_node<char> *phys_model_node = XML_FIRST_NODE( parent, "PhysicalModelOptions" );
     
   if( (rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) && !phys_model_node )
@@ -9423,7 +9713,20 @@ void RelEffCurveInput::fromXml( const ::rapidxml::xml_node<char> *parent, Materi
         phys_model_external_atten.push_back( att );
       }
     }//if( ext_atten_node )
-      
+
+    const rapidxml::xml_node<char> *outer_curve_node = XML_FIRST_NODE( phys_model_node, "ShieldedByCurves" );
+    if( outer_curve_node )
+    {
+      XML_FOREACH_CHILD( index_node, outer_curve_node, "RelEffCurveIndex" )
+      {
+        size_t index;
+        const string index_str = SpecUtils::xml_value_str( index_node );
+        if( !(stringstream(index_str) >> index) )
+          throw runtime_error( "Invalid 'RelEffCurveIndex' value '" + index_str + "'" );
+        shielded_by_other_phys_model_curve_shieldings.insert( index );
+      }//
+    }//if( outer_curve_node )
+
     phys_model_use_hoerl = XmlUtils::get_bool_node_value(phys_model_node, "PhysModelUseHoerl" );
   }//if( phys_model_node )
 
@@ -9726,17 +10029,21 @@ std::string RelActAutoSolution::rel_eff_txt( const bool html_format, const size_
   assert( rel_eff_index < m_options.rel_eff_curves.size() );
   
   if( rel_eff_index >= m_options.rel_eff_curves.size() )
-    throw logic_error( "RelActAutoSolution::rel_eff_txt: invalis rel eff index" );
-  
+    throw logic_error( "RelActAutoSolution::rel_eff_txt: invalid rel eff index" );
+
   const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
   const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
   
   if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     return RelActCalc::rel_eff_eqn_text( eqn_form, coeffs);
-  
-  const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef phys_in
-           = RelActCalcAutoImp::RelActAutoCostFcn::make_phys_eqn_input( m_options.rel_eff_curves[rel_eff_index], m_drf, coeffs, 0 );
-  
+
+  assert( m_cost_functor );
+  if( !m_cost_functor )
+    return "ErrorWithEqn";
+
+  const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double> phys_in
+               = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
+
   return RelActCalc::physical_model_rel_eff_eqn_text( phys_in.self_atten, phys_in.external_attens,
                                 phys_in.det, phys_in.hoerl_b, phys_in.hoerl_c, html_format );
 }//std::string RelActAutoSolution::rel_eff_txt()
@@ -9852,42 +10159,62 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
         const SandiaDecay::Nuclide * const nuc_j_nuclide = RelActCalcAuto::nuclide(nuc_j.source);
 
         
-        const double act_ratio = activity_ratio(nuc_i.source, nuc_j.source, rel_eff_index);
-        const double nuc_mass_ratio = (nuc_i_nuclide && nuc_j_nuclide) ? mass_ratio(nuc_i_nuclide, nuc_j_nuclide, rel_eff_index) : 0.0;
-        
-        out << "\t" << std::setw(16) << (nuc_i.name() + " / " + nuc_j.name())
-        << "\tact: " << std::setw(10) << std::setprecision(4) << act_ratio;
-        try
-        {
-          const double uncert = activity_ratio_uncertainty(nuc_i.source, rel_eff_index, nuc_j.source, rel_eff_index );
-          out << " ± " << uncert;
-        }catch( std::exception &e )
-        {
-          cerr << "\nFailed to get act ratio uncert for "
-          << RelActCalcAuto::to_name(nuc_i.source) << "/" << RelActCalcAuto::to_name(nuc_j.source)
-          << " - " << e.what() << endl;
-        }
-        out << ",\tmass: " << std::setw(10) << std::setprecision(4) << nuc_mass_ratio;
-        out << "\n";
-        
+        const pair<double,optional<double>> act_ratio = activity_ratio(nuc_i.source, rel_eff_index,
+                                                                       nuc_j.source, rel_eff_index);
+
+        double nuc_mass_ratio = 0.0, nuc_mass_ratio_uncert = 0.0;
         if( nuc_i_nuclide && nuc_j_nuclide )
         {
-          out << "\t" << std::setw(16) << (nuc_j.name() + " / " + nuc_i.name())
-          << "\tact: " << std::setw(10) << std::setprecision(4) << 1.0/act_ratio;
-          try
-          {
-            const double uncert = activity_ratio_uncertainty(nuc_j.source, rel_eff_index, nuc_i.source, rel_eff_index );
-            out << " ± " << uncert;
-          }catch( std::exception &e )
-          {
-            cerr << "\nFailed to get act ratio uncert for "
-            << RelActCalcAuto::to_name(nuc_j.source) << "/" << RelActCalcAuto::to_name(nuc_i.source)
-            << " - " << e.what() << endl;
-          }
-          
-          out << ",\tmass: " << std::setw(10) << std::setprecision(4) << 1.0/nuc_mass_ratio;
-          out << "\n";
+          const double act_to_mass = nuc_j_nuclide->activityPerGram() / nuc_i_nuclide->activityPerGram();
+          nuc_mass_ratio = act_ratio.first * act_to_mass;
+          if( act_ratio.second.has_value() )
+            nuc_mass_ratio_uncert = act_ratio.second.value() * act_to_mass;
         }
+
+        string act_val_str = SpecUtils::printCompact(act_ratio.first,4);
+        if( act_ratio.second.has_value() )
+          act_val_str += " ± " + SpecUtils::printCompact(act_ratio.second.value(),4);
+
+        out << "\t" << std::setw(16) << (nuc_i.name() + " / " + nuc_j.name())
+        << "\tact: " << std::setw(16)
+        << act_val_str;
+        if( nuc_i_nuclide && nuc_j_nuclide )
+        {
+          string mass_ratio_str = SpecUtils::printCompact(nuc_mass_ratio,4);
+          if( act_ratio.second.has_value() )
+            mass_ratio_str += " ± " + SpecUtils::printCompact(nuc_mass_ratio_uncert,4);
+          out << ",\tmass: "<< std::setw(16) << mass_ratio_str;
+        }
+        out << "\n";
+        
+
+        const pair<double,optional<double>> inv_act_ratio = activity_ratio(nuc_j.source, rel_eff_index,
+                                                                             nuc_i.source, rel_eff_index);
+        const double inv = inv_act_ratio.first;
+        double inv_uncert = inv_act_ratio.second.has_value() ? inv_act_ratio.second.value() : -1.0;
+
+        string inv_act_val_str = SpecUtils::printCompact(inv,4);
+        if( inv_act_ratio.second.has_value() )
+          inv_act_val_str += " ± " + SpecUtils::printCompact(inv_uncert,4);
+
+        out << "\t" << std::setw(16) << (nuc_j.name() + " / " + nuc_i.name())
+        << "\tact: " << std::setw(16) << inv_act_val_str;
+
+        if( nuc_i_nuclide && nuc_j_nuclide )
+        {
+          const double inv_act_to_mass = nuc_i_nuclide->activityPerGram() / nuc_j_nuclide->activityPerGram();
+          const double inv_nuc_mass_ratio = inv_act_ratio.first * inv_act_to_mass;
+
+          string inv_mass_val_str = SpecUtils::printCompact(inv_nuc_mass_ratio,4);
+          if( inv_act_ratio.second.has_value() )
+          {
+            const double inv_nuc_mass_ratio_uncert = inv_act_ratio.second.value() * inv_act_to_mass;
+            inv_mass_val_str += " ± " + SpecUtils::printCompact(inv_nuc_mass_ratio_uncert,4);
+          }
+
+          out << ",\tmass: " << std::setw(16) << inv_mass_val_str;
+        }
+        out << "\n";
       }//for( size_t j = 0; j < i; ++j )
     }//for( size_t i = 0; i < used_isotopes.size(); ++i )
   }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
@@ -10045,9 +10372,9 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       }
     }//for( auto &v : nucs_of_element )
   }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_activities.size(); ++rel_eff_index )
-  
-  
-  // Now print out ratios of activities for Rel Eff cyrves that have same nuclides
+
+  // Now print out ratios of activities for Rel Eff curves that have same nuclides
+  bool printed_any_ratio = false;
   for( size_t outer_re_index = 0; outer_re_index < m_rel_activities.size(); ++outer_re_index )
   {
     for( const NuclideRelAct &outer_act : m_rel_activities[outer_re_index] )
@@ -10058,16 +10385,32 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
         {
           if( outer_act.source != inner_act.source )
             continue;
-            
+
           const double inner_activity = inner_act.rel_activity;
           const double outer_activity = outer_act.rel_activity;
           const double inner_counts = nuclide_counts(inner_act.source, inner_re_index);
           const double outer_counts = nuclide_counts(outer_act.source, outer_re_index);
-          
+
+          if( !printed_any_ratio )
+            out << "\n";
+          printed_any_ratio = true;
+
           out << "Ratio of " << outer_act.name() << " between RE curves "
           << outer_re_index << " and " << inner_re_index << ":\n"
-          << "\tActivity: " << outer_activity << " / " << inner_activity << " = " << (outer_activity/inner_activity) << "\n"
-          << "\tCounts  : " << outer_counts << " / " << inner_counts << " = " << (outer_counts/inner_counts) << "\n"; 
+          << "    Activity: " << outer_activity << " / " << inner_activity << " = " 
+          << SpecUtils::printCompact( outer_activity/inner_activity, 4 );
+          try
+          {
+            const double act_ratio_uncert = activity_ratio_uncertainty(outer_act.source, outer_re_index,
+                                                                       inner_act.source, inner_re_index);
+            out << " ± " << SpecUtils::printCompact( act_ratio_uncert, 4 );
+          }catch( std::exception & )
+          {
+            // Happens if we dont have covariance matrix or whatever
+          }
+
+          out << "\n"
+          << "    Counts  : " << outer_counts << " / " << inner_counts << " = " << (outer_counts/inner_counts) << "\n";
         }//for( const NuclideRelAct &inner_act : m_rel_activities[inner_re_index] )
       }//for( loop over further RE curves )
     }//for( const NuclideRelAct &outer_act : m_rel_activities[outer_re_index] )
@@ -10824,14 +11167,18 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       if( rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel )
       {
         info.js_rel_eff_eqn = RelActCalc::rel_eff_eqn_js_function( rel_eff.rel_eff_eqn_type, m_rel_eff_coefficients[rel_eff_index] );
-      }else
+      }else if( m_cost_functor )
       {
         const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef input
-                   = RelActCalcAutoImp::RelActAutoCostFcn::make_phys_eqn_input( rel_eff, m_drf, m_rel_eff_coefficients[rel_eff_index], 0 );
-      
+        = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
+
         info.js_rel_eff_eqn = RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
                                                                           input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
-      }//if( not FramPhysicalModel ) / else
+      }else
+      {
+        assert( 0 );
+        info.js_rel_eff_eqn = "function(x){ return 1; }";
+      }//if( not FramPhysicalModel ) / else / m_cost_functor
     }catch( std::exception &e )
     {
       cerr << "Error creating RelEffChart::ReCurveInfo: " << e.what() << endl;
@@ -11286,9 +11633,10 @@ double RelActAutoSolution::mass_ratio( const SandiaDecay::Nuclide *numerator,
                                       const SandiaDecay::Nuclide *denominator,
                                       const size_t rel_eff_index ) const
 {
-  const double ratio = activity_ratio(SrcVariant(numerator), SrcVariant(denominator), rel_eff_index);
-  
-  return ratio * denominator->activityPerGram() / numerator->activityPerGram();
+  const pair<double,std::optional<double>> ratio = activity_ratio(SrcVariant(numerator), rel_eff_index,
+                                                                  SrcVariant(denominator), rel_eff_index);
+
+  return ratio.first * denominator->activityPerGram() / numerator->activityPerGram();
 }//double mass_ratio(...)
 
 
@@ -11310,17 +11658,64 @@ const NuclideRelAct &RelActAutoSolution::nucinfo( const SrcVariant src, const si
   throw runtime_error( "nucinfo: nuclide not found in rel eff curve" );
 }
 
-double RelActAutoSolution::activity_ratio( const SrcVariant &numerator,
-                                          const SrcVariant &denominator,
-                                          const size_t rel_eff_index ) const
+
+pair<double,optional<double>> RelActAutoSolution::activity_ratio( const SrcVariant &numerator, const size_t num_rel_eff_index,
+                                            const SrcVariant &denominator, const size_t denom_rel_eff_index ) const
 {
-  assert( m_rel_activities.size() == m_options.rel_eff_curves.size() );
-  
-  assert( rel_eff_index < m_rel_activities.size() );
-  if( rel_eff_index >= m_rel_activities.size() )
-    throw std::logic_error( "activity_ratio: invalid rel eff index" );
-  
-  return rel_activity(numerator, rel_eff_index) / rel_activity(denominator, rel_eff_index);
+  assert( m_cost_functor );
+  if( !m_cost_functor || m_covariance.empty() )
+  {
+    const double ratio = rel_activity(numerator, num_rel_eff_index) / rel_activity(denominator, denom_rel_eff_index);
+    return make_pair( ratio, optional<double>{} );
+  }
+
+  const vector<double> &x = m_final_parameters;
+  const vector<vector<double>> &covariance = m_covariance;
+
+  const size_t num_pars = m_cost_functor->number_parameters();
+  assert( covariance.size() == num_pars );
+  if( covariance.size() != num_pars )
+    throw std::logic_error( "activity_ratio: covariance matrix has wrong number of rows." );
+  for( const auto &row : covariance )
+  {
+    assert( row.size() == num_pars );
+    if( row.size() != num_pars )
+      throw std::logic_error( "activity_ratio: covariance matrix has wrong number of columns." );
+  }
+
+  typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+
+  double ratio = -1.0;
+  vector<double> jacobian( num_pars, 0.0 );
+  for( size_t i = 0; i < num_pars; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+  {
+    vector<Jet> x_local( begin(x), end(x) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_pars); ++j )
+      x_local[i+j].v[j] = 1.0;
+    const Jet num_rel_act_jet = m_cost_functor->relative_activity(numerator, num_rel_eff_index, x_local);
+    const Jet denom_rel_act_jet = m_cost_functor->relative_activity(denominator, denom_rel_eff_index, x_local);
+
+    const Jet ratio_jet = num_rel_act_jet / denom_rel_act_jet;
+
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_pars); ++j )
+      jacobian[i+j] = ratio_jet.v[j];
+
+    ratio = ratio_jet.a;
+  }//for( size_t i = 0; i < num_pars; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+
+  double uncertainty = 0.0;
+  for( size_t i = 0; i < num_pars; ++i )
+  {
+    for( size_t j = 0; j < num_pars; ++j )
+      uncertainty += jacobian[i]*covariance[i][j]*jacobian[j];
+  }
+
+  uncertainty = sqrt( uncertainty );
+
+  if( IsInf(uncertainty) || IsNan(uncertainty) )
+    return {ratio, optional<double>{}};
+
+  return {ratio, uncertainty};
 }//double activity_ratio(...)
 
 
@@ -11672,7 +12067,61 @@ double RelActAutoSolution::rel_activity( const SrcVariant &src, const size_t rel
 
   return nuclides[nuc_index].rel_activity;
 }//double rel_activity(...)
-  
+
+
+pair<double,double> RelActAutoSolution::rel_activity_with_uncert( const SrcVariant &src, const size_t rel_eff_index ) const
+{
+  typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+
+  // Check if covariance matrix is available
+  if( m_phys_units_cov.empty() || m_final_parameters.empty() || !m_cost_functor )
+    throw std::logic_error( "rel_activity_with_uncert: covariance matrix or parameters not available" );
+
+  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
+
+  assert( rel_eff_index < m_rel_eff_forms.size() );
+  if( rel_eff_index >= m_rel_eff_forms.size() )
+    throw std::logic_error( "rel_activity_with_uncert: invalid numerator rel eff index" );
+
+  // We compute the full Jacobian and multiply everything out here because reh Rel. Act. could be subject to a
+  //  constraint or something, so we want to fully take that into account.
+  const size_t num_par = m_final_parameters.size();
+  double rel_act = -1.0;
+  vector<double> jacobian( num_par, 0.0 );
+  for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+  {
+    vector<Jet> x_local( begin(m_final_parameters), end(m_final_parameters) );
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+      x_local[i+j].v[j] = 1.0;
+
+    const Jet value_jet = m_cost_functor->relative_activity(src, rel_eff_index, x_local);
+
+    for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_par); ++j )
+      jacobian[i+j] = value_jet.v[j];
+    rel_act = value_jet.a;
+  }
+
+  double uncertainty_2 = 0.0;
+  for( size_t i = 0; i < num_par; ++i )
+  {
+    assert( m_covariance[i].size() == num_par );
+    if( m_covariance[i].size() != num_par )
+      throw logic_error( "rel_activity_with_uncert: invalid act ratio covariance matrix row." );
+
+    for( size_t j = 0; j < num_par; ++j )
+      uncertainty_2 += jacobian[i]*m_covariance[i][j]*jacobian[j];
+  }
+
+  if( (uncertainty_2 < 0.0) || IsNan(uncertainty_2) || IsInf(uncertainty_2) )
+    throw std::logic_error( "rel_activity_with_uncert: negative variance in covariance matrix" );
+
+  const double uncertainty = std::sqrt( uncertainty_2 );
+
+  return std::make_pair( rel_act, uncertainty );
+}//{double,double} rel_activity_with_uncert( const SrcVariant &src, const size_t rel_eff_index ) const
+
+
 
 double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const
 {
@@ -11816,6 +12265,16 @@ double RelActAutoSolution::relative_efficiency( const double energy, const size_
     external_attens.push_back( std::move(ext_shield_mdl) );
   }
 
+  for( const PhysicalModelFitInfo::ShieldInfo &other_curve_shield : phys_model_result->shields_from_other_curves )
+  {
+    RelActCalc::PhysModelShield<double> ext_shield_mdl;
+    ext_shield_mdl.material = other_curve_shield.material;
+    if( other_curve_shield.atomic_number.has_value() )
+      ext_shield_mdl.atomic_number = *other_curve_shield.atomic_number;
+    ext_shield_mdl.areal_density = other_curve_shield.areal_density;
+    external_attens.push_back( std::move(ext_shield_mdl) );
+  }
+
   return RelActCalc::eval_physical_model_eqn( energy, self_atten, external_attens, m_drf.get(), 
                                               phys_model_result->hoerl_b, phys_model_result->hoerl_c );
 }//double relative_efficiency( const double energy, const size_t rel_eff_index ) const;
@@ -11928,24 +12387,26 @@ size_t RelActAutoSolution::nuclide_index( const SrcVariant &src, const size_t re
 
 string RelActAutoSolution::rel_eff_eqn_js_function( const size_t rel_eff_index ) const
 {
+  assert( m_cost_functor );
   assert( m_rel_activities.size() == m_rel_eff_forms.size() );
   assert( m_rel_eff_coefficients.size() == m_rel_eff_forms.size() );
   
   assert( rel_eff_index < m_rel_eff_forms.size() );
   if( rel_eff_index >= m_rel_eff_forms.size() )
     throw std::logic_error( "rel_eff_eqn_js_function: invalid rel eff index" );
-  
+
+  if( !m_cost_functor )
+    throw std::logic_error( "rel_eff_eqn_js_function: invalid cost functor pointer" );
+
   const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
   const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
   
   if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
     return RelActCalc::rel_eff_eqn_js_function( eqn_form, coeffs );
-  
+
   const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef input
-                    = RelActCalcAutoImp::RelActAutoCostFcn::make_phys_eqn_input(
-                            m_options.rel_eff_curves[rel_eff_index], m_drf, coeffs, 0 );
-  
-    
+                                    = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
+
   return RelActCalc::physical_model_rel_eff_eqn_js_function( input.self_atten,
                             input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
 }//string rel_eff_eqn_js_function() const
@@ -12344,8 +12805,8 @@ RelActAutoSolution solve( const Options options,
         
         optional<RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double>> &phys_model_input = phys_model_inputs[rel_eff_index];
         if( (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel) && !phys_model_input.has_value() )
-          phys_model_input = RelActCalcAutoImp::RelActAutoCostFcn::make_phys_eqn_input( rel_eff, current_sol.m_drf, rel_eff_coefs, 0 );
-        
+          phys_model_input = current_sol.m_cost_functor->make_phys_eqn_input(rel_eff_index, current_sol.m_final_parameters );
+
         for( const NuclideRelAct &rel_act : rel_acts )
         {
           assert( !is_null(rel_act.source) );

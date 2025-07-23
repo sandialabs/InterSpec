@@ -718,100 +718,166 @@ public:
   }//void addUrl( const string &url )
 };//MultiUrlSpectrumDialog
 #endif //USE_QR_CODES
-
-WT_DECLARE_WT_MEMBER
-(LookForQrCode, Wt::JavaScriptFunction, "LookForQrCode",
-async function( sender_id, u8Buffer )
-{
-  let zxing = await ZXing();
-  
-  let zxingBuffer = zxing._malloc(u8Buffer.length);
-  zxing.HEAPU8.set(u8Buffer, zxingBuffer);
-  
-  let results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, "QRCode", 0xff);
-  zxing._free(zxingBuffer);
-  
-  const firstRes = (results.size() > 0) ? results.get(0) : null;
-  
-  if( (results.size() === 0)
-     || (firstRes && firstRes.error && (firstRes.error.length !== 0) && (!firstRes.text || firstRes.text.length)) )
-  {
-    if( firstRes && firstRes.error && (firstRes.error.length !== 0) )
-    {
-      console.log( "QR-code reading error:", firstRes.error );
-      Wt.emit( sender_id, 'QrDecodedFromImg', -1, firstRes.error );
-    }else
-    {
-      // No QR-code found
-      console.log( "No QR-code found." );
-      Wt.emit( sender_id, 'QrDecodedFromImg', 0, "" );
-    }
-  }else
-  {
-    console.log( "Successfully got QR-code results." );
-    let uri = "";
-    for( let i = 0; i < results.size(); i += 1)
-    {
-      const { format, text, bytes, error } = results.get(i);
-      uri += (uri.length ? "\n" : "") + btoa(text);
-      //console.log( "text: ", text, "\nerror:", error );
-    }
-    
-    Wt.emit( sender_id, 'QrDecodedFromImg', results.size(), uri );
-  }//if( error ) / else
-}
-);
-  
-  
-WT_DECLARE_WT_MEMBER
-(SearchForQrFromImgData, Wt::JavaScriptFunction, "SearchForQrFromImgData",
-function( sender_id, b64_img_data_str )
-{
-  let binaryString = atob(b64_img_data_str);
-  let bytes = new Uint8Array(binaryString.length);
-  for( let i = 0; i < binaryString.length; i++)
-    bytes[i] = binaryString.charCodeAt(i);
-    
-  let u8Buffer = new Uint8Array(bytes);
-  
-  Wt.WT.LookForQrCode(sender_id, u8Buffer).then( function(){
-    console.log( "Done calling qr decode" );
-  }).catch(function(err){
-    console.log( "qr decode error: ", err );
-    Wt.emit( sender_id, 'QrDecodedFromImg', -999, "There was an error calling decoding routine." );
-  });
-}
-);
   
   
 WT_DECLARE_WT_MEMBER
 (SearchForQrUsingCanvas, Wt::JavaScriptFunction, "SearchForQrUsingCanvas",
-function( sender_id, img )
+ async function( sender_id, img )
 {
-  //Turn image into PNG, then call Wt.WT.LookForQrCode(sender_id, u8Buffer).then...
   try
   {
-    let canvas = document.createElement('canvas');
-    canvas.width = Math.max(img.width, img.naturalWidth ? img.naturalWidth : 0);
-    canvas.height = Math.max(img.height, img.naturalHeight ? img.naturalHeight : 0);
+    const originalCanvas = document.createElement('canvas');
+    originalCanvas.width = Math.max(img.width, img.naturalWidth ? img.naturalWidth : 0);
+    originalCanvas.height = Math.max(img.height, img.naturalHeight ? img.naturalHeight : 0);
+    const originalCtx = originalCanvas.getContext('2d');
+    originalCtx.drawImage(img, 0, 0);
     
-    let ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
+    
+    // Function to resize the canvas contents - if each QR code element is too large, the
+    //  zxing heuristics may not work out.
+    function resizeCanvas(scaleFactor) {
+      const resizedCanvas = document.createElement('canvas');
+      const resizedCtx = resizedCanvas.getContext('2d');
+      resizedCanvas.width = originalCanvas.width * scaleFactor;
+      resizedCanvas.height = originalCanvas.height * scaleFactor;
+      resizedCtx.drawImage(originalCanvas, 0, 0, originalCanvas.width, originalCanvas.height, 0, 0, resizedCanvas.width, resizedCanvas.height);
+      return resizedCanvas;
+    };//function resizeCanvas
+    
+    // Function to adjust image properties
+    //  wcjohns knowns nothing about image transformations - this function was thanks to a LLM - seems to work, kinda
+    function adjustImage(canvas, ctx, options) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data; // Pixel data (RGBA)
+      
+      const {
+        exposure = 1.0,       // Exposure multiplier (default: 1.0)
+        contrast = 1.0,       // Contrast multiplier (default: 1.0)
+        saturation = 1.0,     // Saturation multiplier (default: 1.0)
+        highlights = 0.0,     // Highlights adjustment (default: 0.0)
+        shadows = 0.0         // Shadows adjustment (default: 0.0)
+      } = options;
+      
+      for (let i = 0; i < data.length; i += 4) {
+        let r = data[i], g = data[i + 1], b = data[i + 2];
+        
+        // Adjust exposure
+        r *= exposure;
+        g *= exposure;
+        b *= exposure;
+        
+        // Adjust contrast
+        r = ((r - 128) * contrast) + 128;
+        g = ((g - 128) * contrast) + 128;
+        b = ((b - 128) * contrast) + 128;
+        
+        // Adjust highlights and shadows
+        r += highlights - shadows;
+        g += highlights - shadows;
+        b += highlights - shadows;
+        
+        // Adjust saturation
+        const avg = (r + g + b) / 3; // Calculate average intensity
+        r += (r - avg) * saturation;
+        g += (g - avg) * saturation;
+        b += (b - avg) * saturation;
+        
+        // Clamp values to [0, 255]
+        data[i] = Math.min(255, Math.max(0, r));
+        data[i + 1] = Math.min(255, Math.max(0, g));
+        data[i + 2] = Math.min(255, Math.max(0, b));
+      }
+      
+      // Put the adjusted image data back onto the canvas
+      ctx.putImageData(imageData, 0, 0);
+    };//function adjustImage(...)
+    
+    
+    // We will make a number of transforms to try an look for the QR code in
+    let canvas_transforms_to_try = [
+      function(){return resizeCanvas(0.5);},
+      function(){return resizeCanvas(0.25);},
+      function(){return resizeCanvas(0.15);},
+      function(){ //increase contrast
+        let c = resizeCanvas(1.0);
+        const ctx = c.getContext('2d');
+        adjustImage(c, ctx, {
+          exposure: 1.0,    // exposure - leave nominal
+          contrast: 1.5,    // Increase contrast
+          saturation: 1.0,  // leave saturation
+          highlights: 0,   // Brighten highlights - adds to pixel values (e.g. 0,255)
+          shadows: 0      // Darken shadows - subtracts to pixel values (e.g. 0,255)
+        });
+        return c;
+      },
+      function(){ //cut size in half and increase contrast
+        let c = resizeCanvas(0.5);
+        const ctx = c.getContext('2d');
+        adjustImage(c, ctx, { contrast: 1.5 });
+        return c;
+      }
+    ];//let canvas_transforms_to_try = [...]
+  
+    let error_status = null;
+    const zxing = await ZXing();
+    
+    async function LookForQrCode( blobData ){
+      const arrBuf = await blobData.arrayBuffer();
+      const u8Buffer = new Uint8Array( arrBuf );
+      
+      let zxingBuffer = zxing._malloc(u8Buffer.length);
+      zxing.HEAPU8.set(u8Buffer, zxingBuffer);
+      
+      let results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, "QRCode", 0xff);
+      zxing._free(zxingBuffer);
+      
+      const firstRes = (results.size() > 0) ? results.get(0) : null;
+      
+      if( (results.size() === 0)
+         || (firstRes && firstRes.error && (firstRes.error.length !== 0) && (!firstRes.text || firstRes.text.length)) )
+      {
+        if( firstRes && firstRes.error && (firstRes.error.length !== 0) )
+        {
+          console.log( "QR-code reading error:", firstRes.error );
+          if( !error_status )
+            error_status = { status: -1, msg: "" + firstRes.error };
+        }else
+        {
+          // No QR-code found
+          console.log( "No QR-code found." );
+          if( !error_status )
+            error_status = { status: 0, msg: "" };
+        }
+      }else
+      {
+        console.log( "Successfully got QR-code results." );
+        let uri = "";
+        for( let i = 0; i < results.size(); i += 1)
+        {
+          const { format, text, bytes, error } = results.get(i);
+          uri += (uri.length ? "\n" : "") + btoa(text);
+          //console.log( "text: ", text, "\nerror:", error );
+        }
+        
+        Wt.emit( sender_id, 'QrDecodedFromImg', results.size(), uri );
+        return;
+      }//if( error ) / else
+      
+      
+      if( canvas_transforms_to_try.length > 0 )
+      {
+        const xform = canvas_transforms_to_try.shift();
+        const new_canvas = xform();
+        new_canvas.toBlob( LookForQrCode, 'image/png' );
+        return;
+      }
+      
+      Wt.emit( sender_id, 'QrDecodedFromImg', error_status ? error_status.status : 0, error_status ? error_status.msg : "" );
+    };//function LookForQrCode
+    
     
     // Convert the image to PNG format
-    function blobToQr(blobData){
-      blobData.arrayBuffer().then( function(arrBuf){
-        let u8Buffer = new Uint8Array( arrBuf );
-        Wt.WT.LookForQrCode(sender_id, u8Buffer).then( function(){
-          console.log( "Done calling qr decode for canvas blob" );
-        }).catch(function(err){
-          console.log( "qr decode error: ", err );
-          Wt.emit( sender_id, 'QrDecodedFromImg', -999, "Error calling decoding routine." );
-        });
-      });
-    };//blobToQr
-    
-    canvas.toBlob( blobToQr, 'image/png' );
+    originalCanvas.toBlob( LookForQrCode, 'image/png' );
   }catch( err )
   {
     console.log( "qr decode error (1): ", err );
@@ -1097,23 +1163,8 @@ protected:
   }//void qr_check_result( const int num_qr, const string b64_value )
   
   
-  void check_for_qr_with_raw()
-  {
-    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
-    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrFromImgData);
-    wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
-    
-    vector<unsigned char> raw_data = m_resource->data();
-    string str_data( raw_data.size(), '\0' );
-    memcpy( (void *)&(str_data[0]), (void *)raw_data.data(), raw_data.size() );
-    string b64_data = Wt::Utils::base64Encode(str_data, false);
-    this->doJavaScript( "Wt.WT.SearchForQrFromImgData('" + this->id() + "','" + b64_data + "');" );
-  }//void check_for_qr_with_raw()
-  
-  
   void check_for_qr_from_canvas()
   {
-    LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
     LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
     wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
     
@@ -1217,10 +1268,6 @@ public:
       return;
     }//if( !success )
     
-    const bool is_gif_jpg_png = (SpecUtils::icontains(mimetype, "gif")
-                              || SpecUtils::icontains(mimetype, "jpeg")
-                              || SpecUtils::icontains(mimetype, "png"));
-    
     m_resource = new WMemoryResource( mimetype, this );
     m_resource->setData( totaldata );
         
@@ -1247,41 +1294,25 @@ public:
     m_qrDecodeSignal.connect( boost::bind( &UploadedImgDisplay::qr_check_result, this,
                                           boost::placeholders::_1, boost::placeholders::_2 ) );
     
-    if( is_gif_jpg_png )
+    // We will draw the image to a canvas, and use that
+    if( m_autoQrCodeSearch )
     {
-      // We will use the raw image data
-      if( m_autoQrCodeSearch )
-      {
-        assert( m_qrCodeStatusTxt );
-        m_qrCodeStatusTxt->setText( WString::tr("uid-looking-for-qr") );
-        check_for_qr_with_raw();
-      }else
-      {
-        m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_with_raw );
-      }
+      LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
+      wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
+        
+      assert( m_qrCodeStatusTxt );
+      m_qrCodeStatusTxt->setText( WString::tr("uid-looking-for-qr") );
+        
+      // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
+      //  if image file is invalid, or a HEIC on Windows.
+      m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + "); }" );
+      m_image->imageLoaded().connect( boost::bind( &WText::setText, m_qrCodeStatusTxt, WString("Looking for QR-codes.") ) );
     }else
     {
-      // We will draw the image to a canvas, and use that
-      if( m_autoQrCodeSearch )
-      {
-        LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsLookForQrCode);
-        LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
-        wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
-        
-        assert( m_qrCodeStatusTxt );
-        m_qrCodeStatusTxt->setText( WString::tr("uid-no-qr-found") );
-        
-        // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
-        //  if image file is invalid, or a HEIC on Windows.
-        m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + "); }" );
-        m_image->imageLoaded().connect( boost::bind( &WText::setText, m_qrCodeStatusTxt, WString("Looking for QR-codes.") ) );
-      }else
-      {
-        m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
-        m_checkForQrCodeBtn->disable();
-        m_image->imageLoaded().connect( m_checkForQrCodeBtn, &WPushButton::enable );
-      }
-    }//if( zxing can read the image directly ) / else
+      m_checkForQrCodeBtn->clicked().connect( this, &UploadedImgDisplay::check_for_qr_from_canvas );
+      m_checkForQrCodeBtn->disable();
+      m_image->imageLoaded().connect( m_checkForQrCodeBtn, &WPushButton::enable );
+    }
     
         
     if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )

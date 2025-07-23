@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <atomic>
 #include <string>
 #include <memory>
@@ -439,6 +440,14 @@ struct RelEffCurveInput
   /** Only used for `RelEffEqnForm::FramPhysicalModel` - shielding definitions for external attenuators. */
   std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten;
 
+  /** The indices of other Physical Model Rel. Eff. curves, whose self-attenuation and external attuators act as external shieldings for
+   this Rel. Eff. curve.  If any indices are provided, a number of requirements must be met.
+   - The indices provided must be for Physical Model defined rel. eff. curves, and the indix of this curve may not be provided.
+   - The `Options::same_external_shielding_for_all_rel_eff_curves` option must be false.
+   - The curve(s) shielding this curve may not also be shielded by this curve.
+   */
+  std::set<size_t> shielded_by_other_phys_model_curve_shieldings;
+
   /** If true, fit the modified Hoerl equation form for the physical model.
    * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
    *
@@ -775,13 +784,14 @@ struct RelActAutoSolution
   const NuclideRelAct &nucinfo( const SrcVariant src, const size_t rel_eff_index ) const;
   
 
-  /** Returns the activity ratio of two nuclides.
-   
+  /** Returns the activity ratio of two nuclides, and if possible, the uncertainty of the ratio.
+
+   The uncertainty will not be provided if covariance matrix is empty, or if it is Inf or NaN.
+
    Throws exception if either input \c nuclide is nullptr, or was not in the problem.
-   
-   TODO: add uncertainty, via returning pair<double,double>
    */
-  double activity_ratio( const SrcVariant &numerator, const SrcVariant &denominator, const size_t rel_eff_index ) const;
+  std::pair<double,std::optional<double>> activity_ratio( const SrcVariant &numerator, const size_t num_rel_eff_index,
+                                              const SrcVariant &denominator, const size_t denom_rel_eff_index ) const;
 
 
   /** Walks the chain of activity ratio constraints to find the controlling source.
@@ -813,6 +823,8 @@ struct RelActAutoSolution
   TODO: add uncertainty, via returning pair<double,double>
   */
   double rel_activity( const SrcVariant &src, const size_t rel_eff_index ) const;
+
+  std::pair<double,double> rel_activity_with_uncert( const SrcVariant &src, const size_t rel_eff_index ) const;
 
 
   /** Returns the counts in all peaks for a source in the relative efficency curve.
@@ -1122,14 +1134,20 @@ struct RelActAutoSolution
     /** Self attenuator info will only be present if was input into fit. */
     std::optional<ShieldInfo> self_atten;
     std::vector<ShieldInfo> ext_shields;
-    
+
+    /** If `RelEffCurveInput::shielded_by_other_phys_model_curve_shieldings` was specified, the "outer" curves shieldings
+     (both self-atten and external atten) will copied to this variable.
+     */
+    std::vector<ShieldInfo> shields_from_other_curves;
+
     // Modified Hoerl corrections only present if fitting the Hoerl function was selected
     //  Uncertainties are just sqrt of covariance diagnal
     std::optional<double> hoerl_b, hoerl_b_uncert;
     std::optional<double> hoerl_c, hoerl_c_uncert;
   };//struct PhysicalModelFitInfo
   
-  
+  /** The curve information for Physical Model curves.
+   */
   std::vector<std::optional<PhysicalModelFitInfo>> m_phys_model_results;
   
   

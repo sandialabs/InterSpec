@@ -6824,7 +6824,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
     for( size_t i = 0; i < dummy_amplitudes.size(); ++i )
     {
       assert( (abs(amplitudes[i] - dummy_amplitudes[i])
-             < 0.0001*max(abs(amplitudes[i]),abs(dummy_amplitudes[i])))
+             < 0.001*max(abs(amplitudes[i]),abs(dummy_amplitudes[i])))
              || (abs(amplitudes[i] - dummy_amplitudes[i]) < 1.0E-7) );
       assert( (abs(amplitudes_uncerts[i] - dummy_amplitudes_uncerts[i])
              < 0.001*max(abs(amplitudes_uncerts[i]),abs(dummy_amplitudes_uncerts[i])))

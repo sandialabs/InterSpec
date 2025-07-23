@@ -1963,8 +1963,8 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
       if( !w )
         return;
       
-      assert( input );
-      
+      assert( !input == !fit );
+
       if( !fit )
       {
         w->resetState();
