@@ -1531,7 +1531,10 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
     auto peak = make_shared<PeakDef>(mean, sigma, amplitude );
     
     peak->continuum()->setRange( roi_lower, roi_upper );
-    peak->continuum()->calc_linear_continuum_eqn( m_foreground, mean, roi_lower, roi_upper, 3, 3 );
+    shared_ptr<const SpecUtils::Measurement> histogram = m_spectrum->data();
+    if( !histogram )
+      histogram = m_foreground;
+    peak->continuum()->calc_linear_continuum_eqn( histogram, mean, roi_lower, roi_upper, 3, 3 );
     
     m_spectrum->updateRoiBeingDragged( vector< shared_ptr<const PeakDef>>{peak} );
   }catch( std::exception &e )
