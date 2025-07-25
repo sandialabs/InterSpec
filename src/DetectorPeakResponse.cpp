@@ -3582,8 +3582,7 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       if( pars.size() != 3 )
         throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
                                  " pars not defined" );
-      
-      energy /= PhysicalUnits::keV;
+      assert( PhysicalUnits::keV == 1.0 );
       
       /*
        // 20231223: a updated straight-forward translation from the fortran is:
@@ -3605,26 +3604,24 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
        return 6.61f * resolution661 * std::pow(std::max(30.0f,energy)/661.0f, p );
        */
       
-      const float &a = pars[0];
-      const float &b = pars[1];
-      const float &c = pars[2];
-      
-      
+      const double a = pars[0];
+      const double b = pars[1];
+      const double c = pars[2];
       
       if( energy >= 661.0f || fabs(a)<float(1.0E-6) )
-        return 6.61f * b * pow(energy/661.0f, c);
-      
+        return static_cast<float>( 6.61 * b * pow(energy/661.0, c) );
+
       if( a < 0.0 )
       {
-        const float p = pow( c, float(1.0f/log(1.0f-a)) );
-        return 6.61f * b * pow(energy/661.0f, p);
+        const double p = pow( c, 1.0/log(1.0-a) );
+        return static_cast<float>( 6.61 * b * pow(energy/661.0, p) );
       }//if( a < 0.0 )
       
-      if( a > 6.61f*b )
-        return a;
-      
-      const float A7 = sqrt( pow(float(6.61f*b), float(2.0f))-a*a )/6.61f;
-      return sqrt(a*a + pow(float(6.61f * A7 * pow(energy/661.0f, c)), 2.0f));
+      if( a > 6.61*b )
+        return static_cast<float>( a );
+
+      const double A7 = sqrt( pow( 6.61*b, 2.0) - a*a ) / 6.61;
+      return static_cast<float>( sqrt(a*a + pow( 6.61 * A7 * pow(energy/661.0, c), 2.0)) );
     }//case kGadrasResolutionFcn:
     
     case kSqrtEnergyPlusInverse:
