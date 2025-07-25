@@ -1200,6 +1200,8 @@ createWebViewWithConfiguration:(WKWebViewConfiguration *)configuration
     NSNumber *columnNumber = sentData[@"colno"];
     NSString *errorDetails = sentData[@"error"];
 
+    //If the error message contained "Wt internal error" or "c.size", it was a fatal error...
+
     // Create the alert
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"JavaScript Error";
