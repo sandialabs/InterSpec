@@ -134,7 +134,7 @@ option(
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
-
+option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
 
 
@@ -350,6 +350,7 @@ set(sources
     src/UserPreferences.cpp
     src/RefSpectraWidget.cpp
     src/RefSpectraModel.cpp
+    src/AnalystChecks.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -459,6 +460,7 @@ set(headers
     InterSpec/XmlUtils.hpp
     InterSpec/RefSpectraWidget.h
     InterSpec/RefSpectraModel.h
+    InterSpec/AnalystChecks.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -608,6 +610,14 @@ if( BUILD_AS_OSX_APP )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
 endif( BUILD_AS_OSX_APP )
 
+if( USE_LLM_INTERFACE )
+  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp )
+  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h )
+  
+  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
+  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+endif( USE_LLM_INTERFACE )
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)

@@ -506,7 +506,7 @@ public:
   {
     GaussianDefined,
     DataDefined
-  };//enum PeakType
+  };//enum DefintionType
   
   /** Returns "GaussianDefined" or "DataDefined". */
   static const char *to_str( const DefintionType type );

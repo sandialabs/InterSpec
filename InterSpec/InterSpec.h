@@ -61,6 +61,10 @@ class WarningWidget;
 class DoseCalcWindow;
 class FluxToolWindow;
 class PeakEditWindow;
+
+#if( USE_LLM_INTERFACE )
+class LlmInterface;
+#endif
 class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
@@ -852,6 +856,14 @@ public:
   /** If a `MakeFwhmForDrfWindow` is showing, deletes it, and sets `m_addFwhmTool` to nullptr.
    */
   void deleteFwhmFromForegroundWindow();
+
+#if( USE_LLM_INTERFACE )
+  /** Get the LLM interface for this session (creates it if needed). */
+  LlmInterface *llmInterface();
+  
+  /** Test the LLM interface connection and print debug info to stdout. */
+  void testLlmInterface();
+#endif
   
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
@@ -1620,6 +1632,11 @@ protected:
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
   EnergyCalPreserveWindow *m_preserveCalibWindow;
+
+#if( USE_LLM_INTERFACE )
+  /** LLM interface for this session. Created on-demand. */
+  std::unique_ptr<LlmInterface> m_llmInterface;
+#endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   /** Pointer to window showing the Search Mode 3D data view. */

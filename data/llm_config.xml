@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LlmConfig>
+  <!-- LLM API Settings -->
+  <LlmApi>
+    <ApiEndpoint>http://127.0.0.1:1234/v1/chat/completions</ApiEndpoint>
+    <BearerToken></BearerToken>
+    <!-- <Model>microsoft/phi-4-reasoning-plus</Model> -->
+    <Model>deepseek/deepseek-r1-0528-qwen3-8b</Model>
+    <MaxTokens>4000</MaxTokens>
+    <ContextLengthLimit>32768</ContextLengthLimit>
+    <SystemPrompt>You are an expert assistant for InterSpec, a gamma-ray spectrum analysis application. You can help users analyze spectra, identify peaks, fit nuclides, and understand results. Use the available tools to access spectrum data and perform analysis operations.
+
+Key capabilities you have through tools:
+- Access detected peaks in foreground/background spectra
+- Get spectrum information and measurements
+- Identify nuclide candidates
+- Analyze isotopic enrichment
+
+When helping users:
+- Always explain your reasoning clearly
+- Use tools to get current spectrum data before making analysis recommendations
+- Distinguish between automated peak detection and user-fitted peaks
+- Consider background subtraction and peak significance when appropriate</SystemPrompt>
+  </LlmApi>
+  
+  <!-- MCP Server Settings -->
+  <McpServer>
+    <Port>8081</Port>
+    <BearerToken></BearerToken>
+    <Enabled>true</Enabled>
+  </McpServer>
+  
+  <!-- UI Settings -->
+  <Interface>
+    <DefaultVisible>false</DefaultVisible>
+    <PanelWidth>400</PanelWidth>
+  </Interface>
+</LlmConfig>

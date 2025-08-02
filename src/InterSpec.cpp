@@ -96,6 +96,10 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/PeakModel.h"
+
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmInterface.h"
+#endif
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/HelpSystem.h"
@@ -500,6 +504,9 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_decayInfoWindow( nullptr ),
   m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
+#if( USE_LLM_INTERFACE )
+  m_llmInterface( nullptr ),
+#endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
 #endif
@@ -9864,6 +9871,12 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
+
+#if( USE_LLM_INTERFACE )
+  item = popup->addMenuItem( WString::fromUTF8("Test LLM Interface") );
+  HelpSystem::attachToolTipOn( item, WString::fromUTF8("Test the Large Language Model interface connection and configuration"), showToolTips );
+  item->triggered().connect( boost::bind( &InterSpec::testLlmInterface, this ) );
+#endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -13249,4 +13262,29 @@ void InterSpec::displayBackgroundData()
   if( m_hardBackgroundSub->isEnabled() != canSub )
     m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
+
+
+#if( USE_LLM_INTERFACE )
+LlmInterface *InterSpec::llmInterface()
+{
+  if( !m_llmInterface )
+  {
+    m_llmInterface = std::make_unique<LlmInterface>( this );
+  }
+  
+  return m_llmInterface.get();
+}
+
+void InterSpec::testLlmInterface()
+{
+  if( !llmInterface() )
+  {
+    std::cout << "Error: Failed to create LLM interface" << std::endl;
+    return;
+  }
+  
+  std::cout << "Testing LLM Interface connection..." << std::endl;
+  llmInterface()->testConnection();
+}
+#endif // USE_LLM_INTERFACE
 
