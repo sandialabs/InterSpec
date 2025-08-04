@@ -40,6 +40,9 @@ class PeakDef;
 class PeakModel;
 struct PeakContinuum;
 class DetectorPeakResponse;
+#if( USE_LLM_INTERFACE )
+struct LlmConversationStart;
+#endif
 
 namespace rapidxml
 {
@@ -67,6 +70,11 @@ public:
   //       the peaks used dont change; so instead should use set<weak_ptr<const Measurement>> to
   //       track peak ownership.
   typedef std::map<std::set<int>, PeakDequeShrdPtr >     SampleNumsToPeakMap;
+
+#if( USE_LLM_INTERFACE )
+  // Forward declaration for LLM conversation history
+  typedef std::map<std::set<int>, std::shared_ptr<std::vector<LlmConversationStart>>> SampleNumsToLlmHistoryMap;
+#endif
   
   //
   //typedef std::map<std::pair<std::set<int>,std::set<std::string>>, PeakDequeShrdPtr >     SampleNumsToPeakMap;
@@ -351,12 +359,30 @@ public:
   void setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<char>> &&model );
 #endif //#if( USE_REL_ACT_TOOL )
 
+#if( USE_LLM_INTERFACE )
+  /** Gets the LLM conversation history for the specified sample numbers. */
+  std::shared_ptr<std::vector<LlmConversationStart>> llmConversationHistory( const std::set<int> &samplenums ) const;
+  
+  /** Sets the LLM conversation history for the specified sample numbers. */
+  void setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<LlmConversationStart>> history );
+  
+  /** Removes LLM conversation history for the specified sample numbers. */
+  void removeLlmConversationHistory( const std::set<int> &samplenums );
+  
+  /** Gets all sample number sets that have LLM conversation history. */
+  std::set<std::set<int>> sampleNumsWithLlmHistory() const;
+  
+  /** Removes all LLM conversation history. */
+  void removeAllLlmConversationHistory();
+#endif //#if( USE_LLM_INTERFACE )
+
 protected:
-  //m_peaks: is only accessed by the PeakModel class - it shouldnt be set or
+  //m_peaks: is only accessed by the PeakModel class for the foreground spectrum - it shouldnt be set or
   //         modified anywhere else. When a new primary spectrum is loaded in
   //         InterSpec::setSpectrum(...), the m_peaks variable is passed
   //         to the PeakModel class, so it then controls inserting or removing
-  //         peaks.
+  //         peaks.  There are some places where the peaks for background/secondary are modified, but as of
+  //         20250802, this isnt carefully controlled, or the UI isnt updated from this.
   
   enum XmlPeakSource{ UserPeaks, AutomatedSearchPeaks /*, AutomatedSearchInitialPeaks */ };
   static const char *toString( const XmlPeakSource source );
@@ -394,6 +420,10 @@ protected:
 #if( USE_REL_ACT_TOOL )
   std::unique_ptr<rapidxml::xml_document<char>> m_relActManualGuiState;
   std::unique_ptr<rapidxml::xml_document<char>> m_relActAutoGuiState;
+#endif
+
+#if( USE_LLM_INTERFACE )
+  SampleNumsToLlmHistoryMap m_llmConversationHistory;
 #endif
   
   Wt::Signal<> m_aboutToBeDeleted;

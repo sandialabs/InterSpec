@@ -107,6 +107,13 @@ public:
    */
   void testConnection();
   
+  /** Test chat history recording and reconstruction without calling an actual LLM.
+   
+   This simulates various conversation scenarios including tool calls to verify
+   that history is being properly recorded and can be reconstructed correctly.
+   */
+
+  
   /** Reload configuration from XML files */
   void reloadConfig();
   
@@ -122,6 +129,12 @@ public:
   /** Check if LLM interface is properly configured and ready to use */
   bool isConfigured() const;
   
+  /** Signal emitted when a new response is received from the LLM */
+  Wt::Signal<>& responseReceived();
+  
+  /** Check if a specific request ID is still pending */
+  bool isRequestPending(int requestId) const;
+  
 #ifdef USE_JS_BRIDGE_FOR_LLM
   /** JavaScript callback to handle LLM response */
   void handleJavaScriptResponse(std::string response, int requestId);
@@ -131,6 +144,8 @@ private:
   InterSpec* m_interspec;
   std::unique_ptr<LlmConfig> m_config;
   std::shared_ptr<LlmConversationHistory> m_history;
+  
+  Wt::Signal<> m_responseReceived; // Signal emitted when new responses are received
   
 #ifdef USE_JS_BRIDGE_FOR_LLM
   std::unique_ptr<Wt::JSignal<std::string, int>> m_responseSignal; // For JavaScript bridge (response, requestId)
@@ -143,7 +158,7 @@ private:
   
   // Request tracking
   int m_nextRequestId;
-  std::string m_currentToolCallId; // Track the current tool call ID for message association
+  std::string m_currentConversationId; // Track the current conversation ID for message association
   struct PendingRequest {
     int requestId;
     std::string originalUserMessage;
@@ -176,6 +191,9 @@ private:
   /** Strip <think>...</think> content from LLM responses */
   std::string stripThinkingContent(const std::string& content);
   
+  /** Extract thinking content and clean content from LLM responses */
+  std::pair<std::string, std::string> extractThinkingAndContent(const std::string& content);
+  
   /** Build the messages array for the API request including history and system prompt */
   nlohmann::json buildMessagesArray(const std::string& userMessage, bool isSystemGenerated = false);
   
@@ -195,18 +213,5 @@ private:
   void handleWtHttpClientResponse(boost::system::error_code err, const Wt::Http::Message& response);
 #endif
 };
-
-// Legacy namespace for backward compatibility
-namespace LlmInterfaceNS
-{
-  /** A simple "hello world" type function for testing purposes.
-   
-   Returns a greeting message indicating the LlmInterface module is working.
-   
-   @return A string containing a hello world message.
-   */
-  InterSpec_API std::string hello_world();
-  
-} // namespace LlmInterfaceNS
 
 #endif // LlmInterface_h 

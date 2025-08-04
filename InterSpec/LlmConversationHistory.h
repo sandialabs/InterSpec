@@ -39,31 +39,57 @@ namespace rapidxml {
   template<class Ch> class xml_document;
 }
 
-/** Represents a single message in an LLM conversation.
+/** Represents a response within a conversation thread.
  
- This can be a user message, assistant response, system message, or tool call/result.
+ This can be an assistant response, tool call, or tool result that follows
+ up on a conversation start.
  */
-struct LlmMessage {
+struct LlmConversationResponse {
   enum class Type {
-    System,      // System prompt or system-generated message
-    User,        // User question or request
     Assistant,   // LLM response
     ToolCall,    // LLM requesting to call a tool
-    ToolResult   // Result from tool execution
+    ToolResult,  // Result from tool execution
+    Error        // Error message
+  };
+  
+  Type type;
+  std::string content;
+  std::string thinkingContent;  // Raw thinking content from LLM (e.g., <think>...</think>)
+  std::chrono::system_clock::time_point timestamp;
+  
+  // For tool calls/results
+  std::string toolName;
+  std::string invocationId;    // ID for specific tool invocation
+  nlohmann::json toolParameters;
+  
+  LlmConversationResponse(Type t, const std::string& c) 
+    : type(t), content(c), timestamp(std::chrono::system_clock::now()) {}
+};
+
+/** Represents the start of a conversation thread.
+ 
+ This is typically a user message or system message that initiates a conversation.
+ */
+struct LlmConversationStart {
+  enum class Type {
+    System,      // System prompt or system-generated message
+    User         // User question or request
   };
   
   Type type;
   std::string content;
   std::chrono::system_clock::time_point timestamp;
+  std::string conversationId;  // ID for the entire conversation thread
   
-  // For tool calls/results
-  std::string toolName;
-  std::string toolCallId;
-  nlohmann::json toolParameters;
+  // Nested follow-up responses (assistant responses, tool calls, tool results)
+  std::vector<LlmConversationResponse> responses;
   
-  LlmMessage(Type t, const std::string& c) 
+  LlmConversationStart(Type t, const std::string& c) 
     : type(t), content(c), timestamp(std::chrono::system_clock::now()) {}
 };
+
+// Legacy alias for backward compatibility during transition
+using LlmMessage = LlmConversationStart;
 
 /** Manages conversation history for LLM interactions.
  
@@ -79,23 +105,43 @@ public:
   LlmConversationHistory();
   
   /** Add a user message */
-  void addUserMessage(const std::string& message, const std::string& toolCallId = "");
+  void addUserMessage(const std::string& message, const std::string& conversationId = "");
   
-  /** Add an assistant response */
-  void addAssistantMessage(const std::string& message, const std::string& toolCallId = "");
+  /** Add an assistant response as a follow-up to the last message */
+  void addAssistantMessage(const std::string& message, const std::string& conversationId = "");
+  
+  /** Add an assistant response with thinking content as a follow-up to the last message */
+  void addAssistantMessageWithThinking(const std::string& message, const std::string& thinkingContent, 
+                                     const std::string& conversationId = "");
   
   /** Add a system message */
-  void addSystemMessage(const std::string& message, const std::string& toolCallId = "");
+  void addSystemMessage(const std::string& message, const std::string& conversationId = "");
   
-  /** Add a tool call request */
-  void addToolCall(const std::string& toolName, const std::string& callId, 
-                   const nlohmann::json& parameters);
+  /** Add a tool call request as a follow-up to the last message */
+  void addToolCall(const std::string& toolName, const std::string& conversationId, 
+                   const std::string& invocationId, const nlohmann::json& parameters);
   
-  /** Add a tool call result */
-  void addToolResult(const std::string& callId, const nlohmann::json& result);
+  /** Add a tool call result as a follow-up to the last message */
+  void addToolResult(const std::string& conversationId, const std::string& invocationId, 
+                     const nlohmann::json& result);
   
-  /** Get all messages */
-  const std::vector<LlmMessage>& getMessages() const;
+  /** Add an error message as a follow-up to the last message */
+  void addErrorMessage(const std::string& errorMessage, const std::string& conversationId = "");
+  
+  /** Add a follow-up response to a specific conversation by conversation ID */
+  void addFollowUpResponse(const std::string& conversationId, const LlmConversationResponse& response);
+  
+  /** Find a conversation start by conversation ID */
+  LlmConversationStart* findConversationByConversationId(const std::string& conversationId);
+  
+  /** Get all conversation starts */
+  const std::vector<LlmConversationStart>& getConversations() const;
+  
+  /** Set conversations from shared pointer */
+  void setConversations(std::shared_ptr<std::vector<LlmConversationStart>> conversations);
+  
+  /** Get conversations as shared pointer */
+  std::shared_ptr<std::vector<LlmConversationStart>> getConversationsPtr() const;
   
   /** Clear all messages */
   void clear();
@@ -115,14 +161,28 @@ public:
   /** Load from XML when loading SpecMeas */
   void fromXml(const rapidxml::xml_node<char>* node);
   
+  /** Static function to serialize conversations to XML */
+  static void toXml(const std::vector<LlmConversationStart>& conversations, 
+                    rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc);
+  
+  /** Static function to deserialize conversations from XML */
+  static void fromXml(const rapidxml::xml_node<char>* node, 
+                      std::vector<LlmConversationStart>& conversations);
+  
 private:
-  std::vector<LlmMessage> m_messages;
+  std::shared_ptr<std::vector<LlmConversationStart>> m_conversations;
   
-  /** Convert message type to string for XML */
-  static std::string typeToString(LlmMessage::Type type);
+  /** Convert conversation start type to string for XML */
+  static std::string conversationTypeToString(LlmConversationStart::Type type);
   
-  /** Convert string to message type from XML */
-  static LlmMessage::Type stringToType(const std::string& str);
+  /** Convert string to conversation start type from XML */
+  static LlmConversationStart::Type stringToConversationType(const std::string& str);
+  
+  /** Convert response type to string for XML */
+  static std::string responseTypeToString(LlmConversationResponse::Type type);
+  
+  /** Convert string to response type from XML */
+  static LlmConversationResponse::Type stringToResponseType(const std::string& str);
 };
 
 #endif // LLM_CONVERSATION_HISTORY_H

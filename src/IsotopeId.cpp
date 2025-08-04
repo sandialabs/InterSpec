@@ -89,69 +89,6 @@ std::mutex sm_CharacteristicGammas_mutex;
 bool sm_CharacteristicGammas_inited = false;
 vector<tuple<string, const SandiaDecay::Nuclide *, float>> sm_CharacteristicGammas;
 
-const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &characteristicGammas()
-{
-  std::lock_guard<std::mutex> lock( sm_CharacteristicGammas_mutex );
-  if( sm_CharacteristicGammas_inited )
-    return sm_CharacteristicGammas;
-  
-  string line;
-  const string filename = SpecUtils::append_path( dataDirectory(), "CharacteristicGammas.txt" );
-  
-#ifdef _WIN32
-  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
-  ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
-#else
-  ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
-#endif
-  
-  sm_CharacteristicGammas_inited = true;
-  
-  if( !characteristicFile.is_open() )
-  {
-    cerr << "Failed to open '" << filename << "' - nuclide suggestions will not use it." << endl;
-    return sm_CharacteristicGammas;
-  }
-  
-  
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  if( !db )
-  {
-    assert( db );
-    cerr << "Failed to get SandiaDecayDataBase - nuclide suggestions will not use it." << endl;
-    return sm_CharacteristicGammas;
-  }
-  
-  
-  while( SpecUtils::safe_get_line( characteristicFile, line ) )
-  {
-    vector<string> fields;
-    SpecUtils::trim( line );
-    if( line.empty() )
-      continue;
-    
-    SpecUtils::split( fields, line, " \t" );
-    
-    double testenergy;
-    if( (fields.size() != 2) || !(stringstream(fields[1]) >> testenergy) )
-    {
-      cerr << "CharacteristicGammas.txt: Failed to read line '" << line << "' - skipping." << endl;
-      continue;
-    }
-    
-    const SandiaDecay::Nuclide *testnuc = db->nuclide( fields[0] );
-    
-    sm_CharacteristicGammas.push_back( {fields[0], testnuc, testenergy} );
-  }//while( getline( characteristicFile, line ) )
-  
-  std::sort( sm_CharacteristicGammas.begin(), sm_CharacteristicGammas.end(),
-            []( const tuple<string, const SandiaDecay::Nuclide *, float> &lhs,
-               const tuple<string, const SandiaDecay::Nuclide *, float> &rhs ) -> bool {
-    return get<2>(lhs) < get<2>(rhs);
-  } );
-  
-  return sm_CharacteristicGammas;
-}//const vector<...> &characteristicGammas()
 
 
 
@@ -460,12 +397,77 @@ const vector<tuple<float,
 
 namespace IsotopeId
 {
-  void setDataDirectory( const std::string &dir )
-  {
-    std::lock_guard<mutex> lock( sm_data_dir_mutex );
-    sm_data_dir = dir;
-  }
+void setDataDirectory( const std::string &dir )
+{
+  std::lock_guard<mutex> lock( sm_data_dir_mutex );
+  sm_data_dir = dir;
+}
 
+  
+const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &characteristicGammas()
+{
+  std::lock_guard<std::mutex> lock( sm_CharacteristicGammas_mutex );
+  if( sm_CharacteristicGammas_inited )
+    return sm_CharacteristicGammas;
+  
+  string line;
+  const string filename = SpecUtils::append_path( dataDirectory(), "CharacteristicGammas.txt" );
+  
+#ifdef _WIN32
+  const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+  ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
+#else
+  ifstream characteristicFile( filename.c_str(), ios_base::binary|ios_base::in );
+#endif
+  
+  sm_CharacteristicGammas_inited = true;
+  
+  if( !characteristicFile.is_open() )
+  {
+    cerr << "Failed to open '" << filename << "' - nuclide suggestions will not use it." << endl;
+    return sm_CharacteristicGammas;
+  }
+  
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  if( !db )
+  {
+    assert( db );
+    cerr << "Failed to get SandiaDecayDataBase - nuclide suggestions will not use it." << endl;
+    return sm_CharacteristicGammas;
+  }
+  
+  
+  while( SpecUtils::safe_get_line( characteristicFile, line ) )
+  {
+    vector<string> fields;
+    SpecUtils::trim( line );
+    if( line.empty() )
+      continue;
+    
+    SpecUtils::split( fields, line, " \t" );
+    
+    double testenergy;
+    if( (fields.size() != 2) || !(stringstream(fields[1]) >> testenergy) )
+    {
+      cerr << "CharacteristicGammas.txt: Failed to read line '" << line << "' - skipping." << endl;
+      continue;
+    }
+    
+    const SandiaDecay::Nuclide *testnuc = db->nuclide( fields[0] );
+    
+    sm_CharacteristicGammas.push_back( {fields[0], testnuc, testenergy} );
+  }//while( getline( characteristicFile, line ) )
+  
+  std::sort( sm_CharacteristicGammas.begin(), sm_CharacteristicGammas.end(),
+            []( const tuple<string, const SandiaDecay::Nuclide *, float> &lhs,
+               const tuple<string, const SandiaDecay::Nuclide *, float> &rhs ) -> bool {
+    return get<2>(lhs) < get<2>(rhs);
+  } );
+  
+  return sm_CharacteristicGammas;
+}//const vector<...> &characteristicGammas()
+  
 double minDetectableCounts( double energy, double sigma, std::shared_ptr<const SpecUtils::Measurement> data )
 {
   //If we are calling this function, we are assuming no peak was detected,

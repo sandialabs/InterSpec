@@ -23,8 +23,6 @@
 
 #include "InterSpec_config.h"
 
-#if( USE_LLM_INTERFACE )
-
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -50,25 +48,15 @@
 #include "InterSpec/LlmConversationHistory.h"
 #include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/InterSpec.h"
+#include <rapidxml/rapidxml.hpp>
+#include <rapidxml/rapidxml_print.hpp>
+
+static_assert( USE_LLM_INTERFACE, "This file shouldnt be compiled unless USE_LLM_INTERFACE is true" );
 
 using namespace std;
 using json = nlohmann::json;
 
-/** Resource for JavaScript bridge to make HTTPS requests */
-class LlmHttpResource : public Wt::WResource {
-public:
-  LlmHttpResource(LlmInterface* interface) : m_interface(interface) {}
-  
-protected:
-  void handleRequest(const Wt::Http::Request& request, Wt::Http::Response& response) override {
-    // Simple placeholder resource - we use JSlot for the actual callback
-    response.setMimeType("application/json");
-    response.out() << "{\"status\":\"ready\"}";
-  }
-  
-private:
-  LlmInterface* m_interface;
-};
+
 
 LlmInterface::LlmInterface(InterSpec* interspec) 
   : m_interspec(interspec),
@@ -82,11 +70,10 @@ LlmInterface::LlmInterface(InterSpec* interspec)
     m_currentRequestId(0),
 #endif
     m_nextRequestId(1),
-    m_currentToolCallId("")
+    m_currentConversationId("")
 {
-  if (!m_interspec) {
+  if (!m_interspec)
     throw std::runtime_error("InterSpec instance cannot be null");
-  }
   
   // Get session ID through WApplication
   string sessionId = "unknown";
@@ -126,31 +113,25 @@ void LlmInterface::sendUserMessage(const std::string& message) {
   
   cout << "User message: " << message << endl;
   
-  // Generate a unique call ID
-  string callId = "user_msg_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                                                                      std::chrono::system_clock::now().time_since_epoch()).count());
-  
-  // Set current tool call ID for message association
-  m_currentToolCallId = callId;
+  // Generate a new conversation ID for each user message
+  m_currentConversationId = "conv_" + std::to_string(chrono::duration_cast<chrono::milliseconds>( chrono::system_clock::now().time_since_epoch()).count());
+  cout << "Starting new conversation with ID: " << m_currentConversationId << endl;
   
   // Add to history FIRST to ensure it's there before any async responses
   cout << "About to add user message to history..." << endl;
-  m_history->addUserMessage(message, m_currentToolCallId);
-  cout << "Added user message to history. History now has " << m_history->getMessages().size() << " messages" << endl;
+  m_history->addUserMessage(message, m_currentConversationId);
+  cout << "Added user message to history. History now has " << m_history->getConversations().size() << " conversations" << endl;
   
   // Debug: Show what's actually in history
   cout << "Current history contents:" << endl;
-  for (size_t i = 0; i < m_history->getMessages().size(); ++i) {
-    const auto& msg = m_history->getMessages()[i];
+  for (size_t i = 0; i < m_history->getConversations().size(); ++i) {
+    const auto& conv = m_history->getConversations()[i];
     string typeStr;
-    switch (msg.type) {
-      case LlmMessage::Type::User: typeStr = "user"; break;
-      case LlmMessage::Type::Assistant: typeStr = "assistant"; break;
-      case LlmMessage::Type::System: typeStr = "system"; break;
-      case LlmMessage::Type::ToolCall: typeStr = "tool_call"; break;
-      case LlmMessage::Type::ToolResult: typeStr = "tool_result"; break;
+    switch (conv.type) {
+      case LlmConversationStart::Type::User: typeStr = "user"; break;
+      case LlmConversationStart::Type::System: typeStr = "system"; break;
     }
-    cout << "  " << i << ". " << typeStr << ": " << msg.content.substr(0, 50) << "..." << endl;
+    cout << "  " << i << ". " << typeStr << ": " << conv.content.substr(0, 50) << "..." << " (responses: " << conv.responses.size() << ")" << endl;
   }
   
   // Build API request (buildMessagesArray will include the message from history + current message)
@@ -212,6 +193,8 @@ void LlmInterface::testConnection() {
     cout << testRequest.dump(2) << endl;
   }
   
+
+  
   cout << "=========================" << endl;
 }
 
@@ -234,6 +217,14 @@ void LlmInterface::setHistory(std::shared_ptr<LlmConversationHistory> history) {
 
 bool LlmInterface::isConfigured() const {
   return !m_config->llmApi.apiEndpoint.empty();
+}
+
+Wt::Signal<>& LlmInterface::responseReceived() {
+  return m_responseReceived;
+}
+
+bool LlmInterface::isRequestPending(int requestId) const {
+  return m_pendingRequests.find(requestId) != m_pendingRequests.end();
 }
 
 void LlmInterface::makeApiCall(const nlohmann::json& requestJson) {
@@ -385,8 +376,8 @@ void LlmInterface::handleApiResponse(const std::string& response) {
         string content = message.value("content", "");
         
                 if (role == "assistant") {
-          // Strip thinking content before adding to history
-          string cleanContent = stripThinkingContent(content);
+          // Extract thinking content and clean content
+          auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
                   
                   cout
                   << "=== Start Cleaned Response Content ===" << endl
@@ -394,8 +385,8 @@ void LlmInterface::handleApiResponse(const std::string& response) {
                   << "\n=== End Cleaned Response Content   ===" << endl
                   << endl;
 
-          // Add assistant message to history first
-          m_history->addAssistantMessage(cleanContent, m_currentToolCallId);
+          // Add assistant message to history with thinking content
+          m_history->addAssistantMessageWithThinking(cleanContent, thinkingContent, m_currentConversationId);
           
           // Handle structured tool calls first (OpenAI format)
           if (message.contains("tool_calls")) {
@@ -412,6 +403,9 @@ void LlmInterface::handleApiResponse(const std::string& response) {
   } catch (const std::exception& e) {
     cout << "Error parsing LLM response: " << e.what() << endl;
   }
+  
+  // Emit signal to notify listeners that a response was received
+  m_responseReceived.emit();
 }
 
 void LlmInterface::executeToolCalls(const nlohmann::json& toolCalls) {
@@ -421,35 +415,32 @@ void LlmInterface::executeToolCalls(const nlohmann::json& toolCalls) {
   std::vector<std::string> executedToolCallIds;
   
   for (const auto& toolCall : toolCalls) {
+    const string callId = toolCall.value("id", "");
+    
     try {
-      string callId = toolCall.value("id", "");
-      string toolName = toolCall["function"]["name"];
+      const string toolName = toolCall["function"]["name"];
       json arguments = json::parse(toolCall["function"]["arguments"].get<string>());
       
       cout << "Calling tool: " << toolName << " with ID: " << callId << endl;
       
-      // Set current tool call ID for message association
-      m_currentToolCallId = callId;
-      
-      // Add tool call to history
-      m_history->addToolCall(toolName, callId, arguments);
+      // Add tool call to history with conversation ID and invocation ID
+      m_history->addToolCall(toolName, m_currentConversationId, callId, arguments);
       
       // Execute the tool
       json result = LlmTools::ToolRegistry::instance().executeTool(toolName, arguments, m_interspec);
       
-      // Add result to history
-      m_history->addToolResult(callId, result);
-      
-      // Clear current tool call ID after execution
-      m_currentToolCallId = "";
-      
-      // Track this tool call for follow-up
-      executedToolCallIds.push_back(callId);
+      // Add result to history with conversation ID and invocation ID
+      m_history->addToolResult(m_currentConversationId, callId, result);
     } catch (const std::exception& e) {
       cout << "Tool execution error: " << e.what() << endl;
-      // Clear current tool call ID on error too
-      m_currentToolCallId = "";
+      
+      json result;
+      result["error"] = "Tool call failed: " + string(e.what());
+      m_history->addToolResult(m_currentConversationId, callId, result);
     }
+    
+    // Track this tool call for follow-up
+    executedToolCallIds.push_back(callId);
   }
   
   // If we executed any tools, send the results back to the LLM for processing
@@ -486,6 +477,11 @@ void LlmInterface::parseContentForToolCalls(const std::string& content) {
     
     for (; iter != end; ++iter) {
       const std::smatch& match = *iter;
+      
+      // Generate a unique invocation ID for this tool call
+      string invocationId = "text_call_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                                                                std::chrono::system_clock::now().time_since_epoch()).count());
+      
       if (match.size() >= 2) {
         try {
           string toolName;
@@ -501,8 +497,11 @@ void LlmInterface::parseContentForToolCalls(const std::string& content) {
               toolName = toolCallObj["name"];
               arguments = toolCallObj["arguments"];
             } else {
-              cout << "Invalid tool call JSON format - missing name or arguments" << endl;
-              continue;
+              string name = toolCallObj.contains("name") ? toolCallObj["name"] : "missing_tool_name";
+              string args = toolCallObj.contains("arguments") ? toolCallObj["arguments"] : "missing_arguments";
+              
+              m_history->addToolCall( name, m_currentConversationId, invocationId, args);
+              throw std::runtime_error( "Invalid tool call JSON format - missing name or arguments" );
             }
           } else if (match.size() >= 3) {
             // Two capture groups - tool name and arguments separately
@@ -519,36 +518,29 @@ void LlmInterface::parseContentForToolCalls(const std::string& content) {
           
           cout << "Found text-based tool call: " << toolName << " with args: " << arguments.dump() << endl;
           
-          // Generate a unique call ID
-          string callId = "text_call_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
           
-          // Set current tool call ID for message association
-          m_currentToolCallId = callId;
-          
-          // Add tool call to history
-          m_history->addToolCall(toolName, callId, arguments);
-          cout << "Added tool call to history. History now has " << m_history->getMessages().size() << " messages" << endl;
+          // Add tool call to history with conversation ID and invocation ID
+          m_history->addToolCall(toolName, m_currentConversationId, invocationId, arguments);
+          cout << "Added tool call to history. History now has " << m_history->getConversations().size() << " conversations" << endl;
           
           // Execute the tool
           json result = LlmTools::ToolRegistry::instance().executeTool(toolName, arguments, m_interspec);
           
-          // Add result to history
-          m_history->addToolResult(callId, result);
-          cout << "Added tool result to history. History now has " << m_history->getMessages().size() << " messages" << endl;
-          
-          // Clear current tool call ID after execution
-          m_currentToolCallId = "";
+          // Add result to history with conversation ID and invocation ID
+          m_history->addToolResult(m_currentConversationId, invocationId, result);
+          cout << "Added tool result to history. History now has " << m_history->getConversations().size() << " conversations" << endl;
           
           // Track this tool call for follow-up
-          executedToolCallIds.push_back(callId);
+          executedToolCallIds.push_back(invocationId);
           
           cout << "Tool " << toolName << " executed successfully" << endl;
           
         } catch (const std::exception& e) {
           cout << "Error parsing/executing text-based tool call: " << e.what() << endl;
-          // Clear current tool call ID on error too
-          m_currentToolCallId = "";
+          
+          json result;
+          result["error"] = "Tool call failed: " + string(e.what());
+          m_history->addToolResult(m_currentConversationId, invocationId, result);
         }
       }
     }
@@ -590,6 +582,54 @@ std::string LlmInterface::stripThinkingContent(const std::string& content) {
   return result;
 }
 
+std::pair<std::string, std::string> LlmInterface::extractThinkingAndContent(const std::string& content) {
+  std::string cleanContent = content;
+  std::string thinkingContent;
+  
+  // Extract <think>...</think> blocks (case insensitive, supports nested and multiline)
+  std::regex thinkRegex("<think[^>]*>([\\s\\S]*?)</think>", 
+    std::regex_constants::icase | std::regex_constants::ECMAScript);
+  
+  std::smatch match;
+  std::string::const_iterator searchStart(content.cbegin());
+  
+  // Collect all thinking content from properly formatted <think>...</think> blocks
+  while (std::regex_search(searchStart, content.cend(), match, thinkRegex)) {
+    if (!thinkingContent.empty()) {
+      thinkingContent += "\n";
+    }
+    thinkingContent += match[1].str();
+    searchStart = match.suffix().first;
+  }
+  
+  // Check for orphaned </think> tags (closing tag without opening tag)
+  std::regex orphanedCloseRegex("</think>", std::regex_constants::icase);
+  std::smatch orphanedMatch;
+  if (std::regex_search(content, orphanedMatch, orphanedCloseRegex)) {
+    // Find the position of the first </think> tag
+    size_t closePos = orphanedMatch.position();
+    
+    // Extract all text before the </think> tag as thinking content
+    std::string orphanedThinking = content.substr(0, closePos);
+    
+    // Only add if we found some content and it's not just whitespace
+    if (!orphanedThinking.empty() && orphanedThinking.find_first_not_of("\\s\\t\\n\\r") != std::string::npos) {
+      if (!thinkingContent.empty()) {
+        thinkingContent += "\n";
+      }
+      thinkingContent += orphanedThinking;
+      
+      // Remove the orphaned thinking content and </think> tag from clean content
+      cleanContent = content.substr(closePos + 7); // 7 is length of "</think>"
+    }
+  } else {
+    // No orphaned tags, use normal stripping
+    cleanContent = stripThinkingContent(content);
+  }
+  
+  return {cleanContent, thinkingContent};
+}
+
 nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, bool isSystemGenerated) {
   json request;
   request["model"] = m_config->llmApi.model;
@@ -608,21 +648,28 @@ nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, 
           // Add conversation history
         if (!m_history->isEmpty()) {
           json historyMessages = m_history->toApiFormat();
-          for (const auto& msg : historyMessages) {
+          cout << "=== Including " << historyMessages.size() << " history messages in request ===" << endl;
+          for (size_t i = 0; i < historyMessages.size(); ++i) {
+            const auto& msg = historyMessages[i];
+            cout << "  " << i << ". " << msg["role"].get<string>() << ": " 
+                 << (msg.contains("content") ? msg["content"].get<string>().substr(0, 50) + "..." : "tool_call") << endl;
             messages.push_back(msg);
           }
+          cout << "=== End history messages ===" << endl;
+        } else {
+          cout << "=== No history to include ===" << endl;
         }
   
       // Add current user message (only if not empty, not system-generated, and not already in history)
     if (!userMessage.empty() && !isSystemGenerated) {
       // Check if this message is already the last message in history to prevent duplication
-      const auto& historyMessages = m_history->getMessages();
-      bool isAlreadyLastMessage = false;
-      if (!historyMessages.empty()) {
-        const auto& lastMessage = historyMessages.back();
-        isAlreadyLastMessage = (lastMessage.type == LlmMessage::Type::User && 
-                              lastMessage.content == userMessage);
-      }
+      const auto& historyConversations = m_history->getConversations();
+              bool isAlreadyLastMessage = false;
+        if (!historyConversations.empty()) {
+          const auto& lastConversation = historyConversations.back();
+          isAlreadyLastMessage = (lastConversation.type == LlmConversationStart::Type::User && 
+                                lastConversation.content == userMessage);
+        }
       
       if (!isAlreadyLastMessage) {
         json userMsg;
@@ -641,7 +688,13 @@ nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, 
     toolDef["type"] = "function";
     toolDef["function"]["name"] = tool.name;
     toolDef["function"]["description"] = tool.description;
-    toolDef["function"]["parameters"] = tool.parameters_schema;
+    
+    // Most functions include a "userSession" argument for the MCP server - but we dont need that here since we are in a Wt session
+    nlohmann::json par_schema = tool.parameters_schema;
+    if( par_schema.contains("userSession") )
+      par_schema.erase( "userSession" );
+    
+    toolDef["function"]["parameters"] = par_schema;
     tools.push_back(toolDef);
   }
   
@@ -678,10 +731,18 @@ void LlmInterface::setupJavaScriptBridge() {
         headers['Authorization'] = 'Bearer ' + bearerToken;
       }
       
+      // Create AbortController for timeout handling
+      var controller = new AbortController();
+      var timeoutId = setTimeout(function() {
+        console.log('LLM Request timeout after 2 minutes');
+        controller.abort();
+      }, 120000); // 2 minutes = 120 seconds
+      
       fetch(endpoint, {
         method: 'POST',
         headers: headers,
-        body: requestJsonString
+        body: requestJsonString,
+        signal: controller.signal
       })
       .then(function(response) {
         console.log('LLM Response status:', response.status);
@@ -690,6 +751,9 @@ void LlmInterface::setupJavaScriptBridge() {
       .then(function(responseText) {
         console.log('LLM Response:', responseText);
         
+        // Clear the timeout since we got a response
+        clearTimeout(timeoutId);
+        
         // Call back to C++ with response and request ID as separate parameters
         if (window.llmResponseCallback) {
           window.llmResponseCallback(responseText, requestId);
@@ -697,10 +761,14 @@ void LlmInterface::setupJavaScriptBridge() {
       })
       .catch(function(error) {
         console.error('LLM Request error:', error);
+        
+        // Clear the timeout since we got an error
+        clearTimeout(timeoutId);
+        
         var errorResponse = JSON.stringify({
           error: {
             message: 'HTTP request failed: ' + error.message,
-            type: 'network_error'
+            type: error.name === 'AbortError' ? 'timeout_error' : 'network_error'
           }
         });
         if (window.llmResponseCallback) {
@@ -740,8 +808,16 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     // Check for errors first
     json responseJson = json::parse(response);
     if (responseJson.contains("error")) {
-      cout << "LLM API Error: " << responseJson["error"].dump(2) << endl;
-      // TODO: Show error to user in GUI
+      string errorMsg = "LLM API Error: " + responseJson["error"].dump(2);
+      cout << errorMsg << endl;
+      
+      // Add error to conversation history
+      if (m_history) {
+        m_history->addErrorMessage(errorMsg, m_currentConversationId);
+      }
+      
+      // Signal that a response was received (even if it's an error)
+      m_responseReceived.emit();
       return;
     }
     
@@ -882,18 +958,14 @@ void LlmInterface::handleWtHttpError(int requestId, const std::string& error) {
     cout << "Removed pending request for ID " << requestId << endl;
   }
   
-  // TODO: Show error to user in GUI
+  // Add error to conversation history
+  if (m_history) {
+    m_history->addErrorMessage("HTTP Error: " + error, m_currentConversationId);
+  }
+  
+  // Signal that a response was received (even if it's an error)
+  m_responseReceived.emit();
 }
 #endif // USE_WT_HTTP_FOR_LLM
 
-// Legacy namespace for backward compatibility
-namespace LlmInterfaceNS
-{
-  std::string hello_world()
-  {
-    return "Hello World from LlmInterface namespace!";
-  }
-  
-} // namespace LlmInterfaceNS
 
-#endif // USE_LLM_INTERFACE 

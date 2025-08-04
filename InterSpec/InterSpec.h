@@ -64,6 +64,7 @@ class PeakEditWindow;
 
 #if( USE_LLM_INTERFACE )
 class LlmInterface;
+class LlmTool;
 #endif
 class WarningMessage;
 class DrfSelectWindow;
@@ -367,6 +368,16 @@ public:
   //  If the returned WModelIndex is not valid, then the peak was not added.
   Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn );
   
+  /** Sets the peaks for the given spectrum.  If foreground, you should consider instead to use the PeakModel.
+   
+   @param spectrum Which spectrum to set the peaks for.
+   @param peaks The peaks to set.  Must not be nullptr, or the currently set deque of peaks.
+   
+   Will trigger update of displayed spectrum.
+   
+   Throws exception if spectrum type specified is not displayed, or peaks is nullptr.
+   */
+  void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks );
   
   Wt::WContainerWidget *menuDiv();
 
@@ -861,8 +872,11 @@ public:
   /** Get the LLM interface for this session (creates it if needed). */
   LlmInterface *llmInterface();
   
-  /** Test the LLM interface connection and print debug info to stdout. */
-  void testLlmInterface();
+  /** Create and show the LLM tool widget in the tools tab. */
+  void createLlmTool();
+  
+  /** Handle cleanup when LLM tool is closed. */
+  void handleLlmToolClose();
 #endif
   
   /** Will show the disclaimer, license, and statment window, setting
@@ -1636,6 +1650,10 @@ protected:
 #if( USE_LLM_INTERFACE )
   /** LLM interface for this session. Created on-demand. */
   std::unique_ptr<LlmInterface> m_llmInterface;
+  /** Menu item for opening the LLM tool. */
+  PopupDivMenuItem *m_llmToolMenuItem;
+  /** LLM tool widget for user interaction. */
+  LlmTool          *m_llmTool;
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )

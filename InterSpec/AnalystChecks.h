@@ -70,6 +70,37 @@ namespace AnalystChecks
    */
   InterSpec_API DetectedPeakStatus detected_peaks(const DetectedPeaksOptions& options, InterSpec* interspec);
   
+  
+  struct FitPeakOptions {
+    bool addToUsersPeaks;
+    double energy;
+    SpecUtils::SpectrumType specType;
+    std::optional<std::string> source;
+    std::optional<std::string> userSession;
+  };
+  
+  struct FitPeakStatus {
+    std::string userSession;
+    std::shared_ptr<const PeakDef> fitPeak;
+    std::vector<std::shared_ptr<const PeakDef>> peaksInRoi;
+  };
+  
+  InterSpec_API FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec );
+  
+  struct GetUserPeakOptions {
+    SpecUtils::SpectrumType specType;
+    std::optional<std::string> userSession;
+  };
+  
+  struct GetUserPeakStatus {
+    std::string userSession;
+    std::vector<std::shared_ptr<const PeakDef>> peaks;
+  };
+  
+  InterSpec_API GetUserPeakStatus get_user_peaks( const GetUserPeakOptions &options, InterSpec *interspec );
+  
+  InterSpec_API std::vector<float> get_characteristic_gammas( const std::string &nuclide );
+  
 } // namespace AnalystChecks
 
 #endif // AnalystChecks_h 

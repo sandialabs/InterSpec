@@ -822,6 +822,12 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
     setForegroundPeaksToClient();
   
+  if( m_renderFlags.testFlag(UpdateSecondaryPeaks) )
+    setSecondaryPeaksToClient();
+  
+  if( m_renderFlags.testFlag(UpdateBackgroundPeaks) )
+    setBackgroundPeaksToClient();
+  
   if( m_renderFlags.testFlag(UpdateHighlightRegions) )
     setHighlightRegionsToClient();
   
@@ -1237,12 +1243,46 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
     m_pendingJs.push_back( js );
 }//void setForegroundPeaksToClient();
 
+
+void D3SpectrumDisplayDiv::setSecondaryPeaksToClient()
+{
+  cerr << "D3SpectrumDisplayDiv::setSecondaryPeaksToClient() not implemented" << endl;
+}
+
+
+void D3SpectrumDisplayDiv::setBackgroundPeaksToClient()
+{
+  cerr << "D3SpectrumDisplayDiv::setBackgroundPeaksToClient() not implemented" << endl;
+}
+
+
 void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 {
   m_renderFlags |= UpdateForegroundPeaks;
   
   scheduleRender();
 }//void scheduleForegroundPeakRedraw()
+
+
+void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
+{
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      m_renderFlags |= UpdateForegroundPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::SecondForeground:
+      m_renderFlags |= UpdateSecondaryPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::Background:
+      m_renderFlags |= UpdateBackgroundPeaks;
+      break;
+  }//switch( spectrum_type )
+  
+  scheduleRender();
+}//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
 
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )

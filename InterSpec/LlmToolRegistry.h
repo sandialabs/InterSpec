@@ -108,6 +108,9 @@ private:
   // Helper functions for default tools
   static nlohmann::json executePeakDetection(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json getSpectrumInfo(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executePeakFit(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetCharacteristicGammasForNuclide( const nlohmann::json& params );
 };
 
 } // namespace LlmTools

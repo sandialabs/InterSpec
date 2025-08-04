@@ -157,9 +157,15 @@ public:
   
   
   /** Schedules the foreground peaks to be re-loaded to the client during the
-   next call to #render (which Wt takes care of calling).
+   next call to #render (which Wt takes care of calling); this function is called by the PeakModel.
    */
   void scheduleForegroundPeakRedraw();
+  
+  /** Schedules peak redraw for the given spectrum.
+   
+   TODO: As of 20250802, only foreground spectrum has any effect.
+   */
+  void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type );
   
   /** Applies the current color theme.
    if nullptr, then sets to default colors.
@@ -399,6 +405,12 @@ protected:
   
   void setForegroundPeaksToClient();
   
+  /// TODO: currently not implemented
+  void setSecondaryPeaksToClient();
+  
+  /// TODO: currently not implemented
+  void setBackgroundPeaksToClient();
+  
   void setReferenceLinesToClient();
   
   
@@ -407,18 +419,21 @@ protected:
   /** Flags */
   enum D3RenderActions
   {
-    UpdateForegroundPeaks = 0x01,
+    UpdateForegroundPeaks = 0x0001,
     
-    UpdateForegroundSpectrum = 0x02,
-    UpdateBackgroundSpectrum = 0x04,
-    UpdateSecondarySpectrum = 0x08,
+    UpdateForegroundSpectrum = 0x0002,
+    UpdateBackgroundSpectrum = 0x0004,
+    UpdateSecondarySpectrum = 0x0008,
     
-    ResetXDomain = 0x10,
+    ResetXDomain = 0x0010,
     
-    UpdateHighlightRegions = 0x20,
+    UpdateHighlightRegions = 0x0020,
     
-    UpdateRefLines = 0x40
+    UpdateRefLines = 0x0040,
     
+    // TODO: Currently background and secondary peaks not loaded to client, so these flags have no effect.
+    UpdateBackgroundPeaks = 0x0080,
+    UpdateSecondaryPeaks  = 0x0100,
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   

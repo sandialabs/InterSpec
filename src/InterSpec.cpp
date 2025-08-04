@@ -99,6 +99,8 @@
 
 #if( USE_LLM_INTERFACE )
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmTool.h"
+#include "InterSpec/LlmConversationHistory.h"
 #endif
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/GammaXsGui.h"
@@ -244,6 +246,9 @@ namespace
 #endif
 #if( USE_REL_ACT_TOOL )
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
+#endif
+#if( USE_LLM_INTERFACE )
+static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif
 
 //#if( !BUILD_FOR_WEB_DEPLOYMENT )
@@ -506,6 +511,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_preserveCalibWindow( 0 ),
 #if( USE_LLM_INTERFACE )
   m_llmInterface( nullptr ),
+  m_llmToolMenuItem( nullptr ),
+  m_llmTool( nullptr ),
 #endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
@@ -3117,6 +3124,57 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
 }//WModelIndex addPeak( PeakDef peak )
 
 
+void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks )
+{
+  if( !peaks )
+    throw runtime_error( "InterSpec::setPeaks: peaks deque may not be null" );
+  
+  std::shared_ptr<SpecMeas> meas = measurment( spectrum );
+  if( !meas )
+    throw runtime_error( "InterSpec::setPeaks: spectrum type requested not loaded" );
+  
+  shared_ptr<const SpecUtils::Measurement> histogram = displayedHistogram( spectrum );
+  if( !histogram )
+    throw runtime_error( "InterSpec::setPeaks: spectrum type requested not displayed" );
+  
+  const set<int> &sample_nums = displayedSamples( spectrum );
+  
+  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas->peaks(sample_nums);
+  
+  if( orig_peaks.get() == peaks.get() )
+    throw runtime_error( "InterSpec::setPeaks: peaks deque can not be same as current" );
+  
+  
+  auto set_peaks = [this,spectrum]( std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    if( spectrum == SpecUtils::SpectrumType::Foreground )
+    {
+      vector<shared_ptr<const PeakDef>> peaks( begin(*new_peaks), end(*new_peaks) );
+      m_peakModel->setPeaks( std::move(peaks) );
+    }else
+    {
+      shared_ptr<SpecMeas> meas = measurment( spectrum );
+      if( meas )
+      {
+        const set<int> &sample_nums = displayedSamples( spectrum );
+        meas->setPeaks( *new_peaks, sample_nums );
+      }
+      m_spectrum->schedulePeakRedraw( spectrum );
+    }
+  };
+  
+  set_peaks(peaks);
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [set_peaks,peaks,orig_peaks](){ set_peaks(orig_peaks); };
+    auto redo = [set_peaks,peaks,orig_peaks](){ set_peaks(peaks); };
+    m_undo->addUndoRedoStep( undo, redo, "Set peaks." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks );
+
+
+
 #if( USE_DB_TO_STORE_SPECTRA )
 void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 {
@@ -3425,6 +3483,11 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     }//if( m_simpleMdaWindow )
 #endif
     
+#if( USE_LLM_INTERFACE )
+    if( m_llmTool )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingLlmAssistant;
+#endif
+    
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3450,6 +3513,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
       else if( txtKey == RelActManualTitleKey )
         entry.modify()->currentTab = UserState::kRelActManualTab;
+#endif
+#if( USE_LLM_INTERFACE )
+      else if( txtKey == LlmAssistantTabTitleKey )
+        entry.modify()->currentTab = UserState::kLlmAssistantTab;
 #endif
     }//if( m_toolsTabs )
     
@@ -3952,6 +4019,11 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       showRelActAutoWindow();
 #endif
     
+#if( USE_LLM_INTERFACE )
+    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant) )
+      createLlmTool();
+#endif
+    
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
@@ -4111,6 +4183,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
         case UserState::kRelActManualTab: titleKey = RelActManualTitleKey;     break;
 #endif
+#if( USE_LLM_INTERFACE )
+        case UserState::kLlmAssistantTab: titleKey = LlmAssistantTabTitleKey;  break;
+#endif
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
@@ -4144,6 +4219,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           case UserState::kRelActManualTab: 
             if( m_relActManualGui )
               m_toolsTabs->setCurrentWidget( m_relActManualGui );
+            break;
+  #endif
+  #if( USE_LLM_INTERFACE )
+          case UserState::kLlmAssistantTab:
+            if( m_llmTool )
+              m_toolsTabs->setCurrentWidget( m_llmTool );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -9730,7 +9811,7 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 #endif //#if( USE_REL_ACT_TOOL )
 
 
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
 void InterSpec::handleToolTabClosed( const int tabnum )
 {
   assert( m_toolsTabs );
@@ -9739,6 +9820,16 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   
   WWidget *w = m_toolsTabs->widget( tabnum );
   
+#if( USE_LLM_INTERFACE )
+  if( w == m_llmTool )
+  {
+    handleLlmToolClose();
+  }
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+  else
+#endif
+#endif
+
 #if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
   if( w == m_relActManualGui )
   {
@@ -9751,9 +9842,21 @@ void InterSpec::handleToolTabClosed( const int tabnum )
     assert( 0 );
   }
 #elif( USE_TERMINAL_WIDGET )
-  handleTerminalWindowClose();
+  if( w == m_terminal )
+  {
+    handleTerminalWindowClose();
+  }else
+  {
+    assert( 0 );
+  }
 #elif( USE_REL_ACT_TOOL )
-  handleRelActManualClose();
+  if( w == m_relActManualGui )
+  {
+    handleRelActManualClose();
+  }else
+  {
+    assert( 0 );
+  }
   //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
   
@@ -9873,9 +9976,9 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
 
 #if( USE_LLM_INTERFACE )
-  item = popup->addMenuItem( WString::fromUTF8("Test LLM Interface") );
-  HelpSystem::attachToolTipOn( item, WString::fromUTF8("Test the Large Language Model interface connection and configuration"), showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::testLlmInterface, this ) );
+  m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
+  HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
+  m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
 #endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -11181,6 +11284,33 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
+    
+#if( USE_LLM_INTERFACE )
+    // Save LLM conversation history to previous SpecMeas before switching foreground
+    if( m_llmInterface && m_llmInterface->getHistory() && previous )
+    {
+      try
+      {
+        auto history = m_llmInterface->getHistory();
+        if( !history->getConversations().empty() )
+        {
+          // Get the previous foreground's sample numbers
+          const std::set<int> &prevSamples = prevsamples;
+          
+          // Convert LlmConversationHistory to native format
+          const auto &conversations = history->getConversations();
+          std::vector<LlmConversationStart> nativeConversations( conversations.begin(), conversations.end() );
+          
+          // Save the history to the previous SpecMeas using sample numbers
+          previous->setLlmConversationHistory( prevSamples, std::make_shared<std::vector<LlmConversationStart>>( nativeConversations ) );
+        }
+      }
+      catch( const std::exception& e )
+      {
+        std::cerr << "Failed to save LLM conversation history to SpecMeas: " << e.what() << std::endl;
+      }
+    }
+#endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -11814,6 +11944,39 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( showToolTips )
   }//if( passthrough foreground )
    */
+   
+#if( USE_LLM_INTERFACE )
+  // Load LLM conversation history from the new foreground SpecMeas
+  if( (spec_type == SpecUtils::SpectrumType::Foreground) && meas && m_llmInterface && m_llmTool )
+  {
+    try
+    {
+      // Get the current sample numbers for the new foreground
+      const std::set<int> &currentSamples = sample_numbers.empty() ? displayedSamples(spec_type) : sample_numbers;
+      
+      // Get the LLM history for these sample numbers
+      auto nativeHistoryPtr = meas->llmConversationHistory( currentSamples );
+      const vector<LlmConversationStart>* nativeHistory = nativeHistoryPtr ? nativeHistoryPtr.get() : nullptr;
+      
+      // Clear current LLM history
+      m_llmInterface->getHistory()->clear();
+      
+      if( nativeHistory && !nativeHistory->empty() )
+      {
+        // Load the native conversations directly into LlmConversationHistory
+        // This preserves the conversation structure with responses attached to their correct parent conversations
+        m_llmInterface->getHistory()->setConversations( std::make_shared<std::vector<LlmConversationStart>>( *nativeHistory ) );
+      }
+      
+      // Refresh the LLM tool display
+      m_llmTool->refreshDisplay();
+    }
+    catch( const std::exception& e )
+    {
+      std::cerr << "Failed to load LLM conversation history from SpecMeas: " << e.what() << std::endl;
+    }
+  }
+#endif
 }//void setSpectrum(...)
 
 
@@ -13275,16 +13438,51 @@ LlmInterface *InterSpec::llmInterface()
   return m_llmInterface.get();
 }
 
-void InterSpec::testLlmInterface()
+void InterSpec::createLlmTool()
 {
-  if( !llmInterface() )
-  {
-    std::cout << "Error: Failed to create LLM interface" << std::endl;
+  if( m_llmTool )
     return;
+    
+  try {
+    m_llmTool = new LlmTool( this );
+    m_llmTool->focusInput();
+    
+    if( m_toolsTabs )
+    {
+      WMenuItem *item = m_toolsTabs->addTab( m_llmTool, WString::fromUTF8("LLM Assistant") );
+      item->setCloseable( true );
+      m_toolsTabs->setCurrentWidget( m_llmTool );
+      const int index = m_toolsTabs->currentIndex();
+      m_toolsTabs->setTabToolTip( index, WString::fromUTF8("Chat with the Large Language Model assistant for spectrum analysis help") );
+      
+      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+    }
+    
+    m_llmToolMenuItem->disable();
+    
+  } catch (const std::exception& e) {
+    std::cout << "Error creating LLM tool: " << e.what() << std::endl;
+    if( m_llmTool ) {
+      delete m_llmTool;
+      m_llmTool = nullptr;
+    }
   }
-  
-  std::cout << "Testing LLM Interface connection..." << std::endl;
-  llmInterface()->testConnection();
 }
+
+void InterSpec::handleLlmToolClose()
+{
+  if( !m_llmTool )
+    return;
+ 
+  m_llmToolMenuItem->enable();
+  
+  delete m_llmTool;
+  if( m_toolsTabs )
+    m_toolsTabs->setCurrentIndex( 2 );
+  
+  m_llmTool = nullptr;
+}
+
 #endif // USE_LLM_INTERFACE
 

@@ -1,0 +1,29 @@
+/* LlmTool Widget Styles */
+
+/* Main container for the LLM tool widget */
+.LlmTool {
+
+}
+
+.llm-conversation-display {
+}
+
+.llm-input-edit {
+  
+}
+
+.llm-input-edit.disabled {
+  opacity: 0.6;
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.llm-send-button {
+
+}
+
+.llm-send-button.disabled {
+  opacity: 0.6;
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+} 
