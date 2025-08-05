@@ -13,10 +13,14 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/AnalystChecks.h"
+#include "InterSpec/MoreNuclideInfo.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/PhysicalUnits.h"
 
 #include <Wt/WApplication>
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/DateTime.h"
 #include "SandiaDecay/SandiaDecay.h"
 
 using namespace std;
@@ -398,12 +402,173 @@ void ToolRegistry::registerDefaultTools() {
             "type": "string", 
             "description": "Which spectrum to get info for", 
             "enum": ["Foreground", "Background", "Secondary"] 
+          },
+          "userSession": { 
+            "type": "string", 
+            "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
           }
       },
       "required": ["specType"]
     })"),
     [](const json& params, InterSpec* interspec) -> json {
-      return getSpectrumInfo(params, interspec);
+      return executeGetSpectrumInfo(params, interspec);
+    }
+  });
+
+  registerTool({
+    "primary_gammas_for_nuclide",
+    "Get the most likely energies a peak will be detected at for a nuclide, x-ray element, or nuclear reaction. Returns one to a few energies (in keV).  This is only a rough guess at the most prominent or unique peaks for the source; not detecting a peak at these energies does not rule out a source, but it makes the source a candidate.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "type": "string",
+          "description": "The nuclide, x-ray element, or nuclear reaction to get the characteristic gammas for."
+        }
+      },
+      "required": ["nuclide"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetCharacteristicGammasForNuclide(params);
+    }
+  });
+
+
+  registerTool({
+    "nuclides_with_primary_gammas_in_energy_range",
+    "Get the commonly encountered field nuclides, x-ray elements, or nuclear reactions with primary gammas in the specified energy range.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "lowerEnergy": {
+          "type": "number",
+          "description": "The lower energy (in keV) to search for primary gammas."
+        },
+        "upperEnergy": {
+          "type": "number",
+          "description": "The upper energy (in keV) to search for primary gammas."
+        },
+        "userSession": { 
+          "type": "string", 
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        }
+      },
+      "required": ["lowerEnergy", "upperEnergy"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
+    }
+  });
+
+  registerTool({
+    "nuclides_with_primary_gammas_near_energy",
+    "Get the commonly encountered field nuclides, x-ray elements, or nuclear reactions with primary gammas near the specified energy.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "energy": {
+          "type": "number",
+          "description": "The energy (in keV) to search for primary gammas."
+        },
+        "userSession": { 
+          "type": "string", 
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        }
+      },
+      "required": ["energy"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
+    }
+  });
+
+  registerTool({
+    "associated_nuclides",
+    "Gets other nuclides that are commonly detected along with the specified nuclide, or nuclides that might be mis-identified as the specified nuclide.  You you should check for these associated nuclides being present or not when the specified nuclide is observed.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "type": "string",
+          "description": "The nuclide to get associated nuclides for."
+        }
+      },
+      "required": ["nuclide"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetAssociatedNuclides(params);
+    }
+  });
+
+  registerTool({
+    "analyst_notes_for_nuclide",
+    "Gets analyst notes for the specified nuclide, such as when the nuclide is used, typical activity ranges, etc.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "type": "string",
+          "description": "The nuclide to get analyst notes for."
+        }
+      },
+      "required": ["nuclide"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetNuclideAnalystNotes(params);
+    }
+  });
+  
+  registerTool({
+    "nuclide_info",
+    "Gets nuclear data information about the specified nuclide, such as half-life, decay modes, etc.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "type": "string",
+          "description": "The nuclide to get data for."
+        }
+      },
+      "required": ["nuclide"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetNuclideInfo(params);
+    }
+  });
+
+  registerTool({
+    "nuclide_decay_chain",
+    "Returns a list of all progeny nuclides, of the specified nuclide, and thier decay modes and branching ratios.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "type": "string",
+          "description": "The nuclide to get data for."
+        }
+      },
+      "required": ["nuclide"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetNuclideDecayChain(params);
+    }
+  });
+
+
+  registerTool({
+    "loaded_spectra",
+    "Returns array of the currently loaded spectra from [\"Foreground\", \"Background\", \"Secondary\"].  If no spectra are loaded, returns empty array.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "userSession": { 
+            "type": "string", 
+            "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+          }
+      }
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetLoadedSpectra(params, interspec);
     }
   });
   
@@ -533,7 +698,7 @@ nlohmann::json ToolRegistry::executeGetUserPeaks(const nlohmann::json& params, I
   return result_json;
 }//nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec)
   
-json ToolRegistry::getSpectrumInfo(const json& params, InterSpec* interspec) {
+json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* interspec) {
   if (!interspec) {
     throw std::runtime_error("No InterSpec session available");
   }
@@ -550,33 +715,263 @@ json ToolRegistry::getSpectrumInfo(const json& params, InterSpec* interspec) {
   if (!meas) {
     throw std::runtime_error("No measurement loaded for " + specTypeStr + " spectrum");
   }
+
+  const set<int> &displayedSamples = interspec->displayedSamples(specType);
   
   shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram(specType);
-  if (!spectrum) {
+  if (!spectrum)
     throw std::runtime_error("No spectrum displayed for " + specTypeStr + " spectrum");
-  }
   
   json result;
   result["specType"] = specTypeStr;
   result["detectorName"] = spectrum->detector_name();
+  result["fileName"] = meas->filename();
   result["liveTime"] = spectrum->live_time();
   result["realTime"] = spectrum->real_time();
+  result["startTime"] = SpecUtils::to_iso_string( spectrum->start_time() );
   result["numChannels"] = spectrum->num_gamma_channels();
-  result["energyCalibration"] = spectrum->calibration_coeffs();
-  
+  //result["energyCalibration"] = spectrum->calibration_coeffs();
+  result["displayedSamples"] = displayedSamples;
+  result["includesNeutron"] = spectrum->contained_neutron();
+  if( spectrum->contained_neutron() )
+  {
+    result["neutronCounts"] = spectrum->neutron_counts_sum();
+    result["neutronLiveTime"] = spectrum->neutron_live_time();
+    result["neutronCPS"] = spectrum->neutron_counts_sum() / spectrum->neutron_live_time();
+  }
+  if( !spectrum->title().empty() )
+    result["title"] = spectrum->title();
+  if( meas->detector_type() != SpecUtils::DetectorType::Unknown )
+    result["detectorType"] = SpecUtils::detectorTypeToString(meas->detector_type());
+  if( !meas->manufacturer().empty() )
+    result["detectorManufacturer"] = meas->manufacturer();
+  if( !meas->instrument_model().empty() )
+    result["detectorModel"] = meas->instrument_model();
+  if( !meas->instrument_id().empty() )
+    result["detectorSerialNumber"] = meas->instrument_id();
+  if( spectrum->has_gps_info() )
+  {
+    result["gpsLatitude"] = spectrum->latitude();
+    result["gpsLongitude"] = spectrum->longitude();
+  }
+
+  result["minimumGammaEnergy"] = spectrum->gamma_energy_min();
+  result["maximumGammaEnergy"] = spectrum->gamma_energy_max();
+
   if (spectrum->gamma_counts() && !spectrum->gamma_counts()->empty()) {
     result["totalCounts"] = spectrum->gamma_count_sum();
   }
   
   return result;
+}//json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* interspec)
+  
+nlohmann::json ToolRegistry::executeGetCharacteristicGammasForNuclide( const nlohmann::json& params )
+{
+  const string nuclide = params.at("nuclide").get<string>();
+  json result;
+  result["nuclide"] = nuclide;
+  result["characteristicGammas"] = AnalystChecks::get_characteristic_gammas( nuclide );
+  return result;
+}
+
+nlohmann::json ToolRegistry::executeGetLoadedSpectra( const nlohmann::json& params, InterSpec* interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+  
+  vector<SpecUtils::SpectrumType> specTypes = { SpecUtils::SpectrumType::Foreground, SpecUtils::SpectrumType::Background, SpecUtils::SpectrumType::SecondForeground };
+  vector<string> loadedSpectra;
+  if( interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground ) )
+    loadedSpectra.push_back("Foreground");
+  if( interspec->displayedHistogram( SpecUtils::SpectrumType::Background ) )
+    loadedSpectra.push_back("Background");
+  if( interspec->displayedHistogram( SpecUtils::SpectrumType::SecondForeground ) )
+    loadedSpectra.push_back("Secondary");
+  
+  return json{ loadedSpectra };
 }
   
-  nlohmann::json executeGetCharacteristicGammasForNuclide( const nlohmann::json& params )
+nlohmann::json ToolRegistry::executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+  
+  vector<variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>> result;
+  if( params.contains("lowerEnergy") && params.contains("upperEnergy") )
   {
-    InterSpec_API std::vector<float> AnalystChecksget_characteristic_gammas( const std::string &nuclide );
-    
-    
+    const double lower_energy = params.at("lowerEnergy").get<double>();
+    const double upper_energy = params.at("upperEnergy").get<double>();
+    result = AnalystChecks::get_nuclides_with_characteristics_in_energy_range( lower_energy, upper_energy, interspec );
+  }else if( params.contains("energy") )
+  {
+    const double energy = params.at("energy").get<double>();
+    result = AnalystChecks::get_characteristics_near_energy( energy, interspec );
+  }else
+  {
+    throw std::runtime_error("Missing lowerEnergy, upperEnergy, or energy parameter");
   }
+  
+  json result_json = json::array();
+  for( const auto &item : result )
+  {
+    if( std::holds_alternative<const SandiaDecay::Nuclide *>(item) )
+    {
+      result_json.push_back( std::get<const SandiaDecay::Nuclide *>(item)->symbol );
+    }else if( std::holds_alternative<const SandiaDecay::Element *>(item) )
+    {
+      result_json.push_back( std::get<const SandiaDecay::Element *>(item)->symbol );
+    }else if( std::holds_alternative<const ReactionGamma::Reaction *>(item) )
+    {
+      result_json.push_back( std::get<const ReactionGamma::Reaction *>(item)->name() );
+    }
+  }
+  return result_json;
+}
+  
+
+nlohmann::json ToolRegistry::executeGetAssociatedNuclides( const nlohmann::json& params )
+{
+  const string nuclide = params.at("nuclide").get<string>();
+
+  try
+  {
+    const shared_ptr<const MoreNuclideInfo::MoreNucInfoDb> info_db = MoreNuclideInfo::MoreNucInfoDb::instance();
+    if( !info_db )
+      throw std::runtime_error("No MoreNucInfoDb instance available");
+    
+    const MoreNuclideInfo::NucInfo *nuc_info = info_db->info(nuclide);
+    if( !nuc_info )
+      throw runtime_error( "No info for " + nuclide );
+    
+    return json{{"status", "success"}, {"nuclide", nuclide}, {"associatedNuclides", nuc_info->m_associated} };
+  }catch( const std::exception &e )
+  {
+    return json{{"status", "failed"}, {"nuclide", nuclide}, {"error", e.what()}};
+  }
+  assert( 0 );
+  return {};
+}//nlohmann::json executeGetAssociatedNuclides(const nlohmann::json& params, InterSpec* interspec)
+
+
+nlohmann::json ToolRegistry::executeGetNuclideAnalystNotes( const nlohmann::json& params )
+{
+  const string nuclide = params.at("nuclide").get<string>();
+  
+  try
+  {
+    const shared_ptr<const MoreNuclideInfo::MoreNucInfoDb> info_db = MoreNuclideInfo::MoreNucInfoDb::instance();
+    if( !info_db )
+      throw std::runtime_error("No MoreNucInfoDb instance available");
+    
+    const MoreNuclideInfo::NucInfo *nuc_info = info_db->info(nuclide);
+    if( !nuc_info || nuc_info->m_notes.empty() )
+      throw runtime_error( "No info for " + nuclide );
+    
+    return json{{"status", "success"}, {"nuclide", nuclide}, {"notes", nuc_info->m_notes} };
+  }catch( const std::exception &e )
+  {
+    return json{{"status", "failed"}, {"nuclide", nuclide}, {"error", e.what()}};
+  }
+  assert( 0 );
+  return {};
+}//nlohmann::json executeGetNuclideAnalystNotes(const nlohmann::json& params, InterSpec* interspec)
+
+  
+nlohmann::json ToolRegistry::executeGetNuclideInfo(const nlohmann::json& params )
+{
+  const string nuclide = params.at("nuclide").get<string>();
+  
+  nlohmann::json result;
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+  {
+    result["error"] = "Could not initialize nuclide DecayDataBase.";
+    return result;
+  }
+  
+  const SandiaDecay::Nuclide * const nuc = db->nuclide( nuclide );
+  if( !nuc )
+  {
+    result["error"] = "Nuclide '" + nuclide + "' is not a valid nuclide.";
+    return result;
+  }
+  
+  try
+  {
+    const nlohmann::json associated = ToolRegistry::executeGetAssociatedNuclides( params );
+    if( associated.contains("associatedNuclides") )
+      result["associatedNuclides"] = associated["associatedNuclides"];
+  }catch( std::exception & )
+  {
+  }
+  
+  result["symbol"] = nuc->symbol;
+  result["atomicNumber"] = static_cast<int>(nuc->atomicNumber);
+  result["massNumber"] = static_cast<int>(nuc->massNumber);
+  result["isomerNumber"] = static_cast<int>(nuc->isomerNumber);
+  result["atomicMass"] = nuc->atomicMass;
+  result["halfLife"] = PhysicalUnits::printToBestTimeUnits(nuc->halfLife, 6);
+  if( nuc->canObtainPromptEquilibrium() )
+    result["promptEquilibriumHalfLife"] = PhysicalUnits::printToBestTimeUnits(nuc->promptEquilibriumHalfLife(), 6);
+  if( nuc->canObtainSecularEquilibrium() )
+    result["secularEquilibriumHalfLife"] = PhysicalUnits::printToBestTimeUnits(nuc->secularEquilibriumHalfLife(), 6);
+  result["atomsPerGram"] = nuc->atomsPerGram();
+  result["activityPerGram"] = nuc->activityPerGram();
+  result["isStable"] = nuc->isStable();
+  result["decaysToStableChildren"] = nuc->decaysToStableChildren();
+  result["defaultAge"] = PhysicalUnits::printToBestTimeUnits( PeakDef::defaultDecayTime(nuc), 6 );
+  
+  for( const SandiaDecay::Transition *trans : nuc->decaysToChildren )
+  {
+    result["decays"].push_back( json{{"child", trans->child ? trans->child->symbol : ""},
+      {"branchingRatio",trans->branchRatio},
+      {"decayType", SandiaDecay::to_str(trans->mode)}}
+    );
+  }
+  
+  return result;
+}//nlohmann::json ToolRegistry::executeGetNuclideInfo(const nlohmann::json& params )
+
+nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& params )
+{
+  const string nuclide = params.at("nuclide").get<string>();
+
+  nlohmann::json result;
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+  {
+    result["error"] = "Could not initialize nuclide DecayDataBase.";
+    return result;
+  }
+  
+  const SandiaDecay::Nuclide * const nuc = db->nuclide( nuclide );
+  if( !nuc )
+  {
+    result["error"] = "Nuclide '" + nuclide + "' is not a valid nuclide.";
+    return result;
+  }
+  
+  const vector<const SandiaDecay::Nuclide *> descendants = nuc->descendants();
+  for( const SandiaDecay::Nuclide * const kid : descendants )
+  {
+    nlohmann::json kid_info;
+    kid_info["nuclide"] = kid->symbol;
+    kid_info["halfLife"] = PhysicalUnits::printToBestTimeUnits(kid->halfLife, 6);
+    
+    for( const SandiaDecay::Transition *trans : nuc->decaysToChildren )
+    {
+      kid_info["decays"].push_back( json{{"child", trans->child ? trans->child->symbol : ""},
+        {"branchingRatio",trans->branchRatio},
+        {"decayType", SandiaDecay::to_str(trans->mode)}}
+      );
+    }
+    
+    result.push_back( std::move(kid_info) );
+  }//for( const SandiaDecay::Nuclide * const kid : descendants )
+  
+  return result;
+}//nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& params )
+  
 } // namespace LlmTools
 
 #endif // USE_LLM_INTERFACE

@@ -1,5 +1,5 @@
-#ifndef LlmTool_h
-#define LlmTool_h
+#ifndef LlmToolGui_h
+#define LlmToolGui_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
 
 Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -54,14 +54,14 @@ namespace Wt
  * It displays conversation history in a scrollable text area and provides
  * an input field for new messages.
  */
-class LlmTool : public Wt::WContainerWidget
+class LlmToolGui : public Wt::WContainerWidget
 {
 public:
   /** Constructor.
    * @param viewer The InterSpec instance this tool belongs to
    * @param parent The parent widget (optional)
    */
-  LlmTool(InterSpec *viewer, Wt::WContainerWidget *parent = nullptr);
+  LlmToolGui(InterSpec *viewer, Wt::WContainerWidget *parent = nullptr);
   
   /** Focus the input text field */
   void focusInput();
@@ -124,4 +124,4 @@ private:
 };
 
 #endif // USE_LLM_INTERFACE
-#endif // LlmTool_h
+#endif // LlmToolGui_h

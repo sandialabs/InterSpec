@@ -2,7 +2,7 @@
 
 #if( USE_LLM_INTERFACE )
 
-#include "InterSpec/LlmTool.h"
+#include "InterSpec/LlmToolGui.h"
 
 #include <iostream>
 #include <sstream>
@@ -25,7 +25,7 @@
 using namespace std;
 using namespace Wt;
 
-LlmTool::LlmTool(InterSpec *viewer, WContainerWidget *parent)
+LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   : WContainerWidget(parent),
     m_viewer(viewer),
     m_llmInterface(nullptr),
@@ -47,13 +47,13 @@ LlmTool::LlmTool(InterSpec *viewer, WContainerWidget *parent)
     throw std::runtime_error("LLM interface is not available");
   }
   
-  wApp->useStyleSheet( "InterSpec_resources/LlmTool.css" );
+  wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
   
   // Connect to LLM interface response signal
-  m_llmInterface->responseReceived().connect(this, &LlmTool::handleResponseReceived);
+  m_llmInterface->responseReceived().connect(this, &LlmToolGui::handleResponseReceived);
   
   // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
-  m_viewer->displayedSpectrumChanged().connect(this, &LlmTool::handleSpectrumChanged);
+  m_viewer->displayedSpectrumChanged().connect(this, &LlmToolGui::handleSpectrumChanged);
   
   initializeUI();
   
@@ -61,9 +61,9 @@ LlmTool::LlmTool(InterSpec *viewer, WContainerWidget *parent)
   refreshDisplay();
 }
 
-void LlmTool::initializeUI()
+void LlmToolGui::initializeUI()
 {
-  addStyleClass("LlmTool");
+  addStyleClass("LlmToolGui");
   
   // Create the main layout
   m_layout = new WGridLayout();
@@ -107,8 +107,8 @@ void LlmTool::initializeUI()
 
   
   // Connect signals
-  m_inputEdit->enterPressed().connect(this, &LlmTool::handleInputSubmit);
-  m_sendButton->clicked().connect(this, &LlmTool::handleSendButton);
+  m_inputEdit->enterPressed().connect(this, &LlmToolGui::handleInputSubmit);
+  m_sendButton->clicked().connect(this, &LlmToolGui::handleSendButton);
   
   // Basic styling - can be enhanced with CSS later
   //m_conversationDisplay->setMinimumSize(WLength::Auto, WLength(200, WLength::Pixel));
@@ -117,14 +117,14 @@ void LlmTool::initializeUI()
 }
 
 
-void LlmTool::focusInput()
+void LlmToolGui::focusInput()
 {
   if (m_inputEdit) {
     m_inputEdit->setFocus(true);
   }
 }
 
-void LlmTool::clearHistory()
+void LlmToolGui::clearHistory()
 {
   if (m_conversationDisplay) {
     m_conversationDisplay->setText("");
@@ -139,12 +139,12 @@ void LlmTool::clearHistory()
   }
 }
 
-void LlmTool::handleInputSubmit()
+void LlmToolGui::handleInputSubmit()
 {
   handleSendButton(); // Same logic as clicking send button
 }
 
-void LlmTool::handleSendButton()
+void LlmToolGui::handleSendButton()
 {
   if (!m_inputEdit) {
     return;
@@ -162,7 +162,7 @@ void LlmTool::handleSendButton()
   sendMessage(message);
 }
 
-void LlmTool::sendMessage(const std::string& message)
+void LlmToolGui::sendMessage(const std::string& message)
 {
   if (!m_llmInterface) {
     cout << "Error: LLM interface not available" << endl;
@@ -207,12 +207,12 @@ void LlmTool::sendMessage(const std::string& message)
   }
 }
 
-void LlmTool::updateConversationDisplay()
+void LlmToolGui::updateConversationDisplay()
 {
   refreshDisplay();
 }
 
-void LlmTool::refreshDisplay()
+void LlmToolGui::refreshDisplay()
 {
   if( !m_conversationDisplay) {
     return;
@@ -271,7 +271,7 @@ void LlmTool::refreshDisplay()
                                       );
 }
 
-void LlmTool::handleResponseReceived()
+void LlmToolGui::handleResponseReceived()
 {
   // Re-enable input when we receive a response
   if (m_isRequestPending) {
@@ -285,7 +285,7 @@ void LlmTool::handleResponseReceived()
   refreshDisplay();
 }
 
-std::string LlmTool::formatMessage(const LlmConversationStart& conversation, int requestId)
+std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, int requestId)
 {
   stringstream formatted;
   
@@ -355,7 +355,7 @@ std::string LlmTool::formatMessage(const LlmConversationStart& conversation, int
   return formatted.str();
 }
 
-std::map<int, std::vector<const LlmConversationStart*>> LlmTool::groupConversationsByRequest()
+std::map<int, std::vector<const LlmConversationStart*>> LlmToolGui::groupConversationsByRequest()
 {
   std::map<int, std::vector<const LlmConversationStart*>> groups;
   
@@ -388,7 +388,7 @@ std::map<int, std::vector<const LlmConversationStart*>> LlmTool::groupConversati
   return groups;
 }
 
-void LlmTool::setInputEnabled(bool enabled)
+void LlmToolGui::setInputEnabled(bool enabled)
 {
   if (m_inputEdit) {
     m_inputEdit->setEnabled(enabled);
@@ -407,7 +407,7 @@ void LlmTool::setInputEnabled(bool enabled)
   }
 }
 
-void LlmTool::handleSpectrumChanged()
+void LlmToolGui::handleSpectrumChanged()
 {
   // If there's a pending request, cancel it and re-enable input
   if (m_isRequestPending) {
@@ -416,7 +416,7 @@ void LlmTool::handleSpectrumChanged()
   }
 }
 
-void LlmTool::cancelCurrentRequest()
+void LlmToolGui::cancelCurrentRequest()
 {
   if (!m_isRequestPending || m_currentRequestId == -1) {
     return;

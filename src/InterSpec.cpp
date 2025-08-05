@@ -99,7 +99,7 @@
 
 #if( USE_LLM_INTERFACE )
 #include "InterSpec/LlmInterface.h"
-#include "InterSpec/LlmTool.h"
+#include "InterSpec/LlmToolGui.h"
 #include "InterSpec/LlmConversationHistory.h"
 #endif
 #include "InterSpec/ColorTheme.h"
@@ -13444,7 +13444,7 @@ void InterSpec::createLlmTool()
     return;
     
   try {
-    m_llmTool = new LlmTool( this );
+    m_llmTool = new LlmToolGui( this );
     m_llmTool->focusInput();
     
     if( m_toolsTabs )

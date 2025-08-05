@@ -107,10 +107,16 @@ private:
   
   // Helper functions for default tools
   static nlohmann::json executePeakDetection(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json getSpectrumInfo(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetSpectrumInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePeakFit(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetCharacteristicGammasForNuclide( const nlohmann::json& params );
+  static nlohmann::json executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec );
+  static nlohmann::json executeGetLoadedSpectra(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetAssociatedNuclides(const nlohmann::json& params );
+  static nlohmann::json executeGetNuclideAnalystNotes(const nlohmann::json& params );
+  static nlohmann::json executeGetNuclideInfo(const nlohmann::json& params );
+  static nlohmann::json executeGetNuclideDecayChain(const nlohmann::json& params );
 };
 
 } // namespace LlmTools

@@ -29,12 +29,21 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include <variant>
 
 #include "SpecUtils/SpecFile.h"
+
+#include "InterSpec/ReactionGamma.h" //for ReactionGamma::Reaction
 
 // Forward declarations
 class PeakDef;
 class InterSpec;
+
+namespace SandiaDecay
+{
+  struct Nuclide;
+  struct Element;
+}
 
 namespace AnalystChecks
 {
@@ -99,7 +108,31 @@ namespace AnalystChecks
   
   InterSpec_API GetUserPeakStatus get_user_peaks( const GetUserPeakOptions &options, InterSpec *interspec );
   
+  /** Calculates an approximate importance that a peak in a spectrum will have for a given nuclide.
+   * 
+   * Importance is defined by `yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))`.
+   * A very rough approximation, but can be useful for matching things.
+   * This is what PhotoPeak.lis uses for its fourth column.
+   * 
+   * @param gamma_energies_and_yields A vector of tuples containing the energy and yield of each gamma.
+   * @return A tuple containing the energy, yield, and estimated importance.
+   */
+  std::vector<std::tuple<float,float,float>> cacl_estimated_gamma_importance( const std::vector<std::tuple<float,float>> &gamma_energies_and_yields );
+
   InterSpec_API std::vector<float> get_characteristic_gammas( const std::string &nuclide );
+  
+  /** Returns the Nuclides, x-rays, and reaction gammas from CharacteristicGammas.txt, in the energy range. */
+  std::vector<std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>>
+  get_nuclides_with_characteristics_in_energy_range( double lower_energy, double upper_energy, InterSpec *interspec );
+  
+  /** Gets the approximate FWHM of the foreground spectrum for the provided energy, and returns
+   `get_nuclides_with_characteristics_in_energy_range(energy-fwhm, energy+fwhm)`
+   
+   Throws exception on error (no foreground, invalid InterSpec pointer, etc).
+   */
+  std::vector<std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>>
+  get_characteristics_near_energy( const double energy, InterSpec *interspec );
+  
   
 } // namespace AnalystChecks
 

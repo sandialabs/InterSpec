@@ -64,7 +64,7 @@ class PeakEditWindow;
 
 #if( USE_LLM_INTERFACE )
 class LlmInterface;
-class LlmTool;
+class LlmToolGui;
 #endif
 class WarningMessage;
 class DrfSelectWindow;
@@ -1653,7 +1653,7 @@ protected:
   /** Menu item for opening the LLM tool. */
   PopupDivMenuItem *m_llmToolMenuItem;
   /** LLM tool widget for user interaction. */
-  LlmTool          *m_llmTool;
+  LlmToolGui          *m_llmTool;
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )

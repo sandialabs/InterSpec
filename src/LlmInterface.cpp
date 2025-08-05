@@ -94,7 +94,7 @@ LlmInterface::LlmInterface(InterSpec* interspec)
 
 #ifdef USE_WT_HTTP_FOR_LLM
   // Configure HTTP client
-  m_httpClient->setTimeout(30); // 30 second timeout
+  m_httpClient->setTimeout(120); // 120 second timeout
   m_httpClient->setMaximumResponseSize(1024 * 1024); // 1MB max response
   
   // Connect the done signal to our response handler
@@ -404,8 +404,13 @@ void LlmInterface::handleApiResponse(const std::string& response) {
     cout << "Error parsing LLM response: " << e.what() << endl;
   }
   
-  // Emit signal to notify listeners that a response was received
-  m_responseReceived.emit();
+  // Only emit signal if there are no pending requests (i.e., this is the final response)
+  if (m_pendingRequests.empty()) {
+    cout << "No pending requests, emitting response received signal" << endl;
+    m_responseReceived.emit();
+  } else {
+    cout << "Still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
+  }
 }
 
 void LlmInterface::executeToolCalls(const nlohmann::json& toolCalls) {
@@ -691,8 +696,8 @@ nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, 
     
     // Most functions include a "userSession" argument for the MCP server - but we dont need that here since we are in a Wt session
     nlohmann::json par_schema = tool.parameters_schema;
-    if( par_schema.contains("userSession") )
-      par_schema.erase( "userSession" );
+    if( par_schema.contains("properties") && par_schema["properties"].contains("userSession") )
+      par_schema["properties"].erase( "userSession" );
     
     toolDef["function"]["parameters"] = par_schema;
     tools.push_back(toolDef);
@@ -719,9 +724,8 @@ void LlmInterface::setupJavaScriptBridge() {
   // Set up the JavaScript function to handle HTTP requests
   string jsCode = R"(
     window.llmHttpRequest = function(endpoint, requestJsonString, bearerToken, requestId) {
-      console.log('LLM HTTP Request to:', endpoint);
-      console.log('Request ID:', requestId);
-      console.log('Request data:', requestJsonString);
+      console.log('LLM HTTP Request to:', endpoint, 'For requestID', requestId);
+      //console.log('Request data:', requestJsonString);
       
       var headers = {
         'Content-Type': 'application/json'
@@ -749,7 +753,8 @@ void LlmInterface::setupJavaScriptBridge() {
         return response.text();
       })
       .then(function(responseText) {
-        console.log('LLM Response:', responseText);
+        //console.log('LLM Response:', responseText);
+        console.log( 'Got LLM Response text' ); 
         
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);
@@ -817,7 +822,13 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       }
       
       // Signal that a response was received (even if it's an error)
-      m_responseReceived.emit();
+      // Only emit if no pending requests (this is the final response)
+      if (m_pendingRequests.empty()) {
+        cout << "Error response - no pending requests, emitting signal" << endl;
+        m_responseReceived.emit();
+      } else {
+        cout << "Error response - still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
+      }
       return;
     }
     
@@ -964,7 +975,13 @@ void LlmInterface::handleWtHttpError(int requestId, const std::string& error) {
   }
   
   // Signal that a response was received (even if it's an error)
-  m_responseReceived.emit();
+  // Only emit if no pending requests (this is the final response)
+  if (m_pendingRequests.empty()) {
+    cout << "HTTP Error - no pending requests, emitting signal" << endl;
+    m_responseReceived.emit();
+  } else {
+    cout << "HTTP Error - still have " << m_pendingRequests.size() << " pending requests, not emitting signal yet" << endl;
+  }
 }
 #endif // USE_WT_HTTP_FOR_LLM
 

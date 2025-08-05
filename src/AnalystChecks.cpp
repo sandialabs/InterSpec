@@ -29,6 +29,8 @@
 #include <algorithm>
 #include <limits>
 
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/SpecMeas.h"
@@ -37,6 +39,12 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/IsotopeId.h"
+#include "InterSpec/ReactionGamma.h"
+#include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/IsotopeSearchByEnergy.h"
+#include "InterSpec/MoreNuclideInfo.h"
 
 #include <Wt/WApplication>
 
@@ -373,11 +381,289 @@ namespace AnalystChecks
     return status;
   }
   
+  vector<tuple<float,float,float>> cacl_estimated_gamma_importance( const vector<tuple<float,float>> &gamma_energies_and_yields )
+  {
+    float sum_yields_sqrt_energy = 0.0f;
+    for( const tuple<float,float> &gamma : gamma_energies_and_yields )
+    {
+      sum_yields_sqrt_energy += std::get<1>(gamma) * sqrt(std::get<0>(gamma));
+    }
+    
+    vector<tuple<float,float,float>> answer;
+    answer.reserve(gamma_energies_and_yields.size());
+    for( const tuple<float,float> &gamma : gamma_energies_and_yields )
+    {
+      float importance = std::get<1>(gamma) * sqrt(std::get<0>(gamma)) / sum_yields_sqrt_energy;
+      answer.push_back({std::get<0>(gamma), std::get<1>(gamma), importance});
+    }
+    return answer;
+  }
   
   std::vector<float> get_characteristic_gammas( const std::string &nuclide )
   {
-    //
-    //const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &nuc_characteristics = IsotopeId::characteristicGammas();
-    //blah blah blah
-  }
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    if( !db )
+      throw std::runtime_error("No decay database available");
+
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( nuclide );
+    if( !nuc )
+    {
+      // See if its a element for nuclide fluorescence
+      const SandiaDecay::Element * const el = db->element( nuclide );
+      if( !el )
+      {
+        if( SpecUtils::istarts_with( nuclide, "Neut" ) )
+          return {478.0f, 847.0f, 2223.3f, 2235.3f};
+
+        // See if its a reaction
+        try
+        {
+          const ReactionGamma * const rctnDb = ReactionGammaServer::database();
+          vector<ReactionGamma::ReactionPhotopeak> reactions;
+          
+          if( rctnDb )
+            rctnDb->gammas( nuclide, reactions );
+
+          if( reactions.empty() )
+            throw std::runtime_error("No reactions found for '" + nuclide + "'");
+
+          vector<tuple<float,float>> energies_and_yields;
+          for( const auto &reaction : reactions )
+            energies_and_yields.push_back({reaction.energy, reaction.abundance});
+
+          vector<tuple<float,float,float>> importances = cacl_estimated_gamma_importance(energies_and_yields);
+          std::sort( begin(importances), end(importances), [](const tuple<float,float,float> &a, const tuple<float,float,float> &b) {
+              return std::get<2>(a) > std::get<2>(b);
+          });
+
+          const float max_importance = std::get<2>(importances[0]);
+          vector<float> answer;
+          for( const auto &importance : importances )
+          {
+            if( std::get<2>(importance) < max_importance * 0.25 )
+              break;
+            answer.push_back( std::get<0>(importance) );
+          }
+        
+
+          if( answer.size() > 3 )
+            answer.resize(3);
+
+          return answer;
+        }catch(...)
+        {
+          throw std::runtime_error("No nuclide, element, or reaction found for name '" + nuclide + "'");
+        }//try / catch
+      }//if( !el )
+
+      // For uranium and lead we'll just hard-code the result
+      if( el->atomicNumber == 92 ) //Uranium
+        return {98.4f};
+      if( el->atomicNumber == 82 ) //Lead
+        return {75.0f};
+
+      // We'll return the highest "importance" x-ray for the element
+      vector<tuple<float,float>> gamma_energies_and_yields;
+      for( const auto &xray : el->xrays )
+        gamma_energies_and_yields.push_back({xray.energy, xray.intensity});
+
+      vector<tuple<float,float,float>> importances = cacl_estimated_gamma_importance(gamma_energies_and_yields);
+      std::sort( begin(importances), end(importances), [](const tuple<float,float,float> &a, const tuple<float,float,float> &b) {
+        return std::get<2>(a) > std::get<2>(b);
+      });
+
+      if( importances.empty() )
+        return {};
+
+      return {std::get<0>(importances[0])};
+    }//if( !nuc )
+    
+    const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &nuc_characteristics = IsotopeId::characteristicGammas();
+    
+    vector<float> answer;
+    for( const auto &nuc_characteristic : nuc_characteristics )
+    {
+      if( get<0>(nuc_characteristic) == nuclide )
+        answer.push_back( get<2>(nuc_characteristic) );
+    }
+
+    if( answer.empty() )
+    {
+      // We'll return up to a few of the highest "importance" gammas for the element.
+      const double age = PeakDef::defaultDecayTime( nuc );
+      SandiaDecay::NuclideMixture mixture;
+      mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuc,1.0E4) );
+      const vector<SandiaDecay::EnergyRatePair> photons
+                                        = mixture.photons(age, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy);
+
+      vector<tuple<float,float>> gamma_energies_and_yields;
+      for( const auto &photon : photons )
+        gamma_energies_and_yields.push_back({photon.energy, photon.numPerSecond});
+
+      vector<tuple<float,float,float>> importances = cacl_estimated_gamma_importance(gamma_energies_and_yields);
+      std::sort( begin(importances), end(importances), [](const tuple<float,float,float> &a, const tuple<float,float,float> &b) {
+        return std::get<2>(a) > std::get<2>(b);
+      });
+
+      if( importances.empty() )
+        return {};
+
+      const float max_importance = std::get<2>(importances[0]);
+      for( const auto &importance : importances )
+      {
+        if( std::get<2>(importance) < max_importance * 0.25 )
+          break;
+        answer.push_back( std::get<0>(importance) );
+      }
+
+      if( answer.size() > 3 )
+        answer.resize(3);
+    }//if( answer.empty() )
+
+    return answer;
+  }//std::vector<float> get_characteristic_gammas( const std::string &nuclide )
+  
+  
+  std::vector<std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>>
+  get_nuclides_with_characteristics_in_energy_range( double lower_energy, double upper_energy, InterSpec *interspec  )
+  {
+    std::vector<std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>> answer;
+    
+    if( lower_energy > upper_energy )
+      std::swap( lower_energy, upper_energy );
+    
+    // First, we'll identify all the common nuclides, elements, and reactions that are 
+    //  typically encountered.
+    set<const SandiaDecay::Nuclide *> nuclides;
+    set<const SandiaDecay::Element *> elements;
+    set<const ReactionGamma::Reaction *> reactions;
+    
+    std::vector<IsotopeSearchByEnergy::NucSearchCategory> nuc_categories;
+    if( interspec && interspec->nuclideSearch() )
+      nuc_categories = interspec->nuclideSearch()->search_categories();
+    else
+      IsotopeSearchByEnergy::init_category_info( nuc_categories );
+
+    for( const IsotopeSearchByEnergy::NucSearchCategory &category : nuc_categories )
+    {
+      nuclides.insert( begin(category.m_specific_nuclides), end(category.m_specific_nuclides) );
+      elements.insert( begin(category.m_specific_elements), end(category.m_specific_elements) );
+      reactions.insert( begin(category.m_specific_reactions), end(category.m_specific_reactions) );
+    }
+
+    const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &nuc_characteristics = IsotopeId::characteristicGammas();
+    for( const auto &nuc_characteristic : nuc_characteristics )
+    {
+      if( get<1>(nuc_characteristic) )
+        nuclides.insert( get<1>(nuc_characteristic) );
+    }
+
+    // Now add all the nuclides that have characteristics in the energy range
+    for( const auto &nuclide : nuclides )
+    {
+      const vector<float> gammas = get_characteristic_gammas( nuclide->symbol );
+      for( const float gamma : gammas )
+      {
+        if( gamma >= lower_energy && gamma <= upper_energy )
+          answer.push_back( nuclide );
+      }
+    }
+
+    for( const auto &element : elements )
+    {
+      const vector<float> xrays = get_characteristic_gammas( element->symbol );
+      for( const float xray : xrays )
+      {
+        if( xray >= lower_energy && xray <= upper_energy )
+          answer.push_back( element );
+      }
+    }
+
+    for( const auto &reaction : reactions )
+    {
+      const vector<float> gammas = get_characteristic_gammas( reaction->name() );
+      for( const float gamma : gammas )
+      {
+        if( gamma >= lower_energy && gamma <= upper_energy )
+          answer.push_back( reaction );
+      }
+    }
+
+    return answer;
+  }//get_nuclides_with_characteristics_in_energy_range(...)
+  
+  
+  std::vector<std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>>
+  get_characteristics_near_energy( const double energy, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw std::runtime_error("No InterSpec session available");
+    
+    shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    if( !meas || !spectrum )
+      throw std::runtime_error("No foreground loaded");
+    
+    
+    float fwhm = -1.0;
+    
+    // Try the currently loaded peak detector response
+    if( meas->detector() && meas->detector()->hasResolutionInfo() )
+      fwhm = meas->detector()->peakResolutionFWHM( static_cast<float>(energy) );
+    
+    // Estimate the FWHM response...
+    shared_ptr<deque<shared_ptr<const PeakDef>>> peak_deque;
+    if( fwhm <= 0.0 )
+    {
+      try
+      {
+        DetectedPeaksOptions opts;
+        opts.specType = SpecUtils::SpectrumType::Foreground;
+        const DetectedPeakStatus peaks = detected_peaks( opts, interspec );
+        peak_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(peaks.peaks), end(peaks.peaks) );
+        
+        DetectorPeakResponse drf;
+        drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+        
+        drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+        
+        fwhm = drf.peakResolutionFWHM( static_cast<float>(energy) );
+      }catch( std::exception & )
+      {
+      }
+    }//if( fwhm <= 0.0 )
+    
+    // Find nearest peak, and if within 20% of the energy, use it.
+    if( (fwhm <= 0.0) && peak_deque )
+    {
+      double smallest_energy_diff = std::numeric_limits<double>::max();
+      double nearest_fwhm = 0.0;
+      for( const auto &peak : *peak_deque )
+      {
+        double energy_diff = std::abs(peak->mean() - energy);
+        if( energy_diff < smallest_energy_diff )
+        {
+          smallest_energy_diff = energy_diff;
+          nearest_fwhm = peak->fwhm();
+        }
+      }
+
+      if( smallest_energy_diff < 0.2*energy )
+        fwhm = nearest_fwhm;
+    }//if( (fwhm <= 0.0) && peak_deque )
+    
+    // Finally, a wag based on detection type.
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+    const vector<float> pars = isHPGe ? vector<float>{ 1.54f, 0.264f, 0.33f } : vector<float>{ -6.5f, 7.5f, 0.55f };
+    fwhm = DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars );
+
+    if( fwhm <= 0.0 )
+      throw std::runtime_error("Could not determine FWHM for energy " + std::to_string(energy) );
+    
+    return get_nuclides_with_characteristics_in_energy_range( energy - fwhm, energy + fwhm, interspec );
+  }//get_characteristics_near_energy(...)
+  
+  
+  
 } // namespace AnalystChecks
