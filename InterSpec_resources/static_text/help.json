@@ -155,6 +155,13 @@
         "keywords":"MDA Detectable simple"
       },
       {
+        "id":"simple-activity-calc",
+        "title": "Simple Activity Calculator",
+        "help-xml":"simple_activity_calc_help.xml",
+        "keywords":"Activity simple"
+      },
+      
+      {
         "id":"color-theme-dialog",
         "title": "Colors/Theme",
         "help-xml":"color_theme_dialog_help.xml",

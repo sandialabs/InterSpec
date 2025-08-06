@@ -174,6 +174,7 @@
 #include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/DetectionLimitSimple.h"
 #endif
+#include "InterSpec/SimpleActivityCalc.h"
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
 #include "InterSpec/SpecFileQueryWidget.h"
@@ -491,6 +492,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_simpleMdaWindow( nullptr ),
   m_detectionLimitWindow( nullptr ),
 #endif
+  m_simpleActivityCalcWindow( nullptr ),
   m_clientDeviceType( 0x0 ),
   m_referencePhotopeakLines( 0 ),
   m_referencePhotopeakLinesWindow( 0 ),
@@ -1173,6 +1175,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
       case kSimpleMda:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-mda") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleMdaFromRightClick );
+      break;
+      case kSimpleActivityCalc:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-activity-calc") );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleActivityCalcFromRightClick );
       break;
 #endif
         
@@ -2748,6 +2754,20 @@ void InterSpec::handleRightClick( double energy, double counts,
         
         break;
       }//case kSimpleMda:
+        
+      case kSimpleActivityCalc:
+      {
+        const bool showItem = (peak && peak->parentNuclide());
+        m_rightClickMenutItems[i]->setHidden( !showItem );
+        
+        if( showItem )
+        {
+          const SandiaDecay::Nuclide *nuc = peak->parentNuclide();
+          m_rightClickMenutItems[i]->setText( WString::tr("rclick-simple-activity-calc").arg( nuc->symbol ) );
+        }//if( showItem )
+        
+        break;
+      }//case kSimpleActivityCalc:
 #endif  //USE_DETECTION_LIMIT_TOOL
         
         
@@ -8830,6 +8850,107 @@ void InterSpec::startSimpleMdaFromRightClick()
   }//if( m_undo && m_undo->canAddUndoRedoNow() )
 }//void startSimpleMdaFromRightClick()
 #endif //USE_DETECTION_LIMIT_TOOL
+
+SimpleActivityCalcWindow *InterSpec::showSimpleActivityCalcWindow()
+{
+  if( m_simpleActivityCalcWindow )
+    return m_simpleActivityCalcWindow;
+  
+  m_simpleActivityCalcWindow = new SimpleActivityCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+  m_simpleActivityCalcWindow->finished().connect( this, &InterSpec::handleSimpleActivityCalcWindowClose );
+  
+  return m_simpleActivityCalcWindow;
+}//SimpleActivityCalcWindow *showSimpleActivityCalcWindow()
+
+void InterSpec::programmaticallyCloseSimpleActivityCalc()
+{
+  if( !m_simpleActivityCalcWindow )
+    return;
+  
+  SimpleActivityCalcWindow *dialog = m_simpleActivityCalcWindow;
+  m_simpleActivityCalcWindow = nullptr;
+  dialog->done( WDialog::DialogCode::Accepted );
+}//void programmaticallyCloseSimpleActivityCalc()
+
+void InterSpec::handleSimpleActivityCalcWindowClose()
+{
+  auto *caller = dynamic_cast<SimpleActivityCalcWindow *>( WObject::sender() );
+  assert( caller );
+  assert( !m_simpleActivityCalcWindow || (caller == m_simpleActivityCalcWindow) );
+  
+  if( !m_simpleActivityCalcWindow )
+    return;
+  
+  auto dialog = m_simpleActivityCalcWindow;
+  m_simpleActivityCalcWindow = nullptr;
+  
+  const SimpleActivityCalcState state = dialog->tool()->currentState();
+  
+  AuxWindow::deleteAuxWindow( dialog );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this, state](){
+      SimpleActivityCalcWindow *tool = showSimpleActivityCalcWindow();
+      assert( tool );
+      if( tool && tool->tool() )
+        tool->tool()->setState( state );
+    };
+    auto redo = [this](){ programmaticallyCloseSimpleActivityCalc(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple Activity Calc" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
+}//void handleSimpleActivityCalcWindowClose()
+
+void InterSpec::startSimpleActivityCalcFromRightClick()
+{
+  std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
+  if( !peak || !peak->parentNuclide() )
+    return;
+  
+  SimpleActivityCalcState prevState;
+  bool wasShowing = false;
+  
+  if( m_simpleActivityCalcWindow )
+  {
+    wasShowing = true;
+    prevState = m_simpleActivityCalcWindow->tool()->currentState();
+  }else
+  {
+    showSimpleActivityCalcWindow();
+  }
+  
+  assert( m_simpleActivityCalcWindow );
+  if( !m_simpleActivityCalcWindow )
+    return;
+  
+  m_simpleActivityCalcWindow->tool()->setPeakFromEnergy( m_rightClickEnergy );
+  
+  const SimpleActivityCalcState currentState = m_simpleActivityCalcWindow->tool()->currentState();
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this, wasShowing, prevState](){
+      if( wasShowing )
+      {
+        showSimpleActivityCalcWindow();
+        if( m_simpleActivityCalcWindow )
+          m_simpleActivityCalcWindow->tool()->setState( prevState );
+      }else
+      {
+        programmaticallyCloseSimpleActivityCalc();
+      }
+    };//undo
+    
+    auto redo = [this, currentState](){
+      showSimpleActivityCalcWindow();
+      assert( m_simpleActivityCalcWindow );
+      if( m_simpleActivityCalcWindow )
+        m_simpleActivityCalcWindow->tool()->setState( currentState );
+    };//redo
+    
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Simple Activity Calc Tool." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void startSimpleActivityCalcFromRightClick()
 
 
 void InterSpec::deleteDecayInfoWindow()
