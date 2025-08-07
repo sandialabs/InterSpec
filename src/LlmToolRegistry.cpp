@@ -41,6 +41,33 @@ namespace {
   
   double rount_to_hundredth(double val){ return 0.01*std::round(100.0*val); }
 
+  /** Some LLMs will give number values as strings, so this function will check types and return the correct answer.
+
+   @param parent The parent JSON object.
+   @param name The field name of the number to parse.
+
+   An exception will be thrown if cant be converted to int.
+   */
+  double get_number( const json& parent, const string &name )
+  {
+    if( !parent.contains(name) )
+      throw runtime_error( "'" + name + "' parameter must be specified." );
+
+    if( parent[name].is_number() )
+      return parent.at(name).get<double>();
+
+    if( parent[name].is_string() )
+    {
+      string strval = parent.at(name).get<string>();
+      double val;
+      if( !(stringstream(strval) >> val) )
+        throw runtime_error( "'" + name + "' parameter must be a number." );
+      return val;
+    }//if( parent[name].is_string() )
+
+    throw runtime_error( "'" + name + "' parameter must be a number." );
+  }//double get_number( const json& parent, const string &name )
+
   void from_json(const json& j, AnalystChecks::DetectedPeaksOptions& p) {
     std::string specTypeStr = j.at("specType").get<std::string>();
     if (specTypeStr == "Foreground") {
@@ -55,25 +82,9 @@ namespace {
     p.userSession = j.value("userSession", std::optional<std::string>{});
   }
 
-  
   void from_json(const json& j, AnalystChecks::FitPeakOptions& p) {
-    if( !j.contains("energy") )
-      throw runtime_error( "'energy' parameter must be specified." );
 
-    if( j["energy"].is_number() )
-    {
-      p.energy = j.at("energy").get<double>();
-    }else if( j["energy"].is_string() )
-    {
-      string strval = j.at("energy").get<string>();
-      if( !(stringstream(strval) >> p.energy) )
-        throw runtime_error( "'energy' parameter must be a number." );
-    }else
-    {
-      throw runtime_error( "'energy' parameter must be a number." );
-    }
-
-
+    p.energy = get_number( j, "energy" );
     
     p.addToUsersPeaks = true;
     if( j.contains("addToUsersPeaks") )
@@ -1021,12 +1032,12 @@ nlohmann::json ToolRegistry::executeGetNuclidesWithCharacteristicsInEnergyRange(
   vector<variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>> result;
   if( params.contains("lowerEnergy") && params.contains("upperEnergy") )
   {
-    const double lower_energy = params.at("lowerEnergy").get<double>();
-    const double upper_energy = params.at("upperEnergy").get<double>();
+    const double lower_energy = get_number( params, "lowerEnergy" );
+    const double upper_energy = get_number( params, "upperEnergy" );
     result = AnalystChecks::get_nuclides_with_characteristics_in_energy_range( lower_energy, upper_energy, interspec );
   }else if( params.contains("energy") )
   {
-    const double energy = params.at("energy").get<double>();
+    const double energy = get_number( params, "energy" );
     result = AnalystChecks::get_characteristics_near_energy( energy, interspec );
   }else
   {
@@ -1308,8 +1319,9 @@ nlohmann::json ToolRegistry::executeGetCountsInEnergyRange(const nlohmann::json&
     throw std::runtime_error("No InterSpec session available.");
   }
 
-  const double lowerEnergy = params.at("lowerEnergy").get<double>();
-  const double upperEnergy = params.at("upperEnergy").get<double>();
+
+  const double lowerEnergy = get_number( params, "lowerEnergy" );
+  const double upperEnergy = get_number( params, "upperEnergy" );
 
   // Call the AnalystChecks function to get the counts in energy range
   const AnalystChecks::SpectrumCountsInEnergyRange result = AnalystChecks::get_counts_in_energy_range(lowerEnergy, upperEnergy, interspec);
@@ -1326,7 +1338,7 @@ nlohmann::json ToolRegistry::executeGetExpectedFwhm(const nlohmann::json& params
   if (!interspec)
     throw std::runtime_error("No InterSpec session available.");
 
-  const double energy = params.at("energy").get<double>();
+  const double energy = get_number( params, "energy" );
 
   const float fwhm = AnalystChecks::get_expected_fwhm( energy, interspec );
   
@@ -1346,7 +1358,7 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
     throw std::runtime_error("No foreground spectrum loaded");
 
   // Parse only the selected parameters
-  const double energy = params.at("energy").get<double>();
+  const double energy = get_number( params, "energy" );
   const double detection_probability = params.value("detectionProbability", 0.95);
   const float additional_uncertainty = params.value("additionalUncertainty", 0.0f);
 
