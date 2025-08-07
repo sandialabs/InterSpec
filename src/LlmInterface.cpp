@@ -387,9 +387,12 @@ void LlmInterface::handleApiResponse(const std::string& response) {
       if (choice.contains("message")) {
         json message = choice["message"];
         string role = message.value("role", "");
-        string content = message.value("content", "");
-        
-                if (role == "assistant") {
+        string content;
+        if( message.contains("content") && message["content"].is_string() )
+          content = message["content"];
+
+
+        if (role == "assistant") {
           // Extract thinking content and clean content
           auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
                   
@@ -415,7 +418,9 @@ void LlmInterface::handleApiResponse(const std::string& response) {
     }
     
   } catch (const std::exception& e) {
-    cout << "Error parsing LLM response: " << e.what() << endl;
+    cout << "Error parsing LLM response: " << e.what()
+    << "\n\tresponse="
+    << response << endl << endl;
   }
   
   // Only emit signal if there are no pending requests (i.e., this is the final response)

@@ -3,6 +3,7 @@
 
 #if( USE_LLM_INTERFACE )
 
+#include <sstream>
 #include <iostream>
 #include <stdexcept>
 
@@ -54,7 +55,23 @@ namespace {
 
   
   void from_json(const json& j, AnalystChecks::FitPeakOptions& p) {
-    p.energy = j.at("energy").get<double>();
+    if( !j.contains("energy") )
+      throw runtime_error( "'energy' parameter must be specified." );
+
+    if( j["energy"].is_number() )
+    {
+      p.energy = j.at("energy").get<double>();
+    }else if( j["energy"].is_string() )
+    {
+      string strval = j.at("energy").get<string>();
+      if( !(stringstream(strval) >> p.energy) )
+        throw runtime_error( "'energy' parameter must be a number." );
+    }else
+    {
+      throw runtime_error( "'energy' parameter must be a number." );
+    }
+
+
     
     p.addToUsersPeaks = true;
     if( j.contains("addToUsersPeaks") )
