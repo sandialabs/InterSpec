@@ -1080,8 +1080,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         const bool no_neg = true;
         const bool do_round = false;
         
-        const bool sf = spec->live_time() / results.background->live_time();
-        
+        double sf = spec->live_time() / results.background->live_time();
+        if( IsInf(sf) || IsNan(sf) )
+          sf = 1.0; //e.g., if we dont have live-time
+
         shared_ptr<const vector<float>> fore_counts = spec->gamma_counts();
         shared_ptr<const vector<float>> back_counts = results.background->gamma_counts();
         
