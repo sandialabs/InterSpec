@@ -923,5 +923,153 @@ namespace AnalystChecks
   }//get_characteristics_near_energy(...)
   
   
+  float get_expected_fwhm( const double energy, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw std::runtime_error("No InterSpec session available");
+    
+    shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
+    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    if( !meas || !spectrum )
+      throw std::runtime_error("No foreground loaded");
+    
+    float fwhm = -1.0;
+    
+    // Try the currently loaded peak detector response
+    if( meas->detector() && meas->detector()->hasResolutionInfo() )
+      fwhm = meas->detector()->peakResolutionFWHM( static_cast<float>(energy) );
+    
+    // Estimate the FWHM response using detected peaks...
+    shared_ptr<deque<shared_ptr<const PeakDef>>> peak_deque;
+    if( fwhm <= 0.0 )
+    {
+      try
+      {
+        DetectedPeaksOptions opts;
+        opts.specType = SpecUtils::SpectrumType::Foreground;
+        const DetectedPeakStatus peaks = detected_peaks( opts, interspec );
+        peak_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(peaks.peaks), end(peaks.peaks) );
+        
+        DetectorPeakResponse drf;
+        drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
+                                               0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+        
+        drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+        
+        fwhm = drf.peakResolutionFWHM( static_cast<float>(energy) );
+      }catch( std::exception & )
+      {
+      }
+    }//if( fwhm <= 0.0 )
+    
+    // Find nearest peak, and if within 20% of the energy, use it.
+    if( (fwhm <= 0.0) && peak_deque )
+    {
+      double smallest_energy_diff = std::numeric_limits<double>::max();
+      double nearest_fwhm = 0.0;
+      for( const auto &peak : *peak_deque )
+      {
+        double energy_diff = std::abs(peak->mean() - energy);
+        if( energy_diff < smallest_energy_diff )
+        {
+          smallest_energy_diff = energy_diff;
+          nearest_fwhm = peak->fwhm();
+        }
+      }
+
+      if( smallest_energy_diff < 0.2*energy )
+        fwhm = nearest_fwhm;
+    }//if( (fwhm <= 0.0) && peak_deque )
+    
+    // Finally, a wag based on detection type.
+    if( fwhm <= 0.0 )
+    {
+      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+      const vector<float> pars = isHPGe ? vector<float>{ 1.54f, 0.264f, 0.33f } : vector<float>{ -6.5f, 7.5f, 0.55f };
+      fwhm = DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars );
+    }
+
+    if( fwhm <= 0.0 )
+      throw std::runtime_error("Could not determine FWHM for energy " + std::to_string(energy) );
+    
+    return fwhm;
+  }//get_expected_fwhm(...)
   
+  
+  SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw std::runtime_error("No InterSpec session available");
+
+    shared_ptr<const SpecUtils::Measurement> foreground = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    if( !foreground )
+      throw runtime_error( "get_counts_in_energy_range: no foreground loaded." );
+
+    if( lower_energy > upper_energy )
+      std::swap( lower_energy, upper_energy );
+
+    SpectrumCountsInEnergyRange answer;
+    answer.lower_energy = lower_energy;
+    answer.upper_energy = upper_energy;
+
+    answer.foreground_counts = foreground->gamma_integral( static_cast<float>(lower_energy), static_cast<float>(upper_energy) );
+    if( foreground->live_time() > 0.0 )
+      answer.foreground_cps = answer.foreground_counts / foreground->live_time();
+    else 
+      answer.foreground_cps = std::numeric_limits<double>::quiet_NaN();
+    
+    shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+    if( background )
+    {
+      SpectrumCountsInEnergyRange::CountsWithComparisonToForeground back;
+
+      back.counts = background->gamma_integral( static_cast<float>(lower_energy), static_cast<float>(upper_energy) );
+      if( background->live_time() > 0.0 )
+        back.cps = back.counts / background->live_time();
+      else
+        back.cps = std::numeric_limits<double>::quiet_NaN();
+
+      const double backSF = foreground->live_time() / background->live_time();
+      const double nfore = answer.foreground_counts;
+      const double nback = back.counts;
+      const double scaleback = nback * backSF;
+      const double backsigma = sqrt(nback);
+      const double forsigma = sqrt(nfore);
+      const double backscalesigma = backSF * backsigma;
+      const double total_back_fore_sigma = sqrt(backscalesigma*backscalesigma + forsigma*forsigma);
+      const double nsigma = (nfore - scaleback) / total_back_fore_sigma;
+
+      back.num_sigma_rel_foreground = nsigma;
+
+      answer.background_info = std::move( back );
+    }//if( background )
+
+    shared_ptr<const SpecUtils::Measurement> secondary = interspec->displayedHistogram(SpecUtils::SpectrumType::SecondForeground);
+    if( secondary )
+    {
+      SpectrumCountsInEnergyRange::CountsWithComparisonToForeground sec;
+
+      sec.counts = secondary->gamma_integral( static_cast<float>(lower_energy), static_cast<float>(upper_energy) );
+      if( secondary->live_time() > 0.0 )
+        sec.cps = sec.counts / secondary->live_time();
+      else
+        sec.cps = std::numeric_limits<double>::quiet_NaN();
+
+      const double secSF = foreground->live_time() / secondary->live_time();
+      const double nfore = answer.foreground_counts;
+      const double nsec = sec.counts;
+      const double scalesec = nsec * secSF;
+      const double secsigma = sqrt(nsec);
+      const double forsigma = sqrt(nfore);
+      const double secscalesigma = secSF * secsigma;
+      const double total_sec_fore_sigma = sqrt(secscalesigma*secscalesigma + forsigma*forsigma);
+      const double nsigma = (nfore - scalesec) / total_sec_fore_sigma;
+
+      sec.num_sigma_rel_foreground = nsigma;
+
+      answer.secondary_info = std::move( sec );
+    }//if( secondary )
+
+    return answer;
+  }//SpectrumCountsInEnergyRange get_counts_in_energy_range( const double lower_energy, const double upper_energy, InterSpec *interspec )
 } // namespace AnalystChecks

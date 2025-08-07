@@ -143,8 +143,49 @@ namespace AnalystChecks
    */
   std::vector<std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>>
   get_characteristics_near_energy( const double energy, InterSpec *interspec );
+
+  /** Get the expected Full Width at Half Maximum (FWHM) for a peak at the specified energy.
+   
+   Uses the detector response function if available, otherwise fits detected peaks to estimate
+   resolution, or falls back to detector type-based estimation.
+   
+   @param energy The energy (in keV) to calculate the expected FWHM for
+   @param interspec Pointer to the InterSpec session
+   @return The expected FWHM in keV
+   @throws std::runtime_error if no InterSpec session, no foreground loaded, or FWHM cannot be determined
+   */
+  float get_expected_fwhm( const double energy, InterSpec *interspec );
   
-  
+  struct SpectrumCountsInEnergyRange
+  {
+    double lower_energy;
+    double upper_energy;
+
+    double foreground_counts;
+
+    /** Counts divided by live time.  If live time of spectrum is not valid, this will be set to NaN. */
+    double foreground_cps;
+
+    struct CountsWithComparisonToForeground
+    {
+      double counts;
+
+      /** Counts divided by live time.  If live time of spectrum is not valid, this will be set to NaN. */
+      double cps;
+
+      /** The number of statistical sigma the foreground is is elevated, 
+       * relative to this spectrum (the background or secondary), when live-time normalized. 
+       * Positive numbers indicate foreground is elevated, negative numbers indicate 
+       * deficit in foreground.
+       * */
+      double num_sigma_rel_foreground;
+    };//struct CountsWithComparisonToForeground
+
+    std::optional<CountsWithComparisonToForeground> background_info;
+    std::optional<CountsWithComparisonToForeground> secondary_info;
+  };//struct SpectrumCountsInEnergyRange
+
+  SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy, InterSpec *interspec );
 } // namespace AnalystChecks
 
 #endif // AnalystChecks_h 

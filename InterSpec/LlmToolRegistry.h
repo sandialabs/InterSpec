@@ -119,6 +119,9 @@ private:
   static nlohmann::json executeGetNuclideDecayChain(const nlohmann::json& params );
   static nlohmann::json executeGetAutomatedRiidId(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeFitPeaksForNuclide(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetCountsInEnergyRange(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec);
 };
 
 } // namespace LlmTools
