@@ -7018,12 +7018,11 @@ bool chi2_significance_test( PeakDef peak,
   const double withGausChi2 = chi2fcn( &(params[0]) );
   const double chi2Ratio = withoutGausChi2 / withGausChi2;
   
-  const bool noDeltaRequired = ((withoutPeakDSigma <= 0.0) && (chi2ratioRequired <= 0.0));
-  bool noRatioRequired = noDeltaRequired;
-          
+  const bool noDeltaRequired = (withoutPeakDSigma <= 0.0);
+  bool noRatioRequired = (chi2ratioRequired <= 0.0);
+
   if( withoutGausChi2 < 5 )
     noRatioRequired = true;
-  
   
           
   //Dont require the ratio test to apply if peaks share a continuum

@@ -1825,8 +1825,12 @@ void fit_peaks_LM( vector<shared_ptr<const PeakDef>> &results,
         continue;
       }
 
-      const bool significant = chi2_significance_test( *peak, stat_threshold, hypothesis_threshold, {}, data );
-      if( !significant )
+      const double num_sigma = (peak->amplitude() / peak->amplitudeUncert());
+      const bool is_sig = (stat_threshold <= 0.0) || (num_sigma >= stat_threshold);
+
+      const double dummy_stat_thresh = 0.0;
+      const bool significant = chi2_significance_test( *peak, dummy_stat_thresh, hypothesis_threshold, {}, data );
+      if( !is_sig || !significant )
       {
 #if( PRINT_DEBUG_INFO_FOR_PEAK_SEARCH_FIT_LEVEL > 0 )
         DebugLog(cerr) << "\tPeak at mean=" << peak->mean()
