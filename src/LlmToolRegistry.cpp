@@ -18,6 +18,8 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+#include "InterSpec/DetectionLimitCalc.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 #include <Wt/WApplication>
 
@@ -307,6 +309,59 @@ namespace {
     }
     
     p.doNotAddPeaksToUserSession = j.value("doNotAddPeaksToUserSession", false);
+  }
+
+  void to_json(json& j, const AnalystChecks::SpectrumCountsInEnergyRange::CountsWithComparisonToForeground& c) {
+    j = json{
+      {"counts", c.counts},
+      {"cps", c.cps},
+      {"numSigmaCpsRelForeground", c.num_sigma_rel_foreground}
+    };
+  }
+
+  void to_json(json& j, const AnalystChecks::SpectrumCountsInEnergyRange& c) {
+    j = json{
+      {"lowerEnergy", c.lower_energy},
+      {"upperEnergy", c.upper_energy},
+      {"foregroundCounts", c.foreground_counts},
+      {"foregroundCps", c.foreground_cps}
+    };
+
+    if (c.background_info.has_value()) {
+      json background_json;
+      to_json(background_json, c.background_info.value());
+      j["backgroundInfo"] = background_json;
+    }
+
+    if (c.secondary_info.has_value()) {
+      json secondary_json;
+      to_json(secondary_json, c.secondary_info.value());
+      j["secondaryInfo"] = secondary_json;
+    }
+  }
+
+
+  void to_json(json& j, const DetectionLimitCalc::CurrieMdaResult& result) {
+    j = json{
+      {"gammaEnergy", result.input.gamma_energy},
+      {"roiLowerEnergy", result.input.roi_lower_energy},
+      {"roiUpperEnergy", result.input.roi_upper_energy},
+      {"numLowerSideChannels", result.input.num_lower_side_channels},
+      {"numUpperSideChannels", result.input.num_upper_side_channels},
+      {"detectionProbability", result.input.detection_probability},
+      {"additionalUncertainty", result.input.additional_uncertainty},
+      {"firstPeakRegionChannel", static_cast<int>(result.first_peak_region_channel)},
+      {"lastPeakRegionChannel", static_cast<int>(result.last_peak_region_channel)},
+      {"peakRegionCountsSum", result.peak_region_counts_sum},
+      {"estimatedPeakContinuumCounts", result.estimated_peak_continuum_counts},
+      {"estimatedPeakContinuumUncert", result.estimated_peak_continuum_uncert},
+      {"decisionThreshold", result.decision_threshold},
+      {"detectionLimit", result.detection_limit},
+      {"sourceCounts", result.source_counts},
+      {"lowerLimit", result.lower_limit},
+      {"upperLimit", result.upper_limit},
+      {"peakPresentInData", (result.source_counts > result.decision_threshold)}
+    };
   }
    
   
@@ -653,6 +708,89 @@ void ToolRegistry::registerDefaultTools() {
     })"),
     [](const json& params, InterSpec* interspec) -> json {
       return ToolRegistry::executeFitPeaksForNuclide(params, interspec);
+    }
+  });
+
+  registerTool({
+    "get_counts_in_energy_range",
+    "Get the counts in the spectra for the specified energy range as well as compares statistical significance of differences between foreground and background and/or secondary count-rates, if those spectra are loaded.  This function can be used to check if the count rate of an energy range is elevated in the foreground relative to the background, especially above the 2614 keV peak.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "lowerEnergy": {
+          "type": "number",
+          "description": "The lower energy bound in keV."
+        },
+        "upperEnergy": {
+          "type": "number",
+          "description": "The upper energy bound in keV."
+        },
+        "userSession": { 
+          "type": "string", 
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        }
+      },
+      "required": ["lowerEnergy", "upperEnergy"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return ToolRegistry::executeGetCountsInEnergyRange(params, interspec);
+    }
+  });
+
+  registerTool({
+    "get_expected_fwhm",
+    "Calculate the expected Full Width at Half Maximum (FWHM) for a peak at the specified energy, based on the detector response function, detected peaks, or detector type. This is useful for determining the expected width of a peak for ROI calculations.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "energy": {
+          "type": "number",
+          "description": "The energy (in keV) to calculate the expected FWHM for."
+        },
+        "userSession": { 
+          "type": "string", 
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        }
+      },
+      "required": ["energy"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return ToolRegistry::executeGetExpectedFwhm(params, interspec);
+    }
+  });
+
+  registerTool({
+    "currie_mda_calc",
+    "Calculate Minimum Detectable Activity (MDA) and detection confidence intervals using Currie-style (ISO 11929) methodology. Determines if a peak is detectable at a specified energy. Returns decision threshold, detection limit, and confidence intervals - as well as if it looks like a peak is at the energy (see `peakPresentInData` in output).",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "energy": {
+          "type": "number",
+          "description": "The energy (in keV) of the photopeak for which the detection limit is being calculated."
+        },
+        "detectionProbability": {
+          "type": "number",
+          "description": "Optional: Detection probability (confidence level), typically 0.95 for 95% confidence. Defaults to 0.95.",
+          "minimum": 0.5,
+          "maximum": 0.999,
+          "default": 0.95
+        },
+        "additionalUncertainty": {
+          "type": "number",
+          "description": "Optional: Additional relative uncertainty to include (e.g., from detector response function uncertainties). Defaults to 0.0.",
+          "minimum": 0.0,
+          "default": 0.0
+        },
+        "userSession": { 
+          "type": "string", 
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        }
+      },
+      "required": ["energy"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return ToolRegistry::executeCurrieMdaCalc(params, interspec);
     }
   });
   
@@ -1163,6 +1301,99 @@ nlohmann::json ToolRegistry::executeFitPeaksForNuclide(const nlohmann::json& par
   
   return result_json;
 }//nlohmann::json executeFitPeaksForNuclide(const nlohmann::json& params, InterSpec* interspec)
+
+nlohmann::json ToolRegistry::executeGetCountsInEnergyRange(const nlohmann::json& params, InterSpec* interspec)
+{
+  if (!interspec) {
+    throw std::runtime_error("No InterSpec session available.");
+  }
+
+  const double lowerEnergy = params.at("lowerEnergy").get<double>();
+  const double upperEnergy = params.at("upperEnergy").get<double>();
+
+  // Call the AnalystChecks function to get the counts in energy range
+  const AnalystChecks::SpectrumCountsInEnergyRange result = AnalystChecks::get_counts_in_energy_range(lowerEnergy, upperEnergy, interspec);
+
+  // Convert the result to JSON and return
+  json result_json;
+  to_json(result_json, result);
+
+  return result_json;
+}//nlohmann::json executeGetCountsInEnergyRange(const nlohmann::json& params, InterSpec* interspec)
+
+nlohmann::json ToolRegistry::executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec)
+{
+  if (!interspec)
+    throw std::runtime_error("No InterSpec session available.");
+
+  const double energy = params.at("energy").get<double>();
+
+  const float fwhm = AnalystChecks::get_expected_fwhm( energy, interspec );
+  
+  json result;
+  result["energy"] = energy;
+  result["fwhm"] = fwhm;
+  return result;
+}//nlohmann::json executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec)
+
+nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec)
+{
+  if (!interspec)
+    throw std::runtime_error("No InterSpec session available.");
+
+  shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  if (!spectrum)
+    throw std::runtime_error("No foreground spectrum loaded");
+
+  // Parse only the selected parameters
+  const double energy = params.at("energy").get<double>();
+  const double detection_probability = params.value("detectionProbability", 0.95);
+  const float additional_uncertainty = params.value("additionalUncertainty", 0.0f);
+
+  // Get expected FWHM for the energy to determine ROI width
+  float fwhm = -1.0;
+  shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
+  if (meas && meas->detector() && meas->detector()->hasResolutionInfo())
+    fwhm = meas->detector()->peakResolutionFWHM(static_cast<float>(energy));
+  
+  // Fallback FWHM estimation if needed
+  if (fwhm <= 0.0) {
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+    const vector<float> pars = isHPGe ? vector<float>{1.54f, 0.264f, 0.33f} : vector<float>{-6.5f, 7.5f, 0.55f};
+    fwhm = DetectorPeakResponse::peakResolutionFWHM(energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars);
+  }
+
+  if (fwhm <= 0.0)
+    throw std::runtime_error("Could not determine FWHM for energy " + std::to_string(energy));
+
+  // Set up CurrieMdaInput with fixed values for ROI and side channels
+  DetectionLimitCalc::CurrieMdaInput input;
+  input.spectrum = spectrum;
+  input.gamma_energy = static_cast<float>(energy);
+  
+  // Set ROI to be ±1.5 FWHM around the energy
+  const float roi_half_width = 1.25f * fwhm; // recommended by ISO 11929:2010, could instead use 1.19
+  input.roi_lower_energy = static_cast<float>(energy) - roi_half_width;
+  input.roi_upper_energy = static_cast<float>(energy) + roi_half_width;
+  
+  // Use fixed values for side channels (typical values)
+  input.num_lower_side_channels = 4;
+  input.num_upper_side_channels = 4;
+  
+  // Use the parsed parameters
+  input.detection_probability = detection_probability;
+  input.additional_uncertainty = additional_uncertainty;
+
+  // Call the DetectionLimitCalc function to perform the calculation
+  const DetectionLimitCalc::CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc(input);
+
+  // Convert the result to JSON and return
+  json result_json;
+  to_json(result_json, result);
+
+  return result_json;
+}//nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec)
+
 } // namespace LlmTools
 
 #endif // USE_LLM_INTERFACE
