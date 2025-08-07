@@ -62,6 +62,7 @@ public:
    * @param parent The parent widget (optional)
    */
   LlmToolGui(InterSpec *viewer, Wt::WContainerWidget *parent = nullptr);
+  ~LlmToolGui();
   
   /** Focus the input text field */
   void focusInput();
@@ -74,6 +75,15 @@ public:
   
   /** Handle response received from LLM interface */
   void handleResponseReceived();
+  
+  /** Get the current conversation history for saving to SpecMeas */
+  std::shared_ptr<std::vector<LlmConversationStart>> getConversationHistory() const;
+  
+  /** Set the conversation history from SpecMeas */
+  void setConversationHistory(const std::shared_ptr<std::vector<LlmConversationStart>>& history);
+  
+  /** Clear the current conversation history */
+  void clearConversationHistory();
 
 protected:
   /** Handle user pressing Enter in the input field */
@@ -98,7 +108,7 @@ protected:
 
 private:
   InterSpec *m_viewer;              ///< The InterSpec instance
-  LlmInterface *m_llmInterface;     ///< The LLM interface for sending messages
+  std::unique_ptr<LlmInterface> m_llmInterface;  ///< The LLM interface for sending messages
   
   Wt::WTextArea *m_conversationDisplay;  ///< Text area showing conversation history
   Wt::WLineEdit *m_inputEdit;             ///< Input field for user messages

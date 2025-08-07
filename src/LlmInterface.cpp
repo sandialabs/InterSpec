@@ -231,7 +231,14 @@ void LlmInterface::makeApiCall(const nlohmann::json& requestJson) {
   cout << "=== Making LLM API Call ===" << endl;
   cout << "Endpoint: " << m_config->llmApi.apiEndpoint << endl;
   cout << "Request JSON:" << endl;
-  cout << requestJson.dump(2) << endl;
+  nlohmann::json debugJson = requestJson;
+  if( debugJson.contains("messages") && debugJson["messages"].is_array() && debugJson["messages"].size() && debugJson["messages"][0].is_object() )
+    debugJson["messages"][0]["content"] = "...system prompt not shown..."; //Erase System prompt
+  if( debugJson.contains("tools") )
+    debugJson.erase("tools");
+  if( debugJson.contains("tool_choice") )
+    debugJson.erase("tool_choice");
+  cout << debugJson.dump(2) << endl;
   cout << "=========================" << endl;
   
 #ifdef USE_JS_BRIDGE_FOR_LLM
@@ -288,7 +295,14 @@ void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requ
   cout << "=== Making LLM API Call with ID " << requestId << " ===" << endl;
   cout << "Endpoint: " << m_config->llmApi.apiEndpoint << endl;
   cout << "Request JSON:" << endl;
-  cout << requestJson.dump(2) << endl;
+  nlohmann::json debugJson = requestJson;
+  if( debugJson.contains("messages") && debugJson["messages"].is_array() && debugJson["messages"].size() && debugJson["messages"][0].is_object() )
+    debugJson["messages"][0]["content"] = "...system prompt not shown..."; //Erase System prompt
+  if( debugJson.contains("tools") )
+    debugJson.erase("tools");
+  if( debugJson.contains("tool_choice") )
+    debugJson.erase("tool_choice");
+  cout << debugJson.dump(2) << endl;
   cout << "=========================" << endl;
   
 #ifdef USE_JS_BRIDGE_FOR_LLM
@@ -469,6 +483,8 @@ void LlmInterface::parseContentForToolCalls(const std::string& content) {
     std::regex("\\[TOOL_REQUEST\\]\\s*(\\w+)\\s*(\\{[^}]*\\})\\s*\\[/TOOL_REQUEST\\]"),
     // Pattern: <tool_call name="tool_name">{"param": "value"}</tool_call>
     std::regex("<tool_call\\s+name=\"([^\"]+)\">([^<]*)</tool_call>"),
+    // Pattern: <tool_call>{"name": "tool_name", "arguments": {...}}</tool_call>
+    std::regex("<tool_call>\\s*([^<]+)\\s*</tool_call>"),
     // Pattern: Tool: tool_name Arguments: {"param": "value"}
     std::regex("Tool:\\s*(\\w+)\\s*Arguments:\\s*(\\{[^}]*\\})"),
     // Pattern: detected_peaks({"specType": "Foreground"})

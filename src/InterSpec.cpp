@@ -96,12 +96,6 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/PeakModel.h"
-
-#if( USE_LLM_INTERFACE )
-#include "InterSpec/LlmInterface.h"
-#include "InterSpec/LlmToolGui.h"
-#include "InterSpec/LlmConversationHistory.h"
-#endif
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/HelpSystem.h"
@@ -209,6 +203,11 @@
 #if( USE_REL_ACT_TOOL )
 #include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/RelActManualGui.h"
+#endif
+
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
 #endif
 
 #include "js/InterSpec.js"
@@ -510,7 +509,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
 #if( USE_LLM_INTERFACE )
-  m_llmInterface( nullptr ),
   m_llmToolMenuItem( nullptr ),
   m_llmTool( nullptr ),
 #endif
@@ -11287,22 +11285,18 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     
 #if( USE_LLM_INTERFACE )
     // Save LLM conversation history to previous SpecMeas before switching foreground
-    if( m_llmInterface && m_llmInterface->getHistory() && previous )
+    if( m_llmTool && previous )
     {
       try
       {
-        auto history = m_llmInterface->getHistory();
-        if( !history->getConversations().empty() )
+        auto history = m_llmTool->getConversationHistory();
+        if( history && !history->empty() )
         {
           // Get the previous foreground's sample numbers
           const std::set<int> &prevSamples = prevsamples;
           
-          // Convert LlmConversationHistory to native format
-          const auto &conversations = history->getConversations();
-          std::vector<LlmConversationStart> nativeConversations( conversations.begin(), conversations.end() );
-          
           // Save the history to the previous SpecMeas using sample numbers
-          previous->setLlmConversationHistory( prevSamples, std::make_shared<std::vector<LlmConversationStart>>( nativeConversations ) );
+          previous->setLlmConversationHistory( prevSamples, history );
         }
       }
       catch( const std::exception& e )
@@ -11947,7 +11941,7 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
    
 #if( USE_LLM_INTERFACE )
   // Load LLM conversation history from the new foreground SpecMeas
-  if( (spec_type == SpecUtils::SpectrumType::Foreground) && meas && m_llmInterface && m_llmTool )
+  if( (spec_type == SpecUtils::SpectrumType::Foreground) && meas && m_llmTool )
   {
     try
     {
@@ -11956,20 +11950,9 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       
       // Get the LLM history for these sample numbers
       auto nativeHistoryPtr = meas->llmConversationHistory( currentSamples );
-      const vector<LlmConversationStart>* nativeHistory = nativeHistoryPtr ? nativeHistoryPtr.get() : nullptr;
       
-      // Clear current LLM history
-      m_llmInterface->getHistory()->clear();
-      
-      if( nativeHistory && !nativeHistory->empty() )
-      {
-        // Load the native conversations directly into LlmConversationHistory
-        // This preserves the conversation structure with responses attached to their correct parent conversations
-        m_llmInterface->getHistory()->setConversations( std::make_shared<std::vector<LlmConversationStart>>( *nativeHistory ) );
-      }
-      
-      // Refresh the LLM tool display
-      m_llmTool->refreshDisplay();
+      // Set the conversation history in the LLM tool
+      m_llmTool->setConversationHistory( nativeHistoryPtr );
     }
     catch( const std::exception& e )
     {
@@ -13427,17 +13410,9 @@ void InterSpec::displayBackgroundData()
 }//void displayBackgroundData()
 
 
-#if( USE_LLM_INTERFACE )
-LlmInterface *InterSpec::llmInterface()
-{
-  if( !m_llmInterface )
-  {
-    m_llmInterface = std::make_unique<LlmInterface>( this );
-  }
-  
-  return m_llmInterface.get();
-}
 
+
+#if( USE_LLM_INTERFACE )
 void InterSpec::createLlmTool()
 {
   if( m_llmTool )
@@ -13483,6 +13458,5 @@ void InterSpec::handleLlmToolClose()
   
   m_llmTool = nullptr;
 }
-
 #endif // USE_LLM_INTERFACE
 

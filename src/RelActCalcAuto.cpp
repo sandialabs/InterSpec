@@ -2202,14 +2202,27 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         if( use_peak )
         {
-          RelActCalcManual::GenericPeakInfo peak;
-          peak.m_energy = p->mean();
-          peak.m_mean = peak.m_energy;
-          peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
-          peak.m_counts = p->amplitude();
-          peak.m_counts_uncert = p->amplitudeUncert();
-          peak.m_base_rel_eff_uncert = 0.1; //TODO: do we want this?
-          peaks_in_range.push_back( peak );
+          //We'll make sure peaks wont have duplicate energies, so `add_nuclides_to_peaks(...)` wont throw exception.
+          const auto pos = find_if( begin(peaks_in_range), end(peaks_in_range), [&p]( const RelActCalcManual::GenericPeakInfo &other_p ){
+            return (p->mean() == other_p.m_energy);
+          } );
+          
+          if( pos != end(peaks_in_range) )
+          {
+            //This can happen if we have a duplicate peak with exactly the same energies
+            pos->m_counts += p->amplitude();
+            pos->m_counts_uncert = sqrt( pos->m_counts_uncert*pos->m_counts_uncert + p->amplitudeUncert()*p->amplitudeUncert());
+          }else
+          {
+            RelActCalcManual::GenericPeakInfo peak;
+            peak.m_energy = p->mean();
+            peak.m_mean = peak.m_energy;
+            peak.m_fwhm = p->gausPeak() ? p->fwhm() : (2.35482 * 0.25 * p->roiWidth());
+            peak.m_counts = p->amplitude();
+            peak.m_counts_uncert = p->amplitudeUncert();
+            peak.m_base_rel_eff_uncert = 0.1; //TODO: do we want this?
+            peaks_in_range.push_back( peak );
+          }
           
           debug_manual_display_peaks.push_back( p );
         }//if( use_peak )

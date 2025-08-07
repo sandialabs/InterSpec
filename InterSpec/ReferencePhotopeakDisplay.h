@@ -343,6 +343,18 @@ public:
   bool showingBetaLines() const;
   void setShowBetaLines( const bool show );
   
+  /** Returns the "External RIID" (i.e. GADRAS Full Spectrum ID results, if used)
+   
+   The pairs of nuclide names, and thier descriptions.  For each pair,
+   if the name is a valid nuclide (or rather reference line that can be displayed), then
+   the first element should be nuclide name, and second element its description
+   (e.g., "Industrial", "SNM", etc).  If not a nuclide, then the second element should
+   be empty.
+   
+   \sa setExternalRidResults
+   */
+  const std::vector<std::pair<std::string,std::string>> &external_RIID_ids() const;
+  const std::string &external_RIID_algo_name() const;
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   

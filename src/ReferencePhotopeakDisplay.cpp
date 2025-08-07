@@ -1805,6 +1805,19 @@ void ReferencePhotopeakDisplay::setShowBetaLines( const bool show )
   updateDisplayChange();
 }
 
+
+const std::vector<std::pair<std::string,std::string>> &ReferencePhotopeakDisplay::external_RIID_ids() const
+{
+  return m_external_ids;
+}
+
+
+const std::string &ReferencePhotopeakDisplay::external_RIID_algo_name() const
+{
+  return m_external_algo_name;
+}
+
+
 FeatureMarkerWidget *ReferencePhotopeakDisplay::featureMarkerTool()
 {
   return m_featureMarkers;

@@ -215,7 +215,8 @@ struct MassFractionConstraint
 /** Adds the `GenericLineInfo` info (e.g. nuclides and their BR) to input `peaks` by clustering gamma lines of
  provided nuclides.
  
- @param peaks Input peaks, with all info except `GenericPeakInfo::m_source_gammas` filled out
+ @param peaks Input peaks, with all info except `GenericPeakInfo::m_source_gammas` filled out.
+        Note: there must not be any duplicate energies, or else an exception will be thrown, as assignment would be ambigious..
  @param nuclides The input nuclides to cluster and assign to peaks
  @param real_time The real time of the measurement - only used if correcting for the nuclides decay during measurement
         \sa `SandiaDecayNuc::correct_for_decay_during_meas`

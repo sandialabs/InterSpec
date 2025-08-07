@@ -107,6 +107,17 @@ namespace AnalystChecks
   };
   
   InterSpec_API GetUserPeakStatus get_user_peaks( const GetUserPeakOptions &options, InterSpec *interspec );
+
+  struct FitPeaksForNuclideOptions {
+    std::vector<std::string> nuclides;
+    bool doNotAddPeaksToUserSession;
+  };
+  
+  struct FitPeaksForNuclideStatus {
+    std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
+  };
+  
+  InterSpec_API FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec );
   
   /** Calculates an approximate importance that a peak in a spectrum will have for a given nuclide.
    * 

@@ -63,7 +63,6 @@ class FluxToolWindow;
 class PeakEditWindow;
 
 #if( USE_LLM_INTERFACE )
-class LlmInterface;
 class LlmToolGui;
 #endif
 class WarningMessage;
@@ -869,9 +868,6 @@ public:
   void deleteFwhmFromForegroundWindow();
 
 #if( USE_LLM_INTERFACE )
-  /** Get the LLM interface for this session (creates it if needed). */
-  LlmInterface *llmInterface();
-  
   /** Create and show the LLM tool widget in the tools tab. */
   void createLlmTool();
   
@@ -1648,8 +1644,6 @@ protected:
   EnergyCalPreserveWindow *m_preserveCalibWindow;
 
 #if( USE_LLM_INTERFACE )
-  /** LLM interface for this session. Created on-demand. */
-  std::unique_ptr<LlmInterface> m_llmInterface;
   /** Menu item for opening the LLM tool. */
   PopupDivMenuItem *m_llmToolMenuItem;
   /** LLM tool widget for user interaction. */

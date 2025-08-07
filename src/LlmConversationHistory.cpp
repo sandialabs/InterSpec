@@ -229,6 +229,11 @@ nlohmann::json LlmConversationHistory::toApiFormat() const {
           responseMsg["tool_call_id"] = conv.conversationId + ":" + response.invocationId;
           responseMsg["content"] = response.content;
           break;
+          
+        case LlmConversationResponse::Type::Error:
+          responseMsg["role"] = "assistant";
+          responseMsg["content"] = "Error: " + response.content;
+          break;
       }
       
       messages.push_back(responseMsg);

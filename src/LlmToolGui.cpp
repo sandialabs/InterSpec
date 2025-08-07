@@ -41,11 +41,8 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
     throw std::runtime_error("InterSpec instance cannot be null");
   }
   
-  // Get the LLM interface from InterSpec
-  m_llmInterface = m_viewer->llmInterface();
-  if (!m_llmInterface) {
-    throw std::runtime_error("LLM interface is not available");
-  }
+  // Create our own LLM interface instance
+  m_llmInterface = std::make_unique<LlmInterface>(m_viewer);
   
   wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
   
@@ -59,6 +56,11 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   
   // Initial display refresh
   refreshDisplay();
+}
+
+LlmToolGui::~LlmToolGui()
+{
+  
 }
 
 void LlmToolGui::initializeUI()
@@ -433,6 +435,64 @@ void LlmToolGui::cancelCurrentRequest()
   
   // Note: We can't actually cancel the HTTP request from C++, but the response will be ignored
   // when it comes back since we've cleared the pending request state
+}
+
+std::shared_ptr<std::vector<LlmConversationStart>> LlmToolGui::getConversationHistory() const
+{
+  if (!m_llmInterface) {
+    return nullptr;
+  }
+  
+  auto history = m_llmInterface->getHistory();
+  if (!history) {
+    return nullptr;
+  }
+  
+  const auto& conversations = history->getConversations();
+  if (conversations.empty()) {
+    return nullptr;
+  }
+  
+  // Convert the conversations to a vector for storage
+  return std::make_shared<std::vector<LlmConversationStart>>(conversations.begin(), conversations.end());
+}
+
+void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<LlmConversationStart>>& history)
+{
+  if (!m_llmInterface) {
+    return;
+  }
+  
+  auto llmHistory = m_llmInterface->getHistory();
+  if (!llmHistory) {
+    return;
+  }
+  
+  if (history && !history->empty()) {
+    // Set the conversations in the LLM history
+    llmHistory->setConversations(history);
+  } else {
+    // Clear the history if no valid history provided
+    llmHistory->clear();
+  }
+  
+  // Refresh the display to show the new history
+  refreshDisplay();
+}
+
+void LlmToolGui::clearConversationHistory()
+{
+  if (!m_llmInterface) {
+    return;
+  }
+  
+  auto history = m_llmInterface->getHistory();
+  if (history) {
+    history->clear();
+  }
+  
+  // Refresh the display to show the cleared history
+  refreshDisplay();
 }
 
 #endif // USE_LLM_INTERFACE

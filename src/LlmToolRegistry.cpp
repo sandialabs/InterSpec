@@ -16,11 +16,13 @@
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 
 #include <Wt/WApplication>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SandiaDecay/SandiaDecay.h"
 
 using namespace std;
@@ -276,6 +278,19 @@ namespace {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
   }
+
+  void from_json(const json& j, AnalystChecks::FitPeaksForNuclideOptions& p) {
+    const json& nuclideParam = j.at("nuclide");
+    if (nuclideParam.is_string()) {
+      p.nuclides = {nuclideParam.get<std::string>()};
+    } else if (nuclideParam.is_array()) {
+      p.nuclides = nuclideParam.get<std::vector<std::string>>();
+    } else {
+      throw std::runtime_error("Invalid nuclide parameter: must be string or array of strings");
+    }
+    
+    p.doNotAddPeaksToUserSession = j.value("doNotAddPeaksToUserSession", false);
+  }
    
   
   
@@ -286,6 +301,13 @@ namespace {
     
     j = json{{"userSession", p.userSession},
       {"rois", peak_rois}};
+  }
+
+  void to_json(json& j, const AnalystChecks::FitPeaksForNuclideStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
+    json peak_rois;
+    to_json( peak_rois, p.fitPeaks, meas );
+    
+    j = json{{"rois", peak_rois}};
   }
 }//namespace
 
@@ -554,6 +576,22 @@ void ToolRegistry::registerDefaultTools() {
     }
   });
 
+  registerTool({
+    "automated_isotope_id_results",
+    "Get the isotope ID from the avaiable automated ID algorithms. Will return the detection systems on-board nuclide ID results, if present, as well as the GADRAS Full Spectrum Isotope ID results if the app is configured to get.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "userSession": { 
+          "type": "string", 
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        }
+      }
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetAutomatedRiidId(params, interspec);
+    }
+  });
 
   registerTool({
     "loaded_spectra",
@@ -569,6 +607,35 @@ void ToolRegistry::registerDefaultTools() {
     })"),
     [](const json& params, InterSpec* interspec) -> json {
       return executeGetLoadedSpectra(params, interspec);
+    }
+  });
+
+  registerTool({
+    "fit_peaks_for_nuclide",
+    "Fits peaks for the one or more specified nuclide(s). Returns the peaks that were fit.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "nuclide": {
+          "anyOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}}
+          ],
+          "description": "The nuclide or array of nuclides to fit peaks for (ex U235, I131, Ba133)."
+        },
+        "userSession": { 
+          "type": "string", 
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        },
+        "doNotAddPeaksToUserSession": {
+          "type": "boolean",
+          "description": "Optional: if true, fitted peaks will not be added to the user's peak collection; defaults to false."
+        }
+      },
+      "required": ["nuclide"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return ToolRegistry::executeFitPeaksForNuclide(params, interspec);
     }
   });
   
@@ -972,6 +1039,113 @@ nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& p
   return result;
 }//nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& params )
   
+
+nlohmann::json ToolRegistry::executeGetAutomatedRiidId(const nlohmann::json& params, InterSpec* interspec)
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    throw std::runtime_error("Could not initialize nuclide DecayDataBase.");
+  
+
+  std::shared_ptr<SpecMeas> meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( !meas )
+    throw std::runtime_error("No foreground spectrum loaded.");
+  
+  nlohmann::json result;
+
+  shared_ptr<const SpecUtils::DetectorAnalysis> riid_ana = meas->detectors_analysis();
+  
+  if( riid_ana )
+  {
+    vector<pair<string, string>> riid_nucs;  //<description, nuclide>
+  
+    for( const SpecUtils::DetectorAnalysisResult &res : riid_ana->results_ )
+    {
+      if( res.nuclide_.empty() || res.isEmpty() )
+        continue;
+  
+      auto pos = std::find_if(riid_nucs.begin(), riid_nucs.end(),
+          [&res](const auto& v) { return v.first == res.nuclide_; });
+      if( pos != riid_nucs.end() )
+        continue;
+  
+      string nuc_name = res.nuclide_;
+  
+      const SandiaDecay::Nuclide *nuc = db->nuclide(nuc_name);
+      if( !nuc )
+      {
+        vector<string> fields;
+        SpecUtils::split(fields, nuc_name, " \t,");
+        for( const auto &v : fields )
+        {
+          nuc = db->nuclide(v);
+          if( nuc )
+          {
+            nuc_name = v;
+            break;
+          }
+        }//for( const auto &v : fields )
+      }//if( !nuc )
+  
+      riid_nucs.push_back( {res.nuclide_, nuc ? nuc->symbol : ""} );
+    }//for( loop over RIID results )
+
+    if( riid_nucs.empty() )
+    {
+      result["detectorSystemId"]["description"] = "No nuclides found.";
+    }else
+    {
+      result["detectorSystemId"]["description"] = riid_ana? riid_ana->algorithm_name_ : "On-board RIID algorithm";
+      for( const auto &v : riid_nucs )
+        result["detectorSystemId"]["nuclides"].push_back( v.second.empty() ? v.first : v.second );
+    }
+  }else
+  {
+    result["detectorSystemId"]["description"] = "No ID algorithm present.";
+  }//if( riid_ana )
+
+
+  const ReferencePhotopeakDisplay * const refWidget = interspec->referenceLinesWidget();
+  if( refWidget )
+  {
+    const std::vector<std::pair<std::string,std::string>> &external_riid_results = refWidget->external_RIID_ids();
+    const std::string &external_RIID_algo_name = refWidget->external_RIID_algo_name();
+    if( !external_riid_results.empty() )
+    {
+      result["externalRiidTool"]["description"] = external_RIID_algo_name;
+      for( const auto &v : external_riid_results )
+        result["externalRiidTool"]["nuclides"].push_back( v.first );
+    }
+  }//if( refWidget )
+
+  return result;
+}//nlohmann::json executeGetAutomatedRiidId(const nlohmann::json& params, InterSpec* interspec)
+
+nlohmann::json ToolRegistry::executeFitPeaksForNuclide(const nlohmann::json& params, InterSpec* interspec)
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+  
+  // Parse parameters into FitPeaksForNuclideOptions
+  AnalystChecks::FitPeaksForNuclideOptions options;
+  from_json(params, options);
+  
+  // Call the AnalystChecks function to perform the actual peak fitting
+  const AnalystChecks::FitPeaksForNuclideStatus result = AnalystChecks::fit_peaks_for_nuclides( options, interspec );
+  
+  shared_ptr<const SpecUtils::Measurement> meas;
+  if( interspec )
+    meas = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  
+  // Convert the result to JSON and return
+  json result_json;
+  to_json( result_json, result, meas );
+  
+  return result_json;
+}//nlohmann::json executeFitPeaksForNuclide(const nlohmann::json& params, InterSpec* interspec)
 } // namespace LlmTools
 
 #endif // USE_LLM_INTERFACE
