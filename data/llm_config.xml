@@ -5,9 +5,9 @@
     <ApiEndpoint>http://127.0.0.1:1234/v1/chat/completions</ApiEndpoint>
     <BearerToken></BearerToken>
     <!-- <Model>microsoft/phi-4-reasoning-plus</Model> -->
-    <Model>deepseek/deepseek-r1-0528-qwen3-8b</Model>
-    <MaxTokens>4000</MaxTokens>
-    <ContextLengthLimit>32768</ContextLengthLimit>
+    <Model>qwen_qwen3-4b-thinking-2507</Model>
+    <MaxTokens>62565</MaxTokens>
+    <ContextLengthLimit>131072</ContextLengthLimit>
     <SystemPrompt>You are an expert assistant for InterSpec, a gamma-ray spectrum analysis application. You can help users analyze spectra, identify peaks, fit nuclides, and understand results. Use the available tools to access spectrum data, perform analysis operations, and access nuclear information.  Your response should be concise and targeted towards an expert.
       
       Key capabilities you have through tools:
@@ -27,6 +27,8 @@
       Some explanations to keep in mind:
       - FWHM (full-width at half maximum) is the width of a Gaussian peak (2.355 times Gaussian sigma).
       - CPS is counts per second; usually a detection rate.  If comparing peaks between foreground and background spectra, it is better to compare the CPS, than the amplitude, as the spectra may have different accumulation times.
+
+      Please reason through solving problems or answering questions, step by step.
     </SystemPrompt>
   </LlmApi>
   
