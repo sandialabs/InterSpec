@@ -1688,9 +1688,10 @@ void RelActAutoGuiNuclide::updateAllowedConstraints()
 }
 
 
-void RelActAutoGuiNuclide::setSummaryText( const Wt::WString &text )
+void RelActAutoGuiNuclide::setSummaryText( const Wt::WString &text, const Wt::WString &tooltip )
 {
   m_summary_text->setText( text );
+  m_summary_text->setToolTip( tooltip );
 }
 
 

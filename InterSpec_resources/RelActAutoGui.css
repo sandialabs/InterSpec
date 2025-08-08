@@ -372,12 +372,15 @@ padding-bottom: 1px;
 {
 }
 
-.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysHoerlOptionDiv
+.RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCbDiv
 {
+  display: grid;
+  /*
   display: flex;
   flex-direction: row;
   justify-content: start;
   align-items: center;
+   */
 }
 
 .RelActAutoGui .PhysicalModelOpts .PhysicalModelOptRow .PhysOptionCb
