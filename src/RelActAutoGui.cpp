@@ -3663,11 +3663,10 @@ void RelActAutoGui::setPeaksToForeground()
   
   SimpleDialog *dialog = new SimpleDialog( "Use peaks with foreground?", "" );
   dialog->addStyleClass( "SetToPeaksDialog" );
-  WText *message = new WText( "Peaks will not have uncertainties unless you choose"
-                             " to re-fit them, in which case the re-fit peaks may"
-                             " differ from the current peaks since they will no"
-                             " longer be constrained by the Relative Efficiency"
-                             " curve or spectrum wide FWHM response.", dialog->contents() );
+  WText *message = new WText( "Peaks uncertainties will be based on total relative efficiency fit (eg.,"
+                             " peaks helping each other out to reduce uncertainties), unless you choose"
+                             " to refit them, in which case they will not be constrained by Rel. Eff."
+                             " curve of FWHM functional form.", dialog->contents() );
   message->addStyleClass( "content" );
   message->setInline( false );
   
@@ -3689,8 +3688,7 @@ void RelActAutoGui::setPeaksToForeground()
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = 
   "When checked, peaks will be refit without the constraints of the relative efficiency curve,"
-  " expected branching ratios, or FWHM constraints from other ROIs - allowing statistical"
-  " uncertainties to be assigned to the peaks amplitude.<br/>"
+  " expected branching ratios, or FWHM constraints from other ROIs.<br/>"
   "Peaks that are within 0.53 FWHM (1.25 sigma) of each other will be merged together.<br/>"
   "  Peak mean, FWHM, and continuums will be refit, with usually peak means limited to be changed"
   " by no more than 0.11 times the peak FWHM, but if this fails,"

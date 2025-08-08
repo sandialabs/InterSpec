@@ -382,6 +382,15 @@ namespace BatchInfoLog
   {
     try
     {
+      if( args.empty() )
+        return "";
+      if( args[0]->is_null() )
+        return "--";  //This happens if you try to put a inf or NaN as the value - the JSON will just have a null object, since JSON doesnt support these values
+      if( args[0]->is_string() )
+        return args[0]->get<string>();
+      if( !args[0]->is_number() )
+        throw runtime_error( "not a number, like expected." );
+
       const double val = args.at(0)->get<double>();
       const int numDecimal = std::max( 0, args.at(1)->get<int>() );
       
@@ -400,7 +409,7 @@ namespace BatchInfoLog
     }catch( std::exception &e )
     {
       cerr << "Error in 'printFixed': " << e.what() << endl;
-      throw;
+      return "ErrorPrintingValue{" + string(e.what()) + "}";
     }
   };
   
@@ -408,6 +417,15 @@ namespace BatchInfoLog
   {
     try
     {
+      if( args.empty() )
+        return "";
+      if( args[0]->is_null() )
+        return "--";  //This happens if you try to put a inf or NaN as the value - the JSON will just have a null object, since JSON doesnt support these values
+      if( args[0]->is_string() )
+        return args[0]->get<string>();
+      if( !args[0]->is_number() )
+        throw runtime_error( "not a number, like expected." );
+      
       const double val = args.at(0)->get<double>();
       const int numSigFig = args.at(1)->get<int>();
       if( numSigFig <= 1 )
@@ -425,7 +443,7 @@ namespace BatchInfoLog
     }catch( std::exception &e )
     {
       cerr << "Error in 'printCompact': " << e.what() << endl;
-      throw;
+      return "ErrorPrintingValue{" + string(e.what()) + "}";
     }
     return "";
   };
@@ -1273,7 +1291,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     spec_obj["RealTime_s"] = rt;
     spec_obj["DeadTime"] = PhysicalUnits::printToBestTimeUnits(rt - lt);
     spec_obj["DeadTime_s"] = (rt - lt)/PhysicalUnits::second;
-    spec_obj["DeadTime_percent"] = 100.0*(rt - lt) / rt;
+    spec_obj["DeadTime_percent"] = 100.0*(rt - lt) / rt; //If rt is zero, will create a NaN, and then the JSON will have a `null` for the value
     spec_obj["StartTime"] = SpecUtils::to_extended_iso_string( spec.start_time() );
     spec_obj["StartTime_iso"] = SpecUtils::to_iso_string( spec.start_time() );
     spec_obj["StartTime_vax"] = SpecUtils::to_vax_string( spec.start_time() );

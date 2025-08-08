@@ -3998,7 +3998,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     for( const RoiRangeChannels &range : cost_functor->m_energy_ranges )
     {
-      const PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters, {} );
+      const PeaksForEnergyRange these_peaks = cost_functor->peaks_for_energy_range( range, parameters, {}, &(solution.m_covariance) );
 
       fit_peaks.insert( end(fit_peaks), begin(these_peaks.peaks), end(these_peaks.peaks) );
       
@@ -4007,7 +4007,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         shared_ptr<PeakContinuum> shared_continuum;
         for( size_t i = 0; i < num_rel_eff_curves; ++i )
         {
-          PeaksForEnergyRange this_re_peaks = cost_functor->peaks_for_energy_range( range, parameters, {i} );
+          PeaksForEnergyRange this_re_peaks = cost_functor->peaks_for_energy_range( range, parameters, {i}, &(solution.m_covariance)  );
           
           //Set the peaks for this ROI to share the same PeakContinuum as for this ROI and other R.E. curves
           for( PeakDef &p : this_re_peaks.peaks )
@@ -7210,9 +7210,71 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
    */
   PeaksForEnergyRange peaks_for_energy_range( const RoiRangeChannels &range,
                                              const std::vector<double> &x,
-                                             const std::set<size_t> &rel_eff_indices ) const
+                                             const std::set<size_t> &rel_eff_indices,
+                                             const std::vector<std::vector<double>> * const convariance ) const
   {
+    typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+    
     RelActCalcAuto::PeaksForEnergyRangeImp<double> computed_peaks = peaks_for_energy_range_imp( range, x, true );
+
+    // Compute uncertainties if covariance is provided and valid
+    vector<vector<double>> peak_uncertainties; // [peak_index][param_index] where param_index: 0=mean, 1=sigma, 2=amplitude, 3+=skew_pars
+    
+    if( convariance && !convariance->empty() && (convariance->size() == x.size()) )
+    {
+      const size_t num_par = x.size();
+      const size_t num_peaks = computed_peaks.peaks.size();
+      peak_uncertainties.resize(num_peaks, vector<double>(4 + 4, 0.0)); // mean, sigma, amplitude, 4 skew pars
+      
+      // For each peak, compute jacobians for each parameter (mean, sigma, amplitude, skew_pars)
+      vector<vector<vector<double>>> peak_jacobians(num_peaks, vector<vector<double>>(8, vector<double>(num_par, 0.0)));
+      
+      for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+      {
+        vector<Jet> x_local( begin(x), end(x) );
+        for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+          x_local[i+j].v[j] = 1.0;
+        
+        RelActCalcAuto::PeaksForEnergyRangeImp<Jet> computed_peaks_jet = peaks_for_energy_range_imp( range, x_local, true );
+        
+        // Store jacobians for each peak parameter
+        for( size_t peak_idx = 0; peak_idx < num_peaks && peak_idx < computed_peaks_jet.peaks.size(); ++peak_idx )
+        {
+          const auto &peak_jet = computed_peaks_jet.peaks[peak_idx];
+          
+          for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_par); ++j )
+          {
+            peak_jacobians[peak_idx][0][i+j] = peak_jet.m_mean.v[j];        // mean jacobian
+            peak_jacobians[peak_idx][1][i+j] = peak_jet.m_sigma.v[j];       // sigma jacobian  
+            peak_jacobians[peak_idx][2][i+j] = peak_jet.m_amplitude.v[j];   // amplitude jacobian
+            
+            for( size_t skew_idx = 0; skew_idx < 4; ++skew_idx )
+              peak_jacobians[peak_idx][3 + skew_idx][i+j] = peak_jet.m_skew_pars[skew_idx].v[j];
+          }
+        }
+      }
+      
+      // Compute uncertainties using full covariance propagation: uncertainty = sqrt(J^T * Cov * J)
+      for( size_t peak_idx = 0; peak_idx < num_peaks; ++peak_idx )
+      {
+        for( size_t param_idx = 0; param_idx < 8; ++param_idx )
+        {
+          const vector<double> &jacobian = peak_jacobians[peak_idx][param_idx];
+          double uncertainty = 0.0;
+          
+          for( size_t i = 0; i < num_par; ++i )
+          {
+            for( size_t j = 0; j < num_par; ++j )
+            {
+              if( i < convariance->size() && j < (*convariance)[i].size() )
+                uncertainty += jacobian[i] * (*convariance)[i][j] * jacobian[j];
+            }
+          }
+          
+          peak_uncertainties[peak_idx][param_idx] = std::sqrt(std::max(0.0, uncertainty));
+        }
+      }
+    }//if( covariance provided and valid )
 
     
     if( !rel_eff_indices.empty() )
@@ -7236,6 +7298,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       const RelActCalcAuto::PeakDefImp<double> &comp_peak = computed_peaks.peaks[i];
       PeakDef peak( comp_peak.m_mean, comp_peak.m_sigma, comp_peak.m_amplitude );
+      
+      // Set uncertainties if they were computed
+      if( i < peak_uncertainties.size() )
+      {
+        peak.setMeanUncert( peak_uncertainties[i][0] );
+        peak.setSigmaUncert( peak_uncertainties[i][1] );
+        peak.setAmplitudeUncert( peak_uncertainties[i][2] );
+      }
+      
       peak.setSkewType( comp_peak.m_skew_type );
       const size_t num_skew = PeakDef::num_skew_parameters( comp_peak.m_skew_type );
       for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
@@ -7243,6 +7314,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const PeakDef::CoefficientType coef
              = static_cast<PeakDef::CoefficientType>( static_cast<int>(PeakDef::CoefficientType::SkewPar0) + skew_index );
         peak.set_coefficient( comp_peak.m_skew_pars[skew_index], coef );
+        
+        // Set skew parameter uncertainty if computed
+        if( i < peak_uncertainties.size() && skew_index < 4 )
+        {
+          peak.set_uncertainty( peak_uncertainties[i][3 + skew_index], coef );
+        }
       }//for( size_t skew_index = 0; skew_index < num_skew; ++skew_index )
       
       if( comp_peak.m_parent_nuclide )
