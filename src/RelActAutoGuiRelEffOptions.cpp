@@ -72,6 +72,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_phys_model_use_hoerl(nullptr),
       m_phys_model_same_hoerl_on_all_curves(nullptr),
       m_phys_model_same_ext_shield_all_curves(nullptr),
+      m_phys_model_shielded_by_other_curves(nullptr),
       m_eqn_txt(nullptr),
       m_add_del_rel_eff_div(nullptr),
       m_add_rel_eff_btn(nullptr),
@@ -82,6 +83,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_eqn_form_changed(this),
       m_same_hoerl_on_all_curves(this),
       m_same_ext_shield_on_all_curves(this),
+      m_shielded_by_other_curves(this),
       m_options_changed_signal(this),
       m_has_multiple_phys_models(false)
 {
@@ -224,17 +226,17 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   SpectraFileModel *spec_model = spec_manager ? spec_manager->model() : nullptr;
   DetectorDisplay *det_disp = new DetectorDisplay( viewer, spec_model, phys_opt_row );
 
-  WContainerWidget *hoerl_row = new WContainerWidget( phys_opt_row );
-  hoerl_row->addStyleClass( "PhysHoerlOptionDiv" );
-  m_phys_model_use_hoerl = new WCheckBox( "Use Corr. Fcn.", hoerl_row );
-  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb CbNoLineBreak PhysOptionCb" );
+  WContainerWidget *phys_opt_cb_row = new WContainerWidget( phys_opt_row );
+  phys_opt_cb_row->addStyleClass( "PhysOptionCbDiv" );
+  m_phys_model_use_hoerl = new WCheckBox( "Use corr. fcn.", phys_opt_cb_row );
+  m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb CbNoLineBreak PhysOptionCb GridFirstRow GridFirstCol" );
   m_phys_model_use_hoerl->setChecked( true );
   m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
 
   // Add the new checkboxes for shared settings
-  m_phys_model_same_hoerl_on_all_curves = new WCheckBox( "Same Corr. Fcn all curves", hoerl_row );
-  m_phys_model_same_hoerl_on_all_curves->addStyleClass( "SameHoerlAllCurvesCb CbNoLineBreak PhysOptionCb" );
+  m_phys_model_same_hoerl_on_all_curves = new WCheckBox( "Share corr. fcn.", phys_opt_cb_row );
+  m_phys_model_same_hoerl_on_all_curves->addStyleClass( "SameHoerlAllCurvesCb CbNoLineBreak PhysOptionCb GridFirstRow GridSecondCol" );
   m_phys_model_same_hoerl_on_all_curves->setChecked( false );
   m_phys_model_same_hoerl_on_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
   m_phys_model_same_hoerl_on_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
@@ -243,8 +245,9 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   tooltip = "When checked, the Correlation Function setting will be synchronized across all Physical model curves.";
   HelpSystem::attachToolTipOn( {m_phys_model_same_hoerl_on_all_curves}, tooltip, showToolTips );
 
-  m_phys_model_same_ext_shield_all_curves = new WCheckBox( "Same ext. atten. all curves", phys_opt_row );
-  m_phys_model_same_ext_shield_all_curves->addStyleClass( "SameExtShieldAllCurvesCb PhysOptionCb" );
+
+  m_phys_model_same_ext_shield_all_curves = new WCheckBox( "Share ext. atten.", phys_opt_cb_row );
+  m_phys_model_same_ext_shield_all_curves->addStyleClass( "SameExtShieldAllCurvesCb PhysOptionCb GridSecondRow GridFirstCol" );
   m_phys_model_same_ext_shield_all_curves->setChecked( false );
   m_phys_model_same_ext_shield_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
   m_phys_model_same_ext_shield_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
@@ -252,6 +255,16 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   
   tooltip = "When checked, the external shielding configuration will be synchronized across all Physical model curves.";
   HelpSystem::attachToolTipOn( {m_phys_model_same_ext_shield_all_curves}, tooltip, showToolTips );
+
+  m_phys_model_shielded_by_other_curves = new WCheckBox( "Shielded by other curves", phys_opt_cb_row );
+  m_phys_model_shielded_by_other_curves->addStyleClass( "ShieldedByOtherCurvesCb PhysOptionCb GridSecondRow GridSecondCol" );
+  m_phys_model_shielded_by_other_curves->setChecked( false );
+  m_phys_model_shielded_by_other_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleShieldedByOtherCurvesChanged );
+  m_phys_model_shielded_by_other_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleShieldedByOtherCurvesChanged );
+  m_phys_model_shielded_by_other_curves->hide();
+
+  tooltip = "When checked, the sources of this curve will be shielded by all other Physical model curves.";
+  HelpSystem::attachToolTipOn( {m_phys_model_shielded_by_other_curves}, tooltip, showToolTips );
 
   m_phys_model_shields = new WContainerWidget( m_phys_model_opts );
   m_phys_model_shields->addStyleClass( "PhysicalModelShields" );
@@ -300,14 +313,18 @@ void RelActAutoGuiRelEffOptions::showAndHideOptionsForEqnType()
   m_phys_model_opts->setHidden( !is_physical );
   
   // Hide multi-curve options if not a physical model
-  if (!is_physical) {
+  if( !is_physical )
+  {
     m_phys_model_same_hoerl_on_all_curves->hide();
     m_phys_model_same_ext_shield_all_curves->hide();
-  } else {
+    m_phys_model_shielded_by_other_curves->hide();
+  }else
+  {
     // Show multi-curve options only if there are multiple physical models
-    const bool show_shared_options = m_has_multiple_phys_models && is_physical;
+    const bool show_shared_options = (m_has_multiple_phys_models && is_physical);
     m_phys_model_same_hoerl_on_all_curves->setHidden(!show_shared_options);
     m_phys_model_same_ext_shield_all_curves->setHidden(!show_shared_options);
+    m_phys_model_shielded_by_other_curves->setHidden(!show_shared_options);
   }
   
   if( is_physical && !m_phys_model_self_atten )
@@ -322,10 +339,11 @@ void RelActAutoGuiRelEffOptions::setHasMultiplePhysicalModels(const bool has_mul
     
     // Only show shared options if this is a physical model and there are multiple physical models
     const bool is_physical = (rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel);
-    const bool show_shared_options = m_has_multiple_phys_models && is_physical;
-    
+    const bool show_shared_options = (m_has_multiple_phys_models && is_physical);
+
     m_phys_model_same_hoerl_on_all_curves->setHidden(!show_shared_options);
     m_phys_model_same_ext_shield_all_curves->setHidden(!show_shared_options);
+    m_phys_model_shielded_by_other_curves->setHidden(!show_shared_options);
   }
 }
 
@@ -347,8 +365,24 @@ bool RelActAutoGuiRelEffOptions::physModelSameExtShieldAllCurves() const
 void RelActAutoGuiRelEffOptions::setPhysModelSameExtShieldAllCurves(const bool same_ext_shield_all_curves)
 {
   m_phys_model_same_ext_shield_all_curves->setChecked(same_ext_shield_all_curves);
+
+  if( same_ext_shield_all_curves )
+    m_phys_model_shielded_by_other_curves->setChecked( false );
 }
 
+
+bool RelActAutoGuiRelEffOptions::physModelShieldedByOtherCurves() const
+{
+  return m_phys_model_shielded_by_other_curves->isChecked();
+}
+
+
+void RelActAutoGuiRelEffOptions::setPhysModelShieldedByOtherCurves( const bool shielded_by_others )
+{
+  m_phys_model_shielded_by_other_curves->setChecked( shielded_by_others );
+  if( shielded_by_others )
+    m_phys_model_same_ext_shield_all_curves->setChecked( false );
+}
 
 void RelActAutoGuiRelEffOptions::handleRelEffEqnTypeChanged()
 {
@@ -367,6 +401,10 @@ void RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged()
   m_same_ext_shield_on_all_curves.emit(this);
 }
 
+void RelActAutoGuiRelEffOptions::handleShieldedByOtherCurvesChanged()
+{
+  m_shielded_by_other_curves.emit(this);
+}
 
 void RelActAutoGuiRelEffOptions::initPhysModelShields()
 {
@@ -431,6 +469,11 @@ Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::sameHoerlO
 Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::sameExternalShieldingChanged()
 {
   return m_same_ext_shield_on_all_curves;
+}
+
+Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::shieldedByOtherCurvesChanged()
+{
+  return m_shielded_by_other_curves;
 }
 
 Wt::Signal<RelActAutoGuiRelEffOptions *> &RelActAutoGuiRelEffOptions::optionsChanged()
@@ -547,6 +590,8 @@ void RelActAutoGuiRelEffOptions::setRelEffCurveInput( const RelActCalcAuto::RelE
         sw->resetState();
       }
     }//for( size_t i = 0; i < std::min(num_ext_atten, m_phys_ext_attens->children().size()); ++i )
+
+    m_phys_model_shielded_by_other_curves->setChecked( !rel_eff.shielded_by_other_phys_model_curve_shieldings.empty() );
   }else
   {
     const int eqn_order = std::max( 0, std::min(m_rel_eff_eqn_order->count() - 1, static_cast<int>(rel_eff.rel_eff_eqn_order) ) );
