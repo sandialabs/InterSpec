@@ -4032,7 +4032,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_fit_peaks_in_spectrums_cal_for_each_curve = vector<vector<PeakDef>>{1, fit_peaks};
     else
       solution.m_fit_peaks_in_spectrums_cal_for_each_curve = fit_peaks_for_each_curve;
-    
+
+    if( background )
+    {
+      // We subtracted the background from foreground before fitting peaks, so if we plot the resulting
+      // peaks, they will be abit below the actual data.  So here we will adjust the continuum to best
+      // value we can, without changing the rest of the peak
+      solution.m_peaks_without_back_sub = RelActCalc::refit_roi_continuums( solution.m_fit_peaks_in_spectrums_cal, foreground );
+    }else
+    {
+      solution.m_peaks_without_back_sub = solution.m_fit_peaks_in_spectrums_cal;
+    }
     // \c fit_peaks are in the original energy calibration of the spectrum, we may need to adjust
     //  them to match the new energy calibration
     if( new_cal != cost_functor->m_energy_cal )

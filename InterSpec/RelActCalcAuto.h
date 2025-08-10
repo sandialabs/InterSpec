@@ -996,12 +996,21 @@ struct RelActAutoSolution
    if you are not updating the displayed spectrum for the adjusted energy cal).
    
    You would use these peaks for `m_foreground`.
+
+   Note: if background subtraction is used, and you want to display the peaks on 
+     non-background-subtracted data, please use `m_peaks_without_back_sub`.
    */
   std::vector<PeakDef> m_fit_peaks_in_spectrums_cal;
   
   /** Same as `m_fit_peaks_in_spectrums_cal`, but seperated by rel eff curve, and not including free-floating peaks. */
   std::vector<std::vector<PeakDef>> m_fit_peaks_in_spectrums_cal_for_each_curve;
   
+  /** The fit peaks, in the spectrums cal, but with the continuums adjusted to display the peaks in 
+   non-background-subtracted data.  If background subtraction wasnt used to do the fit, then these
+   peaks will be the same as `m_fit_peaks_in_spectrums_cal`.
+  */
+  std::vector<PeakDef> m_peaks_without_back_sub;
+
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
    be assessed based on peak localities and expected counts; this variable holds the ROI
    ranges that were assessed and used to compute final answer.
@@ -1179,7 +1188,6 @@ RelActAutoSolution solve( const Options options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
-
 
 }//namespace RelActCalcAuto
 
