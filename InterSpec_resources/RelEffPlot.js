@@ -256,7 +256,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     const startX = parentWidth - maxTextWidth;
     
     // Create the actual text elements stacked vertically
-    let currentY = 0;
+    let currentY = 5;
     this.chi2TxtArray.forEach((txt, index) => {
       const textElem = this.svg.append("text")
         .attr("class", "ChartInfoTitle dataset-" + index)
