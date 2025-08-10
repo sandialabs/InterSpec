@@ -4803,6 +4803,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             eff.cluster_lower_energy = clusters[i].first;
             eff.roi_upper_energy = clusters[i].second;
             eff.amplitude = fit_amps[i];
+            eff.amplitude_uncert = fit_amp_uncert[i];
             eff.effective_sigma = effective_sigmas[i];
 
             for( const pair<size_t,size_t> &re_peak_ind : range_peak_indices ) //TODO: store peak indices better than `range_peak_indices` (its an artifact of prev code)
@@ -11598,9 +11599,16 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     RelEffChart::ReCurveInfo info;
 
     info.live_time = m_spectrum ? m_spectrum->live_time() : 1.0;
-    //info.fit_peaks = m_fit_peaks_for_each_curve[rel_eff_index];
-    if( rel_eff_index < m_free_amp_fit_peaks_for_each_curve.size() ) //`m_free_amp_fit_peaks_for_each_curve` may be empty if computation failed
-      info.fit_peaks = m_free_amp_fit_peaks_for_each_curve[rel_eff_index];
+    //info.obs_eff_data = m_obs_eff_for_each_curve[rel_eff_index];
+    if( rel_eff_index < m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
+    {
+      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4
+      for( const auto &obs_eff : m_obs_eff_for_each_curve[rel_eff_index] )
+      {
+        if( obs_eff.observed_efficiency > 0.0 && obs_eff.num_sigma_significance > 2.5 )
+          info.obs_eff_data.push_back( obs_eff );
+      }
+    }
 
     info.rel_acts = m_rel_activities[rel_eff_index];
     info.re_curve_name = Wt::WString::fromUTF8(rel_eff.name);

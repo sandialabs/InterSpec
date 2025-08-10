@@ -1048,6 +1048,7 @@ struct RelActAutoSolution
     double roi_lower_energy, roi_upper_energy;
     /** The unconstrained fit peak amplitude. */
     double amplitude;
+    double amplitude_uncert;
     /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
     double effective_sigma;
 
@@ -1057,7 +1058,9 @@ struct RelActAutoSolution
     std::vector<PeakDef> fit_peaks;
   };//struct ObsEff
 
-  /**
+  /** The fit efficiencies for the peaks fit to data, allowing the amplitudes to freely float.
+   Each `ObsEff` may be from one to a number of peaks that have been clustered together because they were effectively
+   indistiguishable (means within 1.5 sigma is the criteria used).
 
    Will be empty if re-fitting process fails.
    */

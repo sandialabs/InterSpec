@@ -5196,9 +5196,15 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     RelEffChart::ReCurveInfo info;
     info.live_time = live_time;
-    //info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
-    if( i < answer->m_free_amp_fit_peaks_for_each_curve.size() ) //`m_free_amp_fit_peaks_for_each_curve` may be empty if computation failed
-      info.fit_peaks = answer->m_free_amp_fit_peaks_for_each_curve[i];
+    if( i < answer->m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
+    {
+      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4
+      for( const auto &obs_eff : answer->m_obs_eff_for_each_curve[i] )
+      {
+        if( obs_eff.observed_efficiency > 0.0 && obs_eff.num_sigma_significance > 2.5 )
+          info.obs_eff_data.push_back( obs_eff );
+      }
+    }
     info.rel_acts = answer->m_rel_activities[i];
     info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
     info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
