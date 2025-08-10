@@ -25,6 +25,8 @@
 
 #include <map>
 
+#include <boost/math/distributions/chi_squared.hpp>
+
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -479,9 +481,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   WStackedWidget *upper_stack = new WStackedWidget();
   upper_stack->addStyleClass( "UpperStack" );
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
-  upper_stack->setTransitionAnimation( animation, true );
-  
+  // Adding this transformation causes the "Rel. Eff." chart to resize wrong initially when you click to it
+  //WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  //upper_stack->setTransitionAnimation( animation, true );
+
   m_upper_menu = new WMenu( upper_stack, Wt::Vertical, upper_div );
   m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
   upper_div->addWidget( upper_stack );
@@ -5036,10 +5039,25 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
-  
-  WString chi2_title("χ²/dof = {1}/{2}{3}");
-  chi2_title.arg( SpecUtils::printCompact(answer->m_chi2, 3) )
-            .arg( static_cast<int>(answer->m_dof) );
+
+  const string chi2_str = SpecUtils::printCompact(answer->m_chi2, 3);
+  const int dof = static_cast<int>(answer->m_dof);
+  WString chi2_title_tooltip;
+  WString chi2_title = WString("χ²/dof = {1}/{2}{3}").arg( chi2_str ).arg( dof );
+  try
+  {
+    const double chi2_dof = answer->m_chi2 / answer->m_dof;
+    const string chi2_dof_str = SpecUtils::printCompact(chi2_dof, 3);
+    boost::math::chi_squared chi2_dist(dof);
+    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2); //Probability we would have seen a chi2 this large.
+    const double p_value = 1.0 - prob; //Probability we would have observed this good of a chi2, or better
+    const string p_value_str = SpecUtils::printCompact(p_value, 3);
+
+    chi2_title_tooltip = WString("χ²/dof = {1}/{2} = {3} --> p-value = {4}" );
+    chi2_title_tooltip.arg(chi2_str).arg(dof).arg(chi2_dof_str).arg(p_value_str);
+  }catch( std::exception & )
+  {
+  }//try / catch to compute the Chi2/DOF
 
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio
@@ -5178,7 +5196,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     RelEffChart::ReCurveInfo info;
     info.live_time = live_time;
-    info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
+    //info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
+    if( i < answer->m_free_amp_fit_peaks_for_each_curve.size() ) //`m_free_amp_fit_peaks_for_each_curve` may be empty if computation failed
+      info.fit_peaks = answer->m_free_amp_fit_peaks_for_each_curve[i];
     info.rel_acts = answer->m_rel_activities[i];
     info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
     info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
@@ -5199,6 +5219,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   m_rel_eff_chart->setData( info_sets );
 
   m_fit_chi2_msg->setText( chi2_title );
+  m_fit_chi2_msg->setToolTip( chi2_title_tooltip );
   m_fit_chi2_msg->show();
 
 

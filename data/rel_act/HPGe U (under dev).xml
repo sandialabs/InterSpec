@@ -219,9 +219,10 @@
 				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
 			</RoiRange>
 		</RoiRangeList>
+		<BackgroundSubtract>true</BackgroundSubtract>
 		<ShowRefGammaLines>true</ShowRefGammaLines>
-		<LowerDisplayEnergy>111.453408</LowerDisplayEnergy>
-		<UpperDisplayEnergy>269.154871</UpperDisplayEnergy>
+		<LowerDisplayEnergy>110</LowerDisplayEnergy>
+		<UpperDisplayEnergy>1100</UpperDisplayEnergy>
 	</Options>
 </RelActCalcAuto>
 
