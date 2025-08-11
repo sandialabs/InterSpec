@@ -2694,7 +2694,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                           " estimate of relative efficiencies and activities." );
           
           const string re_id_str =  (num_rel_eff_curves > 1) ? ("RE_" + std::to_string(re_eff_index)) : string("");
-          cout << "Initial manual " << re_id_str << " estimate:" << endl;
+          cout << "Initial manual '" << re_id_str << "' estimate:" << endl;
           manual_solution.print_summary( cout );
           
           //ofstream debug_manual_html( "/Users/wcjohns/rad_ana/InterSpec_RelAct/RelActTest/initial_manual" + re_id_str + "_estimate.html" );
@@ -2822,6 +2822,29 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             const RelActCalcAuto::NucInputInfo &nuc = rel_eff_curve.nuclides[nuc_num];
             const size_t act_index = cost_functor->nuclide_parameter_index(nuc.source, re_eff_index);
             double rel_act = manual_solution.relative_activity( nuc.name() ) / live_time;
+
+            // If the rel_act has an uncertainty approaching 100%, we may get totally wild starting values of activity,
+            //  so we'll arbitrarily use an initial guess of 1, which may be well-off
+            try
+            {
+              const double rel_act_uncert = manual_solution.relative_activity_uncertainty( nuc.name() )  / live_time;
+              if( rel_act_uncert > 0.75*rel_act ) //A value of 0.75 is totally arbitrary
+              {
+                rel_act = 10.0;
+
+                // TODO: we could look through `peaks_with_sources` for the peak with the largest BR for `nuc`, attribute
+                //       that peak to this nuc 100%, and assume a RE of 1.0, then estimate the RelAct from that.
+              }
+            }catch( std::exception &e )
+            {
+
+            }//try / catch check on rel act uncertainty having reasonable confidence range.
+
+            // Its pretty arbitrary, the smallest relative activity I've encountered, using "log(x)" equation, is 0.025,
+            //  for a very low-background, long-duration count - so we'll make sure the starting activity isnt really
+            //  close to zero.
+            if( IsInf(rel_act) || IsNan(rel_act) || (rel_act < 1.0E-2) )
+              rel_act = 1.0;
 
             //Count how many rel eff curves this nuclide is in, and divide by that... we can probably come up with a better solution...
             size_t nuc_count = 0;
@@ -3585,10 +3608,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     const size_t num_pars = cost_functor->number_parameters();
     
     ceres::CostFunction *cost_function = nullptr;
-    
+
+    /*
 #if( PERFORM_DEVELOPER_CHECKS )
     //Test auto diff vs numerical diff
     auto test_gradients = [constant_parameters,&cost_functor]( RelActAutoCostFcn *fcn, const vector<double> &x ){
+      
       ceres::DynamicAutoDiffCostFunction<RelActAutoCostFcn,32> auto_diff( fcn, ceres::DO_NOT_TAKE_OWNERSHIP );
       auto_diff.SetNumResiduals( static_cast<int>(fcn->number_residuals()) );
       auto_diff.AddParameterBlock( static_cast<int>(fcn->number_parameters()) );
@@ -3615,11 +3640,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       std::vector<double> residuals_numeric( num_res, 0.0 ), jacobians_numeric( num_pars*num_res, 0.0 );
       std::vector<double*> jacobian_ptrs_numeric = { &(jacobians_numeric[0]) };
       num_diff.Evaluate( parameter_blocks.data(), residuals_numeric.data(), jacobian_ptrs_numeric.data() );
-      
-      // TODO: should make function to give parameter name!
-      
+
       cout << "Non-equal of numeric and auto-diff Jacobians\n";
-      cout << setw(7) << "Index" << setw(7) << "ParName" << setw(10) << "ResNum"
+      cout << setw(7) << "Index"
+      << setw(8) << "ParName" << setw(10) << "ResNum"
       << setw(12) << "ResVal" << setw(12) << "ParVal"
       << setw(12) << "Auto" << setw(12) << "Numeric"
       << setw(12) << "Diff" << setw(12) << "FracDiff"
@@ -3641,7 +3665,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         if( (diff > 1.0E-18) && (frac_diff > 1.0E-2) )  //This is totally arbitrary
         {
           cout << setprecision(4)
-          << setw(7) << i << setw(10) << par_name << setw(7) << residual_num
+          << setw(8) << i << setw(10) << par_name << setw(7) << residual_num
           << setw(12) << residuals_numeric[residual_num] << setw(12) << x[par_num]
           << setw(12) << jacobians_auto[i] << setw(12) << jacobians_numeric[i]
           << setw(12) << diff << setw(12) << frac_diff
@@ -3653,6 +3677,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     test_gradients( cost_functor.get(), parameters );
 #endif
+     */
 
     if( sm_use_auto_diff )
     {
@@ -3812,7 +3837,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // Changing function_tolerance from 1e-9 to 1e-7, and using initial_trust_region_radius=1E5, and use_nonmonotonic_steps=false
     //  - 52.88% enrich, 261 function calls, 64 iterations, Chi2=0.664167 (terminate due to function tol reached)
     // Decreasing from 1e-7 to 1e9 increases number of calls/time by about 30%, for one example problem, but solution is better.
-    ceres_options.function_tolerance = 1e-10;
+    ceres_options.function_tolerance = 1e-9;
 
     ceres_options.gradient_tolerance = 1.0E-4*ceres_options.function_tolerance; // Per documentation of `gradient_tolerance`
     // parameter_tolerance seems to be what terminates the minimization on some example problems.
@@ -4275,28 +4300,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             is_mass_constrained |= (mass_cons.nuclide == nuc);
         }
 
-        if( is_mass_constrained )
-        {
-          // We'll multiple the uncertainty of mass-fraction paramater, by the derivative of RelAct
-
-          nuc_output.rel_activity_uncertainty = -1;
-          try
-          {
-            const size_t rel_act_index = cost_functor->nuclide_parameter_index( nuc_output.source, rel_eff_index );
-            vector<ceres::Jet<double,sm_auto_diff_stride_size>> input_jets( begin(parameters), end(parameters) );
-            input_jets[rel_act_index].v[0] = 1.0; //It doesnt matter which element of `v` we use to get the derivative, so we'll just use the first one.
-            ceres::Jet<double,sm_auto_diff_stride_size> rel_act_jet = cost_functor->relative_activity(nuc_output.source, rel_eff_index, input_jets);
-            assert( (nuc_output.rel_activity < 1.0E-12) || (fabs(nuc_output.rel_activity - rel_act_jet.a) < 1.0E-6*nuc_output.rel_activity) );
-            const double derivative = rel_act_jet.v[0];
-            nuc_output.rel_activity_uncertainty = uncertainties[rel_act_index] * derivative;
-          }catch( std::exception & )
-          {
-
-          }//try / catch
-        }else
-        {
-          nuc_output.rel_activity_uncertainty = cost_functor->relative_activity( nuc_input.source, rel_eff_index, uncertainties );
-        }
+        if( solution.m_covariance.empty() )
+          nuc_output.rel_activity_uncertainty = -1.0;
+        else
+          nuc_output.rel_activity_uncertainty = cost_functor->relative_activity_uncertainty(
+                                                  nuc_output.source, rel_eff_index, parameters, solution.m_covariance );
 
         vector<SandiaDecay::EnergyRatePair> gammas;
         if( const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuc_output.source) )
@@ -5985,9 +5993,70 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     assert( nuc_info.activity_multiple > 0.0 );
 
+/*
+    static std::mutex static_mutex;
+
+    static map<string,bool> has_seen_zero;
+    const string src_name = RelActCalcAuto::to_name(src);
+    std::lock_guard<std::mutex> lock(static_mutex);
+    if( !has_seen_zero.count(src_name) )
+      has_seen_zero[src_name] = false;
+
+    if( (x[parent_nuc_par_index] - RelActAutoCostFcn::sm_activity_par_offset) < 1.0E-6 )
+      has_seen_zero[src_name] = true;
+
+    if( has_seen_zero[src_name] )
+      cout << "Activity " << src_name << ": " << (x[parent_nuc_par_index] - RelActAutoCostFcn::sm_activity_par_offset) << endl;
+*/
+
     return nuc_info.activity_multiple * (x[parent_nuc_par_index] - RelActAutoCostFcn::sm_activity_par_offset);
   }//double relative_activity(...)
-  
+
+
+  /** Returns the uncertainty on relative activity.
+
+   For the simple case of if no constraints/relations, this function is a bit heavy duty and expensive, but it handles all the cases.
+
+   Throws an exception on error.
+   */
+  double relative_activity_uncertainty( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index,
+                                       const std::vector<double> &x, vector<vector<double>> &covariance ) const
+  {
+    typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
+
+    const size_t num_pars = this->number_parameters();
+    assert( x.size() == covariance.size() );
+    if( x.size() != num_pars )
+      throw runtime_error( "relative_activity_uncertainty: invalid number of parameters." );
+
+    if( covariance.size() != num_pars )
+      throw runtime_error( "relative_activity_uncertainty: invalid covariance size." );
+
+    vector<double> jacobian( num_pars, 0.0 );
+    for( size_t i = 0; i < num_pars; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
+    {
+      vector<Jet> x_local( begin(x), end(x) );
+      for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && (i+j < num_pars); ++j )
+        x_local[i+j].v[j] = 1.0;
+      const Jet rel_act_jet = this->relative_activity( src, rel_eff_index, x_local );
+      for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size) && ((i+j) < num_pars); ++j )
+        jacobian[i+j] = rel_act_jet.v[j];
+    }
+
+    double uncertainty_2 = 0.0;
+    for( size_t i = 0; i < num_pars; ++i )
+    {
+      assert( covariance[i].size() == num_pars );
+      if( covariance[i].size() != num_pars )
+        throw runtime_error( "relative_activity_uncertainty: invalid shaped covariance." );
+
+      for( size_t j = 0; j < num_pars; ++j )
+        uncertainty_2 += jacobian[i] * covariance[i][j] * jacobian[j];
+    }
+
+    return sqrt( uncertainty_2 );
+  }//double relative_activity_uncertainty(...)
+
 
   template<typename T>
   T mass_enrichment_fraction( const RelActCalcAuto::SrcVariant &src, const size_t rel_eff_index, const std::vector<T> &x ) const
@@ -7361,9 +7430,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
           check_peak_reasonable( peak, gamma.energy );
 
-
-          if( peak_amplitude < static_cast<double>( std::numeric_limits<float>::min() ) )
-            continue;
+          // We need to also include peaks with an amplitude of zero, so this way auto-differentiation
+          //  will be able to provide gradient information to Ceres, so we cant do any optimizations
+          //  ignoring zero amplitude peaks, like the next couple lines would do
+          //if( peak_amplitude < static_cast<double>( std::numeric_limits<float>::min() ) )
+          //  continue;
 
           peaks.push_back( std::move(peak) );
         }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
@@ -7945,8 +8016,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         ++residual_index;
       }
     }//if( !m_peak_ranges_with_uncert.empty() )
-    
-    
+
     assert( residual_index == number_residuals() );
 #ifndef NDEBUG
     for( size_t i = 0; i < residual_index; ++i )
@@ -10636,7 +10706,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
         if( act_ratio.second.has_value() )
           act_val_str += " ± " + SpecUtils::printCompact(act_ratio.second.value(),4);
 
-        out << "\t" << std::setw(16) << (nuc_i.name() + " / " + nuc_j.name())
+        out << "    " << std::setw(16) << (nuc_i.name() + " / " + nuc_j.name())
         << "\tact: " << std::setw(16)
         << act_val_str;
         if( nuc_i_nuclide && nuc_j_nuclide )
@@ -10678,6 +10748,18 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
         out << "\n";
       }//for( size_t j = 0; j < i; ++j )
     }//for( size_t i = 0; i < used_isotopes.size(); ++i )
+
+    out << "\n";
+    out << "Relative Activities" << ((num_rel_eff > 1) ? (" " + std::to_string(rel_eff_index)) : string()) << ":\n";
+    for( size_t i = 0; i < rel_acts.size(); ++i )
+    {
+      const NuclideRelAct &nuc_i = rel_acts[i];
+      
+      out << "    " << std::setw(10) << nuc_i.name()
+      << " act: " << std::setw(8) << SpecUtils::printCompact(nuc_i.rel_activity,5)
+      << " +- " << std::setw(8) << SpecUtils::printCompact(nuc_i.rel_activity_uncertainty,5)
+      << "\n";
+    }//
   }//for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
   
   

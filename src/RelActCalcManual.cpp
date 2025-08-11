@@ -2774,6 +2774,23 @@ double RelEffSolution::relative_activity( const std::string &nuclide ) const
 }//double relative_activity( const std::string &nuclide ) const
 
 
+double RelEffSolution::relative_activity_uncertainty( const std::string &nuclide ) const
+{
+  for( const IsotopeRelativeActivity &i : m_rel_activities )
+  {
+    if( i.m_isotope == nuclide )
+    {
+      if( i.m_rel_activity_uncert < 0.0 )
+        throw runtime_error( "RelEffSolution::relative_activity_uncertainty: uncertainties not able to be computed." );
+      return i.m_rel_activity_uncert;
+    }
+  }
+
+  throw runtime_error( "RelEffSolution::relative_activity_uncertainty: no nuclide '" + nuclide + "'" );
+  return 0.0;
+}//double relative_activity_uncertainty( const std::string &nuclide ) const
+
+
 double RelEffSolution::relative_efficiency( const double energy ) const
 {
   if( m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
