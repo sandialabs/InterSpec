@@ -5286,7 +5286,8 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       try
       {
         const pair<double,double> act_uncert = this->m_solution->rel_activity_with_uncert(src, rel_eff_index);
-        assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act)) );
+        assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act))
+               || (fabs(act_uncert.first - rel_act) < 1.0E-6) );
         tooltip_text += " ± " + SpecUtils::printCompact(act_uncert.second, 4);
       }catch( std::exception &e )
       {

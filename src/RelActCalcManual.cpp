@@ -1818,6 +1818,44 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     return num_pars;
   }
   
+  // Walk to controlling nuclide similar to solution.walk_to_controlling_nuclide()
+  bool walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const
+  {
+    assert( multiple == 1.0 );
+    multiple = 1.0;
+    assert( iso_index < m_isotopes.size() );
+    
+    if( m_input.act_ratio_constraints.empty() )
+      return false;
+    
+    size_t controller_index = std::numeric_limits<size_t>::max();
+    bool found_controller = false;
+    size_t sentinel = 0; // Safety counter to prevent infinite loops
+    
+    while( controller_index != iso_index )
+    {
+      sentinel += 1;
+      assert( sentinel < 100 );
+      if( sentinel > 1000 )
+        throw std::logic_error( "ManualGenericRelActFunctor::walk_to_controlling_nuclide: possible infinite loop - logic error" );
+      
+      controller_index = iso_index;
+      for( const RelActCalcManual::ManualActRatioConstraint &constraint : m_input.act_ratio_constraints )
+      {
+        if( constraint.m_constrained_nuclide == m_isotopes[iso_index] )
+        {
+          // Find the index of the controlling nuclide
+          iso_index = this->iso_index( constraint.m_controlling_nuclide );
+          multiple *= constraint.m_constrained_to_controlled_activity_ratio;
+          found_controller = true;
+          break;
+        }
+      }
+    }//while( controller_index != iso_index )
+    
+    return found_controller;
+  }//bool walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const
+  
   // The return value indicates whether the computation of the
   // residuals and/or jacobians was successful or not.
   template<typename T>
@@ -2813,6 +2851,7 @@ bool RelEffSolution::walk_to_controlling_nuclide( size_t &iso_index, double &mul
     }
   }//while( controller_index != iso_index )
 
+  
 #ifndef NDEBUG
   assert( fabs((multiple * m_rel_activities[iso_index].m_rel_activity_uncert) - m_rel_activities[original_iso_index].m_rel_activity_uncert) < 1e-6 );
 #endif
@@ -3037,7 +3076,9 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << m_rel_activities[nuc_index].m_rel_activity_uncert << endl;
     cout << "m_rel_activities[nuc_index].m_rel_activity = " << m_rel_activities[nuc_index].m_rel_activity << endl;
   }
-  assert( (norm_for_nuc * sqrt_cov_nuc_nuc) == m_rel_activities[nuc_index].m_rel_activity_uncert );
+  assert( (fabs((norm_for_nuc * sqrt_cov_nuc_nuc) - m_rel_activities[nuc_index].m_rel_activity_uncert)
+            < 1.0E-6*m_rel_activities[nuc_index].m_rel_activity_uncert)
+         || (fabs((norm_for_nuc * sqrt_cov_nuc_nuc) - m_rel_activities[nuc_index].m_rel_activity_uncert) < 1.0E-3) );
 
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
   for( size_t loop_index = 0; loop_index < m_rel_activities.size(); ++loop_index )
@@ -5226,12 +5267,21 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 #endif
         else
         {
+          assert( is_constrolled );
           assert( fabs(parameters[i] - -1.0) < 1.0E-6 );
           assert( parameters.size() == solution.m_nonlin_covariance.size() );
 
-          const double par_uncert = std::sqrt( solution.m_nonlin_covariance[i][i] );
+          // Use the cost_functor's walk_to_controlling_nuclide function to find the ultimate
+          // controlling nuclide and calculate the uncertainty
+          size_t ultimate_controller_index = i;
+          double multiple = 1.0;
+          const bool found_controller = cost_functor->walk_to_controlling_nuclide( ultimate_controller_index, multiple );
+          assert( found_controller );
 
-          rel_act.m_rel_activity_uncert = cost_functor->m_rel_act_norms[i] * par_uncert;
+          const double par_uncert = std::sqrt( solution.m_nonlin_covariance[ultimate_controller_index][ultimate_controller_index] );
+          rel_act.m_rel_activity_uncert = multiple * cost_functor->m_rel_act_norms[ultimate_controller_index] * par_uncert;
+          assert( (fabs(rel_act.m_rel_activity - multiple*cost_functor->relative_activity( cost_functor->m_isotopes[ultimate_controller_index], parameters )) < 1.0E-5*rel_act.m_rel_activity)
+                  || (fabs(rel_act.m_rel_activity - multiple*cost_functor->relative_activity( cost_functor->m_isotopes[ultimate_controller_index], parameters )) < 1.0E-3) );
         }//if( input.act_ratio_constraints.empty() ) / else
       }//if( input.act_ratio_constraints.empty() ) / else
       

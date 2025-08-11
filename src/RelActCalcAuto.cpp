@@ -1258,6 +1258,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   */
   static const size_t sm_auto_diff_stride_size = 32;
 
+  
+  /** Activity parameters will have a lower possible value of 1.0 - this is to avoid the Ceres parameters getting near zero,
+   which causes them to behave badly
+   */
+  constexpr static double sm_activity_par_offset = 1.0;
+  
 
   RelActCalcAuto::Options m_options;
   std::vector<std::vector<NucInputGamma>> m_nuclides; //has same number of entries as `m_options.rel_eff_curves`
@@ -2844,6 +2850,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               is_constrained = true;
               parameters[act_index] = -1.0;
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              
+              cout << "Fixing act_index=" << act_index << ", "
+              << RelActCalcAuto::to_name(act_ratio_constraint->constrained_source)
+              << ":" << RelActCalcAuto::to_name(act_ratio_constraint->controlling_source)
+              << " = " << act_ratio_constraint->constrained_to_controlled_activity_ratio
+              << endl;
+              
               assert( std::find( begin(constant_parameters), end(constant_parameters), static_cast<int>(act_index) ) == end(constant_parameters) );
               constant_parameters.push_back( static_cast<int>(act_index) );
             }//if( act_ratio_constraint )
@@ -2860,7 +2873,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
               //TODO: To model mass-fraction constraints, should switch to a paramter that gives total RelAct of an element, and then use a ceres::Manifold to make all the nuclides of the element add up to 1.0 (eg, on a surface).
 
-              parameters[act_index] = 1.0;
+              parameters[act_index] = 0.5 + RelActAutoCostFcn::sm_activity_par_offset;
               if( mass_frac_constraint->lower_mass_fraction != mass_frac_constraint->upper_mass_fraction )
               {
                 try
@@ -2869,7 +2882,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                   double frac = (mf - mass_frac_constraint->lower_mass_fraction) / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
                   assert( frac > -0.0002 && frac < 1.0002 );
                   frac = std::min( 1.0, std::max( frac, 0.0 ) );
-                  parameters[act_index] = 0.5 + 0.5*frac;
+                  parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + 0.5*frac;
                   cerr << "\n\nStill having trouble navigating to global minima\n\nHacked mass fraction to be halfway in the range it should!\n\n" << endl;
 #pragma message("Still having trouble navigating to global minima for RelActAuto. Hacked mass fraction to be halfway in the range it should! - should undo this (but seems to help for some problems).")
                 }catch( std::exception & )
@@ -2884,12 +2897,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               if( fabs(mass_frac_constraint->lower_mass_fraction - mass_frac_constraint->upper_mass_fraction)
                   <= 1.0E-6*std::max(mass_frac_constraint->lower_mass_fraction, mass_frac_constraint->upper_mass_fraction) )
               {
+                cout << "Fixing act_index=" << act_index << ", " << mass_frac_constraint->nuclide << ", for mass fraction constraint" << endl;
                 assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
                 constant_parameters.push_back( static_cast<int>(act_index) );
               }else
               {
-                lower_bounds[act_index] = 0.5;
-                upper_bounds[act_index] = 1.5;
+                lower_bounds[act_index] = RelActAutoCostFcn::sm_activity_par_offset;
+                upper_bounds[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
               }
             }//if( mass_frac_constraint )
 
@@ -2903,7 +2917,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                && nuc.max_rel_act.has_value() 
                 && (nuc.min_rel_act.value() == nuc.max_rel_act.value()) )
             {
-              parameters[act_index] = 1.0;
+              parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = nuc.min_rel_act.value();
               assert( cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple > 0.0 );
               constant_parameters.push_back( static_cast<int>(act_index) );
@@ -2920,9 +2934,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             if( (rel_act < 1.0E-16) || IsInf(rel_act) || IsNan(rel_act) )
               rel_act = 1.0;
             
-            lower_bounds[act_index] = (nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act;
+            lower_bounds[act_index] = ((nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act) + RelActAutoCostFcn::sm_activity_par_offset;
             if( nuc.max_rel_act.has_value() )
-              upper_bounds[act_index] = nuc.max_rel_act.value() / rel_act;
+              upper_bounds[act_index] = (nuc.max_rel_act.value() / rel_act) + RelActAutoCostFcn::sm_activity_par_offset;
 
             cout << "Updating initial activity estimate for " << nuc.name() << " from "
                    << parameters[act_index] << " to " << rel_act << endl;          
@@ -2930,7 +2944,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act;
             assert( rel_act > 0.0 );
 
-            parameters[act_index] = 1.0;
+            parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
           }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
           
           
@@ -3175,16 +3189,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
             if( src_act_ratio_constr )
             {
+              // We already set all "fixed" values for this nuclide a few hundred lines ago, but we'll make sure
               const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &nuc_constraint = *src_act_ratio_constr;
               assert( nuc_constraint.constrained_source == nuc.source );
-
-              parameters[act_index] = -1.0;
-              cout << "Setting par " << act_index << " to -1.0 for " << nuc.name() << endl;
-
-              cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
-              assert( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) ) == constant_parameters.end() );
-              constant_parameters.push_back( static_cast<int>(act_index) );
-
+              assert( parameters[act_index] == -1.0 );
+              assert( cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple == -1.0 );
+              auto pos = std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(act_index) );
+              assert( pos != constant_parameters.end() );
+              if( pos == constant_parameters.end() )
+              {
+                parameters[act_index] = -1.0;
+                constant_parameters.push_back( static_cast<int>(act_index) );
+                cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
+              }
               continue;
             }//for( const auto &nuc_constraint : rel_eff_curve.act_ratio_constraints )
 
@@ -3193,9 +3210,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint = *src_mass_frac_constr;
               assert( (constraint.nuclide == nuc_nuclide) && nuc_nuclide );
 
-              parameters[act_index] = 1.0;
+              parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
               cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = -1.0;
-              cout << "Setting par " << act_index << " to 1.0 for " << nuc.name() << endl;
+              cout << "Setting par " << act_index << " to " << (1.0 + RelActAutoCostFcn::sm_activity_par_offset) << " for " << nuc.name() << endl;
 
               if( constraint.lower_mass_fraction == constraint.upper_mass_fraction )
               {
@@ -3204,8 +3221,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 constant_parameters.push_back( static_cast<int>(act_index) );
               }else
               {
-                lower_bounds[act_index] = 0.5;
-                upper_bounds[act_index] = 1.5;
+                lower_bounds[act_index] = RelActAutoCostFcn::sm_activity_par_offset;
+                upper_bounds[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
               }
 
               continue;
@@ -3255,7 +3272,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             if( nuc.max_rel_act.has_value() )
               rel_act_mult = std::min( rel_act_mult, nuc.max_rel_act.value() );
 
-            parameters[act_index] = 1.0;
+            parameters[act_index] = 1.0 + RelActAutoCostFcn::sm_activity_par_offset;
             cost_functor->m_nuclides[re_eff_index][nuc_num].activity_multiple = rel_act_mult;
             assert( rel_act_mult > 0.0 );
 
@@ -3296,9 +3313,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               constant_parameters.push_back( static_cast<int>(act_index) );
             }else
             {
-              lower_bounds[act_index] = (nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act_mult;
+              lower_bounds[act_index] = ((nuc.min_rel_act.has_value() ? nuc.min_rel_act.value() : 0.0) / rel_act_mult) + RelActAutoCostFcn::sm_activity_par_offset;
               if( nuc.max_rel_act.has_value() )
-                upper_bounds[act_index] = nuc.max_rel_act.value() / rel_act_mult;
+                upper_bounds[act_index] = (nuc.max_rel_act.value() / rel_act_mult) + RelActAutoCostFcn::sm_activity_par_offset;
             }
           }//if( !succesfully_estimated_re_and_ra )
         }//for( size_t nuc_num = 0; nuc_num < rel_eff_curve.nuclides.size(); ++nuc_num )
@@ -3369,10 +3386,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               continue;
 
             const size_t act_index = cost_functor->nuclide_parameter_index( c.nuclide, re_eff_index );
-            parameters[act_index] = 0.5 + ((1.0 - frac_variable_reduce)*(parameters[act_index] - 0.5));
-            assert( (parameters[act_index] >= 0.5) && (parameters[act_index] <= 1.5) );
+            const double offset = RelActAutoCostFcn::sm_activity_par_offset;
+            parameters[act_index] = offset + ((1.0 - frac_variable_reduce)*(parameters[act_index] - offset));
+            assert( (parameters[act_index] >= offset) && (parameters[act_index] <= (1.0 + offset)) );
 
-            check_var_frac += (c.lower_mass_fraction + (parameters[act_index] - 0.5)*(c.upper_mass_fraction - c.lower_mass_fraction));
+            check_var_frac += (c.lower_mass_fraction + (parameters[act_index] - offset)*(c.upper_mass_fraction - c.lower_mass_fraction));
           }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
 
           assert( fabs(check_var_frac - updated_variable_frac) < 0.0001 );
@@ -5907,11 +5925,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
           const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint * const mass_constraint
                                                                = mass_fraction_constraint(nuclide.source,rel_eff_index);
-              
+           
           if( mass_constraint )
           {
             const size_t nuc_x_index = nuclide_parameter_index( nuclide.source, rel_eff_index );
-            const T rel_dist = (x[nuc_x_index] - 0.5); //Rel Act paramater is constrained within 0.5 and 1.5, to make mass fraction go between lower and upper
+            const T rel_dist = (x[nuc_x_index] - RelActAutoCostFcn::sm_activity_par_offset); //Rel Act paramater is constrained within offset and 1.0+offset, to make mass fraction go between lower and upper
             assert( rel_dist >= (0.0 - 1.0E-6) );
             assert( rel_dist <= (1.0 + 1.0E-6) );
             
@@ -5941,7 +5959,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
 
         const size_t this_nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
-        const T rel_dist = x[this_nuc_x_index] - 0.5;
+        const T rel_dist = x[this_nuc_x_index] - RelActAutoCostFcn::sm_activity_par_offset;
         assert( (rel_dist >= (0.0 - 1.0E-6)) || (x[this_nuc_x_index] == 0.0) );
         assert( rel_dist <= (1.0 + 1.0E-6) || (x[this_nuc_x_index] == 0.0) );
         const T this_rel_mass_frac = mass_frac_constraint.lower_mass_fraction
@@ -5967,7 +5985,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     assert( nuc_info.activity_multiple > 0.0 );
 
-    return nuc_info.activity_multiple * x[parent_nuc_par_index];
+    return nuc_info.activity_multiple * (x[parent_nuc_par_index] - RelActAutoCostFcn::sm_activity_par_offset);
   }//double relative_activity(...)
   
 
@@ -6083,7 +6101,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
         // For mass-constrained nuclides, return the mass fraction directly
         const size_t nuc_x_index = nuclide_parameter_index( src, rel_eff_index );
-        const T rel_dist = x[nuc_x_index] - T(0.5);
+        const T rel_dist = x[nuc_x_index] - T(RelActAutoCostFcn::sm_activity_par_offset);
         const T mass_frac = mass_frac_constraint.lower_mass_fraction
                            + rel_dist*(mass_frac_constraint.upper_mass_fraction - mass_frac_constraint.lower_mass_fraction);
         return mass_frac;
