@@ -4686,9 +4686,38 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const pair<size_t,size_t> channel_range
         = roi.channel_range( roi.lower_energy, roi.upper_energy, roi.num_channels, solution.m_spectrum->energy_calibration() );
 
-        set<shared_ptr<const PeakContinuum>> peak_continuums; //Mostly for debug - we should only have one continuum per ROI
+        shared_ptr<const PeakContinuum> continuum;
 
-        double ref_energy = -999.9;
+        // Find the PeakContinuum that cooresponds to `roi`
+        double nearest_dist = 1000;
+        for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
+        {
+          const vector<PeakDef> &peaks = solution.m_fit_peaks_for_each_curve[rel_eff_index];
+
+          for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
+          {
+            const PeakDef &p = peaks[peak_index];
+            assert( p.hasSourceGammaAssigned() );
+            if( !p.hasSourceGammaAssigned() || (p.continuum() == continuum) )
+              continue;
+            const double lower_diff = fabs(roi.lower_energy - p.continuum()->lowerEnergy());
+            const double upper_diff = fabs(roi.upper_energy - p.continuum()->upperEnergy());
+            const double diff = lower_diff + upper_diff;
+            if( (diff < nearest_dist) /*&& (diff < 1.0)*/ )
+            {
+              assert( (diff > 1.0) || (nearest_dist > 1.0) );
+              nearest_dist = diff;
+              continuum = p.continuum();
+            }
+          }//for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
+        }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
+
+        assert( nearest_dist < 1.0 );
+        if( !continuum || (nearest_dist > 10.0) )
+          continue;
+
+        const double ref_energy = continuum->referenceEnergy();
+
         vector<double> effective_means, effective_sigmas, effective_amps;
         vector<pair<double,double>> clusters;
         vector<vector<pair<size_t,size_t>>> peak_indices; //index into solution.m_fit_peaks_for_each_curve, via `peak_indices[]`
@@ -4711,19 +4740,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
             {
               const vector<PeakDef> &peaks = solution.m_fit_peaks_for_each_curve[rel_eff_index]; //Note: do not include free-floating peaks.
+
               for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
               {
                 const PeakDef &p = peaks[peak_index];
                 assert( p.hasSourceGammaAssigned() );
-                if( !p.hasSourceGammaAssigned() )
+                if( !p.hasSourceGammaAssigned() || (p.continuum() != continuum) )
                   continue;
 
                 const float energy = p.gammaParticleEnergy();
                 if( (energy < range.first) || (energy > range.second) )
                   continue;
-
-                //if( (energy < roi.lower_energy) || (energy > roi.upper_energy) )
-                //  continue;
 
                 num_peaks_in_range += 1;
                 const double w = p.amplitude();
@@ -4732,8 +4759,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 means.push_back( energy );
                 sigmas.push_back( p.sigma() );
                 amps.push_back( w );
-                ref_energy = p.continuum()->referenceEnergy();
-                peak_continuums.insert( p.continuum() );
                 range_peak_indices.emplace_back( rel_eff_index, peak_index );
               }//for( const PeakDef &p : solution.m_fit_peaks_in_spectrums_cal )
             }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
@@ -4758,10 +4783,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
         //assert( ref_energy > 0.0 );
         if( ref_energy < 0.0 )
-          continue;
-
-        assert( peak_continuums.size() == 1 );
-        if( peak_continuums.size() < 1 )
           continue;
 
         const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( roi.continuum_type ) );
@@ -4805,15 +4826,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                     fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts, peak_counts );
 
         assert( fit_amps.size() == effective_amps.size() );
-        auto new_continuum = make_shared<PeakContinuum>( *(*begin(peak_continuums)) );
+        auto new_continuum = make_shared<PeakContinuum>( *continuum );
         new_continuum->setParameters( ref_energy, fit_continuum_coefs, fit_continuum_uncerts );
 
         for( size_t i = 0; i < fit_amps.size(); ++i )
         {
           double scale_factor_for_cluster = fit_amps[i] / effective_amps[i];
           const double rel_uncert = fit_amp_uncert[i] / fit_amps[i];
-          //cout << "For range [" << clusters[i].first << ", " << clusters[i].second << "], SF=" << scale_factor_for_cluster
-          //<< ", uncert=" << rel_uncert << endl;
+          cout << "For range [" << clusters[i].first << ", " << clusters[i].second << "], SF=" << scale_factor_for_cluster
+          << ", uncert=" << rel_uncert << endl;
 
           const vector<pair<size_t,size_t>> &range_peak_indices = peak_indices[i];
 
@@ -5992,22 +6013,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     assert( nuc_info.source == src );
     
     assert( nuc_info.activity_multiple > 0.0 );
-
-/*
-    static std::mutex static_mutex;
-
-    static map<string,bool> has_seen_zero;
-    const string src_name = RelActCalcAuto::to_name(src);
-    std::lock_guard<std::mutex> lock(static_mutex);
-    if( !has_seen_zero.count(src_name) )
-      has_seen_zero[src_name] = false;
-
-    if( (x[parent_nuc_par_index] - RelActAutoCostFcn::sm_activity_par_offset) < 1.0E-6 )
-      has_seen_zero[src_name] = true;
-
-    if( has_seen_zero[src_name] )
-      cout << "Activity " << src_name << ": " << (x[parent_nuc_par_index] - RelActAutoCostFcn::sm_activity_par_offset) << endl;
-*/
 
     return nuc_info.activity_multiple * (x[parent_nuc_par_index] - RelActAutoCostFcn::sm_activity_par_offset);
   }//double relative_activity(...)

@@ -1729,10 +1729,10 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           if( isnan(residuals[index].v[jac_index]) || isinf(residuals[index].v[jac_index]) )
             cerr << "Residual " << index << " has Jacobian " << jac_index << " value if inf or nan" << endl;
         }
-        cout << "Residual " << index << " has value " << residuals[index].a << endl;
+        //cout << "Residual " << index << " has value " << residuals[index].a << endl;
       }else
       {
-        cout << "Residual " << index << " has value " << residuals[index] << endl;
+        //cout << "Residual " << index << " has value " << residuals[index] << endl;
       }//if constexpr ( !std::is_same_v<T, double> ) / else
     }//for( size_t index = 0; index < number_residuals(); ++index )
 #endif
