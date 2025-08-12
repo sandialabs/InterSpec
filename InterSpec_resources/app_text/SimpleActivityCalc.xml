@@ -7,7 +7,6 @@
   <message id="sac-peak-label">Peak:</message>
   <message id="sac-distance-label">Distance:</message>
   <message id="sac-age-label">Age:</message>
-  <message id="sac-detector-label">Detector:</message>
   <message id="sac-shielding-label">Shielding:</message>
   <message id="sac-geometry-label">Geometry:</message>
   <message id="sac-result-label">Activity:</message>
@@ -15,10 +14,12 @@
   
   <message id="sac-geometry-point">Point Source</message>
   <message id="sac-geometry-plane">Infinite Plane</message>
-  <message id="sac-geometry-sphere">Spherical Trace Source</message>
   <message id="sac-geometry-self-atten">Self-Attenuating Sphere</message>
   
   <message id="sac-error-no-peak">No peak selected</message>
   <message id="sac-error-no-detector">No detector response loaded</message>
   <message id="sac-error-invalid-distance">Invalid distance entered</message>
+  
+  <message id="sac-qr-tool-state-title">Simple Activity Calc Tool State</message>
+  <message id="sac-qr-tool-state-txt">Current state of simple activity calc tool.</message>
 </messages>

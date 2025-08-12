@@ -3,21 +3,20 @@
 .SimpleActivityCalc {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   padding: 10px;
-  min-width: 400px;
+  padding-bottom: 0px;
+  width: 300px;
 }
 
 .SimpleActivityCalc .row {
   display: flex;
+  padding-bottom: 5px;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 5px;
+  margin-bottom: 1px;
 }
 
 .SimpleActivityCalc .label {
-  min-width: 120px;
-  font-weight: bold;
+  width: 70px;
 }
 
 .SimpleActivityCalc .input {
@@ -30,22 +29,29 @@
   font-weight: bold;
   color: #2e7d32;
   padding: 10px;
-  text-align: center;
+  padding-bottom: 0px;
+  justify-content: center;
 }
 
 .SimpleActivityCalc .error {
   font-size: 11pt;
   color: #d32f2f;
   padding: 5px;
-  text-align: center;
+  justify-content: center;
 }
 
-.SimpleActivityCalc .advanced-btn {
-  margin-top: 10px;
+.SimpleActivityCalc button.advanced-btn.LinkBtn, .SimpleActivityCalc button.advanced-btn.LinkBtn:hover {
   align-self: flex-end;
+  font-weight: normal;
+  font-size: x-small;
+  padding-bottom: 0px;
+  margin-bottom: 0px;
+  height: 12px;
 }
 
 .SimpleActivityCalc .nuclide-info {
   font-style: italic;
+  font-size: smaller;
   color: #666;
+  justify-content: flex-end;
 }

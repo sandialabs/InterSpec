@@ -33,11 +33,13 @@
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/ShieldingSelect.h"
+#include "InterSpec/GammaInteractionCalc.h"
 
 class DrfSelect;
 class ShieldingSelect;
 class SimpleActivityCalc;
 class DetectorPeakResponse;
+class DetectorDisplay;
 class MaterialDB;
 
 namespace Wt
@@ -59,12 +61,22 @@ namespace SandiaDecay
 
 class PeakDef;
 
+namespace SpecUtils { class Measurement; }
+namespace ShieldingSourceFitCalc { struct ShieldingInfo; }
+
+enum class SimpleActivityGeometryType : int
+{
+  Point = 0,
+  Plane = 1,
+  SelfAttenuating = 2
+};
+
 struct SimpleActivityCalcState
 {
   double peakEnergy;
   std::string nuclideAgeStr;
   std::string distanceStr;
-  int geometryType;
+  SimpleActivityGeometryType geometryType;
   ShieldingSourceFitCalc::ShieldingInfo shielding;
   
   SimpleActivityCalcState();
@@ -77,6 +89,38 @@ struct SimpleActivityCalcState
   
   void serialize( std::ostream &out ) const;
   void deserialize( std::istream &in );
+};
+
+struct SimpleActivityCalcInput
+{
+  std::shared_ptr<const PeakDef> peak;
+  std::shared_ptr<DetectorPeakResponse> detector;
+  std::shared_ptr<const SpecUtils::Measurement> foreground;
+  std::shared_ptr<const SpecUtils::Measurement> background;
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> allPeaks;
+  double distance;
+  SimpleActivityGeometryType geometryType;
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> shielding;
+  double age;
+  bool backgroundSubtract;
+};
+
+struct SimpleActivityCalcResult
+{
+  double activity;
+  double activityUncertainty;
+  double nuclideMass;
+  bool isSelfAttenuating;
+  double sourceDimensions;
+  double sourceMass;
+  bool successful;
+  std::string errorMessage;
+  
+  SimpleActivityCalcResult() 
+    : activity(0.0), activityUncertainty(0.0), nuclideMass(0.0),
+      isSelfAttenuating(false), sourceDimensions(0.0), sourceMass(0.0),
+      successful(false), errorMessage("")
+  {}
 };
 
 class SimpleActivityCalcWindow : public AuxWindow
@@ -124,9 +168,28 @@ protected:
   void handleGeometryChanged();
   void handleShieldingChanged();
   void handleSpectrumChanged();
+  void handlePeaksChanged();
   
   void updateResult();
   void handleOpenAdvancedTool();
+  void handleAgeChanged();
+  
+  void updatePeakList();
+  void updateNuclideInfo();
+  std::shared_ptr<const PeakDef> getCurrentPeak() const;
+  
+  int findBestReplacementPeak( std::shared_ptr<const PeakDef> targetPeak ) const;
+  
+  double calculateActivity() const;
+  
+  static SimpleActivityCalcInput createCalcInput( const SimpleActivityCalc* instance );
+  static SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input );
+  
+  static SimpleActivityGeometryType geometryTypeFromString( const std::string& key );
+  static std::string geometryTypeToString( SimpleActivityGeometryType type );
+  static GammaInteractionCalc::GeometryType toGammaInteractionGeometry( SimpleActivityGeometryType type );
+  
+  void updateGeometryOptions();
   
   enum RenderActions
   {
@@ -134,6 +197,8 @@ protected:
     AddUndoRedoStep = 0x02,
     UpdateDisplayedSpectrum = 0x04
   };
+  
+  void scheduleRender( RenderActions action );
   
   Wt::WFlags<RenderActions> m_renderFlags;
   
@@ -145,7 +210,7 @@ protected:
   Wt::WText *m_nuclideInfo;
   Wt::WLineEdit *m_ageEdit;
   Wt::WLineEdit *m_distanceEdit;
-  DrfSelect *m_detectorDisplay;
+  DetectorDisplay *m_detectorDisplay;
   ShieldingSelect *m_shieldingSelect;
   Wt::WComboBox *m_geometrySelect;
   Wt::WText *m_resultText;
@@ -156,11 +221,9 @@ protected:
   Wt::WContainerWidget *m_ageRow;
   Wt::WContainerWidget *m_geometryRow;
   
-  std::string m_stateUri;
-  
   std::shared_ptr<const PeakDef> m_currentPeak;
-  const SandiaDecay::Nuclide *m_currentNuclide;
-  double m_currentAge;
+  
+  std::vector<double> m_peakEnergies;  // Stores energy values corresponding to m_peakSelect items
 };
 
 #endif //SimpleActivityCalc_h
