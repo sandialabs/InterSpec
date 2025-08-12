@@ -4658,6 +4658,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     // We will fit the "best" peak amplitudes.  To do this we will cluster the peaks into regions
     //  and fit them on a ROI by ROI basis; we will only fit the amplitude multiple in each region.
+    // TODO: move all this to its own function, and make parrallel over ROIs
     try
     {
       vector<vector<PeakDef>> refit_peaks( options.rel_eff_curves.size() );
@@ -4804,7 +4805,19 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         vector<double> fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts;
         assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->channel_energies() );
 
-        const shared_ptr<const vector<float>> channel_energies_ptr = cost_functor->m_energy_cal->channel_energies();
+        if( !solution.m_spectrum )
+          throw runtime_error( "Result spectrum not avaiable ?!?" );
+
+        const shared_ptr<const SpecUtils::EnergyCalibration> energy_cal = solution.m_spectrum->energy_calibration();
+        if( !energy_cal || !energy_cal->valid() )
+          throw runtime_error( "Result energy cal not avaiable ?!?" );
+
+        shared_ptr<const vector<float>> spectrum = solution.m_spectrum->gamma_counts();
+        if( !spectrum
+           || (solution.m_spectrum->num_gamma_channels() != energy_cal->num_channels()) )
+          throw runtime_error( "Spectrum energy cal num channel mismatch." );
+
+        const shared_ptr<const vector<float>> channel_energies_ptr = energy_cal->channel_energies();
 
         if( !channel_energies_ptr
            || (channel_range.first >= channel_energies_ptr->size())
@@ -4813,10 +4826,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           throw runtime_error( "Invalid energy cal." );
         }
 
-        shared_ptr<const vector<float>> spectrum = solution.m_spectrum ? solution.m_spectrum->gamma_counts() : nullptr;
-        if( !spectrum
-           || (solution.m_spectrum->num_gamma_channels() != cost_functor->m_energy_cal->num_channels()) )
-          throw runtime_error( "Spectrum energy cal num channel mismatch." );
 
         const float * const channel_counts = &((*spectrum)[channel_range.first]);
         const float * const channel_energies = &((*channel_energies_ptr)[channel_range.first]);
@@ -4829,12 +4838,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         auto new_continuum = make_shared<PeakContinuum>( *continuum );
         new_continuum->setParameters( ref_energy, fit_continuum_coefs, fit_continuum_uncerts );
 
+        double total_roi_signal_counts = 0.0;
+        for( size_t i = 0; i < fit_amps.size(); ++i )
+          total_roi_signal_counts += std::max(0.0, fit_amps[i]);
+
         for( size_t i = 0; i < fit_amps.size(); ++i )
         {
           double scale_factor_for_cluster = fit_amps[i] / effective_amps[i];
           const double rel_uncert = fit_amp_uncert[i] / fit_amps[i];
-          cout << "For range [" << clusters[i].first << ", " << clusters[i].second << "], SF=" << scale_factor_for_cluster
-          << ", uncert=" << rel_uncert << endl;
+          //cout << "For range [" << clusters[i].first << ", " << clusters[i].second << "], SF=" << scale_factor_for_cluster
+          //<< ", uncert=" << rel_uncert << endl;
 
           const vector<pair<size_t,size_t>> &range_peak_indices = peak_indices[i];
 
@@ -4852,8 +4865,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             eff.amplitude = fit_amps[i];
             eff.amplitude_uncert = fit_amp_uncert[i];
             eff.effective_sigma = effective_sigmas[i];
+            eff.fraction_roi_counts = fit_amps[i] / total_roi_signal_counts;
 
-            for( const pair<size_t,size_t> &re_peak_ind : range_peak_indices ) //TODO: store peak indices better than `range_peak_indices` (its an artifact of prev code)
+            //TODO: store peak indices better than `range_peak_indices` (its an artifact of prev code)
+            for( const pair<size_t,size_t> &re_peak_ind : range_peak_indices )
             {
               const size_t inner_rel_eff_index = re_peak_ind.first;
               if( inner_rel_eff_index != rel_eff_index )
@@ -11710,8 +11725,12 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4
       for( const auto &obs_eff : m_obs_eff_for_each_curve[rel_eff_index] )
       {
-        if( obs_eff.observed_efficiency > 0.0 && obs_eff.num_sigma_significance > 2.5 )
+        if( (obs_eff.observed_efficiency > 0.0)
+           && (obs_eff.num_sigma_significance > 2.5)
+           && (obs_eff.fraction_roi_counts > 0.05) )
+        {
           info.obs_eff_data.push_back( obs_eff );
+        }
       }
     }
 

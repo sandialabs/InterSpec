@@ -5201,8 +5201,12 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4
       for( const auto &obs_eff : answer->m_obs_eff_for_each_curve[i] )
       {
-        if( obs_eff.observed_efficiency > 0.0 && obs_eff.num_sigma_significance > 2.5 )
+        if( (obs_eff.observed_efficiency > 0.0)
+           && (obs_eff.num_sigma_significance > 2.5)
+           && (obs_eff.fraction_roi_counts > 0.05) )
+        {
           info.obs_eff_data.push_back( obs_eff );
+        }
       }
     }
     info.rel_acts = answer->m_rel_activities[i];

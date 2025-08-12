@@ -1051,6 +1051,7 @@ struct RelActAutoSolution
     double amplitude_uncert;
     /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
     double effective_sigma;
+    double fraction_roi_counts;
 
     /** The peaks, who have had their amplitudes scaled to the unconstrined fit value, who where clustered together.
      Ordered by largest peak first.
