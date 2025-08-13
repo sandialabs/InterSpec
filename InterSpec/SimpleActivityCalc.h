@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <optional>
 
 #include <Wt/WContainerWidget>
 
@@ -68,16 +69,18 @@ enum class SimpleActivityGeometryType : int
 {
   Point = 0,
   Plane = 1,
-  SelfAttenuating = 2
+  SelfAttenuating = 2,
+  TraceSrc = 3
 };
 
 struct SimpleActivityCalcState
 {
   double peakEnergy;
+  std::string nuclideName;
   std::string nuclideAgeStr;
   std::string distanceStr;
   SimpleActivityGeometryType geometryType;
-  ShieldingSourceFitCalc::ShieldingInfo shielding;
+  std::optional<ShieldingSourceFitCalc::ShieldingInfo> shielding;
   
   SimpleActivityCalcState();
   
@@ -87,22 +90,27 @@ struct SimpleActivityCalcState
   std::string encodeToUrl() const;
   void decodeFromUrl( const std::string &uri );
   
-  void serialize( std::ostream &out ) const;
-  void deserialize( std::istream &in );
+  void serialize( rapidxml::xml_node<char> * const parent_node ) const;
+  void deSerialize( const ::rapidxml::xml_node<char> *src_node, MaterialDB *materialDB = nullptr );
+  
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+  static void equalEnough( const SimpleActivityCalcState &lhs, const SimpleActivityCalcState &rhs );
+#endif
+  
+  static const int sm_xmlSerializationVersion = 0;
 };
 
 struct SimpleActivityCalcInput
 {
   std::shared_ptr<const PeakDef> peak;
-  std::shared_ptr<DetectorPeakResponse> detector;
+  std::shared_ptr<const PeakDef> background_peak;
+  std::shared_ptr<const DetectorPeakResponse> detector;
   std::shared_ptr<const SpecUtils::Measurement> foreground;
   std::shared_ptr<const SpecUtils::Measurement> background;
-  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> allPeaks;
-  double distance;
-  SimpleActivityGeometryType geometryType;
+  double distance = 0.0;
+  SimpleActivityGeometryType geometryType = SimpleActivityGeometryType::Point;
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> shielding;
-  double age;
-  bool backgroundSubtract;
+  double age = 0.0;
 };
 
 struct SimpleActivityCalcResult
@@ -180,14 +188,11 @@ protected:
   
   int findBestReplacementPeak( std::shared_ptr<const PeakDef> targetPeak ) const;
   
-  double calculateActivity() const;
-  
-  static SimpleActivityCalcInput createCalcInput( const SimpleActivityCalc* instance );
+  SimpleActivityCalcInput createCalcInput() const;
   static SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input );
   
   static SimpleActivityGeometryType geometryTypeFromString( const std::string& key );
   static std::string geometryTypeToString( SimpleActivityGeometryType type );
-  static GammaInteractionCalc::GeometryType toGammaInteractionGeometry( SimpleActivityGeometryType type );
   
   void updateGeometryOptions();
   

@@ -257,6 +257,7 @@ namespace ShieldingSourceFitCalc
     void handleAppUrl( std::string query_str, MaterialDB *materialDb );
     
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    /** Throws exception if the two shieldings are not equal. */
     static void equalEnough( const ShieldingInfo &lhs, const ShieldingInfo &rhs );
 #endif
     

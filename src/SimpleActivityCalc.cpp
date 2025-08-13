@@ -25,7 +25,6 @@
 
 #include <string>
 #include <vector>
-#include <sstream>
 #include <limits>
 
 #include <Wt/WMenu>
@@ -39,6 +38,13 @@
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
 
+#include "Minuit2/MnUserParameters.h"
+
+#include "SandiaDecay/SandiaDecay.h"
+
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
@@ -48,20 +54,19 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
-#include "InterSpec/DrfSelect.h"
 #include "InterSpec/SimpleActivityCalc.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
-#include "SandiaDecay/SandiaDecay.h"
-
-#include "Minuit2/MnUserParameters.h"
 
 #if( USE_QR_CODES )
 #include <Wt/Utils>
@@ -73,21 +78,53 @@ using namespace std;
 
 SimpleActivityCalcState::SimpleActivityCalcState()
   : peakEnergy( -1 ),
+    nuclideName( "" ),
     nuclideAgeStr( "" ),
     distanceStr( "" ),
     geometryType( SimpleActivityGeometryType::Point ),
-    shielding{}
+    shielding{} // Empty optional
 {
 }
 
 bool SimpleActivityCalcState::operator==( const SimpleActivityCalcState &rhs ) const
 {
-  return (peakEnergy == rhs.peakEnergy)
-         && (nuclideAgeStr == rhs.nuclideAgeStr)
-         && (distanceStr == rhs.distanceStr)
-         && (geometryType == rhs.geometryType)
-         // TODO: need to implement equality check for `ShieldingSourceFitCalc::ShieldingInfo` && (shielding == rhs.shielding)
-  ;
+  if( (peakEnergy != rhs.peakEnergy)
+     || (nuclideName != rhs.nuclideName)
+     || (nuclideAgeStr != rhs.nuclideAgeStr)
+     || (distanceStr != rhs.distanceStr)
+     || (geometryType != rhs.geometryType) )
+  {
+    return false;
+  }
+  
+  // Handle optional shielding comparison
+  if( shielding.has_value() != rhs.shielding.has_value() )
+    return false;
+    
+  if( shielding.has_value() )
+  {
+    try
+    {
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+      ShieldingSourceFitCalc::ShieldingInfo::equalEnough( *shielding, *rhs.shielding );
+      return true;
+#else
+      // For non-test builds, we'll do a simpler comparison since equalEnough throws exceptions
+      return (shielding->m_geometry == rhs.shielding->m_geometry)
+             && (shielding->m_isGenericMaterial == rhs.shielding->m_isGenericMaterial)
+             && (shielding->m_forFitting == rhs.shielding->m_forFitting)
+             && (std::abs(shielding->m_dimensions[0] - rhs.shielding->m_dimensions[0]) < 1e-9)
+             && (std::abs(shielding->m_dimensions[1] - rhs.shielding->m_dimensions[1]) < 1e-9)
+             && (std::abs(shielding->m_dimensions[2] - rhs.shielding->m_dimensions[2]) < 1e-9);
+#endif
+    }
+    catch( const std::exception & )
+    {
+      return false;
+    }
+  }
+  
+  return true; // Both empty optionals
 }
 
 bool SimpleActivityCalcState::operator!=( const SimpleActivityCalcState &rhs ) const
@@ -104,13 +141,163 @@ void SimpleActivityCalcState::decodeFromUrl( const std::string &uri )
 {
 }
 
-void SimpleActivityCalcState::serialize( std::ostream &out ) const
+void SimpleActivityCalcState::serialize( rapidxml::xml_node<char> * const parent_node ) const
 {
+  using namespace rapidxml;
+  
+  assert( parent_node );
+  if( !parent_node || !parent_node->document() )
+    throw std::runtime_error( "SimpleActivityCalcState::serialize: invalid parent node" );
+    
+  xml_document<char> *doc = parent_node->document();
+  xml_node<char> *base_node = doc->allocate_node( node_element, "SimpleActivityCalcState" );
+  parent_node->append_node( base_node );
+  
+  XmlUtils::append_version_attrib( base_node, SimpleActivityCalcState::sm_xmlSerializationVersion );
+  
+  // Serialize basic fields
+  XmlUtils::append_float_node( base_node, "PeakEnergy", peakEnergy );
+  XmlUtils::append_string_node( base_node, "NuclideName", nuclideName );
+  XmlUtils::append_string_node( base_node, "NuclideAgeStr", nuclideAgeStr );
+  XmlUtils::append_string_node( base_node, "DistanceStr", distanceStr );
+  
+  // Serialize geometry type as integer
+  XmlUtils::append_int_node( base_node, "GeometryType", static_cast<int>(geometryType) );
+  
+  // Serialize shielding info only if present
+  if( shielding.has_value() )
+  {
+    shielding->serialize( base_node );
+  }
 }
 
-void SimpleActivityCalcState::deserialize( std::istream &in )
+void SimpleActivityCalcState::deSerialize( const ::rapidxml::xml_node<char> *src_node, MaterialDB *materialDB )
 {
+  using namespace rapidxml;
+  
+  try
+  {
+    if( !src_node )
+      throw std::runtime_error( "SimpleActivityCalcState::deSerialize: invalid input node" );
+    
+    if( !rapidxml::internal::compare( src_node->name(), src_node->name_size(), "SimpleActivityCalcState", 23, false ) )
+      throw std::logic_error( "SimpleActivityCalcState::deSerialize: invalid input node name" );
+    
+    // Check version compatibility
+    static_assert( SimpleActivityCalcState::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+    XmlUtils::check_xml_version( src_node, SimpleActivityCalcState::sm_xmlSerializationVersion );
+    
+    // Deserialize basic fields
+    peakEnergy = XmlUtils::get_float_node_value( src_node, "PeakEnergy" );
+    
+    const rapidxml::xml_node<char> *nuclide_name_node = XML_FIRST_NODE( src_node, "NuclideName" );
+    if( nuclide_name_node )
+      nuclideName = SpecUtils::xml_value_str( nuclide_name_node );
+    
+    const rapidxml::xml_node<char> *age_str_node = XML_FIRST_NODE( src_node, "NuclideAgeStr" );
+    if( age_str_node )
+      nuclideAgeStr = SpecUtils::xml_value_str( age_str_node );
+    
+    const rapidxml::xml_node<char> *distance_str_node = XML_FIRST_NODE( src_node, "DistanceStr" );
+    if( distance_str_node )
+      distanceStr = SpecUtils::xml_value_str( distance_str_node );
+    
+    // Deserialize geometry type from integer
+    const rapidxml::xml_node<char> *geom_type_node = XML_FIRST_NODE( src_node, "GeometryType" );
+    int geomTypeInt = 0; // Default to Point
+    if( geom_type_node )
+    {
+      const std::string geom_str = SpecUtils::xml_value_str( geom_type_node );
+      geomTypeInt = std::stoi( geom_str );
+    }
+    geometryType = static_cast<SimpleActivityGeometryType>(geomTypeInt);
+    
+    // Validate geometry type value
+    if( geomTypeInt < 0 || geomTypeInt > static_cast<int>(SimpleActivityGeometryType::TraceSrc) )
+      throw std::runtime_error( "SimpleActivityCalcState::deSerialize: invalid geometry type value" );
+    
+    // Deserialize shielding info - find the ShieldingInfo node
+    const rapidxml::xml_node<char> *shielding_node = XML_FIRST_NODE( src_node, "Shielding" );
+    if( shielding_node )
+    {
+      shielding = ShieldingSourceFitCalc::ShieldingInfo();
+      shielding->deSerialize( shielding_node, materialDB );
+    }
+    else
+    {
+      // If no shielding node found, leave as empty optional
+      shielding.reset();
+    }
+  }
+  catch( const std::exception &e )
+  {
+    // Reset to default state on any error
+    *this = SimpleActivityCalcState();
+    throw std::runtime_error( std::string("SimpleActivityCalcState::deSerialize: ") + e.what() );
+  }
 }
+
+#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+void SimpleActivityCalcState::equalEnough( const SimpleActivityCalcState &lhs, const SimpleActivityCalcState &rhs )
+{
+  // Compare peak energy
+  if( std::abs(lhs.peakEnergy - rhs.peakEnergy) > 1e-6 )
+  {
+    throw std::runtime_error( "SimpleActivityCalcState::equalEnough: peakEnergy differs - LHS=" 
+                             + std::to_string(lhs.peakEnergy) + ", RHS=" + std::to_string(rhs.peakEnergy) );
+  }
+  
+  // Compare nuclide name
+  if( lhs.nuclideName != rhs.nuclideName )
+  {
+    throw std::runtime_error( "SimpleActivityCalcState::equalEnough: nuclideName differs - LHS='" 
+                             + lhs.nuclideName + "', RHS='" + rhs.nuclideName + "'" );
+  }
+  
+  // Compare nuclide age string
+  if( lhs.nuclideAgeStr != rhs.nuclideAgeStr )
+  {
+    throw std::runtime_error( "SimpleActivityCalcState::equalEnough: nuclideAgeStr differs - LHS='" 
+                             + lhs.nuclideAgeStr + "', RHS='" + rhs.nuclideAgeStr + "'" );
+  }
+  
+  // Compare distance string
+  if( lhs.distanceStr != rhs.distanceStr )
+  {
+    throw std::runtime_error( "SimpleActivityCalcState::equalEnough: distanceStr differs - LHS='" 
+                             + lhs.distanceStr + "', RHS='" + rhs.distanceStr + "'" );
+  }
+  
+  // Compare geometry type
+  if( lhs.geometryType != rhs.geometryType )
+  {
+    throw std::runtime_error( "SimpleActivityCalcState::equalEnough: geometryType differs - LHS=" 
+                             + std::to_string(static_cast<int>(lhs.geometryType)) + ", RHS=" + std::to_string(static_cast<int>(rhs.geometryType)) );
+  }
+  
+  // Compare optional shielding
+  if( lhs.shielding.has_value() != rhs.shielding.has_value() )
+  {
+    throw std::runtime_error( "SimpleActivityCalcState::equalEnough: shielding presence differs - LHS has_value=" 
+                             + std::string(lhs.shielding.has_value() ? "true" : "false") + ", RHS has_value=" + std::string(rhs.shielding.has_value() ? "true" : "false") );
+  }
+  
+  // If both have shielding, compare using ShieldingInfo::equalEnough
+  if( lhs.shielding.has_value() && rhs.shielding.has_value() )
+  {
+    try
+    {
+      ShieldingSourceFitCalc::ShieldingInfo::equalEnough( *lhs.shielding, *rhs.shielding );
+    }
+    catch( const std::exception &e )
+    {
+      throw std::runtime_error( "SimpleActivityCalcState::equalEnough: shielding differs - " + std::string(e.what()) );
+    }
+  }
+}//void SimpleActivityCalcState::equalEnough( const SimpleActivityCalcState &lhs, const SimpleActivityCalcState &rhs )
+#endif
 
 SimpleActivityCalcWindow::SimpleActivityCalcWindow( MaterialDB *materialDB,
                                                   Wt::WSuggestionPopup *materialSuggestion,
@@ -194,6 +381,9 @@ SimpleActivityCalc::SimpleActivityCalc( MaterialDB *materialDB,
   m_geometryRow( nullptr ),
   m_currentPeak( nullptr )
 {
+  if( !m_materialDB )
+    throw logic_error( "SimpleActivityCalc requires a valid MaterialDB." );
+  
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
   if( app )
   {
@@ -348,11 +538,112 @@ std::string SimpleActivityCalc::encodeStateToUrl() const
 
 SimpleActivityCalcState SimpleActivityCalc::currentState() const
 {
-  return SimpleActivityCalcState();
+  SimpleActivityCalcState state;
+  
+  // Get current peak and nuclide information
+  auto peak = getCurrentPeak();
+  if( peak )
+  {
+    state.peakEnergy = peak->mean();
+    const SandiaDecay::Nuclide *nuc = peak->parentNuclide();
+    if( nuc )
+      state.nuclideName = nuc->symbol;
+  }
+  
+  // Get age string
+  if( m_ageEdit )
+    state.nuclideAgeStr = m_ageEdit->text().toUTF8();
+  
+  // Get distance string
+  if( m_distanceEdit )
+    state.distanceStr = m_distanceEdit->text().toUTF8();
+  
+  // Get geometry type
+  if( m_geometrySelect && m_geometrySelect->currentIndex() >= 0 )
+  {
+    const std::string key = m_geometrySelect->currentText().toUTF8();
+    state.geometryType = geometryTypeFromString( key );
+  }
+  
+  // Get shielding info only if not "no shielding"
+  if( m_shieldingSelect && !m_shieldingSelect->isNoShielding() )
+  {
+    try
+    {
+      state.shielding = m_shieldingSelect->toShieldingInfo();
+    }
+    catch( const std::exception &e )
+    {
+      // If error getting shielding, leave it as empty optional
+      state.shielding.reset();
+    }
+  }
+  else
+  {
+    // No shielding selected
+    state.shielding.reset();
+  }
+  
+  return state;
 }
 
 void SimpleActivityCalc::setState( const SimpleActivityCalcState &state )
 {
+  // Set peak based on energy and nuclide name
+  if( state.peakEnergy > 0 && !state.nuclideName.empty() )
+  {
+    setPeakFromEnergy( state.peakEnergy );
+  }
+  
+  // Set age string
+  if( m_ageEdit && !state.nuclideAgeStr.empty() )
+    m_ageEdit->setText( WString::fromUTF8(state.nuclideAgeStr) );
+  
+  // Set distance string
+  if( m_distanceEdit && !state.distanceStr.empty() )
+    m_distanceEdit->setText( WString::fromUTF8(state.distanceStr) );
+  
+  // Set shielding info first (before geometry, so geometry options can be updated appropriately)
+  if( m_shieldingSelect )
+  {
+    if( state.shielding.has_value() )
+    {
+      try
+      {
+        m_shieldingSelect->fromShieldingInfo( state.shielding.value() );
+      }
+      catch( const std::exception &e )
+      {
+        // If error setting shielding, clear it
+        m_shieldingSelect->setToNoShielding();
+      }
+    }
+    else
+    {
+      // No shielding in state - set to no shielding
+      m_shieldingSelect->setToNoShielding();
+    }
+  }
+  
+  // Update geometry options based on current detector, peak, and shielding
+  updateGeometryOptions();
+  
+  // Now try to set geometry type if the desired option is available
+  if( m_geometrySelect )
+  {
+    const std::string geometryStr = geometryTypeToString( state.geometryType );
+    for( int i = 0; i < m_geometrySelect->count(); ++i )
+    {
+      if( m_geometrySelect->itemText(i).toUTF8().find( geometryStr ) != std::string::npos )
+      {
+        m_geometrySelect->setCurrentIndex( i );
+        break;
+      }
+    }
+  }
+  
+  // Update display
+  updateResult();
 }
 
 void SimpleActivityCalc::updatePeakList()
@@ -483,7 +774,7 @@ void SimpleActivityCalc::updateNuclideInfo()
   const double activity = 1.0*PhysicalUnits::bq;
   const double real_time = 1.0;
   const bool decay_correct = false;
-  const double cluster_num_sigma = 1.5;
+  const double cluster_num_sigma = 1.25;
   
   SandiaDecay::NuclideMixture mixture;
   mixture.addNuclideByActivity( nuc, GammaInteractionCalc::ShieldingSourceChi2Fcn::sm_activityUnits);
@@ -763,13 +1054,84 @@ void SimpleActivityCalc::updateResult()
   
   try
   {
-    const double activity = calculateActivity();
-    if( activity > 0.0 )
+    const SimpleActivityCalcInput input = createCalcInput();
+    const SimpleActivityCalcResult result = performCalculation( input );
+    
+    if( !result.successful )
     {
-      char buffer[256];
-      const std::string actStr = PhysicalUnits::printToBestActivityUnits(activity);
-      snprintf( buffer, sizeof(buffer), "Activity: %s", actStr.c_str() );
-      m_resultText->setText( WString::fromUTF8(buffer) );
+      m_errorText->setText( WString::fromUTF8("Calculation error: ") + WString::fromUTF8(result.errorMessage) );
+      m_errorText->show();
+      return;
+    }
+    
+    if( result.activity > 0.0 )
+    {
+      string resultStr;
+      
+      switch( input.geometryType )
+      {
+        case SimpleActivityGeometryType::Point:
+        case SimpleActivityGeometryType::TraceSrc:
+        case SimpleActivityGeometryType::SelfAttenuating:
+        {
+          resultStr = "Activity: " + PhysicalUnits::printToBestActivityUnits(result.activity);
+          if( result.activityUncertainty > 0.0 )
+            resultStr += " ± " + PhysicalUnits::printToBestActivityUnits(result.activityUncertainty);
+          
+          if( input.geometryType == SimpleActivityGeometryType::SelfAttenuating )
+          {
+            const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+            const SandiaDecay::Nuclide * const nuc = input.peak ? input.peak->parentNuclide() : nullptr;
+            const SandiaDecay::Element *el = (db && nuc) ? db->element( nuc->atomicNumber ) : nullptr;
+            assert( el );
+            if( el )
+              resultStr += "<br/>(used " + el->symbol + " 100% " + nuc->symbol + ")";
+            
+            if( result.sourceDimensions > 0.0 )
+            {
+              const std::string dimStr = PhysicalUnits::printToBestLengthUnits(result.sourceDimensions);
+              resultStr += "<br/>Source radius: " + dimStr;
+            }
+            if( result.nuclideMass > 0.0 )
+            {
+              const std::string srcMassStr = PhysicalUnits::printToBestMassUnits(result.nuclideMass);
+              resultStr += "<br/>" + string(nuc ? nuc->symbol : "null") + " mass: " + srcMassStr;
+            }
+          }//if( input.geometryType == SimpleActivityGeometryType::SelfAttenuating )
+          
+          break;
+        }//case SimpleActivityGeometryType::Point, TraceSrc, SelfAttenuating
+          
+        case SimpleActivityGeometryType::Plane:
+        {
+          // We will make the activity per cm2.
+          assert( (input.shielding.size() >= 1) && (input.shielding[0].m_traceSources.size() == 1) );
+          
+          if( (input.shielding.size() >= 1) && (input.shielding[0].m_traceSources.size() > 0) )
+          {
+            const ShieldingSourceFitCalc::ShieldingInfo &shield = input.shielding[0];
+            assert( shield.m_traceSources[0].m_type == GammaInteractionCalc::TraceActivityType::TotalActivity );
+            
+            const double surface_area = PhysicalUnits::pi * std::pow(shield.m_dimensions[0], 2.0);
+            const double surface_area_cm2 = surface_area / PhysicalUnits::cm2;
+            const double activity_cm2 = result.activity / surface_area_cm2;
+            
+            resultStr = "Act/cm<sup>2</sup>: " + PhysicalUnits::printToBestActivityUnits(activity_cm2);
+            if( result.activityUncertainty > 0.0 )
+            {
+              const double uncert_cm2 = result.activityUncertainty / surface_area_cm2;
+              resultStr += " ± " + PhysicalUnits::printToBestActivityUnits(uncert_cm2);
+            }
+            resultStr += " /cm<sup>2</sup>";
+          }else
+          {
+            resultStr = "Unexpected error converting result";
+          }
+          break;
+        }//case SimpleActivityGeometryType::Plane:
+      }//switch( input.geometryType )
+      
+      m_resultText->setText( WString::fromUTF8(resultStr) );
     }
     else
     {
@@ -784,197 +1146,442 @@ void SimpleActivityCalc::updateResult()
   }
 }
 
-double SimpleActivityCalc::calculateActivity() const
+SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
 {
+  SimpleActivityCalcInput input;
+  
   // Get current peak
-  auto peak = getCurrentPeak();
-  if( !peak || !peak->parentNuclide() )
+  const shared_ptr<const PeakDef> spectrum_peak = getCurrentPeak();
+  
+  if( !spectrum_peak || !spectrum_peak->parentNuclide() )
     throw std::runtime_error( "No valid peak selected" );
-    
-  // Get detector
-  auto detector = m_detectorDisplay ? m_detectorDisplay->detector() : nullptr;
-  if( !detector )
-    throw std::runtime_error( "No detector response available" );
-    
+  
+  // Make a copy of the peak, so we dont mess the original up, and make sure
+  //  it is marked to actually be used for act/shield fit
+  shared_ptr<PeakDef> peak = make_shared<PeakDef>( *spectrum_peak );
+  peak->setContinuum( make_shared<PeakContinuum>( *peak->continuum() ));
+  peak->useForShieldingSourceFit( true );
+  input.peak = peak;
+  
+  const SandiaDecay::Nuclide *nuc = input.peak ? input.peak->parentNuclide() : nullptr;
+  const SandiaDecay::Transition *trans = input.peak ? input.peak->nuclearTransition() : nullptr;
+  
+  
   // Get foreground spectrum
   if( !m_viewer )
     throw std::runtime_error( "No InterSpec viewer available" );
     
-  auto foregroundSpecMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<const SpecMeas> foregroundSpecMeas = m_viewer->measurment( SpecUtils::SpectrumType::Foreground );
   if( !foregroundSpecMeas )
     throw std::runtime_error( "No foreground spectrum available" );
-    
-  // Get background spectrum (optional)
-  auto backgroundSpecMeas = m_viewer->measurment( SpecUtils::SpectrumType::Background );
   
-  // Convert to SpecUtils::Measurement using the displayed sample numbers
-  std::set<int> foreground_samples = m_viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
-  std::shared_ptr<const SpecUtils::Measurement> foreground = 
-    foregroundSpecMeas->sum_measurements( foreground_samples, foregroundSpecMeas->detector_names(), nullptr );
-    
-  if( !foreground )
-    throw std::runtime_error( "Could not sum foreground measurements" );
-    
-  std::shared_ptr<const SpecUtils::Measurement> background;
-  if( backgroundSpecMeas )
-  {
-    std::set<int> background_samples = m_viewer->displayedSamples( SpecUtils::SpectrumType::Background );
-    background = backgroundSpecMeas->sum_measurements( background_samples, backgroundSpecMeas->detector_names(), nullptr );
-  }
+  // Get the detector
+  input.detector = foregroundSpecMeas->detector();
+  if( !input.detector )
+    throw std::runtime_error( "No detector response available" );
   
-  // Get current peaks
-  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> allPeaks = m_viewer->peakModel()->peaks();
-  if( !allPeaks )
-    throw std::runtime_error( "No peaks available" );
-    
-  // Set up the data structures required by the framework
-  std::vector<ShieldingSourceFitCalc::ShieldingInfo> shield_definitions;
-  std::vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions;
-  ShieldingSourceFitCalc::ShieldingSourceFitOptions fit_options;
+  // Get spectra
+  input.foreground = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  input.background = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
+  
+  if( !input.foreground )
+    throw std::runtime_error( "Could not get foreground spectrum" );
   
   // Set up geometry and distance
-  double distance = 1.0 * PhysicalUnits::meter; // default 1 meter
-  GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::Spherical;
-  
-  if( detector->isFixedGeometry() )
+  if( input.detector->isFixedGeometry() )
   {
-    distance = detector->detectorDiameter(); // Use detector diameter for fixed geometry
-  }
-  else if( m_distanceEdit && !m_distanceEdit->text().empty() )
+    input.distance = 0.0;
+    input.geometryType = SimpleActivityGeometryType::Point;
+  }else
   {
     try
     {
-      distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
-    }
-    catch( const std::exception &e )
+      input.distance = PhysicalUnits::stringToDistance( m_distanceEdit->text().toUTF8() );
+    }catch( const std::exception &e )
     {
       throw std::runtime_error( "Invalid distance: " + std::string(e.what()) );
     }
-  }
-  
-  // Set up geometry based on user selection
-  if( m_geometrySelect && m_geometrySelect->currentIndex() >= 0 && !detector->isFixedGeometry() )
-  {
-    switch( m_geometrySelect->currentIndex() )
+    
+    const std::string geom_key = m_geometrySelect->currentText().toUTF8();
+    input.geometryType = geometryTypeFromString( geom_key );
+    
+    switch( input.geometryType )
     {
-      case 0: geometry = GammaInteractionCalc::GeometryType::Spherical; break;
-      case 1: geometry = GammaInteractionCalc::GeometryType::Rectangular; break; // Infinite plane approximation
-      case 2: geometry = GammaInteractionCalc::GeometryType::Spherical; break; // Spherical trace source
-      case 3: geometry = GammaInteractionCalc::GeometryType::Spherical; break; // Self-attenuating sphere
-      default: geometry = GammaInteractionCalc::GeometryType::Spherical; break;
-    }
-  }
+      case SimpleActivityGeometryType::Point:
+      {
+        if( !m_shieldingSelect->isNoShielding() )
+        {
+          ShieldingSourceFitCalc::ShieldingInfo info = m_shieldingSelect->toShieldingInfo();
+          input.shielding.push_back( info );
+        }//if( !m_shieldingSelect->isNoShielding() )
+        
+        break;
+      }//case SimpleActivityGeometryType::Point:
+        
+      case SimpleActivityGeometryType::Plane:
+      {
+        ShieldingSourceFitCalc::TraceSourceInfo trace_info;
+        trace_info.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+        trace_info.m_fitActivity = true;
+        trace_info.m_nuclide = nuc;
+        trace_info.m_activity = 1.0E-6*PhysicalUnits::curie; //starting value only
+        trace_info.m_relaxationDistance = 0.0; //not applicable
+        
+        ShieldingSourceFitCalc::ShieldingInfo trace_shield;
+        trace_shield.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+        trace_shield.m_isGenericMaterial = false;
+        trace_shield.m_forFitting = true;
+        const Material *air = m_materialDB->material( "Air" );
+        assert( air );
+        if( !air )
+          throw runtime_error( "No Air material in DB?!?" );
+        trace_shield.m_material = make_shared<Material>( *air );
+        
+        trace_shield.m_dimensions[0] = 50.0*PhysicalUnits::meter; //radius
+        trace_shield.m_dimensions[1] = 1.0*PhysicalUnits::mm;     //half-length
+        trace_shield.m_dimensions[2] = 0.0; //N/A
+        trace_shield.m_fitDimensions[0] = trace_shield.m_fitDimensions[1] = trace_shield.m_fitDimensions[2] = false;
+        
+        trace_shield.m_traceSources.push_back( trace_info );
+        
+        input.shielding.insert( begin(input.shielding), trace_shield ); //Make sure goes in the front
+        
+        if( !m_shieldingSelect->isNoShielding() )
+        {
+          ShieldingSourceFitCalc::ShieldingInfo info = m_shieldingSelect->toShieldingInfo();
+          if( !info.m_isGenericMaterial )
+          {
+            info.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+            info.m_dimensions[1] = info.m_dimensions[0];
+            info.m_dimensions[0] = info.m_dimensions[2] = 0.0;
+            info.m_fitDimensions[0] = info.m_fitDimensions[1] = info.m_fitDimensions[2];
+          }//if( !info.m_isGenericMaterial )
+          
+          input.shielding.push_back( info );
+        }//if( !m_shieldingSelect->isNoShielding() )
+        
+        break;
+      }//case SimpleActivityGeometryType::Plane:
+        
+        
+      case SimpleActivityGeometryType::SelfAttenuating:
+      {
+        if( m_shieldingSelect->isNoShielding() || m_shieldingSelect->isGenericMaterial() )
+          throw runtime_error( "You must have a material shielding defined for self-attenuation." );
+          
+        ShieldingSourceFitCalc::ShieldingInfo info = m_shieldingSelect->toShieldingInfo();
+        assert( info.m_material );
+        if( !info.m_material )
+          throw runtime_error( "No valid material defined for self-attenuation." );
+        
+        info.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+        info.m_isGenericMaterial = false;
+        info.m_dimensions[0] = 1.0*PhysicalUnits::cm; //staring radius
+        info.m_fitDimensions[0] = true;
+        info.m_fitDimensions[1] = info.m_fitDimensions[2] = false;
+        
+        const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+        if( !db )
+          throw runtime_error( "Invalid SandiaDecayDataBase?!?" );
+        
+        const SandiaDecay::Element * const el = db->element( nuc->atomicNumber );
+        assert( el );
+        if( !el )
+          throw runtime_error( "Invalid element?!?" );
+        
+        bool has_element = false;
+        for( const pair<const SandiaDecay::Element *,float> &el_frac : info.m_material->elements )
+        {
+          if( el_frac.first != el )
+            continue;
+          has_element = true;
+          break;
+        }
+        
+        for( const pair<const SandiaDecay::Nuclide *,float> &nuc_frac : info.m_material->nuclides )
+        {
+          if( has_element )
+            break;
+        }
+        
+        if( !has_element )
+          throw runtime_error( "Shielding material selected does not contain the element for the current source nuclide." );
+          
+        // TODO: currently we are just putting the isotope in as 100% of the element... need to give the user an option to set this
+        
+        double massFraction = 1.0;
+        info.m_nuclideFractions_[el].push_back( {nuc,massFraction,false} );
+        
+        input.shielding.push_back( info );
+        
+        break;
+      }//case SimpleActivityGeometryType::SelfAttenuating:
+        
+        
+      case SimpleActivityGeometryType::TraceSrc:
+      {
+        if( m_shieldingSelect->isNoShielding() || m_shieldingSelect->isGenericMaterial() )
+          throw runtime_error( "You must have a material shielding defined for trace-source." );
+        
+        ShieldingSourceFitCalc::ShieldingInfo info = m_shieldingSelect->toShieldingInfo();
+        assert( info.m_material );
+        if( !info.m_material )
+          throw runtime_error( "No valid material defined for trace-source." );
+        
+        info.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+        info.m_isGenericMaterial = false;
+        if( info.m_dimensions[0] <= 1.0*PhysicalUnits::um )
+          throw runtime_error( "Shielding for trace source must have non-zero thickness" );
+        
+        info.m_fitDimensions[0] = info.m_fitDimensions[1] = info.m_fitDimensions[2] = false;
+        
+        ShieldingSourceFitCalc::TraceSourceInfo trace_info;
+        trace_info.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+        trace_info.m_fitActivity = true;
+        trace_info.m_nuclide = nuc;
+        trace_info.m_activity = 1.0E-6*PhysicalUnits::curie;  //starting value only
+        trace_info.m_relaxationDistance = 0.0; //not applicable
+        
+        info.m_traceSources.push_back( trace_info );
+        
+        input.shielding.push_back( info );
+        break;
+      }//case SimpleActivityGeometryType::TraceSrc
+    }//switch( input.geometryType )
+  }//if( !input.detector->isFixedGeometry() ) / else
   
-  // Set up shielding from ShieldingSelect widget
-  if( m_shieldingSelect && !m_shieldingSelect->isNoShielding() )
-  {
-    try
-    {
-      ShieldingSourceFitCalc::ShieldingInfo shielding = m_shieldingSelect->toShieldingInfo();
-      shield_definitions.push_back( shielding );
-    }
-    catch( const std::exception &e )
-    {
-      // If no shielding, that's okay - just use empty vector
-    }
-  }
   
-  const SandiaDecay::Nuclide *nuc = peak ? peak->parentNuclide() : nullptr;
-  const SandiaDecay::Transition *trans = peak ? peak->nuclearTransition() : nullptr;
   const bool is_parent_gamma = trans && trans->parent && (trans->parent == nuc);
   
-  // Set up source definition
-  ShieldingSourceFitCalc::SourceFitDef source;
-  source.nuclide = nuc;
-  source.activity = 1.0 * PhysicalUnits::curie; // Initial guess - will be fit
-  source.fitActivity = true;
-  source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
-  source.fitAge = false; // Don't fit age, use user-specified value
-  source.age = PeakDef::defaultDecayTime( source.nuclide );
-  
   // Set up age if specified
-  if( !is_parent_gamma && !PeakDef::ageFitNotAllowed(source.nuclide) )
+  input.age = PeakDef::defaultDecayTime( nuc );
+  if( !is_parent_gamma && !PeakDef::ageFitNotAllowed(nuc) )
   {
     try
     {
-      source.age = PhysicalUnits::stringToTimeDuration( m_ageEdit->text().toUTF8() );
+      input.age = PhysicalUnits::stringToTimeDuration( m_ageEdit->text().toUTF8() );
     }catch( const std::exception &e )
     {
-      
+      // Use default age on error
     }
-  }//if( !is_parent_gamma && !PeakDef::ageFitNotAllowed(source.nuclide) )
+  }//if( we want an age )
   
+  return input;
+}//createCalcInput()
+
+
+SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleActivityCalcInput& input )
+{
+  SimpleActivityCalcResult result;
   
-  source.ageDefiningNuc = nullptr;
-  src_definitions.push_back( source );
-  
-  // Set up fit options
-  fit_options.multiple_nucs_contribute_to_peaks = true; // Incase there are multiple
-  //fit_options.photopeak_cluster_sigma = 1.25;
-  fit_options.attenuate_for_air = true;
-  // We should background subtract only if we have a compatible background peak
-  fit_options.background_peak_subtract = (background != nullptr);
-  fit_options.same_age_isotopes = false;
-  
-  // Filter peaks to just those with the selected nuclide
-  std::deque<std::shared_ptr<const PeakDef>> foreground_peaks;
-  std::deque<std::shared_ptr<const PeakDef>> background_peaks;
-  
-  // I think we just want to use the one peak the user has selected.
-  for( const auto &p : *allPeaks )
+  try
   {
-    if( p && p->parentNuclide() == source.nuclide )
+    if( !input.peak )
+      throw runtime_error( "No peak provided." );
+      
+    if( !input.detector || !input.detector->isValid() )
+      throw runtime_error( "No detector efficiency provided." );
+    
+    const SandiaDecay::Nuclide *nuc = input.peak->parentNuclide();
+    if( !nuc )
+      throw runtime_error( "No nuclide associated with input peak." );
+    
+    if( input.background_peak )
     {
-      foreground_peaks.push_back( p );
+      if( fabs(input.background_peak->mean() - input.peak->mean()) > input.peak->fwhm() )
+        throw runtime_error( "Background peak mean greater than 1 FWHM away from foreground peak." );
     }
-  }
-  
-  if( foreground_peaks.empty() )
-    throw std::runtime_error( "No peaks found for selected nuclide" );
     
-  // Create the fitting function
-  std::pair<std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
-                                                         shield_definitions, src_definitions, detector,
-                                                         foreground, background, 
-                                                         foreground_peaks, 
-                                                         std::make_shared<const std::deque<std::shared_ptr<const PeakDef>>>(background_peaks), 
-                                                         fit_options );
-  
-  auto inputPrams = std::make_shared<ROOT::Minuit2::MnUserParameters>();
-  *inputPrams = fcn_pars.second;
-  
-  auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
-  auto fit_results = std::make_shared<ShieldingSourceFitCalc::ModelFitResults>();
-  
-  auto progress_fcn = [](){
-    // No progress updates needed for simple case
-  };
-  
-  bool finished_fit_called = false;
-  auto finished_fcn = [&finished_fit_called](){
-    finished_fit_called = true;
-  };
-  
-  // Do the fit
-  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
-  
-  if( !finished_fit_called )
-    throw std::runtime_error( "Fit was cancelled or did not complete" );
+    assert( !input.detector->isFixedGeometry() || (input.geometryType == SimpleActivityGeometryType::Point) );
+    if( input.detector->isFixedGeometry() && (input.geometryType != SimpleActivityGeometryType::Point) )
+      throw runtime_error( "Fixed geometry detector efficiencies must be point geometry" );
     
-  if( fit_results->successful != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final )
-    throw std::runtime_error( "Fit was not successful" );
+    // Set up the data structures required by the framework
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions fit_options;
+    fit_options.multiple_nucs_contribute_to_peaks = true;
+    fit_options.attenuate_for_air = true;
+    fit_options.account_for_decay_during_meas = false;
+    fit_options.photopeak_cluster_sigma = 1.25;
+    fit_options.background_peak_subtract = !!input.background_peak;
+    fit_options.same_age_isotopes = false;
     
-  // Extract the activity result
-  if( fit_results->fit_src_info.empty() )
-    throw std::runtime_error( "No fit results available" );
+    // Set up source definition
+    ShieldingSourceFitCalc::SourceFitDef source;
+    source.nuclide = nuc;
+    source.activity = 1.0 * PhysicalUnits::curie; // will be fit
+    source.fitActivity = true;
+    source.fitAge = false; // Don't fit age, use user-specified value
+    source.age = input.age;
+    source.ageDefiningNuc = nullptr;
     
-  const ShieldingSourceFitCalc::IsoFitStruct &fitResult = fit_results->fit_src_info[0];
+    const vector<ShieldingSourceFitCalc::ShieldingInfo> &shielding = input.shielding;
+    GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::Spherical;
+    
+    switch( input.geometryType )
+    {
+      case SimpleActivityGeometryType::Point:
+      {
+        geometry = GammaInteractionCalc::GeometryType::Spherical;
+        source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+        break;
+      }//case SimpleActivityGeometryType::Point:
+        
+      case SimpleActivityGeometryType::Plane:
+      {
+        if( input.detector->isFixedGeometry() )
+          throw std::logic_error( "Infinite plane source not allowed for fixed geometry detector" );
+        
+        geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+        source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+        
+        assert( (shielding.size() == 1) || (shielding.size() == 2) );
+        if( (shielding.size() != 1) && (shielding.size() != 2) )
+          throw runtime_error( "Invalid inifinite plane input - must have 1 or 2 shieldings." );
+        
+        if( shielding[0].m_traceSources.size() != 1 )
+          throw runtime_error( "Invalid inifinite plane input - must have trace-source defined." );
   
-  if( fitResult.nuclide != source.nuclide )
-    throw std::runtime_error( "Fit result nuclide mismatch" );
+        assert( shielding[0].m_geometry == GammaInteractionCalc::GeometryType::CylinderEndOn );
+        if( shielding[0].m_geometry != GammaInteractionCalc::GeometryType::CylinderEndOn )
+          throw logic_error( "Unexpected trace source geometery" );
+        
+        break;
+      }//case SimpleActivityGeometryType::Plane:
+        
+      case SimpleActivityGeometryType::SelfAttenuating:
+      {
+        if( input.detector->isFixedGeometry() )
+          throw std::logic_error( "Self attenuating source not allowed for fixed geometry detector" );
+        
+        source.fitActivity = false;
+        geometry = GammaInteractionCalc::GeometryType::Spherical;
+        source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Intrinsic;
+        if( shielding.empty() )
+          throw runtime_error( "You must have a shielding defined for a self-attenuating source." );
+        
+        const ShieldingSourceFitCalc::ShieldingInfo &shield = shielding.front();
+        if( !shield.m_material || shield.m_isGenericMaterial )
+          throw logic_error( "No material defined for self-attenuating source" );
+        
+        if( shield.m_geometry != GammaInteractionCalc::GeometryType::Spherical )
+          throw logic_error( "Geometry for self-attenuating source not spherical" );
+        
+        if( (shield.m_nuclideFractions_.size() != 1)
+           || (begin(shield.m_nuclideFractions_)->second.size() != 1) )
+          throw logic_error( "No source nuclides defined for self attenuation" );
+        
+        if( get<0>(begin(shield.m_nuclideFractions_)->second.front()) != nuc )
+          throw logic_error( "Self-attenuating nuclide doesnt match to peak" );
+        
+        break;
+      }//case SimpleActivityGeometryType::SelfAttenuating:
+        
+      case SimpleActivityGeometryType::TraceSrc:
+      {
+        if( input.detector->isFixedGeometry() )
+          throw std::logic_error( "Trace source not allowed for fixed geometry detector" );
+        
+        geometry = GammaInteractionCalc::GeometryType::Spherical;
+        source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+        if( shielding.empty() )
+          throw runtime_error( "You must have a shielding defined for a trace source." );
+        
+        break;
+      }//case SimpleActivityGeometryType::TraceSrc:
+    }//switch( input.geometryType )
     
-  return fitResult.activity;
+    if( input.detector->isFixedGeometry() )
+      geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  
+      
+    vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions( 1, source );
+    
+    
+    // Create peak collections for the calculation
+    deque<std::shared_ptr<const PeakDef>> foreground_peaks( 1, input.peak );
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> background_peaks;
+    if( input.background_peak )
+    {
+      auto bg_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+      bg_peaks->push_back( input.background_peak );
+      background_peaks = bg_peaks;
+    }
+    
+      
+    // Create the fitting function
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input.distance, geometry,
+                                                           shielding, src_definitions, input.detector,
+                                                           input.foreground, input.background, 
+                                                           foreground_peaks, 
+                                                           background_peaks,
+                                                           fit_options );
+    
+    auto inputPrams = std::make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+    
+    auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto fit_results = std::make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    
+    auto progress_fcn = [](){
+      // No progress updates needed for simple case
+    };
+    
+    bool finished_fit_called = false;
+    auto finished_fcn = [&finished_fit_called](){
+      finished_fit_called = true;
+    };
+    
+    // Do the fit
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn, fit_results, finished_fcn );
+    
+    if( !finished_fit_called )
+      throw std::runtime_error( "Fit was cancelled or did not complete" );
+      
+    if( fit_results->successful != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final )
+      throw std::runtime_error( "Fit was not successful" );
+      
+    // Extract the activity result
+    if( fit_results->fit_src_info.empty() )
+      throw std::runtime_error( "No fit results available" );
+      
+    const ShieldingSourceFitCalc::IsoFitStruct &fitResult = fit_results->fit_src_info[0];
+    
+    if( fitResult.nuclide != source.nuclide )
+      throw std::runtime_error( "Fit result nuclide mismatch" );
+      
+    result.successful = true;
+    result.activity = fitResult.activity;
+    result.activityUncertainty = fitResult.activityUncertainty;
+    
+    // Calculate nuclide mass
+    result.nuclideMass = (result.activity / nuc->activityPerGram()) * PhysicalUnits::gram;
+    
+    
+    // Check if this is self-attenuating
+    result.isSelfAttenuating = (input.geometryType == SimpleActivityGeometryType::SelfAttenuating);
+    
+    if( result.isSelfAttenuating && !input.shielding.empty() )
+    {
+      // For self-attenuating sources, calculate source dimensions and mass
+      const auto& shield = input.shielding[0];
+      if( shield.m_geometry == GammaInteractionCalc::GeometryType::Spherical )
+      {
+        result.sourceDimensions = shield.m_dimensions[0]; // radius
+        if( shield.m_material )
+        {
+          const double volume = (4.0/3.0) * M_PI * pow(result.sourceDimensions, 3);
+          result.sourceMass = volume * shield.m_material->density;
+        }
+      }
+    }
+  }catch( const std::exception &e )
+  {
+    result.successful = false;
+    result.errorMessage = e.what();
+  }//try / catch to compute an answer
+  
+  return result;
 }
 
 void SimpleActivityCalc::updateGeometryOptions()
@@ -1000,8 +1607,9 @@ void SimpleActivityCalc::updateGeometryOptions()
   // Get current peak to check nuclide compatibility with shielding
   auto peak = getCurrentPeak();
   
-  // Get current shielding info to check for self-attenuation compatibility
+  // Get current shielding info to check for self-attenuation and trace source compatibility
   bool allowSelfAttenuation = false;
+  bool allowTraceSrc = false;
   
   if( peak && peak->parentNuclide() && m_shieldingSelect && !m_shieldingSelect->isNoShielding() )
   {
@@ -1009,6 +1617,13 @@ void SimpleActivityCalc::updateGeometryOptions()
     {
       ShieldingSourceFitCalc::ShieldingInfo shielding = m_shieldingSelect->toShieldingInfo();
       const SandiaDecay::Nuclide *peakNuclide = peak->parentNuclide();
+      
+      // Check if we should allow trace source option
+      // Allow TraceSrc if we have non-generic shielding with non-zero thickness (radius)
+      if( !shielding.m_isGenericMaterial && shielding.m_material && shielding.m_dimensions[0] > 1e-6 )
+      {
+        allowTraceSrc = true;
+      }
       
       // Check if the shielding material contains the same element as the peak nuclide
       if( shielding.m_material && peakNuclide )
@@ -1078,6 +1693,12 @@ void SimpleActivityCalc::updateGeometryOptions()
     m_geometrySelect->addItem( WString::tr("sac-geometry-self-atten") );
   }
   
+  // Add trace source option only if we have appropriate shielding
+  if( allowTraceSrc )
+  {
+    m_geometrySelect->addItem( WString::tr("sac-geometry-trace-src") );
+  }
+  
   // Try to restore previous selection if still available
   int newIndex = -1;
   if( !currentSelection.empty() )
@@ -1109,4 +1730,30 @@ void SimpleActivityCalc::handleOpenAdvancedTool()
   // 2. Set it to equivalent state based on current SimpleActivityCalc state
   // 3. Add undo/redo point for both tools and peaks
   // 4. Close current dialog
+}
+
+SimpleActivityGeometryType SimpleActivityCalc::geometryTypeFromString( const std::string& key )
+{
+  if( key.find("Point") != std::string::npos || key.find("point") != std::string::npos )
+    return SimpleActivityGeometryType::Point;
+  else if( key.find("Plane") != std::string::npos || key.find("plane") != std::string::npos )
+    return SimpleActivityGeometryType::Plane;
+  else if( key.find("Self") != std::string::npos || key.find("self") != std::string::npos )
+    return SimpleActivityGeometryType::SelfAttenuating;
+  else if( key.find("Trace") != std::string::npos || key.find("trace") != std::string::npos )
+    return SimpleActivityGeometryType::TraceSrc;
+  else
+    return SimpleActivityGeometryType::Point; // Default fallback
+}
+
+std::string SimpleActivityCalc::geometryTypeToString( SimpleActivityGeometryType type )
+{
+  switch( type )
+  {
+    case SimpleActivityGeometryType::Point: return "Point";
+    case SimpleActivityGeometryType::Plane: return "Plane";
+    case SimpleActivityGeometryType::SelfAttenuating: return "Self-attenuating";
+    case SimpleActivityGeometryType::TraceSrc: return "Trace source";
+    default: return "Point";
+  }
 }
