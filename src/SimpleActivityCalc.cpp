@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 #include <limits>
+#include <algorithm>
 
 #include <Wt/WMenu>
 #include <Wt/WText>
@@ -134,12 +135,205 @@ bool SimpleActivityCalcState::operator!=( const SimpleActivityCalcState &rhs ) c
 
 std::string SimpleActivityCalcState::encodeToUrl() const
 {
-  return "dummy-url-implementation";
-}
+  string answer = "V=1";
+  
+  if( peakEnergy >= 0.0 )
+  {
+    char buffer[64] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "&E=%.2f", peakEnergy );
+    answer += buffer;
+  }
+  
+  if( !nuclideName.empty() )
+  {
+    string nuc_name = nuclideName;
+    SpecUtils::ireplace_all(nuc_name, "#", "%23");
+    SpecUtils::ireplace_all(nuc_name, "&", "%26");
+    answer += "&N=" + nuc_name;
+  }
+  
+  if( !nuclideAgeStr.empty() )
+  {
+    string age_str = nuclideAgeStr;
+    SpecUtils::ireplace_all(age_str, "#", "%23");
+    SpecUtils::ireplace_all(age_str, "&", "%26");
+    answer += "&AGE=" + age_str;
+  }
+  
+  if( !distanceStr.empty() )
+  {
+    string dist_str = distanceStr;
+    SpecUtils::ireplace_all(dist_str, "#", "%23");
+    SpecUtils::ireplace_all(dist_str, "&", "%26");
+    answer += "&DIST=" + dist_str;
+  }
+  
+  answer += "&GEOM=" + SimpleActivityCalc::to_str(geometryType);
+  
+  if( shielding.has_value() )
+  {
+    if( shielding->m_isGenericMaterial )
+    {
+      // Generic shielding: encode atomic number and areal density
+      answer += "&AN=" + SpecUtils::printCompact(shielding->m_dimensions[0],5);
+      answer += "&AD=" + SpecUtils::printCompact(shielding->m_dimensions[1]/PhysicalUnits::g_per_cm2,6);
+    }
+    else if( shielding->m_material )
+    {
+      // Material shielding: encode material name and thickness
+      string mat_name = shielding->m_material->name;
+      SpecUtils::ireplace_all(mat_name, "#", "%23");
+      SpecUtils::ireplace_all(mat_name, "&", "%26");
+      answer += "&MAT=" + mat_name;
+      answer += "&THICK=" + PhysicalUnits::printToBestLengthUnits(shielding->m_dimensions[0],3);
+    }
+  }
+  
+  return answer;
+}//std::string SimpleActivityCalcState::encodeToUrl() const
 
-void SimpleActivityCalcState::decodeFromUrl( const std::string &uri )
+
+void SimpleActivityCalcState::decodeFromUrl( const std::string &uri, MaterialDB *materialDB )
 {
-}
+  *this = SimpleActivityCalcState();
+  
+  try
+  {
+    const map<string,string> values = AppUtils::query_str_key_values( uri );
+    
+    const auto ver_iter = values.find( "V" );
+    if( (ver_iter == end(values)) || (ver_iter->second != "1") )
+      throw runtime_error( "SimpleActivityCalcState: URI not compatible version." );
+    
+    const auto energy_iter = values.find( "E" );
+    if( energy_iter != end(values) )
+    {
+      peakEnergy = std::stod( energy_iter->second );
+    }
+    
+    const auto nuc_iter = values.find( "N" );
+    if( nuc_iter != end(values) )
+    {
+      nuclideName = nuc_iter->second;
+      SpecUtils::ireplace_all(nuclideName, "%23", "#");
+      SpecUtils::ireplace_all(nuclideName, "%26", "&");
+    }
+    
+    const auto age_iter = values.find( "AGE" );
+    if( age_iter != end(values) )
+    {
+      nuclideAgeStr = age_iter->second;
+      SpecUtils::ireplace_all(nuclideAgeStr, "%23", "#");
+      SpecUtils::ireplace_all(nuclideAgeStr, "%26", "&");
+    }
+    
+    const auto dist_iter = values.find( "DIST" );
+    if( dist_iter != end(values) )
+    {
+      distanceStr = dist_iter->second;
+      SpecUtils::ireplace_all(distanceStr, "%23", "#");
+      SpecUtils::ireplace_all(distanceStr, "%26", "&");
+    }
+    
+    const auto geom_iter = values.find( "GEOM" );
+    if( geom_iter != end(values) )
+    {
+      geometryType = SimpleActivityCalc::geometryTypeFromString( geom_iter->second );
+    }
+    
+    // Check for shielding parameters: AN/AD for generic material, MAT/THICK for material
+    const auto an_iter = values.find( "AN" );
+    const auto ad_iter = values.find( "AD" );
+    const auto mat_iter = values.find( "MAT" );
+    const auto thick_iter = values.find( "THICK" );
+    
+    bool has_generic_shielding = (an_iter != end(values)) && (ad_iter != end(values));
+    bool has_material_shielding = (mat_iter != end(values)) && (thick_iter != end(values));
+    
+    if( has_generic_shielding )
+    {
+      try
+      {
+        shielding = ShieldingSourceFitCalc::ShieldingInfo();
+        
+        double an, ad;
+        if( !SpecUtils::parse_double(an_iter->second.c_str(), an_iter->second.size(), an) )
+          throw runtime_error( "Unable to parse AN." );
+        
+        if( !SpecUtils::parse_double(ad_iter->second.c_str(), ad_iter->second.size(), ad) )
+          throw runtime_error( "Unable to parse AD." );
+        
+        shielding->m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+        shielding->m_isGenericMaterial = true;
+        shielding->m_forFitting = false;
+        shielding->m_material.reset();
+        
+        // Set atomic number and areal density
+        shielding->m_dimensions[0] = an;
+        shielding->m_dimensions[1] = ad * PhysicalUnits::g_per_cm2;
+        shielding->m_dimensions[2] = 0.0;
+        
+        // Initialize fit dimensions to false
+        shielding->m_fitDimensions[0] = false;
+        shielding->m_fitDimensions[1] = false;
+        shielding->m_fitDimensions[2] = false;
+      }catch( const std::exception & )
+      {
+        shielding.reset();
+      }
+    }else if( has_material_shielding )
+    {
+      try
+      {
+        shielding = ShieldingSourceFitCalc::ShieldingInfo();
+        shielding->m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+        shielding->m_isGenericMaterial = false;
+        shielding->m_forFitting = false;
+        
+        // Material name with URL decoding
+        string mat_name = mat_iter->second;
+        SpecUtils::ireplace_all(mat_name, "%23", "#");
+        SpecUtils::ireplace_all(mat_name, "%26", "&");
+        
+        // Look up material in MaterialDB
+        if( materialDB )
+        {
+          const Material *material = materialDB->material( mat_name );
+          if( material )
+            shielding->m_material = std::shared_ptr<const Material>( new Material(*material) );
+          else
+            throw std::runtime_error( "Material '" + mat_name + "' not found in MaterialDB" );
+        }else
+        {
+          throw std::runtime_error( "MaterialDB required for material-based shielding decoding" );
+        }
+        
+        // Set thickness
+        const double thick = PhysicalUnits::stringToDistance( thick_iter->second );
+        shielding->m_dimensions[0] = thick;
+        shielding->m_dimensions[1] = 0.0;
+        shielding->m_dimensions[2] = 0.0;
+        
+        // Initialize fit dimensions to false
+        shielding->m_fitDimensions[0] = false;
+        shielding->m_fitDimensions[1] = false;
+        shielding->m_fitDimensions[2] = false;
+      }catch( const std::exception & )
+      {
+        shielding.reset();
+      }
+    }
+    else
+    {
+      shielding.reset();
+    }
+  }catch( const std::exception & )
+  {
+    *this = SimpleActivityCalcState();
+    throw;
+  }
+}//void decodeFromUrl( const std::string &uri )
+
 
 void SimpleActivityCalcState::serialize( rapidxml::xml_node<char> * const parent_node ) const
 {
@@ -162,14 +356,13 @@ void SimpleActivityCalcState::serialize( rapidxml::xml_node<char> * const parent
   XmlUtils::append_string_node( base_node, "DistanceStr", distanceStr );
   
   // Serialize geometry type as string
-  XmlUtils::append_string_node( base_node, "GeometryType", SimpleActivityCalc::geometryTypeToString(geometryType) );
+  XmlUtils::append_string_node( base_node, "GeometryType", SimpleActivityCalc::to_str(geometryType) );
   
   // Serialize shielding info only if present
   if( shielding.has_value() )
-  {
     shielding->serialize( base_node );
-  }
-}
+}//void serialize( rapidxml::xml_node<char> * const parent_node ) const
+
 
 void SimpleActivityCalcState::deSerialize( const ::rapidxml::xml_node<char> *src_node, MaterialDB *materialDB )
 {
@@ -219,20 +412,19 @@ void SimpleActivityCalcState::deSerialize( const ::rapidxml::xml_node<char> *src
     {
       shielding = ShieldingSourceFitCalc::ShieldingInfo();
       shielding->deSerialize( shielding_node, materialDB );
-    }
-    else
+    }else
     {
       // If no shielding node found, leave as empty optional
       shielding.reset();
     }
-  }
-  catch( const std::exception &e )
+  }catch( const std::exception &e )
   {
     // Reset to default state on any error
     *this = SimpleActivityCalcState();
     throw std::runtime_error( std::string("SimpleActivityCalcState::deSerialize: ") + e.what() );
   }
-}
+}//void deSerialize( const ::rapidxml::xml_node<char> *src_node, MaterialDB *materialDB )
+
 
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
 void SimpleActivityCalcState::equalEnough( const SimpleActivityCalcState &lhs, const SimpleActivityCalcState &rhs )
@@ -318,7 +510,7 @@ SimpleActivityCalcWindow::SimpleActivityCalcWindow( MaterialDB *materialDB,
   qr_btn->clicked().connect( std::bind( [this](){
     try
     {
-      const string url = "interspec://quick-activity/" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
+      const string url = "interspec://simple-activity/?" + Wt::Utils::urlEncode(m_tool->encodeStateToUrl());
       QrCode::displayTxtAsQrCode( url, WString::tr("sac-qr-tool-state-title"),
                                  WString::tr("sac-qr-tool-state-txt") );
     }catch( std::exception &e )
@@ -372,8 +564,9 @@ SimpleActivityCalc::SimpleActivityCalc( MaterialDB *materialDB,
   m_resultText( nullptr ),
   m_errorText( nullptr ),
   m_advancedBtn( nullptr ),
-  m_distanceRow( nullptr ),
+
   m_ageRow( nullptr ),
+  m_distanceRow( nullptr ),
   m_geometryRow( nullptr ),
   m_currentPeak( nullptr ),
   m_previous_state{}
@@ -425,17 +618,6 @@ void SimpleActivityCalc::init()
   m_ageEdit->changed().connect( this, &SimpleActivityCalc::handleAgeChanged );
   m_ageRow->hide(); // Initially hidden
   
-  // Distance row (hidden if fixed geometry)
-  m_distanceRow = new WContainerWidget( this );
-  m_distanceRow->addStyleClass( "row" );
-  WText *distanceLabel = new WText( WString::tr("sac-distance-label"), m_distanceRow );
-  distanceLabel->addStyleClass( "label" );
-  m_distanceEdit = new WLineEdit( m_distanceRow );
-  m_distanceEdit->addStyleClass( "input" );
-  m_distanceEdit->setText( "1 m" );
-  m_distanceEdit->setValidator( new WRegExpValidator( PhysicalUnits::sm_distanceRegex ) );
-  m_distanceEdit->changed().connect( this, &SimpleActivityCalc::handleDistanceChanged );
-  
   // Detector row
   WContainerWidget *detectorRow = new WContainerWidget( this );
   detectorRow->addStyleClass( "row" );
@@ -463,6 +645,16 @@ void SimpleActivityCalc::init()
   m_geometrySelect->changed().connect( this, &SimpleActivityCalc::handleGeometryChanged );
   m_geometryRow->hide(); // Initially hidden, shown if not fixed geometry
   
+  // Distance row (hidden if fixed geometry)
+  m_distanceRow = new WContainerWidget( this );
+  m_distanceRow->addStyleClass( "row" );
+  WText *distanceLabel = new WText( WString::tr("sac-distance-label"), m_distanceRow );
+  distanceLabel->addStyleClass( "label" );
+  m_distanceEdit = new WLineEdit( m_distanceRow );
+  m_distanceEdit->addStyleClass( "input" );
+  m_distanceEdit->setText( "1 m" );
+  m_distanceEdit->setValidator( new WRegExpValidator( PhysicalUnits::sm_distanceRegex ) );
+  m_distanceEdit->changed().connect( this, &SimpleActivityCalc::handleDistanceChanged );
 
   // Result display
   m_resultText = new WText( this );
@@ -579,14 +771,32 @@ void SimpleActivityCalc::setPeakFromEnergy( const double energy )
 }//void setPeakFromEnergy( const double energy )
 
 
-void SimpleActivityCalc::handleAppUrl( std::string uri )
+void SimpleActivityCalc::handleAppUrl( const std::string &query_str )
 {
-}
+  //The inclomming string might "V=1&E=185.678635&N=U235&AGE=20.00 y&DIST=1 m&GEOM=Point"
+  
+  try
+  {
+    SimpleActivityCalcState state;
+    state.decodeFromUrl( query_str, m_materialDB );
+    setState( state );
+  }catch( const std::exception &e )
+  {
+    const string msg = "Error setting Simple Activity Calculator state from URI: " + string(e.what());
+    if( m_viewer )
+      passMessage( msg, WarningWidget::WarningMsgHigh );
+  }
+}//void SimpleActivityCalc::handleAppUrl( std::string uri )
+
 
 std::string SimpleActivityCalc::encodeStateToUrl() const
 {
-  return "dummy-state-url";
-}
+  const shared_ptr<const SimpleActivityCalcState> state = SimpleActivityCalc::currentState();
+  if( !state )
+    return "";
+  
+  return state->encodeToUrl();
+}//std::string SimpleActivityCalc::encodeStateToUrl() const
 
 std::shared_ptr<SimpleActivityCalcState> SimpleActivityCalc::currentState() const
 {
@@ -667,10 +877,26 @@ void SimpleActivityCalc::setState( const SimpleActivityCalcState &state )
   // Update geometry options based on current detector, peak, and shielding
   updateGeometryOptions();
   
+  // Set geometry type selection
+  const std::string targetGeometry = geometryTypeToStringKey( state.geometryType );
+  for( int i = 0; i < m_geometrySelect->count(); ++i )
+  {
+    if( m_geometrySelect->itemText(i).key() == targetGeometry )
+    {
+      m_geometrySelect->setCurrentIndex( i );
+      break;
+    }
+  }
+  
   // Update display
   scheduleRender( UpdateResult );
 }//void setState( const SimpleActivityCalcState &state )
 
+
+void SimpleActivityCalc::addUndoRedoPoint()
+{
+  scheduleRender( AddUndoRedoStep );
+}
 
 void SimpleActivityCalc::updatePeakList()
 {
@@ -967,8 +1193,7 @@ void SimpleActivityCalc::handleDetectorChanged( std::shared_ptr<DetectorPeakResp
   if( new_drf )
   {
     const bool isFixedGeom = new_drf->isFixedGeometry();
-    m_distanceRow->setHidden( isFixedGeom );
-    m_geometryRow->setHidden( isFixedGeom );
+          m_distanceRow->setHidden( isFixedGeom );
   }
   
   updateGeometryOptions();
@@ -1743,26 +1968,48 @@ void SimpleActivityCalc::handleOpenAdvancedTool()
 
 SimpleActivityGeometryType SimpleActivityCalc::geometryTypeFromString( const std::string& key )
 {
-  if( key.find("Point") != std::string::npos || key.find("point") != std::string::npos )
+  if( SpecUtils::icontains(key, "point") )
     return SimpleActivityGeometryType::Point;
-  else if( key.find("Plane") != std::string::npos || key.find("plane") != std::string::npos )
+  
+  if( SpecUtils::icontains(key, "plane") )
     return SimpleActivityGeometryType::Plane;
-  else if( key.find("Self") != std::string::npos || key.find("self") != std::string::npos )
+  
+  if( SpecUtils::icontains(key, "self") )
     return SimpleActivityGeometryType::SelfAttenuating;
-  else if( key.find("Trace") != std::string::npos || key.find("trace") != std::string::npos )
+  
+  if( SpecUtils::icontains(key, "trace") )
     return SimpleActivityGeometryType::TraceSrc;
-  else
-    return SimpleActivityGeometryType::Point; // Default fallback
-}
+  
+  throw std::runtime_error( "Invalid geometry type: '" + key + "'" );
+    
+  return SimpleActivityGeometryType::Point;
+}//SimpleActivityGeometryType geometryTypeFromString( const std::string& key )
 
-std::string SimpleActivityCalc::geometryTypeToString( SimpleActivityGeometryType type )
+
+std::string SimpleActivityCalc::geometryTypeToStringKey( SimpleActivityGeometryType type )
 {
   switch( type )
   {
-    case SimpleActivityGeometryType::Point: return "Point";
-    case SimpleActivityGeometryType::Plane: return "Plane";
-    case SimpleActivityGeometryType::SelfAttenuating: return "Self-attenuating";
-    case SimpleActivityGeometryType::TraceSrc: return "Trace source";
-    default: return "Point";
+    case SimpleActivityGeometryType::Point: return "sac-geometry-point";
+    case SimpleActivityGeometryType::Plane: return "sac-geometry-plane";
+    case SimpleActivityGeometryType::SelfAttenuating: return "sac-geometry-self-atten";
+    case SimpleActivityGeometryType::TraceSrc: return "sac-geometry-trace-src";
+    default: return "sac-geometry-point";
   }
 }
+
+std::string SimpleActivityCalc::to_str( SimpleActivityGeometryType type )
+{
+  switch( type )
+  {
+    case SimpleActivityGeometryType::Point:
+      return "Point";
+    case SimpleActivityGeometryType::Plane:
+      return "Plane";
+    case SimpleActivityGeometryType::SelfAttenuating:
+      return "Self-attenuating";
+    case SimpleActivityGeometryType::TraceSrc:
+      return "Trace-source";
+  }
+  return "Point";
+}//std::string to_str( SimpleActivityGeometryType type )

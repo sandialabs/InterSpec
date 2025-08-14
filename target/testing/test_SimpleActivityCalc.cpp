@@ -458,3 +458,414 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_EqualEnough )
   state2.shielding = ShieldingSourceFitCalc::ShieldingInfo();
   BOOST_CHECK_THROW( SimpleActivityCalcState::equalEnough( state1, state2 ), std::runtime_error );
 }//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_EqualEnough )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_BasicEncoding )
+{
+  set_data_dir();
+  
+  // Test basic URL encoding without shielding
+  {
+    SimpleActivityCalcState state;
+    state.peakEnergy = 661.657;
+    state.nuclideName = "Cs137";
+    state.nuclideAgeStr = "30 y";
+    state.distanceStr = "1 m";
+    state.geometryType = SimpleActivityGeometryType::Point;
+    
+    const std::string url = state.encodeToUrl();
+    
+    BOOST_CHECK( !url.empty() );
+    BOOST_CHECK( url.find("V=1") != std::string::npos );
+    BOOST_CHECK( url.find("E=661.6") != std::string::npos );
+    BOOST_CHECK( url.find("N=Cs137") != std::string::npos );
+    BOOST_CHECK( url.find("AGE=30 y") != std::string::npos );
+    BOOST_CHECK( url.find("DIST=1 m") != std::string::npos );
+    BOOST_CHECK( url.find("GEOM=Point") != std::string::npos );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_BasicEncoding )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_BasicDecoding )
+{
+  set_data_dir();
+  
+  // Test basic URL decoding without shielding
+  {
+    const std::string url = "V=1&E=661.657&N=Cs137&AGE=30 y&DIST=1 m&GEOM=Point";
+    
+    SimpleActivityCalcState state;
+    BOOST_REQUIRE_NO_THROW( state.decodeFromUrl( url ) );
+    
+    BOOST_CHECK_CLOSE( state.peakEnergy, 661.657, 1e-6 );
+    BOOST_CHECK_EQUAL( state.nuclideName, "Cs137" );
+    BOOST_CHECK_EQUAL( state.nuclideAgeStr, "30 y" );
+    BOOST_CHECK_EQUAL( state.distanceStr, "1 m" );
+    BOOST_CHECK( state.geometryType == SimpleActivityGeometryType::Point );
+    BOOST_CHECK( !state.shielding.has_value() );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_BasicDecoding )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_RoundTrip )
+{
+  set_data_dir();
+  
+  // Test round-trip URL encoding/decoding
+  {
+    SimpleActivityCalcState original_state;
+    original_state.peakEnergy = 1173.228;
+    original_state.nuclideName = "Co60";
+    original_state.nuclideAgeStr = "2.5 years";
+    original_state.distanceStr = "75 cm";
+    original_state.geometryType = SimpleActivityGeometryType::Plane;
+    
+    const std::string url = original_state.encodeToUrl();
+    
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    
+    BOOST_CHECK_LT( fabs(decoded_state.peakEnergy - original_state.peakEnergy), 0.01 );
+    BOOST_CHECK_EQUAL( decoded_state.nuclideName, original_state.nuclideName );
+    BOOST_CHECK_EQUAL( decoded_state.nuclideAgeStr, original_state.nuclideAgeStr );
+    BOOST_CHECK_EQUAL( decoded_state.distanceStr, original_state.distanceStr );
+    BOOST_CHECK( decoded_state.geometryType == original_state.geometryType );
+    BOOST_CHECK( !decoded_state.shielding.has_value() );
+    BOOST_CHECK( !original_state.shielding.has_value() );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_RoundTrip )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_AllGeometryTypes )
+{
+  set_data_dir();
+  
+  // Test URL encoding/decoding for all geometry types
+  const std::vector<SimpleActivityGeometryType> geometry_types = {
+    SimpleActivityGeometryType::Point,
+    SimpleActivityGeometryType::Plane,
+    SimpleActivityGeometryType::SelfAttenuating,
+    SimpleActivityGeometryType::TraceSrc
+  };
+  
+  for( const auto geom_type : geometry_types )
+  {
+    SimpleActivityCalcState original_state;
+    original_state.peakEnergy = 1332.5;
+    original_state.nuclideName = "Co60";
+    original_state.nuclideAgeStr = "5.27 y";
+    original_state.distanceStr = "50 cm";
+    original_state.geometryType = geom_type;
+    
+    const std::string url = original_state.encodeToUrl();
+    
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    
+    BOOST_CHECK_MESSAGE( decoded_state.geometryType == geom_type, 
+                        "Geometry type mismatch for type " << static_cast<int>(geom_type) );
+    BOOST_CHECK_CLOSE( decoded_state.peakEnergy, original_state.peakEnergy, 1e-6 );
+    BOOST_CHECK_EQUAL( decoded_state.nuclideName, original_state.nuclideName );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_AllGeometryTypes )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_EnergyPrecision )
+{
+  set_data_dir();
+  
+  // Test that peak energy matches to nearest 0.01 as specified in requirements
+  {
+    SimpleActivityCalcState original_state;
+    original_state.peakEnergy = 661.65789; // More precision than 0.01
+    original_state.nuclideName = "Cs137";
+    original_state.geometryType = SimpleActivityGeometryType::Point;
+    
+    const std::string url = original_state.encodeToUrl();
+    
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    
+    // Energy should match within 0.01 keV as specified
+    BOOST_CHECK( std::abs(decoded_state.peakEnergy - original_state.peakEnergy) <= 0.01 );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_EnergyPrecision )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_SpecialCharacters )
+{
+  set_data_dir();
+  
+  // Test URL encoding/decoding with special characters
+  {
+    SimpleActivityCalcState original_state;
+    original_state.peakEnergy = 511.0;
+    original_state.nuclideName = "F18"; // Contains numbers
+    original_state.nuclideAgeStr = "109.8 m"; // Contains period
+    original_state.distanceStr = "1.5 m"; // Contains period
+    original_state.geometryType = SimpleActivityGeometryType::Point;
+    
+    const std::string url = original_state.encodeToUrl();
+    
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    
+    BOOST_CHECK_EQUAL( decoded_state.nuclideName, original_state.nuclideName );
+    BOOST_CHECK_EQUAL( decoded_state.nuclideAgeStr, original_state.nuclideAgeStr );
+    BOOST_CHECK_EQUAL( decoded_state.distanceStr, original_state.distanceStr );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_SpecialCharacters )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_EmptyFields )
+{
+  set_data_dir();
+  
+  // Test URL encoding/decoding with empty fields
+  {
+    SimpleActivityCalcState original_state;
+    original_state.peakEnergy = 1173.2;
+    original_state.nuclideName = "";
+    original_state.nuclideAgeStr = "";
+    original_state.distanceStr = "";
+    original_state.geometryType = SimpleActivityGeometryType::Plane;
+    
+    const std::string url = original_state.encodeToUrl();
+    
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    
+    BOOST_CHECK_CLOSE( decoded_state.peakEnergy, original_state.peakEnergy, 1e-6 );
+    BOOST_CHECK_EQUAL( decoded_state.nuclideName, original_state.nuclideName );
+    BOOST_CHECK_EQUAL( decoded_state.nuclideAgeStr, original_state.nuclideAgeStr );
+    BOOST_CHECK_EQUAL( decoded_state.distanceStr, original_state.distanceStr );
+    BOOST_CHECK( decoded_state.geometryType == original_state.geometryType );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_EmptyFields )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ErrorHandling )
+{
+  set_data_dir();
+  
+  // Test error handling for invalid URLs
+  {
+    SimpleActivityCalcState state;
+    
+    // Test with empty string
+    BOOST_CHECK_THROW( state.decodeFromUrl( "" ), std::exception );
+    
+    // Test with invalid version
+    BOOST_CHECK_THROW( state.decodeFromUrl( "V=2&E=661" ), std::exception );
+    
+    // Test with missing version
+    BOOST_CHECK_THROW( state.decodeFromUrl( "E=661&N=Cs137" ), std::exception );
+    
+    // Test with invalid energy
+    BOOST_CHECK_THROW( state.decodeFromUrl( "V=1&E=invalid" ), std::exception );
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ErrorHandling )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_WithGenericShielding )
+{
+  set_data_dir();
+  
+  // Set up MaterialDB for ShieldingInfo handling
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  MaterialDB matdb;
+  
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
+  
+  // Test URL round-trip with generic shielding
+  {
+    SimpleActivityCalcState original_state;
+    original_state.peakEnergy = 1173.228;
+    original_state.nuclideName = "Co60";
+    original_state.nuclideAgeStr = "5.27 y";
+    original_state.distanceStr = "1 m";
+    original_state.geometryType = SimpleActivityGeometryType::Point;
+    
+    // Set up generic shielding
+    original_state.shielding = ShieldingSourceFitCalc::ShieldingInfo();
+    original_state.shielding->m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    original_state.shielding->m_isGenericMaterial = true;
+    original_state.shielding->m_forFitting = false;
+    original_state.shielding->m_dimensions[0] = 82; // atomic number (Lead)
+    original_state.shielding->m_dimensions[1] = 5.0 * PhysicalUnits::g_per_cm2; // areal density
+    original_state.shielding->m_dimensions[2] = 0.0;
+    original_state.shielding->m_fitDimensions[0] = false;
+    original_state.shielding->m_fitDimensions[1] = false;
+    original_state.shielding->m_fitDimensions[2] = false;
+    
+    const std::string url = original_state.encodeToUrl();
+    BOOST_CHECK( !url.empty() );
+    BOOST_CHECK( url.find("V=1") != std::string::npos );
+    
+    SimpleActivityCalcState decoded_state;
+    BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url ) );
+    
+    // Verify basic fields
+    BOOST_CHECK_LT( fabs(decoded_state.peakEnergy - original_state.peakEnergy), 0.01 );
+    BOOST_CHECK_EQUAL( decoded_state.nuclideName, original_state.nuclideName );
+    BOOST_CHECK_EQUAL( decoded_state.nuclideAgeStr, original_state.nuclideAgeStr );
+    BOOST_CHECK_EQUAL( decoded_state.distanceStr, original_state.distanceStr );
+    BOOST_CHECK( decoded_state.geometryType == original_state.geometryType );
+    
+    // Verify shielding was preserved
+    BOOST_CHECK( decoded_state.shielding.has_value() );
+    BOOST_CHECK( original_state.shielding.has_value() );
+    
+    if( decoded_state.shielding.has_value() && original_state.shielding.has_value() )
+    {
+      BOOST_CHECK( decoded_state.shielding->m_isGenericMaterial );
+      BOOST_CHECK( decoded_state.shielding->m_geometry == original_state.shielding->m_geometry );
+      BOOST_CHECK_CLOSE( decoded_state.shielding->m_dimensions[0], original_state.shielding->m_dimensions[0], 1e-6 );
+      BOOST_CHECK_CLOSE( decoded_state.shielding->m_dimensions[1], original_state.shielding->m_dimensions[1], 1e-6 );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_WithGenericShielding )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_WithMaterialShielding )
+{
+  set_data_dir();
+  
+  // Set up MaterialDB for ShieldingInfo handling
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  MaterialDB matdb;
+  
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
+  
+  // Test URL round-trip with material-based shielding
+  {
+    SimpleActivityCalcState original_state;
+    original_state.peakEnergy = 661.657;
+    original_state.nuclideName = "Cs137";
+    original_state.nuclideAgeStr = "30 y";
+    original_state.distanceStr = "50 cm";
+    original_state.geometryType = SimpleActivityGeometryType::Point;
+    
+    // Set up material-based shielding (Iron)
+    const Material *iron = matdb.material( "Iron" );
+    if( iron ) // Only run this test if Iron material is available
+    {
+      original_state.shielding = ShieldingSourceFitCalc::ShieldingInfo();
+      original_state.shielding->m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+      original_state.shielding->m_isGenericMaterial = false;
+      original_state.shielding->m_forFitting = false;
+      original_state.shielding->m_material = make_shared<Material>( *iron );
+      original_state.shielding->m_dimensions[0] = 2.5; // thickness in cm
+      original_state.shielding->m_dimensions[1] = 0.0;
+      original_state.shielding->m_dimensions[2] = 0.0;
+      original_state.shielding->m_fitDimensions[0] = false;
+      original_state.shielding->m_fitDimensions[1] = false;
+      original_state.shielding->m_fitDimensions[2] = false;
+      
+      const std::string url = original_state.encodeToUrl();
+      BOOST_CHECK( !url.empty() );
+      BOOST_CHECK( url.find("V=1") != std::string::npos );
+      
+      SimpleActivityCalcState decoded_state;
+      BOOST_REQUIRE_NO_THROW( decoded_state.decodeFromUrl( url, &matdb ) );
+      
+      // Verify basic fields
+      BOOST_CHECK_LT( fabs(decoded_state.peakEnergy - original_state.peakEnergy), 0.01 );
+      BOOST_CHECK_EQUAL( decoded_state.nuclideName, original_state.nuclideName );
+      BOOST_CHECK_EQUAL( decoded_state.nuclideAgeStr, original_state.nuclideAgeStr );
+      BOOST_CHECK_EQUAL( decoded_state.distanceStr, original_state.distanceStr );
+      BOOST_CHECK( decoded_state.geometryType == original_state.geometryType );
+      
+      // Verify shielding was preserved
+      BOOST_CHECK( decoded_state.shielding.has_value() );
+      BOOST_CHECK( original_state.shielding.has_value() );
+      
+      if( decoded_state.shielding.has_value() && original_state.shielding.has_value() )
+      {
+        BOOST_CHECK( !decoded_state.shielding->m_isGenericMaterial );
+        BOOST_CHECK( decoded_state.shielding->m_geometry == original_state.shielding->m_geometry );
+        BOOST_CHECK_CLOSE( decoded_state.shielding->m_dimensions[0], original_state.shielding->m_dimensions[0], 1e-6 );
+        
+        // Verify material name matches
+        if( decoded_state.shielding->m_material && original_state.shielding->m_material )
+        {
+          BOOST_CHECK_EQUAL( decoded_state.shielding->m_material->name, original_state.shielding->m_material->name );
+        }
+      }
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_WithMaterialShielding )
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ShieldingRoundTripMultiple )
+{
+  set_data_dir();
+  
+  // Set up MaterialDB for ShieldingInfo handling
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  MaterialDB matdb;
+  
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
+  
+  // Test multiple encode/decode cycles to ensure stability
+  {
+    SimpleActivityCalcState original_state;
+    original_state.peakEnergy = 1332.5;
+    original_state.nuclideName = "Co60";
+    original_state.nuclideAgeStr = "5.27 y";
+    original_state.distanceStr = "75 cm";
+    original_state.geometryType = SimpleActivityGeometryType::Plane;
+    
+    // Set up shielding with parameters compatible with SimpleActivityCalc constraints
+    original_state.shielding = ShieldingSourceFitCalc::ShieldingInfo();
+    original_state.shielding->m_geometry = GammaInteractionCalc::GeometryType::Spherical; // SimpleActivityCalc always uses Spherical
+    original_state.shielding->m_isGenericMaterial = true;
+    original_state.shielding->m_forFitting = false; // SimpleActivityCalc sets this to false
+    original_state.shielding->m_dimensions[0] = 26; // atomic number (Iron)
+    original_state.shielding->m_dimensions[1] = 7.87 * PhysicalUnits::g_per_cm2; // areal density
+    original_state.shielding->m_dimensions[2] = 0.0;
+    original_state.shielding->m_fitDimensions[0] = false; // SimpleActivityCalc sets all to false
+    original_state.shielding->m_fitDimensions[1] = false;
+    original_state.shielding->m_fitDimensions[2] = false;
+    
+    // First round-trip
+    const std::string url1 = original_state.encodeToUrl();
+    SimpleActivityCalcState state1;
+    BOOST_REQUIRE_NO_THROW( state1.decodeFromUrl( url1 ) );
+    
+    // Second round-trip
+    const std::string url2 = state1.encodeToUrl();
+    SimpleActivityCalcState state2;
+    BOOST_REQUIRE_NO_THROW( state2.decodeFromUrl( url2 ) );
+    
+    // Third round-trip
+    const std::string url3 = state2.encodeToUrl();
+    SimpleActivityCalcState final_state;
+    BOOST_REQUIRE_NO_THROW( final_state.decodeFromUrl( url3 ) );
+    
+    // Verify all data survived multiple round-trips
+    BOOST_CHECK_LT( fabs(final_state.peakEnergy - original_state.peakEnergy), 0.01 );
+    BOOST_CHECK_EQUAL( final_state.nuclideName, original_state.nuclideName );
+    BOOST_CHECK_EQUAL( final_state.nuclideAgeStr, original_state.nuclideAgeStr );
+    BOOST_CHECK_EQUAL( final_state.distanceStr, original_state.distanceStr );
+    BOOST_CHECK( final_state.geometryType == original_state.geometryType );
+    
+    // Verify shielding data survived multiple round-trips
+    BOOST_CHECK( final_state.shielding.has_value() );
+    BOOST_CHECK( original_state.shielding.has_value() );
+    
+    if( final_state.shielding.has_value() && original_state.shielding.has_value() )
+    {
+      BOOST_CHECK( final_state.shielding->m_isGenericMaterial == original_state.shielding->m_isGenericMaterial );
+      BOOST_CHECK( final_state.shielding->m_forFitting == original_state.shielding->m_forFitting );
+      BOOST_CHECK( final_state.shielding->m_geometry == original_state.shielding->m_geometry );
+      BOOST_CHECK_CLOSE( final_state.shielding->m_dimensions[0], original_state.shielding->m_dimensions[0], 1e-6 );
+      BOOST_CHECK_CLOSE( final_state.shielding->m_dimensions[1], original_state.shielding->m_dimensions[1], 1e-6 );
+      BOOST_CHECK( final_state.shielding->m_fitDimensions[0] == original_state.shielding->m_fitDimensions[0] );
+      BOOST_CHECK( final_state.shielding->m_fitDimensions[1] == original_state.shielding->m_fitDimensions[1] );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ShieldingRoundTripMultiple )

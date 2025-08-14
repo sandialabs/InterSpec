@@ -88,7 +88,7 @@ struct SimpleActivityCalcState
   bool operator!=( const SimpleActivityCalcState &rhs ) const;
   
   std::string encodeToUrl() const;
-  void decodeFromUrl( const std::string &uri );
+  void decodeFromUrl( const std::string &uri, MaterialDB *materialDB = nullptr );
   
   void serialize( rapidxml::xml_node<char> * const parent_node ) const;
   void deSerialize( const ::rapidxml::xml_node<char> *src_node, MaterialDB *materialDB = nullptr );
@@ -159,14 +159,20 @@ public:
   
   void setPeakFromEnergy( const double energy );
   
-  void handleAppUrl( std::string uri );
+  /** Sets the state using the URI query (i.e., everything after the '?' character) description.
+   Example input: "V=1&E=185.678635&N=U235&AGE=20.00 y&DIST=1 m&GEOM=Point"
+   */
+  void handleAppUrl( const std::string &query_str );
   std::string encodeStateToUrl() const;
   
   std::shared_ptr<SimpleActivityCalcState> currentState() const;
   void setState( const SimpleActivityCalcState &state );
   
+  void addUndoRedoPoint();
+  
   static SimpleActivityGeometryType geometryTypeFromString( const std::string& key );
-  static std::string geometryTypeToString( SimpleActivityGeometryType type );
+  static std::string geometryTypeToStringKey( SimpleActivityGeometryType type );
+  static std::string to_str( SimpleActivityGeometryType type );
   
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
@@ -224,8 +230,9 @@ protected:
   Wt::WText *m_errorText;
   Wt::WPushButton *m_advancedBtn;
   
-  Wt::WContainerWidget *m_distanceRow;
+
   Wt::WContainerWidget *m_ageRow;
+  Wt::WContainerWidget *m_distanceRow;
   Wt::WContainerWidget *m_geometryRow;
   
   std::shared_ptr<const PeakDef> m_currentPeak;

@@ -12148,6 +12148,26 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     showWelcomeDialog(true);
     if( m_useInfoWindow )
       m_useInfoWindow->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"simple-activity") )
+  {
+    const bool was_showing = !!m_simpleActivityCalcWindow;
+    if( was_showing )
+    {
+      m_simpleActivityCalcWindow->tool()->handleAppUrl( query_str );
+      m_simpleActivityCalcWindow->tool()->addUndoRedoPoint();
+    }else
+    {
+      auto undo = [this](){ programmaticallyCloseSimpleActivityCalc(); };
+      auto redo = [this,query_str](){
+        showSimpleActivityCalcWindow();
+        if( m_simpleActivityCalcWindow )
+          m_simpleActivityCalcWindow->tool()->handleAppUrl( query_str );
+      };
+      
+      redo();
+      if( m_undo && m_undo->canAddUndoRedoNow() )
+        m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Handle simple-activity url" );
+    }//
   }
 #if( USE_REMOTE_RID )
   else if( SpecUtils::iequals_ascii(host,"remoterid") )
