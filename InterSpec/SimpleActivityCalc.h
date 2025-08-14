@@ -75,11 +75,11 @@ enum class SimpleActivityGeometryType : int
 
 struct SimpleActivityCalcState
 {
-  double peakEnergy;
+  double peakEnergy = -1.0;
   std::string nuclideName;
   std::string nuclideAgeStr;
   std::string distanceStr;
-  SimpleActivityGeometryType geometryType;
+  SimpleActivityGeometryType geometryType = SimpleActivityGeometryType::Point;
   std::optional<ShieldingSourceFitCalc::ShieldingInfo> shielding;
   
   SimpleActivityCalcState();
@@ -162,8 +162,11 @@ public:
   void handleAppUrl( std::string uri );
   std::string encodeStateToUrl() const;
   
-  SimpleActivityCalcState currentState() const;
+  std::shared_ptr<SimpleActivityCalcState> currentState() const;
   void setState( const SimpleActivityCalcState &state );
+  
+  static SimpleActivityGeometryType geometryTypeFromString( const std::string& key );
+  static std::string geometryTypeToString( SimpleActivityGeometryType type );
   
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
@@ -188,24 +191,23 @@ protected:
   
   int findBestReplacementPeak( std::shared_ptr<const PeakDef> targetPeak ) const;
   
+  void handleAddUndoPoint();
+  
   SimpleActivityCalcInput createCalcInput() const;
   static SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input );
-  
-  static SimpleActivityGeometryType geometryTypeFromString( const std::string& key );
-  static std::string geometryTypeToString( SimpleActivityGeometryType type );
   
   void updateGeometryOptions();
   
   enum RenderActions
   {
     UpdateResult = 0x01,
-    AddUndoRedoStep = 0x02,
-    UpdateDisplayedSpectrum = 0x04
+    AddUndoRedoStep = 0x02
   };
   
   void scheduleRender( RenderActions action );
   
   Wt::WFlags<RenderActions> m_renderFlags;
+  bool m_haveRendered;
   
   InterSpec *m_viewer;
   Wt::WSuggestionPopup *m_materialSuggest;
@@ -229,6 +231,8 @@ protected:
   std::shared_ptr<const PeakDef> m_currentPeak;
   
   std::vector<double> m_peakEnergies;  // Stores energy values corresponding to m_peakSelect items
+  
+  std::shared_ptr<const SimpleActivityCalcState> m_previous_state;
 };
 
 #endif //SimpleActivityCalc_h

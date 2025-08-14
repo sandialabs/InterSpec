@@ -27,10 +27,14 @@
 .SimpleActivityCalc .result {
   font-size: 15px;
   font-weight: bold;
-  color: #2e7d32;
-  padding: 10px;
-  padding-bottom: 0px;
+  /* color: #2e7d32; */
+  padding-top: 6px;
+  padding-bottom: 6px;
   justify-content: center;
+  
+  margin: 3px;
+  background: white;
+  border-radius: 3px;
 }
 
 .SimpleActivityCalc .error {

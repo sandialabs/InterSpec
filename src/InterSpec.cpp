@@ -8884,17 +8884,17 @@ void InterSpec::handleSimpleActivityCalcWindowClose()
   auto dialog = m_simpleActivityCalcWindow;
   m_simpleActivityCalcWindow = nullptr;
   
-  const SimpleActivityCalcState state = dialog->tool()->currentState();
+  shared_ptr<const SimpleActivityCalcState> state = dialog->tool()->currentState();
   
   AuxWindow::deleteAuxWindow( dialog );
   
-  if( m_undo && m_undo->canAddUndoRedoNow() )
+  if( state && m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this, state](){
       SimpleActivityCalcWindow *tool = showSimpleActivityCalcWindow();
       assert( tool );
       if( tool && tool->tool() )
-        tool->tool()->setState( state );
+        tool->tool()->setState( *state );
     };
     auto redo = [this](){ programmaticallyCloseSimpleActivityCalc(); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple Activity Calc" );
@@ -8903,49 +8903,32 @@ void InterSpec::handleSimpleActivityCalcWindowClose()
 
 void InterSpec::startSimpleActivityCalcFromRightClick()
 {
-  std::shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
-  if( !peak || !peak->parentNuclide() )
-    return;
+  const shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
   
-  SimpleActivityCalcState prevState;
-  bool wasShowing = false;
+  //If was already showing, the tool itself will take car of undo/redo, otherwise we need to
+  const bool wasShowing = !!m_simpleActivityCalcWindow;
   
-  if( m_simpleActivityCalcWindow )
-  {
-    wasShowing = true;
-    prevState = m_simpleActivityCalcWindow->tool()->currentState();
-  }else
-  {
+  if( !m_simpleActivityCalcWindow )
     showSimpleActivityCalcWindow();
-  }
   
   assert( m_simpleActivityCalcWindow );
   if( !m_simpleActivityCalcWindow )
     return;
   
-  m_simpleActivityCalcWindow->tool()->setPeakFromEnergy( m_rightClickEnergy );
+  const double energy = peak ? peak->mean() : m_rightClickEnergy;
+  m_simpleActivityCalcWindow->tool()->setPeakFromEnergy( energy );
   
-  const SimpleActivityCalcState currentState = m_simpleActivityCalcWindow->tool()->currentState();
-  
-  if( m_undo && m_undo->canAddUndoRedoNow() )
+  if( m_undo && m_undo->canAddUndoRedoNow() && !wasShowing )
   {
-    auto undo = [this, wasShowing, prevState](){
-      if( wasShowing )
-      {
-        showSimpleActivityCalcWindow();
-        if( m_simpleActivityCalcWindow )
-          m_simpleActivityCalcWindow->tool()->setState( prevState );
-      }else
-      {
-        programmaticallyCloseSimpleActivityCalc();
-      }
+    auto undo = [this](){
+      programmaticallyCloseSimpleActivityCalc();
     };//undo
     
-    auto redo = [this, currentState](){
+    auto redo = [this, energy](){
       showSimpleActivityCalcWindow();
       assert( m_simpleActivityCalcWindow );
       if( m_simpleActivityCalcWindow )
-        m_simpleActivityCalcWindow->tool()->setState( currentState );
+        m_simpleActivityCalcWindow->tool()->setPeakFromEnergy( energy );
     };//redo
     
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Simple Activity Calc Tool." );

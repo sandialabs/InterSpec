@@ -15,6 +15,7 @@
   <message id="sac-geometry-point">Point Source</message>
   <message id="sac-geometry-plane">Infinite Plane</message>
   <message id="sac-geometry-self-atten">Self-Attenuating Sphere</message>
+  <message id="sac-geometry-trace-src">Trace Source</message>
   
   <message id="sac-error-no-peak">No peak selected</message>
   <message id="sac-error-no-detector">No detector response loaded</message>

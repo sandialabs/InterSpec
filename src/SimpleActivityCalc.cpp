@@ -161,8 +161,8 @@ void SimpleActivityCalcState::serialize( rapidxml::xml_node<char> * const parent
   XmlUtils::append_string_node( base_node, "NuclideAgeStr", nuclideAgeStr );
   XmlUtils::append_string_node( base_node, "DistanceStr", distanceStr );
   
-  // Serialize geometry type as integer
-  XmlUtils::append_int_node( base_node, "GeometryType", static_cast<int>(geometryType) );
+  // Serialize geometry type as string
+  XmlUtils::append_string_node( base_node, "GeometryType", SimpleActivityCalc::geometryTypeToString(geometryType) );
   
   // Serialize shielding info only if present
   if( shielding.has_value() )
@@ -204,19 +204,14 @@ void SimpleActivityCalcState::deSerialize( const ::rapidxml::xml_node<char> *src
     if( distance_str_node )
       distanceStr = SpecUtils::xml_value_str( distance_str_node );
     
-    // Deserialize geometry type from integer
+    // Deserialize geometry type from string
     const rapidxml::xml_node<char> *geom_type_node = XML_FIRST_NODE( src_node, "GeometryType" );
-    int geomTypeInt = 0; // Default to Point
+    std::string geomTypeStr = "Point"; // Default to Point
     if( geom_type_node )
     {
-      const std::string geom_str = SpecUtils::xml_value_str( geom_type_node );
-      geomTypeInt = std::stoi( geom_str );
+      geomTypeStr = SpecUtils::xml_value_str( geom_type_node );
     }
-    geometryType = static_cast<SimpleActivityGeometryType>(geomTypeInt);
-    
-    // Validate geometry type value
-    if( geomTypeInt < 0 || geomTypeInt > static_cast<int>(SimpleActivityGeometryType::TraceSrc) )
-      throw std::runtime_error( "SimpleActivityCalcState::deSerialize: invalid geometry type value" );
+    geometryType = SimpleActivityCalc::geometryTypeFromString( geomTypeStr );
     
     // Deserialize shielding info - find the ShieldingInfo node
     const rapidxml::xml_node<char> *shielding_node = XML_FIRST_NODE( src_node, "Shielding" );
@@ -363,6 +358,7 @@ SimpleActivityCalc::SimpleActivityCalc( MaterialDB *materialDB,
                                       Wt::WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_renderFlags( 0x0 ),
+  m_haveRendered( false ),
   m_viewer( specViewer ),
   m_materialSuggest( materialSuggestion ),
   m_materialDB( materialDB ),
@@ -379,7 +375,8 @@ SimpleActivityCalc::SimpleActivityCalc( MaterialDB *materialDB,
   m_distanceRow( nullptr ),
   m_ageRow( nullptr ),
   m_geometryRow( nullptr ),
-  m_currentPeak( nullptr )
+  m_currentPeak( nullptr ),
+  m_previous_state{}
 {
   if( !m_materialDB )
     throw logic_error( "SimpleActivityCalc requires a valid MaterialDB." );
@@ -505,16 +502,70 @@ void SimpleActivityCalc::init()
   handlePeakChanged();
 }
 
+
+void SimpleActivityCalc::handleAddUndoPoint()
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || undoRedo->isInUndoOrRedo() )
+    return;
+    
+  shared_ptr<const SimpleActivityCalcState> prev_state = m_previous_state;
+  shared_ptr<const SimpleActivityCalcState> current_state = currentState();
+  m_previous_state = current_state;
+  
+  if( !prev_state )
+    prev_state = make_shared<SimpleActivityCalcState>();
+  
+  assert( prev_state && current_state );
+  
+  auto undo = [prev_state](){
+    InterSpec *viewer = InterSpec::instance();
+    SimpleActivityCalcWindow *window = viewer ? viewer->showSimpleActivityCalcWindow() : nullptr;
+    SimpleActivityCalc *calc = window ? window->tool() : nullptr;
+    if( calc )
+    {
+      calc->setState( *prev_state );
+      calc->m_renderFlags.clear(AddUndoRedoStep);
+    }
+  };//undo
+      
+  auto redo = [current_state](){
+    InterSpec *viewer = InterSpec::instance();
+    SimpleActivityCalcWindow *window = viewer ? viewer->showSimpleActivityCalcWindow() : nullptr;
+    SimpleActivityCalc *calc = window ? window->tool() : nullptr;
+    if( calc )
+    {
+      calc->setState( *current_state );
+      calc->m_renderFlags.clear(AddUndoRedoStep);
+    }
+  };//redo
+      
+  undoRedo->addUndoRedoStep( undo, redo, "SimpleActivityCalc state change" );
+}//void SimpleActivityCalc::handleAddUndoPoint()
+
+
 void SimpleActivityCalc::render( WFlags<RenderFlag> flags )
 {
   WContainerWidget::render( flags );
-}
+  
+  if( m_haveRendered && m_renderFlags.testFlag(AddUndoRedoStep) )
+    handleAddUndoPoint();
+  
+  if( m_renderFlags.testFlag(UpdateResult) )
+    updateResult();
+  
+  m_renderFlags = 0;
+  
+  if( !m_haveRendered )
+  {
+    m_haveRendered = true;
+    m_previous_state = currentState();
+  }//if( !m_haveRendered )
+}//void render( WFlags<RenderFlag> flags )
+
 
 void SimpleActivityCalc::setPeakFromEnergy( const double energy )
 {
-  if( !m_peakSelect )
-    return;
-    
   // Find the peak with the closest energy
   for( size_t i = 0; i < m_peakEnergies.size(); ++i )
   {
@@ -525,7 +576,8 @@ void SimpleActivityCalc::setPeakFromEnergy( const double energy )
       break;
     }
   }
-}
+}//void setPeakFromEnergy( const double energy )
+
 
 void SimpleActivityCalc::handleAppUrl( std::string uri )
 {
@@ -536,33 +588,27 @@ std::string SimpleActivityCalc::encodeStateToUrl() const
   return "dummy-state-url";
 }
 
-SimpleActivityCalcState SimpleActivityCalc::currentState() const
+std::shared_ptr<SimpleActivityCalcState> SimpleActivityCalc::currentState() const
 {
-  SimpleActivityCalcState state;
+  auto state = make_shared<SimpleActivityCalcState>();
   
   // Get current peak and nuclide information
   auto peak = getCurrentPeak();
   if( peak )
   {
-    state.peakEnergy = peak->mean();
+    state->peakEnergy = peak->mean();
     const SandiaDecay::Nuclide *nuc = peak->parentNuclide();
     if( nuc )
-      state.nuclideName = nuc->symbol;
+      state->nuclideName = nuc->symbol;
   }
   
-  // Get age string
-  if( m_ageEdit )
-    state.nuclideAgeStr = m_ageEdit->text().toUTF8();
+  state->nuclideAgeStr = m_ageEdit->text().toUTF8();
+  state->distanceStr = m_distanceEdit->text().toUTF8();
   
-  // Get distance string
-  if( m_distanceEdit )
-    state.distanceStr = m_distanceEdit->text().toUTF8();
-  
-  // Get geometry type
-  if( m_geometrySelect && m_geometrySelect->currentIndex() >= 0 )
+  if( m_geometrySelect && (m_geometrySelect->currentIndex() >= 0) )
   {
-    const std::string key = m_geometrySelect->currentText().toUTF8();
-    state.geometryType = geometryTypeFromString( key );
+    const std::string key = m_geometrySelect->currentText().key();
+    state->geometryType = geometryTypeFromString( key );
   }
   
   // Get shielding info only if not "no shielding"
@@ -570,88 +616,66 @@ SimpleActivityCalcState SimpleActivityCalc::currentState() const
   {
     try
     {
-      state.shielding = m_shieldingSelect->toShieldingInfo();
-    }
-    catch( const std::exception &e )
+      state->shielding = m_shieldingSelect->toShieldingInfo();
+    }catch( const std::exception &e )
     {
       // If error getting shielding, leave it as empty optional
-      state.shielding.reset();
+      state->shielding.reset();
     }
   }
   else
   {
     // No shielding selected
-    state.shielding.reset();
+    state->shielding.reset();
   }
   
   return state;
 }
 
+
 void SimpleActivityCalc::setState( const SimpleActivityCalcState &state )
 {
+  updatePeakList();
+  
   // Set peak based on energy and nuclide name
-  if( state.peakEnergy > 0 && !state.nuclideName.empty() )
-  {
+  if( (state.peakEnergy > 0) && !state.nuclideName.empty() )
     setPeakFromEnergy( state.peakEnergy );
-  }
   
   // Set age string
-  if( m_ageEdit && !state.nuclideAgeStr.empty() )
-    m_ageEdit->setText( WString::fromUTF8(state.nuclideAgeStr) );
+  m_ageEdit->setText( WString::fromUTF8(state.nuclideAgeStr) );
   
   // Set distance string
-  if( m_distanceEdit && !state.distanceStr.empty() )
+  if( !state.distanceStr.empty() )
     m_distanceEdit->setText( WString::fromUTF8(state.distanceStr) );
   
   // Set shielding info first (before geometry, so geometry options can be updated appropriately)
-  if( m_shieldingSelect )
+  if( state.shielding.has_value() )
   {
-    if( state.shielding.has_value() )
+    try
     {
-      try
-      {
-        m_shieldingSelect->fromShieldingInfo( state.shielding.value() );
-      }
-      catch( const std::exception &e )
-      {
-        // If error setting shielding, clear it
-        m_shieldingSelect->setToNoShielding();
-      }
-    }
-    else
+      m_shieldingSelect->fromShieldingInfo( state.shielding.value() );
+    }catch( const std::exception &e )
     {
-      // No shielding in state - set to no shielding
       m_shieldingSelect->setToNoShielding();
     }
+  }else
+  {
+    // No shielding in state - set to no shielding
+    m_shieldingSelect->setToNoShielding();
   }
   
   // Update geometry options based on current detector, peak, and shielding
   updateGeometryOptions();
   
-  // Now try to set geometry type if the desired option is available
-  if( m_geometrySelect )
-  {
-    const std::string geometryStr = geometryTypeToString( state.geometryType );
-    for( int i = 0; i < m_geometrySelect->count(); ++i )
-    {
-      if( m_geometrySelect->itemText(i).toUTF8().find( geometryStr ) != std::string::npos )
-      {
-        m_geometrySelect->setCurrentIndex( i );
-        break;
-      }
-    }
-  }
-  
   // Update display
-  updateResult();
-}
+  scheduleRender( UpdateResult );
+}//void setState( const SimpleActivityCalcState &state )
+
 
 void SimpleActivityCalc::updatePeakList()
 {
-  if( !m_peakSelect )
-    return;
-    
   m_peakSelect->clear();
+  m_peakEnergies.clear();
   
   if( !m_viewer )
     return;
@@ -661,9 +685,6 @@ void SimpleActivityCalc::updatePeakList()
   
   if( !spec || !peaks )
     return;
-    
-  // Store peaks in member variable for later access
-  m_peakEnergies.clear();
   
   for( const auto &peak : *peaks )
   {
@@ -677,24 +698,20 @@ void SimpleActivityCalc::updatePeakList()
       // Store the peak energy in member vector
       m_peakEnergies.push_back( peak->mean() );
     }
-  }
+  }//for( const auto &peak : *peaks )
   
   if( m_peakSelect->count() == 0 )
   {
     m_peakSelect->addItem( "No peaks with assigned nuclides" );
     m_peakSelect->setEnabled( false );
+    m_peakEnergies.push_back( -1.0 );
     
     // Clear nuclide info and result when no peaks available
     m_nuclideInfo->setText( "" );
-    if( m_resultText )
-      m_resultText->setText( "" );
-    if( m_errorText )
-    {
-      m_errorText->setText( WString::tr("sac-error-no-peak") );
-      m_errorText->show();
-    }
-  }
-  else
+    m_resultText->setText( "" );
+    m_errorText->setText( WString::tr("sac-error-no-peak") );
+    m_errorText->show();
+  }else
   {
     m_peakSelect->setEnabled( true );
     
@@ -717,7 +734,8 @@ void SimpleActivityCalc::handlePeakChanged()
   
   updateNuclideInfo();
   updateGeometryOptions();
-  updateResult();
+  
+  scheduleRender( UpdateResult );
   scheduleRender( AddUndoRedoStep );
 }//void handlePeakChanged()
 
@@ -736,7 +754,7 @@ void SimpleActivityCalc::updateNuclideInfo()
     m_errorText->setText( WString::tr("sac-error-no-peak") );
     m_errorText->show();
     return;
-  }
+  }//if( !nuc || (m_peakSelect->currentIndex() < 0) )
     
   const double energy = peak->mean();
   const double gamma_energy = peak->gammaParticleEnergy();
@@ -807,7 +825,7 @@ void SimpleActivityCalc::updateNuclideInfo()
 
 std::shared_ptr<const PeakDef> SimpleActivityCalc::getCurrentPeak() const
 {
-  if( !m_viewer || !m_peakSelect || m_peakSelect->currentIndex() < 0 )
+  if( !m_viewer || !m_peakSelect || (m_peakSelect->currentIndex() < 0) )
     return nullptr;
     
   const int index = m_peakSelect->currentIndex();
@@ -933,20 +951,20 @@ int SimpleActivityCalc::findBestReplacementPeak( std::shared_ptr<const PeakDef> 
 
 void SimpleActivityCalc::handleAgeChanged()
 {
-  updateResult();
+  scheduleRender( UpdateResult );
   scheduleRender( AddUndoRedoStep );
 }
 
 void SimpleActivityCalc::handleDistanceChanged()
 {
-  updateResult();
+  scheduleRender( UpdateResult );
   scheduleRender( AddUndoRedoStep );
 }
 
 void SimpleActivityCalc::handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_drf )
 {
   // Check if this is a fixed geometry detector and hide/show distance and geometry rows
-  if( new_drf && m_distanceRow && m_geometryRow )
+  if( new_drf )
   {
     const bool isFixedGeom = new_drf->isFixedGeometry();
     m_distanceRow->setHidden( isFixedGeom );
@@ -954,27 +972,27 @@ void SimpleActivityCalc::handleDetectorChanged( std::shared_ptr<DetectorPeakResp
   }
   
   updateGeometryOptions();
-  updateResult();
+  scheduleRender( UpdateResult );
   scheduleRender( AddUndoRedoStep );
 }
 
 void SimpleActivityCalc::handleGeometryChanged()
 {
-  updateResult();
+  scheduleRender( UpdateResult );
   scheduleRender( AddUndoRedoStep );
 }
 
 void SimpleActivityCalc::handleShieldingChanged()
 {
   updateGeometryOptions();
-  updateResult();
+  scheduleRender( UpdateResult );
   scheduleRender( AddUndoRedoStep );
 }
 
 void SimpleActivityCalc::handleSpectrumChanged()
 {
   updatePeakList();
-  updateResult();
+  scheduleRender( UpdateResult );
 }
 
 void SimpleActivityCalc::handlePeaksChanged()
@@ -986,20 +1004,18 @@ void SimpleActivityCalc::handlePeaksChanged()
   updatePeakList();
   
   // Try to find the best replacement peak if we had a selection before
-  if( previousPeak && m_peakSelect && m_peakSelect->count() > 0 && m_peakSelect->isEnabled() )
+  if( previousPeak && (m_peakSelect->count() > 0) && m_peakSelect->isEnabled() )
   {
     int bestIndex = findBestReplacementPeak( previousPeak );
     if( bestIndex >= 0 )
     {
       m_peakSelect->setCurrentIndex( bestIndex );
-    }
-    else if( m_peakSelect->count() > 0 )
+    }else if( m_peakSelect->count() > 0 )
     {
       // Fallback to first available peak
       m_peakSelect->setCurrentIndex( 0 );
     }
-  }
-  else if( m_peakSelect && m_peakSelect->count() > 0 && m_peakSelect->isEnabled() )
+  }else if( m_peakSelect->count() > 0 && m_peakSelect->isEnabled() )
   {
     // If we didn't have a selection before but now have peaks, select the first one
     m_peakSelect->setCurrentIndex( 0 );
@@ -1010,8 +1026,10 @@ void SimpleActivityCalc::handlePeaksChanged()
   
   // Update displays
   updateNuclideInfo();
-  updateResult();
-}
+  
+  scheduleRender( UpdateResult );
+}//void handlePeaksChanged()
+
 
 void SimpleActivityCalc::scheduleRender( RenderActions action )
 {
@@ -1019,11 +1037,9 @@ void SimpleActivityCalc::scheduleRender( RenderActions action )
   WContainerWidget::scheduleRender();
 }
 
+
 void SimpleActivityCalc::updateResult()
 {
-  if( !m_resultText || !m_errorText )
-    return;
-    
   // Clear previous results
   m_resultText->setText( "" );
   m_errorText->setText( "" );
@@ -1085,12 +1101,38 @@ void SimpleActivityCalc::updateResult()
             const SandiaDecay::Element *el = (db && nuc) ? db->element( nuc->atomicNumber ) : nullptr;
             assert( el );
             if( el )
-              resultStr += "<br/>(used " + el->symbol + " 100% " + nuc->symbol + ")";
+            {
+              //input.shielding.push_back( info );
+              double mass_frac = 1.0;
+              assert( !input.shielding.empty() );
+              if( !input.shielding.empty() )
+              {
+                auto pos = input.shielding.front().m_nuclideFractions_.find(el);
+                
+                assert( pos != end(input.shielding.front().m_nuclideFractions_)
+                       && !pos->second.empty()
+                       && (get<0>(pos->second.front()) == nuc) );
+                if( (pos != end(input.shielding.front().m_nuclideFractions_))
+                   && !pos->second.empty() )
+                {
+                  const tuple<const SandiaDecay::Nuclide *,double,bool> &nucinfo = pos->second.front();
+                  assert( get<0>(nucinfo) == nuc );
+                  if( get<0>(nucinfo) == nuc )
+                    mass_frac = get<1>(nucinfo);
+                }//
+                //input.shielding.front().m_nuclideFractions_[el].fr
+              }//if( !input.shielding.empty()
+              
+              resultStr += "<br/>(" + nuc->symbol + " as " + SpecUtils::printCompact(100.0*mass_frac,3) + "% of "
+                           + el->symbol  + ")";
+            }
             
             if( result.sourceDimensions > 0.0 )
             {
               const std::string dimStr = PhysicalUnits::printToBestLengthUnits(result.sourceDimensions);
               resultStr += "<br/>Source radius: " + dimStr;
+              
+              m_shieldingSelect->setSphericalThickness( result.sourceDimensions );
             }
             if( result.nuclideMass > 0.0 )
             {
@@ -1122,7 +1164,7 @@ void SimpleActivityCalc::updateResult()
               const double uncert_cm2 = result.activityUncertainty / surface_area_cm2;
               resultStr += " ± " + PhysicalUnits::printToBestActivityUnits(uncert_cm2);
             }
-            resultStr += " /cm<sup>2</sup>";
+            //resultStr += " /cm<sup>2</sup>";
           }else
           {
             resultStr = "Unexpected error converting result";
@@ -1202,7 +1244,7 @@ SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
       throw std::runtime_error( "Invalid distance: " + std::string(e.what()) );
     }
     
-    const std::string geom_key = m_geometrySelect->currentText().toUTF8();
+    const std::string geom_key = m_geometrySelect->currentText().key();
     input.geometryType = geometryTypeFromString( geom_key );
     
     switch( input.geometryType )
@@ -1290,11 +1332,17 @@ SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
           throw runtime_error( "Invalid element?!?" );
         
         bool has_element = false;
+        double massFraction = 1.0;
         for( const pair<const SandiaDecay::Element *,float> &el_frac : info.m_material->elements )
         {
           if( el_frac.first != el )
             continue;
+          
           has_element = true;
+          
+          // TODO: currently we are just putting the isotope in as 100% of the element... need to give the user an option to set this
+          massFraction = 1.0;
+          
           break;
         }
         
@@ -1302,14 +1350,18 @@ SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
         {
           if( has_element )
             break;
-        }
+          has_element = (nuc_frac.first == nuc);
+          if( has_element )
+          {
+            // TODO: currently we are just putting the isotope as given in the material... need to give the user an option to set this
+            massFraction = nuc_frac.second;
+            break;
+          }
+        }//
         
         if( !has_element )
           throw runtime_error( "Shielding material selected does not contain the element for the current source nuclide." );
           
-        // TODO: currently we are just putting the isotope in as 100% of the element... need to give the user an option to set this
-        
-        double massFraction = 1.0;
         info.m_nuclideFractions_[el].push_back( {nuc,massFraction,false} );
         
         input.shielding.push_back( info );
@@ -1561,10 +1613,11 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     // Check if this is self-attenuating
     result.isSelfAttenuating = (input.geometryType == SimpleActivityGeometryType::SelfAttenuating);
     
-    if( result.isSelfAttenuating && !input.shielding.empty() )
+    if( result.isSelfAttenuating && !fit_results->final_shieldings.empty() )
     {
       // For self-attenuating sources, calculate source dimensions and mass
-      const auto& shield = input.shielding[0];
+      const ShieldingSourceFitCalc::FitShieldingInfo &shield = fit_results->final_shieldings.front();
+      
       if( shield.m_geometry == GammaInteractionCalc::GeometryType::Spherical )
       {
         result.sourceDimensions = shield.m_dimensions[0]; // radius
@@ -1584,20 +1637,20 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
   return result;
 }
 
+
 void SimpleActivityCalc::updateGeometryOptions()
 {
-  if( !m_geometrySelect || !m_geometryRow )
-    return;
-    
   // Get current detector
-  auto detector = m_detectorDisplay ? m_detectorDisplay->detector() : nullptr;
+  shared_ptr<DetectorPeakResponse> detector = m_detectorDisplay ? m_detectorDisplay->detector() : nullptr;
   
   // If fixed geometry detector, hide the entire row and set to Point
   if( !detector || detector->isFixedGeometry() )
   {
     m_geometryRow->hide();
-    // Set to point source but don't emit signals
-    m_geometrySelect->setCurrentIndex( static_cast<int>(SimpleActivityGeometryType::Point) );
+    
+    m_geometrySelect->clear();
+    m_geometrySelect->addItem( WString::tr("sac-geometry-point") );
+    m_geometrySelect->setCurrentIndex( 0 );
     return;
   }
   
@@ -1605,80 +1658,48 @@ void SimpleActivityCalc::updateGeometryOptions()
   m_geometryRow->show();
   
   // Get current peak to check nuclide compatibility with shielding
-  auto peak = getCurrentPeak();
+  shared_ptr<const PeakDef> peak = getCurrentPeak();
+  const SandiaDecay::Nuclide *nuclide = peak ? peak->parentNuclide() : nullptr;
   
   // Get current shielding info to check for self-attenuation and trace source compatibility
-  bool allowSelfAttenuation = false;
   bool allowTraceSrc = false;
+  bool allowSelfAttenuation = false;
   
-  if( peak && peak->parentNuclide() && m_shieldingSelect && !m_shieldingSelect->isNoShielding() )
+  if( nuclide && m_shieldingSelect && !m_shieldingSelect->isNoShielding() )
   {
-    try
+    const ShieldingSourceFitCalc::ShieldingInfo shielding = m_shieldingSelect->toShieldingInfo();
+    
+    // Check if we should allow trace source option
+    // Allow TraceSrc if we have non-generic shielding with non-zero thickness (radius)
+    allowTraceSrc = (!shielding.m_isGenericMaterial && shielding.m_material && (shielding.m_dimensions[0] > 1.0e-6));
+    
+    // Check if the shielding material contains the same element as the peak nuclide
+    if( shielding.m_material  )
     {
-      ShieldingSourceFitCalc::ShieldingInfo shielding = m_shieldingSelect->toShieldingInfo();
-      const SandiaDecay::Nuclide *peakNuclide = peak->parentNuclide();
-      
-      // Check if we should allow trace source option
-      // Allow TraceSrc if we have non-generic shielding with non-zero thickness (radius)
-      if( !shielding.m_isGenericMaterial && shielding.m_material && shielding.m_dimensions[0] > 1e-6 )
+      // Check material elements by atomic number
+      for( const auto &element : shielding.m_material->elements )
       {
-        allowTraceSrc = true;
-      }
+        if( element.first && (element.first->atomicNumber == nuclide->atomicNumber) && (element.second > 0.0) )
+        {
+          allowSelfAttenuation = true;
+          break;
+        }
+      }//for( const auto &element : shielding.m_material->elements )
       
-      // Check if the shielding material contains the same element as the peak nuclide
-      if( shielding.m_material && peakNuclide )
+      // Also check nuclide fractions map for exact nuclide match or same element
+      for( const std::pair<const SandiaDecay::Nuclide *,float> &nuc_fracs : shielding.m_material->nuclides )
       {
-        const int peakAtomicNumber = peakNuclide->atomicNumber;
+        if( !allowSelfAttenuation )
+          allowSelfAttenuation = (nuc_fracs.first == nuclide);
         
-        // Check material elements by atomic number
-        for( const auto &element : shielding.m_material->elements )
-        {
-          if( element.first && element.first->atomicNumber == peakAtomicNumber && element.second > 1e-6 )
-          {
-            allowSelfAttenuation = true;
-            break;
-          }
-        }
-        
-        // Also check nuclide fractions map for exact nuclide match or same element
-        for( const auto &elementToNucs : shielding.m_nuclideFractions_ )
-        {
-          const SandiaDecay::Element *shieldingElement = elementToNucs.first;
-          if( shieldingElement && shieldingElement->atomicNumber == peakAtomicNumber )
-          {
-            // Same element - check if our specific nuclide is present or if there are any nuclides
-            allowSelfAttenuation = true;
-            
-            const auto &nuclideVec = elementToNucs.second;
-            for( const auto &nucTuple : nuclideVec )
-            {
-              const SandiaDecay::Nuclide *nuc = std::get<0>(nucTuple);
-              if( nuc == peakNuclide )
-              {
-                // Exact nuclide match
-                allowSelfAttenuation = true;
-                break;
-              }
-            }
-            break;
-          }
-        }
-      }
-    }
-    catch( const std::exception &e )
-    {
-      // If can't get shielding info, assume no self-attenuation
-      allowSelfAttenuation = false;
-    }
-  }
+        if( allowSelfAttenuation )
+          break;
+      }//for( const auto &elementToNucs : shielding.m_nuclideFractions_ )
+    }//if( shielding.m_material  )
+  }//if( nuclide && m_shieldingSelect && !m_shieldingSelect->isNoShielding() )
   
   // Store current selection before clearing
-  const int currentIndex = m_geometrySelect->currentIndex();
-  Wt::WString currentSelection;
-  if( currentIndex >= 0 && currentIndex < m_geometrySelect->count() )
-  {
-    currentSelection = m_geometrySelect->itemText( currentIndex );
-  }
+  const WString currentSelection = m_geometrySelect->currentText();
   
   // Clear and rebuild combo box
   m_geometrySelect->clear();
@@ -1689,38 +1710,26 @@ void SimpleActivityCalc::updateGeometryOptions()
   
   // Add self-attenuation option only if compatible
   if( allowSelfAttenuation )
-  {
     m_geometrySelect->addItem( WString::tr("sac-geometry-self-atten") );
-  }
   
   // Add trace source option only if we have appropriate shielding
   if( allowTraceSrc )
-  {
     m_geometrySelect->addItem( WString::tr("sac-geometry-trace-src") );
-  }
   
   // Try to restore previous selection if still available
-  int newIndex = -1;
-  if( !currentSelection.empty() )
+  int newIndex = 0; // If previous selection is no longer available, default to Point
+  for( int i = 0; i < m_geometrySelect->count(); ++i )
   {
-    for( int i = 0; i < m_geometrySelect->count(); ++i )
+    if( m_geometrySelect->itemText(i).key() == currentSelection.key() )
     {
-      if( m_geometrySelect->itemText(i).key() == currentSelection.key() )
-      {
-        newIndex = i;
-        break;
-      }
+      newIndex = i;
+      break;
     }
   }
   
-  // If previous selection is no longer available, default to Point
-  if( newIndex < 0 )
-  {
-    newIndex = 0; // Point source
-  }
-  
   m_geometrySelect->setCurrentIndex( newIndex );
-}
+}//void updateGeometryOptions()
+
 
 void SimpleActivityCalc::handleOpenAdvancedTool()
 {
