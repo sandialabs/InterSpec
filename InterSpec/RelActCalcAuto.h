@@ -996,12 +996,78 @@ struct RelActAutoSolution
    if you are not updating the displayed spectrum for the adjusted energy cal).
    
    You would use these peaks for `m_foreground`.
+
+   Note: if background subtraction is used, and you want to display the peaks on 
+     non-background-subtracted data, please use `m_peaks_without_back_sub`.
+   You would use these peaks for `m_foreground - m_background` (i.e., if you do background subtraction, then the continuums would not be correct,
+   unless you background subtract from `m_foreground`).
    */
   std::vector<PeakDef> m_fit_peaks_in_spectrums_cal;
   
   /** Same as `m_fit_peaks_in_spectrums_cal`, but seperated by rel eff curve, and not including free-floating peaks. */
   std::vector<std::vector<PeakDef>> m_fit_peaks_in_spectrums_cal_for_each_curve;
   
+  /** The fit peaks, in the spectrums cal, but with the continuums adjusted to display the peaks in 
+   non-background-subtracted data.  If background subtraction wasnt used to do the fit, then these
+   peaks will be the same as `m_fit_peaks_in_spectrums_cal`.
+  */
+  std::vector<PeakDef> m_peaks_without_back_sub;
+
+  /** Peaks whose amplitudes have been unconstrained from RE curve and allowed to float.
+
+   Peaks are clustered together (e.g., peaks less than 1.5 sigma from each other are combined), then the amplitudes and continuums
+   are re-fit to the data, with all other parameters fixed at thier final fit values.  These peaks give a measure of how far off from the
+   relative efficiency curve the data is from the actual solution.
+
+   Will be empty if re-fitting process fails.
+
+   These peaks are seperated by rel eff curve, do not include free-floating peaks, an are in "true" energy calibration of the spectrum.
+
+   TODO: I think `m_free_amp_fit_peaks_for_each_curve` can be removed, since `m_obs_eff_for_each_curve` holds all this info
+   */
+  std::vector<std::vector<PeakDef>> m_free_amp_fit_peaks_for_each_curve;
+
+  /** The measured rel. eff. for a energy; these are determined after the fit finishes, peaks are clustered (peaks within 1.5 sigma of
+   each other are combined), then holding all other things (FWHM, energy cal, etc) constant, the amplitudes are allowed to freely float;
+   then the relative efficieciency is determined from this.
+   */
+  struct ObsEff
+  {
+    /** The effective mean of all the peaks clutered. */
+    double energy;
+    /** The relative efficiency, as determined by the full solution to the problem. */
+    double orig_solution_eff;
+    /** The relative efficiency from the amplitude-unconstrained fit. */
+    double observed_efficiency;
+    double observed_efficiency_uncert;
+    /** The scale factor to multiply the peak amplitude fit in the solution, to get what was freely fit for. */
+    double observed_scale_factor;
+    /** The unconstrained fit peak area, over its uncertainty.  Should be about 4, before we bother showing on chart */
+    double num_sigma_significance;
+    double cluster_lower_energy, cluster_upper_energy;
+    double roi_lower_energy, roi_upper_energy;
+    /** The unconstrained fit peak amplitude. */
+    double amplitude;
+    double amplitude_uncert;
+    /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
+    double effective_sigma;
+    double fraction_roi_counts;
+
+    /** The peaks, who have had their amplitudes scaled to the unconstrined fit value, who where clustered together.
+     Ordered by largest peak first.
+     */
+    std::vector<PeakDef> fit_peaks;
+  };//struct ObsEff
+
+  /** The fit efficiencies for the peaks fit to data, allowing the amplitudes to freely float.
+   Each `ObsEff` may be from one to a number of peaks that have been clustered together because they were effectively
+   indistiguishable (means within 1.5 sigma is the criteria used).
+
+   Will be empty if re-fitting process fails.
+   */
+  std::vector<std::vector<ObsEff>> m_obs_eff_for_each_curve;
+
+
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
    be assessed based on peak localities and expected counts; this variable holds the ROI
    ranges that were assessed and used to compute final answer.
@@ -1112,7 +1178,7 @@ struct RelActAutoSolution
   
   /** The number of degrees of freedom in the fit for equation parameters.
    
-   Note: this is currently just a
+   Note: this is the number data channels used, minus the number of (estimated effective) fit paramaters.
    */
   size_t m_dof;
   
@@ -1179,7 +1245,6 @@ RelActAutoSolution solve( const Options options,
                          std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                          std::shared_ptr<std::atomic_bool> cancel_calc = nullptr
                          );
-
 
 }//namespace RelActCalcAuto
 

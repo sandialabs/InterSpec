@@ -25,6 +25,8 @@
 
 #include <map>
 
+#include <boost/math/distributions/chi_squared.hpp>
+
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -479,9 +481,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   WStackedWidget *upper_stack = new WStackedWidget();
   upper_stack->addStyleClass( "UpperStack" );
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
-  upper_stack->setTransitionAnimation( animation, true );
-  
+  // Adding this transformation causes the "Rel. Eff." chart to resize wrong initially when you click to it
+  //WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  //upper_stack->setTransitionAnimation( animation, true );
+
   m_upper_menu = new WMenu( upper_stack, Wt::Vertical, upper_div );
   m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
   upper_div->addWidget( upper_stack );
@@ -1545,7 +1548,10 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
     auto peak = make_shared<PeakDef>(mean, sigma, amplitude );
     
     peak->continuum()->setRange( roi_lower, roi_upper );
-    peak->continuum()->calc_linear_continuum_eqn( m_foreground, mean, roi_lower, roi_upper, 3, 3 );
+    shared_ptr<const SpecUtils::Measurement> histogram = m_spectrum->data();
+    if( !histogram )
+      histogram = m_foreground;
+    peak->continuum()->calc_linear_continuum_eqn( histogram, mean, roi_lower, roi_upper, 3, 3 );
     
     m_spectrum->updateRoiBeingDragged( vector< shared_ptr<const PeakDef>>{peak} );
   }catch( std::exception &e )
@@ -3660,11 +3666,10 @@ void RelActAutoGui::setPeaksToForeground()
   
   SimpleDialog *dialog = new SimpleDialog( "Use peaks with foreground?", "" );
   dialog->addStyleClass( "SetToPeaksDialog" );
-  WText *message = new WText( "Peaks will not have uncertainties unless you choose"
-                             " to re-fit them, in which case the re-fit peaks may"
-                             " differ from the current peaks since they will no"
-                             " longer be constrained by the Relative Efficiency"
-                             " curve or spectrum wide FWHM response.", dialog->contents() );
+  WText *message = new WText( "Peaks uncertainties will be based on total relative efficiency fit (eg.,"
+                             " peaks helping each other out to reduce uncertainties), unless you choose"
+                             " to refit them, in which case they will not be constrained by Rel. Eff."
+                             " curve of FWHM functional form.", dialog->contents() );
   message->addStyleClass( "content" );
   message->setInline( false );
   
@@ -3686,8 +3691,7 @@ void RelActAutoGui::setPeaksToForeground()
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = 
   "When checked, peaks will be refit without the constraints of the relative efficiency curve,"
-  " expected branching ratios, or FWHM constraints from other ROIs - allowing statistical"
-  " uncertainties to be assigned to the peaks amplitude.<br/>"
+  " expected branching ratios, or FWHM constraints from other ROIs.<br/>"
   "Peaks that are within 0.53 FWHM (1.25 sigma) of each other will be merged together.<br/>"
   "  Peak mean, FWHM, and continuums will be refit, with usually peak means limited to be changed"
   " by no more than 0.11 times the peak FWHM, but if this fails,"
@@ -5035,10 +5039,25 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
-  
-  WString chi2_title("χ²/dof = {1}/{2}{3}");
-  chi2_title.arg( SpecUtils::printCompact(answer->m_chi2, 3) )
-            .arg( static_cast<int>(answer->m_dof) );
+
+  const string chi2_str = SpecUtils::printCompact(answer->m_chi2, 3);
+  const int dof = static_cast<int>(answer->m_dof);
+  WString chi2_title_tooltip;
+  WString chi2_title = WString("χ²/dof = {1}/{2}{3}").arg( chi2_str ).arg( dof );
+  try
+  {
+    const double chi2_dof = answer->m_chi2 / answer->m_dof;
+    const string chi2_dof_str = SpecUtils::printCompact(chi2_dof, 3);
+    boost::math::chi_squared chi2_dist(dof);
+    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2); //Probability we would have seen a chi2 this large.
+    const double p_value = 1.0 - prob; //Probability we would have observed this good of a chi2, or better
+    const string p_value_str = SpecUtils::printCompact(p_value, 3);
+
+    chi2_title_tooltip = WString("χ²/dof = {1}/{2} = {3} --> p-value = {4}" );
+    chi2_title_tooltip.arg(chi2_str).arg(dof).arg(chi2_dof_str).arg(p_value_str);
+  }catch( std::exception & )
+  {
+  }//try / catch to compute the Chi2/DOF
 
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio
@@ -5177,7 +5196,19 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     RelEffChart::ReCurveInfo info;
     info.live_time = live_time;
-    info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
+    if( i < answer->m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
+    {
+      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4
+      for( const auto &obs_eff : answer->m_obs_eff_for_each_curve[i] )
+      {
+        if( (obs_eff.observed_efficiency > 0.0)
+           && (obs_eff.num_sigma_significance > 2.5)
+           && (obs_eff.fraction_roi_counts > 0.05) )
+        {
+          info.obs_eff_data.push_back( obs_eff );
+        }
+      }
+    }
     info.rel_acts = answer->m_rel_activities[i];
     info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
     info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
@@ -5198,6 +5229,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   m_rel_eff_chart->setData( info_sets );
 
   m_fit_chi2_msg->setText( chi2_title );
+  m_fit_chi2_msg->setToolTip( chi2_title_tooltip );
   m_fit_chi2_msg->show();
 
 
@@ -5258,7 +5290,8 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       try
       {
         const pair<double,double> act_uncert = this->m_solution->rel_activity_with_uncert(src, rel_eff_index);
-        assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act)) );
+        assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act))
+               || (fabs(act_uncert.first - rel_act) < 1.0E-6) );
         tooltip_text += " ± " + SpecUtils::printCompact(act_uncert.second, 4);
       }catch( std::exception &e )
       {

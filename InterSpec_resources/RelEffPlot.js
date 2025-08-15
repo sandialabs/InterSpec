@@ -256,7 +256,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     const startX = parentWidth - maxTextWidth;
     
     // Create the actual text elements stacked vertically
-    let currentY = 0;
+    let currentY = 5;
     this.chi2TxtArray.forEach((txt, index) => {
       const textElem = this.svg.append("text")
         .attr("class", "ChartInfoTitle dataset-" + index)
@@ -459,6 +459,29 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   this.chartArea.selectAll("circle").remove();
   this.chartArea.selectAll("line.errorbar").remove();
     
+  // Calculate min and max counts across all datasets for radius scaling
+  let minCounts = Number.MAX_VALUE;
+  let maxCounts = -Number.MAX_VALUE;
+  
+  datasets.forEach(function(dataset) {
+    if (dataset.data_vals && dataset.data_vals.length > 0) {
+      dataset.data_vals.forEach(function(d) {
+        if (d.counts > maxCounts) maxCounts = d.counts;
+        if (d.counts < minCounts) minCounts = d.counts;
+      });
+    }
+  });
+  
+  // Function to calculate radius based on counts (sqrt scaling, radius 1-4)
+  function calculateRadius(counts) {
+    if (minCounts === maxCounts) return 3; // Default radius if all counts are equal
+    
+    // Normalize counts to 0-1 range, then apply sqrt, then scale to 1-4
+    const normalized = (counts - minCounts) / (maxCounts - minCounts);
+    const sqrtNormalized = Math.sqrt(normalized);
+    return 2 + sqrtNormalized * 3; // Scale from 2 to 5
+  }
+  
   // Plot all data points across all datasets
   datasets.forEach(function(dataset, datasetIndex) {
     const data_vals = dataset.data_vals;
@@ -516,7 +539,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       .data(data_vals)
       .enter()
       .append("circle")
-      .attr("r", 3)
+      .attr("r", function(d) { return calculateRadius(d.counts); })
       .attr("cx", function (d) {
         return self.xScale(d.energy)
       })
@@ -640,7 +663,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         d3.select(this).transition()
           .duration('50')
           .attr('opacity', '1')
-          .attr("r", 3);
+          .attr("r", calculateRadius(d.counts));
         self.tooltip.transition()
           .duration(500)
           .style("opacity", 0);
