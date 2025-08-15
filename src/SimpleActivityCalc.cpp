@@ -2317,9 +2317,6 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     {
       try
       {
-        string continuumData = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
-        shared_ptr<GadrasScatterTable> scatter = make_shared<GadrasScatterTable>( continuumData );
-        
         float shielding_an = 14.0f, shielding_ad = 0.0f;
         
         assert( (input.shielding.size() == 0) || (input.shielding.size() == 1) );
