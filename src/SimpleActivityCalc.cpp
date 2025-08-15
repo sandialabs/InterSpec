@@ -31,23 +31,27 @@
 #include <Wt/WMenu>
 #include <Wt/WText>
 #include <Wt/WLabel>
-#include <Wt/WLineEdit>
+#include <Wt/WServer>
+#include <Wt/WCheckBox>
 #include <Wt/WComboBox>
+#include <Wt/WLineEdit>
+#include <Wt/WIOService>
 #include <Wt/WPushButton>
-#include <Wt/WGridLayout>
 #include <Wt/WContainerWidget>
-#include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
+#include <Wt/WSuggestionPopup>
 
 #include "Minuit2/MnUserParameters.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AppUtils.h"
+#include "InterSpec/DoseCalc.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
@@ -59,9 +63,11 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/GadrasSpecFunc.h"
 #include "InterSpec/ShieldingSelect.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/SimpleActivityCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -77,13 +83,109 @@
 using namespace Wt;
 using namespace std;
 
+namespace
+{
+  /** We will load the scatter table as a static resource; a mechanism is setup to
+   to keep the scatter table in memory for a minute after the `SimpleActivityCalc`
+   tool destructs, but given it only take 2 or 3 milli-seconds to load on a M1 macbook pro,
+   we'll just re-initialize it ever creation of `SimpleActivityCalc`, rather than having the
+   asio::timer hanging around - if we ever want to change this, you can enable it with this next #define
+   
+   Note: the scatter table only takes up about 100 kb of memory.
+   */
+#define USE_GADRAS_SCATTER_CLEANUP_SCHEDULING 0
+  
+  std::mutex sm_scatter_mutex;
+  bool sm_tried_init_scatter = false;
+  shared_ptr<const GadrasScatterTable> sm_scatter;
+#if( USE_GADRAS_SCATTER_CLEANUP_SCHEDULING )
+  std::unique_ptr<boost::asio::deadline_timer> sm_cleanup_timer;
+#endif
+
+  shared_ptr<const GadrasScatterTable> get_scatter_table()
+  {
+    std::lock_guard<std::mutex> lock( sm_scatter_mutex );
+    if( sm_tried_init_scatter )
+      return sm_scatter;
+    
+    assert( !sm_scatter );
+    
+    sm_tried_init_scatter = true;
+#if( USE_GADRAS_SCATTER_CLEANUP_SCHEDULING )
+    if( sm_cleanup_timer )
+    {
+      boost::system::error_code ec;
+      sm_cleanup_timer->cancel( ec );
+      if( ec )
+        cerr << "Simple activity calc: error cancelling timer: " << ec.message() << endl;
+      sm_cleanup_timer.reset();
+    }//if( sm_cleanup_timer )
+#endif
+    
+    try
+    {
+      const string data = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
+      sm_scatter = make_shared<GadrasScatterTable>( data );
+    }catch( std::exception &e )
+    {
+      cerr << "SimpleActivityCalc: Failed to init GADRAS scatter object: " << e.what() << endl;
+    }
+    return sm_scatter;
+  }//shared_ptr<const GadrasScatterTable> get_scatter_table()
+  
+  
+  void free_scatter_table_worker()
+  {
+    std::lock_guard<std::mutex> lock( sm_scatter_mutex );
+   
+#if( USE_GADRAS_SCATTER_CLEANUP_SCHEDULING )
+    if( sm_cleanup_timer )
+    {
+      boost::system::error_code ec;
+      sm_cleanup_timer->cancel( ec );
+      sm_cleanup_timer.reset();
+    }//if( sm_cleanup_timer )
+#endif
+    
+    sm_scatter.reset();
+    sm_tried_init_scatter = false;
+  }//void free_scatter_table_worker()
+  
+#if( USE_GADRAS_SCATTER_CLEANUP_SCHEDULING )
+  void schedule_scatter_table_free()
+  {
+    static_assert( 0, "You must implement calling `free_scatter_table_worker()` from the InterSpec class destructor, so the timer wont keep the app from shutting down (I think)" );
+    std::lock_guard<std::mutex> lock( sm_scatter_mutex );
+    
+    if( sm_cleanup_timer )
+      return;
+    
+    WServer * const server = WServer::instance();
+    if( !server )
+    {
+      sm_scatter.reset();
+      sm_tried_init_scatter = false;
+      return;
+    }//if( !server )
+    
+    WIOService &io = server->ioService();
+    sm_cleanup_timer = make_unique<boost::asio::deadline_timer>( io );
+    sm_cleanup_timer->expires_from_now( boost::posix_time::seconds(60) );
+    sm_cleanup_timer->async_wait( [](const boost::system::error_code &ec){ if(!ec) free_scatter_table_worker(); } );
+  }//void schedule_scatter_table_free()
+#endif
+}//namespace
+
+
+
 SimpleActivityCalcState::SimpleActivityCalcState()
   : peakEnergy( -1 ),
     nuclideName( "" ),
     nuclideAgeStr( "" ),
     distanceStr( "" ),
     geometryType( SimpleActivityGeometryType::Point ),
-    shielding{} // Empty optional
+    shielding{}, // Empty optional
+    backgroundSubtract( false )
 {
 }
 
@@ -93,7 +195,8 @@ bool SimpleActivityCalcState::operator==( const SimpleActivityCalcState &rhs ) c
      || (nuclideName != rhs.nuclideName)
      || (nuclideAgeStr != rhs.nuclideAgeStr)
      || (distanceStr != rhs.distanceStr)
-     || (geometryType != rhs.geometryType) )
+     || (geometryType != rhs.geometryType)
+     || (backgroundSubtract != rhs.backgroundSubtract) )
   {
     return false;
   }
@@ -170,6 +273,9 @@ std::string SimpleActivityCalcState::encodeToUrl() const
   
   answer += "&GEOM=" + SimpleActivityCalc::to_str(geometryType);
   
+  if( backgroundSubtract )
+    answer += "&BG_SUB=1";
+  
   if( shielding.has_value() )
   {
     if( shielding->m_isGenericMaterial )
@@ -239,6 +345,12 @@ void SimpleActivityCalcState::decodeFromUrl( const std::string &uri, MaterialDB 
     if( geom_iter != end(values) )
     {
       geometryType = SimpleActivityCalc::geometryTypeFromString( geom_iter->second );
+    }
+    
+    const auto bg_sub_iter = values.find( "BG_SUB" );
+    if( bg_sub_iter != end(values) )
+    {
+      backgroundSubtract = (bg_sub_iter->second == "1");
     }
     
     // Check for shielding parameters: AN/AD for generic material, MAT/THICK for material
@@ -358,6 +470,9 @@ void SimpleActivityCalcState::serialize( rapidxml::xml_node<char> * const parent
   // Serialize geometry type as string
   XmlUtils::append_string_node( base_node, "GeometryType", SimpleActivityCalc::to_str(geometryType) );
   
+  // Serialize background subtract flag
+  XmlUtils::append_bool_node( base_node, "BackgroundSubtract", backgroundSubtract );
+  
   // Serialize shielding info only if present
   if( shielding.has_value() )
     shielding->serialize( base_node );
@@ -405,6 +520,11 @@ void SimpleActivityCalcState::deSerialize( const ::rapidxml::xml_node<char> *src
       geomTypeStr = SpecUtils::xml_value_str( geom_type_node );
     }
     geometryType = SimpleActivityCalc::geometryTypeFromString( geomTypeStr );
+    
+    // Deserialize background subtract flag
+    const rapidxml::xml_node<char> *bg_subtract_node = XML_FIRST_NODE( src_node, "BackgroundSubtract" );
+    if( bg_subtract_node )
+      backgroundSubtract = XmlUtils::get_bool_node_value( src_node, "BackgroundSubtract" );
     
     // Deserialize shielding info - find the ShieldingInfo node
     const rapidxml::xml_node<char> *shielding_node = XML_FIRST_NODE( src_node, "Shielding" );
@@ -462,6 +582,13 @@ void SimpleActivityCalcState::equalEnough( const SimpleActivityCalcState &lhs, c
   {
     throw std::runtime_error( "SimpleActivityCalcState::equalEnough: geometryType differs - LHS=" 
                              + std::to_string(static_cast<int>(lhs.geometryType)) + ", RHS=" + std::to_string(static_cast<int>(rhs.geometryType)) );
+  }
+  
+  // Compare background subtract flag
+  if( lhs.backgroundSubtract != rhs.backgroundSubtract )
+  {
+    throw std::runtime_error( "SimpleActivityCalcState::equalEnough: backgroundSubtract differs - LHS=" 
+                             + std::string(lhs.backgroundSubtract ? "true" : "false") + ", RHS=" + std::string(rhs.backgroundSubtract ? "true" : "false") );
   }
   
   // Compare optional shielding
@@ -537,6 +664,12 @@ SimpleActivityCalcWindow::SimpleActivityCalcWindow( MaterialDB *materialDB,
 
 SimpleActivityCalcWindow::~SimpleActivityCalcWindow()
 {
+  // See notes about how we are freeing up scatter table
+#if( USE_GADRAS_SCATTER_CLEANUP_SCHEDULING )
+  schedule_scatter_table_free();
+#else
+  free_scatter_table_worker();
+#endif
 }
 
 SimpleActivityCalc *SimpleActivityCalcWindow::tool()
@@ -563,16 +696,22 @@ SimpleActivityCalc::SimpleActivityCalc( MaterialDB *materialDB,
   m_geometrySelect( nullptr ),
   m_resultText( nullptr ),
   m_errorText( nullptr ),
-  m_advancedBtn( nullptr ),
-
+  m_backgroundSubtractCheck( nullptr ),
+//  m_advancedBtn( nullptr ),
   m_ageRow( nullptr ),
   m_distanceRow( nullptr ),
   m_geometryRow( nullptr ),
+  m_backgroundSubtractRow( nullptr ),
   m_currentPeak( nullptr ),
   m_previous_state{}
 {
   if( !m_materialDB )
     throw logic_error( "SimpleActivityCalc requires a valid MaterialDB." );
+ 
+  // Start loading the scatter table if it isnt already loaded
+  WServer::instance()->ioService().boost::asio::io_service::post( [](){
+    get_scatter_table();  //Takes about 2 or 3 milliseconds on M1 macbook pro; this beats time until `render()` function is called
+  } );
   
   InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
   if( app )
@@ -630,7 +769,7 @@ void SimpleActivityCalc::init()
   WText *shieldingLabel = new WText( WString::tr("sac-shielding-label"), shieldingRow );
   shieldingLabel->addStyleClass( "label" );
   m_shieldingSelect = new ShieldingSelect( m_materialDB, m_materialSuggest, shieldingRow );
-  m_shieldingSelect->addStyleClass( "input" );
+  //m_shieldingSelect->addStyleClass( "input" );
   m_shieldingSelect->materialChanged().connect( this, &SimpleActivityCalc::handleShieldingChanged );
   m_shieldingSelect->materialModified().connect( this, &SimpleActivityCalc::handleShieldingChanged );
   
@@ -656,6 +795,14 @@ void SimpleActivityCalc::init()
   m_distanceEdit->setValidator( new WRegExpValidator( PhysicalUnits::sm_distanceRegex ) );
   m_distanceEdit->changed().connect( this, &SimpleActivityCalc::handleDistanceChanged );
 
+  // Background subtract row (hidden if no background spectrum loaded)
+  m_backgroundSubtractRow = new WContainerWidget( this );
+  m_backgroundSubtractRow->addStyleClass( "row backsubrow" );
+  m_backgroundSubtractCheck = new WCheckBox( WString::tr("sac-background-subtract-label"), m_backgroundSubtractRow );
+  m_backgroundSubtractCheck->addStyleClass( "CbNoLineBreak input backsub" );
+  m_backgroundSubtractCheck->changed().connect( this, &SimpleActivityCalc::handleBackgroundSubtractChanged );
+  m_backgroundSubtractRow->hide(); // Initially hidden
+
   // Result display
   m_resultText = new WText( this );
   m_resultText->addStyleClass( "row result" );
@@ -666,15 +813,18 @@ void SimpleActivityCalc::init()
   m_errorText->hide();
   
   // Advanced button
-  m_advancedBtn = new WPushButton( WString::tr("sac-advanced-btn"), this );
-  m_advancedBtn->addStyleClass( "row advanced-btn LinkBtn" );
-  m_advancedBtn->clicked().connect( this, &SimpleActivityCalc::handleOpenAdvancedTool );
+  //m_advancedBtn = new WPushButton( WString::tr("sac-advanced-btn"), this );
+  //m_advancedBtn->addStyleClass( "row advanced-btn LinkBtn" );
+  //m_advancedBtn->clicked().connect( this, &SimpleActivityCalc::handleOpenAdvancedTool );
   
   // Connect to InterSpec signals for detector and spectrum changes
   if( m_viewer )
   {
     m_viewer->detectorChanged().connect( this, &SimpleActivityCalc::handleDetectorChanged );
     m_viewer->detectorModified().connect( this, &SimpleActivityCalc::handleDetectorChanged );
+    
+    // Connect to spectrum changes to update background subtract checkbox visibility
+    m_viewer->displayedSpectrumChanged().connect( this, &SimpleActivityCalc::handleSpectrumChanged );
     
     // Connect to PeakModel signals to detect peak changes
     PeakModel *peakModel = m_viewer->peakModel();
@@ -690,6 +840,7 @@ void SimpleActivityCalc::init()
   
   // Initialize display states
   updatePeakList();
+  updateBackgroundSubtractVisibility();
   handleDetectorChanged( m_detectorDisplay->detector() );
   handlePeakChanged();
 }
@@ -839,6 +990,9 @@ std::shared_ptr<SimpleActivityCalcState> SimpleActivityCalc::currentState() cons
     state->shielding.reset();
   }
   
+  // Get background subtract checkbox state
+  state->backgroundSubtract = m_backgroundSubtractCheck->isChecked();
+  
   return state;
 }
 
@@ -887,6 +1041,12 @@ void SimpleActivityCalc::setState( const SimpleActivityCalcState &state )
       break;
     }
   }
+  
+  // Set background subtract checkbox state
+  m_backgroundSubtractCheck->setChecked( state.backgroundSubtract );
+  
+  // Update background subtract visibility
+  updateBackgroundSubtractVisibility();
   
   // Update display
   scheduleRender( UpdateResult );
@@ -940,10 +1100,7 @@ void SimpleActivityCalc::updatePeakList()
   }else
   {
     m_peakSelect->setEnabled( true );
-    
-    // Hide error message when peaks become available
-    if( m_errorText )
-      m_errorText->hide();
+    m_errorText->hide(); // Hide error message when peaks become available
   }
 }
 
@@ -957,6 +1114,9 @@ void SimpleActivityCalc::handlePeakChanged()
   {
     m_ageEdit->setText( "" );
   }
+  
+  // Uncheck background subtract when foreground peak changes
+  m_backgroundSubtractCheck->setChecked( false );
   
   updateNuclideInfo();
   updateGeometryOptions();
@@ -1175,6 +1335,53 @@ int SimpleActivityCalc::findBestReplacementPeak( std::shared_ptr<const PeakDef> 
   return bestIndex;
 }
 
+void SimpleActivityCalc::updateBackgroundSubtractVisibility()
+{
+  shared_ptr<const SpecUtils::Measurement> background = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
+  
+  m_backgroundSubtractRow->setHidden( !background );
+  if( !background )
+    m_backgroundSubtractCheck->setChecked( false );
+}//void updateBackgroundSubtractVisibility()
+
+
+std::shared_ptr<const PeakDef> SimpleActivityCalc::findOverlappingBackgroundPeak() const
+{
+  shared_ptr<const PeakDef> currentPeak = getCurrentPeak();
+  if( !currentPeak )
+    return nullptr;
+  
+  // Get background spectrum
+  const shared_ptr<const SpecMeas> background = m_viewer->measurment(SpecUtils::SpectrumType::Background);
+  if( !background )
+    return nullptr;
+  
+  const set<int> &back_samples = m_viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+  if( back_samples.empty() )
+    return nullptr;
+  
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks = background->peaks(back_samples);
+  if( !back_peaks || back_peaks->empty() )
+    return nullptr;
+  
+  const double mean = currentPeak->mean();
+  const double fwhm = currentPeak->fwhm();
+  
+  // Look for background peaks that overlap with the foreground peak
+  for( const shared_ptr<const PeakDef> &peak : *back_peaks )
+  {
+    assert( peak );
+    const double energy_diff = fabs(peak->mean() - mean);
+    
+    // Consider overlapping if within 1 FWHM
+    if( energy_diff <= fwhm )
+      return peak;
+  }//for( const shared_ptr<const PeakDef> &peak : *back_peaks )
+  
+  return nullptr;
+}//shared_ptr<const PeakDef> findOverlappingBackgroundPeak() const
+
+
 void SimpleActivityCalc::handleAgeChanged()
 {
   scheduleRender( UpdateResult );
@@ -1217,7 +1424,29 @@ void SimpleActivityCalc::handleShieldingChanged()
 void SimpleActivityCalc::handleSpectrumChanged()
 {
   updatePeakList();
+  updateBackgroundSubtractVisibility();
   scheduleRender( UpdateResult );
+}
+
+void SimpleActivityCalc::handleBackgroundSubtractChanged()
+{
+  if( m_backgroundSubtractCheck->isChecked() )
+  {
+    // Check if there's an overlapping background peak
+    shared_ptr<const PeakDef> back_peak = findOverlappingBackgroundPeak();
+    if( !back_peak )
+    {
+      // No overlapping background peak found, uncheck and show message
+      // TODO: ask the user if they want to fit a background peak...
+      // TODO: need to make it so when result is updated, if a background peak was/was-not used, it needs to be checked to be consistent with this checkbox
+      m_backgroundSubtractCheck->setChecked( false );
+      passMessage( WString::tr("sac-error-no-background-peak"), WarningWidget::WarningMsgHigh );
+      return;
+    }//if( !back_peak )
+  }//if( m_backgroundSubtractCheck->isChecked() )
+  
+  scheduleRender( UpdateResult );
+  scheduleRender( AddUndoRedoStep );
 }
 
 void SimpleActivityCalc::handlePeaksChanged()
@@ -1295,8 +1524,10 @@ void SimpleActivityCalc::updateResult()
   
   try
   {
+    shared_ptr<const GadrasScatterTable> scatter = get_scatter_table();
+    
     const SimpleActivityCalcInput input = createCalcInput();
-    const SimpleActivityCalcResult result = performCalculation( input );
+    const SimpleActivityCalcResult result = performCalculation( input, scatter.get() );
     
     if( !result.successful )
     {
@@ -1304,6 +1535,8 @@ void SimpleActivityCalc::updateResult()
       m_errorText->show();
       return;
     }
+    
+    const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", m_viewer );
     
     if( result.activity > 0.0 )
     {
@@ -1315,9 +1548,10 @@ void SimpleActivityCalc::updateResult()
         case SimpleActivityGeometryType::TraceSrc:
         case SimpleActivityGeometryType::SelfAttenuating:
         {
-          resultStr = "Activity: " + PhysicalUnits::printToBestActivityUnits(result.activity);
+          resultStr = "<span class=\"Activity\">Activity: " + PhysicalUnits::printToBestActivityUnits(result.activity, 2, !useBq );
           if( result.activityUncertainty > 0.0 )
-            resultStr += " ± " + PhysicalUnits::printToBestActivityUnits(result.activityUncertainty);
+            resultStr += " ± " + PhysicalUnits::printToBestActivityUnits(result.activityUncertainty, 2, !useBq );
+          resultStr += "</span>";
           
           if( input.geometryType == SimpleActivityGeometryType::SelfAttenuating )
           {
@@ -1348,21 +1582,21 @@ void SimpleActivityCalc::updateResult()
                 //input.shielding.front().m_nuclideFractions_[el].fr
               }//if( !input.shielding.empty()
               
-              resultStr += "<br/>(" + nuc->symbol + " as " + SpecUtils::printCompact(100.0*mass_frac,3) + "% of "
-                           + el->symbol  + ")";
+              resultStr += "<span class=\"MassFrac\">(" + nuc->symbol + " as " + SpecUtils::printCompact(100.0*mass_frac,3) + "% of "
+                           + el->symbol  + ")</span>";
             }
             
             if( result.sourceDimensions > 0.0 )
             {
               const std::string dimStr = PhysicalUnits::printToBestLengthUnits(result.sourceDimensions);
-              resultStr += "<br/>Source radius: " + dimStr;
+              resultStr += "<span class=\"SrcRad\">Source radius: " + dimStr + "</span>";
               
               m_shieldingSelect->setSphericalThickness( result.sourceDimensions );
             }
             if( result.nuclideMass > 0.0 )
             {
               const std::string srcMassStr = PhysicalUnits::printToBestMassUnits(result.nuclideMass);
-              resultStr += "<br/>" + string(nuc ? nuc->symbol : "null") + " mass: " + srcMassStr;
+              resultStr += "<span class=\"NucMass\">" + string(nuc ? nuc->symbol : "null") + " mass: " + srcMassStr + "</span>";
             }
           }//if( input.geometryType == SimpleActivityGeometryType::SelfAttenuating )
           
@@ -1383,30 +1617,34 @@ void SimpleActivityCalc::updateResult()
             const double surface_area_cm2 = surface_area / PhysicalUnits::cm2;
             const double activity_cm2 = result.activity / surface_area_cm2;
             
-            resultStr = "Act/cm<sup>2</sup>: " + PhysicalUnits::printToBestActivityUnits(activity_cm2);
+            resultStr = "<span class=\"Activity\">Act/cm<sup>2</sup>: " + PhysicalUnits::printToBestActivityUnits(activity_cm2);
             if( result.activityUncertainty > 0.0 )
             {
               const double uncert_cm2 = result.activityUncertainty / surface_area_cm2;
               resultStr += " ± " + PhysicalUnits::printToBestActivityUnits(uncert_cm2);
             }
-            //resultStr += " /cm<sup>2</sup>";
+            resultStr += "</span>";
           }else
           {
-            resultStr = "Unexpected error converting result";
+            resultStr = "<span class=\"Error\">Unexpected error converting result</span>";
           }
           break;
         }//case SimpleActivityGeometryType::Plane:
       }//switch( input.geometryType )
       
+      if( result.source_dose.has_value() )
+      {
+        const string dosestr = PhysicalUnits::printToBestEquivalentDoseRateUnits( *result.source_dose, 2, useBq );
+        resultStr += "<span class=\"DoseTxt\">estimated dose: " + dosestr + "</span>";
+      }//if( result.source_dose.has_value() )
+      
       m_resultText->setText( WString::fromUTF8(resultStr) );
-    }
-    else
+    }else
     {
       m_errorText->setText( "Unable to calculate activity" );
       m_errorText->show();
     }
-  }
-  catch( const std::exception &e )
+  }catch( const std::exception &e )
   {
     m_errorText->setText( WString::fromUTF8("Calculation error: ") + WString::fromUTF8(e.what()) );
     m_errorText->show();
@@ -1453,6 +1691,14 @@ SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
   
   if( !input.foreground )
     throw std::runtime_error( "Could not get foreground spectrum" );
+  
+  // Set up background peak if background subtract is checked
+  if( m_backgroundSubtractCheck->isChecked() )
+  {
+    input.background_peak = findOverlappingBackgroundPeak();
+    if( !input.background_peak )
+      throw std::runtime_error( "Background subtract checked but no overlapping background peak found" );
+  }
   
   // Set up geometry and distance
   if( input.detector->isFixedGeometry() )
@@ -1647,7 +1893,8 @@ SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
 }//createCalcInput()
 
 
-SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleActivityCalcInput& input )
+SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleActivityCalcInput& input,
+                                                                const GadrasScatterTable * const scatter )
 {
   SimpleActivityCalcResult result;
   
@@ -1853,6 +2100,54 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
         }
       }
     }
+    
+    if( (input.geometryType == SimpleActivityGeometryType::Point)
+       && !input.detector->isFixedGeometry()
+       && (result.activity > 0.0)
+       && scatter )
+    {
+      try
+      {
+        string continuumData = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GadrasContinuum.lib" );
+        shared_ptr<GadrasScatterTable> scatter = make_shared<GadrasScatterTable>( continuumData );
+        
+        float shielding_an = 14.0f, shielding_ad = 0.0f;
+        
+        assert( (input.shielding.size() == 0) || (input.shielding.size() == 1) );
+        if( input.shielding.size() )
+        {
+          const ShieldingSourceFitCalc::ShieldingInfo &shield = input.shielding.front();
+          if( shield.m_isGenericMaterial )
+          {
+            shielding_an = static_cast<float>( shield.m_dimensions[0] );
+            shielding_ad = static_cast<float>( shield.m_dimensions[1] );
+          }else if( shield.m_material )
+          {
+            shielding_an = shield.m_material->massWeightedAtomicNumber();
+            shielding_ad = static_cast<float>( shield.m_material->density * shield.m_dimensions[0] );
+            //air_radius = std::max( 0.0f, static_cast<float>(input.distance - shield.m_dimensions[0]) );
+          }
+        }//if( input.shielding.size() )
+        
+        const float distance = static_cast<float>( input.distance );
+        
+        vector<float> energies, intensity;
+        SandiaDecay::NuclideMixture mix;
+        mix.addAgedNuclideByActivity( nuc, result.activity, input.age );
+        const vector<SandiaDecay::EnergyRatePair> photons = mix.photons( 0.0 );
+        for( const SandiaDecay::EnergyRatePair &energy_rate : photons )
+        {
+          energies.push_back( energy_rate.energy );
+          intensity.push_back( energy_rate.numPerSecond );
+        }
+        
+        result.source_dose = DoseCalc::gamma_dose_with_shielding( energies, intensity, shielding_ad, shielding_an,
+                                                                      distance, *scatter );
+      }catch( std::exception &e )
+      {
+        cerr << "Simple activity calc: Failed to calculate dose: " << e.what() << endl;
+      }//try /catch to compute dose
+    }//
   }catch( const std::exception &e )
   {
     result.successful = false;
@@ -1860,7 +2155,7 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
   }//try / catch to compute an answer
   
   return result;
-}
+}//SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input )
 
 
 void SimpleActivityCalc::updateGeometryOptions()
@@ -1956,15 +2251,18 @@ void SimpleActivityCalc::updateGeometryOptions()
 }//void updateGeometryOptions()
 
 
-void SimpleActivityCalc::handleOpenAdvancedTool()
-{
+//void SimpleActivityCalc::handleOpenAdvancedTool()
+//{
   // TODO: Implement opening ShieldingSourceDisplay with equivalent configuration
   // This will require:
   // 1. Create ShieldingSourceDisplay 
   // 2. Set it to equivalent state based on current SimpleActivityCalc state
   // 3. Add undo/redo point for both tools and peaks
   // 4. Close current dialog
-}
+  //
+  // However, it would make sense to refactor ShieldingSourceDisplay to save/load its state to/from a struct,
+  // rather than just to XML - this will make it easier here, but also for batch and other places
+//}
 
 SimpleActivityGeometryType SimpleActivityCalc::geometryTypeFromString( const std::string& key )
 {

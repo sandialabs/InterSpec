@@ -5,7 +5,7 @@
   flex-direction: column;
   padding: 10px;
   padding-bottom: 0px;
-  width: 300px;
+  width: 275px;
 }
 
 .SimpleActivityCalc .row {
@@ -15,15 +15,36 @@
   margin-bottom: 1px;
 }
 
+.SimpleActivityCalc .nuclide-info {
+  font-style: italic;
+  font-size: smaller;
+  color: #666;
+  justify-content: flex-end;
+  padding-bottom: 1px;
+}
 
+.SimpleActivityCalc .row.backsubrow
+{
+  justify-content: flex-end;
+  padding-bottom: 1px;
+}
+
+.SimpleActivityCalc CbNoLineBreak.input.backsub {
+  
+}
 
 .SimpleActivityCalc .label {
   width: 70px;
 }
 
-.SimpleActivityCalc .input {
+.SimpleActivityCalc input.input,
+.SimpleActivityCalc select.input {
   flex: 1;
-  min-width: 150px;
+}
+
+.SimpleActivityCalc .ShieldingSelect,
+.SimpleActivityCalc .DetectorDisplay {
+  flex: 1;
 }
 
 .SimpleActivityCalc .result {
@@ -37,7 +58,30 @@
   margin: 3px;
   background: white;
   border-radius: 3px;
+  
+  display: flex;
+  flex-direction: column;
 }
+
+.SimpleActivityCalc .result .Activity
+{
+  
+}
+
+.SimpleActivityCalc .result .Error
+{
+  /* Error displayed in the answer - dont ever expect, instead see ".SimpleActivityCalc .error" */
+}
+
+.SimpleActivityCalc .result .DoseTxt,
+.SimpleActivityCalc .result .MassFrac,
+.SimpleActivityCalc .result .SrcRad,
+.SimpleActivityCalc .result .NucMass
+{
+  font-size: 11px;
+  font-weight: normal;
+}
+
 
 .SimpleActivityCalc .error {
   font-size: 11pt;
@@ -53,11 +97,4 @@
   padding-bottom: 0px;
   margin-bottom: 0px;
   height: 12px;
-}
-
-.SimpleActivityCalc .nuclide-info {
-  font-style: italic;
-  font-size: smaller;
-  color: #666;
-  justify-content: flex-end;
 }

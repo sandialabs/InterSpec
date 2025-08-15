@@ -5,6 +5,8 @@
   <message id="simple-activity-calc-menu">Simple Act. Calc.</message>
   
   <message id="sac-peak-label">Peak:</message>
+  <message id="sac-background-subtract-label">background subtract</message>
+  
   <message id="sac-distance-label">Distance:</message>
   <message id="sac-age-label">Age:</message>
   <message id="sac-shielding-label">Shielding:</message>

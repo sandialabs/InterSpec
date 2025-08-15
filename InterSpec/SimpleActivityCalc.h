@@ -42,6 +42,7 @@ class SimpleActivityCalc;
 class DetectorPeakResponse;
 class DetectorDisplay;
 class MaterialDB;
+class GadrasScatterTable;
 
 namespace Wt
 {
@@ -52,6 +53,7 @@ namespace Wt
   class WPushButton;
   class WGridLayout;
   class WSuggestionPopup;
+  class WCheckBox;
 }//namespace Wt
 
 namespace SandiaDecay
@@ -81,6 +83,7 @@ struct SimpleActivityCalcState
   std::string distanceStr;
   SimpleActivityGeometryType geometryType = SimpleActivityGeometryType::Point;
   std::optional<ShieldingSourceFitCalc::ShieldingInfo> shielding;
+  bool backgroundSubtract = false;
   
   SimpleActivityCalcState();
   
@@ -111,7 +114,8 @@ struct SimpleActivityCalcInput
   SimpleActivityGeometryType geometryType = SimpleActivityGeometryType::Point;
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> shielding;
   double age = 0.0;
-};
+};//struct SimpleActivityCalcInput
+
 
 struct SimpleActivityCalcResult
 {
@@ -123,13 +127,18 @@ struct SimpleActivityCalcResult
   double sourceMass;
   bool successful;
   std::string errorMessage;
+  /** Dose of the source at the detector; only computed for simple point sources, for non-fixed-geometry detectors.
+   Accounts for all gammas in source, as well as scatter continuum.
+   */
+  std::optional<double> source_dose;
   
   SimpleActivityCalcResult() 
     : activity(0.0), activityUncertainty(0.0), nuclideMass(0.0),
       isSelfAttenuating(false), sourceDimensions(0.0), sourceMass(0.0),
       successful(false), errorMessage("")
   {}
-};
+};//struct SimpleActivityCalcResult
+
 
 class SimpleActivityCalcWindow : public AuxWindow
 {
@@ -146,6 +155,11 @@ protected:
   SimpleActivityCalc *m_tool;
 };
 
+
+/** The actual widget to display and calculate the activity from a single peak.
+ 
+ TODO: implement creating the "advanced" ShieldingSourceDisplay display
+ */
 class SimpleActivityCalc : public Wt::WContainerWidget
 {
 public:
@@ -186,10 +200,11 @@ protected:
   void handleShieldingChanged();
   void handleSpectrumChanged();
   void handlePeaksChanged();
+  void handleBackgroundSubtractChanged();
   
   void updateResult();
-  void handleOpenAdvancedTool();
   void handleAgeChanged();
+  //void handleOpenAdvancedTool();
   
   void updatePeakList();
   void updateNuclideInfo();
@@ -197,10 +212,14 @@ protected:
   
   int findBestReplacementPeak( std::shared_ptr<const PeakDef> targetPeak ) const;
   
+  void updateBackgroundSubtractVisibility();
+  std::shared_ptr<const PeakDef> findOverlappingBackgroundPeak() const;
+  
   void handleAddUndoPoint();
   
   SimpleActivityCalcInput createCalcInput() const;
-  static SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input );
+  static SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input,
+                                                     const GadrasScatterTable * const scatter = nullptr );
   
   void updateGeometryOptions();
   
@@ -228,12 +247,14 @@ protected:
   Wt::WComboBox *m_geometrySelect;
   Wt::WText *m_resultText;
   Wt::WText *m_errorText;
-  Wt::WPushButton *m_advancedBtn;
+  Wt::WCheckBox *m_backgroundSubtractCheck;
+  //Wt::WPushButton *m_advancedBtn;
   
 
   Wt::WContainerWidget *m_ageRow;
   Wt::WContainerWidget *m_distanceRow;
   Wt::WContainerWidget *m_geometryRow;
+  Wt::WContainerWidget *m_backgroundSubtractRow;
   
   std::shared_ptr<const PeakDef> m_currentPeak;
   
