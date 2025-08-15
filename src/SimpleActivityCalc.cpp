@@ -50,17 +50,20 @@
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/DoseCalc.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/DrfSelect.h"
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/GadrasSpecFunc.h"
@@ -70,6 +73,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SimpleActivityCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
@@ -843,7 +847,7 @@ void SimpleActivityCalc::init()
   updateBackgroundSubtractVisibility();
   handleDetectorChanged( m_detectorDisplay->detector() );
   handlePeakChanged();
-}
+}//void SimpleActivityCalc::init()
 
 
 void SimpleActivityCalc::handleAddUndoPoint()
@@ -992,6 +996,7 @@ std::shared_ptr<SimpleActivityCalcState> SimpleActivityCalc::currentState() cons
   
   // Get background subtract checkbox state
   state->backgroundSubtract = m_backgroundSubtractCheck->isChecked();
+  state->fit_background_peak = m_fit_background_peak;
   
   return state;
 }
@@ -1044,6 +1049,8 @@ void SimpleActivityCalc::setState( const SimpleActivityCalcState &state )
   
   // Set background subtract checkbox state
   m_backgroundSubtractCheck->setChecked( state.backgroundSubtract );
+  
+  m_fit_background_peak = state.fit_background_peak;
   
   // Update background subtract visibility
   updateBackgroundSubtractVisibility();
@@ -1106,6 +1113,8 @@ void SimpleActivityCalc::updatePeakList()
 
 void SimpleActivityCalc::handlePeakChanged()
 {
+  m_fit_background_peak.reset();
+  
   // Update the current peak tracking
   std::shared_ptr<const PeakDef> old_peak = m_currentPeak;
   m_currentPeak = getCurrentPeak();
@@ -1341,12 +1350,18 @@ void SimpleActivityCalc::updateBackgroundSubtractVisibility()
   
   m_backgroundSubtractRow->setHidden( !background );
   if( !background )
+  {
+    m_fit_background_peak.reset();
     m_backgroundSubtractCheck->setChecked( false );
+  }
 }//void updateBackgroundSubtractVisibility()
 
 
 std::shared_ptr<const PeakDef> SimpleActivityCalc::findOverlappingBackgroundPeak() const
 {
+  if( m_fit_background_peak )
+    return m_fit_background_peak;
+  
   shared_ptr<const PeakDef> currentPeak = getCurrentPeak();
   if( !currentPeak )
     return nullptr;
@@ -1423,6 +1438,7 @@ void SimpleActivityCalc::handleShieldingChanged()
 
 void SimpleActivityCalc::handleSpectrumChanged()
 {
+  m_fit_background_peak.reset();
   updatePeakList();
   updateBackgroundSubtractVisibility();
   scheduleRender( UpdateResult );
@@ -1436,21 +1452,214 @@ void SimpleActivityCalc::handleBackgroundSubtractChanged()
     shared_ptr<const PeakDef> back_peak = findOverlappingBackgroundPeak();
     if( !back_peak )
     {
-      // No overlapping background peak found, uncheck and show message
-      // TODO: ask the user if they want to fit a background peak...
-      // TODO: need to make it so when result is updated, if a background peak was/was-not used, it needs to be checked to be consistent with this checkbox
-      m_backgroundSubtractCheck->setChecked( false );
-      passMessage( WString::tr("sac-error-no-background-peak"), WarningWidget::WarningMsgHigh );
+      shared_ptr<const SpecUtils::Measurement> background = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
+      if( !background || (background->num_gamma_channels() < 10) )
+      {
+        // We dont expect this to happen
+        passMessage( "No background spectrum displayed.", WarningWidget::WarningMsgHigh );
+        m_backgroundSubtractCheck->setChecked( false );
+        return;
+      }
+      
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_viewer->peakModel()->peaks();
+      if( !peaks || !m_currentPeak )
+      {
+        // We never expect this to happen
+        passMessage( "No peak currently selected.", WarningWidget::WarningMsgHigh );
+        m_backgroundSubtractCheck->setChecked( false );
+        return;
+      }
+        
+      vector<shared_ptr<const PeakDef>> roi_peaks;
+      
+      for( const auto &peak : *peaks )
+      {
+        if( peak->continuum() == m_currentPeak->continuum() )
+          roi_peaks.push_back( peak );
+      }
+      
+      assert( roi_peaks.size() >= 1 );
+      if( roi_peaks.empty() )
+      {
+        // We never expect this to happen
+        passMessage( "Unexpected difficulty getting ROI peaks.", WarningWidget::WarningMsgHigh );
+        m_backgroundSubtractCheck->setChecked( false );
+        return;
+      }
+      
+      shared_ptr<PeakContinuum> back_cont = make_shared<PeakContinuum>( *roi_peaks.front()->continuum() );
+      shared_ptr<const SpecUtils::EnergyCalibration> cal = background->energy_calibration();
+      
+      if( !cal
+         || !cal->valid()
+         || (back_cont->upperEnergy() > cal->upper_energy())
+         || (back_cont->lowerEnergy() < cal->lower_energy()) )
+      {
+        // We pretty much dont expect this to happen
+        passMessage( "ROI is outside of background spectrum range.", WarningWidget::WarningMsgHigh );
+        m_backgroundSubtractCheck->setChecked( false );
+        return;
+      }//
+      
+      vector<double> means, sigmas;
+      vector<PeakDef> background_roi_peaks;
+      for( const shared_ptr<const PeakDef> &peak : roi_peaks )
+      {
+        PeakDef p = *peak;
+        p.setContinuum( back_cont );
+        means.push_back( p.mean() );
+        sigmas.push_back( p.sigma() );
+        background_roi_peaks.push_back( p );
+      }
+      
+      try
+      {
+        // First, we'll re-fit the continuum and peak amplitudes at fixed mean and skews, then we'll do a full re-fit
+        const size_t start_channel = background->find_gamma_channel(back_cont->lowerEnergy());
+        const size_t end_channel = background->find_gamma_channel(back_cont->upperEnergy());
+        assert( end_channel < cal->num_channels() );
+        
+        const size_t nchannel = (1 + end_channel) - start_channel;
+        const float * const energies = cal->channel_energies()->data() + start_channel;
+        const float * const data = background->gamma_channel_contents()->data() + start_channel;
+        const bool step_continuum = PeakContinuum::is_step_continuum( back_cont->type() );
+        const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( back_cont->type() ) );
+        const double ref_energy = back_cont->referenceEnergy();
+        const PeakDef::SkewType skew_type = m_currentPeak->skewType();
+        const size_t num_skew = PeakDef::num_skew_parameters( skew_type );
+        const double * const skew_pars = m_currentPeak->coefficients() + PeakDef::CoefficientType::SkewPar0;
+        
+        const vector<PeakDef> dummy_fixed_amp_peaks;
+        vector<double> amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts;
+        
+        fit_amp_and_offset( energies, data, nchannel, num_polynomial_terms, step_continuum, ref_energy,
+                           means, sigmas, dummy_fixed_amp_peaks, skew_type, skew_pars,
+                            amplitudes, continuum_coeffs, amplitudes_uncerts, continuum_coeffs_uncerts );
+        
+        for( size_t i = 0; i < continuum_coeffs.size(); ++i )
+        {
+          back_cont->setPolynomialCoef( i, continuum_coeffs[i] );
+          back_cont->setPolynomialUncert( i, continuum_coeffs_uncerts[i] );
+        }
+        
+        vector<PeakDef> updated_back_roi_peaks;
+        for( size_t i = 0; i < background_roi_peaks.size(); ++i )
+        {
+          PeakDef p = background_roi_peaks[i];
+          if( amplitudes[i] <= 0.0 )
+            continue;
+          p.setAmplitude( amplitudes[i] );
+          p.setAmplitudeUncert( amplitudes_uncerts[i] );
+          updated_back_roi_peaks.push_back( p );
+        }//for( size_t i = 0; i < background_roi_peaks.size(); ++i )
+        
+        if( updated_back_roi_peaks.empty() )
+        {
+          SimpleDialog *dialog = new SimpleDialog( "", WString::tr("sac-error-no-background-peak") );
+          dialog->addButton( WString::tr( "Okay" ) );
+          m_backgroundSubtractCheck->setChecked( false );
+          return;
+        }
+        
+        const double lower_x = back_cont->lowerEnergy();
+        const double upper_x = back_cont->upperEnergy();
+        const double ncausalitysigma = -1.0;
+        const double stat_threshold = -1.0;
+        const double hypothesis_threshold = -1.0;
+        const Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options( PeakFitLM::PeakFitLMOptions::SmallRefinementOnly );
+        const bool isHPGe = PeakFitUtils::is_likely_high_res( m_viewer ); //Or we could use the current peaks FWHM to estimate this...
+        
+        const vector<PeakDef> fit_peaks = fitPeaksInRange( lower_x, upper_x,
+                                             ncausalitysigma, stat_threshold, hypothesis_threshold, updated_back_roi_peaks,
+                                             background, fit_options, isHPGe );
+        
+        double min_dist = 9999.9;
+        std::shared_ptr<const PeakDef> background_peak;
+        for( const PeakDef &p : fit_peaks )
+        {
+          const double diff = fabs(p.mean() - m_currentPeak->mean());
+          if( diff < min_dist )
+          {
+            min_dist = diff;
+            if( diff < m_currentPeak->fwhm() )
+              background_peak = make_shared<PeakDef>( p );
+          }
+        }//
+        
+        if( !background_peak )
+        {
+          SimpleDialog *dialog = new SimpleDialog( "", WString::tr("sac-error-no-background-peak") );
+          dialog->addButton( WString::tr( "Okay" ) );
+          m_backgroundSubtractCheck->setChecked( false );
+          return;
+        }
+
+        SimpleDialog *dialog = new SimpleDialog( WString::tr("sac-use-fit-background-peak"), "" );
+        
+        D3SpectrumDisplayDiv *spectrum = new D3SpectrumDisplayDiv( dialog->contents() );
+        spectrum->clicked().preventPropagation();
+        spectrum->setThumbnailMode();
+        spectrum->resize( 250, 200 );
+        spectrum->setData( background, false );
+        PeakModel *pmodel = new PeakModel( spectrum );
+        pmodel->setNoSpecMeasBacking();
+        pmodel->setForeground( background );
+        spectrum->setPeakModel( pmodel );
+        pmodel->addPeaks( fit_peaks );
+        const double dx = upper_x - lower_x;
+        
+        // Setting the x-axis range now doesnt seem to work, so we'll "post" it - which seems to work
+        spectrum->setXAxisRange( lower_x - 0.5*dx, upper_x + 0.5*dx ); //
+        auto set_range = wApp->bind( boost::bind( &D3SpectrumDisplayDiv::setXAxisRange, spectrum, lower_x - 0.5*dx, upper_x + 0.5*dx ) );
+        WServer::instance()->schedule( 100, wApp->sessionId(), [set_range](){
+          set_range();
+          wApp->triggerUpdate();
+        } );
+        
+        WPushButton *okay_btn = dialog->addButton( WString::tr("Yes") );
+        WPushButton *no_btn = dialog->addButton( WString::tr("No") );
+        okay_btn->clicked().connect( boost::bind(&SimpleActivityCalc::setFitBackgroundPeak, this, background_peak) );
+        no_btn->clicked().connect( m_backgroundSubtractCheck, &WCheckBox::setUnChecked );
+      }catch( std::exception &e )
+      {
+        SimpleDialog *dialog = new SimpleDialog( "", WString::tr("sac-error-fitting-background-peak").arg(e.what()) );
+        dialog->addButton( WString::tr( "Okay" ) );
+        m_backgroundSubtractCheck->setChecked( false );
+        return;
+      }
+      
       return;
     }//if( !back_peak )
   }//if( m_backgroundSubtractCheck->isChecked() )
   
   scheduleRender( UpdateResult );
   scheduleRender( AddUndoRedoStep );
-}
+}//void handleBackgroundSubtractChanged()
+
+
+void SimpleActivityCalc::setFitBackgroundPeak( const shared_ptr<const PeakDef> peak )
+{
+  shared_ptr<const SpecUtils::Measurement> background = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Background);
+  shared_ptr<SpecMeas> back = m_viewer->measurment(SpecUtils::SpectrumType::Background);
+  const std::set<int> &samples = m_viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+  if( !background || !back || samples.empty() )
+  {
+    passMessage( "Error getting background to set peaks.", WarningWidget::WarningMsgHigh );
+    m_backgroundSubtractCheck->setUnChecked();
+  }else
+  {
+    m_fit_background_peak = peak;
+  }
+  
+  scheduleRender( AddUndoRedoStep );
+  scheduleRender( UpdateResult );
+}//void setFitBackgroundPeak( const std::vector<PeakDef> &peaks );
+
 
 void SimpleActivityCalc::handlePeaksChanged()
 {
+  m_fit_background_peak.reset();
+  
   // Store reference to current peak before updating
   std::shared_ptr<const PeakDef> previousPeak = m_currentPeak;
   

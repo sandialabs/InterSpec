@@ -84,6 +84,7 @@ struct SimpleActivityCalcState
   SimpleActivityGeometryType geometryType = SimpleActivityGeometryType::Point;
   std::optional<ShieldingSourceFitCalc::ShieldingInfo> shielding;
   bool backgroundSubtract = false;
+  std::shared_ptr<const PeakDef> fit_background_peak;
   
   SimpleActivityCalcState();
   
@@ -201,7 +202,7 @@ protected:
   void handleSpectrumChanged();
   void handlePeaksChanged();
   void handleBackgroundSubtractChanged();
-  
+  void setFitBackgroundPeak( const std::shared_ptr<const PeakDef> peak );
   void updateResult();
   void handleAgeChanged();
   //void handleOpenAdvancedTool();
@@ -257,6 +258,7 @@ protected:
   Wt::WContainerWidget *m_backgroundSubtractRow;
   
   std::shared_ptr<const PeakDef> m_currentPeak;
+  std::shared_ptr<const PeakDef> m_fit_background_peak;
   
   std::vector<double> m_peakEnergies;  // Stores energy values corresponding to m_peakSelect items
   

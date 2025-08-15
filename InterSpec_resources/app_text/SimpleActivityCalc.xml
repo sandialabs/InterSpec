@@ -23,6 +23,20 @@
   <message id="sac-error-no-detector">No detector response loaded</message>
   <message id="sac-error-invalid-distance">Invalid distance entered</message>
   
+  <message id="sac-error-no-background-peak">
+    <p>There does not appear to be a peak in the background at the same location as this peak.</p>
+    <p>If you think there is, please swap the foreground and background spectra, fit the peak in the background spectrum, and then swap them back.</p>
+  </message>
+  
+  
+  <message id="sac-use-fit-background-peak">Would you like to use the automatically fit background peak?</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>There was an error attempting to fit a peak to the background spectrum:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+  
   <message id="sac-qr-tool-state-title">Simple Activity Calc Tool State</message>
   <message id="sac-qr-tool-state-txt">Current state of simple activity calc tool.</message>
 </messages>
