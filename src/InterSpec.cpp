@@ -11155,17 +11155,16 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     // Close Shielding/Source fit Window
     if( m_shieldingSourceFitWindow )
     {
-      delete m_shieldingSourceFitWindow;
-      m_shieldingSourceFitWindow = nullptr;
-      m_shieldingSourceFit = nullptr;
+      try{ closeShieldingSourceFit(); }catch(...){ assert( 0 ); }
     }
     
-    
+#if( USE_REL_ACT_TOOL )
     if( m_relActAutoGui )
     {
-      // TODO: Should we close this?
+      try{ handleRelActAutoClose(); }catch(...){ assert( 0 ); }
     }
-    
+#endif
+
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
