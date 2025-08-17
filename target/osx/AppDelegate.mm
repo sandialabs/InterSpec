@@ -840,20 +840,42 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
                                   NSURL *destinationURL = savePanel.URL;
                                   if (destinationURL) {
                                       NSFileManager *fileManager = [NSFileManager defaultManager];
-                                      NSError *moveError = nil;
-                                      [fileManager moveItemAtURL:location toURL:destinationURL error:&moveError];
+                                      
+                                      // Ensure parent directory exists
+                                      NSURL *parentDir = [destinationURL URLByDeletingLastPathComponent];
+                                      NSError *dirError = nil;
+                                      [fileManager createDirectoryAtURL:parentDir 
+                                             withIntermediateDirectories:YES 
+                                                              attributes:nil 
+                                                                   error:&dirError];
+                                      
+                                      NSError *replaceError = nil;
+                                      
+                                      // Check if destination file exists
+                                      if ([fileManager fileExistsAtPath:destinationURL.path]) {
+                                          // File exists - use atomic replacement
+                                          [fileManager replaceItemAtURL:destinationURL 
+                                                           withItemAtURL:location 
+                                                          backupItemName:nil 
+                                                                 options:NSFileManagerItemReplacementUsingNewMetadataOnly 
+                                                        resultingItemURL:NULL 
+                                                                   error:&replaceError];
+                                      } else {
+                                          // File doesn't exist - use simple move
+                                          [fileManager moveItemAtURL:location toURL:destinationURL error:&replaceError];
+                                      }
 
-                                      if (moveError) {
+                                      if (replaceError) {
                                         // Show an error alert to the user
                                         dispatch_async(dispatch_get_main_queue(), ^{
                                           NSAlert *alert = [[NSAlert alloc] init];
                                           alert.messageText = @"Error Saving File";
-                                          alert.informativeText = moveError.localizedDescription;
+                                          alert.informativeText = replaceError.localizedDescription;
                                           alert.alertStyle = NSAlertStyleCritical;
                                           [alert addButtonWithTitle:@"OK"];
                                           [alert runModal];
                                         });
-                                        NSLog(@"Failed to move file: %@", moveError.localizedDescription);
+                                        NSLog(@"Failed to save file: %@", replaceError.localizedDescription);
                                       } else {
                                           NSLog(@"File saved to: %@", destinationURL.path);
                                       }
