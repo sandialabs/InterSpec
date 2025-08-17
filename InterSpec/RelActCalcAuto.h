@@ -745,6 +745,8 @@ struct RelActAutoGuiState
   
 struct RelActAutoSolution
 {
+  struct ObsEff; //forward decleration
+  
   RelActAutoSolution();
   
   std::ostream &print_summary( std::ostream &strm ) const;
@@ -870,6 +872,12 @@ struct RelActAutoSolution
    Will throw exception if runs into any issues.
    */
   std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const;
+  
+  static std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
+  fit_free_peak_amplitudes( const RelActCalcAuto::Options &options,
+                            const RelActCalcAutoImp::RelActAutoCostFcn *cost_functor,
+                            const std::vector<double> &parameters,
+                           const RelActCalcAuto::RelActAutoSolution &solution );
   
   enum class Status : int
   {
@@ -1013,20 +1021,6 @@ struct RelActAutoSolution
   */
   std::vector<PeakDef> m_peaks_without_back_sub;
 
-  /** Peaks whose amplitudes have been unconstrained from RE curve and allowed to float.
-
-   Peaks are clustered together (e.g., peaks less than 1.5 sigma from each other are combined), then the amplitudes and continuums
-   are re-fit to the data, with all other parameters fixed at thier final fit values.  These peaks give a measure of how far off from the
-   relative efficiency curve the data is from the actual solution.
-
-   Will be empty if re-fitting process fails.
-
-   These peaks are seperated by rel eff curve, do not include free-floating peaks, an are in "true" energy calibration of the spectrum.
-
-   TODO: I think `m_free_amp_fit_peaks_for_each_curve` can be removed, since `m_obs_eff_for_each_curve` holds all this info
-   */
-  std::vector<std::vector<PeakDef>> m_free_amp_fit_peaks_for_each_curve;
-
   /** The measured rel. eff. for a energy; these are determined after the fit finishes, peaks are clustered (peaks within 1.5 sigma of
    each other are combined), then holding all other things (FWHM, energy cal, etc) constant, the amplitudes are allowed to freely float;
    then the relative efficieciency is determined from this.
@@ -1063,7 +1057,13 @@ struct RelActAutoSolution
    Each `ObsEff` may be from one to a number of peaks that have been clustered together because they were effectively
    indistiguishable (means within 1.5 sigma is the criteria used).
 
+   Peaks are clustered together (e.g., peaks less than 1.5 sigma from each other are combined), then the amplitudes and continuums
+   are re-fit to the data, with all other parameters fixed at thier final fit values.  These peaks give a measure of how far off from the
+   relative efficiency curve the data is from the actual solution.
+
    Will be empty if re-fitting process fails.
+
+   These peaks are seperated by rel eff curve, do not include free-floating peaks, an are in "true" energy calibration of the spectrum.
    */
   std::vector<std::vector<ObsEff>> m_obs_eff_for_each_curve;
 
