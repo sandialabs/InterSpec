@@ -350,6 +350,7 @@ set(sources
     src/UserPreferences.cpp
     src/RefSpectraWidget.cpp
     src/RefSpectraModel.cpp
+    src/SimpleActivityCalc.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -459,6 +460,7 @@ set(headers
     InterSpec/XmlUtils.hpp
     InterSpec/RefSpectraWidget.h
     InterSpec/RefSpectraModel.h
+    InterSpec/SimpleActivityCalc.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)

@@ -168,6 +168,15 @@ add_test( NAME TGammaInteractionCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+
+add_executable( test_SimpleActivityCalc test_SimpleActivityCalc.cpp )
+target_link_libraries( test_SimpleActivityCalc PRIVATE InterSpecLib )
+add_test( NAME TSimpleActivityCalc
+  COMMAND $<TARGET_FILE:test_SimpleActivityCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 
 #            debug "${Wt_TEST_DEBUG_LIBRARY}"
