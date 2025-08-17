@@ -2296,22 +2296,6 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     // Check if this is self-attenuating
     result.isSelfAttenuating = (input.geometryType == SimpleActivityGeometryType::SelfAttenuating);
     
-    if( result.isSelfAttenuating && !fit_results->final_shieldings.empty() )
-    {
-      // For self-attenuating sources, calculate source dimensions and mass
-      const ShieldingSourceFitCalc::FitShieldingInfo &shield = fit_results->final_shieldings.front();
-      
-      if( shield.m_geometry == GammaInteractionCalc::GeometryType::Spherical )
-      {
-        result.sourceDimensions = shield.m_dimensions[0]; // radius
-        if( shield.m_material )
-        {
-          const double volume = (4.0/3.0) * M_PI * pow(result.sourceDimensions, 3);
-          result.sourceMass = volume * shield.m_material->density;
-        }
-      }
-    }
-    
     if( (input.geometryType == SimpleActivityGeometryType::Point)
        && !input.detector->isFixedGeometry()
        && (result.activity > 0.0)

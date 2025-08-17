@@ -128,7 +128,6 @@ struct SimpleActivityCalcResult
   double nuclideMass;
   bool isSelfAttenuating;
   double sourceDimensions;
-  double sourceMass;
   bool successful;
   std::string errorMessage;
   /** Dose of the source at the detector; only computed for simple point sources, for non-fixed-geometry detectors.
@@ -138,7 +137,7 @@ struct SimpleActivityCalcResult
   
   SimpleActivityCalcResult() 
     : activity(0.0), activityUncertainty(0.0), nuclideMass(0.0),
-      isSelfAttenuating(false), sourceDimensions(0.0), sourceMass(0.0),
+      isSelfAttenuating(false), sourceDimensions(0.0),
       successful(false), errorMessage("")
   {}
 };//struct SimpleActivityCalcResult

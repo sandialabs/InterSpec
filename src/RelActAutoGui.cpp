@@ -3319,7 +3319,7 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     return;
   }
   
-  const int orig_w_index = pos - begin( kids );
+  const int orig_w_index = static_cast<int>( pos - begin(kids) );
   RelActAutoGuiEnergyRange *range = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
   assert( range );
   if( !range )

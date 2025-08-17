@@ -790,6 +790,10 @@ if( InterSpec_FETCH_DEPENDENCIES )
   # Need to fix copying the "resources" directory and configs and stuff probably
 endif( InterSpec_FETCH_DEPENDENCIES )
 
+# We will explicitly set the Wt include directory, marked as SYSTEM, to
+#  avoid a ton of warning messages from those headers (if you take this
+#  next line out, things will still work just fine, just with more warnings)
+target_include_directories( InterSpecLib PRIVATE SYSTEM ${Wt_INCLUDE_DIR} )
 
 if(WIN32)
     if( NOT InterSpec_FETCH_DEPENDENCIES )
@@ -803,7 +807,6 @@ if(WIN32)
 else(WIN32)
     target_link_libraries(InterSpecLib PUBLIC
         ${Wt_LIBRARIES}
-        ${Wt_LIBRARY}
         ${Wt_HTTP_LIBRARY}
         ${Wt_DBO_LIBRARY}
         ${Wt_DBOSQLITE3_LIBRARY}
