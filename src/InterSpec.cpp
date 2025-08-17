@@ -174,6 +174,7 @@
 #include "InterSpec/DetectionLimitTool.h"
 #include "InterSpec/DetectionLimitSimple.h"
 #endif
+#include "InterSpec/SimpleActivityCalc.h"
 
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
 #include "InterSpec/SpecFileQueryWidget.h"
@@ -491,6 +492,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_simpleMdaWindow( nullptr ),
   m_detectionLimitWindow( nullptr ),
 #endif
+  m_simpleActivityCalcWindow( nullptr ),
   m_clientDeviceType( 0x0 ),
   m_referencePhotopeakLines( 0 ),
   m_referencePhotopeakLinesWindow( 0 ),
@@ -1173,6 +1175,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
       case kSimpleMda:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-mda") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleMdaFromRightClick );
+      break;
+      case kSimpleActivityCalc:
+        m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-activity-calc") );
+        m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleActivityCalcFromRightClick );
       break;
 #endif
         
@@ -2748,6 +2754,20 @@ void InterSpec::handleRightClick( double energy, double counts,
         
         break;
       }//case kSimpleMda:
+        
+      case kSimpleActivityCalc:
+      {
+        const bool showItem = (peak && peak->parentNuclide());
+        m_rightClickMenutItems[i]->setHidden( !showItem );
+        
+        if( showItem )
+        {
+          const SandiaDecay::Nuclide *nuc = peak->parentNuclide();
+          m_rightClickMenutItems[i]->setText( WString::tr("rclick-simple-activity-calc").arg( nuc->symbol ) );
+        }//if( showItem )
+        
+        break;
+      }//case kSimpleActivityCalc:
 #endif  //USE_DETECTION_LIMIT_TOOL
         
         
@@ -8831,6 +8851,90 @@ void InterSpec::startSimpleMdaFromRightClick()
 }//void startSimpleMdaFromRightClick()
 #endif //USE_DETECTION_LIMIT_TOOL
 
+SimpleActivityCalcWindow *InterSpec::showSimpleActivityCalcWindow()
+{
+  if( m_simpleActivityCalcWindow )
+    return m_simpleActivityCalcWindow;
+  
+  m_simpleActivityCalcWindow = new SimpleActivityCalcWindow( m_materialDB.get(), m_shieldingSuggestion, this );
+  m_simpleActivityCalcWindow->finished().connect( this, &InterSpec::handleSimpleActivityCalcWindowClose );
+  
+  return m_simpleActivityCalcWindow;
+}//SimpleActivityCalcWindow *showSimpleActivityCalcWindow()
+
+void InterSpec::programmaticallyCloseSimpleActivityCalc()
+{
+  if( !m_simpleActivityCalcWindow )
+    return;
+  
+  SimpleActivityCalcWindow *dialog = m_simpleActivityCalcWindow;
+  m_simpleActivityCalcWindow = nullptr;
+  dialog->done( WDialog::DialogCode::Accepted );
+}//void programmaticallyCloseSimpleActivityCalc()
+
+void InterSpec::handleSimpleActivityCalcWindowClose()
+{
+  auto *caller = dynamic_cast<SimpleActivityCalcWindow *>( WObject::sender() );
+  assert( caller );
+  assert( !m_simpleActivityCalcWindow || (caller == m_simpleActivityCalcWindow) );
+  
+  if( !m_simpleActivityCalcWindow )
+    return;
+  
+  auto dialog = m_simpleActivityCalcWindow;
+  m_simpleActivityCalcWindow = nullptr;
+  
+  shared_ptr<const SimpleActivityCalcState> state = dialog->tool()->currentState();
+  
+  AuxWindow::deleteAuxWindow( dialog );
+  
+  if( state && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this, state](){
+      SimpleActivityCalcWindow *tool = showSimpleActivityCalcWindow();
+      assert( tool );
+      if( tool && tool->tool() )
+        tool->tool()->setState( *state );
+    };
+    auto redo = [this](){ programmaticallyCloseSimpleActivityCalc(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close Simple Activity Calc" );
+  }//if( dialog && m_undo && m_undo->canAddUndoRedoNow() )
+}//void handleSimpleActivityCalcWindowClose()
+
+void InterSpec::startSimpleActivityCalcFromRightClick()
+{
+  const shared_ptr<const PeakDef> peak = nearestPeak( m_rightClickEnergy );
+  
+  //If was already showing, the tool itself will take car of undo/redo, otherwise we need to
+  const bool wasShowing = !!m_simpleActivityCalcWindow;
+  
+  if( !m_simpleActivityCalcWindow )
+    showSimpleActivityCalcWindow();
+  
+  assert( m_simpleActivityCalcWindow );
+  if( !m_simpleActivityCalcWindow )
+    return;
+  
+  const double energy = peak ? peak->mean() : m_rightClickEnergy;
+  m_simpleActivityCalcWindow->tool()->setPeakFromEnergy( energy );
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() && !wasShowing )
+  {
+    auto undo = [this](){
+      programmaticallyCloseSimpleActivityCalc();
+    };//undo
+    
+    auto redo = [this, energy](){
+      showSimpleActivityCalcWindow();
+      assert( m_simpleActivityCalcWindow );
+      if( m_simpleActivityCalcWindow )
+        m_simpleActivityCalcWindow->tool()->setPeakFromEnergy( energy );
+    };//redo
+    
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show Simple Activity Calc Tool." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void startSimpleActivityCalcFromRightClick()
+
 
 void InterSpec::deleteDecayInfoWindow()
 {
@@ -12043,6 +12147,26 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     showWelcomeDialog(true);
     if( m_useInfoWindow )
       m_useInfoWindow->handleAppUrl( query_str );
+  }else if( SpecUtils::iequals_ascii(host,"simple-activity") )
+  {
+    const bool was_showing = !!m_simpleActivityCalcWindow;
+    if( was_showing )
+    {
+      m_simpleActivityCalcWindow->tool()->handleAppUrl( query_str );
+      m_simpleActivityCalcWindow->tool()->addUndoRedoPoint();
+    }else
+    {
+      auto undo = [this](){ programmaticallyCloseSimpleActivityCalc(); };
+      auto redo = [this,query_str](){
+        showSimpleActivityCalcWindow();
+        if( m_simpleActivityCalcWindow )
+          m_simpleActivityCalcWindow->tool()->handleAppUrl( query_str );
+      };
+      
+      redo();
+      if( m_undo && m_undo->canAddUndoRedoNow() )
+        m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Handle simple-activity url" );
+    }//
   }
 #if( USE_REMOTE_RID )
   else if( SpecUtils::iequals_ascii(host,"remoterid") )

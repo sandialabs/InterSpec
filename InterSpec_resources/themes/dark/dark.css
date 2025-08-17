@@ -227,7 +227,9 @@ ul.HeavyNavMenu > li.item:hover  {
   filter: invert(100%);
 }
 
-.DoseAnswerTxt, .DoseCalcRuntimeCheckFailMsg {
+.DoseAnswerTxt, 
+.DoseCalcRuntimeCheckFailMsg,
+.SimpleActivityCalc .result {
   color: black;
 }
 
