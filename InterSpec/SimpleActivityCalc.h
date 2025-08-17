@@ -56,6 +56,8 @@ namespace Wt
   class WCheckBox;
 }//namespace Wt
 
+namespace rapidxml{ template<class Ch> class xml_node; }
+
 namespace SandiaDecay
 {
   class Nuclide;
@@ -66,6 +68,7 @@ class PeakDef;
 
 namespace SpecUtils { class Measurement; }
 namespace ShieldingSourceFitCalc { struct ShieldingInfo; }
+
 
 enum class SimpleActivityGeometryType : int
 {

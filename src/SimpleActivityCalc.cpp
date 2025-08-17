@@ -41,6 +41,8 @@
 #include <Wt/WRegExpValidator>
 #include <Wt/WSuggestionPopup>
 
+#include "rapidxml/rapidxml.hpp"
+
 #include "Minuit2/MnUserParameters.h"
 
 #include "SandiaDecay/SandiaDecay.h"
