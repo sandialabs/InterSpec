@@ -1156,7 +1156,9 @@ namespace SpecFileQuery
           case SpecUtils::DetectorType::KromekD5:
           case SpecUtils::DetectorType::KromekGR1:
           case SpecUtils::DetectorType::Raysid:
-          case SpecUtils::DetectorType::RadiaCode:
+          case SpecUtils::DetectorType::RadiaCodeCsI10:
+          case SpecUtils::DetectorType::RadiaCodeCsI14:
+          case SpecUtils::DetectorType::RadiaCodeGAGG10:
           case SpecUtils::DetectorType::Fulcrum:
           case SpecUtils::DetectorType::Fulcrum40h:
           case SpecUtils::DetectorType::Sam950:
