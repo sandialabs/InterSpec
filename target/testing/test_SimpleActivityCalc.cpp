@@ -44,6 +44,8 @@
 #include "InterSpec/SimpleActivityCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/PeakDef.h"
 
 //#define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE GammaInteractionCalc_suite
@@ -869,3 +871,257 @@ BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ShieldingRoundTripMultiple )
     }
   }
 }//BOOST_AUTO_TEST_CASE( SimpleActivityCalcState_URL_ShieldingRoundTripMultiple )
+
+
+struct SimpleActivityTestConfig
+{
+  std::string description;
+  std::string spectrumFile;
+  double targetPeakEnergy;
+  SimpleActivityGeometryType geometryType;
+  std::optional<ShieldingSourceFitCalc::ShieldingInfo> shielding;
+  bool backgroundSubtract;
+  double distance;
+  double expectedActivity;
+  double expectedActivityUncertainty;
+  double tolerancePercent;
+  
+  SimpleActivityTestConfig(const std::string& desc, const std::string& file, double energy, 
+                          SimpleActivityGeometryType geom, bool bgSub = false, double dist = 100.0)
+    : description(desc), spectrumFile(file), targetPeakEnergy(energy), geometryType(geom),
+      backgroundSubtract(bgSub), distance(dist), expectedActivity(-1.0), 
+      expectedActivityUncertainty(-1.0), tolerancePercent(1.0) {}
+};
+
+
+BOOST_AUTO_TEST_CASE( SimpleActivityCalc_Ra226_609keV_Tests )
+{
+  set_data_dir();
+  
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  MaterialDB matdb;
+  
+  const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+  BOOST_REQUIRE_NO_THROW( matdb.parseGadrasMaterialFile( materialfile, db, false ) );
+  
+  auto setup_generic_shielding = []() -> ShieldingSourceFitCalc::ShieldingInfo {
+    ShieldingSourceFitCalc::ShieldingInfo shielding;
+    shielding.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    shielding.m_isGenericMaterial = true;
+    shielding.m_forFitting = false;
+    shielding.m_dimensions[0] = 26;
+    shielding.m_dimensions[1] = 2.0 * PhysicalUnits::g_per_cm2;
+    shielding.m_dimensions[2] = 0.0;
+    shielding.m_fitDimensions[0] = false;
+    shielding.m_fitDimensions[1] = false;
+    shielding.m_fitDimensions[2] = false;
+    return shielding;
+  };
+  
+  auto setup_material_shielding = [&matdb]() -> ShieldingSourceFitCalc::ShieldingInfo {
+    ShieldingSourceFitCalc::ShieldingInfo shielding;
+    shielding.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    shielding.m_isGenericMaterial = false;
+    shielding.m_forFitting = false;
+    
+    const Material *iron = matdb.material( "Fe (iron)" );
+    BOOST_REQUIRE( iron );
+    shielding.m_material = std::make_shared<Material>( *iron );
+    
+    shielding.m_dimensions[0] = 0.5 * PhysicalUnits::cm;
+    shielding.m_dimensions[1] = 0.0;
+    shielding.m_dimensions[2] = 0.0;
+    shielding.m_fitDimensions[0] = false;
+    shielding.m_fitDimensions[1] = false;
+    shielding.m_fitDimensions[2] = false;
+    return shielding;
+  };
+  
+  // Its not a test from first principles, but we'll test computation against some "accepted" answers (e.g., checked
+  //  using the Activity/Shielding Fit tool.
+  std::vector<SimpleActivityTestConfig> test_configs = {
+    SimpleActivityTestConfig("Point source, no shielding, no background subtraction", 
+                           "test_data/SimpleActivityCalc/Ra226 Shielded.n42", 609.3,
+                             SimpleActivityGeometryType::Point,
+                             false,
+                             100.0*PhysicalUnits::cm),
+    SimpleActivityTestConfig("Point source, generic shielding, no background subtraction",
+                           "test_data/SimpleActivityCalc/Ra226 Shielded.n42", 609.3,
+                             SimpleActivityGeometryType::Point,
+                             false,
+                             100.0*PhysicalUnits::cm),
+    SimpleActivityTestConfig("Point source, generic shielding, with background subtraction",
+                           "test_data/SimpleActivityCalc/Ra226 Shielded.n42", 609.3,
+                             SimpleActivityGeometryType::Point,
+                             true,
+                             100.0*PhysicalUnits::cm),
+    SimpleActivityTestConfig("Point source, material shielding",
+                           "test_data/SimpleActivityCalc/Ra226 Shielded.n42", 609.3,
+                             SimpleActivityGeometryType::Point,
+                             true,
+                             100.0*PhysicalUnits::cm),
+    SimpleActivityTestConfig("Trace source",
+                           "test_data/SimpleActivityCalc/Ra226 Shielded.n42", 609.3,
+                             SimpleActivityGeometryType::TraceSrc,
+                             true,
+                             100.0*PhysicalUnits::cm),
+    SimpleActivityTestConfig("Infinite plane",
+                           "test_data/SimpleActivityCalc/Ra226 Shielded.n42", 609.3,
+                             SimpleActivityGeometryType::Plane,
+                             true,
+                             100.0*PhysicalUnits::cm),
+    SimpleActivityTestConfig("Point source, no shielding, no background subtraction - 100m",
+                             "test_data/SimpleActivityCalc/Ra226 Shielded.n42", 609.3,
+                             SimpleActivityGeometryType::Point,
+                             false,
+                             100.0*PhysicalUnits::m)
+  };
+  
+  
+  // Point source, no shielding, no background subtraction
+  test_configs[0].expectedActivity = 4.51*PhysicalUnits::microCi;
+  test_configs[0].expectedActivityUncertainty = 0.04584*PhysicalUnits::microCi;
+  
+  // Point source, generic shielding, no background subtraction
+  test_configs[1].shielding = setup_generic_shielding();
+  test_configs[1].expectedActivity = 5.24*PhysicalUnits::microCi;
+  test_configs[1].expectedActivityUncertainty = 0.05328*PhysicalUnits::microCi;
+  
+  // Point source, generic shielding, with background subtraction
+  test_configs[2].shielding = setup_generic_shielding();
+  test_configs[2].expectedActivity = 4.85*PhysicalUnits::microCi;
+  test_configs[2].expectedActivityUncertainty = 0.05525*PhysicalUnits::microCi;
+  
+  // Point source, material shielding, with background subtraction
+  test_configs[3].shielding = setup_material_shielding();
+  test_configs[3].expectedActivity = 5.61*PhysicalUnits::microCi;
+  test_configs[3].expectedActivityUncertainty = 0.0639*PhysicalUnits::microCi;
+  
+  // Trace source, with background subtraction
+  test_configs[4].shielding = setup_material_shielding();
+  ShieldingSourceFitCalc::TraceSourceInfo trace;
+  trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+  trace.m_fitActivity = true;
+  //trace.m_nuclide = nuc;
+  trace.m_activity = 0.0; //units are according to #m_type
+  trace.m_relaxationDistance = 0.0; //only applicable to #TraceActivityType::ExponentialDistribution
+  test_configs[4].shielding->m_traceSources.push_back( trace );
+  test_configs[4].expectedActivity = 5.15*PhysicalUnits::microCi;
+  test_configs[4].expectedActivityUncertainty = 0.05875*PhysicalUnits::microCi;
+  
+  // Infinite plane, with background subtraction
+  test_configs[5].expectedActivity = 18.93*PhysicalUnits::curie*1.0E-12 / PhysicalUnits::cm2;
+  test_configs[5].expectedActivityUncertainty = 0.21584*PhysicalUnits::curie*1.0E-12 / PhysicalUnits::cm2;
+  
+  //"Point source, no shielding, no background subtraction - 100m"
+  test_configs[6].expectedActivity = 124.75*PhysicalUnits::curie*1.0E-3;
+  test_configs[6].expectedActivityUncertainty = 1.27*PhysicalUnits::curie*1.0E-3;
+  
+  for( size_t i = 0; i < test_configs.size(); ++i )
+  {
+    const auto &config = test_configs[i];
+    
+    //cout << "Running test " << (i+1) << ": " << config.description << endl;
+    
+    const string analysis_tests = SpecUtils::append_path(g_test_file_dir, ".." );
+    const string spec_path = SpecUtils::append_path(analysis_tests, config.spectrumFile);
+    
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(spec_path),
+                          "Spectrum file not found: '" << spec_path << "'" );
+    
+    SpecMeas meas;
+    BOOST_REQUIRE_MESSAGE( meas.load_N42_file(spec_path), 
+                          "Failed to load spectrum from '" << spec_path << "'" );
+    
+    BOOST_REQUIRE_MESSAGE( meas.num_measurements() >= 1, 
+                          "Expected at least one measurement in spectrum file" );
+    
+    std::shared_ptr<const SpecUtils::Measurement> foreground, background;
+    
+    for( size_t j = 0; j < meas.num_measurements(); ++j )
+    {
+      auto measurement = meas.measurements()[j];
+      if( measurement->source_type() == SpecUtils::SourceType::Foreground )
+        foreground = measurement;
+      else if( measurement->source_type() == SpecUtils::SourceType::Background && config.backgroundSubtract )
+        background = measurement;
+    }
+    
+    BOOST_REQUIRE_MESSAGE( foreground, "No foreground measurement found in spectrum file" );
+    
+    if( config.backgroundSubtract )
+    {
+      BOOST_REQUIRE_MESSAGE( background, "Background subtraction requested but no background measurement found" );
+    }
+    
+    auto foreground_peaks = meas.peaks( {foreground->sample_number()} );
+    BOOST_REQUIRE_MESSAGE( foreground_peaks && !foreground_peaks->empty(), 
+                          "No peaks found in foreground measurement" );
+    
+    std::shared_ptr<const PeakDef> target_peak, bg_peak;
+    
+    for( auto peak : *foreground_peaks )
+    {
+      if( std::abs(peak->mean() - config.targetPeakEnergy) < 1.0 )
+      {
+        target_peak = peak;
+        break;
+      }
+    }
+    
+    BOOST_REQUIRE_MESSAGE( target_peak, 
+                          "Could not find " << config.targetPeakEnergy << " keV peak in foreground spectrum" );
+    
+    if( config.backgroundSubtract && background )
+    {
+      auto background_peaks = meas.peaks( {background->sample_number()} );
+      if( background_peaks && !background_peaks->empty() )
+      {
+        for( auto peak : *background_peaks )
+        {
+          if( std::abs(peak->mean() - config.targetPeakEnergy) < 2.0 )
+          {
+            bg_peak = peak;
+            break;
+          }
+        }
+      }
+    }
+    
+    SimpleActivityCalcInput input;
+    input.peak = target_peak;
+    input.background_peak = bg_peak;
+    input.detector = meas.detector();
+    input.foreground = foreground;
+    input.background = background;
+    input.distance = config.distance;
+    input.geometryType = config.geometryType;
+    input.age = PeakDef::defaultDecayTime( target_peak->parentNuclide() );
+    
+    if( config.shielding.has_value() )
+    {
+      input.shielding = { config.shielding.value() };
+      if( !input.shielding.front().m_traceSources.empty() )
+        input.shielding.front().m_traceSources.front().m_nuclide = target_peak->parentNuclide();
+    }
+    
+    SimpleActivityCalcResult result = SimpleActivityCalc::performCalculation( input );
+    
+    BOOST_CHECK_MESSAGE( result.successful, "Calculation failed for test '" << config.description 
+                        << "': " << result.errorMessage );
+    
+    if( result.successful )
+    {
+      //cout << "  Activity: " << result.activity << " ± " << result.activityUncertainty << endl;
+      
+      BOOST_REQUIRE( config.expectedActivity > 0.0 );
+      
+      double percent_diff = std::abs(result.activity - config.expectedActivity) / config.expectedActivity * 100.0;
+      BOOST_CHECK_MESSAGE( percent_diff <= config.tolerancePercent,
+                          "Activity " << result.activity << " differs from expected "
+                          << config.expectedActivity << " by " << percent_diff << "% (tolerance: "
+                          << config.tolerancePercent << "%)" );
+    }//if( result.successful )
+  }//for( size_t i = 0; i < test_configs.size(); ++i )
+}//BOOST_AUTO_TEST_CASE( SimpleActivityCalc_Ra226_609keV_Tests )
+

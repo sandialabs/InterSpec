@@ -1817,28 +1817,18 @@ void SimpleActivityCalc::updateResult()
         case SimpleActivityGeometryType::Plane:
         {
           // We will make the activity per cm2.
-          assert( (input.shielding.size() >= 1) && (input.shielding[0].m_traceSources.size() == 1) );
+          assert( (input.shielding.size() == 0) || (input.shielding.size() == 1) );
           
-          if( (input.shielding.size() >= 1) && (input.shielding[0].m_traceSources.size() > 0) )
-          {
-            const ShieldingSourceFitCalc::ShieldingInfo &shield = input.shielding[0];
-            assert( shield.m_traceSources[0].m_type == GammaInteractionCalc::TraceActivityType::TotalActivity );
+          const double activity_cm2 = result.activity * PhysicalUnits::cm2;
             
-            const double surface_area = PhysicalUnits::pi * std::pow(shield.m_dimensions[0], 2.0);
-            const double surface_area_cm2 = surface_area / PhysicalUnits::cm2;
-            const double activity_cm2 = result.activity / surface_area_cm2;
-            
-            resultStr = "<span class=\"Activity\">Act/cm<sup>2</sup>: " + PhysicalUnits::printToBestActivityUnits(activity_cm2);
-            if( result.activityUncertainty > 0.0 )
-            {
-              const double uncert_cm2 = result.activityUncertainty / surface_area_cm2;
-              resultStr += " ± " + PhysicalUnits::printToBestActivityUnits(uncert_cm2);
-            }
-            resultStr += "</span>";
-          }else
+          resultStr = "<span class=\"Activity\">Act/cm<sup>2</sup>: " + PhysicalUnits::printToBestActivityUnits(activity_cm2);
+          if( result.activityUncertainty > 0.0 )
           {
-            resultStr = "<span class=\"Error\">Unexpected error converting result</span>";
+            const double uncert_cm2 = result.activityUncertainty * PhysicalUnits::cm2;
+            resultStr += " ± " + PhysicalUnits::printToBestActivityUnits(uncert_cm2);
           }
+          resultStr += "</span>";
+          
           break;
         }//case SimpleActivityGeometryType::Plane:
       }//switch( input.geometryType )
@@ -1944,43 +1934,9 @@ SimpleActivityCalcInput SimpleActivityCalc::createCalcInput() const
         
       case SimpleActivityGeometryType::Plane:
       {
-        ShieldingSourceFitCalc::TraceSourceInfo trace_info;
-        trace_info.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
-        trace_info.m_fitActivity = true;
-        trace_info.m_nuclide = nuc;
-        trace_info.m_activity = 1.0E-6*PhysicalUnits::curie; //starting value only
-        trace_info.m_relaxationDistance = 0.0; //not applicable
-        
-        ShieldingSourceFitCalc::ShieldingInfo trace_shield;
-        trace_shield.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
-        trace_shield.m_isGenericMaterial = false;
-        trace_shield.m_forFitting = true;
-        const Material *air = m_materialDB->material( "Air" );
-        assert( air );
-        if( !air )
-          throw runtime_error( "No Air material in DB?!?" );
-        trace_shield.m_material = make_shared<Material>( *air );
-        
-        trace_shield.m_dimensions[0] = 50.0*PhysicalUnits::meter; //radius
-        trace_shield.m_dimensions[1] = 1.0*PhysicalUnits::mm;     //half-length
-        trace_shield.m_dimensions[2] = 0.0; //N/A
-        trace_shield.m_fitDimensions[0] = trace_shield.m_fitDimensions[1] = trace_shield.m_fitDimensions[2] = false;
-        
-        trace_shield.m_traceSources.push_back( trace_info );
-        
-        input.shielding.insert( begin(input.shielding), trace_shield ); //Make sure goes in the front
-        
         if( !m_shieldingSelect->isNoShielding() )
         {
           ShieldingSourceFitCalc::ShieldingInfo info = m_shieldingSelect->toShieldingInfo();
-          if( !info.m_isGenericMaterial )
-          {
-            info.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
-            info.m_dimensions[1] = info.m_dimensions[0];
-            info.m_dimensions[0] = info.m_dimensions[2] = 0.0;
-            info.m_fitDimensions[0] = info.m_fitDimensions[1] = info.m_fitDimensions[2];
-          }//if( !info.m_isGenericMaterial )
-          
           input.shielding.push_back( info );
         }//if( !m_shieldingSelect->isNoShielding() )
         
@@ -2149,7 +2105,7 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     source.age = input.age;
     source.ageDefiningNuc = nullptr;
     
-    const vector<ShieldingSourceFitCalc::ShieldingInfo> &shielding = input.shielding;
+    vector<ShieldingSourceFitCalc::ShieldingInfo> shielding = input.shielding;
     GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::Spherical;
     
     switch( input.geometryType )
@@ -2166,10 +2122,110 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
         if( input.detector->isFixedGeometry() )
           throw std::logic_error( "Infinite plane source not allowed for fixed geometry detector" );
         
+        ShieldingSourceFitCalc::TraceSourceInfo trace_info;
+        trace_info.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+        trace_info.m_fitActivity = true;
+        trace_info.m_nuclide = nuc;
+        trace_info.m_activity = 1.0E-6*PhysicalUnits::curie; //starting value only
+        trace_info.m_relaxationDistance = 0.0; //not applicable
+          
+        ShieldingSourceFitCalc::ShieldingInfo trace_shield;
+        trace_shield.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+        trace_shield.m_isGenericMaterial = false;
+        trace_shield.m_forFitting = true;
+        
+        const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+        if( !db )
+          throw runtime_error( "Failed to get SandiaDecayDataBase!?!" );
+        
+        // We will manually make a "Air" definition so we dont need to carry a MaterialDB through to here (mostly for
+        //  testing).
+        try
+        {
+          MaterialDB matdb;
+          const Material * const mat = matdb.parseChemicalFormula( "N0.7553O0.2318Ar0.0129 d=0.00129", db );
+          if( !mat )
+            throw runtime_error( "Failed to make air." );
+          
+#ifndef NDEBUG
+          const string materialfile = SpecUtils::append_path( InterSpec::staticDataDirectory(), "MaterialDataBase.txt" );
+          matdb.parseGadrasMaterialFile( materialfile, db, false );
+          const Material * const air = matdb.material( "Air" );
+          assert( air );
+          assert( fabs(air->density - mat->density) < 0.001*std::max(air->density,mat->density) );
+          assert( mat->elements.size() == air->elements.size() );
+          
+          for( const auto &a : mat->elements )
+          {
+            bool found = false;
+            for( const auto &b : air->elements )
+            {
+              if( b.first == a.first )
+              {
+                assert( fabs(a.second - b.second) < 0.001*std::max(a.second, b.second) );
+                found = true;
+                break;
+              }
+            }
+            assert( found );
+          }//for( const auto &a : mat->elements )
+#endif //#ifndef NDEBUG
+          
+          trace_shield.m_material = make_shared<Material>( *mat );
+          
+          //We cant directly make an air object because the Material constructor is private.
+          //auto air = make_shared<Material>();
+          //air->name = "Air";
+          //air->description = "Air";
+          //air->density = 0.00129*PhysicalUnits::g/PhysicalUnits::cm3;
+          //air->source = Material::MaterialDefintionsSrc::kGadras;
+          //air->elements.emplace_back( db->element(7), 0.7553f );
+          //air->elements.emplace_back( db->element(8), 0.2318f );
+          //air->elements.emplace_back( db->element(18), 0.0129f );
+          //trace_shield.m_material = air;
+        }catch( std::exception & )
+        {
+          throw logic_error( "Failed to define air." );
+        }
+          
+        trace_shield.m_dimensions[0] = 50.0*PhysicalUnits::meter; //radius
+        trace_shield.m_dimensions[1] = 1.0*PhysicalUnits::mm;     //half-length
+        trace_shield.m_dimensions[2] = 0.0; //N/A
+        trace_shield.m_fitDimensions[0] = trace_shield.m_fitDimensions[1] = trace_shield.m_fitDimensions[2] = false;
+        trace_shield.m_traceSources.push_back( trace_info );
+          
+        shielding.insert( begin(shielding), trace_shield ); //Make sure goes in the front
+          
+        assert( (shielding.size() == 1) || (shielding.size() == 2) );
+        if( shielding.size() > 1 )
+        {
+          if( shielding.size() != 2 )
+            throw runtime_error( "Only a single shielding is allowed" );
+          
+          ShieldingSourceFitCalc::ShieldingInfo &shield = shielding[1];
+          if( shield.m_isGenericMaterial )
+          {
+            assert( shield.m_geometry == GammaInteractionCalc::GeometryType::NumGeometryType );
+          }else
+          {
+            assert( shield.m_geometry == GammaInteractionCalc::GeometryType::Spherical );
+            if( shield.m_geometry != GammaInteractionCalc::GeometryType::Spherical )
+              throw runtime_error( "Wrong geometry of shielding for inifinite plain." );
+            
+            shield.m_geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
+            
+            const double thickness = shield.m_dimensions[0];
+            shield.m_dimensions[0] = trace_shield.m_dimensions[0]; //radius
+            shield.m_dimensions[1] = thickness;
+            trace_shield.m_dimensions[2] = 0.0; //N/A
+            shield.m_fitDimensions[0] = shield.m_fitDimensions[1] = shield.m_fitDimensions[2] = false;
+          }//if( shield.m_isGenericMaterial ) / else
+        }//if( shielding.size() > 1 )
+        
         geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
         source.sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
         
-        assert( (shielding.size() == 1) || (shielding.size() == 2) );
+        
         if( (shielding.size() != 1) && (shielding.size() != 2) )
           throw runtime_error( "Invalid inifinite plane input - must have 1 or 2 shieldings." );
         
@@ -2289,9 +2345,18 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     result.activity = fitResult.activity;
     result.activityUncertainty = fitResult.activityUncertainty;
     
+    if( input.geometryType == SimpleActivityGeometryType::Plane )
+    {
+      assert( shielding.size() >= 1 );
+      const double radius = shielding.at(0).m_dimensions[0];
+      const double surface_area = PhysicalUnits::pi * radius * radius;
+      
+      result.activity /= surface_area;
+      result.activityUncertainty /= surface_area;
+    }//if( input.geometryType == SimpleActivityGeometryType::Plane )
+    
     // Calculate nuclide mass
     result.nuclideMass = (result.activity / nuc->activityPerGram()) * PhysicalUnits::gram;
-    
     
     // Check if this is self-attenuating
     result.isSelfAttenuating = (input.geometryType == SimpleActivityGeometryType::SelfAttenuating);

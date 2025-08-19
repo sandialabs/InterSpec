@@ -123,8 +123,10 @@ struct SimpleActivityCalcInput
 
 struct SimpleActivityCalcResult
 {
+  /** The fit activity.  Except for infiinite plain, is total activity.  For infinite plain is activity per area. */
   double activity;
   double activityUncertainty;
+  /** The mass of the total nuclide, except for infinite plane, which is then mass per area. */
   double nuclideMass;
   bool isSelfAttenuating;
   double sourceDimensions;
@@ -191,6 +193,9 @@ public:
   static std::string geometryTypeToStringKey( SimpleActivityGeometryType type );
   static std::string to_str( SimpleActivityGeometryType type );
   
+  static SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input,
+                                                     const GadrasScatterTable * const scatter = nullptr );
+  
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -221,8 +226,6 @@ protected:
   void handleAddUndoPoint();
   
   SimpleActivityCalcInput createCalcInput() const;
-  static SimpleActivityCalcResult performCalculation( const SimpleActivityCalcInput& input,
-                                                     const GadrasScatterTable * const scatter = nullptr );
   
   void updateGeometryOptions();
   
