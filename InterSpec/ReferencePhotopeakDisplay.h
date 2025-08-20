@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -33,8 +34,9 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WAbstractItemModel>
 
-#include "InterSpec/ReactionGamma.h"
 #include "SandiaDecay/SandiaDecay.h"
+
+#include "InterSpec/ReactionGamma.h"
 #include "InterSpec/ReferenceLineInfo.h"
 
 class MaterialDB;
@@ -47,6 +49,11 @@ namespace SandiaDecay
 {
   struct Nuclide;
   struct Element;
+}
+
+namespace SpecUtils
+{
+  enum class SpectrumType : int;
 }
 
 namespace rapidxml
@@ -73,6 +80,7 @@ class DetectorDisplay;
 class D3SpectrumDisplayDiv;
 class IsotopeNameFilterModel;
 
+#include "InterSpec/ExternalRidResult.h"
 
 class DecayParticleModel : public  Wt::WAbstractItemModel
 {
@@ -253,18 +261,11 @@ public:
    
    @param algo_name The name to display as the header under "Suggestions" for these results.
           Should be short (less than ~12 characters); if empty will use "External RID".
-   @param iso_descrips The pairs of nuclide names, and thier descriptions.  For each pair,
-          if the name is a valid nuclide (or rather reference line that can be displayed), then
-          the first element should be nuclide name, and second element its description
-          (e.g., "Industrial", "SNM", etc).  If not a nuclide, then the second element should
-          be empty, which will make it so user cant click on this result to show ref. lines.
-          (I know, not a great system, but it will probably need re-vamped anyway once
-          we get a little more use-cases and experience).
+   @param iso_descrips The sources returned by the RID algorithm.
    
    \sa RemoteRid::startAutomatedOnLoadAnalysis
    */
-  void setExternalRidResults( const std::string &algo_name,
-                             const std::vector<std::pair<std::string,std::string>> &iso_descrips );
+  void setExternalRidResults( std::shared_ptr<const ExternalRidResults> results );
   
   /** Signal emmitted whenever the user selects a new nuclide to be shown. */
   Wt::Signal<> &displayingNuclide();
@@ -447,10 +448,8 @@ protected:
   
   std::deque<RefLineInput> m_prevNucs;
   
-  /** Name of "external" RID algorithm used, as set by #setExternalRidResults. */
-  std::string m_external_algo_name;
   /** "External" RID results, as set by #setExternalRidResults. */
-  std::vector<std::pair<std::string,std::string>> m_external_ids;
+  std::shared_ptr<const ExternalRidResults> m_external_results;
   
   Wt::WContainerWidget *m_featureMarkerColumn;
   

@@ -85,6 +85,7 @@
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 #if( USE_QR_CODES )
@@ -196,43 +197,8 @@ namespace RestRidImp
 {
 class ExternalRidWidget;
 
-// Some structs to represent the results from the Full-Spectrum analysis service
-struct FullSpecIsotope
-{
-  string name;
-  string type;
-  string confidenceStr;
-  
-  double countRate;
-  double confidence;
-};//struct FullSpecIsotope
 
-
-struct FullSpecResults
-{
-  int code = -1;
-  int analysisError = 0;
-  string errorMessage;
-  vector<string> analysisWarnings;
-  string drf;
-  double chi2 = -1.0;
-  //estimatedDose: in PhysicalUnits (i.e., 1.0E-6*PhysicalUnits::rem/PhysicalUnits::hour)
-  double estimatedDose = -1.0;
-  double stuffOfInterest = 1.0;
-  double alarmBasisDuration = -1.0;
-  
-  string foregroundDescription;
-  string foregroundTitle;
-  string isotopeString;
-  
-  string analysisType;
-  
-  vector<FullSpecIsotope> isotopes;
-};//struct FullSpecResults
-
-
-
-FullSpecResults json_to_results( const string &input )
+ExternalRidResults json_to_results( const string &input )
 {
   /*
    // Input will look something like:
@@ -265,8 +231,9 @@ FullSpecResults json_to_results( const string &input )
   if( code.isNull() )
     throw runtime_error( "Analysis response JSON did not include a 'code' field." );
   
-  FullSpecResults answer;
+  ExternalRidResults answer;
   
+  answer.algorithmName = "GADRAS";
   answer.code = code;
   answer.errorMessage = result["errorMessage"].orIfNull("");
   answer.analysisError = result["analysisError"].orIfNull(0);
@@ -296,20 +263,21 @@ FullSpecResults json_to_results( const string &input )
     {
       const Json::Object &obj = isotopes[i];
       
-      FullSpecIsotope iso;
+      ExternalRidIsotope iso;
       
       iso.confidence = obj.get("confidence").orIfNull( -1.0 );
       iso.countRate = obj.get("countRate").orIfNull( -1.0 );
       iso.name = obj.get("name").orIfNull( "null" );
       iso.type = obj.get("type").orIfNull( "null" );
       iso.confidenceStr = obj.get("confidenceStr").orIfNull( "null" );
+      iso.init();
       
       answer.isotopes.push_back( iso );
     }//for( size_t i = 0; i < isotopes.size(); ++i )
   }//if( result.contains("isotopes") )
   
   return answer;
-}//FullSpecResults json_to_results(string)
+}//ExternalRidResults json_to_results(string)
 
 
 /** A class to stream the current spectrum data and analysis options to the JavaScript FormData
@@ -964,29 +932,28 @@ public:
     {
       // `code == 0` just means the http response was okay - there could still be GADRAS error
       vector<string> nuclides;
-      vector<pair<string,string>> iso_descrips;
-      std::unique_ptr<const FullSpecResults> result_ptr;
+      auto results = std::make_shared<ExternalRidResults>();
       try
       {
-        const FullSpecResults result = json_to_results( res );
-        result_ptr.reset( new FullSpecResults(result) );
+        *results = json_to_results( res );
         
-        string iso_str = result.isotopeString;
+        string iso_str = results->isotopeString;
         SpecUtils::ireplace_all( iso_str, "+", ", " );
         
         if( iso_str.empty() )
         {
-          if( result.errorMessage.size() )
+          if( results->errorMessage.size() )
           {
-            result_ptr.reset();
-            message = WString::tr("rr-gadras-rid-error").arg( result.errorMessage );
-          }else if( result.code )
+            message = WString::tr("rr-gadras-rid-error").arg( results->errorMessage );
+            results.reset();
+          }else if( results->code )
           {
-            result_ptr.reset();
-            message = WString::tr("rr-gadras-rid-error-code").arg(result.code);
+            message = WString::tr("rr-gadras-rid-error-code").arg(results->code);
+            results.reset();
           }else
           {
             message = "rr-gadras-rid-no-id";
+            results.reset();
           }
         }else
         {
@@ -995,30 +962,20 @@ public:
         
         const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
         assert( db );
-        for( const auto &iso : result.isotopes )
+        if( results )
         {
-          const SandiaDecay::Nuclide *nuc = db->nuclide(iso.name);
-          if( nuc )
-            nuclides.push_back( nuc->symbol );
-          
-          // ReferencePhotopeakDisplay::updateOtherNucsDisplay() uses following convention
-          //  to decide if a user should be able to click on a result
-          if( nuc )
-            iso_descrips.emplace_back( nuc->symbol, iso.type );
-          else
-            iso_descrips.emplace_back( iso.name, "" );
+          for( auto &iso : results->isotopes )
+          {
+            const SandiaDecay::Nuclide *nuc = db->nuclide(iso.name);
+            if( nuc )
+            {
+              nuclides.push_back( nuc->symbol );
+              iso.source = nuc;
+            }
+          }
         }
         
-        // We should set the results to ReferencePhotopeakDisplay, and then in
-        //  ReferencePhotopeakDisplay::handleSpectrumChange clear out the old results
-        //  when the file changes.  Also, should modify the auto submital to submit
-        //  the file only if all samples are displayed, and otherwise just the
-        //  displayed spectra, and do this when the sample numbers change.
-        //
-        //  TODO: the results we just got might be for the previous file
-        ReferencePhotopeakDisplay *reflines = interspec->referenceLinesWidget();
-        if( reflines )
-          reflines->setExternalRidResults( "GADRAS", iso_descrips );
+        interspec->externalRidResultsRecieved().emit( results );
       }catch( std::exception &e )
       {
         message = WString::tr("rr-gadras-fail-parse");
@@ -1028,10 +985,10 @@ public:
       }//try / catch
       
       
-      if( make_dialog && result_ptr )
+      if( make_dialog && results )
       {
         WStringStream msg_html_strm;
-        generateResultHtml( msg_html_strm, *result_ptr );
+        generateResultHtml( msg_html_strm, *results );
         const string msg_html = msg_html_strm.str();
           
         wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
@@ -1546,7 +1503,7 @@ public:
   }//void handleInfoResponseError()
 
   
-  static void generateResultHtml( WStringStream &rslttxt, const FullSpecResults &results )
+  static void generateResultHtml( WStringStream &rslttxt, const ExternalRidResults &results )
   {
     const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
@@ -1576,7 +1533,7 @@ public:
     {
       const size_t nres = results.isotopes.size();
       
-      for( const FullSpecIsotope &res_iso : results.isotopes )
+      for( const ExternalRidIsotope &res_iso : results.isotopes )
       {
         const string &iso = res_iso.name;
         string type = res_iso.type;
@@ -1651,10 +1608,10 @@ public:
   {
     m_submit->enable();
     
-    FullSpecResults results;
+    shared_ptr<ExternalRidResults> results = make_shared<ExternalRidResults>();
     try
     {
-      results = json_to_results( msg );
+      *results = json_to_results( msg );
     }catch( std::exception &e )
     {
       m_error->setText( "Error parsing analysis results: <code>" + string(e.what()) + "</code>" );
@@ -1663,15 +1620,17 @@ public:
     
     try
     {
-      if( !results.errorMessage.empty() )
-        throw runtime_error( "Analysis service returned error message: " + results.errorMessage );
+      if( !results->errorMessage.empty() )
+        throw runtime_error( "Analysis service returned error message: " + results->errorMessage );
       
       WStringStream rslttxt;
       rslttxt << "<div class=\"ResultLabel\">Results:</div>";
-      generateResultHtml( rslttxt, results );
+      generateResultHtml( rslttxt, *results );
       
       m_result->setText( rslttxt.str() );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
+      
+      m_interspec->externalRidResultsRecieved().emit( results );
     }catch( std::exception &e )
     {
       m_error->setText( e.what() );

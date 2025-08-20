@@ -72,6 +72,7 @@ class PopupDivMenuItem;
 class SpectraFileHeader;
 class PopupWarningWidget;
 class UnitsConverterTool;
+struct ExternalRidResults;
 class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
 class DetectionLimitWindow;
@@ -85,6 +86,7 @@ class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
 class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
+class RefLineKinetic;
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
@@ -573,6 +575,15 @@ public:
    */
   Wt::Signal<SpecUtils::SpectrumType,double> &spectrumScaleFactorChanged();
   
+  /** Signal emited when the hint-peaks (the automatic search peaks) for the spectrum is set.
+   This signal will always be called after `displayedSpectrumChanged()` for foreground
+   background spectra, if either a fresh search for peaks is done, or previously found peaks are
+   re-used.
+   */
+  Wt::Signal<SpecUtils::SpectrumType> &hintPeaksSet();
+  
+  /** Signal emitted when new external RID results are recieved.  See #RemoteRid. */
+  Wt::Signal<std::shared_ptr<const ExternalRidResults>> &externalRidResultsRecieved();
   
   //addHighlightedEnergyRange(): Adds highlighted range to the energy spectrum.
   //  Returns the ID of the highlight region, which you will need to remove
@@ -1339,17 +1350,11 @@ protected:
   
   SpecMeasManager        *m_fileManager; // The file manager
   
-  
-#if( USE_CSS_FLEX_LAYOUT )
-  Wt::WContainerWidget *m_chartResizer;
-  Wt::WContainerWidget *m_toolsResizer;
-#else
   Wt::WGridLayout        *m_layout;
   
   Wt::WContainerWidget   *m_charts;
   Wt::WContainerWidget   *m_chartResizer;
   Wt::WGridLayout        *m_toolsLayout;
-#endif
   
   Wt::WContainerWidget   *m_menuDiv; // The top menu bar.
 
@@ -1519,6 +1524,8 @@ protected:
   FeatureMarkerWindow *m_featureMarkersWindow;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
+  PopupDivMenuItem *m_kineticRefLineEnableMenuItem;
+  PopupDivMenuItem *m_kineticRefLineDisableMenuItem;
 
   SimpleDialog *m_multimedia;
 
@@ -1602,6 +1609,7 @@ protected:
   //  reference photopeaks on the energy spectrum chart.
   ReferencePhotopeakDisplay *m_referencePhotopeakLines;
   AuxWindow                 *m_referencePhotopeakLinesWindow;
+  RefLineKinetic            *m_refLineKinetic;
 
   HelpSystem::HelpWindow *m_helpWindow;
   
@@ -1709,6 +1717,9 @@ protected:
   
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
+  Wt::Signal<SpecUtils::SpectrumType> m_hintPeaksSet;
+  
+  Wt::Signal<std::shared_ptr<const ExternalRidResults>> m_externalRidResultsRecieved;
   
   /** Some informational messages should only be shown once, like when you click on the
    energy tab, so we'll keep track of if we have shown a message.

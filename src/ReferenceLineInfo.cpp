@@ -2619,7 +2619,19 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   
   const bool check_element = (!nuc && (input.m_input_txt.find_first_of( "0123456789" ) == string::npos));
-  const SandiaDecay::Element * const el = check_element ? db->element( input.m_input_txt ) : nullptr;
+  const SandiaDecay::Element * el = check_element ? db->element( input.m_input_txt ) : nullptr;
+  if( !el && check_element
+     && (SpecUtils::icontains(input.m_input_txt, "xray") || SpecUtils::icontains(input.m_input_txt, "x-ray")) )
+  {
+    string elstr = input.m_input_txt;
+    size_t pos = SpecUtils::ifind_substr_ascii( elstr, "xray");
+    if( pos == string::npos )
+      pos = SpecUtils::ifind_substr_ascii( elstr, "x-ray");
+    if( pos != string::npos )
+      elstr = elstr.substr(0,pos);
+    SpecUtils::ireplace_all( elstr, "-_\t ,", "" );
+    el = db->element( elstr );
+  }//
   
   if( el )
   {
