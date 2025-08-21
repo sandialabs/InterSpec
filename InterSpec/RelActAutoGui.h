@@ -118,6 +118,7 @@ public:
   void handleRelEffEqnOrderChanged();
   void handleFwhmFormChanged();
   void handleFwhmEstimationMethodChanged();
+  void handleUserNoteChanged();
   void handleFitEnergyCalChanged();
   void handleBackgroundSubtractChanged();
   void handleSameAgeChanged();
@@ -348,6 +349,9 @@ protected:
    they can go back to it. The map index corresponds to the #m_preset index for the state.
    */
   std::map<int,std::unique_ptr<rapidxml::xml_document<char>>> m_previous_presets;
+
+  /** This is a note next to the presets drop-down for the user to make notes about a setup. */
+  Wt::WInPlaceEdit *m_user_note;
 
   /** The place to indicate errors in calculation, when calc is not successful. */
   Wt::WText *m_error_msg;

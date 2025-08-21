@@ -628,15 +628,31 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
           .attr('opacity', '.85')
           .attr("r", 6);
 
+        const eqn_eff = dataset.fit_eqn ? dataset.fit_eqn(d.energy) : null;
+
         let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
-          + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
-          + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>";
-          
+          + "<div>Peak Area: " + d.counts.toFixed(1) + " &plusmn; " + d.counts_uncert.toFixed(1) + "</div>";
+
+
         // Add fit equation value if available for this dataset
-        if (dataset.fit_eqn) {
-          txt += "<div>RelEff Curve: " + dataset.fit_eqn(d.energy).toPrecision(5) + "</div>";
+        if (eqn_eff) {
+          txt += "<div>RelEff Curve: " + eqn_eff.toPrecision(4);
+          if( dataset.fit_uncert_fcn )
+            txt += " &plusmn " + dataset.fit_uncert_fcn(d.energy);
+          txt += "</div>";
         }
-        
+
+        txt += "<div>Measured RelEff: " + d.eff.toPrecision(4);
+        if( d.eff_uncert && (d.eff_uncert > 0) ){
+          txt += " &plusmn " + d.eff_uncert.toPrecision(4);
+        }
+        txt += "</div>";
+
+        if( d.eff_uncert && (d.eff_uncert > 0) && eqn_eff ){
+          const nsigma_off = Math.abs(d.eff - eqn_eff) / d.eff_uncert;
+          txt += "<div>Peak fit " + nsigma_off.toPrecision(3) + " &sigma; from curve (peak uncert. only)</div>";
+        }
+
         for (const el of d.nuc_info) {
           txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4);
           if (el.rel_act)

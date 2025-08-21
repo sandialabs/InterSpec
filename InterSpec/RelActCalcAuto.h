@@ -723,7 +723,9 @@ struct FloatingPeakResult
 struct RelActAutoGuiState
 {
   RelActAutoGuiState();
-  
+
+  std::string note;
+
   RelActCalcAuto::Options options;
   
     
@@ -1040,9 +1042,11 @@ struct RelActAutoSolution
     double num_sigma_significance;
     double cluster_lower_energy, cluster_upper_energy;
     double roi_lower_energy, roi_upper_energy;
-    /** The unconstrained fit peak amplitude. */
-    double amplitude;
-    double amplitude_uncert;
+    /** The unconstrained fit peak amplitude.  This amplitude includes contributions from all peaks, and all relative efficiency curves. */
+    double fit_clustered_peak_amplitude;
+    double fit_clustered_peak_amplitude_uncert;
+    /** The starting amiplit*/
+    double initial_clustered_peak_amplitude;
     /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
     double effective_sigma;
     double fraction_roi_counts;

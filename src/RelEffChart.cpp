@@ -152,7 +152,6 @@ void RelEffChart::setData(const RelEffChart::ReCurveInfo &info)
 std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
 {
   std::vector<RelEffChartDataset> datasets;
-  
   for(const ReCurveInfo &info : infoSets)
   {
     const double live_time = info.live_time;
@@ -178,9 +177,10 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
       peak.m_energy = obsEff.energy;
       peak.m_mean = obsEff.energy;
       peak.m_fwhm = 2.35482 * obsEff.effective_sigma; // Convert sigma to FWHM
-      peak.m_counts = obsEff.amplitude;
-      peak.m_counts_uncert = obsEff.amplitude_uncert;
-      
+      peak.m_counts = 0.0;
+
+      const double frac_uncert = obsEff.fit_clustered_peak_amplitude_uncert / obsEff.fit_clustered_peak_amplitude;
+
       // Process all peaks in this ObsEff to create GenericLineInfo entries
       for(const PeakDef &p : obsEff.fit_peaks)
       {
@@ -213,7 +213,7 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
         line.m_isotope = RelActCalcAuto::to_name(peak_src);
         
         // Calculate m_yield = amplitude / (observed_efficiency * nuclide_activity)
-        if(obsEff.observed_efficiency > 0.0 && nuc_info->rel_activity > 0.0)
+        if( (obsEff.observed_efficiency > 0.0) && (nuc_info->rel_activity > 0.0) )
         {
           line.m_yield = p.amplitude() / (obsEff.observed_efficiency * nuc_info->rel_activity);
         }else
@@ -223,19 +223,23 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
                << ") or rel_activity (" << nuc_info->rel_activity
                << ") for " << line.m_isotope << " at " << obsEff.energy << " keV" << endl;
         }
-        
         peak.m_source_gammas.push_back(line);
-        
+
         // Set up color mapping - all peaks for this source get same color as primary peak
         const string src_name = RelActCalcAuto::to_name(peak_src);
         const auto pos = relActsColors.find(src_name);
         if( !p.lineColor().isDefault() && (pos == std::end(relActsColors)) )
           relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, p.lineColor().cssText());
+
+        peak.m_counts += p.amplitude();
       }//for(const PeakDef &p : obsEff.fit_peaks)
-      
-      peaks.push_back(peak);
+
+      peak.m_counts_uncert = frac_uncert * peak.m_counts;
+
+      peaks.push_back( std::move(peak) );
     }//for(const RelActAutoSolution::ObsEff &obsEff : obs_eff_data)
-    
+
+
     dataset.peaks = peaks;
     dataset.relActsColors = relActsColors;
     

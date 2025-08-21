@@ -419,6 +419,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_presets( nullptr ),
   m_loading_preset( false ),
   m_current_preset_index( -1 ),
+  m_user_note( nullptr ),
   m_error_msg( nullptr ),
   m_fit_chi2_msg( nullptr ),
   m_rel_eff_opts_menu( nullptr ),
@@ -610,9 +611,20 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_presets->setCurrentIndex( 0 );
   m_current_preset_index = 0;
   m_presets->changed().connect( this, &RelActAutoGui::handlePresetChange );
-  
-  WContainerWidget *spacer = new WContainerWidget( presetDiv );
-  spacer->addStyleClass( "RelActAutoSpacer" );
+
+  // We'll add a place the user can make a note about the RelEff setup -
+  // TODO: we currently have zero discoverability that the user can enter a note
+  m_user_note = new WInPlaceEdit( presetDiv );
+  m_user_note->setButtonsEnabled( false );
+  m_user_note->addStyleClass( "RelActAutoUserNote" );
+  m_user_note->valueChanged().connect( this, &RelActAutoGui::handleUserNoteChanged );
+  // We need to make the widget clickable
+  m_user_note->setMinimumSize( 15, 10 );
+  m_user_note->textWidget()->setMinimumSize( 15, 10 );
+  m_user_note->textWidget()->setInline( false );
+
+  //WContainerWidget *spacer = new WContainerWidget( presetDiv );
+  //spacer->addStyleClass( "RelActAutoSpacer" );
 
   m_error_msg = new WText( "Not Calculated.", presetDiv );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
@@ -880,7 +892,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   tooltip = "Add a source.";
   HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
 
-  spacer = new WContainerWidget( nuc_footer );
+  WContainerWidget *spacer = new WContainerWidget( nuc_footer );
   spacer->addStyleClass( "RelActAutoSpacer" );
 
   // same_z_age is something that _could_ be a per-relative-efficiency option, 
@@ -2150,6 +2162,7 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
 rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
   RelActCalcAuto::RelActAutoGuiState state;
+  state.note = m_user_note->text().toUTF8();
   state.options = getCalcOptions();
   state.background_subtract = (m_background_subtract->isEnabled() && m_background_subtract->isChecked());
   state.show_ref_lines = m_hide_ref_lines_item->isEnabled();
@@ -2166,7 +2179,11 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( base_node, materialDb );
-  
+
+  const WString user_note = WString::fromUTF8(state.note);
+  m_user_note->setText( user_note );
+  m_user_note->setToolTip( user_note );
+
   m_background_subtract->setChecked( state.background_subtract );
   
   m_show_ref_lines_item->setHidden( state.show_ref_lines );
@@ -2529,6 +2546,12 @@ void RelActAutoGui::handleFitEnergyCalChanged()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFitEnergyCalChanged();
+
+
+void RelActAutoGui::handleUserNoteChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+}
 
 
 void RelActAutoGui::handleBackgroundSubtractChanged()
@@ -5199,7 +5222,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     if( i < answer->m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
     {
       // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4
-      for( const auto &obs_eff : answer->m_obs_eff_for_each_curve[i] )
+      for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : answer->m_obs_eff_for_each_curve[i] )
       {
         if( (obs_eff.observed_efficiency > 0.0)
            && (obs_eff.num_sigma_significance > 2.5)

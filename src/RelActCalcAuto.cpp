@@ -4082,6 +4082,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       ceres::CRSMatrix sparse_jacobian;
       problem.Evaluate(evaluate_options, nullptr, nullptr, nullptr, &sparse_jacobian);
 
+      if( sparse_jacobian.num_rows == 0 )
+        throw runtime_error( "Failed to evaluate Jacobian" );
+
       Eigen::MatrixXd jacobian;
       jacobian.resize(sparse_jacobian.num_rows, sparse_jacobian.num_cols);
       jacobian.setZero();
@@ -10174,7 +10177,14 @@ RelActAutoGuiState::RelActAutoGuiState()
   
   xml_attribute<char> *attrib = doc->allocate_attribute( "version", "0" );
   base_node->append_attribute( attrib );
-  
+
+  if( !note.empty() )
+  {
+    const char *val = doc->allocate_string( note.c_str() );
+    xml_node<char> *node = doc->allocate_node( node_element, "Note", val );
+    base_node->append_node( node );
+  }//if( !note.empty() )
+
   // Elements in the offline-xml we dont deal with here
   //  base_node->append_node( <"ForegroundFileName"> );
   //  base_node->append_node( <"BackgroundFileName"> );
@@ -10234,7 +10244,10 @@ void RelActAutoGuiState::deSerialize( const rapidxml::xml_node<char> *base_node,
   const string base_version = SpecUtils::xml_value_str(attrib);
   if( !SpecUtils::istarts_with(base_version, "0") )
     throw runtime_error( "RelActAutoGuiState::deSerialize: invalid xml version='" + base_version + "'" );
-  
+
+  const xml_node<char> * const note_node = XML_FIRST_NODE(base_node, "Note");
+  note = SpecUtils::xml_value_str( note_node );
+
   const xml_node<char> *node = XML_FIRST_NODE(base_node, "Options");
   if( !node )
     throw runtime_error( "RelActAutoGui::deSerialize: No <Options> node." );
@@ -12971,7 +12984,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 {
   vector<vector<PeakDef>> refit_peaks( options.rel_eff_curves.size() );
   vector<vector<RelActCalcAuto::RelActAutoSolution::ObsEff>> obs_eff_for_each_curve( options.rel_eff_curves.size() );
-  
+
+  const size_t num_skew = PeakDef::num_skew_parameters(options.skew_type);
+
   //Note: we are working in "true" energies
   const double cluster_num_sigma = 1.5;
   const vector<pair<double,double>> clustered_ranges = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
@@ -13026,7 +13041,11 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       continue;
     
     const double ref_energy = continuum->referenceEnergy();
-    
+
+    // We will use the skew paramaters of the largest amplitude peak in the ROI
+    double max_peak_amp = -999.9;
+    vector<double> peak_skews( num_skew, 0.0 );
+
     vector<double> effective_means, effective_sigmas, effective_amps;
     vector<pair<double,double>> clusters;
     vector<vector<pair<size_t,size_t>>> peak_indices; //index into solution.m_fit_peaks_for_each_curve, via `peak_indices[]`
@@ -13056,11 +13075,25 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
             assert( p.hasSourceGammaAssigned() );
             if( !p.hasSourceGammaAssigned() || (p.continuum() != continuum) )
               continue;
-            
+
+            if( p.amplitude() <= 0.01 )
+              continue;
+
             const float energy = p.gammaParticleEnergy();
             if( (energy < range.first) || (energy > range.second) )
               continue;
-            
+
+            if( p.amplitude() > max_peak_amp )
+            {
+              max_peak_amp = p.amplitude();
+              for( int skew_index = 0; skew_index < static_cast<int>(num_skew); ++skew_index )
+              {
+                const PeakDef::CoefficientType par = static_cast<PeakDef::CoefficientType>(
+                                            static_cast<int>(PeakDef::CoefficientType::SkewPar0) + skew_index );
+                peak_skews[skew_index] = p.coefficient( par );
+              }
+            }//if( p.amplitude() > max_counts )
+
             num_peaks_in_range += 1;
             const double w = p.amplitude();
             sum_weights += w;
@@ -13105,11 +13138,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     }//for( const FloatingPeakResult &floater : solution.m_floating_peaks )
     
     double * const peak_counts = nullptr;
-    assert( cost_functor->m_skew_par_start_index <= parameters.size() );
-    assert( (cost_functor->m_skew_par_start_index < parameters.size())
-           || (options.skew_type == PeakDef::SkewType::NoSkew) );
-    const double *skew_parameters = (parameters.data() + cost_functor->m_skew_par_start_index);
-    
+    const double * const skew_parameters = peak_skews.empty() ? nullptr : peak_skews.data();
     vector<double> fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts;
     assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->channel_energies() );
     
@@ -13133,8 +13162,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     {
       throw runtime_error( "Invalid energy cal." );
     }
-    
-    
+
     const float * const channel_counts = &((*spectrum)[channel_range.first]);
     const float * const channel_energies = &((*channel_energies_ptr)[channel_range.first]);
     PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, roi.num_channels,
@@ -13156,7 +13184,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       const double rel_uncert = fit_amp_uncert[i] / fit_amps[i];
       //cout << "For range [" << clusters[i].first << ", " << clusters[i].second << "], SF=" << scale_factor_for_cluster
       //<< ", uncert=" << rel_uncert << endl;
-      
+
       const vector<pair<size_t,size_t>> &range_peak_indices = peak_indices[i];
       
       for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
@@ -13170,8 +13198,10 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
         eff.num_sigma_significance = fit_amps[i] / fit_amp_uncert[i];
         eff.cluster_lower_energy = clusters[i].first;
         eff.roi_upper_energy = clusters[i].second;
-        eff.amplitude = fit_amps[i];
-        eff.amplitude_uncert = fit_amp_uncert[i];
+        eff.fit_clustered_peak_amplitude = fit_amps[i];
+        eff.fit_clustered_peak_amplitude_uncert = fit_amp_uncert[i];
+        eff.initial_clustered_peak_amplitude = effective_amps[i];
+
         eff.effective_sigma = effective_sigmas[i];
         eff.fraction_roi_counts = fit_amps[i] / total_roi_signal_counts;
         
@@ -13189,6 +13219,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
           new_peak.setAmplitudeUncert( rel_uncert * new_peak.amplitude() );
           new_peak.setContinuum( new_continuum );
           eff.fit_peaks.push_back( new_peak );
+
           refit_peaks[rel_eff_index].push_back( std::move(new_peak) );
         }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_in_spectrums_cal_for_each_curve.size(); ++rel_eff_index )
         
