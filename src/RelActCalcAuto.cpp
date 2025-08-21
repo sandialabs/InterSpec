@@ -4620,8 +4620,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           }
           for( size_t i = 0; i < outer_curve.phys_model_external_atten.size(); ++i )
           {
-            auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index + 2 + 2*i );
-            phys_model_result.shields_from_other_curves.push_back( res );
+            if( outer_curve.phys_model_self_atten )
+            {
+              auto res = get_shield_info( *outer_curve.phys_model_self_atten, solution.m_final_parameters, re_start_index + 2 + 2*i );
+              phys_model_result.shields_from_other_curves.push_back( res );
+            }
           }
         }//for( const size_t outer_curve_index : rel_eff_curve.shielded_by_other_phys_model_curve_shieldings )
         //shields_from_other_curves

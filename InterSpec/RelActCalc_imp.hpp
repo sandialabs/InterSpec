@@ -240,14 +240,20 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = self_atten->areal_density;
     
-    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) );
+    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) ); // If using numeric-diff, and AD has value of zero, we may get negative values here during differentiation
     if( (areal_density <= -1.0E-3) || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
     
     if( areal_density < 0.0 )
       areal_density = fmax(areal_density, 0.0);
-    
-    if( (mu > 0.0) && (areal_density > 0.0) )
+
+    assert( mu >= 0.0 );
+    if( mu < 0.0 )
+      mu = fmax(mu, 0.0);
+
+    assert( areal_density >= 0.0 );
+
+    if( (mu >= 0.0) && (areal_density >= 0.0) )
       answer *= (1.0 - exp(-mu * areal_density)) / (mu * self_atten->areal_density);
     
     assert( !isnan(answer) && !isinf(answer) );
@@ -256,7 +262,7 @@ T eval_physical_model_eqn_imp( const double energy,
   for( const RelActCalc::PhysModelShield<T> &ext_atten : external_attens )
   {
     // TODO: `GammaInteractionCalc::transmition_length_coefficient` can be a real bottleneck of computation - at soem point we should memoise its results
-    T mu;
+    T mu( 0.0 );
     if( ext_atten.material )
       mu = T( GammaInteractionCalc::transmition_length_coefficient( ext_atten.material.get(), energyf ) / ext_atten.material->density );
     else
@@ -270,8 +276,14 @@ T eval_physical_model_eqn_imp( const double energy,
     
     if( areal_density < 0.0 )
       areal_density = fmax(areal_density, 0.0);
-    
-    if( (mu > 0.0) && (ext_atten.areal_density > 0.0) )
+
+    assert( mu >= 0.0 );
+    if( mu < 0.0 )
+      mu = fmax(mu, 0.0);
+
+    assert( ext_atten.areal_density >= 0.0 );
+
+    if( (mu >= 0.0) && (areal_density >= 0.0) )
       answer *= exp( -mu * areal_density );
     
     assert( !isnan(answer) && !isinf(answer) );
