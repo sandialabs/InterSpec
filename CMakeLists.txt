@@ -257,6 +257,7 @@ set(sources
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
+    src/ReferenceLinePredef.cpp
     src/ReferencePhotopeakDisplay.cpp
     src/IsotopeNameFilterModel.cpp
     src/ReactionGamma.cpp
@@ -368,6 +369,7 @@ set(headers
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
+    InterSpec/ReferenceLinePredef.h
     InterSpec/ReferencePhotopeakDisplay.h
     InterSpec/IsotopeNameFilterModel.h
     InterSpec/ReactionGamma.h

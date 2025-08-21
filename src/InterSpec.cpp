@@ -673,7 +673,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
-  m_refLineKinetic = new RefLineKinetic( this );
+  m_refLineKinetic = new RefLineKinetic( m_spectrum, this );
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();

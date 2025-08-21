@@ -53,6 +53,7 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReferenceLineInfo.h"
+#include "InterSpec/ReferenceLinePredef.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -76,96 +77,15 @@ std::string jsQuote( const std::string &str )
 }
 
 
-struct NucMixComp
-{
-  /** An age offset, relative to the rest of the nuclides (i.e., t=0).
-   
-   A negative value will increase the age of the nuclide, and positive value reduce it.
-   
-   If a positive value is used, and it is larger than the requested mixture age in the
-   "Reference Photopeak" tool, than an age of 0 will be used.
-   
-   This value corresponds to the "age-offset" attribute of the <Nuc /> element.
-   
-   TODO: as of 20240217, the use of "age-offset" is not well tested
-   */
-  double m_age_offset;
-  
-  /** The relative activity for this nuclide - the total activity fractions dont need to add up to 1, they will be normalized. */
-  double m_rel_act;
-  
-  /** The nuclide - must not be nullptr. */
-  const SandiaDecay::Nuclide *m_nuclide;
-  
-  /** Optional color specified in `add_ref_line.xml` for this nuclide; will override user selection if specified. */
-  Wt::WColor m_color;
-};//struct NucMixComp
-
-struct NucMix
-{
-  std::string m_name;
-  double m_default_age;
-  std::string m_default_age_str;
-  
-  /** If the activity fractions are fixed, at whatever time is specified (e.g., no matter the age, the relative
-   activity fractions of the parent nuclides will always be the same).
-   
-   If the XML provides a "reference-age", then this will be false, and changing the age will change the relative
-   ratio of the activities.
-   
-   TODO: as of 20240217, the use of "reference-age" is not well tested
-   */
-  bool m_fixed_act_fractions;
-  
-  std::vector<NucMixComp> m_components;
-};//struct NucMix
-
 std::mutex sm_nuc_mix_mutex;
 bool sm_have_tried_init = false;
 /** Protected by `sm_nuc_mix_mutex`; is only read in once, and never freed or changed until end of program. */
-std::shared_ptr<const std::map<std::string,NucMix>> sm_nuc_mixes;
+std::shared_ptr<const std::map<std::string,ReferenceLinePredef::NucMix>> sm_nuc_mixes;
 
 
-struct CustomLine
-{
-  float m_energy;
-  float m_branch_ratio;
-  std::string m_info;
-  Wt::WColor m_color;
-  
-  /** The nuclide the user may have specified.
-   If user specifies the nuclide, than the transition will be picked out, assuming a weighting window of 0.25 keV (i.e., if nuclide
-   is valid, so will transition), and that gamma was intended.
-   */
-  const SandiaDecay::Nuclide *m_nuclide;
-  const SandiaDecay::Transition *m_transition;
-  
-  /** If detector efficiency and/or shielding apply to this line, for line height display purposes only. */
-  bool m_atten_applies;
-  
-  CustomLine( float ener, float br, std::string &&inf,
-             const SandiaDecay::Nuclide *nuc, const SandiaDecay::Transition *trans,
-             const bool atten, Wt::WColor &&color )
-  : m_energy(ener),
-  m_branch_ratio(br),
-  m_info( std::move(inf) ),
-  m_color( std::move(color) ),
-  m_nuclide( nuc ),
-  m_transition( trans ),
-  m_atten_applies( atten )
-  {
-  }
-};//struct CustomLine
-
-struct CustomSrcLines
-{
-  string m_name;
-  float m_max_branch_ratio;
-  std::vector<CustomLine> m_lines;
-};//struct CustomSrcLines
 
 /** Also protected by `sm_nuc_mix_mutex`; is only created once, and never freed or changed until program termination. */
-std::shared_ptr<const std::map<std::string,CustomSrcLines>> sm_custom_lines;
+std::shared_ptr<const std::map<std::string,ReferenceLinePredef::CustomSrcLines>> sm_custom_lines;
 
 /** RIght now we will only hold info about fission files in memory - we wont hold fission data in memory.
  Maybe once things are working fully, and useful, could it be useful to do this.
@@ -186,6 +106,8 @@ void sanitize_label_str( string &label )
   SpecUtils::to_lower_ascii( label );
 }//void sanitize_label_str( string &label )
 
+
+
   
 void load_custom_nuc_mixes()
 {
@@ -197,266 +119,14 @@ void load_custom_nuc_mixes()
   
   sm_have_tried_init = true;
   
-  auto load_ref_line_file = []( const string filepath, map<string,NucMix> &nuc_mixes, map<string,CustomSrcLines> &custom_lines ){
-    
-    try
-    {
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      assert( db );
-      if( !db )
-        throw std::logic_error( "invalid SandiaDecayDataBase" );
-      
-      std::vector<char> data;
-      SpecUtils::load_file_data( filepath.c_str(), data );
-      
-      rapidxml::xml_document<char> doc;
-      const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
-      doc.parse<flags>( &data.front() );
-      
-      const XmlNode *ref_lines = doc.first_node( "RefLineDefinitions" );
-      if( !ref_lines )
-        throw runtime_error( "No RefLineDefinitions node." );
-      
-      XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
-      {
-        const XmlAttribute *mix_name = XML_FIRST_ATTRIB( nuc_mix, "name" );
-        const XmlAttribute *def_age = XML_FIRST_ATTRIB( nuc_mix, "default-age" );
-        
-        string mix_name_str = SpecUtils::xml_value_str( mix_name );
-        if( mix_name_str.empty() )
-          throw runtime_error( "No mixture name" );
-        
-        NucMix mix;
-        mix.m_name = mix_name_str;
-        mix.m_default_age = 0.0;
-        mix.m_default_age_str = "";
-        mix.m_fixed_act_fractions = true;
-        if( def_age )
-        {
-          mix.m_default_age_str = SpecUtils::xml_value_str( def_age );
-          mix.m_default_age = PhysicalUnits::stringToTimeDuration( mix.m_default_age_str );
-        }
-        
-        const XmlAttribute *ref_age_attrib = XML_FIRST_ATTRIB( nuc_mix, "reference-age" );
-        const string ref_age_str = SpecUtils::xml_value_str( ref_age_attrib );
-        double ref_age = -1.0;
-        if( !ref_age_str.empty() )
-        {
-          mix.m_fixed_act_fractions = false;
-          ref_age = PhysicalUnits::stringToTimeDuration( ref_age_str );
-        }//if( !ref_age_str.empty() )
-        
-        
-        XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
-        {
-          const XmlAttribute *nuc_name = XML_FIRST_ATTRIB( nuc, "name" );
-          const XmlAttribute *nuc_act_frac = XML_FIRST_ATTRIB( nuc, "act-frac" );
-          const XmlAttribute *age_offset = XML_FIRST_ATTRIB( nuc, "age-offset" );
-          const XmlAttribute *color = XML_FIRST_ATTRIB( nuc, "color" );
-          
-          if( !nuc_name || !nuc_name->value_size() )
-            throw runtime_error( "No nuclide name" );
-          
-          const string nuc_name_str = SpecUtils::xml_value_str( nuc_name );
-          
-          if( !nuc_act_frac || !nuc_act_frac->value_size() )
-            throw runtime_error( "No activity fraction for " + nuc_name_str
-                                + " in " + mix_name_str );
-          
-          NucMixComp comp;
-          comp.m_age_offset = 0.0;
-          comp.m_nuclide = db->nuclide( nuc_name_str );
-          if( !comp.m_nuclide )
-            throw runtime_error( "Invalid nuclide: " + nuc_name_str );
-          
-          if( !SpecUtils::parse_double( nuc_act_frac->value(), nuc_act_frac->value_size(),
-                                       comp.m_rel_act )
-             || (comp.m_rel_act < 0.0) )
-            throw runtime_error( "Invalid activity fraction: " + nuc_name_str );
-          
-          if( age_offset && age_offset->value_size() )
-          {
-            const string age_offset_str = SpecUtils::xml_value_str( age_offset );
-            comp.m_age_offset = PhysicalUnits::stringToTimeDuration( age_offset_str );
-          }//if( age_offset && age_offset->value_size() )
-          
-          if( color && color->value_size() )
-          {
-            const string color_str = SpecUtils::xml_value_str(color);
-            comp.m_color = Wt::WColor( color_str );
-            if( comp.m_color.isDefault() )
-            {
-              const string msg = "NucMixture named '" + mix_name_str + "'"
-              " has invalid color value for '" + nuc_name_str + "': "
-              "'" + color_str + "' - not CSS color string.";
-              cerr << msg << endl;
-              //throw runtime_error( msg ); // we wont disregard the whole file over a single color
-            }//if( parsing of color failed )
-          }//if( user specified color )
-          
-          mix.m_components.push_back( std::move(comp) );
-        }//XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
-        
-        assert( mix.m_fixed_act_fractions == (ref_age < 0.0) );
-        if( !mix.m_fixed_act_fractions && (ref_age > 0.0) )
-        {
-          // Figure out activities at t=0:
-          //  specified_act = A_0 * exp( -ref_age * nuc->decayConstant() );
-          //  A_0 = specified_act / exp( -ref_age * nuc->decayConstant() );
-          
-          for( NucMixComp &m : mix.m_components )
-          {
-            const double given_act = m.m_rel_act;
-            const SandiaDecay::Nuclide *nuc = m.m_nuclide;
-            m.m_rel_act = given_act / exp( -ref_age * nuc->decayConstant() );
-            
-#if( PERFORM_DEVELOPER_CHECKS )
-            SandiaDecay::NuclideMixture decay_mix;
-            decay_mix.addNuclideByActivity( nuc, m.m_rel_act );
-            const double ref_act = decay_mix.activity(ref_age, nuc);
-            if( (given_act > 0.0)
-               && (fabs(ref_act - given_act) > 1.0E-5*std::max(ref_act,given_act)) ) //1.0E-5 arbitrary
-            {
-              log_developer_error( __func__, "Decay correction calculation has failed." );
-              assert( fabs(ref_act - given_act) < 1.0E-5*std::max(ref_act,given_act) );
-            }
-#endif
-          }//for( NucMixComp &m : mix.m_components )
-        }//if( mix.m_fixed_act_fractions )
-        
-        double act_fraction_sum = 0.0;
-        for( const NucMixComp &m : mix.m_components )
-          act_fraction_sum += m.m_rel_act;
-        
-        if( (act_fraction_sum <= 0.0) || IsNan(act_fraction_sum) || IsInf(act_fraction_sum) )
-          throw runtime_error( "Invalid activity fraction sum" );
-        
-        for( NucMixComp &m : mix.m_components )
-          m.m_rel_act /= act_fraction_sum;
-        
-        sanitize_label_str( mix_name_str );
-        nuc_mixes[mix_name_str] = std::move(mix);
-      }//XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
-      
-      
-      XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
-      {
-        const XmlAttribute *src_name = XML_FIRST_ATTRIB( source, "name" );
-        string src_name_str = SpecUtils::xml_value_str( src_name );
-        SpecUtils::trim( src_name_str );
-        
-        if( src_name_str.empty() )
-          throw runtime_error( "No name specified for a SourceLines element" );
-        
-        CustomSrcLines src_lines;
-        src_lines.m_name = src_name_str;
-        src_lines.m_max_branch_ratio = 0.0;
-        XML_FOREACH_CHILD( line, source, "Line" )
-        {
-          const XmlAttribute *info = XML_FIRST_ATTRIB( line, "info" );
-          string info_str = SpecUtils::xml_value_str( info );
-          SpecUtils::trim( info_str );
-          
-          const string values_str = SpecUtils::xml_value_str( line );
-          
-          vector<float> values;
-          SpecUtils::split_to_floats( values_str, values );
-          if( values.size() != 2 )
-            throw runtime_error( "SourceLines named '" + src_name_str + "' provided "
-                                + std::to_string(values.size()) + " values (expected two numbers)" );
-          
-          const float energy = values[0];
-          const float br = values[1];
-          
-          if( (energy <= 0.f) || (br < 0.0f) )
-            throw runtime_error( "SourceLines named '" + src_name_str + "' has a negative value." );
-          
-          src_lines.m_max_branch_ratio = std::max( src_lines.m_max_branch_ratio, br );
-          
-          const SandiaDecay::Nuclide *nuc = nullptr;
-          const SandiaDecay::Transition *trans = nullptr;
-          const XmlAttribute *nuclide = XML_FIRST_ATTRIB( line, "nuc" );
-          if( nuclide && nuclide->value_size() )
-          {
-            const string nuc_name = SpecUtils::xml_value_str(nuclide);
-            nuc = db->nuclide( nuc_name );
-            if( !nuc )
-              throw runtime_error( "SourceLines named '" + src_name_str + "' has an invalid nuclide ('" + nuc_name + "')." );
-            
-            size_t transition_index = 0;
-            PeakDef::SourceGammaType nearestGammaType;
-            PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false, -1.0,
-                                          trans, transition_index, nearestGammaType );
-            if( !trans )
-              throw runtime_error( "SourceLines named '" + src_name_str + "' with nuclide '"
-                                  + nuc_name + "', couldnt be matched to source data for energy "
-                                  + std::to_string(energy) + " keV." );
-          }//if( nuclide && nuclide->value_size() )
-          
-          bool atten_applies = true;
-          const XmlAttribute *atten = XML_FIRST_ATTRIB( line, "atten" );
-          if( atten && atten->value_size() )
-          {
-            const string atten_str = SpecUtils::xml_value_str(atten);
-            if( SpecUtils::iequals_ascii(atten_str, "0")
-               || SpecUtils::iequals_ascii(atten_str, "false")
-               || SpecUtils::iequals_ascii(atten_str, "no") )
-            {
-              atten_applies = false;
-            }else if( !SpecUtils::iequals_ascii(atten_str, "1")
-                     && !SpecUtils::iequals_ascii(atten_str, "true")
-                     && !SpecUtils::iequals_ascii(atten_str, "yes") )
-            {
-              throw runtime_error( "SourceLines named '" + src_name_str + "' has invalid value "
-                                  " for the 'atten' attribute ('" + atten_str + "')" );
-            }
-          }//if( atten && atten->value_size() )
-          
-          Wt::WColor color;
-          const XmlAttribute *color_attrib = XML_FIRST_ATTRIB( line, "color" );
-          if( color_attrib && color_attrib->value_size() )
-          {
-            const string color_str = SpecUtils::xml_value_str(color_attrib);
-            color = Wt::WColor( color_str );
-            if( color.isDefault() )
-            {
-              // Parsing of color failed
-              const string msg =  "SourceLines named '" + src_name_str + "' has invalid value "
-              " for color attribute ('" + color_str
-              + "') - could not parse as CSS color.";
-              cerr << msg << endl;
-              //throw runtime_error( msg ); //We wont disregard the whole file over an invalid file
-            }
-          }//if( color_attrib && color_attrib->value_size() )
-          
-          src_lines.m_lines.emplace_back( energy, br, std::move(info_str), nuc,
-                                         trans, atten_applies, std::move(color) );
-        }//XML_FOREACH_CHILD( line, source, "Line" )
-        
-        if( src_lines.m_lines.empty() )
-          throw runtime_error( "No lines specified for SourceLines named '" + src_name_str + "'" );
-        
-        if( src_lines.m_max_branch_ratio <= 0.0f )
-          throw runtime_error( "Lines specified for SourceLines named '" + src_name_str + "' were all zero amplitude." );
-        
-        sanitize_label_str( src_name_str );
-        custom_lines[std::move(src_name_str)] = std::move(src_lines);
-      }//XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
-    }catch( std::exception &e )
-    {
-      cerr << "Failed to load '" << filepath << "' as custom ref lines: "
-      << e.what() << endl;
-    }//try / catch to load XML data
-  };//auto load_ref_line_file lambda
-  
   
   const string data_dir = InterSpec::staticDataDirectory();
   const string add_lines_path = SpecUtils::append_path( data_dir, "add_ref_line.xml" );
   
-  auto nuc_mixes = make_shared<map<string,NucMix>>();
-  auto custom_lines = make_shared<map<string,CustomSrcLines>>();
+  auto nuc_mixes = make_shared<map<string,ReferenceLinePredef::NucMix>>();
+  auto custom_lines = make_shared<map<string,ReferenceLinePredef::CustomSrcLines>>();
   
-  load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines );
+  ReferenceLinePredef::load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines, nullptr );
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   
@@ -477,7 +147,7 @@ void load_custom_nuc_mixes()
     
     // Any duplicate names, will overwrite what comes with InterSpec
     if( SpecUtils::is_file( custom_lines_path ) )
-      load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines );
+      ReferenceLinePredef::load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines, nullptr );
   }//if( !user_data_dir.empty() )
 #endif
   
@@ -534,7 +204,7 @@ void load_custom_nuc_mixes()
 }//void load_custom_nuc_mixes()
 
 
-const NucMix *get_custom_nuc_mix( std::string label )
+const ReferenceLinePredef::NucMix *get_custom_nuc_mix( std::string label )
 {
   sanitize_label_str( label );
   
@@ -551,10 +221,10 @@ const NucMix *get_custom_nuc_mix( std::string label )
     return nullptr;
   
   return &(pos->second);
-}//const NucMix *get_custom_nuc_mix( std::string label )
+}//const ReferenceLinePredef::NucMix *get_custom_nuc_mix( std::string label )
 
 
-const CustomSrcLines *get_custom_src_lines( std::string label )
+const ReferenceLinePredef::CustomSrcLines *get_custom_src_lines( std::string label )
 {
   sanitize_label_str( label );
   
@@ -571,7 +241,7 @@ const CustomSrcLines *get_custom_src_lines( std::string label )
     return nullptr;
   
   return &(pos->second);
-}//const NucMix *get_custom_nuc_mix( std::string label )
+}//const ReferenceLinePredef::CustomSrcLines *get_custom_src_lines( std::string label )
 
 
 //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
@@ -2731,8 +2401,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     }
   }//if( !nuc && !el && rctnGammas.empty() )
   
-  const NucMix *nuc_mix = nullptr;
-  const CustomSrcLines *src_lines = nullptr;
+  const ReferenceLinePredef::NucMix *nuc_mix = nullptr;
+  const ReferenceLinePredef::CustomSrcLines *src_lines = nullptr;
   if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy )
   {
     nuc_mix = get_custom_nuc_mix( input.m_input_txt );
@@ -3232,7 +2902,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   if( nuc_mix )
   {
-    for( const NucMixComp &comp : nuc_mix->m_components )
+    for( const ReferenceLinePredef::NucMixComp &comp : nuc_mix->m_components )
     {
       assert( comp.m_nuclide );
       const double nuc_age = std::max( 0.0, age - comp.m_age_offset ); //Make sure age is at least zero
@@ -3311,7 +2981,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   {
     answer.m_has_coincidences = false;
     
-    for( const CustomLine &line : src_lines->m_lines )
+    for( const ReferenceLinePredef::CustomLine &line : src_lines->m_lines )
     {
       ReferenceLineInfo::RefLine refline;
       refline.m_energy = line.m_energy;

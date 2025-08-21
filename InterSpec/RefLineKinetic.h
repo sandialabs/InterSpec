@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -36,18 +37,24 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 
 class SpecMeas;
 class InterSpec;
+struct AlwaysSrcs;
 struct ExternalRidResults;
+class D3SpectrumDisplayDiv;
 
 class RefLineKinetic : public Wt::WObject
 {
 public:
-  RefLineKinetic( InterSpec *parent );
+  RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *parent );
   virtual ~RefLineKinetic();
+  
+  bool successfully_initialized() const;
   
   void setActive( bool active );
   bool isActive() const;
   
 protected:
+  void start_init_always_sources();
+  
   void autoSearchPeaksSet( const SpecUtils::SpectrumType spectrum );
   void spectrumChanged( const SpecUtils::SpectrumType spec_type,
                        const std::shared_ptr<SpecMeas> &measurement,
@@ -55,10 +62,20 @@ protected:
                        const std::vector<std::string> &detectors );
   void autoRidResultsRecieved( const std::shared_ptr<const ExternalRidResults> &results );
 
+  void updateLines();
+  
   InterSpec *m_interspec;
+  D3SpectrumDisplayDiv *m_chart;
+  
   bool m_active;
   
-  void handlePreferenceChange( bool active );
+  /** Will be set to false until the "always" sources have been attempted to initialize. */
+  bool m_has_inited;
+  
+  /** Will be empty if the "always" sources were succesfully initialized, and non-empty otherwise. */
+  std::string m_init_error_msg;
+  
+  std::unique_ptr<const AlwaysSrcs> m_always_srcs;
 };//class RefLineKinetic
 
 #endif // RefLineKinetic_h

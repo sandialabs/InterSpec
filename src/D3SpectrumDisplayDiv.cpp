@@ -267,6 +267,8 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartWidthPx(0.0),
   m_chartHeightPx(0.0),
   m_showRefLineInfoForMouseOver( true ),
+  m_kineticRefLines{},
+  m_kineticRefLinesJsFwhmFcn{},
   m_comptonPeakAngle( 180 ),
   m_foregroundLineColor( 0x00, 0x00, 0x00 ),  //black
   m_backgroundLineColor( 0x00, 0xff, 0xff ),  //cyan
@@ -777,6 +779,59 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
+void D3SpectrumDisplayDiv::setKineticRefernceLines( vector<pair<double,ReferenceLineInfo>> &&ref_lines,
+                             std::string &&js_fwhm_fcnt )
+{
+  m_kineticRefLines = std::move(ref_lines);
+  m_kineticRefLinesJsFwhmFcn = std::move(js_fwhm_fcnt);
+  
+  m_renderFlags |= D3RenderActions::UpdateKineticRefLines;
+  scheduleRender();
+}//void setKineticRefernceLines(...)
+
+
+void D3SpectrumDisplayDiv::setKineticRefLinesToClient()
+{
+  if( m_kineticRefLines.empty() )
+  {
+    const string js = "try{" + m_jsgraph + ".setKineticReferenceLines(null);}catch(e){}";
+    if( isRendered() )
+      doJavaScript( js );
+    else
+      m_pendingJs.push_back( js );
+    return;
+  }//if( m_kineticRefLines.empty() )
+  
+  string result = "{\n"
+  "  fwhm_fcn: " + (m_kineticRefLinesJsFwhmFcn.empty() ? "function(){return 1;}"s : m_kineticRefLinesJsFwhmFcn) + ",\n"
+  " ref_lines: [";
+
+  for( size_t i = 0; i < m_kineticRefLines.size(); ++i )
+  {
+    const pair<double,ReferenceLineInfo> &ref = m_kineticRefLines[i];
+    
+    result += (i ? ",{\n" : "{\n")
+    + string("  weight: ") + std::to_string(ref.first) + ",\n"
+    "  src_lines : ";
+    ref.second.toJson(result);
+    result += "\n}";
+  }
+  result += "]";
+  
+  const string js =
+  "try{"
+  + m_jsgraph + ".setKineticReferenceLines(" + result + ");"
+  "}catch(e){ console.log('Exception setting ref lines: ' + e ); }";
+  
+  cout << "js=" << js << endl << endl << endl;
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//void setKineticRefLinesToClient()
+
+
 void D3SpectrumDisplayDiv::highlightPeakAtEnergy( const double energy )
 {
   if( isRendered() )
@@ -827,6 +882,9 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_renderFlags.testFlag(D3RenderActions::UpdateRefLines) )
     setReferenceLinesToClient();
+  
+  if( m_renderFlags.testFlag(D3RenderActions::UpdateKineticRefLines) )
+    setKineticRefLinesToClient();
   
   m_renderFlags = 0;
 }//void render( flags )

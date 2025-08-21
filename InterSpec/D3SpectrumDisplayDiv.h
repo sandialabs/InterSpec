@@ -356,6 +356,17 @@ public:
   //  should be shown for the line that the mouse is currently over.  Default is
   //  to show the information.
   void setShowRefLineInfoForMouseOver( const bool show );
+    
+  /** Set the reference lines that update as you move the mouse.
+   
+   @param ref_lines The ReferenceLines for a source, as well as a thier relative weights.
+   The higher the weight, the more likely
+   @param js_fwhm_fcnt The JavaScript function that gives the FWHM as a function of energy.  Ex "function(e){ return 20 + 3*sqrt(e); }*"
+   
+   TODO: implement to allow setting this info before 
+   */
+  void setKineticRefernceLines( std::vector<std::pair<double,ReferenceLineInfo>> &&ref_lines,
+                               std::string &&js_fwhm_fcnt );
   
   /** Highlights a peak, at the specified energy, as if you had moused over it.
    
@@ -401,6 +412,7 @@ protected:
   
   void setReferenceLinesToClient();
   
+  void setKineticRefLinesToClient();
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -417,8 +429,9 @@ protected:
     
     UpdateHighlightRegions = 0x20,
     
-    UpdateRefLines = 0x40
+    UpdateRefLines = 0x40,
     
+    UpdateKineticRefLines = 0x80
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   
@@ -583,6 +596,9 @@ protected:
   std::vector<ReferenceLineInfo> m_persistedPhotoPeakLines;
 
   bool m_showRefLineInfoForMouseOver;
+  
+  std::vector<std::pair<double,ReferenceLineInfo>> m_kineticRefLines;
+  std::string m_kineticRefLinesJsFwhmFcn;
   
   bool m_showFeatureMarker[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   
