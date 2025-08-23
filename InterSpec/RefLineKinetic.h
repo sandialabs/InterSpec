@@ -38,19 +38,44 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 class SpecMeas;
 class InterSpec;
 struct AlwaysSrcs;
+struct ReferenceLineInfo;
 struct ExternalRidResults;
 class D3SpectrumDisplayDiv;
 
 class RefLineKinetic : public Wt::WObject
 {
 public:
-  RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *parent );
+  RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *viewer );
   virtual ~RefLineKinetic();
   
   bool successfully_initialized() const;
   
   void setActive( bool active );
   bool isActive() const;
+  
+  /** Flags to indicate what actions need to be taken during pushUpdates. */
+  enum KineticRefLineRenderFlags
+  {
+    UpdateLines = 0x01
+  };//enum KineticRefLineRenderFlags
+  
+  /** Call this from InterSpec::render() to push any pending updates. */
+  void pushUpdates();
+  
+  enum class RefLineSrc : int
+  {
+    AlwaysShowing,
+    ExternalRid,
+    OnboardRid,
+    CharacteristicLine
+  };//enum class RefLineSrc : int
+  
+  /** Attempts to filter the lines in `ref_lines` to just the most-likely relevant lines - we dont want like 500 lines the client has to deal with for a 30 second
+   spectrum
+   */
+  static void filterLines( ReferenceLineInfo &ref_lines,
+                          const RefLineSrc src,
+                          const std::shared_ptr<const SpecUtils::Measurement> &meas );
   
 protected:
   void start_init_always_sources();
@@ -76,6 +101,11 @@ protected:
   std::string m_init_error_msg;
   
   std::unique_ptr<const AlwaysSrcs> m_always_srcs;
+  
+  std::shared_ptr<const ExternalRidResults> m_external_rid_results;
+  
+  /** Flags to track what updates need to be made during render. */
+  Wt::WFlags<KineticRefLineRenderFlags> m_renderFlags;
 };//class RefLineKinetic
 
 #endif // RefLineKinetic_h

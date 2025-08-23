@@ -26,10 +26,13 @@ class SpecMeas;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
+class RefLineKinetic;
+
 namespace Wt
 {
   class WCssTextRule;
 }//namespace Wt
+
 enum class FeatureMarkerType : int;
 namespace SpecUtils{ class Measurement; }
 namespace SpecUtils{ enum class SpectrumType : int; }
@@ -357,13 +360,27 @@ public:
   //  to show the information.
   void setShowRefLineInfoForMouseOver( const bool show );
     
+  /** To avoid duplicate calculations of kinetic reference lines, the `RefLineKinetic` class will notify this class
+   that it has updates, by calling the `scheduleRenderKineticRefLine()` function; this will also trigger a render
+   update for this class.  Then in the render function for this class, it will call back into RefLineKinetic, to have it do the
+   calculations and give the results to this class (see #m_kineticRefLines and #m_kineticRefLinesJsFwhmFcn), to then be
+   sent to the client.
+   */
+  void setKineticRefLineController( RefLineKinetic *kinetic );
+  
+  /** Marks it so this class will call the  `RefLineKinetic` instance to give this class the updated lines, on the next render cycle,
+   and mark that this instance needs to be rendered.
+   */
+  void scheduleRenderKineticRefLine();
+  
   /** Set the reference lines that update as you move the mouse.
    
    @param ref_lines The ReferenceLines for a source, as well as a thier relative weights.
    The higher the weight, the more likely
    @param js_fwhm_fcnt The JavaScript function that gives the FWHM as a function of energy.  Ex "function(e){ return 20 + 3*sqrt(e); }*"
    
-   TODO: implement to allow setting this info before 
+   If this widget is rendered, then lines are also put to `doJavaScript(...)` immediately during this call; if not rendered, then will wait until
+   the render cycle to do this.
    */
   void setKineticRefernceLines( std::vector<std::pair<double,ReferenceLineInfo>> &&ref_lines,
                                std::string &&js_fwhm_fcnt );
@@ -582,6 +599,8 @@ protected:
    */
   const std::string m_jsgraph;
   
+  std::size_t m_num_render_calls;
+  
   // X-axis and Y-axis values
   double m_xAxisMinimum;
   double m_xAxisMaximum;
@@ -597,6 +616,7 @@ protected:
 
   bool m_showRefLineInfoForMouseOver;
   
+  RefLineKinetic *m_kinetic;
   std::vector<std::pair<double,ReferenceLineInfo>> m_kineticRefLines;
   std::string m_kineticRefLinesJsFwhmFcn;
   

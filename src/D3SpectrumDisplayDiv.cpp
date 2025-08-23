@@ -54,6 +54,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
+#include "InterSpec/RefLineKinetic.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -260,6 +261,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_xAxisCompactnessChanged( this ),
   // These next member variables roughly track state in the JS
   m_jsgraph( jsRef() + ".chart" ),
+  m_num_render_calls( 0 ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
   m_yAxisMinimum(0.0),
@@ -267,6 +269,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartWidthPx(0.0),
   m_chartHeightPx(0.0),
   m_showRefLineInfoForMouseOver( true ),
+  m_kinetic( nullptr ),
   m_kineticRefLines{},
   m_kineticRefLinesJsFwhmFcn{},
   m_comptonPeakAngle( 180 ),
@@ -779,14 +782,30 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
+void D3SpectrumDisplayDiv::setKineticRefLineController( RefLineKinetic *kinetic )
+{
+  m_kinetic = kinetic;
+}
+
+
+void D3SpectrumDisplayDiv::scheduleRenderKineticRefLine()
+{
+  m_renderFlags |= D3RenderActions::UpdateKineticRefLines;
+  scheduleRender();
+}//void scheduleRenderKineticRefLine();
+
+
+
 void D3SpectrumDisplayDiv::setKineticRefernceLines( vector<pair<double,ReferenceLineInfo>> &&ref_lines,
                              std::string &&js_fwhm_fcnt )
 {
+  if( m_kineticRefLines.empty() && ref_lines.empty() && m_kineticRefLinesJsFwhmFcn.empty() && js_fwhm_fcnt.empty() )
+    return;
+    
   m_kineticRefLines = std::move(ref_lines);
   m_kineticRefLinesJsFwhmFcn = std::move(js_fwhm_fcnt);
   
-  m_renderFlags |= D3RenderActions::UpdateKineticRefLines;
-  scheduleRender();
+  setKineticRefLinesToClient();
 }//void setKineticRefernceLines(...)
 
 
@@ -803,27 +822,28 @@ void D3SpectrumDisplayDiv::setKineticRefLinesToClient()
   }//if( m_kineticRefLines.empty() )
   
   string result = "{\n"
-  "  fwhm_fcn: " + (m_kineticRefLinesJsFwhmFcn.empty() ? "function(){return 1;}"s : m_kineticRefLinesJsFwhmFcn) + ",\n"
-  " ref_lines: [";
-
+  "  \"fwhm_fcn\": " + (m_kineticRefLinesJsFwhmFcn.empty() ? "function(){return 1;}"s : m_kineticRefLinesJsFwhmFcn) + ",\n"
+  " \"ref_lines\": [";
+  
   for( size_t i = 0; i < m_kineticRefLines.size(); ++i )
   {
     const pair<double,ReferenceLineInfo> &ref = m_kineticRefLines[i];
     
     result += (i ? ",{\n" : "{\n")
-    + string("  weight: ") + std::to_string(ref.first) + ",\n"
-    "  src_lines : ";
+    + string("  \"weight\": ") + std::to_string(ref.first) + ",\n"
+    "  \"src_lines\": ";
     ref.second.toJson(result);
     result += "\n}";
   }
-  result += "]";
+  result += "]\n"
+  "}";
   
   const string js =
   "try{"
   + m_jsgraph + ".setKineticReferenceLines(" + result + ");"
   "}catch(e){ console.log('Exception setting ref lines: ' + e ); }";
   
-  cout << "js=" << js << endl << endl << endl;
+  //cout << "js=" << js << endl << endl << endl;
   
   if( isRendered() )
     doJavaScript( js );
@@ -883,10 +903,11 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( m_renderFlags.testFlag(D3RenderActions::UpdateRefLines) )
     setReferenceLinesToClient();
   
-  if( m_renderFlags.testFlag(D3RenderActions::UpdateKineticRefLines) )
-    setKineticRefLinesToClient();
+  if( m_kinetic && m_renderFlags.testFlag(D3RenderActions::UpdateKineticRefLines) )
+    m_kinetic->pushUpdates();
   
   m_renderFlags = 0;
+  m_num_render_calls += 1;
 }//void render( flags )
 
 

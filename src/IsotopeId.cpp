@@ -1614,6 +1614,7 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
   //Artificially bump up the rating for background and common sources; note that
   //  this is put in just to play around with, we may not want to keep it, I
   //  really dont like hard coding any nuclides anywhere in InterSpec (20141120)
+  //  Or maybe instead look in "data/NuclideSearchCatagories.xml" to get a more complete list
   for( map<string,int>::iterator i = nsources.begin(); i != nsources.end(); ++i )
   {
     //Not a complete list...
@@ -1817,12 +1818,15 @@ void populateCandidateNuclides( std::shared_ptr<const SpecUtils::Measurement> da
 //    entries.insert( nuc );
 //  }//for( const std::string &nuc : otherpeaksnucs )
   
-  Wt::WServer *server = Wt::WServer::instance();
-  if( server )
-    server->post( sessionid, doupdate );
-  else
-    cerr << "populateCandidateNuclides(): error getting pointer to server"
-         << endl;
+  if( doupdate )
+  {
+    Wt::WServer *server = Wt::WServer::instance();
+    if( server )
+      server->post( sessionid, doupdate );
+    else
+      cerr << "populateCandidateNuclides(): error getting pointer to server"
+      << endl;
+  }
 }//void populateCandidateNuclides(...)
 
 }//namespace IsotopeId

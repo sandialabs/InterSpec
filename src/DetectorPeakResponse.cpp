@@ -3701,6 +3701,84 @@ float DetectorPeakResponse::peakResolutionSigma( const float energy ) const
 }//double peakResolutionSigma( float energy ) const
 
 
+std::string DetectorPeakResponse::javaScriptFwhmFunction() const
+{
+  if( !hasResolutionInfo() )
+  {
+    throw std::runtime_error( "DetectorPeakResponse::javaScriptFwhmFunction(): "
+                              "detector does not have resolution information" );
+  }
+  
+  return javaScriptFwhmFunction( m_resolutionCoeffs, m_resolutionForm );
+}//std::string javaScriptFwhmFunction() const
+
+
+std::string DetectorPeakResponse::javaScriptFwhmFunction( const std::vector<float> &coeffs,
+                                                          const ResolutionFnctForm form )
+{
+  std::string js_fwhm_fcn;
+  
+  switch( form )
+  {
+    case kGadrasResolutionFcn:
+      if( coeffs.size() >= 3 )
+      {
+        js_fwhm_fcn = "function(e) { var a=" + std::to_string(coeffs[0]) +
+        ", b=" + std::to_string(coeffs[1]) +
+        ", c=" + std::to_string(coeffs[2]) +
+        "; e = Math.max(1.0, e);" +
+        " if(e > 661.0) return 6.61 * b * Math.pow(e/661.0, c);" +
+        " if(a >= 0.0) { var ZeroLimit = Math.max(0.0, Math.abs(a)*(661.0-e)/661.0);" +
+        " var FWHM = 6.61 * b * Math.pow(e/661.0, c);" +
+        " return Math.sqrt(ZeroLimit*ZeroLimit + FWHM*FWHM); }" +
+        " if(a > 6.61*b) return a;" +
+        " var A7 = Math.sqrt(Math.pow(6.61*b, 2.0) - a*a) / 6.61;" +
+        " return Math.sqrt(a*a + Math.pow(6.61 * A7 * Math.pow(e/661.0, c), 2.0)); }";
+      }
+      break;
+      
+    case kSqrtEnergyPlusInverse:
+      if( coeffs.size() >= 3 )
+      {
+        js_fwhm_fcn = "function(e) { return Math.sqrt(" + std::to_string(coeffs[0]) +
+        " + " + std::to_string(coeffs[1]) + "*e + " + std::to_string(coeffs[2]) + "/e); }";
+      }
+      break;
+      
+    case kConstantPlusSqrtEnergy:
+      if( coeffs.size() >= 2 )
+      {
+        js_fwhm_fcn = "function(e) { return " + std::to_string(coeffs[0]) +
+        " + " + std::to_string(coeffs[1]) + "*Math.sqrt(e); }";
+      }
+      break;
+      
+    case kSqrtPolynomial:
+      if( !coeffs.empty() )
+      {
+        js_fwhm_fcn = "function(e) { e = e/1000.0; var val = " + std::to_string(coeffs.back()) + ";";
+        for( int i = static_cast<int>(coeffs.size()) - 2; i >= 0; i-- )
+        {
+          js_fwhm_fcn += " val = val * e + " + std::to_string(coeffs[i]) + ";";
+        }
+        js_fwhm_fcn += " return Math.sqrt(val); }";
+      }
+      break;
+      
+    case kNumResolutionFnctForm:
+      break;
+  }
+  
+  if( js_fwhm_fcn.empty() )
+  {
+    throw std::runtime_error( "DetectorPeakResponse::javaScriptFwhmFunction(): "
+                              "unable to generate JavaScript function for resolution form" );
+  }
+  
+  return js_fwhm_fcn;
+}//static std::string javaScriptFwhmFunction(...)
+
+
 float DetectorPeakResponse::detectorDiameter() const
 {
   return m_detectorDiameter;
