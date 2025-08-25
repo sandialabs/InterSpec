@@ -38,6 +38,7 @@ namespace SpecUtils{ enum class SpectrumType : int; }
 class SpecMeas;
 class InterSpec;
 struct AlwaysSrcs;
+struct ColorTheme;
 struct ReferenceLineInfo;
 struct ExternalRidResults;
 class D3SpectrumDisplayDiv;
@@ -86,8 +87,12 @@ protected:
                        const std::set<int> &sample_numbers,
                        const std::vector<std::string> &detectors );
   void autoRidResultsRecieved( const std::shared_ptr<const ExternalRidResults> &results );
+  void colorThemeChanged( const std::shared_ptr<const ColorTheme> &theme );
 
   void updateLines();
+  
+  /** Helper method to assign color to ReferenceLineInfo, applying fallback logic. */
+  void assignColorToInput( ReferenceLineInfo &input ) const;
   
   InterSpec *m_interspec;
   D3SpectrumDisplayDiv *m_chart;

@@ -78,6 +78,7 @@ public:
 		TimeHistoryForegroundHighlight,
 		TimeHistoryBackgroundHighlight,
 		TimeHistorySecondaryHighlight,
+		KineticRefLineDefault,
 		NumSelectableColors
 	};//enum class EditableColor
 

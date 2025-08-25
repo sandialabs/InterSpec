@@ -193,6 +193,17 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
+	new WLabel("Kinetic Ref Line Default", cell);
+	cell = table->elementAt(row, 1);
+  cell->addStyleClass( "CTSelect" );
+	m_colorSelects[KineticRefLineDefault] = new ColorSelect(0,cell);
+	cell = table->elementAt(row, 2);
+  cell->addStyleClass( "CTRowDesc" );
+	new WText("Default color for kinetic reference lines when no specific color is assigned", cell);
+
+	++row;
+	cell = table->elementAt(row, 0);
+  cell->addStyleClass( "CTRowLabel" );
 	new WLabel("Spectrum Chart Axis", cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
@@ -727,6 +738,9 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
 	m_colorSelects[TimeHistoryForegroundHighlight]->setColor(theme->timeHistoryForegroundHighlight);
 	m_colorSelects[TimeHistoryBackgroundHighlight]->setColor(theme->timeHistoryBackgroundHighlight);
 	m_colorSelects[TimeHistorySecondaryHighlight]->setColor(theme->timeHistorySecondaryHighlight);
+	m_colorSelects[KineticRefLineDefault]->setColor( theme->kineticRefLineDefaultColor.isDefault() ? 
+                                                    Wt::WColor( ColorTheme::sm_kinetic_ref_line_default_color ) : 
+                                                    theme->kineticRefLineDefaultColor );
   
   
   for( int i = 0; i < sm_numRefLineColors; ++i )
@@ -906,6 +920,10 @@ void ColorThemeWidget::newColorSelectedCallback(const ColorThemeWidget::Selectab
       
 	  case TimeHistorySecondaryHighlight:
       m_currentTheme->timeHistorySecondaryHighlight = m_colorSelects[color]->color();
+      break;
+      
+	  case KineticRefLineDefault:
+      m_currentTheme->kineticRefLineDefaultColor = m_colorSelects[color]->color();
       break;
       
 	  case NumSelectableColors:

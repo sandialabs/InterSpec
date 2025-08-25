@@ -39,27 +39,84 @@
 #include "InterSpec/ReferenceLinePredef.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
+#include "InterSpec/ColorTheme.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
+#include "InterSpec/MoreNuclideInfo.h"
 
 using namespace std;
 using namespace Wt;
 
 
+namespace
+{
+  // Helper function to check if two peaks overlap within 1 FWHM
+  bool peaks_overlap( const shared_ptr<const PeakDef>& p1, const shared_ptr<const PeakDef>& p2 )
+  {
+    // See also/instead PeakDef::causilyConnected(...)
+    if( !p1 || !p2 )
+      return false;
+    const double fwhm1 = p1->gausPeak() ? p1->fwhm() : 0.5*p1->roiWidth();
+    const double fwhm2 = p2->gausPeak() ? p2->fwhm() : 0.5*p2->roiWidth();
+    return fabs(p1->mean() - p2->mean()) <= (0.5*(fwhm1 + fwhm2));
+  };
+  
+  // Function to combine users peaks with the auto-search peaks; if a auto-search peak overlaps with a user peak, it
+  //  wont be added.
+  vector<shared_ptr<const PeakDef>> combine_nonoverlapping_peaks(
+                                            const shared_ptr<const deque<shared_ptr<const PeakDef>>> &user_peaks,
+                                            const shared_ptr<const deque<shared_ptr<const PeakDef>>> &autosearch_peaks )
+  {
+    vector<shared_ptr<const PeakDef>> unique_peaks;
+    
+    if( user_peaks )
+      unique_peaks.insert( end(unique_peaks), begin(*user_peaks), end(*user_peaks) );
+    
+    if( autosearch_peaks )
+    {
+      for( const auto& auto_peak : *autosearch_peaks )
+      {
+        bool overlaps_with_existing = false;
+        for( size_t i = 0; !overlaps_with_existing && (i < unique_peaks.size()); ++i )
+          overlaps_with_existing = peaks_overlap( auto_peak, unique_peaks[i] );
+        
+        if( !overlaps_with_existing )
+          unique_peaks.push_back( auto_peak );
+      }//for( const auto& auto_peak : *autosearch_peaks )
+    }//if( autosearch_peaks )
+    std::sort( begin(unique_peaks), end(unique_peaks), &PeakDef::lessThanByMeanShrdPtr );
+
+    return unique_peaks;
+  }
+  
+  template <typename T>
+  bool is_in_a_category( const T *nuc, const vector<IsotopeSearchByEnergy::NucSearchCategory> &categories )
+  {
+    return (IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_medical_category_key, categories)
+            || IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_industrial_category_key, categories)
+            || IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_norm_category_key, categories)
+            || IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_snm_category_key, categories)
+            || IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_common_category_key, categories)
+            // || IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_fission_category_key, categories)
+            );
+  }
+}//namespace
+
 struct AlwaysSrcs
 {
   const map<string,ReferenceLinePredef::NucMix> nuc_mixes;
   const map<string,ReferenceLinePredef::CustomSrcLines> custom_lines;
-  const std::vector<ReferenceLinePredef::IndividualSource> individual_sources;
+  const vector<ReferenceLinePredef::IndividualSource> individual_sources;
   
   AlwaysSrcs() = delete;
   AlwaysSrcs( map<string,ReferenceLinePredef::NucMix> &&mixes,
              map<string,ReferenceLinePredef::CustomSrcLines> &&lines,
-             std::vector<ReferenceLinePredef::IndividualSource> &&srcs )
+             vector<ReferenceLinePredef::IndividualSource> &&srcs )
   : nuc_mixes( std::move(mixes) ),
   custom_lines( std::move(lines) ),
   individual_sources( std::move(srcs) )
@@ -93,6 +150,10 @@ RefLineKinetic::RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *interspe
   ) );
   
   m_interspec->externalRidResultsRecieved().connect( boost::bind( &RefLineKinetic::autoRidResultsRecieved, this, boost::placeholders::_1 ) );
+  m_interspec->colorThemeChanged().connect( boost::bind( &RefLineKinetic::colorThemeChanged, this, boost::placeholders::_1 ) );
+  
+  // TODO: We also need to update lines after an energy calbration is done
+  // TODO: We also need to make sure hint peaks are adjusted for energy changes
   
   m_chart->setKineticRefLineController( this );
   
@@ -118,7 +179,7 @@ void RefLineKinetic::start_init_always_sources()
     
     map<string,ReferenceLinePredef::NucMix> nuc_mixes;
     map<string,ReferenceLinePredef::CustomSrcLines> custom_lines;
-    std::vector<ReferenceLinePredef::IndividualSource> indiv_sources;
+    vector<ReferenceLinePredef::IndividualSource> indiv_sources;
     ReferenceLinePredef::load_ref_line_file( always_defs_file, nuc_mixes, custom_lines, &indiv_sources );
     
     m_always_srcs = make_unique<AlwaysSrcs>( std::move(nuc_mixes), std::move(custom_lines), std::move(indiv_sources) );
@@ -128,6 +189,52 @@ void RefLineKinetic::start_init_always_sources()
     m_init_error_msg = e.what();
   }//try / catch
 }//void start_init_always_sources()
+
+
+void RefLineKinetic::assignColorToInput( ReferenceLineInfo &lines ) const
+{
+  RefLineInput &input = lines.m_input;
+  const string &source_name = input.m_input_txt;
+  
+  // If color is already set, don't override it
+  if( !input.m_color.isDefault() )
+    return;
+  
+  // Check ColorTheme::referenceLineColorForSources first
+  const auto color_theme = m_interspec->getColorTheme();
+  if( color_theme )
+  {
+    const auto specific_color_it = color_theme->referenceLineColorForSources.find( source_name );
+    if( specific_color_it != color_theme->referenceLineColorForSources.end() && !specific_color_it->second.isDefault() )
+    {
+      input.m_color = specific_color_it->second;
+      return;
+    }
+  }
+  
+  // Check if ReferencePhotopeakDisplay can suggest a color
+  const auto refphoto = m_interspec->referenceLinesWidget();
+  if( refphoto )
+  {
+    const Wt::WColor suggested_color = refphoto->suggestColorForSource( source_name );
+    if( !suggested_color.isDefault() )
+    {
+      input.m_color = suggested_color;
+      return;
+    }
+  }
+  
+  // Use the kinetic reference line default color from the ColorTheme
+  if( color_theme && !color_theme->kineticRefLineDefaultColor.isDefault() )
+  {
+    input.m_color = color_theme->kineticRefLineDefaultColor;
+  }
+  else
+  {
+    // Fallback to the static default if ColorTheme is unavailable
+    input.m_color = Wt::WColor( ColorTheme::sm_kinetic_ref_line_default_color );
+  }
+}//void RefLineKinetic::assignColorToInput(...)
 
 
 void RefLineKinetic::setActive( bool active )
@@ -156,9 +263,9 @@ void RefLineKinetic::autoSearchPeaksSet( const SpecUtils::SpectrumType spectrum 
 
 
 void RefLineKinetic::spectrumChanged( const SpecUtils::SpectrumType spec_type,
-                     const std::shared_ptr<SpecMeas> &measurement,
-                     const std::set<int> &sample_numbers,
-                     const std::vector<std::string> &detectors )
+                     const shared_ptr<SpecMeas> &measurement,
+                     const set<int> &sample_numbers,
+                     const vector<string> &detectors )
 {
   if( spec_type == SpecUtils::SpectrumType::Foreground )
     m_external_rid_results.reset();
@@ -168,13 +275,21 @@ void RefLineKinetic::spectrumChanged( const SpecUtils::SpectrumType spec_type,
 }//void spectrumChanged(...)
 
 
-void RefLineKinetic::autoRidResultsRecieved( const std::shared_ptr<const ExternalRidResults> &results )
+void RefLineKinetic::autoRidResultsRecieved( const shared_ptr<const ExternalRidResults> &results )
 {
   m_external_rid_results = results;
   
   m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
   m_chart->scheduleRenderKineticRefLine();
-}//void autoRidResultsRecieved( const std::shared_ptr<const ExternalRidResults> &results )
+}//void autoRidResultsRecieved( const shared_ptr<const ExternalRidResults> &results )
+
+
+void RefLineKinetic::colorThemeChanged( const shared_ptr<const ColorTheme> &theme )
+{
+  // Color theme has changed, trigger an update to refresh colors
+  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderKineticRefLine();
+}//void RefLineKinetic::colorThemeChanged(...)
 
 
 void RefLineKinetic::pushUpdates()
@@ -206,6 +321,13 @@ void RefLineKinetic::updateLines()
     return;
   }//if( !m_active )
   
+  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+  assert( db );
+  if( !db )
+    return;
+
+  const bool highres = PeakFitUtils::is_likely_high_res( m_interspec );
+  
   shared_ptr<const SpecUtils::Measurement> foreground = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   const set<int> &foreground_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
   const shared_ptr<const SpecMeas> foreground_meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
@@ -213,6 +335,98 @@ void RefLineKinetic::updateLines()
   shared_ptr<const SpecUtils::Measurement> background = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
   const set<int> &background_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Background);
   const shared_ptr<const SpecMeas> background_meas = m_interspec->measurment(SpecUtils::SpectrumType::Background);
+  
+  
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> foreground_autosearch_peaks = foreground_meas
+                                  ? foreground_meas->automatedSearchPeaks(foreground_samples)
+                                  : nullptr;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> background_autosearch_peaks = background_meas
+                                  ? background_meas->automatedSearchPeaks(background_samples)
+                                  : nullptr;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> user_background_peaks =
+                                  (background_meas && background_meas->sampleNumsWithPeaks().count(background_samples))
+                                  ? background_meas->peaks(background_samples)
+                                  : nullptr;
+  
+  PeakModel * const pmodel = m_interspec->peakModel();
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> user_foreground_peaks = pmodel ? pmodel->peaks() : nullptr;
+
+  const double foreground_lt = foreground ? foreground->live_time() : 0.0;
+  const double background_lt = background ? background->live_time() : 0.0;
+  
+  // We'll create a combination of user and auto-search peaks, that dont overlap
+  const vector<shared_ptr<const PeakDef>> unique_foreground_peaks
+                                  = combine_nonoverlapping_peaks( user_foreground_peaks, foreground_autosearch_peaks );
+  const vector<shared_ptr<const PeakDef>> unique_background_peaks
+                                  = combine_nonoverlapping_peaks( user_background_peaks, background_autosearch_peaks );
+  
+  // Get peaks that are in the foreground, but not the background.
+  shared_ptr<deque<shared_ptr<const PeakDef>>> nonbackground_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+  
+  for( const shared_ptr<const PeakDef> &p: unique_foreground_peaks )
+  {
+    bool overlaps_background = false;
+    // We will check if a peak overlaps the background peak, and if they do in energy, that the foreground peak is
+    //  no bigger than 25% larger than background peak (arbitrarily chosen)
+    for( size_t back_index = 0; !overlaps_background && (back_index < unique_background_peaks.size()); ++back_index )
+    {
+      if( peaks_overlap(p, unique_background_peaks[back_index]) )
+      {
+        if( (foreground_lt > 0.1) && (background_lt > 0.1) )
+        {
+          const double fore_rate = p->amplitude() / foreground_lt;
+          const double back_rate = unique_background_peaks[back_index]->amplitude() / background_lt;
+          overlaps_background = (fore_rate - back_rate) < 0.25*std::max(fore_rate, back_rate);
+        }
+      }
+    }
+    if( !overlaps_background )
+      nonbackground_peaks->push_back( p );
+  }//for( const shared_ptr<const PeakDef> &p: unique_foreground_peaks )
+  
+  shared_ptr<const DetectorPeakResponse> detector = foreground_meas ? foreground_meas->detector() : nullptr;
+  if( !detector || !detector->isValid() )
+  {
+    // Load a generic detector efficiency function
+    shared_ptr<DetectorPeakResponse> detPtr = make_shared<DetectorPeakResponse>();
+    
+    const string basename = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
+    const string csvfilename = SpecUtils::append_path( basename, highres ? "HPGe 40%/Efficiency.csv" : "NaI 3x3/Efficiency.csv" );
+    const string datFilename = SpecUtils::append_path( basename, highres ? "HPGe 40%/Detector.dat" : "NaI 3x3/Detector.dat" );
+    
+#ifdef _WIN32
+    ifstream csv( SpecUtils::convert_from_utf8_to_utf16(csvfilename).c_str(), ios_base::binary|ios_base::in );
+    ifstream datFile( SpecUtils::convert_from_utf8_to_utf16(datFilename).c_str(), ios_base::binary|ios_base::in );
+#else
+    ifstream csv( csvfilename.c_str(), ios_base::binary|ios_base::in );
+    ifstream datFile( datFilename.c_str(), ios_base::binary|ios_base::in );
+#endif
+    
+    if( csv.good() && datFile.good() )
+    {
+      detPtr->fromGadrasDefinition( csv, datFile );
+    }else
+    {
+      cerr << "findCandidates(...): error opening default detector file" << endl;
+      detPtr->setIntrinsicEfficiencyFormula( "1.0", 3.0*PhysicalUnits::cm, PhysicalUnits::keV,
+                                            0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarField );
+    }
+    
+    detector = detPtr;
+  }//if( !detector || !detector->isValid() )
+  
+  assert( detector );
+  if( !detector->hasResolutionInfo() )
+  {
+    // TODO: fit this from unique_foreground_peaks, maybe using DetectorPeakResponse::fitResolution(...), or MakeDrfFit::performResolutionFit(...);
+  }//if( !detector->hasResolutionInfo() )
+  
+  
+  const ReactionGamma * const reaction_db = ([]()-> const ReactionGamma *{
+    try{ return ReactionGammaServer::database(); }catch(...){}
+    return static_cast<const ReactionGamma *>(nullptr); }
+  )();
+  
   
   RefLineInput base_input;
   base_input.m_lower_br_cutt_off = 0.0;
@@ -224,7 +438,6 @@ void RefLineKinetic::updateLines()
   base_input.m_showCascades = false;
   base_input.m_showEscapes = false;
   
-  const shared_ptr<const DetectorPeakResponse> detector = foreground_meas ? foreground_meas->detector() : nullptr;
   if( detector && detector->isValid() )
   {
     base_input.m_detector_name = detector->name();
@@ -254,7 +467,7 @@ void RefLineKinetic::updateLines()
       
       if( src.shielding_material.has_value() )
       {
-        const std::string &shielding_material = *src.shielding_material;
+        const string &shielding_material = *src.shielding_material;
         
         if( src.shielding_thickness.has_value() )
         {
@@ -293,8 +506,7 @@ void RefLineKinetic::updateLines()
       {
         filterLines( *ref_info, RefLineSrc::AlwaysShowing, foreground );
         ref_lines.emplace_back( src.m_weight, std::move(*ref_info) );
-      }
-      else
+      }else
       {
         cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for individual source: " << src.m_name << endl;
       }
@@ -314,8 +526,7 @@ void RefLineKinetic::updateLines()
       {
         filterLines( *ref_info, RefLineSrc::AlwaysShowing, foreground );
         ref_lines.emplace_back( mix.m_weight, std::move(*ref_info) );
-      }
-      else
+      }else
       {
         cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for nuclide mixture: " << mix.m_name << endl;
       }
@@ -343,8 +554,6 @@ void RefLineKinetic::updateLines()
   }//if( m_always_srcs )
   
   // Now check which nuclides peaks have been assigned to, and add those lines, if they havent already been added
-  PeakModel * const pmodel = m_interspec->peakModel();
-  const shared_ptr<const deque<std::shared_ptr<const PeakDef>>> user_foreground_peaks = pmodel ? pmodel->peaks() : nullptr;
   if( user_foreground_peaks && user_foreground_peaks->size() )
   {
     // We will assign these nuclides a weight of 10
@@ -353,7 +562,7 @@ void RefLineKinetic::updateLines()
       if( !peak )
         continue;
         
-      std::string canonical_name;
+      string canonical_name;
       bool found_source = false;
       
       // Try to get the canonical name using PeakDef source methods
@@ -375,7 +584,7 @@ void RefLineKinetic::updateLines()
       
       if( !found_source )
         continue;
-        
+
       // Check if this source is already in ref_lines using canonical name, and update weight if higher
       bool already_exists = false;
       double new_weight = 10.0;
@@ -422,7 +631,7 @@ void RefLineKinetic::updateLines()
       if( isotope.is_null() )
         continue;
         
-      std::string canonical_name;
+      string canonical_name;
       bool found_source = false;
       
       // Try to get the canonical name using the helper methods
@@ -502,7 +711,7 @@ void RefLineKinetic::updateLines()
       if( result.nuclide_.empty() )
         continue;
         
-      std::string canonical_name;
+      string canonical_name;
       bool found_source = false;
       
       // Try to get the nuclide from SandiaDecay database
@@ -576,237 +785,243 @@ void RefLineKinetic::updateLines()
   }//if( foreground_meas && foreground_meas->detectors_analysis() )
   
   
-  // If we want to be heavy-handed, we could use (some of the) suggestions from populateCandidateNuclides
-  shared_ptr<const deque<shared_ptr<const PeakDef>>> foreground_autosearch_peaks = foreground_meas
-            ? foreground_meas->automatedSearchPeaks(foreground_samples)
-            : nullptr;
-  const shared_ptr<const deque<shared_ptr<const PeakDef>>> background_autosearch_peaks = background_meas
-            ? background_meas->automatedSearchPeaks(background_samples)
-            : nullptr;
-  const shared_ptr<const deque<std::shared_ptr<const PeakDef>>> user_background_peaks = 
-            (background_meas && background_meas->sampleNumsWithPeaks().count(background_samples)) 
-            ? background_meas->peaks(background_samples) 
-            : nullptr;
-  
-  // We'll treat user peaks that dont have a source associated with them, as automated serach peaks.
-  if( (!foreground_autosearch_peaks || foreground_autosearch_peaks->empty()) 
-      && user_foreground_peaks && !user_foreground_peaks->empty() )
+  // Add associated nuclides for existing reference lines
+  shared_ptr<const MoreNuclideInfo::MoreNucInfoDb> more_nuc_info = MoreNuclideInfo::MoreNucInfoDb::instance();
+  if( more_nuc_info )
   {
-    auto non_idd_peaks = make_shared<deque<shared_ptr<const PeakDef>>>();
-    for( const auto &p : *user_foreground_peaks )
+    // Create a copy of current ref_lines to iterate over (to avoid modifying collection while iterating)
+    vector<pair<double, ReferenceLineInfo>> current_ref_lines = ref_lines;
+    
+    for( const pair<double, ReferenceLineInfo> &ref_line_pair : current_ref_lines )
     {
-      if( p && !p->parentNuclide() && !p->xrayElement() && !p->reaction() )
-        non_idd_peaks->push_back( p );
-    }
+      const double parent_weight = ref_line_pair.first;
+      const string& ref_line_name = ref_line_pair.second.m_input.m_input_txt;
+      
+      const MoreNuclideInfo::NucInfo *nuc_info = more_nuc_info->info(ref_line_name);
+      if( !nuc_info || nuc_info->m_associated.empty() )
+        continue;
+      
+      for( const string &associated_name : nuc_info->m_associated )
+      {
+        // Check if this associated nuclide is already in ref_lines
+        bool associated_already_exists = false;
+        double associated_weight = 0.25 * parent_weight;
+        
+        for( auto& existing : ref_lines )
+        {
+          if( existing.second.m_input.m_input_txt == associated_name )
+          {
+            associated_already_exists = true;
+            // Use max of current weight and 0.25 times parent weight
+            existing.first = std::max(existing.first, associated_weight);
+            break;
+          }
+        }//for( auto& existing : ref_lines )
+        
+        if( !associated_already_exists )
+        {
+          // Create reference lines for associated nuclide
+          RefLineInput associated_input = base_input;
+          associated_input.m_input_txt = associated_name;
+          
+          shared_ptr<ReferenceLineInfo> associated_ref_info = ReferenceLineInfo::generateRefLineInfo( associated_input );
+          if( associated_ref_info && associated_ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
+          {
+            filterLines( *associated_ref_info, RefLineSrc::CharacteristicLine, foreground );
+            ref_lines.emplace_back( associated_weight, std::move(*associated_ref_info) );
+          }
+          else
+          {
+            cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for associated nuclide: " << associated_name << endl;
+          }
+        }//if( !associated_already_exists )
+      }//for( const string &associated_name : nuc_info->m_associated )
+    }//for( ref_line_pair in current_ref_lines )
+  }//if( more_nuc_info )
+  
 
-    if( !non_idd_peaks->empty() )
-      foreground_autosearch_peaks = non_idd_peaks;
-  }//
+  // For peaks above ~1460 keV, either user or auto-fit, add in escape peak lines
+  // Add in escape peak lines, for peaks above a practical pair-production threshold
+  const double pair_prod_thresh = highres ? 1255.0 : 2585; //The single_escape_sf and double_escape_sf give negative values below 1255; the value used for low-res is arbitrary
+   //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
+  //  included in InterSpec, is given pretty well by the following (energy in keV):
+  const auto single_escape_sf = []( const double x ) -> double {
+    return std::max( 0.0, (1.8768E-11 *x*x*x) - (9.1467E-08 *x*x) + (2.1565E-04 *x) - 0.16367 );
+  };
+  
+  const auto double_escape_sf = []( const double x ) -> double {
+    return std::max( 0.0, (1.8575E-11 *x*x*x) - (9.0329E-08 *x*x) + (2.1302E-04 *x) - 0.16176 );
+  };
+  
+  vector<ReferenceLineInfo::RefLine> escape_lines;
+  for( const shared_ptr<const PeakDef> &peak : unique_foreground_peaks )
+  {
+    if( !peak || peak->mean() < pair_prod_thresh )
+      continue;
+      
+    const double peak_energy = peak->mean();
+    const double peak_amplitude = peak->amplitude();
+    
+    // Single escape peak at energy - 511 keV
+    const double se_energy = peak_energy - 510.9989;
+    const double se_amplitude = peak_amplitude * single_escape_sf( peak_energy );
+    const double se_peak_amp_threshold = 3.0; //TODO: base this more intelligently off of the spectrum itself
+    if( se_amplitude >= se_peak_amp_threshold )
+    {
+      ReferenceLineInfo::RefLine se_line;
+      se_line.m_energy = se_energy;
+      se_line.m_normalized_intensity = se_amplitude;
+      se_line.m_decaystr = "S.E.";
+      se_line.m_parent_nuclide = peak->parentNuclide();
+      se_line.m_transition = peak->nuclearTransition();
+      se_line.m_reaction = peak->reaction();
+      se_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SingleEscape;
+      escape_lines.push_back( se_line );
+    }
+    
+    // Double escape peak at energy - 1022 keV
+    const double de_energy = peak_energy - 2.0 * 510.9989;
+    const double de_amplitude = peak_amplitude * double_escape_sf( peak_energy );
+    const double de_peak_amp_threshold = 3.0; //TODO: base this more intelligently off of the spectrum itself
+    if( de_amplitude >= de_peak_amp_threshold )
+    {
+      ReferenceLineInfo::RefLine de_line;
+      de_line.m_energy = de_energy;
+      de_line.m_normalized_intensity = de_amplitude;
+      de_line.m_decaystr = "D.E.";
+      de_line.m_parent_nuclide = peak->parentNuclide();
+      de_line.m_transition = peak->nuclearTransition();
+      de_line.m_reaction = peak->reaction();
+      de_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape;
+      escape_lines.push_back( de_line );
+    }
+  }//for( const auto& peak : unique_foreground_peaks )
+  
+  // Normalize escape lines so highest intensity is 1.0 and add to ref_lines
+  if( !escape_lines.empty() )
+  {
+    double max_intensity = 0.0;
+    for( const auto& line : escape_lines )
+      max_intensity = std::max( max_intensity, line.m_normalized_intensity );
+      
+    if( max_intensity > 0.0 )
+    {
+      for( auto& line : escape_lines )
+        line.m_normalized_intensity /= max_intensity;
+        
+      ReferenceLineInfo escape_info;
+      escape_info.m_ref_lines = std::move( escape_lines );
+      escape_info.m_input.m_input_txt = "Escape Peaks";
+      //escape_info.m_input.m_color = ...;
+      escape_info.m_validity = ReferenceLineInfo::InputValidity::Valid;
+      
+      ref_lines.emplace_back( 1.0, std::move(escape_info) );
+    }
+  }
+
+  // Check if user or auto-fit peaks cooresponds to a cascade sum energy... maybe require the parent nuclide to not have a gamma at that energy, but how often does this happen?
+  
+  // We'll get the peaks that dont have a source assigned to them, and dont have a background peak, and then
+  //  use those to find suggested characteristic - but we arent currently adding these lines;
+  deque<shared_ptr<const PeakDef>> peaks_for_characteristics;
+  for( const shared_ptr<const PeakDef> &peak : unique_foreground_peaks )
+  {
+    if( !peak || peak->parentNuclide() || peak->reaction() || peak->xrayElement() )
+      continue;
+    
+    bool should_skip = false;
+    for( size_t i = 0; !should_skip && (i < unique_background_peaks.size()); ++i )
+      should_skip = peaks_overlap(peak, unique_background_peaks[i]);
+    
+    if( !should_skip )
+      peaks_for_characteristics.push_back(peak);
+  }//for( const shared_ptr<const PeakDef> &peak : unique_foreground_peaks )
+  std::sort( begin(peaks_for_characteristics), end(peaks_for_characteristics), &PeakDef::lessThanByMeanShrdPtr );
+    
 
   // Process automated search peaks to find characteristic nuclides
-  if( foreground_autosearch_peaks && foreground_autosearch_peaks->size() )
+  // If we want to be heavy-handed, we could use (some of the) suggestions from populateCandidateNuclides
+  if( !peaks_for_characteristics.empty() )
   {
-    // Helper lambda to check if a peak has a source assigned (nuclide, xray, or reaction)
-    auto peak_has_source = []( const std::shared_ptr<const PeakDef>& p ) -> bool {
-      return p && ( p->parentNuclide() != nullptr || p->xrayElement() != nullptr || p->reaction() != nullptr );
-    };
+    // This next section is experimental - it tries to match peaks to characteristic lines,
+    // however, there is a concern that we might end up with just too many ref_lines and it
+    // will be detrimental to the experience
+    set<string> candidate_source_names;
+    map<string,vector<shared_ptr<const PeakDef>>> candidate_to_peaks;
     
-    // Helper lambda to check if two peaks overlap within 1 FWHM
-    auto peaks_overlap = []( const std::shared_ptr<const PeakDef>& p1, const std::shared_ptr<const PeakDef>& p2 ) -> bool {
-      if( !p1 || !p2 )
-        return false;
-      const double fwhm1 = p1->fwhm();
-      const double fwhm2 = p2->fwhm();
-      const double avg_fwhm = 0.5 * (fwhm1 + fwhm2);
-      return fabs(p1->mean() - p2->mean()) <= avg_fwhm;
-    };
-    
-    // Create a list of remaining automated search peaks after filtering
-    vector<std::shared_ptr<const PeakDef>> remaining_autosearch_peaks;
-    
-    for( const auto& auto_peak : *foreground_autosearch_peaks )
+    cout << "Finding characteristics for " << peaks_for_characteristics.size() << " remaining automated search peaks:" << endl;
+    for( const shared_ptr<const PeakDef> &peak : peaks_for_characteristics )
     {
-      if( !auto_peak )
-        continue;
+      vector<string> characteristicnucs;
+      //IsotopeId::findCharacteristics( characteristicnucs, peak );
+      //IsotopeId::findCandidates( characteristicnucs, peak, nonbackground_peaks, detector, foreground );
+      
+      IsotopeId::PeakToNuclideMatch suggestedNucs;
+      IsotopeId::suggestNuclides( suggestedNucs, peak, nonbackground_peaks, foreground, detector );
+      
+      const vector<IsotopeId::NuclideStatWeightPair> &sugestions = suggestedNucs.nuclideWeightPairs;
+      for( size_t i = 0; i < 10 && i < sugestions.size(); ++i )
+      {
+        if( sugestions[i].nuclide )
+        {
+          if( sugestions[i].weight > 0.1*sugestions[0].weight ) //10% is arbitrary, but just looking through a few examples seems reasonable
+          {
+            characteristicnucs.push_back(sugestions[i].nuclide->symbol );
+            candidate_to_peaks[sugestions[i].nuclide->symbol].push_back(peak);
+          }
+          //cout << "suggestNuclides(" << peak->mean() << ", " << i << ") gave " << sugestions[i].nuclide->symbol << ", with weight " << sugestions[i].weight << endl;
+        }
+      }
+      
+      cout << "Peak at " << peak->mean() << " keV: ";
+      if( characteristicnucs.empty() )
+      {
+        cout << "No characteristic nuclides found" << endl;
+      }else
+      {
+        cout << "Found " << characteristicnucs.size() << " candidates: ";
         
-      bool should_skip = false;
-      
-      // Skip if this autosearch peak overlaps with a user foreground peak that has a source assigned
-      if( user_foreground_peaks )
-      {
-        for( const auto& user_peak : *user_foreground_peaks )
+        // Collect top 5 characteristics
+        for( size_t i = 0; i < characteristicnucs.size() && i < 5; ++i )
         {
-          if( peaks_overlap(auto_peak, user_peak) )
-          {
-            should_skip = true;
-            break;
-          }
+          if( i > 0 ) cout << ", ";
+          cout << characteristicnucs[i];
+          
+          candidate_source_names.insert( characteristicnucs[i] );
         }
-      }
-      
-      // Skip if this autosearch peak overlaps with any background peaks
-      if( !should_skip && user_background_peaks )
-      {
-        for( const auto& bg_peak : *user_background_peaks )
-        {
-          if( peaks_overlap(auto_peak, bg_peak) )
-          {
-            should_skip = true;
-            break;
-          }
-        }
-      }
-      
-      if( !should_skip && background_autosearch_peaks )
-      {
-        for( const auto& bg_auto_peak : *background_autosearch_peaks )
-        {
-          if( peaks_overlap(auto_peak, bg_auto_peak) )
-          {
-            should_skip = true;
-            break;
-          }
-        }
-      }
-      
-      if( !should_skip )
-        remaining_autosearch_peaks.push_back( auto_peak );
-    }
-    
-    // Also process user foreground peaks that have no source assigned
-    vector<std::shared_ptr<const PeakDef>> unsourced_user_peaks;
-    if( user_foreground_peaks )
-    {
-      for( const auto& user_peak : *user_foreground_peaks )
-      {
-        if( user_peak && !peak_has_source(user_peak) )
-          unsourced_user_peaks.push_back( user_peak );
-      }
-    }
-    
-    // Helper function to extract nuclide/element/reaction name from characteristic string
-    auto extract_source_name = []( const std::string& characteristic ) -> std::string {
-      // Format is typically: "Co60 1173.228 keV", "Fe xray 6.4 keV", "Fe(n,g) 7631.1 keV"
-      size_t space_pos = characteristic.find(' ');
-      if( space_pos != std::string::npos )
-      {
-        std::string source_name = characteristic.substr(0, space_pos);
-        // Handle xray case: "Fe xray" -> "Fe"
-        if( source_name.find("xray") != std::string::npos )
-        {
-          size_t xray_pos = characteristic.find(" xray");
-          if( xray_pos != std::string::npos )
-            return characteristic.substr(0, xray_pos);
-        }
-        return source_name;
-      }
-      return "";
-    };
-    
-    // First, collect all source names from the top 5 characteristics of each peak
-    std::set<std::string> candidate_source_names;
-    
-    // Process remaining automated search peaks
-    if( !remaining_autosearch_peaks.empty() )
-    {
-      cout << "Finding characteristics for " << remaining_autosearch_peaks.size() << " remaining automated search peaks:" << endl;
-      for( const auto& peak : remaining_autosearch_peaks )
-      {
-        vector<string> characteristicnucs;
-        IsotopeId::findCharacteristics( characteristicnucs, peak );
         
-        cout << "Peak at " << peak->mean() << " keV: ";
-        if( characteristicnucs.empty() )
-        {
-          cout << "No characteristic nuclides found" << endl;
-        }
-        else
-        {
-          cout << "Found " << characteristicnucs.size() << " candidates: ";
-          
-          // Collect top 5 characteristics
-          for( size_t i = 0; i < characteristicnucs.size() && i < 5; ++i )
-          {
-            if( i > 0 ) cout << ", ";
-            cout << characteristicnucs[i];
-            
-            std::string source_name = extract_source_name( characteristicnucs[i] );
-            if( !source_name.empty() )
-              candidate_source_names.insert( source_name );
-          }
-          
-          if( characteristicnucs.size() > 5 )
-            cout << " (and " << (characteristicnucs.size() - 5) << " more)";
-          cout << endl;
-        }
+        if( characteristicnucs.size() > 5 )
+          cout << " (and " << (characteristicnucs.size() - 5) << " more)";
+        cout << endl;
       }
-    }
+    }//for( const shared_ptr<const PeakDef> &peak : peaks_for_characteristics )
+  
     
-    // Process unsourced user peaks
-    if( !unsourced_user_peaks.empty() )
-    {
-      cout << "Finding characteristics for " << unsourced_user_peaks.size() << " user peaks without sources:" << endl;
-      for( const auto& peak : unsourced_user_peaks )
-      {
-        vector<string> characteristicnucs;
-        IsotopeId::findCharacteristics( characteristicnucs, peak );
-        
-        cout << "User peak at " << peak->mean() << " keV: ";
-        if( characteristicnucs.empty() )
-        {
-          cout << "No characteristic nuclides found" << endl;
-        }
-        else
-        {
-          cout << "Found " << characteristicnucs.size() << " candidates: ";
-          
-          // Collect top 5 characteristics
-          for( size_t i = 0; i < characteristicnucs.size() && i < 5; ++i )
-          {
-            if( i > 0 ) cout << ", ";
-            cout << characteristicnucs[i];
-            
-            std::string source_name = extract_source_name( characteristicnucs[i] );
-            if( !source_name.empty() )
-              candidate_source_names.insert( source_name );
-          }
-          
-          if( characteristicnucs.size() > 5 )
-            cout << " (and " << (characteristicnucs.size() - 5) << " more)";
-          cout << endl;
-        }
-      }
-    }
+    cout << "Starting candidate_source_names={";
+    for( auto name : candidate_source_names )
+      cout << name << ", ";
+    cout << "}" << endl;
     
     // Now filter the collected source names once
-    std::set<std::string> characteristic_sources;
+    set<string> characteristic_sources;
     
     if( !candidate_source_names.empty() )
     {
       IsotopeSearchByEnergy * const search = m_interspec->nuclideSearch();
-      const std::vector<IsotopeSearchByEnergy::NucSearchCategory> categories = search ? search->search_categories() : std::vector<IsotopeSearchByEnergy::NucSearchCategory>{};
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      const ReactionGamma *reaction_db = nullptr;
-      try
-      {
-        reaction_db = ReactionGammaServer::database();
-      }catch(...){}
+      const vector<IsotopeSearchByEnergy::NucSearchCategory> categories = search ? search->search_categories() : vector<IsotopeSearchByEnergy::NucSearchCategory>{};
       
-      for( const auto& source_name : candidate_source_names )
+      for( const string &source_name : candidate_source_names )
       {
         // Check if already in ref_lines
         bool already_in_ref_lines = false;
-        for( const auto& existing : ref_lines )
-        {
-          if( existing.second.m_input.m_input_txt == source_name )
-          {
-            already_in_ref_lines = true;
-            break;
-          }
-        }
+        for( size_t index = 0; !already_in_ref_lines && (index < ref_lines.size()); ++index )
+          already_in_ref_lines = SpecUtils::iequals_ascii(ref_lines[index].second.m_input.m_input_txt, source_name);
         
-        if( already_in_ref_lines || !search || categories.empty() || !db )
+        if( already_in_ref_lines || categories.empty() )
+        {
+          cout << "Skipping cadndiate source '" << source_name << "' since its already in ref_lines" << endl;
           continue;
+        }
         
         bool is_in_any_category = false;
         
@@ -816,44 +1031,31 @@ void RefLineKinetic::updateLines()
         {
           // Filter out any nuclide that is a descendant of any nuclide already in ref_lines
           bool is_descendant = false;
-          for( const auto& existing : ref_lines )
+          for( size_t index = 0; !is_descendant && (index < ref_lines.size()); ++index )
           {
-            const SandiaDecay::Nuclide *existing_nuc = db->nuclide( existing.second.m_input.m_input_txt );
-            if( existing_nuc && nuc->branchRatioFromForebear( existing_nuc ) > 0.0 )
-            {
-              is_descendant = true;
-              break;
-            }
+            const SandiaDecay::Nuclide *existing_nuc = db->nuclide( ref_lines[index].second.m_input.m_input_txt );
+            is_descendant = (existing_nuc && (nuc->branchRatioFromForebear(existing_nuc) > 0.0));
           }
           
           if( !is_descendant )
           {
-            is_in_any_category = (
-              IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_medical_category_key, categories) ||
-              IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_industrial_category_key, categories) ||
-              IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_norm_category_key, categories) ||
-              IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_snm_category_key, categories) ||
-              IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_common_category_key, categories)
-              // || IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_fission_category_key, categories)
-            );
+            is_in_any_category = is_in_a_category(nuc,categories);
+            if( !is_in_any_category )
+              cout << "Source '" << source_name << "' is not in NuclideSearchCatagories.xml" << endl;
+          }else
+          {
+            cout << "Source '" << source_name << "' is a decendant of an existing ref line" << endl;
           }
-        }
-        else
+        }else
         {
+          //Currently, we wont actually get here, because the `candidate_source_names` are currently all nuclides.
+          
           // Check if it's an element
           const SandiaDecay::Element *el = db->element( source_name );
           if( el )
           {
-            is_in_any_category = (
-              IsotopeSearchByEnergy::is_in_category(el, IsotopeSearchByEnergy::sm_medical_category_key, categories) ||
-              IsotopeSearchByEnergy::is_in_category(el, IsotopeSearchByEnergy::sm_industrial_category_key, categories) ||
-              IsotopeSearchByEnergy::is_in_category(el, IsotopeSearchByEnergy::sm_norm_category_key, categories) ||
-              IsotopeSearchByEnergy::is_in_category(el, IsotopeSearchByEnergy::sm_snm_category_key, categories) ||
-              IsotopeSearchByEnergy::is_in_category(el, IsotopeSearchByEnergy::sm_common_category_key, categories)
-              // || IsotopeSearchByEnergy::is_in_category(el, IsotopeSearchByEnergy::sm_fission_category_key, categories )
-            );
-          }
-          else if( reaction_db )
+            is_in_any_category = is_in_a_category(el,categories);
+          }else if( reaction_db )
           {
             // Check if it's a reaction
             vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
@@ -863,28 +1065,18 @@ void RefLineKinetic::updateLines()
             {
               const ReactionGamma::Reaction *rctn = possible_rctns[0].reaction;
               
-              // Check if we have enough peaks matching gamma lines for this reaction
-              const auto& gammas = rctn->gammas;
-              int required_matches = (gammas.size() > 1) ? 2 : 1;  // Single-gamma reactions need only 1 match
-              int peak_matches = 0;
+              // Check if at least 25% of reaction abundance has matching peaks
+              const vector<ReactionGamma::Reaction::EnergyYield> &gammas = rctn->gammas;
+              const double required_percentage = 0.25;  // 25%
               
-              // Collect all peaks (user foreground peaks + autosearch peaks)
-              vector<std::shared_ptr<const PeakDef>> all_peaks;
-              if( user_foreground_peaks )
+              // Calculate total abundance and matched abundance
+              double total_abundance = 0.0, matched_abundance = 0.0;
+              for( const ReactionGamma::Reaction::EnergyYield &gamma : gammas )
               {
-                for( const auto& p : *user_foreground_peaks )
-                  if( p ) all_peaks.push_back( p );
-              }
-              if( foreground_autosearch_peaks )
-              {
-                for( const auto& p : *foreground_autosearch_peaks )
-                  if( p ) all_peaks.push_back( p );
-              }
-              
-              // Check how many peaks match gamma lines from this reaction
-              for( const auto& gamma : gammas )
-              {
-                for( const auto& peak : all_peaks )
+                total_abundance += gamma.abundance;
+                
+                // Check if this gamma has a matching peak
+                for( const shared_ptr<const PeakDef> &peak : unique_foreground_peaks )
                 {
                   const double peak_energy = peak->mean();
                   const double fwhm = peak->fwhm();
@@ -892,34 +1084,24 @@ void RefLineKinetic::updateLines()
                   
                   if( fabs(peak_energy - gamma.energy) <= tolerance )
                   {
-                    peak_matches++;
+                    matched_abundance += gamma.abundance;
                     break;  // Found a match for this gamma, move to next gamma
-                  }
-                }
-                
-                if( peak_matches >= required_matches )
-                  break;  // We have enough matches
-              }
+                  }//if( matches )
+                }//for( loop over unique_foreground_peaks )
+              }//for( loop over rctn->gammas )
               
-              if( peak_matches >= required_matches )
-              {
-                is_in_any_category = (
-                  IsotopeSearchByEnergy::is_in_category(rctn, IsotopeSearchByEnergy::sm_medical_category_key, categories) ||
-                  IsotopeSearchByEnergy::is_in_category(rctn, IsotopeSearchByEnergy::sm_industrial_category_key, categories) ||
-                  IsotopeSearchByEnergy::is_in_category(rctn, IsotopeSearchByEnergy::sm_norm_category_key, categories) ||
-                  IsotopeSearchByEnergy::is_in_category(rctn, IsotopeSearchByEnergy::sm_snm_category_key, categories) ||
-                  IsotopeSearchByEnergy::is_in_category(rctn, IsotopeSearchByEnergy::sm_common_category_key, categories)
-                        // || IsotopeSearchByEnergy::is_in_category(rctn, IsotopeSearchByEnergy::sm_fission_category_key, categories )
-                );
-              }
-            }
-          }
-        }
+              const double abundance_percentage = (total_abundance > 0.0) ? (matched_abundance / total_abundance) : 0.0;
+              is_in_any_category = (abundance_percentage >= required_percentage) && is_in_a_category(rctn,categories);
+            }//if( !possible_rctns.empty() )
+          }//if( el ) / else if( reaction_db )
+        }//if( nuc ) / else
         
         if( is_in_any_category )
           characteristic_sources.insert( source_name );
-      }
-    }
+        else
+          cout << "Eliminating '" << source_name << "'" << endl;
+      }//for( const string &source_name : candidate_source_names )
+    }//if( !candidate_source_names.empty() )
     
     // Print the final set of characteristic sources
     if( !characteristic_sources.empty() )
@@ -932,20 +1114,113 @@ void RefLineKinetic::updateLines()
         cout << source;
         first = false;
         
-      
         //TODO: use following to score potential matches and filter further
-        //double profile_weight( std::shared_ptr<const DetectorPeakResponse> detector,
-        //                      const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
-        //                      const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
-        //                      const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
-        //                      std::vector<SandiaDecay::EnergyRatePair> srcgammas,
-        //                      const vector<double> &energies,
-        //                      const vector<double> &windows,
-        //                      const IsotopeSearchByEnergyModel::IsotopeMatch &nucmatches,
-        //                      double shielding_an,
-        //                      double shielding_ad )
+        const vector<shared_ptr<const PeakDef>> user_peaks = user_foreground_peaks
+             ? vector<shared_ptr<const PeakDef>>{begin(*user_foreground_peaks), end(*user_foreground_peaks)}
+             : vector<shared_ptr<const PeakDef>>{};
+        const vector<shared_ptr<const PeakDef>> automated_search_peaks = foreground_autosearch_peaks
+             ? vector<shared_ptr<const PeakDef>>{begin(*foreground_autosearch_peaks), end(*foreground_autosearch_peaks)}
+             : vector<shared_ptr<const PeakDef>>{};
+        const shared_ptr<const deque<shared_ptr<const PeakDef>>> user_foreground_peaks = pmodel ? pmodel->peaks() : nullptr;
         
+        const double atomic_nums[]   = { 1.0, 26.0, 74.0 };
+        const double areal_density[] = { 0.0*PhysicalUnits::g_per_cm2, 10.0*PhysicalUnits::g_per_cm2, 25.0*PhysicalUnits::g_per_cm2 };
+        
+        double prof_weight = -999.9;
+        
+        vector<shared_ptr<const PeakDef>> peaks_for_candidate = candidate_to_peaks[source];
+        
+        // Remove any non-Gaussian peaks (we cant easily call `amplitude()` for them, so we'll ignore them for the moment.
+        peaks_for_candidate.erase( std::remove_if( begin(peaks_for_candidate), end(peaks_for_candidate),
+          [](const shared_ptr<const PeakDef> &p ){
+            return !p || !p->gausPeak();
+        }), end(peaks_for_candidate) );
+        
+        // Make sure all the peaks in `peaks_for_candidate` are unique (they should be)
+        std::sort( begin(peaks_for_candidate), end(peaks_for_candidate),
+          []( const shared_ptr<const PeakDef> &lhs, const shared_ptr<const PeakDef> &rhs ){
+            return lhs.get() < rhs.get();
+        } );
+        peaks_for_candidate.erase( std::unique(begin(peaks_for_candidate), end(peaks_for_candidate)), end(peaks_for_candidate) );
+        //Sort `peaks_for_candidate` by amplitude
+        std::sort( begin(peaks_for_candidate), end(peaks_for_candidate),
+                  []( const shared_ptr<const PeakDef> &lhs, const shared_ptr<const PeakDef> &rhs ){
+          return lhs->amplitude() > rhs->amplitude();
+        } );
+        
+        vector<double> energies, windows;
+        const size_t max_peaks_per_source = 3;
+        for( size_t i = 0; (i < max_peaks_per_source) && (i < peaks_for_candidate.size()); ++i )
+        {
+          energies.push_back( peaks_for_candidate[i]->mean() );
+          windows.push_back( 2.5*peaks_for_candidate[i]->sigma() );
+        }
+        
+        vector<SandiaDecay::EnergyRatePair> srcgammas;
+        if( const SandiaDecay::Nuclide * const nuc = db->nuclide(source) )
+        {
+          SandiaDecay::NuclideMixture mix;
+          mix.addNuclideByActivity( nuc, 0.001*PhysicalUnits::curie );
+          srcgammas = mix.photons( PeakDef::defaultDecayTime(nuc) );
+        }else if( const SandiaDecay::Element *el = db->element(source) )
+        {
+          for( const SandiaDecay::EnergyIntensityPair &p : el->xrays )
+            srcgammas.emplace_back( p.intensity, p.energy );
+        }else if( reaction_db )
+        {
+          try
+          {
+            vector<ReactionGamma::ReactionPhotopeak> rctn_lines;
+            reaction_db->gammas(source, rctn_lines );
+            for( const ReactionGamma::ReactionPhotopeak &line : rctn_lines )
+              srcgammas.emplace_back( line.abundance, line.energy );
+          }catch( std::exception &e )
+          {
+          }
+        }//if(nuc) / else if( el ) / else if( rctn )
+        
+        // We dont need to normalize the intensities, I dont think
+        //double max_rate = -9999.9;
+        //for( const SandiaDecay::EnergyRatePair &erp : srcgammas )
+        //  max_rate = std::max( max_rate, erp.numPerSecond );
+        //if( max_rate <= 0.0 )
+        //  srcgammas.clear();
+        //for( SandiaDecay::EnergyRatePair &erp : srcgammas )
+        //  erp.numPerSecond /= max_rate;
+        
+        for( size_t i = 0; !srcgammas.empty() && (i < 3); ++i )
+        {
+          const double weight = IsotopeId::profile_weight( detector, foreground, user_peaks, automated_search_peaks, srcgammas,
+                                energies, windows, atomic_nums[i], areal_density[i], WString() );
+          prof_weight = std::max( prof_weight, weight );
+        }
+        
+        // A min allowed profile weight of 0.25 is arbitrary, but if anything, we could move it higher, to like 0.5
+        const double min_allowed_profile_weight = 0.25;
+        if( prof_weight < min_allowed_profile_weight )
+        {
+          cout << "Eliminating '" << source << "' from profile weight only " << prof_weight << endl;
+          continue;
+        }
+        
+        cout << "For source " << source << " the profile weight is " << prof_weight << endl;
+        
+        // Create reference lines for associated nuclide
+        RefLineInput candidate_input = base_input;
+        candidate_input.m_input_txt = source;
+        const double candidate_weight = 0.1 + 4.9 * (2.0 * std::max(0.0, prof_weight - 0.5)); //
+        
+        shared_ptr<ReferenceLineInfo> candidate_ref_info = ReferenceLineInfo::generateRefLineInfo( candidate_input );
+        if( candidate_ref_info && candidate_ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
+        {
+          filterLines( *candidate_ref_info, RefLineSrc::CharacteristicLine, foreground );
+          ref_lines.emplace_back( candidate_weight, std::move(*candidate_ref_info) );
+        }else
+        {
+          cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for candidate nuclide: " << source << endl;
+        }
       }
+      
       cout << endl;
     }
     else
@@ -954,20 +1229,105 @@ void RefLineKinetic::updateLines()
     }
   }
   
+  
+  // If the deadtime is over 15% (low resolution) or 25% (HPGe), add in lines for random sum peaks of largest peaks
+  const double max_live_time_frac = 1.0; //highres ? 0.75 : 0.85;
+  const double rt = foreground ? foreground->real_time() : 0.0;
+  const double lt = foreground ? foreground->live_time() : 0.0;
+  if( (lt > 0.0) && (rt > 0.0) && (lt < max_live_time_frac*rt) )
+  {
+    const size_t max_summing_peaks = 8;
+    const double rel_sum_prob_min = 0.01;
+    
+    // Get the highest amplitude peaks from unique_foreground_peaks, only considering Gaussian peaks
+    vector<shared_ptr<const PeakDef>> summing_candidates;
+    for( const shared_ptr<const PeakDef> &peak : unique_foreground_peaks )
+    {
+      if( peak && peak->gausPeak() && peak->amplitude() > 0.0 )
+        summing_candidates.push_back( peak );
+    }
+    
+    // Sort by amplitude (highest first)
+    std::sort( begin(summing_candidates), end(summing_candidates),
+              []( const shared_ptr<const PeakDef> &lhs, const shared_ptr<const PeakDef> &rhs ){
+                return lhs->amplitude() > rhs->amplitude();
+              });
+    
+    if( summing_candidates.size() > max_summing_peaks )
+      summing_candidates.resize( max_summing_peaks );
+    
+    if( !summing_candidates.empty() )
+    {
+      // Calculate random-summing probabilities for all pairs
+      vector<tuple<double,double,double,double>> sum_peaks; // energy, rel probability, energy_i, energy_j
+      
+      // Calculate maximum possible probability (highest peak with itself)
+      const double max_sum_prob = summing_candidates[0]->amplitude() * summing_candidates[0]->amplitude();
+      
+      // Generate all unique pairs (including peak with itself)
+      for( size_t i = 0; i < summing_candidates.size(); ++i )
+      {
+        for( size_t j = i; j < summing_candidates.size(); ++j )
+        {
+          const shared_ptr<const PeakDef> &peak_i = summing_candidates[i];
+          const shared_ptr<const PeakDef> &peak_j = summing_candidates[j];
+          const double sum_energy = peak_i->mean() + peak_j->mean();
+          const double sum_prob = peak_i->amplitude() * peak_j->amplitude();
+          const double rel_intensity = (sum_prob / max_sum_prob);
+          if( rel_intensity >= rel_sum_prob_min )
+            sum_peaks.emplace_back( sum_energy, rel_intensity, peak_i->mean(), peak_j->mean() );
+        }//for( size_t j = i; j < summing_candidates.size(); ++j )
+      }//for( size_t i = 0; i < summing_candidates.size(); ++i )
+      
+      // Create reference lines for significant sum peaks
+      if( !sum_peaks.empty() )
+      {
+        ReferenceLineInfo sum_ref_info;
+        sum_ref_info.m_input.m_input_txt = "Random Sum Peaks";
+        //sum_ref_info.m_input.m_color = ...
+        sum_ref_info.m_validity = ReferenceLineInfo::InputValidity::Valid;
+        sum_ref_info.m_source_type = ReferenceLineInfo::SourceType::CustomEnergy;
+        
+        for( const auto &sum_peak : sum_peaks )
+        {
+          const double energy = std::get<0>( sum_peak );
+          const double rel_intensity = std::get<1>( sum_peak );
+          
+          ReferenceLineInfo::RefLine ref_line;
+          ref_line.m_energy = energy;
+          ref_line.m_normalized_intensity = rel_intensity;
+          ref_line.m_decay_intensity = rel_intensity;
+          ref_line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+          ref_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak;
+          ref_line.m_attenuation_applies = false;
+          char buffer[64] = { '\0' };
+          snprintf( buffer, sizeof(buffer), "Random sum %.1f + %.1f keV", get<2>(sum_peak), get<3>(sum_peak) );
+          ref_line.m_decaystr = buffer;
+          
+          sum_ref_info.m_ref_lines.push_back( ref_line );
+        }//for( const auto &sum_peak : sum_peaks )
+        
+        const double randum_sum_lines_weight = 1.0; //totally arbitrary
+        ref_lines.emplace_back( randum_sum_lines_weight, std::move(sum_ref_info) );
+      }//if( !sum_peaks.empty() )
+    }//if( summing_candidates.size() >= 2 )
+  }//if( (lt > 0.0) && (rt > 0.0) && (lt < max_live_time_frac*rt) )
 
 
   // Get the FWHM JavaScript function from the foreground detector
-  std::string js_fwhm_fcn;
+  string js_fwhm_fcn;
   if( detector && detector->hasResolutionInfo() )
     try{ js_fwhm_fcn = detector->javaScriptFwhmFunction(); }catch(...){ assert(0); } //dont expect it to ever throw
   
   if( js_fwhm_fcn.empty() )//We'll put in a generic fcnt
   {
-    const bool highres = PeakFitUtils::is_likely_high_res( m_interspec );
     const vector<float> coefs = highres ? vector<float>{ 1.54f, 0.264f, 0.33f } : vector<float>{ -6.5f, 7.5f, 0.55f };
     js_fwhm_fcn = DetectorPeakResponse::javaScriptFwhmFunction( coefs, DetectorPeakResponse::kGadrasResolutionFcn );
   }//if( js_fwhm_fcn.empty() )
   
+  
+  for( pair<double,ReferenceLineInfo> &ref_line : ref_lines )
+    assignColorToInput( ref_line.second );
   
   // Note: since we are being called from within the render cycle most likely, this next function
   //       call will immediately send the appropriate JS to the client, as long as the chart has been rendered

@@ -25,14 +25,35 @@
         <!--  <Line nuc="F18" color="rgb(14,196,69)" info="" atten="false">510.998910 1.0</Line> -->
     </SourceLines>
 
+    <!-- Individual sources are just single nuclides, reactions or x-ray elements.
+    You can specify:
+      - age: via "default-age" attribute (if you dont specify, then InterSpec will determine default age), 
+      - color: "color" attribute with a valid CSS color string (if you dont specify, the  color is determined by Color Theme), 
+      - Shielding material and thickness: "shield-material" and "shield-thickness".  The material must be like you a shielding widget in InterSpec displays, or it can specify a generic shielding, for example a value "AN=26, AD=7.874".  Thickness is specified like you would enter into InterSpec
+      - if background: "is-background", if true, source will be treated as a trace source in soil, and transported to the surface (currently unimplemented)
+      - weight: A floating point number that affects how likely the lines for this source are to be shown.  This number is multiplied by a windowed weighting, to help decide which set of lines to show.  The higher this number, the more likely it is to be shown.  A value of 1 is default for this file, already-identified isotopes (e.g., peaks with an associated source) get a weight of 10, exteran RID isotopes 5, on-board-RID 2.5, etc
+    -->
     <IndividualSource name="Eu152" default-age="1y" color="red" weight="1" shield-material="Fe (iron)" shield-thickness="0.1 mm"/>
-    <IndividualSource name="Cs137" default-age="1y" color="red" />
-    
-    <IndividualSource name="U238" default-age="120.50 d" color="red" is-background="true" />
-    <IndividualSource name="Ra226" default-age="19.12 d" color="red" />
-    <IndividualSource name="U235" default-age="5.32 d" color="red" />
-    <IndividualSource name="Th232" default-age="28.75 y" color="red" />
-    <IndividualSource name="K40" default-age="0 s" color="red" />
+    <IndividualSource name="Cs137" />
+    <IndividualSource name="Co60" />
+    <IndividualSource name="Y88" />
+    <IndividualSource name="Co57" />
+    <IndividualSource name="Am241" />
+    <IndividualSource name="Ir192" />
+    <IndividualSource name="Na22" />
+    <IndividualSource name="Ba133" />
+    <IndividualSource name="Tc99m" />
+    <IndividualSource name="Tc99" />
+    <IndividualSource name="Tl204" />
+    <IndividualSource name="Pu239" />
+    <IndividualSource name="U232" />
+    <IndividualSource name="U233" />
+
+    <IndividualSource name="U238" default-age="120.50 d" is-background="true" />
+    <IndividualSource name="Ra226" default-age="19.12 d" />
+    <IndividualSource name="U235" default-age="5.32 d" />
+    <IndividualSource name="Th232" default-age="28.75 y" is-background="true" />
+    <IndividualSource name="K40" default-age="0 s" />
 
 <!-- 
     <NucMixture name="Some Mixture" default-age="20y" reference-age="0y">
