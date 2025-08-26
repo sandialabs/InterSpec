@@ -46,8 +46,8 @@
     <IndividualSource name="Tc99" />
     <IndividualSource name="Tl204" />
     <IndividualSource name="Pu239" />
-    <IndividualSource name="U232" />
-    <IndividualSource name="U233" />
+    <IndividualSource name="U233" weight="0.1"/>
+    <IndividualSource name="H(n,g)" />
 
     <IndividualSource name="U238" default-age="120.50 d" is-background="true" />
     <IndividualSource name="Ra226" default-age="19.12 d" />

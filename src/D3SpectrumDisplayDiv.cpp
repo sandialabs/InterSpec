@@ -843,7 +843,7 @@ void D3SpectrumDisplayDiv::setKineticRefLinesToClient()
   + m_jsgraph + ".setKineticReferenceLines(" + result + ");"
   "}catch(e){ console.log('Exception setting ref lines: ' + e ); }";
   
-  //cout << "js=" << js << endl << endl << endl;
+  //cout << "setKineticRefLinesToClient js=" << js << endl << endl << endl;
   
   if( isRendered() )
     doJavaScript( js );
@@ -904,7 +904,7 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
     setReferenceLinesToClient();
   
   if( m_kinetic && m_renderFlags.testFlag(D3RenderActions::UpdateKineticRefLines) )
-    m_kinetic->pushUpdates();
+    m_kinetic->startPushUpdates(); //This does not immediately push updated lines, it starts the computation for this in a background thread that will then push the lines later
   
   m_renderFlags = 0;
   m_num_render_calls += 1;

@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -42,6 +43,7 @@ struct ColorTheme;
 struct ReferenceLineInfo;
 struct ExternalRidResults;
 class D3SpectrumDisplayDiv;
+class DetectorPeakResponse;
 
 class RefLineKinetic : public Wt::WObject
 {
@@ -60,15 +62,19 @@ public:
     UpdateLines = 0x01
   };//enum KineticRefLineRenderFlags
   
-  /** Call this from InterSpec::render() to push any pending updates. */
-  void pushUpdates();
+  /** Function to _start_ computing updated lines, in a background thread, and then when done will push to `m_chart`. */
+  void startPushUpdates();
   
   enum class RefLineSrc : int
   {
-    AlwaysShowing,
+    UserPeakLines,
     ExternalRid,
     OnboardRid,
-    CharacteristicLine
+    AlwaysShowing,
+    UserPeakAssociatedNucLines,
+    CharacteristicLine,
+    EscapeLines,
+    RandomSumLines,
   };//enum class RefLineSrc : int
   
   /** Attempts to filter the lines in `ref_lines` to just the most-likely relevant lines - we dont want like 500 lines the client has to deal with for a 30 second
@@ -76,7 +82,8 @@ public:
    */
   static void filterLines( ReferenceLineInfo &ref_lines,
                           const RefLineSrc src,
-                          const std::shared_ptr<const SpecUtils::Measurement> &meas );
+                          const std::shared_ptr<const SpecUtils::Measurement> &meas,
+                          const std::shared_ptr<const DetectorPeakResponse> &detector );
   
 protected:
   void start_init_always_sources();
@@ -89,7 +96,10 @@ protected:
   void autoRidResultsRecieved( const std::shared_ptr<const ExternalRidResults> &results );
   void colorThemeChanged( const std::shared_ptr<const ColorTheme> &theme );
 
-  void updateLines();
+  void startUpdateLines();
+  void finishUpdateLines( const std::shared_ptr<std::vector<std::pair<double,ReferenceLineInfo>>> &ref_lines,
+                         const std::shared_ptr<std::string> &js_fwhm_fcn,
+                         const size_t calc_num );
   
   /** Helper method to assign color to ReferenceLineInfo, applying fallback logic. */
   void assignColorToInput( ReferenceLineInfo &input ) const;
@@ -111,6 +121,8 @@ protected:
   
   /** Flags to track what updates need to be made during render. */
   Wt::WFlags<KineticRefLineRenderFlags> m_renderFlags;
+  
+  std::shared_ptr<std::atomic<size_t>> m_current_calc_num;
 };//class RefLineKinetic
 
 #endif // RefLineKinetic_h
