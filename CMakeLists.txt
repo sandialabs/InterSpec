@@ -134,7 +134,7 @@ option(
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
-option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
+option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" OFF)
 
 
 
