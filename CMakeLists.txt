@@ -351,6 +351,7 @@ set(sources
     src/RefSpectraWidget.cpp
     src/RefSpectraModel.cpp
     src/AnalystChecks.cpp
+    src/SimpleActivityCalc.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -461,6 +462,7 @@ set(headers
     InterSpec/RefSpectraWidget.h
     InterSpec/RefSpectraModel.h
     InterSpec/AnalystChecks.h
+    InterSpec/SimpleActivityCalc.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -798,6 +800,10 @@ if( InterSpec_FETCH_DEPENDENCIES )
   # Need to fix copying the "resources" directory and configs and stuff probably
 endif( InterSpec_FETCH_DEPENDENCIES )
 
+# We will explicitly set the Wt include directory, marked as SYSTEM, to
+#  avoid a ton of warning messages from those headers (if you take this
+#  next line out, things will still work just fine, just with more warnings)
+target_include_directories( InterSpecLib PUBLIC SYSTEM ${Wt_INCLUDE_DIR} )
 
 if(WIN32)
     if( NOT InterSpec_FETCH_DEPENDENCIES )
@@ -811,7 +817,6 @@ if(WIN32)
 else(WIN32)
     target_link_libraries(InterSpecLib PUBLIC
         ${Wt_LIBRARIES}
-        ${Wt_LIBRARY}
         ${Wt_HTTP_LIBRARY}
         ${Wt_DBO_LIBRARY}
         ${Wt_DBOSQLITE3_LIBRARY}

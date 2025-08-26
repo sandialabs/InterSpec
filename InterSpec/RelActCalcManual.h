@@ -357,8 +357,6 @@ struct IsotopeRelativeActivity
   /** The uncertainty of the activity; this value is just the sqrt of the diagonal of the relative
    activity covariance matrix.  I.e., it doesnt account for uncertainty of the relative efficiency;
    correlations between isotope activities could also be important, and not taken into account here.
-   
-   TODO: check correlations between isotopes to see if we need to take this into account to have a reasonable uncertainty
    */
   double m_rel_activity_uncert;
 };//struct IsotopeRelativeActivity
@@ -644,7 +642,13 @@ struct RelEffSolution
    Throws std::exception if an invalid nuclide.
    */
   double relative_activity( const std::string &nuclide ) const;
-  
+
+  /** Returns the uncertainty of a nuclide.
+
+      Will throw exception if covariances were not computed, or invlaid nuclide.
+   */
+  double relative_activity_uncertainty( const std::string &nuclide ) const;
+
   /** The fit relative efficiency curve value; the curve is shifted so its centered around 1
    over all your input points.
    */

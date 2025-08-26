@@ -4838,8 +4838,16 @@ shared_ptr<DetectorPeakResponse> DrfSelect::initARelEffDetector( const SpecUtils
       case SpecUtils::DetectorType::KromekGR1:
         return { "GR1", "Kromek GR1", "Kromek-GR1" };
 
-      case SpecUtils::DetectorType::RadiaCode:
-        return { "Radiacode 102", "Radiacode", "Radiacode 101" };
+      case SpecUtils::DetectorType::RadiaCodeCsI10:
+        return { "Radiacode 102", "Radiacode", "Radiacode 101", "Radiacode 103" };
+        break;
+
+      case SpecUtils::DetectorType::RadiaCodeCsI14:
+        return { "Radiacode 110" };
+        break;
+
+      case SpecUtils::DetectorType::RadiaCodeGAGG10:
+        return { "Radiacode 103G" };
         break;
 
       case SpecUtils::DetectorType::Raysid:
@@ -5046,9 +5054,8 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case SpecUtils::DetectorType::KromekD3S:       name = "D3S"; break;
     case SpecUtils::DetectorType::KromekD5:        name = "Kromek-D5"; break;
     case SpecUtils::DetectorType::KromekGR1:       name = "Kromek-GR1-CZT"; break;
-
-    case SpecUtils::DetectorType::Raysid:       name = "Raysid"; break;
-      
+    case SpecUtils::DetectorType::Raysid:          name = "Raysid"; break;
+    case SpecUtils::DetectorType::RadiaCodeCsI10:  name = "Radiacode 102"; break;
     case DetectorType::Fulcrum40h:                 name = "Fulcrum40h"; break;
     case DetectorType::IdentiFinderR425NaI: 	     name = "IdentiFINDER-R425"; break;
     case DetectorType::Sam950:                     name = "SAM-950GN-N30"; break;
@@ -5064,7 +5071,8 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector(
     case DetectorType::RIIDEyeLaBr:
     case DetectorType::Fulcrum:
     case DetectorType::IdentiFinderR425LaBr:
-    case SpecUtils::DetectorType::RadiaCode:
+    case SpecUtils::DetectorType::RadiaCodeCsI14:
+    case SpecUtils::DetectorType::RadiaCodeGAGG10:
       // \TODO: fill in these names
       break;
   }//switch( type )

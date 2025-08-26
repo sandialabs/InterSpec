@@ -228,6 +228,17 @@ padding-bottom: 1px;
   flex: 1 1 auto;
 }
 
+.RelActAutoGui .RelActAutoUserNote
+{
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: normal;
+  margin-left: 5px;
+
+  flex: 1 5 auto;
+}
 
 .RelActAutoGui .RelActAutoErrMsg,
 .RelActAutoGui .RelActAutoStatusMsg,
@@ -245,7 +256,8 @@ padding-bottom: 1px;
 
 .RelActAutoGui .RelActAutoErrMsg
 {
-  color: red;
+  flex: 1 1 auto;
+  color: #ff6600; /* dark orange */
 }
 
 .RelActAutoGui .RelActAutoChi2Msg

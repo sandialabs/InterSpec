@@ -30,11 +30,6 @@
 #include <stdexcept>
 #include <utility>
 
-//#define BOOST_TEST_DYN_LINK
-#define BOOST_TEST_MODULE GammaInteractionCalc_suite
-//#include <boost/test/unit_test.hpp>
-#include <boost/test/included/unit_test.hpp>
-
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -46,6 +41,12 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
+
+//#define BOOST_TEST_DYN_LINK
+#define BOOST_TEST_MODULE GammaInteractionCalc_suite
+//#include <boost/test/unit_test.hpp>
+#include <boost/test/included/unit_test.hpp>
+
 
 using namespace std;
 using namespace boost::unit_test;

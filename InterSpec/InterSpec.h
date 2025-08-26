@@ -87,6 +87,7 @@ class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
+class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
@@ -929,6 +930,11 @@ public:
   void programmaticallyCloseSimpleMda();
 #endif //USE_DETECTION_LIMIT_TOOL
   
+  SimpleActivityCalcWindow *showSimpleActivityCalcWindow();
+  void handleSimpleActivityCalcWindowClose();
+  void programmaticallyCloseSimpleActivityCalc();
+  void startSimpleActivityCalcFromRightClick();
+  
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
   
@@ -1474,6 +1480,7 @@ protected:
     kAddPeakNotInRoi,
     kSearchEnergy,
     kSimpleMda,
+    kSimpleActivityCalc,
 #endif
     
     kNumRightClickItems
@@ -1589,6 +1596,7 @@ protected:
   DetectionLimitSimpleWindow *m_simpleMdaWindow;
   DetectionLimitWindow *m_detectionLimitWindow;
 #endif
+  SimpleActivityCalcWindow *m_simpleActivityCalcWindow;
   
   std::set<int> m_excludedSamples;//these are samples that should not be displayed for the primary spectrum
   std::set<int> m_displayedSamples;

@@ -105,7 +105,6 @@ namespace DoseCalc
           have to divide by g/cm2 to print out g/cm2) of shielding
    \param atomic_number Atomic numberof the shielding
    \param distance Distance from center of source to location of interest
-   \param xstool The XS tool to use for attenuation calculations
    \param scatter The GadrasScatterTable object to use to create the continuum
    
    \returns Returns dose in units of PhysicalUnits.  That is, to convert

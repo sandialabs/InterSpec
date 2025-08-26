@@ -3946,7 +3946,7 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
     assert( mat );
     
     const double vol = volumeOfMaterial(material_index, params);
-    const double volUncert = volumeUncertaintyOfMaterial(material_index, params, errors);
+    const double volUncert = volumeUncertaintyOfMaterial(static_cast<int>(material_index), params, errors);
   
     // Add in uncertainty contributions if this is a self attenuating source
     for( const auto el_nucs : shield.m_nuclideFractions_ )
@@ -4096,8 +4096,9 @@ double ShieldingSourceChi2Fcn::activityUncertainty( const SandiaDecay::Nuclide *
   }//for( size_t material_index = 0; material_index < num_materials; ++material_index )
   
   if( activityUncertSquared < 0.0 || IsNan(activityUncertSquared) || IsInf(activityUncertSquared) )
-    throw runtime_error( "error calculating activity uncertainty for self-attenuating source;"
-                         " squared value calculated is " + std::to_string(activityUncertSquared) );
+    throw runtime_error( "error calculating activity uncertainty for "
+                        + string(isTrace ? "trace" : (isSelfAtten ? "self-attenuating" : "uncertain!?!"))
+                        + " source; squared value calculated is " + std::to_string(activityUncertSquared) );
   
   const double normalCalcAct = ShieldingSourceChi2Fcn::totalActivity( nuclide, params );
   assert( fabs(normalCalcAct - activity) < std::max(1.0E-6*PhysicalUnits::bq, 0.001*std::max(normalCalcAct,activity)) );

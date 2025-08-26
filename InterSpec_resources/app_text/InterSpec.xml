@@ -422,6 +422,7 @@
   <message id="rclick-mi-add-new-peak">Add peak...</message>
   <message id="rclick-mi-search-energy">Search near {1} keV</message>
   <message id="rclick-simple-mda">Quick MDA {1}...</message>
+  <message id="rclick-simple-activity-calc">Quick {1} Activity...</message>
 
 
   <!-- Error messages, the user probably wont see -->

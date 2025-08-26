@@ -240,14 +240,20 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = self_atten->areal_density;
     
-    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) );
+    assert( (areal_density >= -1.0E-3) && !isinf(areal_density) ); // If using numeric-diff, and AD has value of zero, we may get negative values here during differentiation
     if( (areal_density <= -1.0E-3) || isnan(areal_density) || isinf(areal_density) )
       throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0." );
     
     if( areal_density < 0.0 )
       areal_density = fmax(areal_density, 0.0);
-    
-    if( (mu > 0.0) && (areal_density > 0.0) )
+
+    assert( mu >= 0.0 );
+    if( mu < 0.0 )
+      mu = fmax(mu, 0.0);
+
+    assert( areal_density >= 0.0 );
+
+    if( (mu >= 0.0) && (areal_density >= 0.0) )
       answer *= (1.0 - exp(-mu * areal_density)) / (mu * self_atten->areal_density);
     
     assert( !isnan(answer) && !isinf(answer) );
@@ -256,7 +262,7 @@ T eval_physical_model_eqn_imp( const double energy,
   for( const RelActCalc::PhysModelShield<T> &ext_atten : external_attens )
   {
     // TODO: `GammaInteractionCalc::transmition_length_coefficient` can be a real bottleneck of computation - at soem point we should memoise its results
-    T mu;
+    T mu( 0.0 );
     if( ext_atten.material )
       mu = T( GammaInteractionCalc::transmition_length_coefficient( ext_atten.material.get(), energyf ) / ext_atten.material->density );
     else
@@ -270,8 +276,14 @@ T eval_physical_model_eqn_imp( const double energy,
     
     if( areal_density < 0.0 )
       areal_density = fmax(areal_density, 0.0);
-    
-    if( (mu > 0.0) && (ext_atten.areal_density > 0.0) )
+
+    assert( mu >= 0.0 );
+    if( mu < 0.0 )
+      mu = fmax(mu, 0.0);
+
+    assert( ext_atten.areal_density >= 0.0 );
+
+    if( (mu >= 0.0) && (areal_density >= 0.0) )
       answer *= exp( -mu * areal_density );
     
     assert( !isnan(answer) && !isinf(answer) );
@@ -398,25 +410,23 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
 
   if( input.pu_age > 0.0 )
   {
-    const T pre_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
-                                                + input.pu241_rel_mass + answer.pu242_mass_frac;
-
     answer.pu238_mass_frac *= exp( -input.pu_age * pu238->decayConstant() );
     answer.pu239_mass_frac *= exp( -input.pu_age * pu239->decayConstant() );
     answer.pu240_mass_frac *= exp( -input.pu_age * pu240->decayConstant() );
     answer.pu241_mass_frac *= exp( -input.pu_age * pu241->decayConstant() );
     answer.pu242_mass_frac *= exp( -input.pu_age * pu242->decayConstant() );
 
+    const T norm_amount = answer.pu238_mass_frac
+                        + answer.pu239_mass_frac
+                        + answer.pu240_mass_frac
+                        + answer.pu241_mass_frac
+                        + answer.pu242_mass_frac;
 
-    const T post_decay_sum_mass_frac = input.pu238_rel_mass + input.pu239_rel_mass + input.pu240_rel_mass
-                                              + input.pu241_rel_mass + answer.pu242_mass_frac;
-
-    const T overall_decay = pre_decay_sum_mass_frac / post_decay_sum_mass_frac;
-    answer.pu238_mass_frac *= overall_decay;
-    answer.pu239_mass_frac *= overall_decay;
-    answer.pu240_mass_frac *= overall_decay;
-    answer.pu241_mass_frac *= overall_decay;
-    answer.pu242_mass_frac *= overall_decay;
+    answer.pu238_mass_frac /= norm_amount;
+    answer.pu239_mass_frac /= norm_amount;
+    answer.pu240_mass_frac /= norm_amount;
+    answer.pu241_mass_frac /= norm_amount;
+    answer.pu242_mass_frac /= norm_amount;
   }//if( input.pu_age > 0.0 )
 
   
@@ -471,7 +481,17 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
   //  we'll throw an arbitrary factor of 2 onto the uncertainty.
   const T engineering_uncert_multiple = T(2.0);
   answer.pu242_uncert *= engineering_uncert_multiple;
-  
+
+#ifndef NDEBUG
+  const T total_pu = answer.pu238_mass_frac
+    + answer.pu239_mass_frac
+    + answer.pu240_mass_frac
+    + answer.pu241_mass_frac
+    + answer.pu242_mass_frac;
+
+  assert( (total_pu > 0.999) && (total_pu < 1.001) );
+#endif //NDEBUG
+
   return answer;
 }//correct_pu_mass_fractions_for_pu242( ... )
 

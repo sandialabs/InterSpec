@@ -29,7 +29,7 @@ public:
   struct ReCurveInfo
   {
     double live_time = 0.0;
-    std::vector<PeakDef> fit_peaks;
+    std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff> obs_eff_data;
     std::vector<RelActCalcAuto::NuclideRelAct> rel_acts;
     std::string js_rel_eff_eqn;
     std::string js_rel_eff_uncert_eqn;
