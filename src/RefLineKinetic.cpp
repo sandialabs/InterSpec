@@ -752,6 +752,11 @@ void RefLineKinetic::startUpdateLines()
       base_input.m_det_intrinsic_eff = detector->intrinsicEfficiencyFcn();
     }
     
+    //cout << "Before always_srcs working_answer={";
+    //for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
+    //  cout << "'" << ref_lines.second.second.m_input.m_input_txt << "', ";
+    //cout << "}" << endl;
+    
     if( always_srcs )
     {
       // Convert individual sources to ReferenceLineInfo objects
@@ -834,6 +839,10 @@ void RefLineKinetic::startUpdateLines()
         shared_ptr<ReferenceLineInfo> ref_info = ReferenceLineInfo::generateRefLineInfo( input );
         if( ref_info && ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
         {
+          assert( !std::count_if(begin(working_answer), end(working_answer), [&input](const auto &v ){
+            return v.second.second.m_input.m_input_txt == input.m_input_txt;
+          }) );
+          
           working_answer.emplace_back( RefLineSrc::AlwaysShowing,
                                       pair<double,ReferenceLineInfo>{src.m_weight, std::move(*ref_info)} );
         }else
@@ -872,6 +881,10 @@ void RefLineKinetic::startUpdateLines()
         shared_ptr<ReferenceLineInfo> ref_info = ReferenceLineInfo::generateRefLineInfo( input );
         if( ref_info && ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
         {
+          assert( !std::count_if(begin(working_answer), end(working_answer), [&input](const auto &v ){
+            return v.second.second.m_input.m_input_txt == input.m_input_txt;
+          }) );
+          
           working_answer.emplace_back( RefLineSrc::AlwaysShowing,
                                       pair<double,ReferenceLineInfo>{mix.m_weight, std::move(*ref_info)} );
         }else
@@ -909,6 +922,10 @@ void RefLineKinetic::startUpdateLines()
         shared_ptr<ReferenceLineInfo> ref_info = ReferenceLineInfo::generateRefLineInfo( input );
         if( ref_info && ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
         {
+          assert( !std::count_if(begin(working_answer), end(working_answer), [&input](const auto &v ){
+            return v.second.second.m_input.m_input_txt == input.m_input_txt;
+          }) );
+          
           working_answer.emplace_back( RefLineSrc::AlwaysShowing,
                                       pair<double,ReferenceLineInfo>{custom.m_weight, std::move(*ref_info)} );
         }else
@@ -927,6 +944,11 @@ void RefLineKinetic::startUpdateLines()
       cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
       return;
     }
+    
+    //cout << "Before user_foreground_peaks working_answer={";
+    //for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
+    //  cout << "'" << ref_lines.second.second.m_input.m_input_txt << "', ";
+    //cout << "}" << endl;
     
     // Now check which nuclides peaks have been assigned to, and add those lines, if they havent already been added
     if( user_foreground_peaks && user_foreground_peaks->size() )
@@ -987,6 +1009,10 @@ void RefLineKinetic::startUpdateLines()
         shared_ptr<ReferenceLineInfo> ref_info = ReferenceLineInfo::generateRefLineInfo( input );
         if( ref_info && ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
         {
+          assert( !std::count_if(begin(working_answer), end(working_answer), [&input](const auto &v ){
+            return v.second.second.m_input.m_input_txt == input.m_input_txt;
+          }) );
+          
           working_answer.emplace_back( RefLineSrc::UserPeakLines,
                                       pair<double,ReferenceLineInfo>{new_weight, std::move(*ref_info)} );
         }else
@@ -1062,6 +1088,10 @@ void RefLineKinetic::startUpdateLines()
       shared_ptr<ReferenceLineInfo> ref_info = ReferenceLineInfo::generateRefLineInfo( input );
       if( ref_info && ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
       {
+        assert( !std::count_if(begin(working_answer), end(working_answer), [&input](const auto &v ){
+          return v.second.second.m_input.m_input_txt == input.m_input_txt;
+        }) );
+        
         working_answer.emplace_back( RefLineSrc::ExternalRid,
                                     pair<double,ReferenceLineInfo>{new_weight, std::move(*ref_info)} );
       }else
@@ -1079,6 +1109,13 @@ void RefLineKinetic::startUpdateLines()
       cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
       return;
     }
+    
+    
+    //cout << "Before det ana working_answer={";
+    //for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
+    //  cout << "'" << ref_lines.second.second.m_input.m_input_txt << "', ";
+    //cout << "}" << endl;
+    
     
     // Use the detectors on-board RID results
     for( const SpecUtils::DetectorAnalysisResult &result : det_ana )
@@ -1148,6 +1185,10 @@ void RefLineKinetic::startUpdateLines()
       shared_ptr<ReferenceLineInfo> ref_info = ReferenceLineInfo::generateRefLineInfo( input );
       if( ref_info && ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
       {
+        assert( !std::count_if(begin(working_answer), end(working_answer), [&input](const auto &v ){
+          return v.second.second.m_input.m_input_txt == input.m_input_txt;
+        }) );
+        
         working_answer.emplace_back( RefLineSrc::OnboardRid,
                                     pair<double,ReferenceLineInfo>{new_weight, std::move(*ref_info)} );
       }else
@@ -1165,6 +1206,11 @@ void RefLineKinetic::startUpdateLines()
       cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
       return;
     }
+    
+    //cout << "Before more info working_answer={";
+    //for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
+    //  cout << "'" << ref_lines.second.second.m_input.m_input_txt << "', ";
+    //cout << "}" << endl;
     
     // Add associated nuclides for existing reference lines
     shared_ptr<const MoreNuclideInfo::MoreNucInfoDb> more_nuc_info = MoreNuclideInfo::MoreNucInfoDb::instance();
@@ -1185,17 +1231,23 @@ void RefLineKinetic::startUpdateLines()
         if( !nuc_info || nuc_info->m_associated.empty() )
           continue;
         
-        for( const string &associated_name : nuc_info->m_associated )
+        for( string associated_name : nuc_info->m_associated )
         {
           // Check if this associated nuclide is already in ref_lines
-          bool associated_already_exists = false;
+          bool already_exists = false;
           double associated_weight = 0.25 * parent_weight;
           
-          for( size_t i = 0; !associated_already_exists && (i < working_answer.size()); i += 1 )
+          // We'll normalize the source name for nuclides, even though it would be fine if we didnt, so this
+          //  way we catch duplicates a little earlier
+          const SandiaDecay::Nuclide * const nuc = db->nuclide(associated_name);
+          if( nuc )
+            associated_name = nuc->symbol;
+          
+          for( size_t i = 0; !already_exists && (i < working_answer.size()); i += 1 )
           {
             auto &existing = working_answer[i];
-            associated_already_exists = (existing.second.second.m_input.m_input_txt == associated_name);
-            if( associated_already_exists )
+            already_exists = (existing.second.second.m_input.m_input_txt == associated_name);
+            if( already_exists )
             {
               // Use max of current weight and 0.25 times parent weight
               existing.second.first = std::max(existing.second.first, associated_weight);
@@ -1204,22 +1256,44 @@ void RefLineKinetic::startUpdateLines()
             }
           }//for( auto& existing : ref_lines )
           
-          if( !associated_already_exists )
+          if( already_exists )
+            continue;
+          
+          // Create reference lines for associated nuclide
+          RefLineInput associated_input = base_input;
+          associated_input.m_input_txt = associated_name;
+          
+          shared_ptr<ReferenceLineInfo> associated_ref_info = ReferenceLineInfo::generateRefLineInfo( associated_input );
+          if( !associated_ref_info || (associated_ref_info->m_validity != ReferenceLineInfo::InputValidity::Valid) )
           {
-            // Create reference lines for associated nuclide
-            RefLineInput associated_input = base_input;
-            associated_input.m_input_txt = associated_name;
+            cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for associated nuclide: "
+            << associated_name << endl;
+            continue;
+          }
             
-            shared_ptr<ReferenceLineInfo> associated_ref_info = ReferenceLineInfo::generateRefLineInfo( associated_input );
-            if( associated_ref_info && associated_ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
+          already_exists = false;
+          for( size_t i = 0; !already_exists && (i < working_answer.size()); ++i )
+          {
+            // Important: we need to compare the input text from the `associated_ref_info`, and not `associated_name`,
+            //            because the text may have been changed.
+            already_exists = (working_answer[i].second.second.m_input.m_input_txt == associated_ref_info->m_input.m_input_txt);
+            if( already_exists )
             {
-              working_answer.emplace_back( RefLineSrc::UserPeakAssociatedNucLines,
-                                          pair<double,ReferenceLineInfo>{associated_weight, std::move(*associated_ref_info)} );
-            }else
-            {
-              cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for associated nuclide: " << associated_name << endl;
+              working_answer[i].second.first = std::max(working_answer[i].second.first, associated_weight);
+              if( static_cast<int>(RefLineSrc::UserPeakAssociatedNucLines) < static_cast<int>(working_answer[i].first) )
+                working_answer[i].first = RefLineSrc::UserPeakAssociatedNucLines;
             }
-          }//if( !associated_already_exists )
+          }//for( auto& existing : ref_lines )
+            
+          if( already_exists )
+            continue;
+            
+          assert( !std::count_if(begin(working_answer), end(working_answer), [&associated_input](const auto &v ){
+            return v.second.second.m_input.m_input_txt == associated_input.m_input_txt;
+          }) );
+              
+          working_answer.emplace_back( RefLineSrc::UserPeakAssociatedNucLines,
+                                        pair<double,ReferenceLineInfo>{associated_weight, std::move(*associated_ref_info)} );
         }//for( const string &associated_name : nuc_info->m_associated )
       }//for( ref_line_pair in current_ref_lines )
     }//if( more_nuc_info )
@@ -1296,6 +1370,11 @@ void RefLineKinetic::startUpdateLines()
         escape_lines.push_back( de_line );
       }
     }//for( const auto& peak : unique_foreground_peaks )
+    
+    //cout << "Before escape peaks working_answer={";
+    //for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
+    //  cout << "'" << ref_lines.second.second.m_input.m_input_txt << "', ";
+    //cout << "}" << endl;
     
     // Normalize escape lines so highest intensity is 1.0 and add to ref_lines
     if( !escape_lines.empty() )
@@ -1518,6 +1597,11 @@ void RefLineKinetic::startUpdateLines()
         return;
       }
       
+      //cout << "Before characteristics working_answer={";
+      //for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
+      //  cout << "'" << ref_lines.second.second.m_input.m_input_txt << "', ";
+      //cout << "}" << endl;
+      
       // Print the final set of characteristic sources
       cout << "Filtered characteristic sources for potential reference lines (" << characteristic_sources.size() << "): ";
       for( const string &source : characteristic_sources )
@@ -1607,11 +1691,11 @@ void RefLineKinetic::startUpdateLines()
           const double min_allowed_profile_weight = 0.25;
           if( prof_weight < min_allowed_profile_weight )
           {
-            cout << "Eliminating '" << source << "' from profile weight only " << prof_weight << endl;
+            //cout << "Eliminating '" << source << "' from profile weight only " << prof_weight << endl;
             return;
           }
           
-          cout << "For source " << source << " the profile weight is " << prof_weight << endl;
+          //cout << "For source " << source << " the profile weight is " << prof_weight << endl;
           
           // Create reference lines for associated nuclide
           RefLineInput candidate_input = base_input;
@@ -1619,7 +1703,7 @@ void RefLineKinetic::startUpdateLines()
           const double candidate_weight = 0.1 + 2.4 * (2.0 * std::max(0.0, prof_weight - 0.5)); //0.1 to 2.5 weight
           
           shared_ptr<ReferenceLineInfo> candidate_ref_info = ReferenceLineInfo::generateRefLineInfo( candidate_input );
-          if( candidate_ref_info && candidate_ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid )
+          if( candidate_ref_info && (candidate_ref_info->m_validity == ReferenceLineInfo::InputValidity::Valid) )
           {
             std::lock_guard<std::mutex> lock( candidate_mutex );
             
@@ -1639,6 +1723,10 @@ void RefLineKinetic::startUpdateLines()
             
             if( !have_source )
             {
+              assert( !std::count_if(begin(working_answer), end(working_answer), [&candidate_input](const auto &v ){
+                return v.second.second.m_input.m_input_txt == candidate_input.m_input_txt;
+              }) );
+              
               working_answer.emplace_back( RefLineSrc::CharacteristicLine,
                                           pair<double,ReferenceLineInfo>{candidate_weight, std::move(*candidate_ref_info)} );
             }
@@ -1760,6 +1848,12 @@ void RefLineKinetic::startUpdateLines()
     
     cout << "Starting to filter ref-lines" << endl;
     ref_lines_answer->reserve( working_answer.size() );
+    
+    //cout << "working_answer={";
+    //for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
+    //  cout << "'" << ref_lines.second.second.m_input.m_input_txt << "', ";
+    //cout << "}" << endl;
+    
     set<string> added_lines;
     for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
     {
@@ -1773,9 +1867,11 @@ void RefLineKinetic::startUpdateLines()
         } );
       }else
       {
-        
         ref_lines.second.second.reset();
-        cerr << "Duplicate ref lines '" << ref_line_name << "'." << endl;
+        const size_t num_copies = std::count_if(begin(working_answer), end(working_answer), [&ref_line_name](const auto &v ){
+          return v.second.second.m_input.m_input_txt == ref_line_name;
+        });
+        cerr << "Duplicate ref lines '" << ref_line_name << "' - have " << num_copies << " copies." << endl;
       }
     }//for( pair<RefLineSrc,pair<double,ReferenceLineInfo>> &ref_lines : working_answer )
     pool.join();
