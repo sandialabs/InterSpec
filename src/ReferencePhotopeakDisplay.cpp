@@ -2332,6 +2332,12 @@ Wt::WColor ReferencePhotopeakDisplay::suggestColorForSource( const std::string &
 }//Wt::WColor suggestColorForSource( const std::string &src ) const;
 
 
+Wt::WColor ReferencePhotopeakDisplay::nextGenericSourceColor() const
+{
+  return {};
+}//Wt::WColor nextGenericSourceColor() const
+
+
 Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src )
 {
   WColor color = m_colorSelect->color();

@@ -142,7 +142,8 @@ RefLineKinetic::RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *interspe
   m_always_srcs{},
   m_external_rid_results( nullptr ),
   m_renderFlags{},
-  m_current_calc_num( make_shared<atomic<size_t>>(0) )
+  m_current_calc_num( make_shared<atomic<size_t>>(0) ),
+  m_current_ref_lines( nullptr )
 {
   if( !m_interspec || !m_chart )
     throw std::runtime_error( "RefLineKinetic: null InterSpec parent or chart" );
@@ -252,6 +253,7 @@ void RefLineKinetic::setActive( bool active )
   
   m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
   m_chart->scheduleRenderKineticRefLine();
+  m_current_ref_lines.reset();
 }//void RefLineKinetic::setActive( bool active )
 
 
@@ -260,11 +262,17 @@ bool RefLineKinetic::isActive() const
   return m_active;
 }
 
+shared_ptr<vector<pair<double,ReferenceLineInfo>>> RefLineKinetic::current_lines() const
+{
+  return m_current_ref_lines;
+}//shared_ptr<vector<pair<double,ReferenceLineInfo>>> current_lines() const
+
 
 void RefLineKinetic::autoSearchPeaksSet( const SpecUtils::SpectrumType spectrum )
 {
   m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
   m_chart->scheduleRenderKineticRefLine();
+  m_current_ref_lines.reset();
 }//void autoSearchPeaksSet(...)
 
 
@@ -278,6 +286,7 @@ void RefLineKinetic::spectrumChanged( const SpecUtils::SpectrumType spec_type,
   
   m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
   m_chart->scheduleRenderKineticRefLine();
+  m_current_ref_lines.reset();
 }//void spectrumChanged(...)
 
 
@@ -287,6 +296,7 @@ void RefLineKinetic::autoRidResultsRecieved( const shared_ptr<const ExternalRidR
   
   m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
   m_chart->scheduleRenderKineticRefLine();
+  m_current_ref_lines.reset();
 }//void autoRidResultsRecieved( const shared_ptr<const ExternalRidResults> &results )
 
 
@@ -295,6 +305,7 @@ void RefLineKinetic::colorThemeChanged( const shared_ptr<const ColorTheme> &them
   // Color theme has changed, trigger an update to refresh colors
   m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
   m_chart->scheduleRenderKineticRefLine();
+  m_current_ref_lines.reset();
 }//void RefLineKinetic::colorThemeChanged(...)
 
 
@@ -483,6 +494,8 @@ void RefLineKinetic::finishUpdateLines( const std::shared_ptr<std::vector<std::p
                        const std::shared_ptr<std::string> &js_fwhm_fcn_ptr,
                                        const size_t calc_num )
 {
+  m_current_ref_lines = ref_lines_ptr;
+  
   assert( ref_lines_ptr && js_fwhm_fcn_ptr );
   if( !ref_lines_ptr || !js_fwhm_fcn_ptr )
     return;

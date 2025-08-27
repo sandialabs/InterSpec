@@ -438,9 +438,9 @@ void D3SpectrumDisplayDiv::defineJavaScript()
                                         boost::placeholders::_1, boost::placeholders::_2,
                                         boost::placeholders::_3, boost::placeholders::_4 ) );
     
-    m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
+    m_doubleLeftClickJS.reset( new JSignal<double,double,string>( this, "doubleclicked", true ) );
     m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback,
-                                              this, boost::placeholders::_1, boost::placeholders::_2 ) );
+                                              this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
     
     m_rightClickJS.reset( new JSignal<double,double,double,double>( this, "rightclicked", true ) );
     m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this,
@@ -653,7 +653,7 @@ Wt::Signal<double,double,SpecUtils::SpectrumType> &D3SpectrumDisplayDiv::yAxisSc
   return m_yAxisScaled;
 }
 
-Wt::Signal<double,double> &D3SpectrumDisplayDiv::doubleLeftClick()
+Wt::Signal<double,double,std::string> &D3SpectrumDisplayDiv::doubleLeftClick()
 {
   return m_doubleLeftClick;
 }
@@ -2235,12 +2235,12 @@ void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pa
 {
   // cout << "chartLeftClickCallback" << endl;
   m_leftClick.emit( x, y, pageX, pageY );
-}//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
+}//void chartLeftClickCallback(...)
 
-void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y )
+void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name )
 {
   // cout << "chartDoubleLeftClickCallback" << endl;
-  m_doubleLeftClick.emit( x, y );
+  m_doubleLeftClick.emit( x, y, ref_line_name );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY )

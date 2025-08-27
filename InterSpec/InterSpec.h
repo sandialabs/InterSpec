@@ -359,12 +359,21 @@ public:
   void addPeakLabelSubMenu( PopupDivMenu *parentWidget );
   void addAboutMenu( Wt::WWidget *menuDiv );
 
-  //addPeak(): Adds a new peak to the peak model, and returns the models index
-  //  of the new peak. If associateShownNucXrayRctn is specified true _and_ the
-  //  user is showing some reference gamma lines, than the new peak will be
-  //  assigned to be from the shown lines if and are reasonably close.
-  //  If the returned WModelIndex is not valid, then the peak was not added.
-  Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn );
+  /** Adds a new peak to the peak model, and returns the models index of the new peak.
+   
+   @param peak the peak to add
+   @param associateShownNucXrayRctn is specified true _and_ the user is showing some
+          reference gamma lines, OR `ref_line_name` is not empty, and the peak doesnt already have
+          a source assigned to it, then the new peak will be assigned to be from the shown lines if
+          and are reasonably close.
+   @param ref_line_name optional string to specify the source name to assign to the peak.  if
+          specified, this string will be tried as a source, before the reference lines.
+   
+   @returns the WModelIndex of the added peak; if the peak was not added (because it is outside the spectrums
+            energy range, or the peak was not initialized), then the returned index will be invalid.
+   */
+  Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn,
+                          const std::string &ref_line_name = "" );
   
   
   Wt::WContainerWidget *menuDiv();
@@ -1131,7 +1140,7 @@ public:
                                        const bool user_interaction);
   
   //Peak finding functions
-  void searchForSinglePeak( const double x );
+  void searchForSinglePeak( const double x, const std::string &ref_line_name );
   
   
   /** Function to call when the automated search for peaks (throughout the

@@ -318,6 +318,9 @@ public:
    */
   Wt::WColor suggestColorForSource( const std::string &src ) const;
   
+  /** Returns the next color that would be given to a source that doesnt already have a defined color. */
+  Wt::WColor nextGenericSourceColor() const;
+  
   /** Updates `m_previouslyPickedSourceColors` for the specified source.
    
    If source string is empty, no action is taken.
@@ -361,6 +364,11 @@ protected:
 
   static std::vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
   
+  /** Function called when a new source is entered into the GUI.
+   Looks through current peaks, `m_previouslyPickedSourceColors`, and `m_specificSourcelineColors`
+   to find the color it should use, and if not returns the next `m_lineColors`.
+   Does not cache the color for the source - and may return the color of the currently showing reference lines.
+   */
   Wt::WColor colorForNewSource( const std::string &src );
 
   void handleIsotopeChange( const bool useCurrentAge );

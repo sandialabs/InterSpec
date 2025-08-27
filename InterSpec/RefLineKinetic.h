@@ -56,6 +56,8 @@ public:
   void setActive( bool active );
   bool isActive() const;
   
+  std::shared_ptr<std::vector<std::pair<double,ReferenceLineInfo>>> current_lines() const;
+  
   /** Flags to indicate what actions need to be taken during pushUpdates. */
   enum KineticRefLineRenderFlags
   {
@@ -123,6 +125,8 @@ protected:
   Wt::WFlags<KineticRefLineRenderFlags> m_renderFlags;
   
   std::shared_ptr<std::atomic<size_t>> m_current_calc_num;
+  
+  std::shared_ptr<std::vector<std::pair<double,ReferenceLineInfo>>> m_current_ref_lines;
 };//class RefLineKinetic
 
 #endif // RefLineKinetic_h

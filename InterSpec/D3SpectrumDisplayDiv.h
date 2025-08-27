@@ -80,7 +80,7 @@ public:
   
   Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &chartClicked();
   Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &rightClicked();
-  Wt::Signal<double/*keV*/,double/*counts*/> &doubleLeftClick();
+  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line number*/> &doubleLeftClick();
   Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
   
   /** When a previously existing ROI gets dragged by its edge, this signal will be emitted as it
@@ -510,7 +510,8 @@ protected:
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
-  std::unique_ptr<Wt::JSignal<double, double> > m_doubleLeftClickJS;
+  /** The double left-click std::string is the ReferenceLine name (including for kinetic ref lines) cooresponding to what the mouse is over at click time. */
+  std::unique_ptr<Wt::JSignal<double, double, std::string> > m_doubleLeftClickJS;
   std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_leftClickJS;
   std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
@@ -539,7 +540,7 @@ protected:
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_leftClick;
-  Wt::Signal<double,double> m_doubleLeftClick;
+  Wt::Signal<double,double,std::string /*ref-line name*/> m_doubleLeftClick;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_rightClick;
   
   Wt::Signal<double /*new roi lower energy*/,
@@ -568,7 +569,7 @@ protected:
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
   void chartLeftClickCallback( double x, double y, double pageX, double pageY );
-  void chartDoubleLeftClickCallback( double x, double y );
+  void chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name );
   void chartRightClickCallback( double x, double y, double pageX,
                                 double pageY );
   

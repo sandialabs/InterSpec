@@ -2420,7 +2420,8 @@ std::vector<std::shared_ptr<const PeakDef>>
   
   
 void fit_peak_from_double_click( InterSpec *interspec, const double x, const double pixPerKeV,
-                                shared_ptr<const DetectorPeakResponse> det )
+                                shared_ptr<const DetectorPeakResponse> det,
+                                std::string ref_line_name )
 {
   PeakModel *pmodel = interspec ? interspec->peakModel() : nullptr;
   assert( pmodel );
@@ -2548,7 +2549,9 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
   for( const PeakModel::PeakShrdPtr &p : peakstoadd )
   {
     if( !p->parentNuclide() && !p->reaction() && !p->xrayElement() )
-      interspec->addPeak( *p, true );
+    {
+      interspec->addPeak( *p, true, ref_line_name );
+    }
   }
 }//void fit_peak_from_double_click(...)
 

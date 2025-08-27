@@ -99,7 +99,8 @@ SpectrumChart *createFixedSpectrumDisplay( std::shared_ptr<const SpecUtils::Meas
 void fit_peak_from_double_click( InterSpec *interspec,
                                 const double energy_clicked,
                                 const double pixel_per_keV,
-                                std::shared_ptr<const DetectorPeakResponse> det );
+                                std::shared_ptr<const DetectorPeakResponse> det,
+                                std::string ref_line_name );
   
   
 /** Performs the automated search for peaks - setting the results to the GUI. */
