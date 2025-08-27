@@ -707,7 +707,11 @@ vector<NuclideStatWeightPair> gammasNearInEnergy( float x, double dx )
       energyToNuc = EnergyToNuclideServer::energyToNuclide();
     }
   }//end codeblock to ensure thread safety
-  
+
+  assert( energyToNuc && !energyToNuc->empty() );
+  if( !energyToNuc || energyToNuc->empty() )
+    return {};
+
   vector<const Nuclide *> nucs = EnergyToNuclideServer::nuclidesWithGammaInRange( x-dx, x+dx, *energyToNuc );
   
   const EnergyToNuclideServer::EnergyNuclidePairVec::const_iterator begin_nuc = energyToNuc->begin();
