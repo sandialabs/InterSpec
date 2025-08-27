@@ -2334,7 +2334,36 @@ Wt::WColor ReferencePhotopeakDisplay::suggestColorForSource( const std::string &
 
 Wt::WColor ReferencePhotopeakDisplay::nextGenericSourceColor() const
 {
-  return {};
+  vector<Wt::WColor> colorcopy = m_lineColors;
+  const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
+
+  for( const auto &p : usedColors )
+  {
+    for( const auto &c : p.second )
+    {
+      auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
+        return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+      } );
+      if( pos != end(colorcopy) )
+        colorcopy.erase(pos);
+    }
+  }//for( loop over colors used for peaks already )
+
+  for( const auto &p : m_persisted )
+  {
+    const WColor &c = p.m_input.m_color;
+    auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
+      return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+    } );
+
+    if( pos != end(colorcopy) )
+      colorcopy.erase(pos);
+  }//for( const auto &p : m_persisted )
+
+  if( colorcopy.empty() )
+    return m_lineColors[m_persisted.size() % m_lineColors.size()];
+
+  return colorcopy[0];
 }//Wt::WColor nextGenericSourceColor() const
 
 
@@ -2384,38 +2413,7 @@ Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src 
       //cout << "Source " << isotxt << " has a specific color, " << color.cssText() << ", in the ColorTheme" << endl;
     }else
     {
-      auto colorcopy = m_lineColors;
-      for( const auto &p : usedColors )
-      {
-        for( const auto &c : p.second )
-        {
-          auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
-            return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
-          } );
-          if( pos != end(colorcopy) )
-            colorcopy.erase(pos);
-        }
-      }//for( loop over colors used for peaks already )
-      
-      for( const auto &p : m_persisted )
-      {
-        const WColor &c = p.m_input.m_color;
-        auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
-          return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
-        } );
-
-
-        if( pos != end(colorcopy) )
-          colorcopy.erase(pos);
-      }//for( const auto &p : m_persisted )
-      
-      if( colorcopy.empty() )
-        color = m_lineColors[m_persisted.size() % m_lineColors.size()];
-      else
-        color = colorcopy[0];
-      //cout << "Source " << isotxt << " will select color, " << color.cssText()
-      //     << ", from default list (len=" << colorcopy.size() << " of "
-      //     << m_lineColors.size() << ")" << endl;
+      color = nextGenericSourceColor();
     }//if( src has been seen ) / else (user picked color previously)
   }else
   {

@@ -506,7 +506,7 @@ void RefLineKinetic::finishUpdateLines( const std::shared_ptr<std::vector<std::p
     return;
   }
   
-  std::vector<std::pair<double,ReferenceLineInfo>> &ref_lines = *ref_lines_ptr;
+  vector<pair<double,ReferenceLineInfo>> ref_lines = *ref_lines_ptr;
   std::string &js_fwhm_fcn = *js_fwhm_fcn_ptr;
   
   for( pair<double,ReferenceLineInfo> &ref_line : ref_lines )

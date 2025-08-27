@@ -3051,8 +3051,8 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
       const bool useColor = ((!is_kinetic_line) && m_colorPeaksBasedOnReferenceLines);
       
       unique_ptr<pair<shared_ptr<const PeakDef>,string>> addswap
-      = PeakSearchGuiUtils::assign_srcs_from_ref_lines( peak, previouspeaks, foreground, ref_lines, useColor, showingEscape );
-      
+         = PeakSearchGuiUtils::assign_nuc_from_ref_lines( peak, previouspeaks, foreground, ref_lines, useColor, showingEscape );
+
       WModelIndex prevpeakind = addswap ? m_peakModel->indexOfPeak( addswap->first ) : WModelIndex();
       if( prevpeakind.isValid() )
       {
