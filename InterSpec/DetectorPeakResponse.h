@@ -590,6 +590,18 @@ public:
                                     const std::vector<float> &pars );
 
   
+  //javaScriptFwhmFunction(): returns a JavaScript function string that computes
+  //  the FWHM for this detector as a function of energy.
+  //  Throws std::runtime_error if the detector does not have resolution info.
+  std::string javaScriptFwhmFunction() const;
+  
+  //javaScriptFwhmFunction(...): static function that returns a JavaScript function
+  //  string that computes the FWHM given coefficients and resolution function form.
+  //  Throws std::runtime_error if coefficients are invalid for the given form.
+  static std::string javaScriptFwhmFunction( const std::vector<float> &coeffs,
+                                             const ResolutionFnctForm form );
+
+  
   //Simple accessors
   float detectorDiameter() const;
   const std::string &efficiencyFormula() const;

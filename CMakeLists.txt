@@ -126,12 +126,6 @@ set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
 option(USE_LEAFLET_MAP "Use leaflet-based maps widget" OFF)
 set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
-option(
-    USE_CSS_FLEX_LAYOUT
-    "Use CSS Flex/Grid Layout in-place of Wts layouts were possible (work in progress)"
-    OFF
-)
-
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
 
@@ -263,6 +257,7 @@ set(sources
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
+    src/ReferenceLinePredef.cpp
     src/ReferencePhotopeakDisplay.cpp
     src/IsotopeNameFilterModel.cpp
     src/ReactionGamma.cpp
@@ -345,12 +340,14 @@ set(sources
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
+    src/ExternalRidResult.cpp
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
     src/RefSpectraWidget.cpp
     src/RefSpectraModel.cpp
     src/SimpleActivityCalc.cpp
+    src/RefLineKinetic.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -372,6 +369,7 @@ set(headers
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
+    InterSpec/ReferenceLinePredef.h
     InterSpec/ReferencePhotopeakDisplay.h
     InterSpec/IsotopeNameFilterModel.h
     InterSpec/ReactionGamma.h
@@ -453,6 +451,7 @@ set(headers
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
     InterSpec/ExportSpecFile.h
+    InterSpec/ExternalRidResult.h
     InterSpec/EnterAppUrlWindow.h
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
@@ -461,6 +460,7 @@ set(headers
     InterSpec/RefSpectraWidget.h
     InterSpec/RefSpectraModel.h
     InterSpec/SimpleActivityCalc.h
+    InterSpec/RefLineKinetic.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)

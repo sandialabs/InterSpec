@@ -240,6 +240,7 @@ struct ReferenceLineInfo
    */
   static void load_nuclide_mixtures();
   
+  
   /** A struct to represent the information for a single reference line.  */
   struct RefLine
   {

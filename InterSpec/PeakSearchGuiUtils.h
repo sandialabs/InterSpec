@@ -99,7 +99,8 @@ SpectrumChart *createFixedSpectrumDisplay( std::shared_ptr<const SpecUtils::Meas
 void fit_peak_from_double_click( InterSpec *interspec,
                                 const double energy_clicked,
                                 const double pixel_per_keV,
-                                std::shared_ptr<const DetectorPeakResponse> det );
+                                std::shared_ptr<const DetectorPeakResponse> det,
+                                std::string ref_line_name );
   
   
 /** Performs the automated search for peaks - setting the results to the GUI. */
@@ -183,6 +184,21 @@ std::vector<std::shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const st
                                    const bool showingEscapePeakFeature,
                                    const bool only_peaks_with_no_src );
 
+/** Assigns the passed in peak to a reference line if reasonable.  If this
+ assignment would cause one of the already existing peaks to change assignment
+ (most likely if two peaks of diff amp, but same nuc, are right next to each
+ other) then the peak that should be changed, along with the string of the
+ assignment it should be changed to.
+
+ TODO: I dont think the return value is what is claimed, or at least not handled correctly; this should all be improved
+ */
+std::unique_ptr<std::pair<PeakModel::PeakShrdPtr,std::string>>
+      assign_nuc_from_ref_lines( PeakDef &peak,
+                                 std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> previouspeaks,
+                                 const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                 const std::vector<ReferenceLineInfo> &displayed,
+                                 const bool colorPeaksBasedOnReferenceLines,
+                                const bool showingEscapePeakFeature );
 
 /** Enum to tell #refit_peaks_from_right_click what type of refit to do.
  */

@@ -56,6 +56,9 @@ struct ColorTheme
    */
   static const char * const sm_color_theme_json_version;  //Currently "1"
   
+  /** Default color for kinetic reference lines when no specific color is assigned. */
+  static const char * const sm_kinetic_ref_line_default_color;  //"orange"
+  
   /** A listing of the predifeined color themes.
       Note that a userPreference for "ColorThemeIndex" that has a negative value
       indicates to use one of these predifined values, where the absolute value
@@ -235,6 +238,12 @@ struct ColorTheme
       The key will be something like 'U235', 'Co65', 'Fe', etc.,
    */
   std::map<std::string,Wt::WColor> referenceLineColorForSources;
+  
+  /** The color of the "Kinetic" reference lines, if the source isnt assigned a specific
+   color, either in this ColorTheme, or if it is an "always" source, a specific color assigned
+   `kinetic_ref_lines.xml`.
+   */
+  Wt::WColor kineticRefLineDefaultColor;
 };//struct ColorTheme
 
 

@@ -845,7 +845,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_otherNucsColumn( nullptr ),
     m_otherNucs( nullptr ),
     m_prevNucs{},
-    m_external_ids{},
+    m_external_results{},
     m_featureMarkerColumn( nullptr ),
     m_detectorDisplay( NULL ),
     m_materialDB( materialDB ),
@@ -1580,7 +1580,7 @@ void ReferencePhotopeakDisplay::handleSpectrumChange(SpecUtils::SpectrumType typ
   //  automatically use a web-service on spectrum load).
   if( type == SpecUtils::SpectrumType::Foreground )
   {
-    m_external_ids.clear();
+    m_external_results.reset();
     updateOtherNucsDisplay();
   }
 }//handleSpectrumChange();
@@ -1636,7 +1636,7 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
     //  button clickable to display; otherwise we'll show the text, but
     //  disable the button.
     const SandiaDecay::Nuclide *const nuc = db->nuclide( nucstr );
-    const SandiaDecay::Element *const el = nuc ? nullptr : db->element( nucstr );
+    const SandiaDecay::Element *el = nuc ? nullptr : db->element( nucstr );
 
     std::vector<ReactionGamma::ReactionPhotopeak> reactions;
     if( !nuc && !el )
@@ -1651,6 +1651,19 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
       }
     }//if( !nuc && !el )
 
+    if( !nuc && !el && reactions.empty() && (nucstr.find_first_of("0123456789") == string::npos)
+       && (SpecUtils::icontains(nucstr,"xray") || SpecUtils::icontains(nucstr,"x-ray")) )
+    {
+      string elstr = nucstr;
+      size_t pos = SpecUtils::ifind_substr_ascii( elstr, "xray");
+      if( pos == string::npos )
+        pos = SpecUtils::ifind_substr_ascii( elstr, "x-ray");
+      if( pos != string::npos )
+        elstr = elstr.substr(0,pos);
+      SpecUtils::ireplace_all( elstr, "-_\t ,", "" );
+      el = db->element( elstr );
+    }//if( it might be an x-ray )
+    
     if( nuc || el || !reactions.empty() )
     {
       RefLineInput input = userInput();
@@ -1982,7 +1995,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   }//if( showPrev )
 
 
-  vector<pair<string, string>> riid_nucs;  //<description, nuclide>
+  vector<ExternalRidIsotope> riid_nucs;
   shared_ptr<const SpecUtils::DetectorAnalysis> riid_ana;
   shared_ptr<const SpecMeas> m = m_spectrumViewer->measurment(SpecUtils::SpectrumType::Foreground);
   if( m )
@@ -1999,7 +2012,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
       bool already_have = false;
       for( const auto &v : riid_nucs )
-        already_have |= (v.first == res.nuclide_);
+        already_have |= (v.name == res.nuclide_);
       if( already_have )
         continue;
 
@@ -2021,10 +2034,16 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
         }//for( const auto &v : fields )
       }//if( !nuc )
 
+      ExternalRidIsotope result;
+      result.name = res.nuclide_;
+      result.confidenceStr = "";
+      result.countRate = 0.0;
+      result.confidence = 0.0;
       if( nuc )
-        riid_nucs.push_back( {nuc->symbol, res.nuclide_} );
-      else 
-        riid_nucs.push_back( {res.nuclide_, ""} );
+        result.source = nuc;
+      result.init();
+      
+      riid_nucs.push_back( result );
     }//for( loop over RIID results )
   }//if( riid_ana )
 
@@ -2075,7 +2094,7 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 
   // TODO: Need to deal the "more info" button
 
-  auto displayDetectorOrExternal = [this]( const WString &title, vector<pair<string,string>> nucs ){
+  auto displayDetectorOrExternal = [this]( const WString &title, vector<ExternalRidIsotope> nucs ){
     if( nucs.empty() )
       return;
     
@@ -2087,15 +2106,15 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
     WText *header = new WText( title, m_otherNucs);
     header->addStyleClass("OtherNucTypeHeader");
     
-    for( const auto &riid : nucs )
+    for( const ExternalRidIsotope &riid : nucs )
     {
-      WPushButton *btn = new WPushButton(riid.first, m_otherNucs);
+      WPushButton *btn = new WPushButton(riid.name, m_otherNucs);
       btn->addStyleClass( "LinkBtn" );
       
-      if( !riid.second.empty() )
+      if( !riid.is_null() )
       {
         RefLineInput input = userInput();
-        input.m_input_txt = riid.first;
+        input.m_input_txt = riid.source_name();
         
         btn->clicked().connect(boost::bind(&ReferencePhotopeakDisplay::updateDisplayFromInput, this, input));
       }else
@@ -2108,11 +2127,12 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
   if( !riid_nucs.empty() )
     displayDetectorOrExternal( WString::tr("rpd-det-id"), riid_nucs );
   
-  if( !m_external_ids.empty() )
+  if( m_external_results && !m_external_results->isotopes.empty() )
   {
-    WString name = m_external_algo_name.empty() ? WString::tr("rpd-ext-rid") : WString::fromUTF8(m_external_algo_name);
-    displayDetectorOrExternal( name, m_external_ids );
-  }//if( !m_external_ids.empty() )
+    WString name = m_external_results->algorithmName.empty() ? WString::tr("rpd-ext-rid")
+                                                             : WString::fromUTF8(m_external_results->algorithmName);
+    displayDetectorOrExternal( name, m_external_results->isotopes );
+  }//if( m_external_results && !m_external_results->isotopes.empty() )
   
   
   if( !prev_nucs.empty() )
@@ -2312,6 +2332,41 @@ Wt::WColor ReferencePhotopeakDisplay::suggestColorForSource( const std::string &
 }//Wt::WColor suggestColorForSource( const std::string &src ) const;
 
 
+Wt::WColor ReferencePhotopeakDisplay::nextGenericSourceColor() const
+{
+  vector<Wt::WColor> colorcopy = m_lineColors;
+  const map<string,vector<WColor>> usedColors = currentlyUsedPeakColors();
+
+  for( const auto &p : usedColors )
+  {
+    for( const auto &c : p.second )
+    {
+      auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
+        return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+      } );
+      if( pos != end(colorcopy) )
+        colorcopy.erase(pos);
+    }
+  }//for( loop over colors used for peaks already )
+
+  for( const auto &p : m_persisted )
+  {
+    const WColor &c = p.m_input.m_color;
+    auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
+      return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
+    } );
+
+    if( pos != end(colorcopy) )
+      colorcopy.erase(pos);
+  }//for( const auto &p : m_persisted )
+
+  if( colorcopy.empty() )
+    return m_lineColors[m_persisted.size() % m_lineColors.size()];
+
+  return colorcopy[0];
+}//Wt::WColor nextGenericSourceColor() const
+
+
 Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src )
 {
   WColor color = m_colorSelect->color();
@@ -2358,38 +2413,7 @@ Wt::WColor ReferencePhotopeakDisplay::colorForNewSource( const std::string &src 
       //cout << "Source " << isotxt << " has a specific color, " << color.cssText() << ", in the ColorTheme" << endl;
     }else
     {
-      auto colorcopy = m_lineColors;
-      for( const auto &p : usedColors )
-      {
-        for( const auto &c : p.second )
-        {
-          auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
-            return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
-          } );
-          if( pos != end(colorcopy) )
-            colorcopy.erase(pos);
-        }
-      }//for( loop over colors used for peaks already )
-      
-      for( const auto &p : m_persisted )
-      {
-        const WColor &c = p.m_input.m_color;
-        auto pos = std::find_if( begin(colorcopy), end(colorcopy), [&c]( const WColor &rhs ){
-          return ((c.red() == rhs.red()) && (c.green() == rhs.green()) && (c.blue() == rhs.blue()) );
-        } );
-
-
-        if( pos != end(colorcopy) )
-          colorcopy.erase(pos);
-      }//for( const auto &p : m_persisted )
-      
-      if( colorcopy.empty() )
-        color = m_lineColors[m_persisted.size() % m_lineColors.size()];
-      else
-        color = colorcopy[0];
-      //cout << "Source " << isotxt << " will select color, " << color.cssText()
-      //     << ", from default list (len=" << colorcopy.size() << " of "
-      //     << m_lineColors.size() << ")" << endl;
+      color = nextGenericSourceColor();
     }//if( src has been seen ) / else (user picked color previously)
   }else
   {
@@ -2920,15 +2944,13 @@ void ReferencePhotopeakDisplay::setPeaksGetAssignedRefLineColor( const bool they
 }
 
 
-void ReferencePhotopeakDisplay::setExternalRidResults( const string &algo_name,
-                                                      const vector<pair<string,string>> &nucs )
+void ReferencePhotopeakDisplay::setExternalRidResults( std::shared_ptr<const ExternalRidResults> results )
 {
-  const bool is_diff = (nucs != m_external_ids);
-  m_external_ids = nucs;
-  m_external_algo_name = algo_name;
+  const bool is_diff = (results != m_external_results);
+  m_external_results = results;
   if( is_diff )
     updateOtherNucsDisplay();
-}//void setExternalRidResults( const std::vector<std::string> &isotopes );
+}//void setExternalRidResults( std::shared_ptr<const ExternalRidResults> results );
 
 
 Wt::Signal<> &ReferencePhotopeakDisplay::displayingNuclide()

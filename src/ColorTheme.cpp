@@ -48,6 +48,7 @@ using namespace std;
 using namespace Wt;
 
 const char * const ColorTheme::sm_color_theme_json_version = "1";
+const char * const ColorTheme::sm_kinetic_ref_line_default_color = "#FFA500"; //Orange
 
 namespace
 {
@@ -99,6 +100,7 @@ std::unique_ptr<ColorTheme> ColorTheme::predefinedTheme( const PredefinedColorTh
         "created" : "2018-12-24T07:02:39+0000",
         "defaultPeakLineColor" : "#cecfd0",
         "description" : "Dark InterSpec color scheme.",
+        "kineticRefLineDefaultColor" : "#ff8c00",
         "modified" : "2018-12-26T02:58:03+0000",
         "name" : "Dark",
         "nonChartArea": { "cssTheme" : "dark" },
@@ -217,6 +219,8 @@ ColorTheme::ColorTheme()
   
   referenceLineColorForSources["U235"] = WColor( "#800080" );
   referenceLineColorForSources["background"] = WColor( "#967f55" );  //brownish
+  
+  kineticRefLineDefaultColor = WColor( sm_kinetic_ref_line_default_color );
 }//ColorTheme() constructor
 
 
@@ -284,6 +288,9 @@ std::string ColorTheme::toJson( const ColorTheme &info )
   base["peaksTakeOnReferenceLineColor"] = info.peaksTakeOnReferenceLineColor;
   if( !info.defaultPeakLine.isDefault() )
     base["defaultPeakLineColor"] = WString( info.defaultPeakLine.cssText(false) );
+  
+  if( !info.kineticRefLineDefaultColor.isDefault() )
+    base["kineticRefLineDefaultColor"] = WString( info.kineticRefLineDefaultColor.cssText(false) );
   
   if( info.referenceLineColor.empty() && info.referenceLineColorForSources.empty() )
     return Json::serialize( base );
@@ -434,6 +441,11 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   
   if( base.contains("defaultPeakLineColor") )
     info.defaultPeakLine = WColor( static_cast<const WString &>(base["defaultPeakLineColor"]) );
+  
+  if( base.contains("kineticRefLineDefaultColor") )
+    info.kineticRefLineDefaultColor = WColor( static_cast<const WString &>(base["kineticRefLineDefaultColor"]) );
+  else
+    info.kineticRefLineDefaultColor = WColor( sm_kinetic_ref_line_default_color );  // Default color if not in JSON
   
   if( base.contains("referenceLines") )
   {

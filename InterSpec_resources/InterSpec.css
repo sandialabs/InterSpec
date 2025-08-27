@@ -1578,22 +1578,6 @@ a:hover { color:#E88400; border-bottom:none; }
     min-height: 65px;
   }
   
-  /* The entries from here below are only used when USE_CSS_FLEX_LAYOUT is tru in the C++ (experimental at the moment) */
-  .InterSpecFlex {
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-  }
-  
-  .InterSpecFlex .D3SpectrumDisplayDiv {
-    flex: 3;
-    overflow: hidden;
-  }
-  
-  .InterSpecFlex .D3TimeChartParent {
-    flex: 2;
-    overflow: hidden;
-  }
   
   .FloatInput:invalid {
     background-color: pink;

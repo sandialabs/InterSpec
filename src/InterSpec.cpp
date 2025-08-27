@@ -101,6 +101,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/D3TimeChart.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
@@ -116,6 +117,7 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/RefLineKinetic.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
@@ -127,6 +129,7 @@
 #include "InterSpec/RefSpectraWidget.h"
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/EnterAppUrlWindow.h"
+#include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/LocalTimeDelegate.h"
 #include "InterSpec/MultimediaDisplay.h"
 #include "InterSpec/CompactFileManager.h"
@@ -135,6 +138,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/FeatureMarkerWidget.h"
 #include "InterSpec/MassAttenuationTool.h"
+#include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/FileDragUploadResource.h"
@@ -145,8 +149,6 @@
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/LicenseAndDisclaimersWindow.h"
 
-#include "InterSpec/D3TimeChart.h"
-#include "InterSpec/D3SpectrumDisplayDiv.h"
 
 #if( IOS )
 #include "target/ios/InterSpec/FileHandling.h"
@@ -195,7 +197,6 @@
 #if( BUILD_AS_WX_WIDGETS_APP )
 #include "target/wxWidgets/InterSpecWxUtils.h"
 #endif 
-
 
 #if( USE_REMOTE_RID )
 #include "InterSpec/RemoteRid.h"
@@ -387,15 +388,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_warnings( 0 ),
     m_warningsWindow( 0 ),
     m_fileManager( 0 ),
-#if( USE_CSS_FLEX_LAYOUT )
-    m_chartResizer( nullptr ),
-    m_toolsResizer( nullptr ),
-#else
     m_layout( 0 ),
     m_charts( nullptr ),
     m_chartResizer( nullptr ),
     m_toolsLayout( 0 ),
-#endif
     m_menuDiv( 0 ),
     m_peakInfoDisplay( 0 ),
     m_peakInfoWindow( 0 ),
@@ -455,6 +451,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkersShown{false},
   m_featureMarkersWindow( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
+  m_kineticRefLineEnableMenuItem( nullptr ),
+  m_kineticRefLineDisableMenuItem( nullptr ),
   m_multimedia( nullptr ),
 #if( USE_REMOTE_RID )
   m_autoRemoteRidResultDialog( nullptr ),
@@ -496,6 +494,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_clientDeviceType( 0x0 ),
   m_referencePhotopeakLines( 0 ),
   m_referencePhotopeakLinesWindow( 0 ),
+  m_refLineKinetic( nullptr ),
   m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
@@ -511,8 +510,13 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_renderedWidth( 0 ),
   m_renderedHeight( 0 ),
   m_colorPeaksBasedOnReferenceLines( true ),
+  m_currentColorThemeCssFile(),
+  m_colorTheme( nullptr ),
+  m_colorThemeChanged( this ),
   m_findingHintPeaks( false ),
   m_hintQueue{},
+  m_hintPeaksSet( this ),
+  m_externalRidResultsRecieved( this ),
   m_infoNotificationsMade{}
 {
   //Initialization of the app (this function) takes about 11ms on my 2.6 GHz
@@ -668,6 +672,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_peakInfoDisplay = new PeakInfoDisplay( this, m_spectrum, m_peakModel );
 
   initMaterialDbAndSuggestions();
+  
+  m_refLineKinetic = new RefLineKinetic( m_spectrum, this );
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
@@ -886,139 +892,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   indicator->addStyleClass( "LoadingIndicator" );
   app->setLoadingIndicator( indicator );
    
-#if( USE_CSS_FLEX_LAYOUT )
-  addStyleClass( "InterSpecFlex" );
   
-  if( m_menuDiv )
-    addWidget( m_menuDiv );
-  
-  addWidget( m_spectrum );
-  
-  m_chartResizer = new WContainerWidget( this );
-  m_chartResizer->addStyleClass( "Wt-vsh2" );
-  m_chartResizer->setHeight( 5 );
-  
-  addWidget( m_timeSeries );
-  
-  m_toolsResizer = new WContainerWidget( this );
-  m_toolsResizer->addStyleClass( "Wt-vsh2" );
-  m_toolsResizer->setHeight( 5 );
-  
-  {//begin make tool tabs
-    m_nuclideSearchWindow = nullptr;
-    m_referencePhotopeakLinesWindow = NULL;
-    
-    
-    m_toolsTabs = new WTabWidget( this );
-    m_toolsTabs->addStyleClass( "ToolsTabs" );
-    
-    CompactFileManager *compact = new CompactFileManager( m_fileManager, this, CompactFileManager::LeftToRight );
-    m_toolsTabs->addTab( compact, WString::tr(FileTabTitleKey), TabLoadPolicy );
-    
-    m_spectrum->yAxisScaled().connect( boost::bind( &CompactFileManager::handleSpectrumScale, compact,
-                                                   boost::placeholders::_1,
-                                                   boost::placeholders::_2,
-                                                   boost::placeholders::_3 ) );
-    
-    m_toolsTabs->addTab( m_peakInfoDisplay, WString::tr(PeakInfoTabTitleKey), TabLoadPolicy );
-    
-    m_referencePhotopeakLines = new ReferencePhotopeakDisplay( m_spectrum,
-                                                              m_materialDB.get(),
-                                                              m_shieldingSuggestion,
-                                                              this );
-    setReferenceLineColors( nullptr );
-    
-    //PreLoading is necessary on the m_referencePhotopeakLines widget, so that the
-    //  "Isotope Search" widget will work properly when a nuclide is clicked
-    //  on to display its photopeaks
-    //XXX In Wt 3.3.4 at least, the contents of m_referencePhotopeakLines
-    //  are not actually loaded to the client until the tab is clicked, and I
-    //  cant seem to get this to actually happen.
-    //WMenuItem *refPhotoTab =
-    m_toolsTabs->addTab( m_referencePhotopeakLines, WString::tr(GammaLinesTabTitleKey), TabLoadPolicy );
-    
-    m_toolsTabs->currentChanged().connect( this, &InterSpec::handleToolTabChanged );
-    
-    m_energyCalTool->setWideLayout();
-    m_toolsTabs->addTab( m_energyCalTool, WString::tr(CalibrationTabTitleKey), TabLoadPolicy );
-    
-    m_toolsTabs->setHeight( 245 );
-    
-    assert( !m_nuclideSearchContainer );
-    
-    m_nuclideSearchContainer = new WContainerWidget();
-    WGridLayout *isoSearchLayout = new WGridLayout();
-    m_nuclideSearchContainer->setLayout( isoSearchLayout );
-    isoSearchLayout->setContentsMargins( 0, 0, 0, 0 );
-    isoSearchLayout->addWidget( m_nuclideSearch, 0, 0 );
-    m_nuclideSearchContainer->setMargin( 0 );
-    m_nuclideSearchContainer->setPadding( 0 );
-    isoSearchLayout->setRowStretch( 0, 1 );
-    isoSearchLayout->setColumnStretch( 0, 1 );
-    
-    //WMenuItem *nuclideTab =
-    m_toolsTabs->addTab( m_nuclideSearchContainer, WString::tr(NuclideSearchTabTitleKey), TabLoadPolicy );
-    //    const char *tooltip = "Search for nuclides with constraints on energy, "
-    //                          "branching ratio, and half life.";
-    //    HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips, HelpSystem::ToolTipPosition::Top );
-    
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
-    // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
-    //  Activity tool
-    m_toolsTabs->tabClosed().connect( boost::bind( &InterSpec::handleToolTabClosed, this, boost::placeholders::_1 ) );
-#endif
-    
-    //Make sure the current tab is the peak info display
-    m_toolsTabs->setCurrentWidget( m_peakInfoDisplay );
-    
-    m_toolsTabs->setJavaScriptMember( WT_RESIZE_JS, "function(self,w,h,layout){ console.log( 'wtResize called for tools tab:', w, h, layout ); }" );
-    
-     // An attempt to call into wtResize from ResizeObserver - not working yet - tool tab contents dont expand...
-    const string stackJsRef = m_toolsTabs->contentsStack()->jsRef();
-    m_toolsTabs->setJavaScriptMember( "resizeObserver",
-      "new ResizeObserver(entries => {"
-        "for (let entry of entries) {"
-          "if( entry.target && entry.target.wtResize ) {"
-            "const w = entry.contentRect.width;"
-            "const h = entry.contentRect.height;"
-            "console.log( 'Got resize', entry.target.id, 'for {' + w + ',' + h + '}'  );"
-            "entry.target.wtResize(entry.target, Math.round(w), Math.round(h), true);"
-            "if( (h > 27) && (entry.target.id === '" + m_toolsTabs->id() + "') ){"
-              "$('#" + m_toolsTabs->id() + " > .Wt-stack').each( function(i,el){ "
-                  "$(el).height( Math.round(h - 27) );"
-              "} );"
-                                     
-            "}"
-            "if( (h > 35) && (entry.target.id === '" + m_toolsTabs->id() + "') ){"
-              "$('#" + m_toolsTabs->id() + " > .Wt-stack > div').each( function(i,el){ "
-                "console.log( 'Setting height to ' + (h - 35) ); "
-                "$(el).height( Math.round(h - 35) );"
-              "} );"
-            "}"
-            //"if(" + stackJsRef + " && " + stackJsRef + ".wtResize) {"
-            //  + stackJsRef + ".wtResize(" + stackJsRef + ", Math.round(w), Math.round(h-27), true);"
-            //  "console.log( 'Will call resize for', " + stackJsRef + " );"
-            //"}"
-          "}else console.log( 'no wtResize' );"
-        "}"
-           // "console.log( 'stack=', " + m_toolsTabs->contentsStack()->jsRef() + " );"
-           // "console.log( 'stack wtResize=', " + m_toolsTabs->contentsStack()->jsRef() + ".wtResize );"
-      "});"
-    );
-    
-    m_toolsTabs->callJavaScriptMember( "resizeObserver.observe", m_toolsTabs->jsRef() );
-    //for( int i = 0; i < m_toolsTabs->count(); ++i )
-    //  m_toolsTabs->callJavaScriptMember( "resizeObserver.observe", m_toolsTabs->widget(i)->jsRef() );
-    
-  }//end make tool tabs
-  
-  // TODO: need to call wtResize of m_toolsTabs so they will get resized correctly
-  // TODO: 
-
-  
-#else
-  
-
   m_charts = new WContainerWidget();
       
       
@@ -1045,7 +919,6 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_layout->addWidget( m_menuDiv, m_layout->rowCount(), 0 );
   m_layout->addWidget( m_charts, m_layout->rowCount(), 0 );
   m_layout->setRowStretch( m_layout->rowCount() - 1, 1 );
-#endif
   
   // No need to updated the default axis titles
   //m_timeSeries->setY1AxisTitle( "Gamma CPS" );
@@ -1203,7 +1076,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                                      boost::placeholders::_1,
                                                      boost::placeholders::_2 ) );
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this,
-                                                     boost::placeholders::_1 ) );
+                                                     boost::placeholders::_1, boost::placeholders::_3 ) );
   m_spectrum->xRangeChanged().connect( boost::bind( &InterSpec::handleSpectrumChartXRangeChange, this,
                                                      boost::placeholders::_1,
                                                    boost::placeholders::_2,
@@ -1553,11 +1426,7 @@ void InterSpec::layoutSizeChanged( int w, int h )
       
       // If we are changing orientation - close all the open windows
       //  TODO: close are restore all the windows, instead of just closing them
-#if( USE_CSS_FLEX_LAYOUT )
-      if( m_toolsTabs->isVisible() != isVertical )
-#else
       if( static_cast<bool>(m_toolsTabs) != isVertical )
-#endif
       {
         //m_energyCalWindow and m_nuclideSearchWindow will get closed by `setToolTabsVisible(...)`
         if( m_gammaCountDialog )
@@ -3102,24 +2971,130 @@ Wt::Signal<SpecUtils::SpectrumType,double> &InterSpec::spectrumScaleFactorChange
   return m_spectrumScaleFactorChanged;
 }
 
+Wt::Signal<SpecUtils::SpectrumType> &InterSpec::hintPeaksSet()
+{
+  return m_hintPeaksSet;
+}
+
+Wt::Signal<std::shared_ptr<const ExternalRidResults>> &InterSpec::externalRidResultsRecieved()
+{
+  return m_externalRidResultsRecieved;
+}
 
 WModelIndex InterSpec::addPeak( PeakDef peak,
-                                    const bool associateShowingNuclideXrayRctn )
+                                const bool associateShowingNuclideXrayRctn,
+                               const std::string &ref_line_name )
 {
   if( fabs(peak.mean())<0.1 && fabs(peak.amplitude())<0.1 )
     return WModelIndex();
   
-  if( !m_referencePhotopeakLines || !associateShowingNuclideXrayRctn )
+  if( !associateShowingNuclideXrayRctn || (!m_referencePhotopeakLines && ref_line_name.empty()) )
     return m_peakModel->addNewPeak( peak );
   
-  if( peak.parentNuclide() || peak.xrayElement() || peak.reaction() )
+  if( peak.hasSourceGammaAssigned() )
     return m_peakModel->addNewPeak( peak );
   
   const bool showingEscape = showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
   auto foreground = displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
-                         foreground, m_referencePhotopeakLines,
-                         m_colorPeaksBasedOnReferenceLines, showingEscape );
+  
+  if( !ref_line_name.empty() )
+  {
+    const bool wasDefaultColor = peak.lineColor().isDefault();
+    shared_ptr<const deque<shared_ptr<const PeakDef>>> previouspeaks = m_peakModel->peaks();
+    if( previouspeaks )
+      previouspeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+    
+    // First, get just the parent name of the ref lines (for now we will assume ref_line_name could be of
+    //  the form "Th232;S.E. of 2614.5 keV".
+    string parent = ref_line_name;
+    const size_t pos = parent.find(';');
+    if( pos != string::npos )
+      parent = parent.substr(0,pos);
+    SpecUtils::trim(parent);
+    
+    bool is_kinetic_line = false;
+    vector<ReferenceLineInfo> ref_lines;
+    
+    // First try to get this reference line from the ReferenceLines
+    if( m_referencePhotopeakLines )
+    {
+      const ReferenceLineInfo &current_ref_lines = m_referencePhotopeakLines->currentlyShowingNuclide();
+      if( SpecUtils::iequals_ascii( parent, current_ref_lines.m_input.m_input_txt ) )
+        ref_lines.push_back( current_ref_lines );
+      
+      const vector<ReferenceLineInfo> &persisted = m_referencePhotopeakLines->persistedNuclides();
+      for( size_t i = 0; ref_lines.empty() && (i < persisted.size()); ++i )
+      {
+        if( SpecUtils::iequals_ascii( parent, persisted[i].m_input.m_input_txt ) )
+          ref_lines.push_back( persisted[i] );
+      }//
+    }//if( m_referencePhotopeakLines )
+    
+    if( ref_lines.empty() && m_refLineKinetic && m_refLineKinetic->current_lines() )
+    {
+      const shared_ptr<vector<pair<double,ReferenceLineInfo>>> kinetic_ref_lines = m_refLineKinetic->current_lines();
+      for( size_t i = 0; ref_lines.empty() && (i < kinetic_ref_lines->size()); ++i )
+      {
+        const ReferenceLineInfo &info = (*kinetic_ref_lines)[i].second;
+        if( SpecUtils::iequals_ascii( parent, info.m_input.m_input_txt ) )
+        {
+          is_kinetic_line = true;
+          ref_lines.push_back( info );
+        }
+      }//for( loop over kinetic_ref_lines )
+    }//if( ref_lines.empty() && m_refLineKinetic )
+    
+    if( !ref_lines.empty() )
+    {
+      const string source_name = ref_lines.front().m_input.m_input_txt;
+      
+      const bool useColor = ((!is_kinetic_line) && m_colorPeaksBasedOnReferenceLines);
+      
+      unique_ptr<pair<shared_ptr<const PeakDef>,string>> addswap
+         = PeakSearchGuiUtils::assign_nuc_from_ref_lines( peak, previouspeaks, foreground, ref_lines, useColor, showingEscape );
+
+      WModelIndex prevpeakind = addswap ? m_peakModel->indexOfPeak( addswap->first ) : WModelIndex();
+      if( prevpeakind.isValid() )
+      {
+        prevpeakind = m_peakModel->index(prevpeakind.row(), PeakModel::kIsotope);
+        m_peakModel->setData( prevpeakind, WString(addswap->second) );
+      }
+      
+      if( wasDefaultColor && peak.hasSourceGammaAssigned() && m_referencePhotopeakLines )
+      {
+        Wt::WColor color;
+        
+        // Check in with ReferencePhotopeakLines widget (it will check for other peaks with this source)
+        if( color.isDefault() )
+          color = m_referencePhotopeakLines->suggestColorForSource( source_name );
+        
+        // Check the color theme
+        if( color.isDefault() && m_colorTheme )
+        {
+          const auto pos = m_colorTheme->referenceLineColorForSources.find(source_name);
+          if( pos != end(m_colorTheme->referenceLineColorForSources) )
+            color = pos->second;
+        }//if( color.isDefault() )
+        
+        // Finally, generate a new color
+        if( color.isDefault() )
+        {
+          color = m_referencePhotopeakLines->nextGenericSourceColor();
+          m_referencePhotopeakLines->updateColorCacheForSource( source_name, color );
+        }//if( color.isDefault() )
+        
+        if( !color.isDefault() )
+          peak.setLineColor( color );
+      }//if( we should assign a color )
+    }//if( !ref_lines.empty() )
+  }//if( !ref_line_name.empty() )
+  
+  if( !peak.hasSourceGammaAssigned() )
+  {
+    PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
+                                                            foreground, m_referencePhotopeakLines,
+                                                            m_colorPeaksBasedOnReferenceLines, showingEscape );
+  }//if( !peak.hasSourceGammaAssigned() )
   
   WModelIndex newpeakindex = m_peakModel->addNewPeak( peak );
   
@@ -6500,13 +6475,8 @@ void InterSpec::removeToolsTabToMenuItems()
 
 void InterSpec::setToolTabsVisible( bool showToolTabs )
 {
-#if( USE_CSS_FLEX_LAYOUT )
-  if( m_toolsTabs->isVisible() == showToolTabs )
-    return;
-#else
   if( static_cast<bool>(m_toolsTabs) == showToolTabs )
     return;
-#endif
   
   unique_ptr<UndoRedoManager::BlockUndoRedoInserts> undo_sentry;
   if( m_undo && m_undo->canAddUndoRedoNow() )
@@ -6534,11 +6504,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   else
     addToolsTabToMenuItems();
 
-#if( USE_CSS_FLEX_LAYOUT )
-  m_toolsTabs->setHidden( !showToolTabs );
-  m_toolsResizer->setHidden( !showToolTabs );
-#else
-  
   string refNucXmlState;
   if( m_referencePhotopeakLines
       && ((m_referencePhotopeakLines->currentlyShowingNuclide().m_validity == ReferenceLineInfo::InputValidity::Valid)
@@ -6627,6 +6592,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
                                               m_shieldingSuggestion,
                                               this );
     setReferenceLineColors( nullptr );
+    
+    m_externalRidResultsRecieved.connect( boost::bind( &ReferencePhotopeakDisplay::setExternalRidResults,
+                                                      m_referencePhotopeakLines, boost::placeholders::_1 ));
     
     //PreLoading is necessary on the m_referencePhotopeakLines widget, so that the
     //  "Isotope Search" widget will work properly when a nuclide is clicked
@@ -6870,10 +6838,7 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   
   // I'm guessing when the charts were temporarily removed from the DOM (or changed or whatever),
   //  the bindings to watch for mousedown and touchstart were removed, so lets re-instate them.
-#if( USE_CSS_FLEX_LAYOUT )
-#else
   m_charts->doJavaScript( "Wt.WT.InitFlexResizer('" + m_chartResizer->id() + "','" + m_timeSeries->id() + "');" );
-#endif
   
   if( m_toolsTabs )
     m_currentToolsTab = m_toolsTabs->currentIndex();
@@ -6928,7 +6893,6 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
   m_spectrum->scheduleUpdateSecondData();
   
   m_timeSeries->scheduleRenderAll();
-#endif // USE_CSS_FLEX_LAYOUT / else
   
   // If we call `displayFeatureMarkerWindow(true);`, we'll get a JS exception - rather than
   //  figure this out, we'll just not re-open it.
@@ -7158,7 +7122,38 @@ void InterSpec::addViewMenu( WWidget *parent )
   HelpSystem::attachToolTipOn( m_featureMarkerMenuItem, WString::tr("app-mi-tt-view-feature-markers"),
                                 showToolTips );
   m_featureMarkerMenuItem->triggered().connect( this, &InterSpec::toggleFeatureMarkerWindow );
-
+  
+  // Set up kinetic reference line menu items
+  const bool kineticRefLineEnabled = UserPreferences::preferenceValue<bool>( "KineticRefLine", this );
+  m_kineticRefLineEnableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-enable-kinetic-ref-lines"), "", true );
+  m_kineticRefLineDisableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-disable-kinetic-ref-lines"), "", true );
+  m_kineticRefLineEnableMenuItem->setHidden( kineticRefLineEnabled );
+  m_kineticRefLineDisableMenuItem->setHidden( !kineticRefLineEnabled );
+  const auto undo_redo_enable_kin_ref = [this](){
+    if( !m_undo || !m_undo->canAddUndoRedoNow() )
+      return;
+    const auto toggle_kin_ref = [this](){
+      const bool active = UserPreferences::preferenceValue<bool>("KineticRefLine",this);
+      m_preferences->setPreferenceValue<bool>( "KineticRefLine", !active, this);
+    };
+    m_undo->addUndoRedoStep( toggle_kin_ref, toggle_kin_ref, "Toggle Kinetic Reference Lines" );
+  };
+  m_kineticRefLineEnableMenuItem->triggered().connect( std::bind([=](){
+    UserPreferences::setPreferenceValue<bool>("KineticRefLine", true, this);
+    undo_redo_enable_kin_ref();
+  }) );
+  m_kineticRefLineDisableMenuItem->triggered().connect( std::bind([=](){
+    UserPreferences::setPreferenceValue<bool>("KineticRefLine", false, this);
+    undo_redo_enable_kin_ref();
+  }) );
+  m_preferences->addCallbackWhenChanged( "KineticRefLine",
+    boost::bind( &Wt::WMenuItem::setHidden, m_kineticRefLineEnableMenuItem, boost::placeholders::_1, Wt::WAnimation() )
+  );
+  m_preferences->addCallbackWhenChanged( "KineticRefLine",
+    boost::bind( &Wt::WMenuItem::setHidden, m_kineticRefLineDisableMenuItem,
+                boost::bind(std::logical_not<bool>(), boost::placeholders::_1), Wt::WAnimation() )
+  );
+  
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
   if (InterSpecApp::isPrimaryWindowInstance())
@@ -8709,7 +8704,7 @@ void InterSpec::handleSimpleMdaWindowClose()
 
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
 {
-  searchForSinglePeak( m_rightClickEnergy );
+  searchForSinglePeak( m_rightClickEnergy, "" );
 }//void fitNewPeakNotInRoiFromRightClick()
 
 
@@ -10592,6 +10587,9 @@ void InterSpec::showGammaLinesWindow()
                                                this );
   setReferenceLineColors( nullptr );
   
+  m_externalRidResultsRecieved.connect( boost::bind( &ReferencePhotopeakDisplay::setExternalRidResults,
+                                                    m_referencePhotopeakLines, boost::placeholders::_1 ));
+  
   if( xml_state.size() )
     m_referencePhotopeakLines->deSerialize( xml_state );
 
@@ -10669,6 +10667,8 @@ void InterSpec::closeGammaLinesWindow()
                                                    this );
     setReferenceLineColors( nullptr );
     
+    m_externalRidResultsRecieved.connect( boost::bind( &ReferencePhotopeakDisplay::setExternalRidResults,
+                                                      m_referencePhotopeakLines, boost::placeholders::_1 ));
     
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     if( isPhone() && (renderedHeight() > renderedWidth()) )
@@ -10875,28 +10875,32 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     break;
   }//switch( type )
   
+  const auto dets = detectorsToDisplay(type);
+  m_displayedSpectrumChangedSignal.emit( type, meas, (*sampleset), dets );
   
-  //Right now, we will only search for hint peaks for foreground
-#if( !ANDROID && !IOS )
+  
   switch( type )
   {
     case SpecUtils::SpectrumType::Foreground:
-      if( !!m_dataMeasurement
-         && !m_dataMeasurement->automatedSearchPeaks(samples) )
+    case SpecUtils::SpectrumType::Background:
+    {
+      const shared_ptr<SpecMeas> &meas = (type == SpecUtils::SpectrumType::Foreground) ? m_dataMeasurement
+                                                                                       : m_backgroundMeasurement;
+      if( meas && !meas->automatedSearchPeaks(samples) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-        searchForHintPeaks( m_dataMeasurement, samples, isHPGe );
+        searchForHintPeaks( meas, samples, isHPGe );
+      }else if( meas )
+      {
+        m_hintPeaksSet.emit(type);
       }
       break;
+    }//case Foreground or backgrounds
       
     case SpecUtils::SpectrumType::SecondForeground:
-    case SpecUtils::SpectrumType::Background:
+      // Right now we will only set hint peaks for foreground and background
       break;
   }//switch( spec_type )
-#endif
-  
-  const auto dets = detectorsToDisplay(type);
-  m_displayedSpectrumChangedSignal.emit( type, meas, (*sampleset), dets );
 }//void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples )
 
 
@@ -11641,28 +11645,28 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
   checkEnableViewImageMenuItem();
   
   //Right now, we will only search for hint peaks for foreground
-#if( !ANDROID && !IOS )
   switch( spec_type )
   {
     case SpecUtils::SpectrumType::Foreground:
+    case SpecUtils::SpectrumType::Background:
     {
-      if( m_dataMeasurement )
+      const shared_ptr<SpecMeas> &meas = (spec_type == SpecUtils::SpectrumType::Foreground)
+                                          ? m_dataMeasurement : m_backgroundMeasurement;
+      if( meas && !meas->automatedSearchPeaks(sample_numbers) )
       {
-        auto peaks = m_dataMeasurement->automatedSearchPeaks(sample_numbers);
-        if( !peaks )
-        {
-          const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-          searchForHintPeaks( m_dataMeasurement, sample_numbers, isHPGe );
-        }
+        const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+        searchForHintPeaks( meas, sample_numbers, isHPGe );
+      }else if( meas )
+      {
+        m_hintPeaksSet.emit(spec_type);
       }
+      
       break;
-    }
+    }//case Foreground/Background
       
     case SpecUtils::SpectrumType::SecondForeground:
-    case SpecUtils::SpectrumType::Background:
       break;
   }//switch( spec_type )
-#endif
   
   
   //Lets see if there are any parse warnings that we should give to the user.
@@ -12518,7 +12522,7 @@ void InterSpec::handleSpectrumChartXRangeChange( const double xmin, const double
 }//void handleSpectrumChartXRangeChange(...);
 
 
-void InterSpec::searchForSinglePeak( const double x )
+void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line_name )
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
   
@@ -12540,7 +12544,7 @@ void InterSpec::searchForSinglePeak( const double x )
   std::shared_ptr<const DetectorPeakResponse> det = m_dataMeasurement->detector();
   
   
-  PeakSearchGuiUtils::fit_peak_from_double_click( this, x, pixPerKeV, det );
+  PeakSearchGuiUtils::fit_peak_from_double_click( this, x, pixPerKeV, det, ref_line_name );
 }//void searchForSinglePeak( const double x )
 
 
@@ -12569,26 +12573,36 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    const std::set<int> &samples,
                                    const bool isHPGe )
 {
-  std::shared_ptr<const deque< PeakModel::PeakShrdPtr > > origPeaks
-                                                        = m_peakModel->peaks();
-  if( !!origPeaks )
-    origPeaks = std::make_shared<deque<PeakModel::PeakShrdPtr> >( *origPeaks );
+  assert( data );
+  if( !data )
+    return;
   
-  std::shared_ptr< vector<std::shared_ptr<const PeakDef> > > searchresults
-            = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> origPeaks;
+  if( data->sampleNumsWithAutomatedSearchPeaks().count(samples) )
+    origPeaks = data->peaks(samples);
+  if( origPeaks )
+    origPeaks = make_shared<deque<shared_ptr<const PeakDef>>>( *origPeaks );
+  
+  shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
   
   const string sessionId = wApp->sessionId();
-  std::weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
-  auto drf = data->detector();
-  std::weak_ptr<SpecMeas> spectrum = data;
+  weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
   
-  boost::function<void(void)> callback = wApp->bind(
-                boost::bind(&InterSpec::setHintPeaks,
-                this, spectrum, samples, origPeaks, searchresults) );
+  // Grab the detector
+  shared_ptr<DetectorPeakResponse> drf = data->detector();
+  // If this is the background measurement, and it doesnt have a detector, try to grab it from the foreground
+  if( !drf && (data != m_dataMeasurement) && (data == m_backgroundMeasurement) && m_dataMeasurement )
+    drf = m_dataMeasurement->detector();
+  
+  weak_ptr<SpecMeas> spectrum = data;
+  
+  boost::function<void(void)> callback = wApp->bind( boost::bind(&InterSpec::setHintPeaks,
+                this, spectrum, samples, origPeaks, searchresults
+  ) );
   
   boost::function<void(void)> worker = [=](){
     PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, true, isHPGe );
+                                                callback, sessionId, false, isHPGe );
   };
   
 
@@ -12609,12 +12623,9 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
 
 void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
                   std::set<int> samplenums,
-                  std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existing,
-                  std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks )
+                  shared_ptr<const deque< std::shared_ptr<const PeakDef>>> existing,
+                  shared_ptr<vector<std::shared_ptr<const PeakDef>>> resultpeaks )
 {
-  //cerr << "InterSpec::setHintPeaks(...) with "
-  //     << (!!resultpeaks ? resultpeaks->size() : size_t(0)) << " peaks." << endl;
-  
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )
     log_developer_error( __func__, "setHintPeaks() being called from not within the event loop!" );
@@ -12628,15 +12639,13 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
     if( server )  //this should always be true
     {
       m_findingHintPeaks = true;
-      cerr << "InterSpec::setHintPeaks(...): posting queued job" << endl;
       boost::function<void()> worker = m_hintQueue.back();
       m_hintQueue.pop_back();
       server->ioService().boost::asio::io_service::post( worker );
     }//if( server )
   }//if( m_hintQueue.size() )
   
-  typedef std::shared_ptr<const PeakDef> PeakPtr;
-  typedef deque< PeakPtr > PeakDeque;
+
   std::shared_ptr<SpecMeas> spectrum = weak_spectrum.lock();
   
   if( !spectrum || !resultpeaks )
@@ -12645,38 +12654,29 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
     return;
   }//if( !spectrum )
   
-//  if( spectrum != m_dataMeasurement && spectrum != m_backgroundMeasurement
-//      && spectrum != m_secondDataMeasurement )
-//  {
-//    cerr << "InterSpec::setHintPeaks(): SpecMeas not current spectrum"
-//         << endl;
-//    return;
-//  }
   
-  //we could check to see if the spectrum and sample numbers are still the
-  //  current one.  If not the user probably doesnt care about this spectrum,
-  //  so why bother storing ther results?
-  
-  std::shared_ptr< PeakDeque > newpeaks
-    = std::make_shared<PeakDeque>( resultpeaks->begin(), resultpeaks->end() );
+  shared_ptr<deque<shared_ptr<const PeakDef>>> newpeaks
+    = make_shared<deque<shared_ptr<const PeakDef>>>( resultpeaks->begin(), resultpeaks->end() );
   
   //See if the user has added any peaks since we did the automated search
-  std::shared_ptr<PeakDeque> current_user_peaks = spectrum->peaks( samplenums );
+  shared_ptr<deque<shared_ptr<const PeakDef>>> current_user_peaks;
+  if( spectrum->sampleNumsWithPeaks().count(samplenums) )
+    current_user_peaks = spectrum->peaks(samplenums);
   
-  vector< PeakPtr > addedpeaks;
-  if( !!current_user_peaks && !existing )
+  vector<shared_ptr<const PeakDef>> addedpeaks;
+  if( current_user_peaks && !existing )
   {
-    addedpeaks.insert( addedpeaks.end(), current_user_peaks->begin(), current_user_peaks->end() );
-  }else if( !!current_user_peaks && !!existing )
+    addedpeaks.insert( end(addedpeaks), begin(*current_user_peaks), end(*current_user_peaks) );
+  }else if( current_user_peaks && existing )
   {
-    for( const PeakPtr &p : *current_user_peaks )
+    for( const shared_ptr<const PeakDef> &p : *current_user_peaks )
       if( std::find(existing->begin(),existing->end(),p) != existing->end() )
         addedpeaks.push_back( p );
   }
   
   if( addedpeaks.size() )
   {
-    for( PeakPtr p : addedpeaks )
+    for( shared_ptr<const PeakDef> p : addedpeaks )
     {
       const int pos = add_hint_peak_pos( p, *newpeaks );
       if( pos >= 0 )
@@ -12685,7 +12685,13 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
   }//if( addedpeaks.size() )
   
   spectrum->setAutomatedSearchPeaks( samplenums, newpeaks );
-//  existing
+  
+  if( (spectrum == m_dataMeasurement) && (m_displayedSamples == samplenums) )
+    m_hintPeaksSet.emit(SpecUtils::SpectrumType::Foreground);
+  else if( (spectrum == m_backgroundMeasurement) && (m_backgroundSampleNumbers == samplenums) )
+    m_hintPeaksSet.emit(SpecUtils::SpectrumType::Background);
+  else if( (spectrum == m_secondDataMeasurement) && (m_sectondForgroundSampleNumbers == samplenums) )
+    m_hintPeaksSet.emit(SpecUtils::SpectrumType::SecondForeground);
 }//void setHintPeaks(...)
 
 
