@@ -433,6 +433,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_languagesSubMenu( nullptr ),
     m_rightClickMenu( 0 ),
     m_rightClickEnergy( -DBL_MAX ),
+    m_rightClickRefLineHint(),
     m_rightClickNuclideSuggestMenu( nullptr ),
     m_rightClickChangeContinuumMenu( nullptr ),
     m_rightClickChangeSkewMenu( nullptr ),
@@ -963,7 +964,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-use-drf-fwhm") );
         m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::WithDrfFwhm ) );
         break;
-      case kSetMeanToRefPhotopeak:
+      case kSetMeanToNucOrRefLinePhotopeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-fix-mean") );
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-fix-mean") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::setMeanToRefPhotopeak );
@@ -1067,10 +1068,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
   m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this,
                                                   boost::placeholders::_1, boost::placeholders::_2,
-                                                  boost::placeholders::_3, boost::placeholders::_4 ) );
+                                                  boost::placeholders::_3, boost::placeholders::_4,
+                                                  boost::placeholders::_5 ) );
   m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this,
                                                   boost::placeholders::_1, boost::placeholders::_2,
-                                                  boost::placeholders::_3, boost::placeholders::_4 ) );
+                                                  boost::placeholders::_3, boost::placeholders::_4,
+                                                  boost::placeholders::_5 ) );
   
   m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this,
                                                      boost::placeholders::_1,
@@ -1847,6 +1850,7 @@ void InterSpec::arrowKeyPressed( const unsigned int value )
 void InterSpec::rightClickMenuClosed()
 {
   m_rightClickEnergy = -DBL_MAX;
+  m_rightClickRefLineHint.clear();
 }//void rightClickMenuClosed()
 
 
@@ -1892,14 +1896,14 @@ void InterSpec::refitPeakFromRightClick( const PeakSearchGuiUtils::RefitPeakType
 void InterSpec::setMeanToRefPhotopeak()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
-  PeakSearchGuiUtils::refit_peak_with_photopeak_mean( this, m_rightClickEnergy );
+  PeakSearchGuiUtils::refit_peak_with_photopeak_mean( this, m_rightClickEnergy, m_rightClickRefLineHint );
 }//void setMeanToRefPhotopeak()
 
 
 void InterSpec::addPeakFromRightClick()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
-  PeakSearchGuiUtils::add_peak_from_right_click( this, m_rightClickEnergy );
+  PeakSearchGuiUtils::add_peak_from_right_click( this, m_rightClickEnergy, m_rightClickRefLineHint );
 }//void addPeakFromRightClick()
 
 
@@ -2274,7 +2278,8 @@ void InterSpec::updateRightClickNuclidesMenu(
 
 
 void InterSpec::handleLeftClick( double energy, double counts,
-                                      double pageX, double pageY )
+                                double pageX, double pageY,
+                                const std::string &ref_line_info )
 {
   // For touch screen non-mobile devices, the right-click menu may be showing
   //  since when it is touch activated (by holding down for >600ms), there is
@@ -2310,13 +2315,15 @@ void InterSpec::handleLeftClick( double energy, double counts,
 
 
 void InterSpec::handleRightClick( double energy, double counts,
-                                  double pageX, double pageY )
+                                  double pageX, double pageY,
+                                 const std::string &ref_line_info )
 {
   if( !m_dataMeasurement )
     return;
   
   const std::shared_ptr<const PeakDef> peak = nearestPeak( energy );
   m_rightClickEnergy = energy;
+  m_rightClickRefLineHint = ref_line_info;
   
   shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
 
@@ -2335,6 +2342,22 @@ void InterSpec::handleRightClick( double energy, double counts,
   
   char energy_str[32] = { '\0' };
   snprintf( energy_str, sizeof(energy_str), "%.1f", energy );
+  
+  // Get just the parent name of the ref lines (for now we will assume ref_line_name could be of
+  //  the form "Th232;S.E. of 2614.5 keV".
+  string parent = ref_line_info;
+  const SandiaDecay::Nuclide *ref_nuc = nullptr;
+  
+  if( !parent.empty() )
+  {
+    const size_t pos = parent.find(';');
+    if( pos != string::npos )
+      parent = parent.substr(0,pos);
+    SpecUtils::trim(parent);
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    ref_nuc = db->nuclide(parent);
+  }//if( !parent.empty() )
+  
   
   //see how many other peaks share ROI
   size_t npeaksInRoi = 0;
@@ -2450,6 +2473,20 @@ void InterSpec::handleRightClick( double energy, double counts,
             if( m_referencePhotopeakLines )
               refLines = m_referencePhotopeakLines->showingNuclides();
             
+            if( parent.empty() && m_refLineKinetic && m_refLineKinetic->isActive() )
+            {
+              bool parentIsInRef = false;
+              for( size_t i = 0; !parentIsInRef && (i < refLines.size()); ++i )
+                parentIsInRef = SpecUtils::iequals_ascii(refLines[i].m_input.m_input_txt, parent);
+              shared_ptr<vector<pair<double,ReferenceLineInfo>>> kinetic_lines = m_refLineKinetic->current_lines();
+              for( size_t i = 0; !parentIsInRef && kinetic_lines && (i < kinetic_lines->size()); ++i )
+              {
+                parentIsInRef = SpecUtils::iequals_ascii( (*kinetic_lines)[i].second.m_input.m_input_txt, parent );
+                if( parentIsInRef )
+                  refLines.insert( begin(refLines), (*kinetic_lines)[i].second );
+              }
+            }//if( !ref_nuc.empty() )
+            
             const string session_id = wApp->sessionId();
             
             boost::function<void(void)> worker = [=](){
@@ -2464,16 +2501,21 @@ void InterSpec::handleRightClick( double energy, double counts,
         break;
       }//case kChangeNuclide:
         
-      case kSetMeanToRefPhotopeak:
+      case kSetMeanToNucOrRefLinePhotopeak:
       {
-        const float energy = peak ? PeakSearchGuiUtils::reference_line_energy_near_peak( this, *peak ) : 0.0;
-        const bool hide = (!peak || (energy < 10.0f));
+        const float src_energy = peak ? PeakSearchGuiUtils::source_or_reference_line_near_peak_energy( this, *peak, ref_line_info ) : 0.0;
+        const bool hide = (!peak || (src_energy < 10.0f));
+        
         m_rightClickMenutItems[i]->setHidden( hide );
         if( !hide )
-          m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fix-energy").arg( energy_str ) );
+        {
+          char src_energy_str[32] = { '\0' };
+          snprintf( src_energy_str, sizeof(src_energy_str), "%.1f", src_energy );
+          m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fix-energy").arg( src_energy_str ) );
+        }//if( !hide )
         
         break;
-      }//case kSetMeanToRefPhotopeak:
+      }//case kSetMeanToNucOrRefLinePhotopeak:
         
       case kShareContinuumWithLeftPeak:
       {
@@ -2604,10 +2646,13 @@ void InterSpec::handleRightClick( double energy, double counts,
         {
           WString target_txt;
           const tuple<const SandiaDecay::Nuclide *, double, float> near_line
-                                = PeakSearchGuiUtils::nuclide_reference_line_near( this, energy );
+                                = PeakSearchGuiUtils::nuclide_reference_line_near( this, energy, parent );
           const SandiaDecay::Nuclide *ref_nuc = get<0>(near_line);
           const float ref_energy = get<2>(near_line);
             
+          
+          
+          
           if( ref_nuc && (ref_energy > 10.0) )
           {
             char buffer[64] = { '\0' };
@@ -8704,7 +8749,7 @@ void InterSpec::handleSimpleMdaWindowClose()
 
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
 {
-  searchForSinglePeak( m_rightClickEnergy, "" );
+  searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint );
 }//void fitNewPeakNotInRoiFromRightClick()
 
 
@@ -8712,14 +8757,15 @@ void InterSpec::startAddPeakFromRightClick()
 {
   // TODO: add AddNewPeakDialog pointer to InterSpec class, like other tools, to fully support undo/redo, and everything.
   const double energy = m_rightClickEnergy;
+  const string ref_line_hint = m_rightClickRefLineHint;
   
-  AddNewPeakDialog *window = new AddNewPeakDialog( energy );
+  AddNewPeakDialog *window = new AddNewPeakDialog( energy, ref_line_hint );
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto redo = [energy](){
-      AddNewPeakDialog *window = new AddNewPeakDialog( energy );
+    auto redo = [energy,ref_line_hint](){
+      AddNewPeakDialog *window = new AddNewPeakDialog( energy, ref_line_hint );
       window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     };
     
@@ -8800,7 +8846,7 @@ void InterSpec::startSimpleMdaFromRightClick()
   if( m_referencePhotopeakLines )
   {
     tuple<const SandiaDecay::Nuclide *, double, float> line
-                = PeakSearchGuiUtils::nuclide_reference_line_near( this, m_rightClickEnergy );
+                = PeakSearchGuiUtils::nuclide_reference_line_near( this, m_rightClickEnergy, m_rightClickRefLineHint );
     
     const SandiaDecay::Nuclide *nuc = get<0>(line);
     const double age = get<1>(line);
@@ -10791,6 +10837,11 @@ Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
   return m_shieldingSuggestion;
 }
 
+
+RefLineKinetic *InterSpec::refLineKinetic()
+{
+  return m_refLineKinetic;
+}//
 
 Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorChanged()
 {

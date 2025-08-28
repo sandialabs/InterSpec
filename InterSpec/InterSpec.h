@@ -738,6 +738,8 @@ public:
    */
   Wt::WSuggestionPopup *shieldingSuggester();
   
+  /** The RefLineKinetic class. */
+  RefLineKinetic *refLineKinetic();
   
   //detectorChanged(): signal emited when the detector is changed to a
   //  completely new detector.  Note that the object pointed to stays the same
@@ -1084,9 +1086,11 @@ protected:
   
   
   void handleRightClick( const double energy, const double counts,
-                         const double pageX, const double pageY );
+                         const double pageX, const double pageY,
+                        const std::string &ref_line_name  );
   void handleLeftClick( const double energy, const double counts,
-                        const double pageX, const double pageY );
+                        const double pageX, const double pageY,
+                       const std::string &ref_line_name );
   void rightClickMenuClosed();
   
   void peakEditFromRightClick();
@@ -1457,7 +1461,7 @@ protected:
     kRefitRoiStandard,
     kRefitRoiAgressive,
     kRefitPeakWithDrfFwhm,
-    kSetMeanToRefPhotopeak,
+    kSetMeanToNucOrRefLinePhotopeak,
     kChangeNuclide,
     kChangeContinuum,
     kChangeSkew,
@@ -1480,6 +1484,10 @@ protected:
   
   PopupDivMenu         *m_rightClickMenu;
   double                m_rightClickEnergy;
+  /** The ref-line info from the client-side when there is a right-click.  This may be a displayed reference line, or it could be a kinematic reference line, and is in the
+   form like "Th232;S.E. of 2614.5 keV".
+   */
+  std::string           m_rightClickRefLineHint;
   Wt::WMenuItem        *m_rightClickMenutItems[kNumRightClickItems];
   PopupDivMenu         *m_rightClickNuclideSuggestMenu;
   PopupDivMenu         *m_rightClickChangeContinuumMenu;

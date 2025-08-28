@@ -61,6 +61,7 @@
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/RefLineKinetic.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
@@ -3269,11 +3270,10 @@ void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightC
   
 std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( InterSpec * const interspec,
                                           const PeakDef &peak,
-                                          const bool only_nuclide )
+                                          const bool only_nuclide,
+                                          const std::string &ref_line_hint )
 {
   auto refLineTool = interspec->referenceLinesWidget();
-  if( !refLineTool )
-    return pair<unique_ptr<ReferenceLineInfo>,int>( nullptr, -1 );
   
   const double mean  = peak.gausPeak() ? peak.mean()
                                        : (((peak.mean() > peak.lowerX()) && (peak.mean() < peak.upperX()))
@@ -3284,7 +3284,39 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
     
   double largest_w = -9999, best_energy = -1.0f;
   
-  const vector<ReferenceLineInfo> showingNucs = refLineTool->showingNuclides();
+  vector<ReferenceLineInfo> showingNucs;
+  
+  string parent = ref_line_hint;
+  
+  const RefLineKinetic * const kineticRefLineTool = interspec->refLineKinetic();
+  if( !parent.empty() && kineticRefLineTool && kineticRefLineTool->isActive() )
+  {
+    const size_t pos = parent.find(';');
+    if( pos != string::npos )
+      parent = parent.substr(0,pos);
+    SpecUtils::trim(parent);
+    
+    const shared_ptr<vector<pair<double,ReferenceLineInfo>>> kinetic_ref_lines = kineticRefLineTool->current_lines();
+    if( kinetic_ref_lines )
+    {
+      for( size_t i = 0; showingNucs.empty() && (i < kinetic_ref_lines->size()); ++i )
+      {
+        const ReferenceLineInfo &ref_line = (*kinetic_ref_lines)[i].second;
+        if( SpecUtils::iequals_ascii(ref_line.m_input.m_input_txt, parent) )
+          showingNucs.push_back( ref_line );
+      }//
+    }//if( kinetic_ref_lines )
+  }//if( check kinetic ref lines )
+  
+  if( refLineTool )
+  {
+    vector<ReferenceLineInfo> user_lines = refLineTool->showingNuclides();
+    if( showingNucs.empty() )
+      showingNucs = std::move(user_lines);
+    else
+      showingNucs.insert( end(showingNucs), begin(user_lines), end(user_lines) );
+  }//if( refLineTool )
+  
   size_t best_info_index = showingNucs.size();
   size_t best_line_index = 0;
   
@@ -3316,7 +3348,12 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
         best_line_index = line_index;
       }//if( best candidate so far )
     }//for( const ReferenceLineInfo::RefLine &line : info.m_ref_lines )
-  }//for( const ReferenceLineInfo &info : m_referencePhotopeakLines->showingNuclides() )
+    
+    // If we have a source reference line info from the UI, and we found a matching candidate from that set
+    //   of lines, we will use that.
+    if( !parent.empty() && (best_info_index == info_index) && SpecUtils::iequals_ascii(info.m_input.m_input_txt, parent) )
+      break;
+  }//for( size_t info_index = 0; info_index < showingNucs.size(); ++info_index )
     
   if( (largest_w > 0) && (best_energy > 0) && (best_info_index < showingNucs.size()) )
   {
@@ -3330,7 +3367,8 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
 }//reference_line_near_peak(...)
   
 
-float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
+float source_or_reference_line_near_peak_energy( InterSpec * const interspec, const PeakDef &peak,
+                                                const std::string &ref_line_hint )
 {
   if( !interspec )
     return -999.9f;
@@ -3344,7 +3382,7 @@ float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDe
   
   const bool only_nucs = false;
   pair<unique_ptr<ReferenceLineInfo>,int> refline
-                              = reference_line_near_peak( interspec, peak, only_nucs );
+                              = reference_line_near_peak( interspec, peak, only_nucs, ref_line_hint );
   
   if( !refline.first || refline.second < 0 )
     return -999.9f;
@@ -3352,12 +3390,12 @@ float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDe
   const ReferenceLineInfo::RefLine &line = refline.first->m_ref_lines[refline.second];
   
   return static_cast<float>( line.m_energy );
-}//float reference_line_energy_near_peak( InterSpec * const interspec, const PeakDef &peak )
+}//float source_or_reference_line_near_peak_energy( InterSpec * const interspec, const PeakDef &peak )
 
   
   
 tuple<const SandiaDecay::Nuclide *, double, float>
-    nuclide_reference_line_near( InterSpec *viewer, const float energy )
+    nuclide_reference_line_near( InterSpec *viewer, const float energy, const std::string &hint_parent )
 {
   double sigma = estimate_FWHM_of_foreground( energy );
   
@@ -3389,7 +3427,7 @@ tuple<const SandiaDecay::Nuclide *, double, float>
   PeakDef tmppeak( energy, std::max(sigma,0.1), 100.0 );
   
   const pair<unique_ptr<ReferenceLineInfo>,int> refline
-        = reference_line_near_peak( viewer, tmppeak, true );
+        = reference_line_near_peak( viewer, tmppeak, true, hint_parent );
   
   if( !refline.first || (refline.second < 0) )
     return tuple<const SandiaDecay::Nuclide *, double, float>( nullptr, 0.0, 0.0f );
@@ -3514,7 +3552,9 @@ float estimate_FWHM_of_foreground( const float energy )
 }//float estimate_FWHM_of_foreground( const float energy )
   
   
-void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double rightClickEnergy )
+void refit_peak_with_photopeak_mean( InterSpec * const interspec,
+                                    const double rightClickEnergy,
+                                    const string &ref_line_hint )
 {
   try
   {
@@ -3531,7 +3571,7 @@ void refit_peak_with_photopeak_mean( InterSpec * const interspec, const double r
       return;
     }
     
-    const float energy = reference_line_energy_near_peak( interspec, *peak );
+    const float energy = source_or_reference_line_near_peak_energy( interspec, *peak, ref_line_hint );
     if( energy < 10 )
     {
       passMessage( WString::tr("psgu-no-ref-line-near-peak-msg"), WarningWidget::WarningMsgInfo );
@@ -4321,7 +4361,10 @@ void prepare_and_add_gadras_peaks( std::shared_ptr<const SpecUtils::Measurement>
   } );
 }//void prepare_and_add_gadras_peaks(...)
 
-void add_peak_from_right_click( InterSpec * const interspec, const double rightClickEnergy )
+
+void add_peak_from_right_click( InterSpec * const interspec,
+                               const double rightClickEnergy,
+                               const std::string &ref_line_hint )
 {
   if( !interspec )
     return;
@@ -4509,7 +4552,7 @@ void add_peak_from_right_click( InterSpec * const interspec, const double rightC
   for( size_t i = 0; i < answer.size(); ++i )
   {
     const bool isNew = !new_to_orig_peaks.count(answer[i]);
-    interspec->addPeak( *answer[i], isNew );
+    interspec->addPeak( *answer[i], isNew, (isNew ? ref_line_hint : "") );
   }
 }//void add_peak_from_right_click()
 

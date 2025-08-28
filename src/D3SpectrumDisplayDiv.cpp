@@ -433,19 +433,21 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback,
                                               this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
-    m_leftClickJS.reset( new JSignal<double,double,double,double>( this, "leftclicked", true ) );
+    m_leftClickJS.reset( new JSignal<double,double,double,double,string>( this, "leftclicked", true ) );
     m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this,
                                         boost::placeholders::_1, boost::placeholders::_2,
-                                        boost::placeholders::_3, boost::placeholders::_4 ) );
+                                        boost::placeholders::_3, boost::placeholders::_4,
+                                        boost::placeholders::_5) );
     
     m_doubleLeftClickJS.reset( new JSignal<double,double,string>( this, "doubleclicked", true ) );
     m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback,
                                               this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
     
-    m_rightClickJS.reset( new JSignal<double,double,double,double>( this, "rightclicked", true ) );
+    m_rightClickJS.reset( new JSignal<double,double,double,double,string>( this, "rightclicked", true ) );
     m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this,
                                          boost::placeholders::_1, boost::placeholders::_2,
-                                         boost::placeholders::_3, boost::placeholders::_4 ) );
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5) );
     
     m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
     m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this,
@@ -626,13 +628,13 @@ bool D3SpectrumDisplayDiv::showingPeakLabel( int peakLabel ) const
 }//bool showingPeakLabel( int peakLabel ) const
 
 
-Signal<double,double,int,int> &D3SpectrumDisplayDiv::chartClicked()
+Signal<double,double,int,int,string> &D3SpectrumDisplayDiv::chartClicked()
 {
   return m_leftClick;
 }//Signal<double,double,int,int> &chartClicked()
 
 
-Wt::Signal<double,double,int,int> &D3SpectrumDisplayDiv::rightClicked()
+Wt::Signal<double,double,int,int,string> &D3SpectrumDisplayDiv::rightClicked()
 {
   return m_rightClick;
 }
@@ -2227,26 +2229,22 @@ void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback( double x0, double x1 )
 
 void D3SpectrumDisplayDiv::chartRightMouseDragCallback( double x0, double x1 )
 {
-  // cout << "chartRightMouseDragCallback" << endl;
   m_rightMouseDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartRightMouseDragCallback(...)
 
-void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY )
+void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name )
 {
-  // cout << "chartLeftClickCallback" << endl;
-  m_leftClick.emit( x, y, pageX, pageY );
+  m_leftClick.emit( x, y, pageX, pageY, ref_line_name );
 }//void chartLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name )
 {
-  // cout << "chartDoubleLeftClickCallback" << endl;
   m_doubleLeftClick.emit( x, y, ref_line_name );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
-void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY )
+void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name )
 {
-  // cout << "chartRightClickCallback" << endl;
-  m_rightClick.emit( x, y, pageX, pageY );
+  m_rightClick.emit( x, y, pageX, pageY, ref_line_name );
 }//void D3SpectrumDisplayDiv::chartRightClickCallback(...)
 
 

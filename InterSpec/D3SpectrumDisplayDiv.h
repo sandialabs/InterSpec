@@ -78,9 +78,9 @@ public:
   void setCompactAxis( const bool compact );
   bool isAxisCompacted() const;
   
-  Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &chartClicked();
-  Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &rightClicked();
-  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line number*/> &doubleLeftClick();
+  Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &chartClicked();
+  Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &rightClicked();
+  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line name*/> &doubleLeftClick();
   Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
   
   /** When a previously existing ROI gets dragged by its edge, this signal will be emitted as it
@@ -510,10 +510,15 @@ protected:
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
-  /** The double left-click std::string is the ReferenceLine name (including for kinetic ref lines) cooresponding to what the mouse is over at click time. */
+  /** The rel-line name std::string below is the ReferenceLine (including for kinetic ref lines) cooresponding to what the mouse is over at click time.
+   It will be empty if no line was actively showing its info, or else it will be the line cooresponding to the JS `SpectrumChartD3.mousedOverRefLine` variable.
+   
+   The name of the reference lines (e.g., "U238", "H(n,g)") _may_ be followed by a semicolon, then information about the specific line.
+   E.x. "Th232;S.E. of 2614.5 keV"
+   */
   std::unique_ptr<Wt::JSignal<double, double, std::string> > m_doubleLeftClickJS;
-  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_leftClickJS;
-  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_rightClickJS;
+  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/,std::string /*ref-line name*/> > m_leftClickJS;
+  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/,std::string /*ref-line name*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
       size in pixels is only approximate, since chart may not have been totally layed out
       and rendered when this signal was emmitted.
@@ -539,9 +544,9 @@ protected:
   Wt::Signal<double,double> m_shiftKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_leftClick;
+  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_leftClick;
   Wt::Signal<double,double,std::string /*ref-line name*/> m_doubleLeftClick;
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_rightClick;
+  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_rightClick;
   
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
@@ -568,10 +573,9 @@ protected:
   void chartShiftKeyDragCallback( double x0, double x1 );
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
-  void chartLeftClickCallback( double x, double y, double pageX, double pageY );
+  void chartLeftClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
   void chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name );
-  void chartRightClickCallback( double x, double y, double pageX,
-                                double pageY );
+  void chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
   
   void existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
                                            double new_lower_px, double new_upper_px,
