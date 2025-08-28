@@ -158,7 +158,14 @@ RefLineKinetic::RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *interspe
   
   m_interspec->externalRidResultsRecieved().connect( boost::bind( &RefLineKinetic::autoRidResultsRecieved, this, boost::placeholders::_1 ) );
   m_interspec->colorThemeChanged().connect( boost::bind( &RefLineKinetic::colorThemeChanged, this, boost::placeholders::_1 ) );
-  
+  PeakModel * const pmodel = m_interspec->peakModel();
+  if( pmodel )
+  {
+    pmodel->rowsInserted().connect( boost::bind( &RefLineKinetic::peaksAdded, this ) );
+    pmodel->rowsRemoved().connect( boost::bind( &RefLineKinetic::peaksRemoved, this ) );
+    pmodel->dataChanged().connect( boost::bind( &RefLineKinetic::peakModified, this ) );
+  }
+
   // TODO: We also need to update lines after an energy calbration is done
   // TODO: We also need to make sure hint peaks are adjusted for energy changes
   
@@ -244,16 +251,55 @@ void RefLineKinetic::assignColorToInput( ReferenceLineInfo &lines ) const
 }//void RefLineKinetic::assignColorToInput(...)
 
 
+void RefLineKinetic::peaksAdded()
+{
+  if( !m_active )
+    return;
+
+  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderKineticRefLine();
+  m_current_ref_lines.reset();
+}
+
+
+void RefLineKinetic::peaksRemoved()
+{
+  if( !m_active )
+    return;
+
+  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderKineticRefLine();
+  m_current_ref_lines.reset();
+}
+
+
+void RefLineKinetic::peakModified()
+{
+  if( !m_active )
+    return;
+
+  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderKineticRefLine();
+  m_current_ref_lines.reset();
+}
+
+
 void RefLineKinetic::setActive( bool active )
 {
   if( m_active == active )
     return;
   
   m_active = active;
-  
-  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-  m_chart->scheduleRenderKineticRefLine();
+
   m_current_ref_lines.reset();
+  if( m_active )
+  {
+    m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
+    m_chart->scheduleRenderKineticRefLine();
+  }else
+  {
+    m_chart->setKineticRefernceLines( vector<pair<double,ReferenceLineInfo>>{}, "" );
+  }
 }//void RefLineKinetic::setActive( bool active )
 
 
@@ -270,6 +316,9 @@ shared_ptr<vector<pair<double,ReferenceLineInfo>>> RefLineKinetic::current_lines
 
 void RefLineKinetic::autoSearchPeaksSet( const SpecUtils::SpectrumType spectrum )
 {
+  if( !m_active )
+    return;
+  
   m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
   m_chart->scheduleRenderKineticRefLine();
   m_current_ref_lines.reset();
@@ -1154,15 +1203,21 @@ void RefLineKinetic::startUpdateLines()
         }else if( reaction_db )
         {
           // Try to get reaction from ReactionGamma database
-          vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-          reaction_db->gammas( result.nuclide_, possible_rctns );
-          
-          if( !possible_rctns.empty() )
+          try
           {
-            canonical_name = possible_rctns[0].reaction->name();
-            found_source = true;
+            vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+            reaction_db->gammas( result.nuclide_, possible_rctns );
+
+            if( !possible_rctns.empty() )
+            {
+              canonical_name = possible_rctns[0].reaction->name();
+              found_source = true;
+            }
+          }catch( std::exception & )
+          {
+            //we get here for example if nuclide did have paranthesis
           }
-        }
+        }//
       }//if( result.nuclide_ is nuclide ) / else
       
       if( !found_source )

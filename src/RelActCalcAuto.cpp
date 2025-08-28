@@ -2746,7 +2746,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
               parameters[this_rel_eff_start + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Areal density; both manual and auto RelEff use g/cm2
-              
+
+              if( rel_eff_curve.phys_model_self_atten->fit_areal_density )
+              {
+                if( parameters[this_rel_eff_start + 1]  < 1.0E-4 )
+                  parameters[this_rel_eff_start + 1] = std::min( std::max( 1.0, rel_eff_curve.phys_model_self_atten->lower_fit_areal_density), rel_eff_curve.phys_model_self_atten->upper_fit_areal_density );
+              }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density )
+
               manual_index += 1;
             }//if( options.phys_model_self_atten )
 

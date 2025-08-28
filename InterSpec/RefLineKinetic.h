@@ -45,6 +45,21 @@ struct ExternalRidResults;
 class D3SpectrumDisplayDiv;
 class DetectorPeakResponse;
 
+/**
+TODO items:
+ - Extend the energy lines to the full-height of the window - maybe either use a dotted line, or one with some alpha, or make the solid line, but a dot at the original height
+ - For the random sum peaks, also show likely nuclides
+ - When multiple nuclides are candidates, need to allow switching between them, or indicate things in some way to either cycle through them, and/or let the user
+ - Each "catagory" of nuclides should get a different color, controllable by the color theme
+
+ Current shortcommings:
+ - Cascade sums not accounted for
+ - The filtering the number of lines for each set could def use improvement
+ - Lines not updated when there is an energy calibration change (the auto-serch peak should also be updated - and any being searched for need to be cancelled and restarted)
+ - Should be able to handle RID output results like DU, Uranium, HEU, Neutrons, "Sr-85/Kr85", Annihilation, etc
+ - Having a peak with a source associated with it should _really_ increase the weight (see HPGe Lu177 spectrum for example why).
+ - Should pick the most important line, get the profile weight for the source, and adjust the source weight a bit using this
+ */
 class RefLineKinetic : public Wt::WObject
 {
 public:
@@ -105,7 +120,11 @@ protected:
   
   /** Helper method to assign color to ReferenceLineInfo, applying fallback logic. */
   void assignColorToInput( ReferenceLineInfo &input ) const;
-  
+
+  void peaksAdded();
+  void peaksRemoved();
+  void peakModified();
+
   InterSpec *m_interspec;
   D3SpectrumDisplayDiv *m_chart;
   

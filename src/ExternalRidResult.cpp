@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/InterSpec.h"
@@ -85,13 +87,22 @@ void ExternalRidIsotope::init()
       if( const SandiaDecay::Element * const el = db->element(name) )
       {
         source = el;
-      }else if( const ReactionGamma * const rctn_db = ReactionGammaServer::database() )
+      }else if( ((name.find('(')!=std::string::npos) && (name.find(')')!=std::string::npos))
+               || SpecUtils::icontains(name,"ann") )
       {
-        std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-        rctn_db->gammas( name, possible_rctns );
-        
-        if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
-          source = possible_rctns[0].reaction;
+        try
+        {
+          std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+          const ReactionGamma * const rctn_db = ReactionGammaServer::database();
+          if( rctn_db )
+            rctn_db->gammas( name, possible_rctns );
+
+          if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
+            source = possible_rctns[0].reaction;
+        }catch( std::exception & )
+        {
+          // ReactionGammaServer::gammas throw if invalid reaction name.
+        }
       }
     }//if( !nuc )
   }//if( std::holds_alternative<std::monostate>(source) && !name.empty() )
