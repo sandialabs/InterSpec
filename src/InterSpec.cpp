@@ -38,6 +38,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <functional>
 #include <sys/stat.h>
 
 #include <boost/ref.hpp>

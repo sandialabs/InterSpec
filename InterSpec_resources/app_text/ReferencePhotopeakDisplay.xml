@@ -44,6 +44,11 @@
   <message id="rpd-suggestions">Suggestions</message>
   <message id="rpd-feature-markers">Feature Markers</message>
 
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">Light Lines</message>
+  <message id="rpd-line-thick-normal">Normal Lines</message>
+  <message id="rpd-line-thick-thick">Thick Lines</message>
+  <message id="rpd-line-thick-thicker">Thicker Lines</message>
 
   <message id="rpd-csv-export-msg">The 'Nuclide Decay Info' tool provides additional capabilities for exporting nuclide, decay products, and decay information to CSV files.</message>
   <message id="rpd-changed-age">Changed age to a more reasonable value for {1} from '{2}' to '{3}'</message>

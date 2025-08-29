@@ -55,6 +55,7 @@
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/ReferenceLinePredef.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -1372,6 +1373,7 @@ ReferenceLineInfo::RefLine::RefLine()
   m_transition( nullptr ),
   m_source_type( ReferenceLineInfo::RefLine::RefGammaType::Normal ),
   m_attenuation_applies( true ),
+  m_major_line( false ),
   m_element( nullptr ),
   m_reaction( nullptr )
 {
@@ -1515,6 +1517,7 @@ void ReferenceLineInfo::toJson( string &json ) const
       continue;
     
     const double energy = round_energy( line.m_energy );
+    bool is_major_line = false;
     
     // There are situations where two lines have either the exact same energies, or super-close
     //  energies, and the spectrum chart is not particularly smart about this, so we effectively
@@ -1676,10 +1679,16 @@ void ReferenceLineInfo::toJson( string &json ) const
         jsons << ",\"src_label\":\"" << src_label << "\"";
       }//if( ReferenceLineInfo::SourceType::NuclideMixture )
       
+      // Check if any of the combined lines is marked as major
+      for( size_t inner_index = index; !is_major_line && (inner_index < std::min(index + num_combined, m_ref_lines.size())); ++inner_index )
+        is_major_line = (m_ref_lines[inner_index].m_major_line);
+      
       // Now increment 'i' so we'll skip over these lines we've already covered.
       index += (num_combined >= 1) ? (num_combined - 1) : size_t(0);
     }else  //if( next_gamma_close )
     {
+      is_major_line = line.m_major_line;
+       
       if( IsNan(line.m_normalized_intensity) || IsInf(line.m_normalized_intensity) )
         snprintf( intensity_buffer, sizeof(intensity_buffer), "0" );
       else
@@ -1709,6 +1718,9 @@ void ReferenceLineInfo::toJson( string &json ) const
     if( !line.m_color.isDefault() )
       jsons << ",\"color\":\"" << line.m_color.cssText(false) << "\"";
     
+    if( is_major_line )
+      jsons << ",\"major\":1";
+    
     jsons << "}";
     
     printed = true;
@@ -1734,6 +1746,174 @@ void ReferenceLineInfo::sortByEnergy()
     return lhs.m_energy < rhs.m_energy;
     } );
 }//void sortByEnergy()
+
+
+void ReferenceLineInfo::markMajorLines()
+{
+  // We want to show "major" lines - however what lines are considered major is dependent on shielding and detector
+  //  efficiency.  So if no shielding is defined, then we will test under no shielding, and heavy shielding,
+  //  and mark the line as major, if it passes the criteria for either shielding sceneriou.
+  //  - If the lines intensity is greater than `intensity_threshold` times the max line intensity
+  //  - If we sum intensities, of lines ordered by decreasing intensity, the current sum is less than
+  //    `cumulative_threshold` of the total intensity
+  //
+  //  `intensity_threshold` was adjusted using a handful of common nuclides (with cumulative threshold turned off),
+  //  until seemingly major lines were marked.
+  //  `cumulative_threshold` was adjusted until the 258 keV of U238 showed, while intensity threshold is off, for
+  //  a example detector.
+  const double intensity_threshold = 0.05;  // fraction of max intensity
+  const double cumulative_threshold = 0.75; // fraction of cumulative coverage wanted
+  
+  // Mark any line where m_attenuation_applies == false as major
+  //  We'll also get the highest energy line, for later to test which shielding we should apply
+  double highest_energy_line = 0.0;
+  for( RefLine &line : m_ref_lines )
+  {
+    highest_energy_line = std::max( highest_energy_line, line.m_energy );
+    line.m_major_line = !line.m_attenuation_applies;
+  }
+  
+  // Filter lines to get gamma/x-ray lines (excluding escapes/sum peaks if gamma/xrays shown)
+  std::vector<RefLine*> gamma_xray_lines;
+  const bool gammas_shown = m_input.m_showGammas;
+  const bool xrays_shown = m_input.m_showXrays;
+  
+  for( RefLine &line : m_ref_lines )
+  {
+    const bool is_gamma_or_xray = ((line.m_particle_type == RefLine::Particle::Gamma)
+                                   || (line.m_particle_type == RefLine::Particle::Xray));
+    
+    if( is_gamma_or_xray )
+    {
+      const bool is_escape_or_sum = (line.m_source_type == RefLine::RefGammaType::SingleEscape) ||
+                                    (line.m_source_type == RefLine::RefGammaType::DoubleEscape) ||
+                                    (line.m_source_type == RefLine::RefGammaType::CoincidenceSumPeak) ||
+                                    (line.m_source_type == RefLine::RefGammaType::SumGammaPeak);
+      
+      // Include line if it's not an escape/sum peak, or if gammas/xrays are not being shown
+      if( !is_escape_or_sum || (!gammas_shown && !xrays_shown) )
+      {
+        gamma_xray_lines.push_back( &line );
+      }
+    }
+  }
+  
+  if( gamma_xray_lines.empty() )
+    return;
+  
+  // Store original intensities by index; we will re-order them, so we'll also copy the original order
+  vector<double> original_intensities( gamma_xray_lines.size() );
+  const vector<RefLine*> original_gamma_xray_lines = gamma_xray_lines;
+  for( size_t i = 0; i < original_gamma_xray_lines.size(); ++i )
+    original_intensities[i] = original_gamma_xray_lines[i]->m_normalized_intensity;
+  
+  // Check if detector response has been applied (if all drf_factor are 1.0, assume no DRF)
+  bool has_drf = false;
+  for( const RefLine *line : gamma_xray_lines )
+  {
+    if( std::abs(line->m_drf_factor - 1.0f) > 1e-6f )
+    {
+      has_drf = true;
+      break;
+    }
+  }
+  
+  // If no detector response, apply generic efficiency using hardcoded HPGe detector
+  if( !has_drf )
+  {
+    try
+    {
+      // Use hardcoded HPGe detector - we could change this in the future to make a little more realistic...
+      auto generic_detector = DetectorPeakResponse::getGenericHPGeDetector();
+      for( RefLine *line : gamma_xray_lines )
+      {
+        const double energy_kev = line->m_energy;
+        if( (generic_detector->lowerEnergy() > 10.0) && (energy_kev < generic_detector->lowerEnergy()) )
+          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( generic_detector->lowerEnergy() );
+        else if( (generic_detector->upperEnergy() > 10.0) && (energy_kev > generic_detector->upperEnergy()) )
+          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( generic_detector->upperEnergy() );
+        else
+          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( energy_kev );
+      }
+    }catch( const std::exception &e )
+    {
+      // Print error but don't modify intensities - use original values
+      std::cerr << "Warning: Failed to use hardcoded HPGe detector for major lines marking: " 
+                << e.what() << ". Using original intensities." << std::endl;
+    }
+  }//if( !has_drf )
+  
+  // Apply intensity-based marking
+  auto markLinesBasedOnIntensity = [&]() {
+    // Sort by intensity descending to get max intensity from first element
+    std::sort( begin(gamma_xray_lines), end(gamma_xray_lines),
+              []( const RefLine *lhs, const RefLine *rhs ) {
+                return lhs->m_normalized_intensity > rhs->m_normalized_intensity;
+    });
+    
+    // Get max intensity from first (highest) element
+    const double max_intensity = gamma_xray_lines[0]->m_normalized_intensity;
+    
+    if( max_intensity <= 0.0 )
+      return;
+    
+    // Calculate total intensity as sum over all intensities
+    double total_intensity = 0.0;
+    for( const RefLine *line : gamma_xray_lines )
+      total_intensity += line->m_normalized_intensity;
+    
+    // Apply intensity threshold filter and mark lines
+    const double min_intensity = max_intensity * intensity_threshold;
+    const double target_cumulative = total_intensity * cumulative_threshold;
+    
+    double cumulative_intensity = 0.0;
+    for( RefLine *line : gamma_xray_lines )
+    {
+      const bool above_min_intensity = (line->m_normalized_intensity >= min_intensity);
+      const bool below_cumulative = (cumulative_intensity < target_cumulative);
+      line->m_major_line |= (above_min_intensity || below_cumulative);
+      cumulative_intensity += line->m_normalized_intensity;
+      
+      if( !below_cumulative && !above_min_intensity )
+        break;
+    }//for( RefLine *line : gamma_xray_lines )
+  };
+  
+  // Apply initial intensity-based marking
+  markLinesBasedOnIntensity();
+  
+  // If no shielding defined, apply additional shielding an check about markings
+  const bool no_shielding = (m_input.m_shielding_name.empty()
+                             && (m_input.m_shielding_an.empty() || m_input.m_shielding_ad.empty()));
+  
+  if( no_shielding )
+  {
+    // Apply 0.5cm Pb shielding (AN=82, AD=11.34 g/cm2) by default
+    float atomic_number = 82;
+    double areal_density = 0.5*11.34 * (PhysicalUnits::gram / PhysicalUnits::cm2);
+    
+    // But if ref-lines only go up to say 200 keV (totally arbitrary!), use 0.5 cm Fe
+    if( highest_energy_line < 200.0 )
+    {
+      atomic_number = 26;
+      areal_density = 0.5*7.874 * (PhysicalUnits::gram / PhysicalUnits::cm2);
+    }
+    
+    for( RefLine *line : gamma_xray_lines )
+    {
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic( atomic_number, areal_density, line->m_energy );
+      const double attenuation = std::exp( -mu );
+      line->m_normalized_intensity *= attenuation;
+    }
+    
+    // Apply intensity-based marking again with shielding
+    markLinesBasedOnIntensity();
+  }
+  
+  // Restore original intensities
+  for( size_t i = 0; i < original_gamma_xray_lines.size(); ++i )
+    original_gamma_xray_lines[i]->m_normalized_intensity = original_intensities[i];
+}//void markMajorLines()
 
 
 void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
@@ -3272,8 +3452,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         if( input.m_shielding_att && line.m_attenuation_applies )
           line.m_shield_atten = input.m_shielding_att( energy );
         
-        max_photon_br = std::max( max_photon_br,
-                                 line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten );
+        const double intensity = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
+        max_photon_br = std::max( max_photon_br, intensity );
         break;
       }
     }//switch( line.m_particle_type )
@@ -3489,6 +3669,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     }//for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
   }//if( !gamma_coincidences.empty() )
   
+  // Mark the major lines before sorting
+  answer.markMajorLines();
   
   //Client-side javascript currently doesn't know about this guarantee that gamma
   //  lines will be sorted by energy.
