@@ -517,6 +517,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
                                              &D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback );
   const int ref_line_thick = std::max(0, std::min(3, UserPreferences::preferenceValue<int>( "RefLineThickness", m_interspec) ));
   m_spectrum->setRefLineThickness( static_cast<D3SpectrumDisplayDiv::RefLineThickness>(ref_line_thick) );
+
+  preferences->addIntCallbackWhenChanged( "RefLineVerbosity", m_spectrum,
+                                             &D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback );
+  const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_interspec) ));
+  m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
     
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();

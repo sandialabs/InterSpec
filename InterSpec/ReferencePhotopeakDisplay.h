@@ -305,6 +305,15 @@ public:
   /** Callback for RefLineThickness preference changes (takes int parameter). */
   void refLineThicknessPreferenceChangedCallback( int thickness );
   
+  /** Called when user changes reference line verbosity combo box. */
+  void refLineVerbosityChanged();
+  
+  /** Called when reference line verbosity preference changes. */
+  void refLineVerbosityPreferenceChanged();
+
+  /** Callback for RefLineVerbosity preference changes (takes int parameter). */
+  void refLineVerbosityPreferenceChangedCallback( int verbosity );
+  
   /** Blinks the feature marker widget a bit. */
   void emphasizeFeatureMarker();
   
@@ -459,6 +468,7 @@ protected:
   Wt::WCheckBox *m_showAssocNucs;
   Wt::WCheckBox *m_showFeatureMarkers;
   Wt::WComboBox *m_refLineThickness;
+  Wt::WComboBox *m_refLineVerbosity;
 
   Wt::WContainerWidget *m_otherNucsColumn;
   Wt::WContainerWidget *m_otherNucs;

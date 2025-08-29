@@ -292,6 +292,14 @@ public:
     Thick = 2,   ///< Thick Lines: width=2.0, hover=3.0
     Thicker = 3  ///< Thicker Lines: width=3.0, hover=5.0
   };//enum class RefLineThickness
+
+  /** Reference line verbosity options for extension lines. */
+  enum class RefLineVerbosity : int
+  {
+    None = 0,       ///< No extension lines shown
+    OnHover = 1,    ///< Extension lines shown only on hover
+    MajorAlways = 2 ///< Major lines always show extensions, all lines show on hover
+  };//enum class RefLineVerbosity
   
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
@@ -380,6 +388,12 @@ public:
 
   /** Callback for RefLineThickness preference changes (takes int parameter). */
   void handleRefLineThicknessPreferenceChangeCallback( int thickness );
+
+  /** Sets reference line verbosity from RefLineVerbosity enum. */
+  void setRefLineVerbosity( const RefLineVerbosity verbosity );
+
+  /** Callback for RefLineVerbosity preference changes (takes int parameter). */
+  void handleRefLineVerbosityPreferenceChangeCallback( int verbosity );
     
   /** To avoid duplicate calculations of kinetic reference lines, the `RefLineKinetic` class will notify this class
    that it has updates, by calling the `scheduleRenderKineticRefLine()` function; this will also trigger a render
@@ -643,6 +657,8 @@ protected:
   bool m_showRefLineInfoForMouseOver;
   double m_refLineWidth;
   double m_refLineWidthHover;
+  
+  RefLineVerbosity m_refLineVerbosity;
   
   RefLineKinetic *m_kinetic;
   std::vector<std::pair<double,ReferenceLineInfo>> m_kineticRefLines;

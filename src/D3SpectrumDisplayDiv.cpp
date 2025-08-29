@@ -270,6 +270,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_showRefLineInfoForMouseOver( true ),
   m_refLineWidth( 1.0 ),
   m_refLineWidthHover( 2.0 ),
+  m_refLineVerbosity( RefLineVerbosity::None ),
   m_kinetic( nullptr ),
   m_kineticRefLines{},
   m_kineticRefLinesJsFwhmFcn{},
@@ -343,6 +344,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", showRefLineInfoForMouseOver: " + jsbool(m_showRefLineInfoForMouseOver);
   options += ", refLineWidth: " + std::to_string(m_refLineWidth);
   options += ", refLineWidthHover: " + std::to_string(m_refLineWidthHover);
+  options += ", refLineVerbosity: " + std::to_string( static_cast<int>(m_refLineVerbosity) );
   options += ", yscale: " + string(m_yAxisIsLog ? "'log'" : "'lin'");
   options += ", backgroundSubtract: " + jsbool( m_backgroundSubtract );
   options += ", showLegend: " + jsbool(m_legendEnabled);
@@ -823,6 +825,24 @@ void D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback( int t
   
   setRefLineThickness( refThickness );
 }//void handleRefLineThicknessPreferenceChangeCallback( int thickness )
+
+
+void D3SpectrumDisplayDiv::setRefLineVerbosity( const RefLineVerbosity verbosity )
+{
+  m_refLineVerbosity = verbosity;
+  const int verbosityValue = static_cast<int>( verbosity );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setRefLineVerbosity(" + std::to_string(verbosityValue) + ");" );
+}//void setRefLineVerbosity( const RefLineVerbosity verbosity )
+
+
+void D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback( int verbosity )
+{
+  const int clampedValue = std::max(0, std::min(2, verbosity));
+  const RefLineVerbosity refVerbosity = static_cast<RefLineVerbosity>(clampedValue);
+  
+  setRefLineVerbosity( refVerbosity );
+}//void handleRefLineVerbosityPreferenceChangeCallback( int verbosity )
 
 
 void D3SpectrumDisplayDiv::setKineticRefLineController( RefLineKinetic *kinetic )

@@ -939,6 +939,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                         &D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback );
   const int ref_line_thick = std::max(0, std::min(3, UserPreferences::preferenceValue<int>( "RefLineThickness", this) ));
   m_spectrum->setRefLineThickness( static_cast<D3SpectrumDisplayDiv::RefLineThickness>(ref_line_thick) );
+
+  // Set up reference line verbosity and preference change callbacks for the spectrum display  
+  m_preferences->addIntCallbackWhenChanged( "RefLineVerbosity", m_spectrum,
+                                        &D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback );
+  const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", this) ));
+  m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
   
 //  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, boost::placeholders::_1) );
   m_rightClickMenu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
