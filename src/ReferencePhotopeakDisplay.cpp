@@ -36,6 +36,7 @@
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
+#include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>
@@ -842,6 +843,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showPrevNucs( NULL ),
     m_showAssocNucs( NULL ),
     m_showFeatureMarkers( nullptr ),
+    m_refLineThickness( nullptr ),
     m_otherNucsColumn( nullptr ),
     m_otherNucs( nullptr ),
     m_prevNucs{},
@@ -1167,12 +1169,29 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers->checked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
   m_showFeatureMarkers->unChecked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
       
+  // Add reference line thickness combo box
+  m_refLineThickness = new WComboBox( m_optionsContent );
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-light") );   // 0: {0.5, 1}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-normal") );  // 1: {1, 2}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-thick") );   // 2: {2, 3}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-thicker") ); // 3: {3, 5}
+  
+  // Set from user preference
+  const int thicknessPref = UserPreferences::preferenceValue<int>( "RefLineThickness", specViewer );
+  m_refLineThickness->setCurrentIndex( std::max(0, std::min(3, thicknessPref)) );
 
   //const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", this);
   //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
   UserPreferences::associateWidget( "RefLineShowPrev", m_showPrevNucs, specViewer );
   UserPreferences::associateWidget( "RefLineShowRiid", m_showRiidNucs, specViewer );
   UserPreferences::associateWidget( "RefLineShowAssoc", m_showAssocNucs, specViewer );
+  
+  // Connect combo box change signal
+  m_refLineThickness->sactivated().connect( this, &ReferencePhotopeakDisplay::refLineThicknessChanged );
+  
+  // Set up preference change listener for updating the combo box
+  specViewer->preferences()->addIntCallbackWhenChanged( "RefLineThickness", this,
+      &ReferencePhotopeakDisplay::refLineThicknessPreferenceChangedCallback );
 
 
   //HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.",
@@ -1872,6 +1891,36 @@ void ReferencePhotopeakDisplay::featureMarkerCbToggled()
   //  state, and also update its menu items, and handle undo/redo.
   m_spectrumViewer->displayFeatureMarkerWindow( m_showFeatureMarkers->isChecked() );
 }//void featureMarkerCbToggled()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessChanged()
+{
+  const int selectedIndex = m_refLineThickness->currentIndex();
+  
+  // Update user preference - D3SpectrumDisplayDiv will automatically react to this change
+  UserPreferences::setPreferenceValue<int>( "RefLineThickness", selectedIndex, m_spectrumViewer );
+}//void refLineThicknessChanged()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessPreferenceChanged()
+{
+  const int thicknessPref = UserPreferences::preferenceValue<int>( "RefLineThickness", m_spectrumViewer );
+  const int clampedIndex = std::max(0, std::min(3, thicknessPref));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the line width changes
+  if( m_refLineThickness->currentIndex() != clampedIndex )
+    m_refLineThickness->setCurrentIndex( clampedIndex );
+}//void refLineThicknessPreferenceChanged()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessPreferenceChangedCallback( int thickness )
+{
+  const int clampedIndex = std::max(0, std::min(3, thickness));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the line width changes
+  if( m_refLineThickness->currentIndex() != clampedIndex )
+    m_refLineThickness->setCurrentIndex( clampedIndex );
+}//void refLineThicknessPreferenceChangedCallback( int thickness )
 
 
 void ReferencePhotopeakDisplay::emphasizeFeatureMarker()

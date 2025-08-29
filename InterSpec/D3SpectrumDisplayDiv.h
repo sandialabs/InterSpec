@@ -283,6 +283,15 @@ public:
     /** Fills just the y-range of the chart, below the data. */
     BelowData
   };//enum class HighlightRegionFill
+
+  /** Reference line thickness options. */
+  enum class RefLineThickness : int
+  {
+    Light = 0,   ///< Light Lines: width=0.5, hover=1.0
+    Normal = 1,  ///< Normal Lines: width=1.0, hover=2.0 (default)
+    Thick = 2,   ///< Thick Lines: width=2.0, hover=3.0
+    Thicker = 3  ///< Thicker Lines: width=3.0, hover=5.0
+  };//enum class RefLineThickness
   
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
@@ -359,6 +368,18 @@ public:
   //  should be shown for the line that the mouse is currently over.  Default is
   //  to show the information.
   void setShowRefLineInfoForMouseOver( const bool show );
+
+  /** Sets the width of reference lines. Default is 1 for normal width, 2 for hover width. */
+  void setRefLineWidths( const double width, const double hoverWidth );
+
+  /** Sets reference line thickness from RefLineThickness enum. */
+  void setRefLineThickness( const RefLineThickness thickness );
+
+  /** Gets the line widths for a given RefLineThickness enum value. */
+  static std::pair<double,double> getRefLineWidths( const RefLineThickness thickness );
+
+  /** Callback for RefLineThickness preference changes (takes int parameter). */
+  void handleRefLineThicknessPreferenceChangeCallback( int thickness );
     
   /** To avoid duplicate calculations of kinetic reference lines, the `RefLineKinetic` class will notify this class
    that it has updates, by calling the `scheduleRenderKineticRefLine()` function; this will also trigger a render
@@ -620,6 +641,8 @@ protected:
   std::vector<ReferenceLineInfo> m_persistedPhotoPeakLines;
 
   bool m_showRefLineInfoForMouseOver;
+  double m_refLineWidth;
+  double m_refLineWidthHover;
   
   RefLineKinetic *m_kinetic;
   std::vector<std::pair<double,ReferenceLineInfo>> m_kineticRefLines;

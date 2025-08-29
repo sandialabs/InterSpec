@@ -66,6 +66,7 @@ namespace Wt
 {
   class WText;
   class WCheckBox;
+  class WComboBox;
   class WLineEdit;
   class WTreeView;
   class WGridLayout;
@@ -295,6 +296,15 @@ public:
   /** Called when user checks or unchecks to show feature markers. */
   void featureMarkerCbToggled();
   
+  /** Called when user changes reference line thickness combo box. */
+  void refLineThicknessChanged();
+  
+  /** Called when reference line thickness preference changes. */
+  void refLineThicknessPreferenceChanged();
+
+  /** Callback for RefLineThickness preference changes (takes int parameter). */
+  void refLineThicknessPreferenceChangedCallback( int thickness );
+  
   /** Blinks the feature marker widget a bit. */
   void emphasizeFeatureMarker();
   
@@ -448,6 +458,7 @@ protected:
   Wt::WCheckBox *m_showPrevNucs;
   Wt::WCheckBox *m_showAssocNucs;
   Wt::WCheckBox *m_showFeatureMarkers;
+  Wt::WComboBox *m_refLineThickness;
 
   Wt::WContainerWidget *m_otherNucsColumn;
   Wt::WContainerWidget *m_otherNucs;

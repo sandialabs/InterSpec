@@ -50,7 +50,6 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
-#include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
@@ -269,6 +268,8 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartWidthPx(0.0),
   m_chartHeightPx(0.0),
   m_showRefLineInfoForMouseOver( true ),
+  m_refLineWidth( 1.0 ),
+  m_refLineWidthHover( 2.0 ),
   m_kinetic( nullptr ),
   m_kineticRefLines{},
   m_kineticRefLinesJsFwhmFcn{},
@@ -340,6 +341,8 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", compactXAxis: " + jsbool(m_compactAxis);
   options += ", allowDragRoiExtent: true";
   options += ", showRefLineInfoForMouseOver: " + jsbool(m_showRefLineInfoForMouseOver);
+  options += ", refLineWidth: " + std::to_string(m_refLineWidth);
+  options += ", refLineWidthHover: " + std::to_string(m_refLineWidthHover);
   options += ", yscale: " + string(m_yAxisIsLog ? "'log'" : "'lin'");
   options += ", backgroundSubtract: " + jsbool( m_backgroundSubtract );
   options += ", showLegend: " + jsbool(m_legendEnabled);
@@ -782,6 +785,44 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
   if( isRendered() )
     doJavaScript( m_jsgraph + ".setShowRefLineInfoForMouseOver(" + jsbool(show) + ")" );
 }//void setShowRefLineInfoForMouseOver( const bool show )
+
+
+void D3SpectrumDisplayDiv::setRefLineWidths( const double width, const double hoverWidth )
+{
+  m_refLineWidth = width;
+  m_refLineWidthHover = hoverWidth;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setRefLineWidths(" + std::to_string(width) + "," + std::to_string(hoverWidth) + ")" );
+}//void setRefLineWidths( const double width, const double hoverWidth )
+
+
+void D3SpectrumDisplayDiv::setRefLineThickness( const RefLineThickness thickness )
+{
+  const auto widths = getRefLineWidths( thickness );
+  setRefLineWidths( widths.first, widths.second );
+}//void setRefLineThickness( const RefLineThickness thickness )
+
+
+std::pair<double,double> D3SpectrumDisplayDiv::getRefLineWidths( const RefLineThickness thickness )
+{
+  switch( thickness )
+  {
+    case RefLineThickness::Light:   return {0.5, 1.0};
+    case RefLineThickness::Normal:  return {1.0, 2.0};
+    case RefLineThickness::Thick:   return {2.0, 3.0};
+    case RefLineThickness::Thicker: return {3.0, 5.0};
+  }
+  return {1.0, 2.0}; // Default to Normal
+}//std::pair<double,double> getRefLineWidths( const RefLineThickness thickness )
+
+
+void D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback( int thickness )
+{
+  const int clampedValue = std::max(0, std::min(3, thickness));
+  const RefLineThickness refThickness = static_cast<RefLineThickness>(clampedValue);
+  
+  setRefLineThickness( refThickness );
+}//void handleRefLineThicknessPreferenceChangeCallback( int thickness )
 
 
 void D3SpectrumDisplayDiv::setKineticRefLineController( RefLineKinetic *kinetic )

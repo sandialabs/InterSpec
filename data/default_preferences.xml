@@ -43,6 +43,7 @@
  <pref name="RefLineShowRiid" type="Boolean">true</pref>
  <pref name="RefLineShowPrev" type="Boolean">true</pref>
  <pref name="RefLineShowAssoc" type="Boolean">true</pref>
+ <pref name="RefLineThickness" type="Integer">1</pref>
  <pref name="ShowMapDataWarning" type="Boolean">true</pref>
  <pref name="AutoDarkFromOs" type="Boolean">true</pref>
  <pref name="Language" type="String"></pref>
