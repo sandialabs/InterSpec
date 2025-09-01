@@ -110,6 +110,39 @@ namespace
             // || IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_fission_category_key, categories)
             );
   }
+  
+  template <typename T>
+  Wt::WColor getCategoryColorForSource( const shared_ptr<const ColorTheme> &color_theme,
+                                        const T *source,
+                                        const vector<IsotopeSearchByEnergy::NucSearchCategory> &search_categories )
+  {
+    if( !color_theme || !source )
+      return color_theme ? color_theme->kineticRefLineOtherColor : Wt::WColor( ColorTheme::sm_kinetic_ref_line_other_color );
+    
+    const std::string &snm_key = IsotopeSearchByEnergy::sm_snm_category_key;
+    const std::string &industrial_key = IsotopeSearchByEnergy::sm_industrial_category_key;
+    const std::string &medical_key = IsotopeSearchByEnergy::sm_medical_category_key;
+    const std::string &norm_key = IsotopeSearchByEnergy::sm_norm_category_key;
+    const std::string &common_key = IsotopeSearchByEnergy::sm_common_category_key;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, snm_key, search_categories ) )
+      return color_theme->kineticRefLineSnmColor;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, industrial_key, search_categories ) )
+      return color_theme->kineticRefLineIndustrialColor;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, medical_key, search_categories ) )
+      return color_theme->kineticRefLineMedicalColor;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, norm_key, search_categories ) )
+      return color_theme->kineticRefLineNormColor;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, common_key, search_categories ) )
+      return color_theme->kineticRefLineCommonColor;
+    
+    // If no specific category found, use "Other" category
+    return color_theme->kineticRefLineOtherColor;
+  }
 }//namespace
 
 struct AlwaysSrcs
@@ -252,9 +285,6 @@ void RefLineKinetic::assignColorToInput( ReferenceLineInfo &lines ) const
     }
     const auto &search_categories = nuclide_search->search_categories();
     
-    // Check each category and assign appropriate color
-    bool found_category = false;
-    
     // We need to check if any of the reference lines match categories
     // For now, we'll classify based on the primary source from the lines
     if( !lines.m_ref_lines.empty() )
@@ -263,138 +293,20 @@ void RefLineKinetic::assignColorToInput( ReferenceLineInfo &lines ) const
       
       // Check if it's a nuclide source
       if( first_line.m_parent_nuclide )
-      {
-        if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
-                                                   IsotopeSearchByEnergy::sm_medical_category_key, 
-                                                   search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineMedicalColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
-                                                        IsotopeSearchByEnergy::sm_industrial_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineIndustrialColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
-                                                        IsotopeSearchByEnergy::sm_norm_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineNormColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
-                                                        IsotopeSearchByEnergy::sm_snm_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineSnmColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
-                                                        IsotopeSearchByEnergy::sm_common_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineCommonColor;
-          found_category = true;
-        }
-      }
-      // Check if it's an element source (x-ray)
-      else if( first_line.m_element )
-      {
-        if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
-                                                   IsotopeSearchByEnergy::sm_medical_category_key, 
-                                                   search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineMedicalColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
-                                                        IsotopeSearchByEnergy::sm_industrial_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineIndustrialColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
-                                                        IsotopeSearchByEnergy::sm_norm_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineNormColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
-                                                        IsotopeSearchByEnergy::sm_snm_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineSnmColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
-                                                        IsotopeSearchByEnergy::sm_common_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineCommonColor;
-          found_category = true;
-        }
-      }
-      // Check if it's a reaction source
-      else if( first_line.m_reaction )
-      {
-        if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
-                                                   IsotopeSearchByEnergy::sm_medical_category_key, 
-                                                   search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineMedicalColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
-                                                        IsotopeSearchByEnergy::sm_industrial_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineIndustrialColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
-                                                        IsotopeSearchByEnergy::sm_norm_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineNormColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
-                                                        IsotopeSearchByEnergy::sm_snm_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineSnmColor;
-          found_category = true;
-        }
-        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
-                                                        IsotopeSearchByEnergy::sm_common_category_key, 
-                                                        search_categories ) )
-        {
-          category_color = color_theme->kineticRefLineCommonColor;
-          found_category = true;
-        }
-      }
-    }
+        category_color = getCategoryColorForSource( color_theme, first_line.m_parent_nuclide, search_categories );
+      else if( first_line.m_element )// Check if it's an element source (x-ray)
+        category_color = getCategoryColorForSource( color_theme, first_line.m_element, search_categories );
+      else if( first_line.m_reaction ) // Check if it's a reaction source
+        category_color = getCategoryColorForSource( color_theme, first_line.m_reaction, search_categories );
+    }//if( !lines.m_ref_lines.empty() )
     
     // If no specific category found, use "Other" category
-    if( !found_category )
+    if( category_color.isDefault() )
       category_color = color_theme->kineticRefLineOtherColor;
     
     // Set the color if valid, otherwise use fallback
-    if( !category_color.isDefault() )
-    {
-      input.m_color = category_color;
-    }
-    else
-    {
-      input.m_color = Wt::WColor( ColorTheme::sm_kinetic_ref_line_other_color );
-    }
-  }
-  else
+    input.m_color = category_color.isDefault() ? WColor( ColorTheme::sm_kinetic_ref_line_other_color ) : category_color;
+  }else
   {
     // Fallback to the static default if ColorTheme is unavailable
     input.m_color = Wt::WColor( ColorTheme::sm_kinetic_ref_line_other_color );
