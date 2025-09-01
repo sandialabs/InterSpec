@@ -26,7 +26,7 @@ class SpecMeas;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
-class RefLineKinetic;
+class RefLineDynamic;
 
 namespace Wt
 {
@@ -78,9 +78,9 @@ public:
   void setCompactAxis( const bool compact );
   bool isAxisCompacted() const;
   
-  Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &chartClicked();
-  Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/> &rightClicked();
-  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line number*/> &doubleLeftClick();
+  Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &chartClicked();
+  Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &rightClicked();
+  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line name*/> &doubleLeftClick();
   Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
   
   /** When a previously existing ROI gets dragged by its edge, this signal will be emitted as it
@@ -283,6 +283,23 @@ public:
     /** Fills just the y-range of the chart, below the data. */
     BelowData
   };//enum class HighlightRegionFill
+
+  /** Reference line thickness options. */
+  enum class RefLineThickness : int
+  {
+    Light = 0,   ///< Light Lines: width=0.5, hover=1.0
+    Normal = 1,  ///< Normal Lines: width=1.0, hover=2.0 (default)
+    Thick = 2,   ///< Thick Lines: width=2.0, hover=3.0
+    Thicker = 3  ///< Thicker Lines: width=3.0, hover=5.0
+  };//enum class RefLineThickness
+
+  /** Reference line verbosity options for extension lines. */
+  enum class RefLineVerbosity : int
+  {
+    None = 0,       ///< No extension lines shown
+    OnHover = 1,    ///< Extension lines shown only on hover
+    MajorAlways = 2 ///< Major lines always show extensions, all lines show on hover
+  };//enum class RefLineVerbosity
   
   size_t addDecorativeHighlightRegion( const float lowerx,
                                       const float upperx,
@@ -359,19 +376,37 @@ public:
   //  should be shown for the line that the mouse is currently over.  Default is
   //  to show the information.
   void setShowRefLineInfoForMouseOver( const bool show );
+
+  /** Sets the width of reference lines. Default is 1 for normal width, 2 for hover width. */
+  void setRefLineWidths( const double width, const double hoverWidth );
+
+  /** Sets reference line thickness from RefLineThickness enum. */
+  void setRefLineThickness( const RefLineThickness thickness );
+
+  /** Gets the line widths for a given RefLineThickness enum value. */
+  static std::pair<double,double> getRefLineWidths( const RefLineThickness thickness );
+
+  /** Callback for RefLineThickness preference changes (takes int parameter). */
+  void handleRefLineThicknessPreferenceChangeCallback( int thickness );
+
+  /** Sets reference line verbosity from RefLineVerbosity enum. */
+  void setRefLineVerbosity( const RefLineVerbosity verbosity );
+
+  /** Callback for RefLineVerbosity preference changes (takes int parameter). */
+  void handleRefLineVerbosityPreferenceChangeCallback( int verbosity );
     
-  /** To avoid duplicate calculations of kinetic reference lines, the `RefLineKinetic` class will notify this class
-   that it has updates, by calling the `scheduleRenderKineticRefLine()` function; this will also trigger a render
-   update for this class.  Then in the render function for this class, it will call back into RefLineKinetic, to have it do the
-   calculations and give the results to this class (see #m_kineticRefLines and #m_kineticRefLinesJsFwhmFcn), to then be
+  /** To avoid duplicate calculations of dynamic reference lines, the `RefLineDynamic` class will notify this class
+   that it has updates, by calling the `scheduleRenderDynamicRefLine()` function; this will also trigger a render
+   update for this class.  Then in the render function for this class, it will call back into RefLineDynamic, to have it do the
+   calculations and give the results to this class (see #m_dynamicRefLines and #m_dynamicRefLinesJsFwhmFcn), to then be
    sent to the client.
    */
-  void setKineticRefLineController( RefLineKinetic *kinetic );
+  void setDynamicRefLineController( RefLineDynamic *dynamic );
   
-  /** Marks it so this class will call the  `RefLineKinetic` instance to give this class the updated lines, on the next render cycle,
+  /** Marks it so this class will call the  `RefLineDynamic` instance to give this class the updated lines, on the next render cycle,
    and mark that this instance needs to be rendered.
    */
-  void scheduleRenderKineticRefLine();
+  void scheduleRenderDynamicRefLine();
   
   /** Set the reference lines that update as you move the mouse.
    
@@ -382,7 +417,7 @@ public:
    If this widget is rendered, then lines are also put to `doJavaScript(...)` immediately during this call; if not rendered, then will wait until
    the render cycle to do this.
    */
-  void setKineticRefernceLines( std::vector<std::pair<double,ReferenceLineInfo>> &&ref_lines,
+  void setDynamicRefernceLines( std::vector<std::pair<double,ReferenceLineInfo>> &&ref_lines,
                                std::string &&js_fwhm_fcnt );
   
   /** Highlights a peak, at the specified energy, as if you had moused over it.
@@ -429,7 +464,7 @@ protected:
   
   void setReferenceLinesToClient();
   
-  void setKineticRefLinesToClient();
+  void setDynamicRefLinesToClient();
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -448,7 +483,7 @@ protected:
     
     UpdateRefLines = 0x40,
     
-    UpdateKineticRefLines = 0x80
+    UpdateDynamicRefLines = 0x80
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   
@@ -510,10 +545,15 @@ protected:
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
-  /** The double left-click std::string is the ReferenceLine name (including for kinetic ref lines) cooresponding to what the mouse is over at click time. */
+  /** The rel-line name std::string below is the ReferenceLine (including for dynamic ref lines) cooresponding to what the mouse is over at click time.
+   It will be empty if no line was actively showing its info, or else it will be the line cooresponding to the JS `SpectrumChartD3.mousedOverRefLine` variable.
+   
+   The name of the reference lines (e.g., "U238", "H(n,g)") _may_ be followed by a semicolon, then information about the specific line.
+   E.x. "Th232;S.E. of 2614.5 keV"
+   */
   std::unique_ptr<Wt::JSignal<double, double, std::string> > m_doubleLeftClickJS;
-  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_leftClickJS;
-  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/> > m_rightClickJS;
+  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/,std::string /*ref-line name*/> > m_leftClickJS;
+  std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/,std::string /*ref-line name*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
       size in pixels is only approximate, since chart may not have been totally layed out
       and rendered when this signal was emmitted.
@@ -539,9 +579,9 @@ protected:
   Wt::Signal<double,double> m_shiftKeyDragg;
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_leftClick;
+  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_leftClick;
   Wt::Signal<double,double,std::string /*ref-line name*/> m_doubleLeftClick;
-  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/> m_rightClick;
+  Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_rightClick;
   
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
@@ -568,10 +608,9 @@ protected:
   void chartShiftKeyDragCallback( double x0, double x1 );
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
-  void chartLeftClickCallback( double x, double y, double pageX, double pageY );
+  void chartLeftClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
   void chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name );
-  void chartRightClickCallback( double x, double y, double pageX,
-                                double pageY );
+  void chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
   
   void existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
                                            double new_lower_px, double new_upper_px,
@@ -616,10 +655,14 @@ protected:
   std::vector<ReferenceLineInfo> m_persistedPhotoPeakLines;
 
   bool m_showRefLineInfoForMouseOver;
+  double m_refLineWidth;
+  double m_refLineWidthHover;
   
-  RefLineKinetic *m_kinetic;
-  std::vector<std::pair<double,ReferenceLineInfo>> m_kineticRefLines;
-  std::string m_kineticRefLinesJsFwhmFcn;
+  RefLineVerbosity m_refLineVerbosity;
+  
+  RefLineDynamic *m_dynamic;
+  std::vector<std::pair<double,ReferenceLineInfo>> m_dynamicRefLines;
+  std::string m_dynamicRefLinesJsFwhmFcn;
   
   bool m_showFeatureMarker[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   

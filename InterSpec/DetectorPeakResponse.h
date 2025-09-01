@@ -609,6 +609,22 @@ public:
   const std::string &description() const;
   DrfSource drfSource() const;
   
+  /** Prints detector parameterization to stdout for hardcoding purposes.
+   Prints out all the key parameters needed to recreate this detector response function
+   programmatically, including efficiency coefficients, FWHM coefficients, detector size, etc.
+   */
+  void printDetectorParameterizationToStdout() const;
+  
+  /** Static factory methods for common detector types with lazy initialization and caching.
+   These methods return const shared_ptrs to pre-configured detector response functions
+   for commonly used detector types. Thread-safe with single initialization.
+   */
+  static std::shared_ptr<const DetectorPeakResponse> getGenericHPGeDetector();
+  static std::shared_ptr<const DetectorPeakResponse> getGenericNaIDetector();
+  static std::shared_ptr<const DetectorPeakResponse> getGenericLaBrDetector();
+  static std::shared_ptr<const DetectorPeakResponse> getGenericCZTGeneralDetector();
+  static std::shared_ptr<const DetectorPeakResponse> getGenericCZTGoodDetector();
+  
   float efficiencyEnergyUnits() const;
   
   //Simple setters (all recompute hash value)

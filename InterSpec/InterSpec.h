@@ -61,6 +61,7 @@ class WarningWidget;
 class DoseCalcWindow;
 class FluxToolWindow;
 class PeakEditWindow;
+class RefLineDynamic;
 class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
@@ -86,7 +87,6 @@ class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
 class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
-class RefLineKinetic;
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
@@ -738,6 +738,8 @@ public:
    */
   Wt::WSuggestionPopup *shieldingSuggester();
   
+  /** The RefLineDynamic class. */
+  RefLineDynamic *refLineDynamic();
   
   //detectorChanged(): signal emited when the detector is changed to a
   //  completely new detector.  Note that the object pointed to stays the same
@@ -1084,9 +1086,11 @@ protected:
   
   
   void handleRightClick( const double energy, const double counts,
-                         const double pageX, const double pageY );
+                         const double pageX, const double pageY,
+                        const std::string &ref_line_name  );
   void handleLeftClick( const double energy, const double counts,
-                        const double pageX, const double pageY );
+                        const double pageX, const double pageY,
+                       const std::string &ref_line_name );
   void rightClickMenuClosed();
   
   void peakEditFromRightClick();
@@ -1457,7 +1461,7 @@ protected:
     kRefitRoiStandard,
     kRefitRoiAgressive,
     kRefitPeakWithDrfFwhm,
-    kSetMeanToRefPhotopeak,
+    kSetMeanToNucOrRefLinePhotopeak,
     kChangeNuclide,
     kChangeContinuum,
     kChangeSkew,
@@ -1480,6 +1484,10 @@ protected:
   
   PopupDivMenu         *m_rightClickMenu;
   double                m_rightClickEnergy;
+  /** The ref-line info from the client-side when there is a right-click.  This may be a displayed reference line, or it could be a kinematic reference line, and is in the
+   form like "Th232;S.E. of 2614.5 keV".
+   */
+  std::string           m_rightClickRefLineHint;
   Wt::WMenuItem        *m_rightClickMenutItems[kNumRightClickItems];
   PopupDivMenu         *m_rightClickNuclideSuggestMenu;
   PopupDivMenu         *m_rightClickChangeContinuumMenu;
@@ -1533,8 +1541,8 @@ protected:
   FeatureMarkerWindow *m_featureMarkersWindow;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
-  PopupDivMenuItem *m_kineticRefLineEnableMenuItem;
-  PopupDivMenuItem *m_kineticRefLineDisableMenuItem;
+  PopupDivMenuItem *m_dynamicRefLineEnableMenuItem;
+  PopupDivMenuItem *m_dynamicRefLineDisableMenuItem;
 
   SimpleDialog *m_multimedia;
 
@@ -1618,7 +1626,7 @@ protected:
   //  reference photopeaks on the energy spectrum chart.
   ReferencePhotopeakDisplay *m_referencePhotopeakLines;
   AuxWindow                 *m_referencePhotopeakLinesWindow;
-  RefLineKinetic            *m_refLineKinetic;
+  RefLineDynamic            *m_refLineDynamic;
 
   HelpSystem::HelpWindow *m_helpWindow;
   

@@ -35,7 +35,7 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFitUtils.h"
-#include "InterSpec/RefLineKinetic.h"
+#include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/ExternalRidResult.h"
@@ -110,6 +110,39 @@ namespace
             // || IsotopeSearchByEnergy::is_in_category(nuc, IsotopeSearchByEnergy::sm_fission_category_key, categories)
             );
   }
+  
+  template <typename T>
+  Wt::WColor getCategoryColorForSource( const shared_ptr<const ColorTheme> &color_theme,
+                                        const T *source,
+                                        const vector<IsotopeSearchByEnergy::NucSearchCategory> &search_categories )
+  {
+    if( !color_theme || !source )
+      return color_theme ? color_theme->dynamicRefLineOtherColor : Wt::WColor( ColorTheme::sm_dynamic_ref_line_other_color );
+    
+    const std::string &snm_key = IsotopeSearchByEnergy::sm_snm_category_key;
+    const std::string &industrial_key = IsotopeSearchByEnergy::sm_industrial_category_key;
+    const std::string &medical_key = IsotopeSearchByEnergy::sm_medical_category_key;
+    const std::string &norm_key = IsotopeSearchByEnergy::sm_norm_category_key;
+    const std::string &common_key = IsotopeSearchByEnergy::sm_common_category_key;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, snm_key, search_categories ) )
+      return color_theme->dynamicRefLineSnmColor;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, industrial_key, search_categories ) )
+      return color_theme->dynamicRefLineIndustrialColor;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, medical_key, search_categories ) )
+      return color_theme->dynamicRefLineMedicalColor;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, norm_key, search_categories ) )
+      return color_theme->dynamicRefLineNormColor;
+    
+    if( IsotopeSearchByEnergy::is_in_category( source, common_key, search_categories ) )
+      return color_theme->dynamicRefLineCommonColor;
+    
+    // If no specific category found, use "Other" category
+    return color_theme->dynamicRefLineOtherColor;
+  }
 }//namespace
 
 struct AlwaysSrcs
@@ -132,7 +165,7 @@ struct AlwaysSrcs
 
 
 
-RefLineKinetic::RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *interspec )
+RefLineDynamic::RefLineDynamic( D3SpectrumDisplayDiv *chart, InterSpec *interspec )
   : Wt::WObject( chart ),
   m_interspec( interspec ),
   m_chart( chart ),
@@ -146,66 +179,66 @@ RefLineKinetic::RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *interspe
   m_current_ref_lines( nullptr )
 {
   if( !m_interspec || !m_chart )
-    throw std::runtime_error( "RefLineKinetic: null InterSpec parent or chart" );
+    throw std::runtime_error( "RefLineDynamic: null InterSpec parent or chart" );
   
-  m_active = UserPreferences::preferenceValue<bool>( "KineticRefLine", m_interspec );
-  m_interspec->preferences()->addCallbackWhenChanged( "KineticRefLine", this, &RefLineKinetic::setActive );
+  m_active = UserPreferences::preferenceValue<bool>( "DynamicRefLine", m_interspec );
+  m_interspec->preferences()->addCallbackWhenChanged( "DynamicRefLine", this, &RefLineDynamic::setActive );
     
-  m_interspec->hintPeaksSet().connect( boost::bind(&RefLineKinetic::autoSearchPeaksSet, this, boost::placeholders::_1) );
-  m_interspec->displayedSpectrumChanged().connect( boost::bind(&RefLineKinetic::spectrumChanged, this,
+  m_interspec->hintPeaksSet().connect( boost::bind(&RefLineDynamic::autoSearchPeaksSet, this, boost::placeholders::_1) );
+  m_interspec->displayedSpectrumChanged().connect( boost::bind(&RefLineDynamic::spectrumChanged, this,
     boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4
   ) );
   
-  m_interspec->externalRidResultsRecieved().connect( boost::bind( &RefLineKinetic::autoRidResultsRecieved, this, boost::placeholders::_1 ) );
-  m_interspec->colorThemeChanged().connect( boost::bind( &RefLineKinetic::colorThemeChanged, this, boost::placeholders::_1 ) );
+  m_interspec->externalRidResultsRecieved().connect( boost::bind( &RefLineDynamic::autoRidResultsRecieved, this, boost::placeholders::_1 ) );
+  m_interspec->colorThemeChanged().connect( boost::bind( &RefLineDynamic::colorThemeChanged, this, boost::placeholders::_1 ) );
   PeakModel * const pmodel = m_interspec->peakModel();
   if( pmodel )
   {
-    pmodel->rowsInserted().connect( boost::bind( &RefLineKinetic::peaksAdded, this ) );
-    pmodel->rowsRemoved().connect( boost::bind( &RefLineKinetic::peaksRemoved, this ) );
-    pmodel->dataChanged().connect( boost::bind( &RefLineKinetic::peakModified, this ) );
+    pmodel->rowsInserted().connect( boost::bind( &RefLineDynamic::peaksAdded, this ) );
+    pmodel->rowsRemoved().connect( boost::bind( &RefLineDynamic::peaksRemoved, this ) );
+    pmodel->dataChanged().connect( boost::bind( &RefLineDynamic::peakModified, this ) );
   }
 
   // TODO: We also need to update lines after an energy calbration is done
   // TODO: We also need to make sure hint peaks are adjusted for energy changes
   
-  m_chart->setKineticRefLineController( this );
+  m_chart->setDynamicRefLineController( this );
   
   start_init_always_sources();
-}//RefLineKinetic constructor
+}//RefLineDynamic constructor
 
 
-RefLineKinetic::~RefLineKinetic()
+RefLineDynamic::~RefLineDynamic()
 {
 }
 
 
-void RefLineKinetic::start_init_always_sources()
+void RefLineDynamic::start_init_always_sources()
 {
   try
   {
     // TODO: move this to being done in a background thread
     m_has_inited = true;
     
-    string always_defs_file = SpecUtils::append_path(InterSpec::writableDataDirectory(), "kinetic_ref_lines.xml");
+    string always_defs_file = SpecUtils::append_path(InterSpec::writableDataDirectory(), "dynamic_ref_lines.xml");
     if( !SpecUtils::is_file(always_defs_file) )
-      always_defs_file = SpecUtils::append_path(InterSpec::staticDataDirectory(), "kinetic_ref_lines.xml");
+      always_defs_file = SpecUtils::append_path(InterSpec::staticDataDirectory(), "dynamic_ref_lines.xml");
     
     map<string,ReferenceLinePredef::NucMix> nuc_mixes;
     map<string,ReferenceLinePredef::CustomSrcLines> custom_lines;
     vector<ReferenceLinePredef::IndividualSource> indiv_sources;
     ReferenceLinePredef::load_ref_line_file( always_defs_file, nuc_mixes, custom_lines, &indiv_sources );
     
-    m_always_srcs = make_unique<AlwaysSrcs>( std::move(nuc_mixes), std::move(custom_lines), std::move(indiv_sources) );
+    m_always_srcs = make_shared<AlwaysSrcs>( std::move(nuc_mixes), std::move(custom_lines), std::move(indiv_sources) );
   }catch( std::exception &e )
   {
-    cerr << "Failed to initialize RefLineKinetic: " << e.what() << endl;
+    cerr << "Failed to initialize RefLineDynamic: " << e.what() << endl;
     m_init_error_msg = e.what();
   }//try / catch
 }//void start_init_always_sources()
 
 
-void RefLineKinetic::assignColorToInput( ReferenceLineInfo &lines ) const
+void RefLineDynamic::assignColorToInput( ReferenceLineInfo &lines ) const
 {
   RefLineInput &input = lines.m_input;
   const string &source_name = input.m_input_txt;
@@ -238,53 +271,83 @@ void RefLineKinetic::assignColorToInput( ReferenceLineInfo &lines ) const
     }
   }
   
-  // Use the kinetic reference line default color from the ColorTheme
-  if( color_theme && !color_theme->kineticRefLineDefaultColor.isDefault() )
+  // Determine category-based color for dynamic reference lines
+  if( color_theme )
   {
-    input.m_color = color_theme->kineticRefLineDefaultColor;
-  }
-  else
+    Wt::WColor category_color;
+    
+    // Get the search categories to classify the source
+    const auto nuclide_search = m_interspec->nuclideSearch();
+    if( !nuclide_search )
+    {
+      input.m_color = Wt::WColor( ColorTheme::sm_dynamic_ref_line_other_color );
+      return;
+    }
+    const auto &search_categories = nuclide_search->search_categories();
+    
+    // We need to check if any of the reference lines match categories
+    // For now, we'll classify based on the primary source from the lines
+    if( !lines.m_ref_lines.empty() )
+    {
+      const auto &first_line = lines.m_ref_lines.front();
+      
+      // Check if it's a nuclide source
+      if( first_line.m_parent_nuclide )
+        category_color = getCategoryColorForSource( color_theme, first_line.m_parent_nuclide, search_categories );
+      else if( first_line.m_element )// Check if it's an element source (x-ray)
+        category_color = getCategoryColorForSource( color_theme, first_line.m_element, search_categories );
+      else if( first_line.m_reaction ) // Check if it's a reaction source
+        category_color = getCategoryColorForSource( color_theme, first_line.m_reaction, search_categories );
+    }//if( !lines.m_ref_lines.empty() )
+    
+    // If no specific category found, use "Other" category
+    if( category_color.isDefault() )
+      category_color = color_theme->dynamicRefLineOtherColor;
+    
+    // Set the color if valid, otherwise use fallback
+    input.m_color = category_color.isDefault() ? WColor( ColorTheme::sm_dynamic_ref_line_other_color ) : category_color;
+  }else
   {
     // Fallback to the static default if ColorTheme is unavailable
-    input.m_color = Wt::WColor( ColorTheme::sm_kinetic_ref_line_default_color );
+    input.m_color = Wt::WColor( ColorTheme::sm_dynamic_ref_line_other_color );
   }
-}//void RefLineKinetic::assignColorToInput(...)
+}//void RefLineDynamic::assignColorToInput(...)
 
 
-void RefLineKinetic::peaksAdded()
+void RefLineDynamic::peaksAdded()
 {
   if( !m_active )
     return;
 
-  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-  m_chart->scheduleRenderKineticRefLine();
+  m_renderFlags |= DynamicRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderDynamicRefLine();
   m_current_ref_lines.reset();
 }
 
 
-void RefLineKinetic::peaksRemoved()
+void RefLineDynamic::peaksRemoved()
 {
   if( !m_active )
     return;
 
-  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-  m_chart->scheduleRenderKineticRefLine();
+  m_renderFlags |= DynamicRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderDynamicRefLine();
   m_current_ref_lines.reset();
 }
 
 
-void RefLineKinetic::peakModified()
+void RefLineDynamic::peakModified()
 {
   if( !m_active )
     return;
 
-  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-  m_chart->scheduleRenderKineticRefLine();
+  m_renderFlags |= DynamicRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderDynamicRefLine();
   m_current_ref_lines.reset();
 }
 
 
-void RefLineKinetic::setActive( bool active )
+void RefLineDynamic::setActive( bool active )
 {
   if( m_active == active )
     return;
@@ -294,38 +357,38 @@ void RefLineKinetic::setActive( bool active )
   m_current_ref_lines.reset();
   if( m_active )
   {
-    m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-    m_chart->scheduleRenderKineticRefLine();
+    m_renderFlags |= DynamicRefLineRenderFlags::UpdateLines;
+    m_chart->scheduleRenderDynamicRefLine();
   }else
   {
-    m_chart->setKineticRefernceLines( vector<pair<double,ReferenceLineInfo>>{}, "" );
+    m_chart->setDynamicRefernceLines( vector<pair<double,ReferenceLineInfo>>{}, "" );
   }
-}//void RefLineKinetic::setActive( bool active )
+}//void RefLineDynamic::setActive( bool active )
 
 
-bool RefLineKinetic::isActive() const
+bool RefLineDynamic::isActive() const
 {
   return m_active;
 }
 
-shared_ptr<vector<pair<double,ReferenceLineInfo>>> RefLineKinetic::current_lines() const
+shared_ptr<vector<pair<double,ReferenceLineInfo>>> RefLineDynamic::current_lines() const
 {
   return m_current_ref_lines;
 }//shared_ptr<vector<pair<double,ReferenceLineInfo>>> current_lines() const
 
 
-void RefLineKinetic::autoSearchPeaksSet( const SpecUtils::SpectrumType spectrum )
+void RefLineDynamic::autoSearchPeaksSet( const SpecUtils::SpectrumType spectrum )
 {
   if( !m_active )
     return;
   
-  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-  m_chart->scheduleRenderKineticRefLine();
+  m_renderFlags |= DynamicRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderDynamicRefLine();
   m_current_ref_lines.reset();
 }//void autoSearchPeaksSet(...)
 
 
-void RefLineKinetic::spectrumChanged( const SpecUtils::SpectrumType spec_type,
+void RefLineDynamic::spectrumChanged( const SpecUtils::SpectrumType spec_type,
                      const shared_ptr<SpecMeas> &measurement,
                      const set<int> &sample_numbers,
                      const vector<string> &detectors )
@@ -333,47 +396,47 @@ void RefLineKinetic::spectrumChanged( const SpecUtils::SpectrumType spec_type,
   if( spec_type == SpecUtils::SpectrumType::Foreground )
     m_external_rid_results.reset();
   
-  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-  m_chart->scheduleRenderKineticRefLine();
+  m_renderFlags |= DynamicRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderDynamicRefLine();
   m_current_ref_lines.reset();
 }//void spectrumChanged(...)
 
 
-void RefLineKinetic::autoRidResultsRecieved( const shared_ptr<const ExternalRidResults> &results )
+void RefLineDynamic::autoRidResultsRecieved( const shared_ptr<const ExternalRidResults> &results )
 {
   m_external_rid_results = results;
   
-  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-  m_chart->scheduleRenderKineticRefLine();
+  m_renderFlags |= DynamicRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderDynamicRefLine();
   m_current_ref_lines.reset();
 }//void autoRidResultsRecieved( const shared_ptr<const ExternalRidResults> &results )
 
 
-void RefLineKinetic::colorThemeChanged( const shared_ptr<const ColorTheme> &theme )
+void RefLineDynamic::colorThemeChanged( const shared_ptr<const ColorTheme> &theme )
 {
   // Color theme has changed, trigger an update to refresh colors
-  m_renderFlags |= KineticRefLineRenderFlags::UpdateLines;
-  m_chart->scheduleRenderKineticRefLine();
+  m_renderFlags |= DynamicRefLineRenderFlags::UpdateLines;
+  m_chart->scheduleRenderDynamicRefLine();
   m_current_ref_lines.reset();
-}//void RefLineKinetic::colorThemeChanged(...)
+}//void RefLineDynamic::colorThemeChanged(...)
 
 
-void RefLineKinetic::startPushUpdates()
+void RefLineDynamic::startPushUpdates()
 {
-  if( m_renderFlags.testFlag(KineticRefLineRenderFlags::UpdateLines) )
+  if( m_renderFlags.testFlag(DynamicRefLineRenderFlags::UpdateLines) )
     startUpdateLines();
   
   m_renderFlags = 0;
 }//void pushUpdates()
 
 
-void RefLineKinetic::filterLines( ReferenceLineInfo &ref_lines,
-                                 const RefLineKinetic::RefLineSrc src,
+void RefLineDynamic::filterLines( ReferenceLineInfo &ref_lines,
+                                 const RefLineDynamic::RefLineSrc src,
                                  const shared_ptr<const SpecUtils::Measurement> &meas,
                                  const std::shared_ptr<const DetectorPeakResponse> &detector )
 {
   // This function tries to reduce the raw amount of information, and number of lines that
-  // potentually get loaded to the client for the kinetic reference lines.
+  // potentually get loaded to the client for the dynamic reference lines.
   //
   // This function currently filters the reflines by:
   // - Calculate a simple `importance = yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))`
@@ -539,7 +602,7 @@ void RefLineKinetic::filterLines( ReferenceLineInfo &ref_lines,
 }//void filterLines(...)
 
 
-void RefLineKinetic::finishUpdateLines( const std::shared_ptr<std::vector<std::pair<double,ReferenceLineInfo>>> &ref_lines_ptr,
+void RefLineDynamic::finishUpdateLines( const std::shared_ptr<std::vector<std::pair<double,ReferenceLineInfo>>> &ref_lines_ptr,
                        const std::shared_ptr<std::string> &js_fwhm_fcn_ptr,
                                        const size_t calc_num )
 {
@@ -561,29 +624,29 @@ void RefLineKinetic::finishUpdateLines( const std::shared_ptr<std::vector<std::p
   for( pair<double,ReferenceLineInfo> &ref_line : ref_lines )
     assignColorToInput( ref_line.second );
   
-  cout << "About to load " << ref_lines.size() << " kinetic ref lines to client" << endl;
+  cout << "About to load " << ref_lines.size() << " dynamic ref lines to client" << endl;
   
   // Note: since we are being called from within the render cycle most likely, this next function
   //       call will immediately send the appropriate JS to the client, as long as the chart has been rendered
   //       (i.e., it doesnt scheduleRender to lazily load to client, as long as its rendered).
-  m_chart->setKineticRefernceLines( std::move(ref_lines), std::move(js_fwhm_fcn) );
+  m_chart->setDynamicRefernceLines( std::move(ref_lines), std::move(js_fwhm_fcn) );
   
   wApp->triggerUpdate();
 }//void finishUpdateLines(...)
 
 
-void RefLineKinetic::startUpdateLines()
+void RefLineDynamic::startUpdateLines()
 {
   if( !m_active )
   {
-    m_chart->setKineticRefernceLines( {}, "" );
+    m_chart->setDynamicRefernceLines( {}, "" );
     return;
   }//if( !m_active )
   
   shared_ptr<const SpecUtils::Measurement> foreground_orig = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
   if( !foreground_orig )
   {
-    m_chart->setKineticRefernceLines( {}, "" );
+    m_chart->setDynamicRefernceLines( {}, "" );
     return;
   }//if( !m_active )
   
@@ -648,13 +711,13 @@ void RefLineKinetic::startUpdateLines()
                                                                   : vector<IsotopeSearchByEnergy::NucSearchCategory>{};
   const vector<ExternalRidIsotope> ext_rid_isotopes = m_external_rid_results ? m_external_rid_results->isotopes
                                                                   : vector<ExternalRidIsotope>{};
-  const AlwaysSrcs * const always_srcs = m_always_srcs.get();
+  const shared_ptr<const AlwaysSrcs> always_srcs = m_always_srcs;
   
   shared_ptr<vector<pair<double,ReferenceLineInfo>>> ref_lines_answer = make_shared<vector<pair<double,ReferenceLineInfo>>>();
   shared_ptr<string> js_fwhm_fcn = make_shared<string>();
   
   const string sessionId = wApp->sessionId();
-  boost::function<void()> updaterfcn = wApp->bind( boost::bind( &RefLineKinetic::finishUpdateLines,
+  boost::function<void()> updaterfcn = wApp->bind( boost::bind( &RefLineDynamic::finishUpdateLines,
                                               this, ref_lines_answer, js_fwhm_fcn, starting_calc_num
   ) );
   
@@ -665,8 +728,8 @@ void RefLineKinetic::startUpdateLines()
                         calc_num, starting_calc_num, sessionId,
                         js_fwhm_fcn, ref_lines_answer,updaterfcn](){
     
-#define DEBUG_KINETIC_REF_LINES_TIMING
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+//#define DEBUG_DYNAMIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     const auto lambda_start_time = std::chrono::high_resolution_clock::now();
     const auto get_elapsed_milliseconds = [lambda_start_time]() -> long long {
       return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -679,7 +742,7 @@ void RefLineKinetic::startUpdateLines()
     if( !db )
       return;
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Initial setup and database access completed" << endl;
 #endif
     
@@ -689,7 +752,7 @@ void RefLineKinetic::startUpdateLines()
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -717,13 +780,13 @@ void RefLineKinetic::startUpdateLines()
         nonbackground_peaks->push_back( p );
     }//for( const shared_ptr<const PeakDef> &p: unique_foreground_peaks )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Filtered non-background peaks" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -780,13 +843,13 @@ void RefLineKinetic::startUpdateLines()
       detector = new_drf;
     }//if( !detector->hasResolutionInfo() )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Loaded detector efficiency function" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -795,6 +858,7 @@ void RefLineKinetic::startUpdateLines()
       return static_cast<const ReactionGamma *>(nullptr); }
     )();
     
+    char buffer[64] = { '\0' };
     
     SpecUtilsAsync::ThreadPool pool;
     
@@ -909,7 +973,7 @@ void RefLineKinetic::startUpdateLines()
                                       pair<double,ReferenceLineInfo>{src.m_weight, std::move(*ref_info)} );
         }else
         {
-          cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for individual source: " << src.m_name << endl;
+          cerr << "RefLineDynamic::updateLines(): Failed to generate valid reference line info for individual source: " << src.m_name << endl;
         }
       }//for( const auto &src : always_srcs->individual_sources )
       
@@ -951,7 +1015,7 @@ void RefLineKinetic::startUpdateLines()
                                       pair<double,ReferenceLineInfo>{mix.m_weight, std::move(*ref_info)} );
         }else
         {
-          cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for nuclide mixture: " << mix.m_name << endl;
+          cerr << "RefLineDynamic::updateLines(): Failed to generate valid reference line info for nuclide mixture: " << mix.m_name << endl;
         }
       }//for( const auto &mix_pair : always_srcs->nuc_mixes )
       
@@ -992,18 +1056,18 @@ void RefLineKinetic::startUpdateLines()
                                       pair<double,ReferenceLineInfo>{custom.m_weight, std::move(*ref_info)} );
         }else
         {
-          cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for custom source: " << custom.m_name << endl;
+          cerr << "RefLineDynamic::updateLines(): Failed to generate valid reference line info for custom source: " << custom.m_name << endl;
         }
       }//for( const auto &custom_pair : always_srcs->custom_lines )
     }//if( always_srcs )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Processed 'always showing' sources" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -1079,18 +1143,18 @@ void RefLineKinetic::startUpdateLines()
                                       pair<double,ReferenceLineInfo>{new_weight, std::move(*ref_info)} );
         }else
         {
-          cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for user peak source: " << canonical_name << endl;
+          cerr << "RefLineDynamic::updateLines(): Failed to generate valid reference line info for user peak source: " << canonical_name << endl;
         }
       }
     }//if( user_foreground_peaks && user_foreground_peaks->size() )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Processed user foreground peaks" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -1158,17 +1222,17 @@ void RefLineKinetic::startUpdateLines()
                                     pair<double,ReferenceLineInfo>{new_weight, std::move(*ref_info)} );
       }else
       {
-        cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for external RID source: " << canonical_name << endl;
+        cerr << "RefLineDynamic::updateLines(): Failed to generate valid reference line info for external RID source: " << canonical_name << endl;
       }
     }//for( const ExternalRidIsotope &isotope : ext_rid_isotopes )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Processed external RID isotopes" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -1261,17 +1325,17 @@ void RefLineKinetic::startUpdateLines()
                                     pair<double,ReferenceLineInfo>{new_weight, std::move(*ref_info)} );
       }else
       {
-        cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for on-board RID source: " << canonical_name << endl;
+        cerr << "RefLineDynamic::updateLines(): Failed to generate valid reference line info for on-board RID source: " << canonical_name << endl;
       }
     }//for( const SpecUtils::DetectorAnalysisResult &result : det_ana )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Processed on-board RID results" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -1334,7 +1398,7 @@ void RefLineKinetic::startUpdateLines()
           shared_ptr<ReferenceLineInfo> associated_ref_info = ReferenceLineInfo::generateRefLineInfo( associated_input );
           if( !associated_ref_info || (associated_ref_info->m_validity != ReferenceLineInfo::InputValidity::Valid) )
           {
-            cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for associated nuclide: "
+            cerr << "RefLineDynamic::updateLines(): Failed to generate valid reference line info for associated nuclide: "
             << associated_name << endl;
             continue;
           }
@@ -1366,13 +1430,13 @@ void RefLineKinetic::startUpdateLines()
       }//for( ref_line_pair in current_ref_lines )
     }//if( more_nuc_info )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Added associated nuclides" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -1391,7 +1455,7 @@ void RefLineKinetic::startUpdateLines()
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -1413,7 +1477,8 @@ void RefLineKinetic::startUpdateLines()
         ReferenceLineInfo::RefLine se_line;
         se_line.m_energy = se_energy;
         se_line.m_normalized_intensity = se_amplitude;
-        se_line.m_decaystr = "S.E.";
+        snprintf( buffer, sizeof(buffer), "S.E. of %.1f keV", peak_energy );
+        se_line.m_decaystr = buffer;
         se_line.m_parent_nuclide = peak->parentNuclide();
         se_line.m_transition = peak->nuclearTransition();
         se_line.m_reaction = peak->reaction();
@@ -1430,7 +1495,8 @@ void RefLineKinetic::startUpdateLines()
         ReferenceLineInfo::RefLine de_line;
         de_line.m_energy = de_energy;
         de_line.m_normalized_intensity = de_amplitude;
-        de_line.m_decaystr = "D.E.";
+        snprintf( buffer, sizeof(buffer), "D.E. of %.1f keV", peak_energy );
+        de_line.m_decaystr = buffer;
         de_line.m_parent_nuclide = peak->parentNuclide();
         de_line.m_transition = peak->nuclearTransition();
         de_line.m_reaction = peak->reaction();
@@ -1467,13 +1533,13 @@ void RefLineKinetic::startUpdateLines()
       }
     }
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Generated escape peak lines" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -1555,7 +1621,7 @@ void RefLineKinetic::startUpdateLines()
       
       if( calc_num->load() != starting_calc_num )
       {
-        cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+        cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
         return;
       }
       
@@ -1661,7 +1727,7 @@ void RefLineKinetic::startUpdateLines()
       
       if( calc_num->load() != starting_calc_num )
       {
-        cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+        cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
         return;
       }
       
@@ -1800,7 +1866,7 @@ void RefLineKinetic::startUpdateLines()
             }
           }else
           {
-            cerr << "RefLineKinetic::updateLines(): Failed to generate valid reference line info for candidate nuclide: " << source << endl;
+            cerr << "RefLineDynamic::updateLines(): Failed to generate valid reference line info for candidate nuclide: " << source << endl;
           }
         } );
       }//for( const auto& source : characteristic_sources )
@@ -1810,18 +1876,18 @@ void RefLineKinetic::startUpdateLines()
       cout << endl;
     }//if( !peaks_for_characteristics.empty() )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Found characteristic nuclides" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
     // If the deadtime is over 15% (low resolution) or 25% (HPGe), add in lines for random sum peaks of largest peaks
-    const double max_live_time_frac = 1.0; //highres ? 0.75 : 0.85;
+    const double max_live_time_frac = highres ? 0.75 : 0.85;
     const double rt = foreground ? foreground->real_time() : 0.0;
     const double lt = foreground ? foreground->live_time() : 0.0;
     if( (lt > 0.0) && (rt > 0.0) && (lt < max_live_time_frac*rt) )
@@ -1849,7 +1915,7 @@ void RefLineKinetic::startUpdateLines()
       if( !summing_candidates.empty() )
       {
         // Calculate random-summing probabilities for all pairs
-        vector<tuple<double,double,double,double>> sum_peaks; // energy, rel probability, energy_i, energy_j
+        vector<tuple<double,double,shared_ptr<const PeakDef>,shared_ptr<const PeakDef>>> sum_peaks; // energy, rel probability, peak_i, peak_j
         
         // Calculate maximum possible probability (highest peak with itself)
         const double max_sum_prob = summing_candidates[0]->amplitude() * summing_candidates[0]->amplitude();
@@ -1865,7 +1931,7 @@ void RefLineKinetic::startUpdateLines()
             const double sum_prob = peak_i->amplitude() * peak_j->amplitude();
             const double rel_intensity = (sum_prob / max_sum_prob);
             if( rel_intensity >= rel_sum_prob_min )
-              sum_peaks.emplace_back( sum_energy, rel_intensity, peak_i->mean(), peak_j->mean() );
+              sum_peaks.emplace_back( sum_energy, rel_intensity, peak_i, peak_j );
           }//for( size_t j = i; j < summing_candidates.size(); ++j )
         }//for( size_t i = 0; i < summing_candidates.size(); ++i )
         
@@ -1882,6 +1948,10 @@ void RefLineKinetic::startUpdateLines()
           {
             const double energy = std::get<0>( sum_peak );
             const double rel_intensity = std::get<1>( sum_peak );
+            const shared_ptr<const PeakDef> &peak_i = std::get<2>( sum_peak );
+            const shared_ptr<const PeakDef> &peak_j = std::get<3>( sum_peak );
+            const double peak_i_energy = peak_i->mean();
+            const double peak_j_energy = peak_j->mean();
             
             ReferenceLineInfo::RefLine ref_line;
             ref_line.m_energy = energy;
@@ -1890,9 +1960,22 @@ void RefLineKinetic::startUpdateLines()
             ref_line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
             ref_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak;
             ref_line.m_attenuation_applies = false;
-            char buffer[64] = { '\0' };
-            snprintf( buffer, sizeof(buffer), "Random sum %.1f + %.1f keV", get<2>(sum_peak), get<3>(sum_peak) );
+            snprintf( buffer, sizeof(buffer), "Random sum %.1f + %.1f keV", peak_i_energy, peak_j_energy );
             ref_line.m_decaystr = buffer;
+            
+            if( peak_i->hasSourceGammaAssigned() || peak_j->hasSourceGammaAssigned() )
+            {
+              const string name_i = peak_i->sourceName();
+              const string name_j = peak_j->sourceName();
+              if( name_i == name_j )
+              {
+                ref_line.m_decaystr += " (" + name_i + ")";
+              }else
+              {
+                ref_line.m_decaystr += " (" + (name_i.empty() ? string("?") : name_i)
+                                       + " + " + (name_j.empty() ? string("?") : name_j) + ")";
+              }//
+            }//if( peak_i->hasSourceGammaAssigned() || peak_j->hasSourceGammaAssigned() )
             
             sum_ref_info.m_ref_lines.push_back( ref_line );
           }//for( const auto &sum_peak : sum_peaks )
@@ -1904,13 +1987,13 @@ void RefLineKinetic::startUpdateLines()
       }//if( summing_candidates.size() >= 2 )
     }//if( (lt > 0.0) && (rt > 0.0) && (lt < max_live_time_frac*rt) )
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Generated random sum peaks" << endl;
 #endif
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread." << endl;
       return;
     }
     
@@ -1975,14 +2058,14 @@ void RefLineKinetic::startUpdateLines()
     
     if( calc_num->load() != starting_calc_num )
     {
-      cerr << "Calc of KineticRefLines is stale, stopping this thread (at last possible minute)." << endl;
+      cerr << "Calc of DynamicRefLines is stale, stopping this thread (at last possible minute)." << endl;
       return;
     }
     
-    cout << "Will post update of KineticRefLines" << endl;
+    cout << "Will post update of DynamicRefLines" << endl;
     WServer::instance()->post(sessionId, updaterfcn );
     
-#ifdef DEBUG_KINETIC_REF_LINES_TIMING
+#ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     cerr << "DEBUG: " << get_elapsed_milliseconds() << " ms - Final processing and JS function setup completed" << endl;
 #endif
   };//do_work_lambda

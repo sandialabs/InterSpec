@@ -38,6 +38,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <functional>
 #include <sys/stat.h>
 
 #include <boost/ref.hpp>
@@ -117,7 +118,7 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
-#include "InterSpec/RefLineKinetic.h"
+#include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
@@ -244,11 +245,9 @@ namespace
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
 #endif
 
-//#if( !BUILD_FOR_WEB_DEPLOYMENT )
-//  const WTabWidget::LoadPolicy TabLoadPolicy = WTabWidget::LazyLoading;
-//#else
+  // The Reference Photopeak and/or the Search tab need thier widgets loaded,
+  //  as other tools depend on thier functions
   const WTabWidget::LoadPolicy TabLoadPolicy = WTabWidget::PreLoading;
-//#endif
 
   void postSvlogHelper( const WString &msg, const int priority )
   {
@@ -256,22 +255,6 @@ namespace
     if( app )
       app->svlog( msg, priority );
   }
-  
-  //adapted from: http://stackoverflow.com/questions/1894886/parsing-a-comma-delimited-stdstring
-  struct csv_reader: std::ctype<char>
-  {
-    csv_reader(): std::ctype<char>(get_table()) {}
-    static std::ctype_base::mask const* get_table()
-    {
-      static std::vector<std::ctype_base::mask> rc(table_size, std::ctype_base::mask());
-      rc[','] = std::ctype_base::space;
-    	rc[' '] = std::ctype_base::space;
-      rc['\n'] = std::ctype_base::space;
-      return &rc[0];
-    }
-  };//struct csv_reader
-  
-
   
   //Returns -1 if you shouldnt add the peak to the hint peaks
   int add_hint_peak_pos( const std::shared_ptr<const PeakDef> &peak,
@@ -433,6 +416,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
     m_languagesSubMenu( nullptr ),
     m_rightClickMenu( 0 ),
     m_rightClickEnergy( -DBL_MAX ),
+    m_rightClickRefLineHint(),
     m_rightClickNuclideSuggestMenu( nullptr ),
     m_rightClickChangeContinuumMenu( nullptr ),
     m_rightClickChangeSkewMenu( nullptr ),
@@ -451,8 +435,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkersShown{false},
   m_featureMarkersWindow( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
-  m_kineticRefLineEnableMenuItem( nullptr ),
-  m_kineticRefLineDisableMenuItem( nullptr ),
+  m_dynamicRefLineEnableMenuItem( nullptr ),
+  m_dynamicRefLineDisableMenuItem( nullptr ),
   m_multimedia( nullptr ),
 #if( USE_REMOTE_RID )
   m_autoRemoteRidResultDialog( nullptr ),
@@ -494,7 +478,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_clientDeviceType( 0x0 ),
   m_referencePhotopeakLines( 0 ),
   m_referencePhotopeakLinesWindow( 0 ),
-  m_refLineKinetic( nullptr ),
+  m_refLineDynamic( nullptr ),
   m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
@@ -673,7 +657,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
-  m_refLineKinetic = new RefLineKinetic( m_spectrum, this );
+  m_refLineDynamic = new RefLineDynamic( m_spectrum, this );
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
@@ -932,6 +916,18 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_spectrum->showHistogramIntegralsInLegend( true );
   m_spectrum->shiftAltKeyDragged().connect( this, &InterSpec::handleShiftAltDrag );
 
+  // Set up reference line thickness and preference change callbacks for the spectrum display
+  m_preferences->addIntCallbackWhenChanged( "RefLineThickness", m_spectrum,
+                                        &D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback );
+  const int ref_line_thick = std::max(0, std::min(3, UserPreferences::preferenceValue<int>( "RefLineThickness", this) ));
+  m_spectrum->setRefLineThickness( static_cast<D3SpectrumDisplayDiv::RefLineThickness>(ref_line_thick) );
+
+  // Set up reference line verbosity and preference change callbacks for the spectrum display  
+  m_preferences->addIntCallbackWhenChanged( "RefLineVerbosity", m_spectrum,
+                                        &D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback );
+  const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", this) ));
+  m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
+  
 //  m_spectrum->rightClicked().connect( boost::bind( &InterSpec::createPeakEdit, this, boost::placeholders::_1) );
   m_rightClickMenu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
   m_rightClickMenu->aboutToHide().connect( this, &InterSpec::rightClickMenuClosed );
@@ -963,7 +959,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-use-drf-fwhm") );
         m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::refitPeakFromRightClick, this, PeakSearchGuiUtils::RefitPeakType::WithDrfFwhm ) );
         break;
-      case kSetMeanToRefPhotopeak:
+      case kSetMeanToNucOrRefLinePhotopeak:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-fix-mean") );
         m_rightClickMenutItems[i]->setToolTip( WString::tr("rclick-mi-tt-fix-mean") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::setMeanToRefPhotopeak );
@@ -1067,10 +1063,12 @@ InterSpec::InterSpec( WContainerWidget *parent )
     
   m_spectrum->rightClicked().connect( boost::bind( &InterSpec::handleRightClick, this,
                                                   boost::placeholders::_1, boost::placeholders::_2,
-                                                  boost::placeholders::_3, boost::placeholders::_4 ) );
+                                                  boost::placeholders::_3, boost::placeholders::_4,
+                                                  boost::placeholders::_5 ) );
   m_spectrum->chartClicked().connect( boost::bind( &InterSpec::handleLeftClick, this,
                                                   boost::placeholders::_1, boost::placeholders::_2,
-                                                  boost::placeholders::_3, boost::placeholders::_4 ) );
+                                                  boost::placeholders::_3, boost::placeholders::_4,
+                                                  boost::placeholders::_5 ) );
   
   m_spectrum->shiftKeyDragged().connect( boost::bind( &InterSpec::excludePeaksFromRange, this,
                                                      boost::placeholders::_1,
@@ -1847,6 +1845,7 @@ void InterSpec::arrowKeyPressed( const unsigned int value )
 void InterSpec::rightClickMenuClosed()
 {
   m_rightClickEnergy = -DBL_MAX;
+  m_rightClickRefLineHint.clear();
 }//void rightClickMenuClosed()
 
 
@@ -1892,14 +1891,14 @@ void InterSpec::refitPeakFromRightClick( const PeakSearchGuiUtils::RefitPeakType
 void InterSpec::setMeanToRefPhotopeak()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
-  PeakSearchGuiUtils::refit_peak_with_photopeak_mean( this, m_rightClickEnergy );
+  PeakSearchGuiUtils::refit_peak_with_photopeak_mean( this, m_rightClickEnergy, m_rightClickRefLineHint );
 }//void setMeanToRefPhotopeak()
 
 
 void InterSpec::addPeakFromRightClick()
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
-  PeakSearchGuiUtils::add_peak_from_right_click( this, m_rightClickEnergy );
+  PeakSearchGuiUtils::add_peak_from_right_click( this, m_rightClickEnergy, m_rightClickRefLineHint );
 }//void addPeakFromRightClick()
 
 
@@ -2274,7 +2273,8 @@ void InterSpec::updateRightClickNuclidesMenu(
 
 
 void InterSpec::handleLeftClick( double energy, double counts,
-                                      double pageX, double pageY )
+                                double pageX, double pageY,
+                                const std::string &ref_line_info )
 {
   // For touch screen non-mobile devices, the right-click menu may be showing
   //  since when it is touch activated (by holding down for >600ms), there is
@@ -2310,13 +2310,15 @@ void InterSpec::handleLeftClick( double energy, double counts,
 
 
 void InterSpec::handleRightClick( double energy, double counts,
-                                  double pageX, double pageY )
+                                  double pageX, double pageY,
+                                 const std::string &ref_line_info )
 {
   if( !m_dataMeasurement )
     return;
   
   const std::shared_ptr<const PeakDef> peak = nearestPeak( energy );
   m_rightClickEnergy = energy;
+  m_rightClickRefLineHint = ref_line_info;
   
   shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
 
@@ -2335,6 +2337,22 @@ void InterSpec::handleRightClick( double energy, double counts,
   
   char energy_str[32] = { '\0' };
   snprintf( energy_str, sizeof(energy_str), "%.1f", energy );
+  
+  // Get just the parent name of the ref lines (for now we will assume ref_line_name could be of
+  //  the form "Th232;S.E. of 2614.5 keV".
+  string parent = ref_line_info;
+  const SandiaDecay::Nuclide *ref_nuc = nullptr;
+  
+  if( !parent.empty() )
+  {
+    const size_t pos = parent.find(';');
+    if( pos != string::npos )
+      parent = parent.substr(0,pos);
+    SpecUtils::trim(parent);
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    ref_nuc = db->nuclide(parent);
+  }//if( !parent.empty() )
+  
   
   //see how many other peaks share ROI
   size_t npeaksInRoi = 0;
@@ -2450,6 +2468,20 @@ void InterSpec::handleRightClick( double energy, double counts,
             if( m_referencePhotopeakLines )
               refLines = m_referencePhotopeakLines->showingNuclides();
             
+            if( parent.empty() && m_refLineDynamic && m_refLineDynamic->isActive() )
+            {
+              bool parentIsInRef = false;
+              for( size_t i = 0; !parentIsInRef && (i < refLines.size()); ++i )
+                parentIsInRef = SpecUtils::iequals_ascii(refLines[i].m_input.m_input_txt, parent);
+              shared_ptr<vector<pair<double,ReferenceLineInfo>>> dynamic_lines = m_refLineDynamic->current_lines();
+              for( size_t i = 0; !parentIsInRef && dynamic_lines && (i < dynamic_lines->size()); ++i )
+              {
+                parentIsInRef = SpecUtils::iequals_ascii( (*dynamic_lines)[i].second.m_input.m_input_txt, parent );
+                if( parentIsInRef )
+                  refLines.insert( begin(refLines), (*dynamic_lines)[i].second );
+              }
+            }//if( !ref_nuc.empty() )
+            
             const string session_id = wApp->sessionId();
             
             boost::function<void(void)> worker = [=](){
@@ -2464,16 +2496,21 @@ void InterSpec::handleRightClick( double energy, double counts,
         break;
       }//case kChangeNuclide:
         
-      case kSetMeanToRefPhotopeak:
+      case kSetMeanToNucOrRefLinePhotopeak:
       {
-        const float energy = peak ? PeakSearchGuiUtils::reference_line_energy_near_peak( this, *peak ) : 0.0;
-        const bool hide = (!peak || (energy < 10.0f));
+        const float src_energy = peak ? PeakSearchGuiUtils::source_or_reference_line_near_peak_energy( this, *peak, ref_line_info ) : 0.0;
+        const bool hide = (!peak || (src_energy < 10.0f));
+        
         m_rightClickMenutItems[i]->setHidden( hide );
         if( !hide )
-          m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fix-energy").arg( energy_str ) );
+        {
+          char src_energy_str[32] = { '\0' };
+          snprintf( src_energy_str, sizeof(src_energy_str), "%.1f", src_energy );
+          m_rightClickMenutItems[i]->setText( WString::tr("rclick-mi-fix-energy").arg( src_energy_str ) );
+        }//if( !hide )
         
         break;
-      }//case kSetMeanToRefPhotopeak:
+      }//case kSetMeanToNucOrRefLinePhotopeak:
         
       case kShareContinuumWithLeftPeak:
       {
@@ -2604,10 +2641,13 @@ void InterSpec::handleRightClick( double energy, double counts,
         {
           WString target_txt;
           const tuple<const SandiaDecay::Nuclide *, double, float> near_line
-                                = PeakSearchGuiUtils::nuclide_reference_line_near( this, energy );
+                                = PeakSearchGuiUtils::nuclide_reference_line_near( this, energy, parent );
           const SandiaDecay::Nuclide *ref_nuc = get<0>(near_line);
           const float ref_energy = get<2>(near_line);
             
+          
+          
+          
           if( ref_nuc && (ref_energy > 10.0) )
           {
             char buffer[64] = { '\0' };
@@ -3012,7 +3052,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
       parent = parent.substr(0,pos);
     SpecUtils::trim(parent);
     
-    bool is_kinetic_line = false;
+    bool is_dynamic_line = false;
     vector<ReferenceLineInfo> ref_lines;
     
     // First try to get this reference line from the ReferenceLines
@@ -3030,25 +3070,25 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
       }//
     }//if( m_referencePhotopeakLines )
     
-    if( ref_lines.empty() && m_refLineKinetic && m_refLineKinetic->current_lines() )
+    if( ref_lines.empty() && m_refLineDynamic && m_refLineDynamic->current_lines() )
     {
-      const shared_ptr<vector<pair<double,ReferenceLineInfo>>> kinetic_ref_lines = m_refLineKinetic->current_lines();
-      for( size_t i = 0; ref_lines.empty() && (i < kinetic_ref_lines->size()); ++i )
+      const shared_ptr<vector<pair<double,ReferenceLineInfo>>> dynamic_ref_lines = m_refLineDynamic->current_lines();
+      for( size_t i = 0; ref_lines.empty() && (i < dynamic_ref_lines->size()); ++i )
       {
-        const ReferenceLineInfo &info = (*kinetic_ref_lines)[i].second;
+        const ReferenceLineInfo &info = (*dynamic_ref_lines)[i].second;
         if( SpecUtils::iequals_ascii( parent, info.m_input.m_input_txt ) )
         {
-          is_kinetic_line = true;
+          is_dynamic_line = true;
           ref_lines.push_back( info );
         }
-      }//for( loop over kinetic_ref_lines )
-    }//if( ref_lines.empty() && m_refLineKinetic )
+      }//for( loop over dynamic_ref_lines )
+    }//if( ref_lines.empty() && m_refLineDynamic )
     
     if( !ref_lines.empty() )
     {
       const string source_name = ref_lines.front().m_input.m_input_txt;
       
-      const bool useColor = ((!is_kinetic_line) && m_colorPeaksBasedOnReferenceLines);
+      const bool useColor = ((!is_dynamic_line) && m_colorPeaksBasedOnReferenceLines);
       
       unique_ptr<pair<shared_ptr<const PeakDef>,string>> addswap
          = PeakSearchGuiUtils::assign_nuc_from_ref_lines( peak, previouspeaks, foreground, ref_lines, useColor, showingEscape );
@@ -7123,34 +7163,34 @@ void InterSpec::addViewMenu( WWidget *parent )
                                 showToolTips );
   m_featureMarkerMenuItem->triggered().connect( this, &InterSpec::toggleFeatureMarkerWindow );
   
-  // Set up kinetic reference line menu items
-  const bool kineticRefLineEnabled = UserPreferences::preferenceValue<bool>( "KineticRefLine", this );
-  m_kineticRefLineEnableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-enable-kinetic-ref-lines"), "", true );
-  m_kineticRefLineDisableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-disable-kinetic-ref-lines"), "", true );
-  m_kineticRefLineEnableMenuItem->setHidden( kineticRefLineEnabled );
-  m_kineticRefLineDisableMenuItem->setHidden( !kineticRefLineEnabled );
+  // Set up dynamic reference line menu items
+  const bool dynamicRefLineEnabled = UserPreferences::preferenceValue<bool>( "DynamicRefLine", this );
+  m_dynamicRefLineEnableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-enable-dynamic-ref-lines"), "", true );
+  m_dynamicRefLineDisableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-disable-dynamic-ref-lines"), "", true );
+  m_dynamicRefLineEnableMenuItem->setHidden( dynamicRefLineEnabled );
+  m_dynamicRefLineDisableMenuItem->setHidden( !dynamicRefLineEnabled );
   const auto undo_redo_enable_kin_ref = [this](){
     if( !m_undo || !m_undo->canAddUndoRedoNow() )
       return;
     const auto toggle_kin_ref = [this](){
-      const bool active = UserPreferences::preferenceValue<bool>("KineticRefLine",this);
-      m_preferences->setPreferenceValue<bool>( "KineticRefLine", !active, this);
+      const bool active = UserPreferences::preferenceValue<bool>("DynamicRefLine",this);
+      m_preferences->setPreferenceValue<bool>( "DynamicRefLine", !active, this);
     };
-    m_undo->addUndoRedoStep( toggle_kin_ref, toggle_kin_ref, "Toggle Kinetic Reference Lines" );
+    m_undo->addUndoRedoStep( toggle_kin_ref, toggle_kin_ref, "Toggle dynamic Reference Lines" );
   };
-  m_kineticRefLineEnableMenuItem->triggered().connect( std::bind([=](){
-    UserPreferences::setPreferenceValue<bool>("KineticRefLine", true, this);
+  m_dynamicRefLineEnableMenuItem->triggered().connect( std::bind([=](){
+    UserPreferences::setPreferenceValue<bool>("DynamicRefLine", true, this);
     undo_redo_enable_kin_ref();
   }) );
-  m_kineticRefLineDisableMenuItem->triggered().connect( std::bind([=](){
-    UserPreferences::setPreferenceValue<bool>("KineticRefLine", false, this);
+  m_dynamicRefLineDisableMenuItem->triggered().connect( std::bind([=](){
+    UserPreferences::setPreferenceValue<bool>("DynamicRefLine", false, this);
     undo_redo_enable_kin_ref();
   }) );
-  m_preferences->addCallbackWhenChanged( "KineticRefLine",
-    boost::bind( &Wt::WMenuItem::setHidden, m_kineticRefLineEnableMenuItem, boost::placeholders::_1, Wt::WAnimation() )
+  m_preferences->addCallbackWhenChanged( "DynamicRefLine",
+    boost::bind( &Wt::WMenuItem::setHidden, m_dynamicRefLineEnableMenuItem, boost::placeholders::_1, Wt::WAnimation() )
   );
-  m_preferences->addCallbackWhenChanged( "KineticRefLine",
-    boost::bind( &Wt::WMenuItem::setHidden, m_kineticRefLineDisableMenuItem,
+  m_preferences->addCallbackWhenChanged( "DynamicRefLine",
+    boost::bind( &Wt::WMenuItem::setHidden, m_dynamicRefLineDisableMenuItem,
                 boost::bind(std::logical_not<bool>(), boost::placeholders::_1), Wt::WAnimation() )
   );
   
@@ -8704,7 +8744,7 @@ void InterSpec::handleSimpleMdaWindowClose()
 
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
 {
-  searchForSinglePeak( m_rightClickEnergy, "" );
+  searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint );
 }//void fitNewPeakNotInRoiFromRightClick()
 
 
@@ -8712,14 +8752,15 @@ void InterSpec::startAddPeakFromRightClick()
 {
   // TODO: add AddNewPeakDialog pointer to InterSpec class, like other tools, to fully support undo/redo, and everything.
   const double energy = m_rightClickEnergy;
+  const string ref_line_hint = m_rightClickRefLineHint;
   
-  AddNewPeakDialog *window = new AddNewPeakDialog( energy );
+  AddNewPeakDialog *window = new AddNewPeakDialog( energy, ref_line_hint );
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    auto redo = [energy](){
-      AddNewPeakDialog *window = new AddNewPeakDialog( energy );
+    auto redo = [energy,ref_line_hint](){
+      AddNewPeakDialog *window = new AddNewPeakDialog( energy, ref_line_hint );
       window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
     };
     
@@ -8800,7 +8841,7 @@ void InterSpec::startSimpleMdaFromRightClick()
   if( m_referencePhotopeakLines )
   {
     tuple<const SandiaDecay::Nuclide *, double, float> line
-                = PeakSearchGuiUtils::nuclide_reference_line_near( this, m_rightClickEnergy );
+                = PeakSearchGuiUtils::nuclide_reference_line_near( this, m_rightClickEnergy, m_rightClickRefLineHint );
     
     const SandiaDecay::Nuclide *nuc = get<0>(line);
     const double age = get<1>(line);
@@ -10700,7 +10741,9 @@ void InterSpec::handleToolTabChanged( int tab )
     
     InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
     
-    if( m_referencePhotopeakLines && focus && (current_tab == refTab) && app && !app->isMobile() )
+    // We wont set the focus to nuclide source if on mobile, or this is the initial app load.
+    //  We only readlly want the focus set if the user clicked the tab, so they can immediately start typing.
+    if( m_referencePhotopeakLines && focus && (current_tab == refTab) && app && !app->isMobile() && isRendered() )
       m_referencePhotopeakLines->setFocusToIsotopeEdit();
     
     if( m_nuclideSearch && (m_currentToolsTab==searchTab) )
@@ -10791,6 +10834,11 @@ Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
   return m_shieldingSuggestion;
 }
 
+
+RefLineDynamic *InterSpec::refLineDynamic()
+{
+  return m_refLineDynamic;
+}//
 
 Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorChanged()
 {

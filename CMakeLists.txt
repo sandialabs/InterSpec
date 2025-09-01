@@ -347,7 +347,7 @@ set(sources
     src/RefSpectraWidget.cpp
     src/RefSpectraModel.cpp
     src/SimpleActivityCalc.cpp
-    src/RefLineKinetic.cpp
+    src/RefLineDynamic.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -460,7 +460,7 @@ set(headers
     InterSpec/RefSpectraWidget.h
     InterSpec/RefSpectraModel.h
     InterSpec/SimpleActivityCalc.h
-    InterSpec/RefLineKinetic.h
+    InterSpec/RefLineDynamic.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -861,6 +861,8 @@ if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
             XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         )
     endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO") #macOS 26 requires this, or else we get some error for development
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
 if(MSVC AND (NOT hasParent))

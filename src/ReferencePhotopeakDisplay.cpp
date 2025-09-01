@@ -36,6 +36,7 @@
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
+#include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WIOService>
 #include <Wt/WGridLayout>
@@ -842,6 +843,8 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_showPrevNucs( NULL ),
     m_showAssocNucs( NULL ),
     m_showFeatureMarkers( nullptr ),
+    m_refLineThickness( nullptr ),
+    m_refLineVerbosity( nullptr ),
     m_otherNucsColumn( nullptr ),
     m_otherNucs( nullptr ),
     m_prevNucs{},
@@ -903,6 +906,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideEdit->setMargin( 2, Wt::Side::Top );
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
+  m_nuclideEdit->doJavaScript( m_nuclideEdit->jsRef() + ".addEventListener('keydown', function(event) {"
+  "if (event.key === 'ArrowUp' || event.key === 'ArrowDown') return true;"
+  "} );" );
   
   m_nuclideEdit->setAutoComplete( false );
   m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );
@@ -1167,12 +1173,44 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_showFeatureMarkers->checked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
   m_showFeatureMarkers->unChecked().connect( this, &ReferencePhotopeakDisplay::featureMarkerCbToggled );
       
+  // Add reference line thickness combo box
+  m_refLineThickness = new WComboBox( m_optionsContent );
+  m_refLineThickness->addStyleClass( "RefLineThicknessCombo" );
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-light") );   // 0: {0.5, 1}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-normal") );  // 1: {1, 2}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-thick") );   // 2: {2, 3}
+  m_refLineThickness->addItem( WString::tr("rpd-line-thick-thicker") ); // 3: {3, 5}
+  
+  // Set from user preference
+  const int thicknessPref = UserPreferences::preferenceValue<int>( "RefLineThickness", specViewer );
+  m_refLineThickness->setCurrentIndex( std::max(0, std::min(3, thicknessPref)) );
+  
+  // Add reference line verbosity combo box
+  m_refLineVerbosity = new WComboBox( m_optionsContent );
+  m_refLineVerbosity->addStyleClass( "RefLineVerbosityCombo" );
+  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-none") );     // 0: No extension lines
+  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-hover") );    // 1: Extension lines on hover only
+  m_refLineVerbosity->addItem( WString::tr("rpd-line-verb-major") );    // 2: Major lines always + hover for all
+  
+  // Set from user preference
+  const int verbosityPref = UserPreferences::preferenceValue<int>( "RefLineVerbosity", specViewer );
+  m_refLineVerbosity->setCurrentIndex( std::max(0, std::min(2, verbosityPref)) );
 
   //const bool showToolTips = UserPreferences::preferenceValue<bool>("ShowTooltips", this);
   //HelpSystem::attachToolTipOn(m_showPrevNucs, "Show ", showToolTips);
   UserPreferences::associateWidget( "RefLineShowPrev", m_showPrevNucs, specViewer );
   UserPreferences::associateWidget( "RefLineShowRiid", m_showRiidNucs, specViewer );
   UserPreferences::associateWidget( "RefLineShowAssoc", m_showAssocNucs, specViewer );
+  
+  // Connect combo box change signal
+  m_refLineThickness->sactivated().connect( this, &ReferencePhotopeakDisplay::refLineThicknessChanged );
+  m_refLineVerbosity->sactivated().connect( this, &ReferencePhotopeakDisplay::refLineVerbosityChanged );
+  
+  // Set up preference change listener for updating the combo box
+  specViewer->preferences()->addIntCallbackWhenChanged( "RefLineThickness", this,
+      &ReferencePhotopeakDisplay::refLineThicknessPreferenceChangedCallback );
+  specViewer->preferences()->addIntCallbackWhenChanged( "RefLineVerbosity", this,
+      &ReferencePhotopeakDisplay::refLineVerbosityPreferenceChangedCallback );
 
 
   //HelpSystem::attachToolTipOn(m_options, "If checked, selection will be shown.",
@@ -1872,6 +1910,66 @@ void ReferencePhotopeakDisplay::featureMarkerCbToggled()
   //  state, and also update its menu items, and handle undo/redo.
   m_spectrumViewer->displayFeatureMarkerWindow( m_showFeatureMarkers->isChecked() );
 }//void featureMarkerCbToggled()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessChanged()
+{
+  const int selectedIndex = m_refLineThickness->currentIndex();
+  
+  // Update user preference - D3SpectrumDisplayDiv will automatically react to this change
+  UserPreferences::setPreferenceValue<int>( "RefLineThickness", selectedIndex, m_spectrumViewer );
+}//void refLineThicknessChanged()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessPreferenceChanged()
+{
+  const int thicknessPref = UserPreferences::preferenceValue<int>( "RefLineThickness", m_spectrumViewer );
+  const int clampedIndex = std::max(0, std::min(3, thicknessPref));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the line width changes
+  if( m_refLineThickness->currentIndex() != clampedIndex )
+    m_refLineThickness->setCurrentIndex( clampedIndex );
+}//void refLineThicknessPreferenceChanged()
+
+
+void ReferencePhotopeakDisplay::refLineThicknessPreferenceChangedCallback( int thickness )
+{
+  const int clampedIndex = std::max(0, std::min(3, thickness));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the line width changes
+  if( m_refLineThickness->currentIndex() != clampedIndex )
+    m_refLineThickness->setCurrentIndex( clampedIndex );
+}//void refLineThicknessPreferenceChangedCallback( int thickness )
+
+
+void ReferencePhotopeakDisplay::refLineVerbosityChanged()
+{
+  const int selectedIndex = m_refLineVerbosity->currentIndex();
+  
+  // Update user preference - D3SpectrumDisplayDiv will automatically react to this change
+  UserPreferences::setPreferenceValue<int>( "RefLineVerbosity", selectedIndex, m_spectrumViewer );
+}//void refLineVerbosityChanged()
+
+
+void ReferencePhotopeakDisplay::refLineVerbosityPreferenceChanged()
+{
+  const int verbosityPref = UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_spectrumViewer );
+  const int clampedIndex = std::max(0, std::min(2, verbosityPref));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the verbosity changes
+  if( m_refLineVerbosity->currentIndex() != clampedIndex )
+    m_refLineVerbosity->setCurrentIndex( clampedIndex );
+}//void refLineVerbosityPreferenceChanged()
+
+
+void ReferencePhotopeakDisplay::refLineVerbosityPreferenceChangedCallback( int verbosity )
+{
+  const int clampedIndex = std::max(0, std::min(2, verbosity));
+  
+  // Update combobox if it's different - D3SpectrumDisplayDiv handles the verbosity changes
+  if( m_refLineVerbosity->currentIndex() != clampedIndex )
+    m_refLineVerbosity->setCurrentIndex( clampedIndex );
+}//void refLineVerbosityPreferenceChangedCallback( int verbosity )
 
 
 void ReferencePhotopeakDisplay::emphasizeFeatureMarker()

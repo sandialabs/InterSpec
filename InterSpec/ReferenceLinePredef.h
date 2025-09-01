@@ -87,7 +87,7 @@ namespace ReferenceLinePredef
      */
     bool m_fixed_act_fractions;
     
-    /** Only applicable to kinetic reference lines.
+    /** Only applicable to dynamic reference lines.
      The user supplied bias weight for this nuclide - if multiple nuclides may be choosen between for a particular energy,
      then a larger value of this weight will make it more likely this nuclide is shown. Default is 1.0.
      */
@@ -134,7 +134,7 @@ namespace ReferenceLinePredef
   struct CustomSrcLines
   {
     std::string m_name;
-    /** Only applicable to kinetic reference lines.
+    /** Only applicable to dynamic reference lines.
      The user supplied bias weight for this nuclide - if multiple nuclides may be choosen between for a particular energy,
      then a larger value of this weight will make it more likely this nuclide is shown. Default is 1.0.
      */
@@ -144,13 +144,13 @@ namespace ReferenceLinePredef
   };//struct CustomSrcLines
 
   /** An individual source specified in the XML file.
-   This is only applicable to kineticreference lines.
+   This is only applicable to dynamic reference lines.
    */
   struct IndividualSource
   {
     std::string m_name;
     
-    /** Only applicable to kinetic reference lines.
+    /** Only applicable to dynamic reference lines.
      The user supplied bias weight for this nuclide - if multiple nuclides may be choosen between for a particular energy,
      then a larger value of this weight will make it more likely this nuclide is shown. Default is 1.0.
      */
@@ -174,7 +174,7 @@ namespace ReferenceLinePredef
    @param filepath Path to the XML file to load
    @param nuc_mixes Map to store loaded nuclide mixtures
    @param custom_lines Map to store loaded custom source lines
-   @param individual_sources Optional vector of individual sources in the file; these are used for RefLineKinetic;
+   @param individual_sources Optional vector of individual sources in the file; these are used for RefLineDynamic;
           cooresponds to <IndividualSource> XML elements.
    */
   void load_ref_line_file( const std::string& filepath, 

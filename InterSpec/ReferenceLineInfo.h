@@ -355,6 +355,12 @@ struct ReferenceLineInfo
      */
     bool m_attenuation_applies;
     
+    /** If this line should be marked as a major line.
+     Major lines are determined by intensity thresholds and cumulative coverage.
+     Lines with m_attenuation_applies=true are automatically major lines.
+     */
+    bool m_major_line;
+    
     /** Element giving rise to this fluorescent x-ray.
     Will be element peak is assigned to, if non-null. 
     */
@@ -457,6 +463,15 @@ struct ReferenceLineInfo
   //        doing it by hand
   void toJson( std::string &json ) const;
   
+  /** Marks reference lines as major based on intensity thresholds and cumulative coverage.
+   
+   This method:
+   1. Marks any line where m_attenuation_applies=true as major
+   2. For gamma/x-ray lines, applies intensity and cumulative coverage thresholds
+   3. If no shielding is defined, applies additional markings with 1cm Pb shielding
+   4. Sorts all lines by energy at the end
+   */
+  void markMajorLines();
   
   void sortByEnergy();
 };//struct ReferenceLineInfo
