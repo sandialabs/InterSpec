@@ -61,7 +61,7 @@
 #include "InterSpec/SpectrumChart.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
-#include "InterSpec/RefLineKinetic.h"
+#include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectrumDataModel.h"
@@ -3288,24 +3288,24 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak( Inte
   
   string parent = ref_line_hint;
   
-  const RefLineKinetic * const kineticRefLineTool = interspec->refLineKinetic();
-  if( !parent.empty() && kineticRefLineTool && kineticRefLineTool->isActive() )
+  const RefLineDynamic * const dynamicRefLineTool = interspec->refLineDynamic();
+  if( !parent.empty() && dynamicRefLineTool && dynamicRefLineTool->isActive() )
   {
     const size_t pos = parent.find(';');
     if( pos != string::npos )
       parent = parent.substr(0,pos);
     SpecUtils::trim(parent);
     
-    const shared_ptr<vector<pair<double,ReferenceLineInfo>>> kinetic_ref_lines = kineticRefLineTool->current_lines();
-    if( kinetic_ref_lines )
+    const shared_ptr<vector<pair<double,ReferenceLineInfo>>> dynamic_ref_lines = dynamicRefLineTool->current_lines();
+    if( dynamic_ref_lines )
     {
-      for( size_t i = 0; showingNucs.empty() && (i < kinetic_ref_lines->size()); ++i )
+      for( size_t i = 0; showingNucs.empty() && (i < dynamic_ref_lines->size()); ++i )
       {
-        const ReferenceLineInfo &ref_line = (*kinetic_ref_lines)[i].second;
+        const ReferenceLineInfo &ref_line = (*dynamic_ref_lines)[i].second;
         if( SpecUtils::iequals_ascii(ref_line.m_input.m_input_txt, parent) )
           showingNucs.push_back( ref_line );
       }//
-    }//if( kinetic_ref_lines )
+    }//if( dynamic_ref_lines )
   }//if( check kinetic ref lines )
   
   if( refLineTool )

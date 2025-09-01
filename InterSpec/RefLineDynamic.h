@@ -1,5 +1,5 @@
-#ifndef RefLineKinetic_h
-#define RefLineKinetic_h
+#ifndef RefLineDynamic_h
+#define RefLineDynamic_h
 /* InterSpec: an application to analyze spectral gamma radiation data.
  
  Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
@@ -60,11 +60,11 @@ TODO items:
  - Having a peak with a source associated with it should _really_ increase the weight (see HPGe Lu177 spectrum for example why).
  - Should pick the most important line, get the profile weight for the source, and adjust the source weight a bit using this
  */
-class RefLineKinetic : public Wt::WObject
+class RefLineDynamic : public Wt::WObject
 {
 public:
-  RefLineKinetic( D3SpectrumDisplayDiv *chart, InterSpec *viewer );
-  virtual ~RefLineKinetic();
+  RefLineDynamic( D3SpectrumDisplayDiv *chart, InterSpec *viewer );
+  virtual ~RefLineDynamic();
   
   bool successfully_initialized() const;
   
@@ -74,10 +74,10 @@ public:
   std::shared_ptr<std::vector<std::pair<double,ReferenceLineInfo>>> current_lines() const;
   
   /** Flags to indicate what actions need to be taken during pushUpdates. */
-  enum KineticRefLineRenderFlags
+  enum DynamicRefLineRenderFlags
   {
     UpdateLines = 0x01
-  };//enum KineticRefLineRenderFlags
+  };//enum DynamicRefLineRenderFlags
   
   /** Function to _start_ computing updated lines, in a background thread, and then when done will push to `m_chart`. */
   void startPushUpdates();
@@ -145,11 +145,11 @@ protected:
   std::shared_ptr<const ExternalRidResults> m_external_rid_results;
   
   /** Flags to track what updates need to be made during render. */
-  Wt::WFlags<KineticRefLineRenderFlags> m_renderFlags;
+  Wt::WFlags<DynamicRefLineRenderFlags> m_renderFlags;
   
   std::shared_ptr<std::atomic<size_t>> m_current_calc_num;
   
   std::shared_ptr<std::vector<std::pair<double,ReferenceLineInfo>>> m_current_ref_lines;
-};//class RefLineKinetic
+};//class RefLineDynamic
 
-#endif // RefLineKinetic_h
+#endif // RefLineDynamic_h

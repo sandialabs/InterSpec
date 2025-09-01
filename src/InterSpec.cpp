@@ -118,7 +118,7 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
-#include "InterSpec/RefLineKinetic.h"
+#include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/PeakInfoDisplay.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/SpecFileSummary.h"
@@ -435,8 +435,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_featureMarkersShown{false},
   m_featureMarkersWindow( nullptr ),
   m_featureMarkerMenuItem( nullptr ),
-  m_kineticRefLineEnableMenuItem( nullptr ),
-  m_kineticRefLineDisableMenuItem( nullptr ),
+  m_dynamicRefLineEnableMenuItem( nullptr ),
+  m_dynamicRefLineDisableMenuItem( nullptr ),
   m_multimedia( nullptr ),
 #if( USE_REMOTE_RID )
   m_autoRemoteRidResultDialog( nullptr ),
@@ -478,7 +478,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_clientDeviceType( 0x0 ),
   m_referencePhotopeakLines( 0 ),
   m_referencePhotopeakLinesWindow( 0 ),
-  m_refLineKinetic( nullptr ),
+  m_refLineDynamic( nullptr ),
   m_helpWindow( nullptr ),
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
@@ -657,7 +657,7 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
-  m_refLineKinetic = new RefLineKinetic( m_spectrum, this );
+  m_refLineDynamic = new RefLineDynamic( m_spectrum, this );
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
@@ -2468,17 +2468,17 @@ void InterSpec::handleRightClick( double energy, double counts,
             if( m_referencePhotopeakLines )
               refLines = m_referencePhotopeakLines->showingNuclides();
             
-            if( parent.empty() && m_refLineKinetic && m_refLineKinetic->isActive() )
+            if( parent.empty() && m_refLineDynamic && m_refLineDynamic->isActive() )
             {
               bool parentIsInRef = false;
               for( size_t i = 0; !parentIsInRef && (i < refLines.size()); ++i )
                 parentIsInRef = SpecUtils::iequals_ascii(refLines[i].m_input.m_input_txt, parent);
-              shared_ptr<vector<pair<double,ReferenceLineInfo>>> kinetic_lines = m_refLineKinetic->current_lines();
-              for( size_t i = 0; !parentIsInRef && kinetic_lines && (i < kinetic_lines->size()); ++i )
+              shared_ptr<vector<pair<double,ReferenceLineInfo>>> dynamic_lines = m_refLineDynamic->current_lines();
+              for( size_t i = 0; !parentIsInRef && dynamic_lines && (i < dynamic_lines->size()); ++i )
               {
-                parentIsInRef = SpecUtils::iequals_ascii( (*kinetic_lines)[i].second.m_input.m_input_txt, parent );
+                parentIsInRef = SpecUtils::iequals_ascii( (*dynamic_lines)[i].second.m_input.m_input_txt, parent );
                 if( parentIsInRef )
-                  refLines.insert( begin(refLines), (*kinetic_lines)[i].second );
+                  refLines.insert( begin(refLines), (*dynamic_lines)[i].second );
               }
             }//if( !ref_nuc.empty() )
             
@@ -3052,7 +3052,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
       parent = parent.substr(0,pos);
     SpecUtils::trim(parent);
     
-    bool is_kinetic_line = false;
+    bool is_dynamic_line = false;
     vector<ReferenceLineInfo> ref_lines;
     
     // First try to get this reference line from the ReferenceLines
@@ -3070,25 +3070,25 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
       }//
     }//if( m_referencePhotopeakLines )
     
-    if( ref_lines.empty() && m_refLineKinetic && m_refLineKinetic->current_lines() )
+    if( ref_lines.empty() && m_refLineDynamic && m_refLineDynamic->current_lines() )
     {
-      const shared_ptr<vector<pair<double,ReferenceLineInfo>>> kinetic_ref_lines = m_refLineKinetic->current_lines();
-      for( size_t i = 0; ref_lines.empty() && (i < kinetic_ref_lines->size()); ++i )
+      const shared_ptr<vector<pair<double,ReferenceLineInfo>>> dynamic_ref_lines = m_refLineDynamic->current_lines();
+      for( size_t i = 0; ref_lines.empty() && (i < dynamic_ref_lines->size()); ++i )
       {
-        const ReferenceLineInfo &info = (*kinetic_ref_lines)[i].second;
+        const ReferenceLineInfo &info = (*dynamic_ref_lines)[i].second;
         if( SpecUtils::iequals_ascii( parent, info.m_input.m_input_txt ) )
         {
-          is_kinetic_line = true;
+          is_dynamic_line = true;
           ref_lines.push_back( info );
         }
-      }//for( loop over kinetic_ref_lines )
-    }//if( ref_lines.empty() && m_refLineKinetic )
+      }//for( loop over dynamic_ref_lines )
+    }//if( ref_lines.empty() && m_refLineDynamic )
     
     if( !ref_lines.empty() )
     {
       const string source_name = ref_lines.front().m_input.m_input_txt;
       
-      const bool useColor = ((!is_kinetic_line) && m_colorPeaksBasedOnReferenceLines);
+      const bool useColor = ((!is_dynamic_line) && m_colorPeaksBasedOnReferenceLines);
       
       unique_ptr<pair<shared_ptr<const PeakDef>,string>> addswap
          = PeakSearchGuiUtils::assign_nuc_from_ref_lines( peak, previouspeaks, foreground, ref_lines, useColor, showingEscape );
@@ -7163,34 +7163,34 @@ void InterSpec::addViewMenu( WWidget *parent )
                                 showToolTips );
   m_featureMarkerMenuItem->triggered().connect( this, &InterSpec::toggleFeatureMarkerWindow );
   
-  // Set up kinetic reference line menu items
-  const bool kineticRefLineEnabled = UserPreferences::preferenceValue<bool>( "KineticRefLine", this );
-  m_kineticRefLineEnableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-enable-kinetic-ref-lines"), "", true );
-  m_kineticRefLineDisableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-disable-kinetic-ref-lines"), "", true );
-  m_kineticRefLineEnableMenuItem->setHidden( kineticRefLineEnabled );
-  m_kineticRefLineDisableMenuItem->setHidden( !kineticRefLineEnabled );
+  // Set up dynamic reference line menu items
+  const bool dynamicRefLineEnabled = UserPreferences::preferenceValue<bool>( "DynamicRefLine", this );
+  m_dynamicRefLineEnableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-enable-dynamic-ref-lines"), "", true );
+  m_dynamicRefLineDisableMenuItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-disable-dynamic-ref-lines"), "", true );
+  m_dynamicRefLineEnableMenuItem->setHidden( dynamicRefLineEnabled );
+  m_dynamicRefLineDisableMenuItem->setHidden( !dynamicRefLineEnabled );
   const auto undo_redo_enable_kin_ref = [this](){
     if( !m_undo || !m_undo->canAddUndoRedoNow() )
       return;
     const auto toggle_kin_ref = [this](){
-      const bool active = UserPreferences::preferenceValue<bool>("KineticRefLine",this);
-      m_preferences->setPreferenceValue<bool>( "KineticRefLine", !active, this);
+      const bool active = UserPreferences::preferenceValue<bool>("DynamicRefLine",this);
+      m_preferences->setPreferenceValue<bool>( "DynamicRefLine", !active, this);
     };
-    m_undo->addUndoRedoStep( toggle_kin_ref, toggle_kin_ref, "Toggle Kinetic Reference Lines" );
+    m_undo->addUndoRedoStep( toggle_kin_ref, toggle_kin_ref, "Toggle dynamic Reference Lines" );
   };
-  m_kineticRefLineEnableMenuItem->triggered().connect( std::bind([=](){
-    UserPreferences::setPreferenceValue<bool>("KineticRefLine", true, this);
+  m_dynamicRefLineEnableMenuItem->triggered().connect( std::bind([=](){
+    UserPreferences::setPreferenceValue<bool>("DynamicRefLine", true, this);
     undo_redo_enable_kin_ref();
   }) );
-  m_kineticRefLineDisableMenuItem->triggered().connect( std::bind([=](){
-    UserPreferences::setPreferenceValue<bool>("KineticRefLine", false, this);
+  m_dynamicRefLineDisableMenuItem->triggered().connect( std::bind([=](){
+    UserPreferences::setPreferenceValue<bool>("DynamicRefLine", false, this);
     undo_redo_enable_kin_ref();
   }) );
-  m_preferences->addCallbackWhenChanged( "KineticRefLine",
-    boost::bind( &Wt::WMenuItem::setHidden, m_kineticRefLineEnableMenuItem, boost::placeholders::_1, Wt::WAnimation() )
+  m_preferences->addCallbackWhenChanged( "DynamicRefLine",
+    boost::bind( &Wt::WMenuItem::setHidden, m_dynamicRefLineEnableMenuItem, boost::placeholders::_1, Wt::WAnimation() )
   );
-  m_preferences->addCallbackWhenChanged( "KineticRefLine",
-    boost::bind( &Wt::WMenuItem::setHidden, m_kineticRefLineDisableMenuItem,
+  m_preferences->addCallbackWhenChanged( "DynamicRefLine",
+    boost::bind( &Wt::WMenuItem::setHidden, m_dynamicRefLineDisableMenuItem,
                 boost::bind(std::logical_not<bool>(), boost::placeholders::_1), Wt::WAnimation() )
   );
   
@@ -10835,9 +10835,9 @@ Wt::WSuggestionPopup *InterSpec::shieldingSuggester()
 }
 
 
-RefLineKinetic *InterSpec::refLineKinetic()
+RefLineDynamic *InterSpec::refLineDynamic()
 {
-  return m_refLineKinetic;
+  return m_refLineDynamic;
 }//
 
 Wt::Signal<std::shared_ptr<DetectorPeakResponse> > &InterSpec::detectorChanged()

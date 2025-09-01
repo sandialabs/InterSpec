@@ -56,13 +56,13 @@ struct ColorTheme
    */
   static const char * const sm_color_theme_json_version;  //Currently "1"
   
-  /** Default colors for kinetic reference lines by category. */
-  static const char * const sm_kinetic_ref_line_medical_color;     //"red"
-  static const char * const sm_kinetic_ref_line_industrial_color;  //"blue"
-  static const char * const sm_kinetic_ref_line_norm_color;        //"yellow"
-  static const char * const sm_kinetic_ref_line_snm_color;         //"magenta"
-  static const char * const sm_kinetic_ref_line_common_color;      //"green"
-  static const char * const sm_kinetic_ref_line_other_color;       //"orange"
+  /** Default colors for dynamic reference lines by category. */
+  static const char * const sm_dynamic_ref_line_medical_color;     //"red"
+  static const char * const sm_dynamic_ref_line_industrial_color;  //"blue"
+  static const char * const sm_dynamic_ref_line_norm_color;        //"yellow"
+  static const char * const sm_dynamic_ref_line_snm_color;         //"magenta"
+  static const char * const sm_dynamic_ref_line_common_color;      //"green"
+  static const char * const sm_dynamic_ref_line_other_color;       //"orange"
   
   /** A listing of the predifeined color themes.
       Note that a userPreference for "ColorThemeIndex" that has a negative value
@@ -244,13 +244,13 @@ struct ColorTheme
    */
   std::map<std::string,Wt::WColor> referenceLineColorForSources;
   
-  /** Kinetic reference line colors for specific categories. */
-  Wt::WColor kineticRefLineMedicalColor;
-  Wt::WColor kineticRefLineIndustrialColor;
-  Wt::WColor kineticRefLineNormColor;
-  Wt::WColor kineticRefLineSnmColor;
-  Wt::WColor kineticRefLineCommonColor;
-  Wt::WColor kineticRefLineOtherColor;
+  /** Dynamic reference line colors for specific categories. */
+  Wt::WColor dynamicRefLineMedicalColor;
+  Wt::WColor dynamicRefLineIndustrialColor;
+  Wt::WColor dynamicRefLineNormColor;
+  Wt::WColor dynamicRefLineSnmColor;
+  Wt::WColor dynamicRefLineCommonColor;
+  Wt::WColor dynamicRefLineOtherColor;
 };//struct ColorTheme
 
 

@@ -61,6 +61,7 @@ class WarningWidget;
 class DoseCalcWindow;
 class FluxToolWindow;
 class PeakEditWindow;
+class RefLineDynamic;
 class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
@@ -86,7 +87,6 @@ class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
 class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
-class RefLineKinetic;
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
@@ -738,8 +738,8 @@ public:
    */
   Wt::WSuggestionPopup *shieldingSuggester();
   
-  /** The RefLineKinetic class. */
-  RefLineKinetic *refLineKinetic();
+  /** The RefLineDynamic class. */
+  RefLineDynamic *refLineDynamic();
   
   //detectorChanged(): signal emited when the detector is changed to a
   //  completely new detector.  Note that the object pointed to stays the same
@@ -1541,8 +1541,8 @@ protected:
   FeatureMarkerWindow *m_featureMarkersWindow;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
-  PopupDivMenuItem *m_kineticRefLineEnableMenuItem;
-  PopupDivMenuItem *m_kineticRefLineDisableMenuItem;
+  PopupDivMenuItem *m_dynamicRefLineEnableMenuItem;
+  PopupDivMenuItem *m_dynamicRefLineDisableMenuItem;
 
   SimpleDialog *m_multimedia;
 
@@ -1626,7 +1626,7 @@ protected:
   //  reference photopeaks on the energy spectrum chart.
   ReferencePhotopeakDisplay *m_referencePhotopeakLines;
   AuxWindow                 *m_referencePhotopeakLinesWindow;
-  RefLineKinetic            *m_refLineKinetic;
+  RefLineDynamic            *m_refLineDynamic;
 
   HelpSystem::HelpWindow *m_helpWindow;
   

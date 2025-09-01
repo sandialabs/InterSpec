@@ -266,8 +266,8 @@
   <message id="app-mi-tt-view-img">Shows images included in the spectrum file.</message>
   <message id="app-mi-view-feature-markers">Feature Markers...</message>
   <message id="app-mi-view-hide-feature-markers">Hide Feature Markers</message>
-  <message id="app-mi-view-enable-kinetic-ref-lines">Enable Kinetic Reference Lines</message>
-  <message id="app-mi-view-disable-kinetic-ref-lines">Disable Kinetic Reference Lines</message>
+  <message id="app-mi-view-enable-dynamic-ref-lines">Show Dynamic Reference Lines</message>
+  <message id="app-mi-view-disable-dynamic-ref-lines">Hide Dynamic Reference Lines</message>
   <message id="app-mi-tt-view-feature-markers">Tool to show single/double escape peaks, Compton peak, Compton Edge, and sum peaks.</message>
   <message id="app-mi-view-new-win">New app window</message>
   <message id="app-mi-view-webbrowser">Use in external browser</message>

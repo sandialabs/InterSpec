@@ -242,7 +242,7 @@ void refit_peaks_from_right_click( InterSpec * const interspec, const double rig
 void refit_peaks_with_drf_fwhm( InterSpec * const interspec, const double rightClickEnergy );
   
 /** Returns the energy of its assigned source gamma line, or if the peak doesnt have assigned gamma line,
- then will use `ref_line_hint` to look for matching displayed or kinetic reference lines, and finally
+ then will use `ref_line_hint` to look for matching displayed or dynamic reference lines, and finally
  will look for displayed referfence lines.
  
  Returns a negative value if none can be found
@@ -254,7 +254,7 @@ float source_or_reference_line_near_peak_energy( InterSpec * const interspec,
 /** Returns the reference line info, and index for the specific reference line
  
  @param only_nuclide If true, then only lines with a parent nuclide, who are a gamma or xray, will be considered
- @param ref_line_hint If non-empty, will be the prefered reference line, or if kinetic reference lines are active, will look through those for this source.
+ @param ref_line_hint If non-empty, will be the prefered reference line, or if dynamic reference lines are active, will look through those for this source.
  
  Example usage:
  ```
@@ -282,7 +282,7 @@ std::pair<std::unique_ptr<ReferenceLineInfo>,int> reference_line_near_peak(
  
   @param viewer The InterSpec instance the click is from.
   @param energy The energy of the click
-  @param hint_parent If non-empty, this ref-line (or kinetic reference line) will be the prefered source.
+  @param hint_parent If non-empty, this ref-line (or dynamic reference line) will be the prefered source.
    
   @returns The nuclide, its age, and energy of the reference line.  If not near a line, or no reference line, or a non-nuc reference
           line is showing, will return {nullptr, 0.0, 0.0f}.

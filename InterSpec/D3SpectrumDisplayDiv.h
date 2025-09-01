@@ -26,7 +26,7 @@ class SpecMeas;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
-class RefLineKinetic;
+class RefLineDynamic;
 
 namespace Wt
 {
@@ -395,18 +395,18 @@ public:
   /** Callback for RefLineVerbosity preference changes (takes int parameter). */
   void handleRefLineVerbosityPreferenceChangeCallback( int verbosity );
     
-  /** To avoid duplicate calculations of kinetic reference lines, the `RefLineKinetic` class will notify this class
-   that it has updates, by calling the `scheduleRenderKineticRefLine()` function; this will also trigger a render
-   update for this class.  Then in the render function for this class, it will call back into RefLineKinetic, to have it do the
-   calculations and give the results to this class (see #m_kineticRefLines and #m_kineticRefLinesJsFwhmFcn), to then be
+  /** To avoid duplicate calculations of dynamic reference lines, the `RefLineDynamic` class will notify this class
+   that it has updates, by calling the `scheduleRenderDynamicRefLine()` function; this will also trigger a render
+   update for this class.  Then in the render function for this class, it will call back into RefLineDynamic, to have it do the
+   calculations and give the results to this class (see #m_dynamicRefLines and #m_dynamicRefLinesJsFwhmFcn), to then be
    sent to the client.
    */
-  void setKineticRefLineController( RefLineKinetic *kinetic );
+  void setDynamicRefLineController( RefLineDynamic *dynamic );
   
-  /** Marks it so this class will call the  `RefLineKinetic` instance to give this class the updated lines, on the next render cycle,
+  /** Marks it so this class will call the  `RefLineDynamic` instance to give this class the updated lines, on the next render cycle,
    and mark that this instance needs to be rendered.
    */
-  void scheduleRenderKineticRefLine();
+  void scheduleRenderDynamicRefLine();
   
   /** Set the reference lines that update as you move the mouse.
    
@@ -417,7 +417,7 @@ public:
    If this widget is rendered, then lines are also put to `doJavaScript(...)` immediately during this call; if not rendered, then will wait until
    the render cycle to do this.
    */
-  void setKineticRefernceLines( std::vector<std::pair<double,ReferenceLineInfo>> &&ref_lines,
+  void setDynamicRefernceLines( std::vector<std::pair<double,ReferenceLineInfo>> &&ref_lines,
                                std::string &&js_fwhm_fcnt );
   
   /** Highlights a peak, at the specified energy, as if you had moused over it.
@@ -464,7 +464,7 @@ protected:
   
   void setReferenceLinesToClient();
   
-  void setKineticRefLinesToClient();
+  void setDynamicRefLinesToClient();
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -483,7 +483,7 @@ protected:
     
     UpdateRefLines = 0x40,
     
-    UpdateKineticRefLines = 0x80
+    UpdateDynamicRefLines = 0x80
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   
@@ -545,7 +545,7 @@ protected:
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_shiftAltKeyDraggJS;
   std::unique_ptr<Wt::JSignal<double, double> > m_rightMouseDraggJS;
-  /** The rel-line name std::string below is the ReferenceLine (including for kinetic ref lines) cooresponding to what the mouse is over at click time.
+  /** The rel-line name std::string below is the ReferenceLine (including for dynamic ref lines) cooresponding to what the mouse is over at click time.
    It will be empty if no line was actively showing its info, or else it will be the line cooresponding to the JS `SpectrumChartD3.mousedOverRefLine` variable.
    
    The name of the reference lines (e.g., "U238", "H(n,g)") _may_ be followed by a semicolon, then information about the specific line.
@@ -660,9 +660,9 @@ protected:
   
   RefLineVerbosity m_refLineVerbosity;
   
-  RefLineKinetic *m_kinetic;
-  std::vector<std::pair<double,ReferenceLineInfo>> m_kineticRefLines;
-  std::string m_kineticRefLinesJsFwhmFcn;
+  RefLineDynamic *m_dynamic;
+  std::vector<std::pair<double,ReferenceLineInfo>> m_dynamicRefLines;
+  std::string m_dynamicRefLinesJsFwhmFcn;
   
   bool m_showFeatureMarker[static_cast<int>(FeatureMarkerType::NumFeatureMarkers)];
   

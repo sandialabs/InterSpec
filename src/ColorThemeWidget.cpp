@@ -193,68 +193,68 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Kinetic Ref Line Medical", cell);
+	new WLabel("Dynamic Ref Line Medical", cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
-	m_colorSelects[KineticRefLineMedical] = new ColorSelect(0,cell);
+	m_colorSelects[DynamicRefLineMedical] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for kinetic reference lines from medical sources", cell);
+	new WText("Color for dynamic reference lines from medical sources", cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Kinetic Ref Line Industrial", cell);
+	new WLabel("Dynamic Ref Line Industrial", cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
-	m_colorSelects[KineticRefLineIndustrial] = new ColorSelect(0,cell);
+	m_colorSelects[DynamicRefLineIndustrial] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for kinetic reference lines from industrial sources", cell);
+	new WText("Color for dynamic reference lines from industrial sources", cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Kinetic Ref Line NORM", cell);
+	new WLabel("Dynamic Ref Line NORM", cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
-	m_colorSelects[KineticRefLineNorm] = new ColorSelect(0,cell);
+	m_colorSelects[DynamicRefLineNorm] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for kinetic reference lines from NORM sources", cell);
+	new WText("Color for dynamic reference lines from NORM sources", cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Kinetic Ref Line SNM", cell);
+	new WLabel("Dynamic Ref Line SNM", cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
-	m_colorSelects[KineticRefLineSnm] = new ColorSelect(0,cell);
+	m_colorSelects[DynamicRefLineSnm] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for kinetic reference lines from SNM sources", cell);
+	new WText("Color for dynamic reference lines from SNM sources", cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Kinetic Ref Line Common", cell);
+	new WLabel("Dynamic Ref Line Common", cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
-	m_colorSelects[KineticRefLineCommon] = new ColorSelect(0,cell);
+	m_colorSelects[DynamicRefLineCommon] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for kinetic reference lines from common sources", cell);
+	new WText("Color for dynamic reference lines from common sources", cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
   cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Kinetic Ref Line Other", cell);
+	new WLabel("Dynamic Ref Line Other", cell);
 	cell = table->elementAt(row, 1);
   cell->addStyleClass( "CTSelect" );
-	m_colorSelects[KineticRefLineOther] = new ColorSelect(0,cell);
+	m_colorSelects[DynamicRefLineOther] = new ColorSelect(0,cell);
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for kinetic reference lines from other/uncategorized sources", cell);
+	new WText("Color for dynamic reference lines from other/uncategorized sources", cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
@@ -793,24 +793,24 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
 	m_colorSelects[TimeHistoryForegroundHighlight]->setColor(theme->timeHistoryForegroundHighlight);
 	m_colorSelects[TimeHistoryBackgroundHighlight]->setColor(theme->timeHistoryBackgroundHighlight);
 	m_colorSelects[TimeHistorySecondaryHighlight]->setColor(theme->timeHistorySecondaryHighlight);
-	m_colorSelects[KineticRefLineMedical]->setColor( theme->kineticRefLineMedicalColor.isDefault() ? 
-                                                    Wt::WColor( ColorTheme::sm_kinetic_ref_line_medical_color ) : 
-                                                    theme->kineticRefLineMedicalColor );
-	m_colorSelects[KineticRefLineIndustrial]->setColor( theme->kineticRefLineIndustrialColor.isDefault() ? 
-                                                       Wt::WColor( ColorTheme::sm_kinetic_ref_line_industrial_color ) : 
-                                                       theme->kineticRefLineIndustrialColor );
-	m_colorSelects[KineticRefLineNorm]->setColor( theme->kineticRefLineNormColor.isDefault() ? 
-                                                 Wt::WColor( ColorTheme::sm_kinetic_ref_line_norm_color ) : 
-                                                 theme->kineticRefLineNormColor );
-	m_colorSelects[KineticRefLineSnm]->setColor( theme->kineticRefLineSnmColor.isDefault() ? 
-                                                Wt::WColor( ColorTheme::sm_kinetic_ref_line_snm_color ) : 
-                                                theme->kineticRefLineSnmColor );
-	m_colorSelects[KineticRefLineCommon]->setColor( theme->kineticRefLineCommonColor.isDefault() ? 
-                                                   Wt::WColor( ColorTheme::sm_kinetic_ref_line_common_color ) : 
-                                                   theme->kineticRefLineCommonColor );
-	m_colorSelects[KineticRefLineOther]->setColor( theme->kineticRefLineOtherColor.isDefault() ? 
-                                                  Wt::WColor( ColorTheme::sm_kinetic_ref_line_other_color ) : 
-                                                  theme->kineticRefLineOtherColor );
+	m_colorSelects[DynamicRefLineMedical]->setColor( theme->dynamicRefLineMedicalColor.isDefault() ? 
+                                                    Wt::WColor( ColorTheme::sm_dynamic_ref_line_medical_color ) : 
+                                                    theme->dynamicRefLineMedicalColor );
+	m_colorSelects[DynamicRefLineIndustrial]->setColor( theme->dynamicRefLineIndustrialColor.isDefault() ? 
+                                                       Wt::WColor( ColorTheme::sm_dynamic_ref_line_industrial_color ) : 
+                                                       theme->dynamicRefLineIndustrialColor );
+	m_colorSelects[DynamicRefLineNorm]->setColor( theme->dynamicRefLineNormColor.isDefault() ? 
+                                                 Wt::WColor( ColorTheme::sm_dynamic_ref_line_norm_color ) : 
+                                                 theme->dynamicRefLineNormColor );
+	m_colorSelects[DynamicRefLineSnm]->setColor( theme->dynamicRefLineSnmColor.isDefault() ? 
+                                                Wt::WColor( ColorTheme::sm_dynamic_ref_line_snm_color ) : 
+                                                theme->dynamicRefLineSnmColor );
+	m_colorSelects[DynamicRefLineCommon]->setColor( theme->dynamicRefLineCommonColor.isDefault() ? 
+                                                   Wt::WColor( ColorTheme::sm_dynamic_ref_line_common_color ) : 
+                                                   theme->dynamicRefLineCommonColor );
+	m_colorSelects[DynamicRefLineOther]->setColor( theme->dynamicRefLineOtherColor.isDefault() ? 
+                                                  Wt::WColor( ColorTheme::sm_dynamic_ref_line_other_color ) : 
+                                                  theme->dynamicRefLineOtherColor );
   
   
   for( int i = 0; i < sm_numRefLineColors; ++i )
@@ -992,28 +992,28 @@ void ColorThemeWidget::newColorSelectedCallback(const ColorThemeWidget::Selectab
       m_currentTheme->timeHistorySecondaryHighlight = m_colorSelects[color]->color();
       break;
       
-	  case KineticRefLineMedical:
-      m_currentTheme->kineticRefLineMedicalColor = m_colorSelects[color]->color();
+	  case DynamicRefLineMedical:
+      m_currentTheme->dynamicRefLineMedicalColor = m_colorSelects[color]->color();
       break;
       
-	  case KineticRefLineIndustrial:
-      m_currentTheme->kineticRefLineIndustrialColor = m_colorSelects[color]->color();
+	  case DynamicRefLineIndustrial:
+      m_currentTheme->dynamicRefLineIndustrialColor = m_colorSelects[color]->color();
       break;
       
-	  case KineticRefLineNorm:
-      m_currentTheme->kineticRefLineNormColor = m_colorSelects[color]->color();
+	  case DynamicRefLineNorm:
+      m_currentTheme->dynamicRefLineNormColor = m_colorSelects[color]->color();
       break;
       
-	  case KineticRefLineSnm:
-      m_currentTheme->kineticRefLineSnmColor = m_colorSelects[color]->color();
+	  case DynamicRefLineSnm:
+      m_currentTheme->dynamicRefLineSnmColor = m_colorSelects[color]->color();
       break;
       
-	  case KineticRefLineCommon:
-      m_currentTheme->kineticRefLineCommonColor = m_colorSelects[color]->color();
+	  case DynamicRefLineCommon:
+      m_currentTheme->dynamicRefLineCommonColor = m_colorSelects[color]->color();
       break;
       
-	  case KineticRefLineOther:
-      m_currentTheme->kineticRefLineOtherColor = m_colorSelects[color]->color();
+	  case DynamicRefLineOther:
+      m_currentTheme->dynamicRefLineOtherColor = m_colorSelects[color]->color();
       break;
       
 	  case NumSelectableColors:

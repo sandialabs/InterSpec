@@ -48,12 +48,12 @@ using namespace std;
 using namespace Wt;
 
 const char * const ColorTheme::sm_color_theme_json_version = "1";
-const char * const ColorTheme::sm_kinetic_ref_line_medical_color = "#FF0000";
-const char * const ColorTheme::sm_kinetic_ref_line_industrial_color = "#7e7e80";
-const char * const ColorTheme::sm_kinetic_ref_line_norm_color = "#39a004";
-const char * const ColorTheme::sm_kinetic_ref_line_snm_color = "#ff7600";
-const char * const ColorTheme::sm_kinetic_ref_line_common_color = "#0033ff";
-const char * const ColorTheme::sm_kinetic_ref_line_other_color = "#8055ef";
+const char * const ColorTheme::sm_dynamic_ref_line_medical_color = "#FF0000";
+const char * const ColorTheme::sm_dynamic_ref_line_industrial_color = "#7e7e80";
+const char * const ColorTheme::sm_dynamic_ref_line_norm_color = "#39a004";
+const char * const ColorTheme::sm_dynamic_ref_line_snm_color = "#ff7600";
+const char * const ColorTheme::sm_dynamic_ref_line_common_color = "#0033ff";
+const char * const ColorTheme::sm_dynamic_ref_line_other_color = "#8055ef";
 
 namespace
 {
@@ -117,12 +117,12 @@ std::unique_ptr<ColorTheme> ColorTheme::predefinedTheme( const PredefinedColorTh
             "U235" : "rgb(128,0,128)",
             "background" : "#967f55"
           },
-          "kineticRefLineMedicalColor" : "#FF0000",
-          "kineticRefLineIndustrialColor" : "#D7D7DA", 
-          "kineticRefLineNormColor" : "#39a004",
-          "kineticRefLineSnmColor" : "#ff7600",
-          "kineticRefLineCommonColor" : "#0033ff",
-          "kineticRefLineOtherColor" : "#8055ef"
+          "dynamicRefLineMedicalColor" : "#FF0000",
+          "dynamicRefLineIndustrialColor" : "#D7D7DA", 
+          "dynamicRefLineNormColor" : "#39a004",
+          "dynamicRefLineSnmColor" : "#ff7600",
+          "dynamicRefLineCommonColor" : "#0033ff",
+          "dynamicRefLineOtherColor" : "#8055ef"
         },
         "spectrum" : {
           "axisLines" : "#cfced2",
@@ -230,12 +230,12 @@ ColorTheme::ColorTheme()
   referenceLineColorForSources["U235"] = WColor( "#800080" );
   referenceLineColorForSources["background"] = WColor( "#967f55" );  //brownish
   
-  kineticRefLineMedicalColor = WColor( sm_kinetic_ref_line_medical_color );
-  kineticRefLineIndustrialColor = WColor( sm_kinetic_ref_line_industrial_color );
-  kineticRefLineNormColor = WColor( sm_kinetic_ref_line_norm_color );
-  kineticRefLineSnmColor = WColor( sm_kinetic_ref_line_snm_color );
-  kineticRefLineCommonColor = WColor( sm_kinetic_ref_line_common_color );
-  kineticRefLineOtherColor = WColor( sm_kinetic_ref_line_other_color );
+  dynamicRefLineMedicalColor = WColor( sm_dynamic_ref_line_medical_color );
+  dynamicRefLineIndustrialColor = WColor( sm_dynamic_ref_line_industrial_color );
+  dynamicRefLineNormColor = WColor( sm_dynamic_ref_line_norm_color );
+  dynamicRefLineSnmColor = WColor( sm_dynamic_ref_line_snm_color );
+  dynamicRefLineCommonColor = WColor( sm_dynamic_ref_line_common_color );
+  dynamicRefLineOtherColor = WColor( sm_dynamic_ref_line_other_color );
 }//ColorTheme() constructor
 
 
@@ -304,22 +304,22 @@ std::string ColorTheme::toJson( const ColorTheme &info )
   if( !info.defaultPeakLine.isDefault() )
     base["defaultPeakLineColor"] = WString( info.defaultPeakLine.cssText(false) );
   
-  // Always create the referenceLines object since we may need it for kinetic ref line colors
+  // Always create the referenceLines object since we may need it for dynamic ref line colors
   Json::Object &refLines = base["referenceLines"] = Json::Value(Json::ObjectType);
   
-  // Add kinetic reference line colors to the referenceLines section
-  if( !info.kineticRefLineMedicalColor.isDefault() )
-    refLines["kineticRefLineMedicalColor"] = WString( info.kineticRefLineMedicalColor.cssText(false) );
-  if( !info.kineticRefLineIndustrialColor.isDefault() )
-    refLines["kineticRefLineIndustrialColor"] = WString( info.kineticRefLineIndustrialColor.cssText(false) );
-  if( !info.kineticRefLineNormColor.isDefault() )
-    refLines["kineticRefLineNormColor"] = WString( info.kineticRefLineNormColor.cssText(false) );
-  if( !info.kineticRefLineSnmColor.isDefault() )
-    refLines["kineticRefLineSnmColor"] = WString( info.kineticRefLineSnmColor.cssText(false) );
-  if( !info.kineticRefLineCommonColor.isDefault() )
-    refLines["kineticRefLineCommonColor"] = WString( info.kineticRefLineCommonColor.cssText(false) );
-  if( !info.kineticRefLineOtherColor.isDefault() )
-    refLines["kineticRefLineOtherColor"] = WString( info.kineticRefLineOtherColor.cssText(false) );
+  // Add dynamic reference line colors to the referenceLines section
+  if( !info.dynamicRefLineMedicalColor.isDefault() )
+    refLines["dynamicRefLineMedicalColor"] = WString( info.dynamicRefLineMedicalColor.cssText(false) );
+  if( !info.dynamicRefLineIndustrialColor.isDefault() )
+    refLines["dynamicRefLineIndustrialColor"] = WString( info.dynamicRefLineIndustrialColor.cssText(false) );
+  if( !info.dynamicRefLineNormColor.isDefault() )
+    refLines["dynamicRefLineNormColor"] = WString( info.dynamicRefLineNormColor.cssText(false) );
+  if( !info.dynamicRefLineSnmColor.isDefault() )
+    refLines["dynamicRefLineSnmColor"] = WString( info.dynamicRefLineSnmColor.cssText(false) );
+  if( !info.dynamicRefLineCommonColor.isDefault() )
+    refLines["dynamicRefLineCommonColor"] = WString( info.dynamicRefLineCommonColor.cssText(false) );
+  if( !info.dynamicRefLineOtherColor.isDefault() )
+    refLines["dynamicRefLineOtherColor"] = WString( info.dynamicRefLineOtherColor.cssText(false) );
   
   if( info.referenceLineColor.size() )
   {
@@ -466,31 +466,31 @@ void ColorTheme::fromJson( const std::string &json, ColorTheme &info )
   if( base.contains("defaultPeakLineColor") )
     info.defaultPeakLine = WColor( static_cast<const WString &>(base["defaultPeakLineColor"]) );
   
-  // Set default values for kinetic reference line colors
-  info.kineticRefLineMedicalColor = WColor( sm_kinetic_ref_line_medical_color );
-  info.kineticRefLineIndustrialColor = WColor( sm_kinetic_ref_line_industrial_color );
-  info.kineticRefLineNormColor = WColor( sm_kinetic_ref_line_norm_color );
-  info.kineticRefLineSnmColor = WColor( sm_kinetic_ref_line_snm_color );
-  info.kineticRefLineCommonColor = WColor( sm_kinetic_ref_line_common_color );
-  info.kineticRefLineOtherColor = WColor( sm_kinetic_ref_line_other_color );
+  // Set default values for dynamic reference line colors
+  info.dynamicRefLineMedicalColor = WColor( sm_dynamic_ref_line_medical_color );
+  info.dynamicRefLineIndustrialColor = WColor( sm_dynamic_ref_line_industrial_color );
+  info.dynamicRefLineNormColor = WColor( sm_dynamic_ref_line_norm_color );
+  info.dynamicRefLineSnmColor = WColor( sm_dynamic_ref_line_snm_color );
+  info.dynamicRefLineCommonColor = WColor( sm_dynamic_ref_line_common_color );
+  info.dynamicRefLineOtherColor = WColor( sm_dynamic_ref_line_other_color );
   
   if( base.contains("referenceLines") )
   {
     Json::Object &refLines = base["referenceLines"];
     
-    // Check for kinetic reference line colors
-    if( refLines.contains("kineticRefLineMedicalColor") )
-      info.kineticRefLineMedicalColor = WColor( static_cast<const WString &>(refLines["kineticRefLineMedicalColor"]) );
-    if( refLines.contains("kineticRefLineIndustrialColor") )
-      info.kineticRefLineIndustrialColor = WColor( static_cast<const WString &>(refLines["kineticRefLineIndustrialColor"]) );
-    if( refLines.contains("kineticRefLineNormColor") )
-      info.kineticRefLineNormColor = WColor( static_cast<const WString &>(refLines["kineticRefLineNormColor"]) );
-    if( refLines.contains("kineticRefLineSnmColor") )
-      info.kineticRefLineSnmColor = WColor( static_cast<const WString &>(refLines["kineticRefLineSnmColor"]) );
-    if( refLines.contains("kineticRefLineCommonColor") )
-      info.kineticRefLineCommonColor = WColor( static_cast<const WString &>(refLines["kineticRefLineCommonColor"]) );
-    if( refLines.contains("kineticRefLineOtherColor") )
-      info.kineticRefLineOtherColor = WColor( static_cast<const WString &>(refLines["kineticRefLineOtherColor"]) );
+    // Check for dynamic reference line colors
+    if( refLines.contains("dynamicRefLineMedicalColor") )
+      info.dynamicRefLineMedicalColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineMedicalColor"]) );
+    if( refLines.contains("dynamicRefLineIndustrialColor") )
+      info.dynamicRefLineIndustrialColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineIndustrialColor"]) );
+    if( refLines.contains("dynamicRefLineNormColor") )
+      info.dynamicRefLineNormColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineNormColor"]) );
+    if( refLines.contains("dynamicRefLineSnmColor") )
+      info.dynamicRefLineSnmColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineSnmColor"]) );
+    if( refLines.contains("dynamicRefLineCommonColor") )
+      info.dynamicRefLineCommonColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineCommonColor"]) );
+    if( refLines.contains("dynamicRefLineOtherColor") )
+      info.dynamicRefLineOtherColor = WColor( static_cast<const WString &>(refLines["dynamicRefLineOtherColor"]) );
     
     if( refLines.contains("lineColors") )
     {

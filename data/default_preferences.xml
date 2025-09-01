@@ -51,5 +51,5 @@
  <pref name="RefSpectraDirs" type="String"></pref>
  <pref name="RefSpectraLastSelection" type="String"></pref>
  <pref name="IsoByNucsShowBackground" type="Boolean">true</pref>
- <pref name="KineticRefLine" type="Boolean">false</pref>
+ <pref name="DynamicRefLine" type="Boolean">false</pref>
 </preferences>
