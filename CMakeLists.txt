@@ -862,7 +862,7 @@ if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
         )
     endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
     
-    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO") //macOS 26 requires this, or else we get some error for development
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO") #macOS 26 requires this, or else we get some error for development
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
 if(MSVC AND (NOT hasParent))

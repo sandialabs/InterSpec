@@ -188,73 +188,6 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
 	cell = table->elementAt(row, 2);
   cell->addStyleClass( "CTRowDesc" );
 	new WText("Color used for peaks that dont have an assigned color", cell);
-	
-
-	++row;
-	cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Dynamic Ref Line Medical", cell);
-	cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-	m_colorSelects[DynamicRefLineMedical] = new ColorSelect(0,cell);
-	cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for dynamic reference lines from medical sources", cell);
-
-	++row;
-	cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Dynamic Ref Line Industrial", cell);
-	cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-	m_colorSelects[DynamicRefLineIndustrial] = new ColorSelect(0,cell);
-	cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for dynamic reference lines from industrial sources", cell);
-
-	++row;
-	cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Dynamic Ref Line NORM", cell);
-	cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-	m_colorSelects[DynamicRefLineNorm] = new ColorSelect(0,cell);
-	cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for dynamic reference lines from NORM sources", cell);
-
-	++row;
-	cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Dynamic Ref Line SNM", cell);
-	cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-	m_colorSelects[DynamicRefLineSnm] = new ColorSelect(0,cell);
-	cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for dynamic reference lines from SNM sources", cell);
-
-	++row;
-	cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Dynamic Ref Line Common", cell);
-	cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-	m_colorSelects[DynamicRefLineCommon] = new ColorSelect(0,cell);
-	cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for dynamic reference lines from common sources", cell);
-
-	++row;
-	cell = table->elementAt(row, 0);
-  cell->addStyleClass( "CTRowLabel" );
-	new WLabel("Dynamic Ref Line Other", cell);
-	cell = table->elementAt(row, 1);
-  cell->addStyleClass( "CTSelect" );
-	m_colorSelects[DynamicRefLineOther] = new ColorSelect(0,cell);
-	cell = table->elementAt(row, 2);
-  cell->addStyleClass( "CTRowDesc" );
-	new WText("Color for dynamic reference lines from other/uncategorized sources", cell);
 
 	++row;
 	cell = table->elementAt(row, 0);
@@ -541,6 +474,74 @@ ColorThemeWidget::ColorThemeWidget(WContainerWidget *parent)
     m_specificRefLineColor[i]->setColor( WColor() );
   }
   
+  
+  
+  {
+    WContainerWidget *dynamicRefCats = new WContainerWidget();
+    dynamicRefCats->addStyleClass( "DynamicRefLineColors" );
+    refLayout->addWidget( dynamicRefCats, 1, 0 );
+    
+    WText *dynamicTitle = new WText( "Dynamic Reference Lines", dynamicRefCats );
+    dynamicTitle->addStyleClass( "ColorRefLineTitle" );
+    dynamicTitle->setInline( false );
+    
+    WText *genericDesc = new WText( "The colors to use, based on a nuclides type", dynamicRefCats );
+    genericDesc->addStyleClass( "ColorRefLineDesc" );
+    genericDesc->setInline( false );
+    
+    table = new WTable( dynamicRefCats );
+    table->addStyleClass( "ReferenceLinColorTable" );
+    
+    int dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel("Medical", cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineMedical] = new ColorSelect(0,cell);
+    
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel("Industrial", cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineIndustrial] = new ColorSelect(0,cell);
+    
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel("NORM", cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineNorm] = new ColorSelect(0,cell);
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel("SNM", cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineSnm] = new ColorSelect(0,cell);
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel("Common", cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineCommon] = new ColorSelect(0,cell);
+    
+    dynamic_ref_row = table->rowCount();
+    cell = table->elementAt(dynamic_ref_row, 0);
+    cell->addStyleClass( "CTRowLabel" );
+    new WLabel("Other", cell);
+    cell = table->elementAt(dynamic_ref_row, 1);
+    cell->addStyleClass( "CTSelect" );
+    m_colorSelects[DynamicRefLineOther] = new ColorSelect(0,cell);
+  }
   
   
   

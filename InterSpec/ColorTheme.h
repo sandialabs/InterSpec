@@ -57,12 +57,12 @@ struct ColorTheme
   static const char * const sm_color_theme_json_version;  //Currently "1"
   
   /** Default colors for dynamic reference lines by category. */
-  static const char * const sm_dynamic_ref_line_medical_color;     //"red"
-  static const char * const sm_dynamic_ref_line_industrial_color;  //"blue"
-  static const char * const sm_dynamic_ref_line_norm_color;        //"yellow"
-  static const char * const sm_dynamic_ref_line_snm_color;         //"magenta"
-  static const char * const sm_dynamic_ref_line_common_color;      //"green"
-  static const char * const sm_dynamic_ref_line_other_color;       //"orange"
+  static const char * const sm_dynamic_ref_line_medical_color;
+  static const char * const sm_dynamic_ref_line_industrial_color;
+  static const char * const sm_dynamic_ref_line_norm_color;
+  static const char * const sm_dynamic_ref_line_snm_color;
+  static const char * const sm_dynamic_ref_line_common_color;
+  static const char * const sm_dynamic_ref_line_other_color;
   
   /** A listing of the predifeined color themes.
       Note that a userPreference for "ColorThemeIndex" that has a negative value

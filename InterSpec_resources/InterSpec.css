@@ -509,6 +509,10 @@ padding-left:10px;
 .HeavyNavMenu li
 {
   color: #ffffff;
+  
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .HeavyNavMenu li.item > a

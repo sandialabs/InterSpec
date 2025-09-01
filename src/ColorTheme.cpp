@@ -112,16 +112,14 @@ std::unique_ptr<ColorTheme> ColorTheme::predefinedTheme( const PredefinedColorTh
         "referenceLines" : {
           "lineColors" : ["#c0c0c0", "#ffff99", "#b8d9f0", "#9933FF", "#FF66FF", "#CC3333", "#FF6633", "#FFFF99", "#CCFFCC", "#0000CC", "#666666", "#003333"],
           "specificSources" : {
-            "Ba133" : "rgb(192,192,192)",
-            "Th232" : "#4abfb9",
-            "U235" : "rgb(128,0,128)",
+            "Ba131" : "rgb(192,192,192)",
             "background" : "#967f55"
           },
           "dynamicRefLineMedicalColor" : "#FF0000",
           "dynamicRefLineIndustrialColor" : "#D7D7DA", 
           "dynamicRefLineNormColor" : "#39a004",
           "dynamicRefLineSnmColor" : "#ff7600",
-          "dynamicRefLineCommonColor" : "#0033ff",
+          "dynamicRefLineCommonColor" : "#9da2f2",
           "dynamicRefLineOtherColor" : "#8055ef"
         },
         "spectrum" : {
@@ -227,7 +225,7 @@ ColorTheme::ColorTheme()
     {"#003333"}
   };
   
-  referenceLineColorForSources["U235"] = WColor( "#800080" );
+  referenceLineColorForSources["Ba131"] = WColor( "#800080" ); //Just an example
   referenceLineColorForSources["background"] = WColor( "#967f55" );  //brownish
   
   dynamicRefLineMedicalColor = WColor( sm_dynamic_ref_line_medical_color );

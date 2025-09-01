@@ -876,7 +876,7 @@ void D3SpectrumDisplayDiv::setDynamicRefLinesToClient()
 {
   if( m_dynamicRefLines.empty() )
   {
-    const string js = "try{" + m_jsgraph + ".setDynamicReferenceLines(null);}catch(e){}";
+    const string js = "try{" + m_jsgraph + ".setKineticReferenceLines(null);}catch(e){}";
     if( isRendered() )
       doJavaScript( js );
     else
@@ -903,7 +903,7 @@ void D3SpectrumDisplayDiv::setDynamicRefLinesToClient()
   
   const string js =
   "try{"
-  + m_jsgraph + ".setDynamicReferenceLines(" + result + ");"
+  + m_jsgraph + ".setKineticReferenceLines(" + result + ");"
   "}catch(e){ console.log('Exception setting ref lines: ' + e ); }";
   
   //cout << "setDynamicRefLinesToClient js=" << js << endl << endl << endl;
