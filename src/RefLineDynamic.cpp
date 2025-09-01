@@ -858,6 +858,7 @@ void RefLineDynamic::startUpdateLines()
       return static_cast<const ReactionGamma *>(nullptr); }
     )();
     
+    char buffer[64] = { '\0' };
     
     SpecUtilsAsync::ThreadPool pool;
     
@@ -1476,7 +1477,8 @@ void RefLineDynamic::startUpdateLines()
         ReferenceLineInfo::RefLine se_line;
         se_line.m_energy = se_energy;
         se_line.m_normalized_intensity = se_amplitude;
-        se_line.m_decaystr = "S.E.";
+        snprintf( buffer, sizeof(buffer), "S.E. of %.1f keV", peak_energy );
+        se_line.m_decaystr = buffer;
         se_line.m_parent_nuclide = peak->parentNuclide();
         se_line.m_transition = peak->nuclearTransition();
         se_line.m_reaction = peak->reaction();
@@ -1493,7 +1495,8 @@ void RefLineDynamic::startUpdateLines()
         ReferenceLineInfo::RefLine de_line;
         de_line.m_energy = de_energy;
         de_line.m_normalized_intensity = de_amplitude;
-        de_line.m_decaystr = "D.E.";
+        snprintf( buffer, sizeof(buffer), "D.E. of %.1f keV", peak_energy );
+        de_line.m_decaystr = buffer;
         de_line.m_parent_nuclide = peak->parentNuclide();
         de_line.m_transition = peak->nuclearTransition();
         de_line.m_reaction = peak->reaction();
@@ -1884,7 +1887,7 @@ void RefLineDynamic::startUpdateLines()
     }
     
     // If the deadtime is over 15% (low resolution) or 25% (HPGe), add in lines for random sum peaks of largest peaks
-    const double max_live_time_frac = 1.0; //highres ? 0.75 : 0.85;
+    const double max_live_time_frac = highres ? 0.75 : 0.85;
     const double rt = foreground ? foreground->real_time() : 0.0;
     const double lt = foreground ? foreground->live_time() : 0.0;
     if( (lt > 0.0) && (rt > 0.0) && (lt < max_live_time_frac*rt) )
@@ -1912,7 +1915,7 @@ void RefLineDynamic::startUpdateLines()
       if( !summing_candidates.empty() )
       {
         // Calculate random-summing probabilities for all pairs
-        vector<tuple<double,double,double,double>> sum_peaks; // energy, rel probability, energy_i, energy_j
+        vector<tuple<double,double,shared_ptr<const PeakDef>,shared_ptr<const PeakDef>>> sum_peaks; // energy, rel probability, peak_i, peak_j
         
         // Calculate maximum possible probability (highest peak with itself)
         const double max_sum_prob = summing_candidates[0]->amplitude() * summing_candidates[0]->amplitude();
@@ -1928,7 +1931,7 @@ void RefLineDynamic::startUpdateLines()
             const double sum_prob = peak_i->amplitude() * peak_j->amplitude();
             const double rel_intensity = (sum_prob / max_sum_prob);
             if( rel_intensity >= rel_sum_prob_min )
-              sum_peaks.emplace_back( sum_energy, rel_intensity, peak_i->mean(), peak_j->mean() );
+              sum_peaks.emplace_back( sum_energy, rel_intensity, peak_i, peak_j );
           }//for( size_t j = i; j < summing_candidates.size(); ++j )
         }//for( size_t i = 0; i < summing_candidates.size(); ++i )
         
@@ -1945,6 +1948,10 @@ void RefLineDynamic::startUpdateLines()
           {
             const double energy = std::get<0>( sum_peak );
             const double rel_intensity = std::get<1>( sum_peak );
+            const shared_ptr<const PeakDef> &peak_i = std::get<2>( sum_peak );
+            const shared_ptr<const PeakDef> &peak_j = std::get<3>( sum_peak );
+            const double peak_i_energy = peak_i->mean();
+            const double peak_j_energy = peak_j->mean();
             
             ReferenceLineInfo::RefLine ref_line;
             ref_line.m_energy = energy;
@@ -1953,9 +1960,22 @@ void RefLineDynamic::startUpdateLines()
             ref_line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
             ref_line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak;
             ref_line.m_attenuation_applies = false;
-            char buffer[64] = { '\0' };
-            snprintf( buffer, sizeof(buffer), "Random sum %.1f + %.1f keV", get<2>(sum_peak), get<3>(sum_peak) );
+            snprintf( buffer, sizeof(buffer), "Random sum %.1f + %.1f keV", peak_i_energy, peak_j_energy );
             ref_line.m_decaystr = buffer;
+            
+            if( peak_i->hasSourceGammaAssigned() || peak_j->hasSourceGammaAssigned() )
+            {
+              const string name_i = peak_i->sourceName();
+              const string name_j = peak_j->sourceName();
+              if( name_i == name_j )
+              {
+                ref_line.m_decaystr += " (" + name_i + ")";
+              }else
+              {
+                ref_line.m_decaystr += " (" + (name_i.empty() ? string("?") : name_i)
+                                       + " + " + (name_j.empty() ? string("?") : name_j) + ")";
+              }//
+            }//if( peak_i->hasSourceGammaAssigned() || peak_j->hasSourceGammaAssigned() )
             
             sum_ref_info.m_ref_lines.push_back( ref_line );
           }//for( const auto &sum_peak : sum_peaks )
