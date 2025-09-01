@@ -136,7 +136,11 @@ protected:
   /** Will be empty if the "always" sources were succesfully initialized, and non-empty otherwise. */
   std::string m_init_error_msg;
   
-  std::unique_ptr<const AlwaysSrcs> m_always_srcs;
+  /** A pointer to information about source that should always be included in the dynamic reference lines.
+   Note: this is a shared pointer to keep alive when doing work in a background thread (launched doing a lambda defined in
+   `startUpdateLines()`), and the session is ended while the work is being done.
+   */
+  std::shared_ptr<const AlwaysSrcs> m_always_srcs;
   
   std::shared_ptr<const ExternalRidResults> m_external_rid_results;
   

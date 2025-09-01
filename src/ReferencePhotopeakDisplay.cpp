@@ -906,6 +906,9 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_nuclideEdit->setMargin( 2, Wt::Side::Top );
 //  m_nuclideEdit->setMinimumSize( WLength(10,WLength::FontEx), WLength::Auto );
   m_nuclideEdit->setMinimumSize( fieldWidth, WLength::Auto );
+  m_nuclideEdit->doJavaScript( m_nuclideEdit->jsRef() + ".addEventListener('keydown', function(event) {"
+  "if (event.key === 'ArrowUp' || event.key === 'ArrowDown') return true;"
+  "} );" );
   
   m_nuclideEdit->setAutoComplete( false );
   m_nuclideEdit->setAttributeValue( "ondragstart", "return false" );

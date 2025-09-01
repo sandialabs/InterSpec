@@ -56,8 +56,13 @@ struct ColorTheme
    */
   static const char * const sm_color_theme_json_version;  //Currently "1"
   
-  /** Default color for kinetic reference lines when no specific color is assigned. */
-  static const char * const sm_kinetic_ref_line_default_color;  //"orange"
+  /** Default colors for kinetic reference lines by category. */
+  static const char * const sm_kinetic_ref_line_medical_color;     //"red"
+  static const char * const sm_kinetic_ref_line_industrial_color;  //"blue"
+  static const char * const sm_kinetic_ref_line_norm_color;        //"yellow"
+  static const char * const sm_kinetic_ref_line_snm_color;         //"magenta"
+  static const char * const sm_kinetic_ref_line_common_color;      //"green"
+  static const char * const sm_kinetic_ref_line_other_color;       //"orange"
   
   /** A listing of the predifeined color themes.
       Note that a userPreference for "ColorThemeIndex" that has a negative value
@@ -239,11 +244,13 @@ struct ColorTheme
    */
   std::map<std::string,Wt::WColor> referenceLineColorForSources;
   
-  /** The color of the "Kinetic" reference lines, if the source isnt assigned a specific
-   color, either in this ColorTheme, or if it is an "always" source, a specific color assigned
-   `kinetic_ref_lines.xml`.
-   */
-  Wt::WColor kineticRefLineDefaultColor;
+  /** Kinetic reference line colors for specific categories. */
+  Wt::WColor kineticRefLineMedicalColor;
+  Wt::WColor kineticRefLineIndustrialColor;
+  Wt::WColor kineticRefLineNormColor;
+  Wt::WColor kineticRefLineSnmColor;
+  Wt::WColor kineticRefLineCommonColor;
+  Wt::WColor kineticRefLineOtherColor;
 };//struct ColorTheme
 
 

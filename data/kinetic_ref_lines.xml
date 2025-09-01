@@ -30,7 +30,7 @@
       - age: via "default-age" attribute (if you dont specify, then InterSpec will determine default age), 
       - color: "color" attribute with a valid CSS color string (if you dont specify, the  color is determined by Color Theme), 
       - Shielding material and thickness: "shield-material" and "shield-thickness".  The material must be like you a shielding widget in InterSpec displays, or it can specify a generic shielding, for example a value "AN=26, AD=7.874".  Thickness is specified like you would enter into InterSpec
-      - if background: "is-background", if true, source will be treated as a trace source in soil, and transported to the surface (currently unimplemented)
+      - if background: "is-background", (currently unimplemented) if true, source will be treated as a trace source in soil, and transported to the surface
       - weight: A floating point number that affects how likely the lines for this source are to be shown.  This number is multiplied by a windowed weighting, to help decide which set of lines to show.  The higher this number, the more likely it is to be shown.  A value of 1 is default for this file, already-identified isotopes (e.g., peaks with an associated source) get a weight of 10, exteran RID isotopes 5, on-board-RID 2.5, etc
     -->
     <IndividualSource name="Eu152" default-age="1y" color="red" weight="1" shield-material="Fe (iron)" shield-thickness="0.1 mm"/>
@@ -49,11 +49,11 @@
     <IndividualSource name="U233" weight="0.1"/>
     <IndividualSource name="H(n,g)" />
 
-    <IndividualSource name="U238" default-age="120.50 d" is-background="true" />
-    <IndividualSource name="Ra226" default-age="19.12 d" />
-    <IndividualSource name="U235" default-age="5.32 d" />
-    <IndividualSource name="Th232" default-age="28.75 y" is-background="true" />
-    <IndividualSource name="K40" default-age="0 s" />
+    <IndividualSource name="U238" default-age="120.50 d" is-background="true" weight="1" />
+    <IndividualSource name="Ra226" default-age="19.12 d" is-background="true" weight="3" />
+    <IndividualSource name="U235" default-age="5.32 d" is-background="true" weight="5" />
+    <IndividualSource name="Th232" default-age="28.75 y" is-background="true" weight="5" />
+    <IndividualSource name="K40" default-age="0 s" weight="5" />
 
 <!-- 
     <NucMixture name="Some Mixture" default-age="20y" reference-age="0y">

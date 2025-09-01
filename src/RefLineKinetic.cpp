@@ -196,7 +196,7 @@ void RefLineKinetic::start_init_always_sources()
     vector<ReferenceLinePredef::IndividualSource> indiv_sources;
     ReferenceLinePredef::load_ref_line_file( always_defs_file, nuc_mixes, custom_lines, &indiv_sources );
     
-    m_always_srcs = make_unique<AlwaysSrcs>( std::move(nuc_mixes), std::move(custom_lines), std::move(indiv_sources) );
+    m_always_srcs = make_shared<AlwaysSrcs>( std::move(nuc_mixes), std::move(custom_lines), std::move(indiv_sources) );
   }catch( std::exception &e )
   {
     cerr << "Failed to initialize RefLineKinetic: " << e.what() << endl;
@@ -238,15 +238,166 @@ void RefLineKinetic::assignColorToInput( ReferenceLineInfo &lines ) const
     }
   }
   
-  // Use the kinetic reference line default color from the ColorTheme
-  if( color_theme && !color_theme->kineticRefLineDefaultColor.isDefault() )
+  // Determine category-based color for kinetic reference lines
+  if( color_theme )
   {
-    input.m_color = color_theme->kineticRefLineDefaultColor;
+    Wt::WColor category_color;
+    
+    // Get the search categories to classify the source
+    const auto nuclide_search = m_interspec->nuclideSearch();
+    if( !nuclide_search )
+    {
+      input.m_color = Wt::WColor( ColorTheme::sm_kinetic_ref_line_other_color );
+      return;
+    }
+    const auto &search_categories = nuclide_search->search_categories();
+    
+    // Check each category and assign appropriate color
+    bool found_category = false;
+    
+    // We need to check if any of the reference lines match categories
+    // For now, we'll classify based on the primary source from the lines
+    if( !lines.m_ref_lines.empty() )
+    {
+      const auto &first_line = lines.m_ref_lines.front();
+      
+      // Check if it's a nuclide source
+      if( first_line.m_parent_nuclide )
+      {
+        if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
+                                                   IsotopeSearchByEnergy::sm_medical_category_key, 
+                                                   search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineMedicalColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
+                                                        IsotopeSearchByEnergy::sm_industrial_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineIndustrialColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
+                                                        IsotopeSearchByEnergy::sm_norm_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineNormColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
+                                                        IsotopeSearchByEnergy::sm_snm_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineSnmColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_parent_nuclide, 
+                                                        IsotopeSearchByEnergy::sm_common_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineCommonColor;
+          found_category = true;
+        }
+      }
+      // Check if it's an element source (x-ray)
+      else if( first_line.m_element )
+      {
+        if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
+                                                   IsotopeSearchByEnergy::sm_medical_category_key, 
+                                                   search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineMedicalColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
+                                                        IsotopeSearchByEnergy::sm_industrial_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineIndustrialColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
+                                                        IsotopeSearchByEnergy::sm_norm_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineNormColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
+                                                        IsotopeSearchByEnergy::sm_snm_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineSnmColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_element, 
+                                                        IsotopeSearchByEnergy::sm_common_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineCommonColor;
+          found_category = true;
+        }
+      }
+      // Check if it's a reaction source
+      else if( first_line.m_reaction )
+      {
+        if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
+                                                   IsotopeSearchByEnergy::sm_medical_category_key, 
+                                                   search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineMedicalColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
+                                                        IsotopeSearchByEnergy::sm_industrial_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineIndustrialColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
+                                                        IsotopeSearchByEnergy::sm_norm_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineNormColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
+                                                        IsotopeSearchByEnergy::sm_snm_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineSnmColor;
+          found_category = true;
+        }
+        else if( IsotopeSearchByEnergy::is_in_category( first_line.m_reaction, 
+                                                        IsotopeSearchByEnergy::sm_common_category_key, 
+                                                        search_categories ) )
+        {
+          category_color = color_theme->kineticRefLineCommonColor;
+          found_category = true;
+        }
+      }
+    }
+    
+    // If no specific category found, use "Other" category
+    if( !found_category )
+      category_color = color_theme->kineticRefLineOtherColor;
+    
+    // Set the color if valid, otherwise use fallback
+    if( !category_color.isDefault() )
+    {
+      input.m_color = category_color;
+    }
+    else
+    {
+      input.m_color = Wt::WColor( ColorTheme::sm_kinetic_ref_line_other_color );
+    }
   }
   else
   {
     // Fallback to the static default if ColorTheme is unavailable
-    input.m_color = Wt::WColor( ColorTheme::sm_kinetic_ref_line_default_color );
+    input.m_color = Wt::WColor( ColorTheme::sm_kinetic_ref_line_other_color );
   }
 }//void RefLineKinetic::assignColorToInput(...)
 
@@ -648,7 +799,7 @@ void RefLineKinetic::startUpdateLines()
                                                                   : vector<IsotopeSearchByEnergy::NucSearchCategory>{};
   const vector<ExternalRidIsotope> ext_rid_isotopes = m_external_rid_results ? m_external_rid_results->isotopes
                                                                   : vector<ExternalRidIsotope>{};
-  const AlwaysSrcs * const always_srcs = m_always_srcs.get();
+  const shared_ptr<const AlwaysSrcs> always_srcs = m_always_srcs;
   
   shared_ptr<vector<pair<double,ReferenceLineInfo>>> ref_lines_answer = make_shared<vector<pair<double,ReferenceLineInfo>>>();
   shared_ptr<string> js_fwhm_fcn = make_shared<string>();

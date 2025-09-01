@@ -245,11 +245,9 @@ namespace
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
 #endif
 
-//#if( !BUILD_FOR_WEB_DEPLOYMENT )
-//  const WTabWidget::LoadPolicy TabLoadPolicy = WTabWidget::LazyLoading;
-//#else
+  // The Reference Photopeak and/or the Search tab need thier widgets loaded,
+  //  as other tools depend on thier functions
   const WTabWidget::LoadPolicy TabLoadPolicy = WTabWidget::PreLoading;
-//#endif
 
   void postSvlogHelper( const WString &msg, const int priority )
   {
@@ -257,22 +255,6 @@ namespace
     if( app )
       app->svlog( msg, priority );
   }
-  
-  //adapted from: http://stackoverflow.com/questions/1894886/parsing-a-comma-delimited-stdstring
-  struct csv_reader: std::ctype<char>
-  {
-    csv_reader(): std::ctype<char>(get_table()) {}
-    static std::ctype_base::mask const* get_table()
-    {
-      static std::vector<std::ctype_base::mask> rc(table_size, std::ctype_base::mask());
-      rc[','] = std::ctype_base::space;
-    	rc[' '] = std::ctype_base::space;
-      rc['\n'] = std::ctype_base::space;
-      return &rc[0];
-    }
-  };//struct csv_reader
-  
-
   
   //Returns -1 if you shouldnt add the peak to the hint peaks
   int add_hint_peak_pos( const std::shared_ptr<const PeakDef> &peak,
@@ -10759,7 +10741,9 @@ void InterSpec::handleToolTabChanged( int tab )
     
     InterSpecApp *app = dynamic_cast<InterSpecApp *>(wApp);
     
-    if( m_referencePhotopeakLines && focus && (current_tab == refTab) && app && !app->isMobile() )
+    // We wont set the focus to nuclide source if on mobile, or this is the initial app load.
+    //  We only readlly want the focus set if the user clicked the tab, so they can immediately start typing.
+    if( m_referencePhotopeakLines && focus && (current_tab == refTab) && app && !app->isMobile() && isRendered() )
       m_referencePhotopeakLines->setFocusToIsotopeEdit();
     
     if( m_nuclideSearch && (m_currentToolsTab==searchTab) )

@@ -1020,6 +1020,8 @@ std::string D3SpectrumDisplayDiv::localizedStringsJson() const
   "recalFromTo: " + WString::tr("d3sdd-recalFromTo").jsStringLiteral() + ",\n\t"                  // "Recalibrate data from {1} to {2} keV"
   "sumFromTo: " + WString::tr("d3sdd-sumFromTo").jsStringLiteral() + ",\n\t"                      // "{1} to {2} keV"
   "comptonPeakAngle: " + WString::tr("d3sdd-comptonPeakAngle").jsStringLiteral() + ",\n\t"        // "{1}° Compton Peak"
+  "candidates: " + WString::tr("d3sdd-candidates").jsStringLiteral() + ",\n\t"                    // "Candidates:"
+  "useArrowsToSelect: " + WString::tr("d3sdd-use-arrows-to-select").jsStringLiteral() + ",\n\t"   // "(use ↑ and ↓ to select)"
   "}";
   
   // In JS, probably need to call: `self.handleResize( false );`
