@@ -728,7 +728,7 @@ void RefLineDynamic::startUpdateLines()
                         calc_num, starting_calc_num, sessionId,
                         js_fwhm_fcn, ref_lines_answer,updaterfcn](){
     
-#define DEBUG_DYNAMIC_REF_LINES_TIMING
+//#define DEBUG_DYNAMIC_REF_LINES_TIMING
 #ifdef DEBUG_DYNAMIC_REF_LINES_TIMING
     const auto lambda_start_time = std::chrono::high_resolution_clock::now();
     const auto get_elapsed_milliseconds = [lambda_start_time]() -> long long {
