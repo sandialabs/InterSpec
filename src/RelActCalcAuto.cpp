@@ -2908,11 +2908,13 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 try
                 {
                   const double mf = manual_solution.mass_fraction( mass_frac_constraint->nuclide->symbol );
-                  double frac = (mf - mass_frac_constraint->lower_mass_fraction) / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
+                  const double frac = (mf - mass_frac_constraint->lower_mass_fraction) / (mass_frac_constraint->upper_mass_fraction - mass_frac_constraint->lower_mass_fraction);
                   assert( frac > -0.0002 && frac < 1.0002 );
-                  frac = std::min( 1.0, std::max( frac, 0.0 ) );
-                  parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + 0.5*frac;
-                  cerr << "\n\nStill having trouble navigating to global minima\n\nHacked mass fraction to be halfway in the range it should!\n\n" << endl;
+                  const double clamped_frac = std::min( 1.0, std::max( frac, 0.0 ) );
+                  parameters[act_index] = RelActAutoCostFcn::sm_activity_par_offset + 0.5*clamped_frac;
+
+                  cerr << "\n\nStill having trouble navigating to global minima\n\nHacked mass fraction to be halfway in the range it should! - From " << frac << " to " << 0.5*clamped_frac << "\n\n" << endl;
+
 #pragma message("Still having trouble navigating to global minima for RelActAuto. Hacked mass fraction to be halfway in the range it should! - should undo this (but seems to help for some problems).")
                 }catch( std::exception & )
                 {
@@ -5952,7 +5954,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           // This is the same logic used in the other parts of the codebase
           return (T(1.0) - corr_output.pu242_mass_frac) * nuc_rel_mass / pu_total_mass;
       }//switch( nuclide->massNumber )
-      
+
       assert( 0 );
       throw std::logic_error( "Failed to find expected Pu nuclide." );
       return nuc_rel_mass / pu_total_mass;
@@ -10686,6 +10688,46 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       print_iso_line( "Pu241" );
       print_iso_line( "Pu242" );
       out << "\n";
+
+
+      /*
+      //Correct back to a specific age.
+      const SpecUtils::time_point_t meas_time = m_foreground->start_time();
+      const SpecUtils::time_point_t wanted_time = SpecUtils::time_from_string( "19880101", SpecUtils::DateParseEndianType::MiddleEndianFirst );
+      if( SpecUtils::is_special(meas_time) || SpecUtils::is_special(wanted_time) )
+      {
+        cerr << "Meas time (" << SpecUtils::to_iso_string(meas_time) << ") or wanted time (" << SpecUtils::to_iso_string(wanted_time) << ") is invalid." << endl;
+      }else
+      {
+        const double num_seconds_back_decay = 1.0*std::chrono::duration_cast<std::chrono::seconds>(meas_time - wanted_time).count();
+        const size_t rel_eff_index = 0;
+        const SandiaDecay::Nuclide * const pu238 = db->nuclide( "Pu238" );
+        const SandiaDecay::Nuclide * const pu239 = db->nuclide( "Pu239" );
+        const SandiaDecay::Nuclide * const pu240 = db->nuclide( "Pu240" );
+        const SandiaDecay::Nuclide * const pu241 = db->nuclide( "Pu241" );
+        const SandiaDecay::Nuclide * const pu242 = db->nuclide( "Pu242" );
+
+        assert( pu238 && pu239 && pu240 && pu241 && pu242 );
+
+        vector<tuple<const SandiaDecay::Nuclide *,double>> input_nuclide_rel_acts;
+        try{ input_nuclide_rel_acts.emplace_back( pu238, rel_activity(pu238, rel_eff_index) ); }catch(...){}
+        try{ input_nuclide_rel_acts.emplace_back( pu239, rel_activity(pu239, rel_eff_index) ); }catch(...){}
+        try{ input_nuclide_rel_acts.emplace_back( pu240, rel_activity(pu240, rel_eff_index) ); }catch(...){}
+        try{ input_nuclide_rel_acts.emplace_back( pu241, rel_activity(pu241, rel_eff_index) ); }catch(...){}
+        try{ input_nuclide_rel_acts.emplace_back( pu242, rel_activity(pu242, rel_eff_index) ); }catch(std::exception &e){
+          cerr << "Failed to get Pu242 act: " << e.what() << endl;
+        }
+
+        const vector<tuple<const SandiaDecay::Nuclide *,double,double>> wanted_time_vals
+                    = RelActCalc::back_decay_relative_activities( num_seconds_back_decay, input_nuclide_rel_acts );
+        for( const tuple<const SandiaDecay::Nuclide *,double,double> &nuc_act_mass : wanted_time_vals )
+        {
+          const SandiaDecay::Nuclide * const nuc = get<0>(nuc_act_mass);
+          const double rel_mass = get<2>(nuc_act_mass);
+          cout << "Time corrected " << nuc->symbol << " rel mass to " << SpecUtils::to_iso_string(wanted_time) << " is " << (100.0*rel_mass) << "%" << endl;
+        }
+      }//if( correct from/to times okay ) / else
+       */
     }//if( pu_corr )
     
     
@@ -11507,12 +11549,14 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     //info.obs_eff_data = m_obs_eff_for_each_curve[rel_eff_index];
     if( rel_eff_index < m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
     {
-      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4
-      for( const auto &obs_eff : m_obs_eff_for_each_curve[rel_eff_index] )
-      {
+      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4, and
+      //  having at least 5% of counts in ROI, and whose peak means+-1sigma are in the ROI.
+      for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : m_obs_eff_for_each_curve[rel_eff_index] )
+      { 
         if( (obs_eff.observed_efficiency > 0.0)
            && (obs_eff.num_sigma_significance > 2.5)
-           && (obs_eff.fraction_roi_counts > 0.05) )
+           && (obs_eff.fraction_roi_counts > 0.05)
+           && obs_eff.within_roi )
         {
           info.obs_eff_data.push_back( obs_eff );
         }
@@ -12404,7 +12448,6 @@ double RelActAutoSolution::rel_activity( const SrcVariant &src, const size_t rel
   if( rel_eff_index >= m_rel_activities.size() )
     throw std::logic_error( "rel_activity: invalid rel eff index" );
 
-  const size_t nuc_index = nuclide_index( src, rel_eff_index );
   const vector<NuclideRelAct> &nuclides = m_rel_activities[rel_eff_index];
     
   // If Pu242, we will use the corrected mass ratio to Pu239 to get activity relative
@@ -12424,9 +12467,10 @@ double RelActAutoSolution::rel_activity( const SrcVariant &src, const size_t rel
     const double corr_rel_pu242_act = pu242->activityPerGram() * m_corrected_pu[rel_eff_index]->pu242_mass_frac;
       
     const double raw_pu239_activity = m_rel_activities[rel_eff_index][nuclide_index(pu239,rel_eff_index)].rel_activity;
-    return raw_pu239_activity * corr_rel_pu242_act / corr_rel_pu242_act;
+    return raw_pu239_activity * corr_rel_pu242_act / corr_rel_pu239_act;
   }//if( Pu242, and make correction )
 
+  const size_t nuc_index = nuclide_index( src, rel_eff_index );
   return nuclides[nuc_index].rel_activity;
 }//double rel_activity(...)
 
@@ -13213,7 +13257,9 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 
         eff.effective_sigma = effective_sigmas[i];
         eff.fraction_roi_counts = fit_amps[i] / total_roi_signal_counts;
-        
+        eff.within_roi = (((effective_means[i] - eff.effective_sigma) >= roi.lower_energy)
+                          && ((effective_means[i] + eff.effective_sigma) <= roi.upper_energy));
+
         //TODO: store peak indices better than `range_peak_indices` (its an artifact of prev code)
         for( const pair<size_t,size_t> &re_peak_ind : range_peak_indices )
         {
