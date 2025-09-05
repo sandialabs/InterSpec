@@ -881,6 +881,13 @@ struct RelActAutoSolution
                             const std::vector<double> &parameters,
                            const RelActCalcAuto::RelActAutoSolution &solution );
   
+  /** Returns the peaks of `m_obs_eff_for_each_curve`, but translated to the energy calibration of `m_foreground`, and fit
+   without background subtraction.
+   
+   Throws exception on error, including if `m_obs_eff_for_each_curve`  is empty.
+   */
+  std::vector<PeakDef> clustered_input_foreground_display_peaks() const;
+  
   enum class Status : int
   {
     Success,
@@ -1053,7 +1060,7 @@ struct RelActAutoSolution
     /* The mean +- 1-sigma is fully within the ROI */
     bool within_roi;
 
-    /** The peaks, who have had their amplitudes scaled to the unconstrined fit value, who where clustered together.
+    /** The peaks, who have had their amplitudes scaled to the unconstrained fit value, who where clustered together.
      Ordered by largest peak first.
      */
     std::vector<PeakDef> fit_peaks;

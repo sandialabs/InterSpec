@@ -321,6 +321,7 @@ namespace {
     }
     
     p.doNotAddPeaksToUserSession = j.value("doNotAddPeaksToUserSession", false);
+    p.userSession = j.value("userSession", std::optional<std::string>{});
   }
 
   void to_json(json& j, const AnalystChecks::SpectrumCountsInEnergyRange::CountsWithComparisonToForeground& c) {
@@ -387,11 +388,17 @@ namespace {
       {"rois", peak_rois}};
   }
 
-  void to_json(json& j, const AnalystChecks::FitPeaksForNuclideStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
-    json peak_rois;
-    to_json( peak_rois, p.fitPeaks, meas );
+  void to_json(json& j, const AnalystChecks::FitPeaksForNuclideResult &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
     
-    j = json{{"rois", peak_rois}};
+    if( p.status != AnalystChecks::FitPeaksForNuclideStatus::Success )
+    {
+      j = json{{"status", "failure"}, {"error", p.error_message}};
+    }else
+    {
+      json peak_rois;
+      to_json( peak_rois, p.fitPeaks, meas );
+      j = json{{"rois", peak_rois}, {"status", "success"}};
+    }
   }
 }//namespace
 
@@ -1301,9 +1308,13 @@ nlohmann::json ToolRegistry::executeFitPeaksForNuclide(const nlohmann::json& par
   // Parse parameters into FitPeaksForNuclideOptions
   AnalystChecks::FitPeaksForNuclideOptions options;
   from_json(params, options);
+  options.computeAsync = false;
   
   // Call the AnalystChecks function to perform the actual peak fitting
-  const AnalystChecks::FitPeaksForNuclideStatus result = AnalystChecks::fit_peaks_for_nuclides( options, interspec );
+  AnalystChecks::FitPeaksForNuclideResult result;
+  AnalystChecks::fit_peaks_for_nuclides( options, interspec, [&result](const AnalystChecks::FitPeaksForNuclideResult &fit_result){
+    result = fit_result;
+  } );
   
   shared_ptr<const SpecUtils::Measurement> meas;
   if( interspec )

@@ -325,7 +325,7 @@ void gauss_exp_integral( const T peak_mean,
           const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, tail_end );
           const double diff = fabs(val - simple_answer);
           const double frac_diff = diff / std::max(val, simple_answer);
-          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) || (IsNan(val) && IsNan(simple_answer)) || (IsInf(val) && IsInf(simple_answer)) );
         }
 #endif
           
@@ -343,7 +343,7 @@ void gauss_exp_integral( const T peak_mean,
           const double simple_answer = peak_amplitude * PeakDists::gauss_exp_integral( peak_mean, peak_sigma, skew, lower_energy, upper_energy );
           const double diff = fabs(val - simple_answer);
           const double frac_diff = diff / std::max(val, simple_answer);
-          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+          assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) || (IsNan(val) && IsNan(simple_answer)) || (IsInf(val) && IsInf(simple_answer)) );
         }
 #endif
           

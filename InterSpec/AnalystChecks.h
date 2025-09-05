@@ -25,11 +25,12 @@
 
 #include "InterSpec_config.h"
 
+#include <memory>
 #include <string>
 #include <vector>
-#include <optional>
-#include <memory>
 #include <variant>
+#include <optional>
+#include <functional>
 
 #include "SpecUtils/SpecFile.h"
 
@@ -111,13 +112,27 @@ namespace AnalystChecks
   struct FitPeaksForNuclideOptions {
     std::vector<std::string> nuclides;
     bool doNotAddPeaksToUserSession;
+    std::optional<std::string> userSession;
+    bool computeAsync;
   };
   
-  struct FitPeaksForNuclideStatus {
+  enum class FitPeaksForNuclideStatus
+  {
+    Success,
+    FailureSettingUp,
+    FailedComputation
+  };
+  
+  struct FitPeaksForNuclideResult {
+    FitPeaksForNuclideStatus status;
+    std::string error_message;
+    
     std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
   };
   
-  InterSpec_API FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec );
+  InterSpec_API void fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options,
+                                             InterSpec *interspec,
+                                             std::function<void(const FitPeaksForNuclideResult &result)> callback );
   
   /** Calculates an approximate importance that a peak in a spectrum will have for a given nuclide.
    * 

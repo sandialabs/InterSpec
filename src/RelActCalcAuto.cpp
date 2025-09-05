@@ -13292,6 +13292,254 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 }//fit_free_peak_amplitudes(...)
  
   
+std::vector<PeakDef> RelActAutoSolution::clustered_input_foreground_display_peaks() const
+{
+  if( m_obs_eff_for_each_curve.empty() )
+    throw runtime_error( "RelActAutoSolution::clustered_input_foreground_display_peaks: no observed efficiencies to start from." );
+  
+  if( !m_spectrum || !m_foreground )
+    throw runtime_error( "RelActAutoSolution::clustered_input_foreground_display_peaks: missing foreground spectrum." );
+  
+  if( !m_cost_functor )
+    throw runtime_error( "RelActAutoSolution::clustered_input_foreground_display_peaks: no cost function avaiable." );
+  
+  shared_ptr<const vector<float>> channel_counts_ptr = m_foreground->gamma_counts();
+  assert( channel_counts_ptr && !channel_counts_ptr->empty() );
+  if( !channel_counts_ptr || channel_counts_ptr->empty() )
+    throw runtime_error( "RelActAutoSolution::clustered_input_foreground_display_peaks: no channel counts." );
+  
+  std::vector<PeakDef> answer;
+  
+  const size_t num_skew = PeakDef::num_skew_parameters(m_options.skew_type);
+  vector<double> peak_skews( num_skew, 0.0 );
+  
+  // We need to group entries of `m_obs_eff_for_each_curve`, for all relative efficiency curves, into the different
+  //  ROIs defined in the RelActAuto problem - we can do this by assuming the fit peaks for each ROI will have
+  //  pointers to the same `PeakContinuum` object.  We also need to combine the peaks that were clustered together,
+  //  across all the relative efficiency curves; this can be done by simply matching on `ObsEff::energy`.
+  //  We will do both these groupings at the same time.
+  map<shared_ptr<const PeakContinuum>,map<double,vector<ObsEff>>> problem_roi_groupings;
+  for( const vector<ObsEff> &rel_eff_obs_eff : m_obs_eff_for_each_curve )
+  {
+    for( const ObsEff &eff : rel_eff_obs_eff )
+    {
+      assert( !eff.fit_peaks.empty() );
+      if( !eff.fit_peaks.empty() )
+        problem_roi_groupings[eff.fit_peaks[0].continuum()][eff.energy].push_back( eff );
+    }
+  }//for( const vector<ObsEff> &rel_eff_obs_eff : m_obs_eff_for_each_curve )
+  
+  for( const auto &roi : problem_roi_groupings )
+  {
+    const shared_ptr<const PeakContinuum> &continuum = roi.first;
+    const map<double,vector<ObsEff>> &energies_to_obs_peaks = roi.second;
+    const size_t num_peaks = energies_to_obs_peaks.size();
+    assert( num_peaks );
+    if( !num_peaks )
+      continue;
+    
+    assert( continuum );
+    
+    // Now we need to get the means and sigmas, for each of the peaks we will fit; since we will output only
+    //  a single peak, no matter how many source peaks were clustered together, we will assign the source
+    //  nuclide/x-ray/reaction of the output peak to be the source in the solution, that had the most
+    //  counts; to track this, we will just grab a pointer to a PeakDef with this source, for each peak we will fit.
+    vector<double> effective_means, effective_sigmas;
+    vector<const PeakDef *> source_defining_peaks;
+    bool set_skew_par = false;
+    double max_amp_peak_in_roi = std::numeric_limits<double>::lowest();
+    
+
+    for( const auto &energy_peak : energies_to_obs_peaks )
+    {
+      const vector<ObsEff> &obs_effs_for_peak = energy_peak.second; //These ObsEff represent one peak in the users displayed spectrum
+      assert( obs_effs_for_peak.size() );
+      
+      const auto peak_to_src_variant = [](const PeakDef &p) -> RelActCalcAuto::SrcVariant{
+        if( p.parentNuclide() )
+          return p.parentNuclide();
+        else if( p.xrayElement() )
+          return p.xrayElement();
+        else if( p.reaction() )
+          return p.reaction();
+        return {};
+      };//peak_to_src_variant lambda
+      
+      map<RelActCalcAuto::SrcVariant,double> src_sums;
+      for( const ObsEff &obs : obs_effs_for_peak )
+      {
+        for( const PeakDef &p : obs.fit_peaks )
+        {
+          assert( p.continuum() == continuum );
+          src_sums[peak_to_src_variant(p)] += p.amplitude();
+          
+          if( p.amplitude() > max_amp_peak_in_roi )
+          {
+            max_amp_peak_in_roi = p.amplitude();
+            set_skew_par = true;
+            for( int skew_index = 0; skew_index < static_cast<int>(num_skew); ++skew_index )
+            {
+              const PeakDef::CoefficientType par = static_cast<PeakDef::CoefficientType>( static_cast<int>(PeakDef::CoefficientType::SkewPar0) + skew_index );
+              peak_skews[skew_index] = p.coefficient( par );
+            }
+          }
+        }//for( const PeakDef &p : obs.fit_peaks )
+      }//for( const ObsEff &obs : energy_peak.second )
+      
+      RelActCalcAuto::SrcVariant max_src;
+      double max_sum = std::numeric_limits<double>::lowest();
+      for( const auto &sum : src_sums )
+      {
+        if( sum.second > max_sum )
+        {
+          max_sum = sum.second;
+          max_src = sum.first;
+        }
+      }//for( const auto &sum : src_sums )
+      
+      const PeakDef *representative_peak = nullptr;
+      for( size_t i = 0; !representative_peak && (i < obs_effs_for_peak.size()); ++i )
+      {
+        for( size_t j = 0; !representative_peak && (j < obs_effs_for_peak[i].fit_peaks.size()); ++j )
+        {
+          if( peak_to_src_variant(obs_effs_for_peak[i].fit_peaks[j]) == max_src )
+            representative_peak = &(obs_effs_for_peak[i].fit_peaks[j]);
+        }
+      }//for( size_t i = 0; !representative_peak && (i < obs_effs_for_peak.size()); ++i )
+      
+      assert( representative_peak );
+      if( !representative_peak )
+        throw std::logic_error( "Somehow didnt find representative peak for an observed peak." );
+      
+      effective_means.push_back( energy_peak.first );
+      effective_sigmas.push_back( energy_peak.second.front().effective_sigma );
+      source_defining_peaks.push_back( representative_peak );
+    }//for( const auto &energy_peak : energies_to_obs_peaks )
+
+    
+    double ref_energy = continuum->referenceEnergy();
+    double lower_energy = continuum->lowerEnergy();
+    double upper_energy = continuum->upperEnergy();
+    
+    const size_t num_skew = PeakDef::num_skew_parameters(m_options.skew_type);
+    
+    const RelActCalcAutoImp::RoiRangeChannels *input_roi = nullptr;
+    for( const RelActCalcAutoImp::RoiRangeChannels &roi : m_cost_functor->m_energy_ranges )
+    {
+      if( (fabs(roi.lower_energy - lower_energy) < 0.1)
+         && (fabs(roi.upper_energy - upper_energy) < 0.1) )
+      {
+        input_roi = &roi;
+        break;
+      }
+    }//for( const RelActCalcAuto::RoiRange &roi : m_options.rois )
+    
+    if( !input_roi )
+      throw logic_error( "Somehow failed to find input ROI" );
+    
+    shared_ptr<const SpecUtils::EnergyCalibration> energy_cal = m_foreground->energy_calibration();
+    
+    if( m_options.fit_energy_cal )
+    {
+      shared_ptr<const SpecUtils::EnergyCalibration> fit_energy_cal = m_spectrum->energy_calibration();
+      shared_ptr<const SpecUtils::EnergyCalibration> user_energy_cal = m_foreground->energy_calibration();
+      energy_cal = user_energy_cal;
+      
+      assert( fit_energy_cal && user_energy_cal && fit_energy_cal->valid() && user_energy_cal->valid() );
+      if( !fit_energy_cal || !fit_energy_cal->valid() || !user_energy_cal || !user_energy_cal->valid() )
+        throw std::logic_error( "Error determining energy cal to use." );
+      
+      auto from_final_to_input_energy = [&]( const double energy ) -> double {
+        const double channel = fit_energy_cal->channel_for_energy(energy);
+        return user_energy_cal->energy_for_channel( channel );
+      };
+      
+      ref_energy = from_final_to_input_energy( ref_energy );
+      lower_energy = from_final_to_input_energy( lower_energy );
+      upper_energy = from_final_to_input_energy( upper_energy );
+      
+      for( size_t index = 0; index < effective_means.size(); ++index )
+      {
+        const double fit_mean = effective_means[index];
+        const double fit_sigma = effective_sigmas[index];
+        const double fit_mean_m1s = fit_mean - fit_sigma;
+        const double fit_mean_p1s = fit_mean + fit_sigma;
+        
+        const double disp_mean = from_final_to_input_energy( fit_mean );
+        const double disp_mean_m1s = from_final_to_input_energy( fit_mean_m1s );
+        const double disp_mean_p1s = from_final_to_input_energy( fit_mean_p1s );
+        
+        effective_means[index] = disp_mean;
+        effective_sigmas[index] = 0.5*(disp_mean_p1s - disp_mean_m1s);
+      }//for( size_t index = 0; index < effective_means.size(); ++index )
+    }//if( m_options.fit_energy_cal )
+    
+    const size_t num_roi_channels = input_roi->num_channels;
+    const pair<size_t,size_t> channel_range
+    = RelActCalcAutoImp::RoiRangeChannels::channel_range( lower_energy, upper_energy, num_roi_channels, energy_cal );
+    
+    
+    const shared_ptr<const vector<float>> channel_energies_ptr = energy_cal->channel_energies();
+    assert( (channel_counts_ptr->size() == channel_energies_ptr->size())
+           || ((channel_counts_ptr->size()+1) == channel_energies_ptr->size()) );
+    
+    if( !channel_energies_ptr
+       || (channel_range.first >= channel_energies_ptr->size())
+       || ((channel_range.second+1) >= channel_energies_ptr->size()) )
+    {
+      throw runtime_error( "Invalid energy cal." );
+    }
+    
+    const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( input_roi->continuum_type ) );
+    const bool is_step_continuum = PeakContinuum::is_step_continuum( input_roi->continuum_type );
+    
+    vector<PeakDef> fixed_amp_peaks;
+    for( const RelActCalcAuto::FloatingPeakResult &floater : m_floating_peaks )
+    {
+      if( (floater.energy >= input_roi->lower_energy) && (floater.energy <= input_roi->upper_energy) )
+        fixed_amp_peaks.emplace_back( floater.energy, floater.fwhm/2.35482, floater.amplitude );
+    }//for( const FloatingPeakResult &floater : solution.m_floating_peaks )
+    
+    assert( set_skew_par );
+    const double * const skew_parameters = peak_skews.empty() ? nullptr : peak_skews.data();
+    
+    double * const peak_counts = nullptr;
+    const float * const channel_counts = &((*channel_counts_ptr)[channel_range.first]);
+    const float * const channel_energies = &((*channel_energies_ptr)[channel_range.first]);
+    
+    vector<double> fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts;
+    
+    PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, num_roi_channels,
+                                    num_polynomial_terms, is_step_continuum, ref_energy, effective_means,
+                                    effective_sigmas, fixed_amp_peaks, m_options.skew_type, skew_parameters,
+                                    fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts, peak_counts );
+    
+    assert( fit_amps.size() == effective_means.size() );
+    auto new_continuum = make_shared<PeakContinuum>( *continuum );
+    new_continuum->setParameters( ref_energy, fit_continuum_coefs, fit_continuum_uncerts );
+    
+    for( size_t i = 0; i < effective_means.size(); ++i )
+    {
+      const PeakDef * const src_def_peak = source_defining_peaks[i];
+      assert( src_def_peak );
+      if( !src_def_peak )
+        continue;
+      
+      PeakDef p = *src_def_peak;
+      p.setMean( effective_means[i] );
+      p.setAmplitude( fit_amps[i] );
+      p.setAmplitudeUncert( fit_amp_uncert[i] );
+      p.setContinuum( new_continuum );
+      
+      answer.push_back( std::move(p) );
+    }//for( size_t i = 0; i < effective_means.size(); ++i )
+  }//for( const auto &roi : problem_roi_groupings )
+  
+  std::sort( begin(answer), end(answer), &PeakDef::lessThanByMean );
+  
+  return answer;
+}//std::vector<PeakDef> clustered_input_foreground_display_peaks() const
+  
   
 RelActAutoSolution solve( const Options options,
                          std::shared_ptr<const SpecUtils::Measurement> foreground,

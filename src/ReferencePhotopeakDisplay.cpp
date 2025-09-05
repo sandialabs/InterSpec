@@ -62,6 +62,7 @@
 #include "InterSpec/ColorSelect.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SimpleDialog.h"
+#include "InterSpec/AnalystChecks.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
@@ -3606,8 +3607,32 @@ void ReferencePhotopeakDisplay::setReaction( const ReactionGamma::Reaction *rctn
 
 void ReferencePhotopeakDisplay::fitPeaks()
 {
+  AnalystChecks::FitPeaksForNuclideOptions options;
+  options.doNotAddPeaksToUserSession = false;
+  options.computeAsync = true;
+  
+  if( !m_currentlyShowingNuclide.m_input.m_input_txt.empty() )
+    options.nuclides.push_back( m_currentlyShowingNuclide.m_input.m_input_txt );
+  
+  for( const ReferenceLineInfo &info : m_persisted )
+  {
+    if( !info.m_input.m_input_txt.empty() )
+      options.nuclides.push_back( info.m_input.m_input_txt );
+  }
+  
+  const WString title = WString::tr("rpd-fit-peaks-wait-title");
+  const WString content = WString::tr("rpd-fit-peaks-wait-content");
+  SimpleDialog *msg = new SimpleDialog( title, content );
+  msg->rejectWhenEscapePressed();
+  msg->addButton( WString::tr("Close") );
+  boost::function<void(void)> guiupdater = wApp->bind( boost::bind( &SimpleDialog::accept, msg ) );
 
-  //AnalystChecks::fit_peaks_for_nuclides
+  auto callback = [guiupdater]( const AnalystChecks::FitPeaksForNuclideResult &results ){
+    guiupdater();
+    cout << "All Done" << endl;
+  };
+  
+  AnalystChecks::fit_peaks_for_nuclides( options, m_spectrumViewer, callback );
 }//void fitPeaks()
 
 
