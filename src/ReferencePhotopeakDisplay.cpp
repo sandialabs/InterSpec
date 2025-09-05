@@ -1876,15 +1876,9 @@ void ReferencePhotopeakDisplay::setShowBetaLines( const bool show )
 }
 
 
-const std::vector<std::pair<std::string,std::string>> &ReferencePhotopeakDisplay::external_RIID_ids() const
+std::shared_ptr<const ExternalRidResults> ReferencePhotopeakDisplay::externalRidResults() const
 {
-  return m_external_ids;
-}
-
-
-const std::string &ReferencePhotopeakDisplay::external_RIID_algo_name() const
-{
-  return m_external_algo_name;
+  return m_external_results;
 }
 
 

@@ -492,18 +492,13 @@ protected:
     ResetXDomain = 0x0010,
     
     UpdateHighlightRegions = 0x0020,
-    
-<<<<<<< HEAD
+
     UpdateRefLines = 0x0040,
     
     // TODO: Currently background and secondary peaks not loaded to client, so these flags have no effect.
     UpdateBackgroundPeaks = 0x0080,
     UpdateSecondaryPeaks  = 0x0100,
-=======
-    UpdateRefLines = 0x40,
-    
-    UpdateDynamicRefLines = 0x80
->>>>>>> master
+    UpdateDynamicRefLines = 0x0200
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   

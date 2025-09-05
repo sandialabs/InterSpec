@@ -13,6 +13,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -1275,15 +1276,17 @@ nlohmann::json ToolRegistry::executeGetAutomatedRiidId(const nlohmann::json& par
 
 
   const ReferencePhotopeakDisplay * const refWidget = interspec->referenceLinesWidget();
-  if( refWidget )
+  shared_ptr<const ExternalRidResults> external_riid_results = refWidget ? refWidget->externalRidResults() : nullptr;
+  if( external_riid_results )
   {
-    const std::vector<std::pair<std::string,std::string>> &external_riid_results = refWidget->external_RIID_ids();
-    const std::string &external_RIID_algo_name = refWidget->external_RIID_algo_name();
-    if( !external_riid_results.empty() )
+    if( !external_riid_results->isotopes.empty() )
     {
-      result["externalRiidTool"]["description"] = external_RIID_algo_name;
-      for( const auto &v : external_riid_results )
-        result["externalRiidTool"]["nuclides"].push_back( v.first );
+      result["externalRiidTool"]["description"] = external_riid_results->algorithmName;
+      for( const ExternalRidIsotope &v : external_riid_results->isotopes )
+      {
+        // TODO: Also include v.type, and v.confidenceStr;
+        result["externalRiidTool"]["nuclides"].push_back( v.name );
+      }
     }
   }//if( refWidget )
 
