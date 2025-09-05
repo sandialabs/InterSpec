@@ -3700,10 +3700,11 @@ void RelActAutoGui::setPeaksToForeground()
   
   SimpleDialog *dialog = new SimpleDialog( "Use peaks with foreground?", "" );
   dialog->addStyleClass( "SetToPeaksDialog" );
-  WText *message = new WText( "Peaks uncertainties will be based on total relative efficiency fit (eg.,"
-                             " peaks helping each other out to reduce uncertainties), unless you choose"
-                             " to refit them, in which case they will not be constrained by Rel. Eff."
-                             " curve of FWHM functional form.", dialog->contents() );
+  WText *message = new WText( "You can either use the peaks fit in the Rel. Eff. solution (including"
+                             " uncertainties based on the full-fit, and possibly many more peaks than can be"
+                             " realistically resolved), or you get can peaks that are what one can effectively"
+                             " fit from the spectrum with thier uncertanties similar to normally fit peaks.",
+                             dialog->contents() );
   message->addStyleClass( "content" );
   message->setInline( false );
   
@@ -3718,176 +3719,60 @@ void RelActAutoGui::setPeaksToForeground()
     replace_or_add->setChecked( true ); //Make "Replace peaks" the default answer
   }//if( we have peaks )
   
-  WContainerWidget *refit_holder = new WContainerWidget( dialog->contents() );
-  refit_holder->addStyleClass( "AddOrReplaceRefitRow" );
-  WCheckBox *refit_peaks = new WCheckBox( "Refit Peaks", refit_holder );
+  
+  WContainerWidget *holder = new WContainerWidget( dialog->contents() );
+  holder->addStyleClass( "AddOrReplaceSwitchRow" );
+  SwitchCheckbox *solution_or_cluster_peaks = new SwitchCheckbox( "Solution peaks", "Effective peaks", holder );
+  solution_or_cluster_peaks->setChecked( true ); //Make "Effective peaks" the default answer
+  
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-  const char *tooltip = 
-  "When checked, peaks will be refit without the constraints of the relative efficiency curve,"
-  " expected branching ratios, or FWHM constraints from other ROIs.<br/>"
-  "Peaks that are within 0.53 FWHM (1.25 sigma) of each other will be merged together.<br/>"
-  "  Peak mean, FWHM, and continuums will be refit, with usually peak means limited to be changed"
-  " by no more than 0.11 times the peak FWHM, but if this fails,"
-  " then the limit may be increased to 0.21 times the peak FWHM. <br/>"
-  "Fit peak amplitudes may also be limits in how much can be changed from the relative efficiency"
-  " peak amplitude, so you may need to manually refit some peaks again.<br/>";
-  HelpSystem::attachToolTipOn( refit_holder, tooltip, showToolTips );
-  
+  const char *tooltip =
+  "The Solution peaks are the peaks as you see them in this tool; when this option is<br/>"
+  "selected, they will be loaded to the foreground, with the only possible change being if.<br/>"
+  "this computation is background subtracted, then the continuums will be refit.<br/>"
+  "The Effective peaks, are the solution peaks that have been combined together to<br/>"
+  "be about what you would identify as a single peak in the spectrum; the peaks amplitudes<br/>"
+  "and offsets are then refit to match the data.<br/>";
+  HelpSystem::attachToolTipOn( holder, tooltip, showToolTips );
   
   dialog->addButton( "No" );
   WPushButton *yes = dialog->addButton( "Yes" );
   
+  std::shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_solution;
   
-  const vector<PeakDef> solution_peaks = m_solution->m_fit_peaks_in_spectrums_cal;
-  std::shared_ptr<const DetectorPeakResponse> ana_drf = m_solution->m_drf;
-  
-  if( m_solution->m_options.fit_energy_cal )
+  if( solution->m_options.fit_energy_cal )
   {
     // The fit peaks have already been adjusted for energy calibration, so I dont
     //  think we need to update them here
   }//if( m_solution->m_options.fit_energy_cal )
   
-  yes->clicked().connect( std::bind([solution_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
-    const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
-    
+  yes->clicked().connect( std::bind([solution, replace_or_add, solution_or_cluster_peaks, previous_peaks](){
     InterSpec *interpsec = InterSpec::instance();
     assert( interpsec );
     if( !interpsec )
       return;
     
-    shared_ptr<const SpecUtils::Measurement> foreground = interpsec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
+    const bool use_effective_peaks = (!solution_or_cluster_peaks || solution_or_cluster_peaks->isChecked());
     
     vector<PeakDef> final_peaks;
-    if( foreground && refit_peaks->isChecked() )
+    if( use_effective_peaks )
     {
-      map< shared_ptr<const PeakContinuum>,vector<shared_ptr<const PeakDef>> > rois;
-     
-      for( const PeakDef &peak : solution_peaks )
-        rois[peak.continuum()].push_back( make_shared<PeakDef>(peak) );
-      
-      
-      vector<shared_ptr<const PeakDef>> solution_peaks_ptrs;
-      for( const PeakDef &p : solution_peaks )
-        solution_peaks_ptrs.push_back( make_shared<const PeakDef>(p) );
-      const auto resType = PeakFitUtils::coarse_resolution_from_peaks(solution_peaks_ptrs);
-      
-      const bool isHPGe = (resType == PeakFitUtils::CoarseResolutionType::High); //Shouldnt matter since peaks all have defined ROIs, but JIC
-      
-      vector< vector<shared_ptr<const PeakDef>> > fit_peaks( rois.size() );
-      
-      SpecUtilsAsync::ThreadPool pool;
-      size_t roi_num = 0;
-      for( const auto &cont_peaks : rois )
+      try
       {
-        const vector<shared_ptr<const PeakDef>> *peaks = &(cont_peaks.second);
-        
-        pool.post( [&fit_peaks, roi_num, foreground, peaks, ana_drf, isHPGe](){
-          
-          // If two peaks are near each other, we wont be able to resolve them in the fit,
-          //  so just get rid of the smaller amplitude peak
-          vector<shared_ptr<const PeakDef>> peaks_to_filter = *peaks;
-          std::sort( begin(peaks_to_filter), end(peaks_to_filter),
-                []( const shared_ptr<const PeakDef> &lhs, const shared_ptr<const PeakDef> &rhs ) -> bool {
-            if( (lhs->type() != PeakDef::GaussianDefined) 
-               || (rhs->type() != PeakDef::GaussianDefined) )
-            {
-              return (lhs->type() < rhs->type());
-            }
-            return lhs->amplitude() > rhs->amplitude();
-          } ); //sort(...)
-          
-          
-          vector<shared_ptr<const PeakDef>> peaks_to_refit;
-          for( const auto &to_add : peaks_to_filter )
-          {
-            if( to_add->type() != PeakDef::GaussianDefined )
-            {
-              peaks_to_refit.push_back( to_add );
-              continue;
-            }
-            
-            bool keep = true;
-            for( const auto &already_added : peaks_to_refit )
-            {
-              if( already_added->type() != PeakDef::GaussianDefined )
-                continue;
-              
-              // Using the default value of ShieldingSourceFitOptions::photopeak_cluster_sigma,
-              //  1.25, to decide if we should keep this peak or not
-              if( fabs(to_add->mean() - already_added->mean()) < 1.25*already_added->sigma() )
-              {
-                keep = false;
-                break;
-              }
-            }//for( const auto &already_added : peaks_to_refit )
-            
-            if( keep )
-              peaks_to_refit.push_back( to_add );
-          }//for( const auto &to_add : peaks_to_filter )
-          
-          std::sort( begin(peaks_to_refit), end(peaks_to_refit), &PeakDef::lessThanByMeanShrdPtr );
-          
-          WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
-          fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly; //Arbitrary
-          
-          fit_peaks[roi_num] = refitPeaksThatShareROI( foreground, ana_drf, peaks_to_refit, fit_options );
-          
-          if( fit_peaks[roi_num].size() != peaks_to_refit.size() )
-          {
-            cout << "refitPeaksThatShareROI gave " << fit_peaks[roi_num].size() << " peaks, while"
-            << " we wanted " << peaks->size() << ", will try fitPeaksInRange(...)" << endl;
-            vector<PeakDef> input_peaks;
-            for( const auto &p : peaks_to_refit )
-              input_peaks.push_back( *p );
-            
-            const double lx = input_peaks.front().lowerX();
-            const double ux = input_peaks.front().upperX();
-            
-            const double ncausality = 10;
-            const double stat_threshold = 0.5;
-            const double hypothesis_threshold = -1.0;
-            Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
-            fit_options |= PeakFitLM::PeakFitLMOptions::SmallRefinementOnly; //THe peaks should be pretty close, so we'll only allow small changes to mean, so we dont fit into someunrelated peak...
-            
-            const vector<PeakDef> retry_peak = fitPeaksInRange( lx, ux, ncausality, stat_threshold,
-                                                          hypothesis_threshold, input_peaks,
-                                                          foreground, fit_options, isHPGe );
-            
-            if( (retry_peak.size() == peaks_to_refit.size())
-               || (fit_peaks[roi_num].empty() && !retry_peak.empty()) )
-            {
-              // This is *usually* the case
-              fit_peaks[roi_num].clear();
-              for( const auto &p : retry_peak )
-                fit_peaks[roi_num].push_back( make_shared<PeakDef>(p) );
-            }else if( !fit_peaks[roi_num].empty() )
-            {
-              // Maybe a peak became insignificant or something, just go with it
-            }else
-            {
-              cerr << "fitPeaksInRange(...) also failed us, giving " << retry_peak.size()
-              << " peaks when we wanted " << peaks_to_refit.size()
-              << ", will just use Rel. Eff. peaks." << endl;
-              fit_peaks[roi_num] = *peaks;
-            }//if( retry_peak.size() == peaks->size() ) / else
-          }//if( fit_peaks[roi_num].size() != peaks->size() )
-        } );
-        
-        ++roi_num;
-      }//for( auto &cont_peaks : rois )
-
-      pool.join();
-      
-      for( const auto &pvec : fit_peaks )
+        final_peaks = solution->clustered_input_foreground_display_peaks();
+      }catch( std::exception &e )
       {
-        for( const auto &p : pvec )
-          final_peaks.push_back( *p );
+        passMessage( "Error computing effective peaks: " + std::string(e.what()), WarningWidget::WarningMsgHigh );
+        return;
       }
-      std::sort( begin(final_peaks), end(final_peaks), &PeakDef::lessThanByMean );
     }else
     {
-      final_peaks = solution_peaks;
+      if( solution->m_background )
+        final_peaks = final_peaks = solution->m_peaks_without_back_sub;
+      else
+        final_peaks = solution->m_fit_peaks_in_spectrums_cal;
     }
     
     PeakModel *peak_model = interpsec->peakModel();
@@ -3904,7 +3789,6 @@ void RelActAutoGui::setPeaksToForeground()
     //  them like we do when we do a peak search, see the `PeakSelectorWindow` class constructor
     //  for how its done there
   }) );
-  
 }//void setPeaksToForeground()
 
 

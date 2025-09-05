@@ -842,20 +842,6 @@ a.DownloadLink.RelActDownload > span
   margin-bottom: 10px;
 }
 
-.SetToPeaksDialog .AddOrReplaceRefitRow
-{
-  display: flex;
-  justify-content: right;
-  padding-right: 10px;
-  margin-bottom: 10px;
-}
-
-.SetToPeaksDialog .AddOrReplaceRefitRow label
-{
-  /* Make the  checkbox and label line up in the center. */
-  display: flex;
-  justify-content: center;
-}
 
 .RelActAutoGui .RelActCalcAutoAlphaBuildWarning
 {

@@ -85,7 +85,6 @@
   <message id="rpd-tbl-hdr-tt-trans">Actual nuclide which decayed to give this particle.</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">Decay mode of the parent nuclide, which produced this particle.</message>
   <message id="rpd-tbl-hdr-tt-type">The type of particle produced</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
-
-
+  <message id="rpd-fit-peaks-wait-title">Fitting peaks</message>
+  <message id="rpd-fit-peaks-wait-content">You can close this window, and things will be updated when done.</message>
 </messages>

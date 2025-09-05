@@ -657,6 +657,17 @@ struct Options
    * used.
    */
   bool same_external_shielding_for_all_rel_eff_curves = false;
+  
+  /** When gamma lines need to be clustered together to associate with an effective peak,
+   this value is used to control what gammas are include in an "effective" peak.
+   
+   Currently this option is used when assigning gammas to peaks fit in the spectrum as part
+   of doing the RelActManua solution for an initial estimate of parameters to start the optimization
+   at, as well as for computing `m_obs_eff_for_each_curve`.
+   
+   \sa fit_free_peak_amplitudes
+   */
+  double cluster_num_sigma = 1.5;
 
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.
