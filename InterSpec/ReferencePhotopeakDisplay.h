@@ -478,6 +478,7 @@ protected:
   ReferenceLineInfo m_currentlyShowingNuclide;
   
   ColorSelect *m_colorSelect;
+  Wt::WPushButton *m_fitPeaks;
   Wt::WInteractWidget *m_csvDownload;
   
   /** Indicates if the user has picked a color for the current source.

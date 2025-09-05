@@ -163,6 +163,17 @@
     font-size: 12px;
 }
 
+.ReferencePhotopeakDisplay .RefBtmRow {
+  display: flex;
+  justify-content: center;
+}
+
+.ReferencePhotopeakDisplay button.Wt-btn.with-label.LightButton.FitPeaksBtn {
+  font-size: 10px;
+  height: 18px;
+  align-self: center;
+}
+
 @media (max-width: 350px) {
   .IsPhone.Portrait .ReferencePhotopeakDisplay .FeatureMarkerWidget {
     font-size: 6pt;

@@ -827,7 +827,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_moreInfoBtn( NULL ),
     m_persistLines( NULL ),
     m_clearLines( NULL ),
-    //m_fitPeaks( NULL ),
     m_showGammas( NULL ),
     m_options_icon( NULL ),
     m_options( NULL ),
@@ -855,6 +854,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_particleModel( NULL ),
     m_currentlyShowingNuclide(),
     m_colorSelect( nullptr ),
+    m_fitPeaks( nullptr ),
     m_csvDownload( nullptr ),
     m_userHasPickedColor( false ),
     m_peaksGetAssignedRefLineColor( false ),
@@ -1063,13 +1063,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_shieldingSelect->materialModified().connect( this, &ReferencePhotopeakDisplay::updateDisplayChange );
   lowerInputLayout->addWidget( m_shieldingSelect, 2, 0 );
 
-  //m_fitPeaks = new WPushButton( "Fit Peaks" );
-  //tooltip = "Fits dominant peaks for primary nuclide";
-  //HelpSystem::attachToolTipOn( m_fitPeaks, tooltip, showToolTips );
-  //m_fitPeaks->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
-  //inputLayout->addWidget( m_fitPeaks, 2, 2 );
-  //m_fitPeaks->disable();
-  
   if( m_lineColors.empty() )
     m_lineColors = sm_def_line_colors;
     
@@ -1244,11 +1237,37 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
                                  WLength(5,WLength::FontEm) );
   
   auto bottomRow = new WContainerWidget();
+  bottomRow->addStyleClass( "RefBtmRow" );
   auto helpBtn = new WContainerWidget(bottomRow);
   helpBtn->addStyleClass("Wt-icon ContentHelpBtn RefGammaHelp");
   helpBtn->clicked().connect(boost::bind(&HelpSystem::createHelpWindow, "reference-gamma-lines-dialog"));
 
-  
+  m_fitPeaks = new WPushButton( WString::tr("rpd-fit-peaks-btn"), bottomRow );
+  m_fitPeaks->addStyleClass("LightButton FitPeaksBtn");
+  HelpSystem::attachToolTipOn( m_fitPeaks, WString::tr("rpd-tt-fit-peaks-btn"), showToolTips );
+  m_fitPeaks->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
+
+  /*
+   // We could have a few options
+   //  - Fit nuclide
+   //  - Fit peaks and then match nuclide
+   //  - Fit all peaks
+  m_fitPeaks = new WSplitButton( WString::tr("rpd-fit-peaks-btn"), bottomRow );
+  m_fitPeaks->addStyleClass( "LightButton FitPeaksBtn" );
+  m_fitPeaks->actionButton()->addStyleClass( "LightButton" );
+  m_fitPeaks->dropDownButton()->addStyleClass( "LightButton" );
+  m_fitPeaks->actionButton()->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
+  m_fitPeaks->hide();
+
+  WPopupMenu *peakFitMenu = nullptr;
+  if( m_viewer->isMobile() )
+    peakFitMenu = new WPopupMenu();
+  else
+    peakFitMenu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu);
+  m_fitPeaks->setMenu( assignPeakMenu );
+      peakFitMenu->addItem....
+*/
+
   RefGammaCsvResource *csv = new RefGammaCsvResource( this );
   csv->setTakesUpdateLock( true );
   
@@ -2612,10 +2631,10 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   
   m_persistLines->setEnabled( show_lines );
   m_clearLines->setDisabled( m_persisted.empty() && !show_lines );
-  
-  if( m_csvDownload )
-    m_csvDownload->setDisabled( !show_lines );
-  
+
+  m_csvDownload->setDisabled( !show_lines );
+  m_fitPeaks->setHidden( !show_lines );
+
   
   const bool isPhone = ( m_spectrumViewer && m_spectrumViewer->isPhone() );
   const WString clearLineTxt = isPhone ? WString::tr(m_persisted.empty() ? "Remove" : "RemoveAll")
@@ -3473,39 +3492,10 @@ void ReferencePhotopeakDisplay::setReaction( const ReactionGamma::Reaction *rctn
 
 void ReferencePhotopeakDisplay::fitPeaks()
 {
-  passMessage( "ReferencePhotopeakDisplay::fitPeaks() not implemented yet,"
-               " but it will be really cool once it is", 2 );
-  
-  //-Get nuclide being displayed, including persisted, then do a whole lot of work...
-  //-Get the existing peaks, and (temporarily fix their means).
-  //-If the existing detector response (m_detectorDisplay->detector()) does not
-  //   have resolution information, do a pre-fit of the highest amplitude
-  //   candiates (above 100 keV, highest amp candidate in each 50 keV span
-  //   maybye), as use this as a starting width response.  If this fales, than
-  //   just use a generic NaI, HPGe, or LaBr resonse.
-  //-Use this detector response to do the 'skyline' type filtering of potential
-  //   peaks.  E.g. loop over each gamma line, and use the same guessing
-  //   algorithm that asigning a nuclide line to a peak does, to see if that
-  //   gamma line would be selected, if so, fit for that peak, if not, dont
-  //   (btw, Ba133 window identifiaction method fails for NaI Ba133, so check
-  //    that out and improve it)
-  //-Now try to figure out which peaks should be fit in the same ROIs, and
-  //   co-fit them, while indiviually fitting the others.  The existing peaks
-  //   will have to be be tossed into the fit as well, but with fixed means.
-  //   This will have to be re-evaluted after the initial fit.
-  //-To actually assign the isotopes to the peaks, should consider the case
-  //   of a single peak for multipe isotopes being shown: at first just identify
-  //   candate nuclides, then disregard shielding and check the amplitude
-  //   relative to the nearest candidate peak of each isotope (at an assumed
-  //   age of course), and assign it to the peak that is closest.  Could also
-  //   consider trying to make sure to assign at least some peaks to each
-  //   nuclide.
-  //-
-  
-  
-//  m_spectrumViewer
-  
+
+  //AnalystChecks::fit_peaks_for_nuclides
 }//void fitPeaks()
+
 
 void ReferencePhotopeakDisplay::clearAllLines()
 {
@@ -3534,8 +3524,7 @@ void ReferencePhotopeakDisplay::clearAllLines()
       m_prevNucs.resize( m_max_prev_nucs );
   }//if( !m_currentlyShowingNuclide.labelTxt.empty() )
   
-  
-  //m_fitPeaks->disable();
+
   m_persisted.clear();
   m_currentlyShowingNuclide.reset();
   m_particleModel->clear();
@@ -3546,7 +3535,8 @@ void ReferencePhotopeakDisplay::clearAllLines()
   m_nuclideEdit->setText( "" );
   m_persistLines->disable();
   m_clearLines->disable();
-  
+  m_fitPeaks->hide();
+
   // Reset the shielding as well
   if( m_shieldingSelect->isGenericMaterial() )
     m_shieldingSelect->setAtomicNumberAndArealDensity( m_shieldingSelect->atomicNumber(), 0.0 );
