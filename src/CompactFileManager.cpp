@@ -1332,7 +1332,7 @@ void CompactFileManager::handleSwapWithForeground( const SpecUtils::SpectrumType
     return;
   
   const shared_ptr<SpecMeas> meas = m_interspec->measurment(type);
-  const set<int> &samples = m_interspec->displayedSamples(type);
+  const set<int> samples = m_interspec->displayedSamples(type);
   const vector<string> detectors = m_interspec->detectorsToDisplay(type);
 
   // When we set the foreground, the background or secondary may get cleared, so we'll re-set that.
@@ -1340,11 +1340,11 @@ void CompactFileManager::handleSwapWithForeground( const SpecUtils::SpectrumType
                                                ? SpecUtils::SpectrumType::SecondForeground 
                                                : SpecUtils::SpectrumType::Background;
   const shared_ptr<SpecMeas> other_meas = m_interspec->measurment(other_type);
-  const set<int> &other_samples = m_interspec->displayedSamples(other_type);
+  const set<int> other_samples = m_interspec->displayedSamples(other_type);
   const vector<string> other_detectors = m_interspec->detectorsToDisplay(other_type);
   
   const shared_ptr<SpecMeas> foreground_meas = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
-  const set<int> &foreground_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  const set<int> foreground_samples = m_interspec->displayedSamples(SpecUtils::SpectrumType::Foreground);
   const vector<string> foreground_detectors = m_interspec->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   
   const Wt::WModelIndex index = m_files->index(meas);

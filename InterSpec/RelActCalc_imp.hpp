@@ -253,9 +253,26 @@ T eval_physical_model_eqn_imp( const double energy,
 
     assert( areal_density >= 0.0 );
 
-    if( (mu >= 0.0) && (areal_density >= 0.0) )
-      answer *= (1.0 - exp(-mu * areal_density)) / (mu * self_atten->areal_density);
-    
+    //The simple computation to handel self-attenuation would be:
+    //  answer *= (1.0 - exp(-mu * areal_density)) / (mu * areal_density);
+    //But if -mu*areal_density is zero, we get NaN, and even as it goes towards zero, we will greatly lose precision
+
+    const T epsilon = T(1.0e-8);
+    const T x = mu * areal_density;
+
+    if( x < epsilon )
+    {
+      // Use the Taylor series expansion for small x.
+      // f(x) = 1 - x/2 + x^2/6
+      answer *= (T(1.0) - 0.5*x + ((x*x) / 6.0)); // + -(x*x*x)/24.0 + ...
+    }else
+    {
+      // For larger x, use the standard formula, but with expm1
+      // to avoid catastrophic cancellation near zero.
+      // 1 - exp(-x) = -expm1(-x)
+      answer *= -expm1(-x) / x;
+    }//if( (mu*areal_density) < epsilon ) / else
+
     assert( !isnan(answer) && !isinf(answer) );
   }//if( self_atten->has_value() )
   

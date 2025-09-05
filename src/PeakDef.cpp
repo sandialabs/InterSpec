@@ -3769,6 +3769,18 @@ bool PeakDef::hasSourceGammaAssigned() const
     || m_xrayElement || m_reaction);
 }
 
+
+std::string PeakDef::sourceName() const
+{
+  if( m_parentNuclide )
+    return m_parentNuclide->symbol;
+  if( m_xrayElement )
+    return m_xrayElement->symbol;
+  if( m_reaction )
+    return m_reaction->name();
+  return "";
+}
+
 void PeakDef::setNuclearTransition( const SandiaDecay::Nuclide *parentNuclide,
                                     const SandiaDecay::Transition *transition,
                                     const int index,

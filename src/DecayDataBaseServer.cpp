@@ -127,7 +127,7 @@ void DecayDataBaseServer::setXmlFileDirectory( const std::string &dir )  //assum
 double EnergyToNuclideServer::sm_halfLife = 6000.0*SandiaDecay::second;
 double EnergyToNuclideServer::sm_minRelativeBranchRatio = 0.0;
 
-const std::shared_ptr< const EnergyToNuclideServer::EnergyNuclidePairVec > &
+const std::shared_ptr< const EnergyToNuclideServer::EnergyNuclidePairVec > 
                                         EnergyToNuclideServer::energyToNuclide()
 {
   std::lock_guard<std::mutex> lock( sm_mutex );
@@ -252,6 +252,9 @@ vector<const SandiaDecay::Nuclide *> EnergyToNuclideServer::nuclidesWithGammaInR
                                                  float highE,
                                                  const EnergyNuclidePairVec &gammaToNuc )
 {
+  if( gammaToNuc.empty() )
+    return {};
+  
   if( highE < lowE )
     swap( highE, lowE );
   const EnergyNuclidePair lowerE( lowE, NULL ), upperE( highE, NULL );

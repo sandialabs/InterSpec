@@ -65,7 +65,7 @@ public:
   static const float m_maxfwhm;// = 450.0f;  //reasonable range of peak widths
 
 protected:
-  /** Flags for what to do in `render(flags)` funciton */
+  /** Flags for what to do in `render(flags)` function */
   enum RenderActions
   {
     UpdatePreview = 0x01,
@@ -93,12 +93,15 @@ protected:
   Wt::WCheckBox *m_fitEnergy;
   Wt::WCheckBox *m_fitFWHM;
   Wt::WCheckBox *m_fitAmplitude;
+  Wt::WCheckBox *m_associateWithNuclide;
+  
+  const std::string m_initial_src_hint;
   
   Wt::WText *m_chart;
   
 public:
   
-  AddNewPeakDialog( const float initialEnergy );
+  AddNewPeakDialog( const float initialEnergy, const std::string &ref_line_hint );
   
   /** Estimates the peak FWHM to initially use for an energy.
    
@@ -115,19 +118,21 @@ protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   void updateCandidatePeakPreview();
+  void updateAssociateWithCb();
 
   void roiTypeChanged();
   
   void meanChanged();
   
-  
   void fwhmChanged();
-  
-  
+    
   void ampChanged();
 
-  
   void roiRangeChanged();
+  
+  void associateWithSrcChanged();
+  
+  void setRefLineSrcToPeak();
   
   void doFit();
 };//class AddNewPeakDialog : public AuxWindow

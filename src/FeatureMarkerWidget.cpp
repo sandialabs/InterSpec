@@ -162,7 +162,6 @@ void FeatureMarkerWidget::init()
   m_viewer->useMessageResourceBundle( "FeatureMarkerWidget" );
   
   m_escapePeaks = new WCheckBox( WString::tr("fmw-escape-peaks"), this );
-  m_escapePeaks->setInline( false );
   m_escapePeaks->setWordWrap( false );
   m_escapePeaks->addStyleClass( "CbNoLineBreak" );
   m_escapePeaks->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
@@ -171,7 +170,6 @@ void FeatureMarkerWidget::init()
                                                 FeatureMarkerType::EscapePeakMarker, false ) );
   
   m_comptonPeak = new WCheckBox( WString::tr("fmw-compton-peak"), this );
-  m_comptonPeak->setInline( false );
   m_comptonPeak->setWordWrap( false );
   m_comptonPeak->addStyleClass( "CbNoLineBreak" );
   m_comptonPeak->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
@@ -197,7 +195,6 @@ void FeatureMarkerWidget::init()
   m_comptonAngle->textInput().connect( this, &FeatureMarkerWidget::handleComptonAngleChanged );
   
   m_comptonEdge = new WCheckBox( WString::tr("fmw-compton-edge"), this );
-  m_comptonEdge->setInline( false );
   m_comptonEdge->setWordWrap( false );
   m_comptonEdge->addStyleClass( "CbNoLineBreak" );
   m_comptonEdge->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,
@@ -207,7 +204,6 @@ void FeatureMarkerWidget::init()
   
   
   m_sumPeaks = new WCheckBox( WString::tr("fmw-sum-peak"), this );
-  m_sumPeaks->setInline( false );
   m_sumPeaks->setWordWrap( false );
   m_sumPeaks->addStyleClass( "CbNoLineBreak" );
   m_sumPeaks->checked().connect( boost::bind( &FeatureMarkerWidget::handleFeatureMarkerOptionChanged, this,

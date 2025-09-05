@@ -30,6 +30,8 @@
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/triangular.hpp>
 
+#include "Eigen/Dense"
+
 //Roots Minuit2 includes
 #include "Minuit2/FCNBase.h"
 #include "Minuit2/FunctionMinimum.h"
@@ -867,10 +869,8 @@ double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
   //Implementation is quite inneficient
   //log(eff(x)) = A0 + A1*logx + A2*logx^2 + A3*logx^3 + ...
-  using namespace boost::numeric;
-  
-  ublas::matrix<double> A( nbin, order );
-  ublas::vector<double> b( nbin );
+  Eigen::MatrixX<double> A( nbin, order );
+  Eigen::VectorX<double> b( nbin );
   
   for( size_t row = 0; row < nbin; ++row )
   {
@@ -882,15 +882,17 @@ double fit_intrinsic_eff_least_linear_squares( const std::vector<DetEffDataPoint
       A(row,col) = std::pow( log(x[row]), double(col)) / data_y_uncert;
   }//for( int col = 0; col < order; ++col )
   
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "fit_intrinsic_eff_least_linear_squares(...): trouble inverting matrix" );
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
   
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  const Eigen::MatrixX<double> A_transpose = A.transpose();
+  const Eigen::MatrixX<double> alpha = A_transpose * A;
+  const Eigen::MatrixX<double> C = alpha.inverse();
   
   coeffs.resize( order );
   coeff_uncerts.resize( order );

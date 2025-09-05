@@ -590,12 +590,40 @@ public:
                                     const std::vector<float> &pars );
 
   
+  //javaScriptFwhmFunction(): returns a JavaScript function string that computes
+  //  the FWHM for this detector as a function of energy.
+  //  Throws std::runtime_error if the detector does not have resolution info.
+  std::string javaScriptFwhmFunction() const;
+  
+  //javaScriptFwhmFunction(...): static function that returns a JavaScript function
+  //  string that computes the FWHM given coefficients and resolution function form.
+  //  Throws std::runtime_error if coefficients are invalid for the given form.
+  static std::string javaScriptFwhmFunction( const std::vector<float> &coeffs,
+                                             const ResolutionFnctForm form );
+
+  
   //Simple accessors
   float detectorDiameter() const;
   const std::string &efficiencyFormula() const;
   const std::string &name() const;
   const std::string &description() const;
   DrfSource drfSource() const;
+  
+  /** Prints detector parameterization to stdout for hardcoding purposes.
+   Prints out all the key parameters needed to recreate this detector response function
+   programmatically, including efficiency coefficients, FWHM coefficients, detector size, etc.
+   */
+  void printDetectorParameterizationToStdout() const;
+  
+  /** Static factory methods for common detector types with lazy initialization and caching.
+   These methods return const shared_ptrs to pre-configured detector response functions
+   for commonly used detector types. Thread-safe with single initialization.
+   */
+  static std::shared_ptr<const DetectorPeakResponse> getGenericHPGeDetector();
+  static std::shared_ptr<const DetectorPeakResponse> getGenericNaIDetector();
+  static std::shared_ptr<const DetectorPeakResponse> getGenericLaBrDetector();
+  static std::shared_ptr<const DetectorPeakResponse> getGenericCZTGeneralDetector();
+  static std::shared_ptr<const DetectorPeakResponse> getGenericCZTGoodDetector();
   
   float efficiencyEnergyUnits() const;
   

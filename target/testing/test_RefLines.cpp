@@ -49,6 +49,8 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
+#include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
+
 
 using namespace std;
 using namespace boost::unit_test;
@@ -845,5 +847,169 @@ BOOST_AUTO_TEST_CASE( testSerialization )
   
   check_serialization( input );
 }//BOOST_AUTO_TEST_CASE( testSerialization )
+
+
+BOOST_AUTO_TEST_CASE( testMajorLines )
+{
+  SetDataDirs::set_data_dir();
+  
+  RefLineInput input;
+  input.m_input_txt = "Co60";
+  input.m_age = "20 y";
+  input.m_showGammas = true;
+  input.m_showXrays = true;
+  
+  std::shared_ptr<ReferenceLineInfo> ref_lines;
+  BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
+  BOOST_REQUIRE_MESSAGE( ref_lines, "Ref lines for '" << input.m_input_txt << "' should not be null");
+  BOOST_CHECK( ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid );
+  
+  // Check that the 1173.228 and 1332.4919 keV lines are marked as major
+  bool found_1173_major = false;
+  bool found_1332_major = false;
+  size_t total_major_lines = 0;
+  
+  for( const ReferenceLineInfo::RefLine &line : ref_lines->m_ref_lines )
+  {
+    if( line.m_major_line )
+    {
+      total_major_lines++;
+      
+      if( std::abs(line.m_energy - 1173.228) < 0.1 )
+        found_1173_major = true;
+      else if( std::abs(line.m_energy - 1332.4919) < 0.1 )
+        found_1332_major = true;
+    }
+  }
+  
+  BOOST_CHECK_MESSAGE( found_1173_major, "1173.228 keV line should be marked as major" );
+  BOOST_CHECK_MESSAGE( found_1332_major, "1332.4919 keV line should be marked as major" );
+  BOOST_CHECK_MESSAGE( total_major_lines == 2, 
+                      "Only the two main Co60 gamma lines should be major, found " << total_major_lines );
+  
+  // Check JSON serialization includes major field for these two lines
+  std::string json;
+  BOOST_REQUIRE_NO_THROW( ref_lines->toJson(json) );
+  
+  // Validate JSON is parseable
+  nlohmann::json parsed_json;
+  BOOST_REQUIRE_NO_THROW( parsed_json = nlohmann::json::parse(json) );
+  BOOST_CHECK_MESSAGE( parsed_json.is_object(), "Generated JSON should be a valid object" );
+  
+  // Check that the JSON contains a "lines" array
+  BOOST_REQUIRE_MESSAGE( parsed_json.contains("lines"), "JSON should contain 'lines' array" );
+  BOOST_REQUIRE_MESSAGE( parsed_json["lines"].is_array(), "JSON 'lines' should be an array" );
+  
+  // Count major lines in the parsed JSON and verify they match expected energies
+  size_t json_major_count = 0;
+  bool found_1173_in_json = false;
+  bool found_1332_in_json = false;
+  
+  for( const auto& line : parsed_json["lines"] )
+  {
+    if( line.contains("major") && line["major"] == 1 )
+    {
+      json_major_count++;
+      
+      // Check if this major line corresponds to our expected energies
+      if( line.contains("e") )
+      {
+        double energy = line["e"];
+        if( std::abs(energy - 1173.228) < 0.1 )
+          found_1173_in_json = true;
+        else if( std::abs(energy - 1332.4919) < 0.1 )
+          found_1332_in_json = true;
+      }
+    }
+  }
+  
+  BOOST_CHECK_EQUAL( json_major_count, 2 );
+  BOOST_CHECK_MESSAGE( found_1173_in_json, "1173.228 keV line should be marked as major in JSON" );
+  BOOST_CHECK_MESSAGE( found_1332_in_json, "1332.4919 keV line should be marked as major in JSON" );
+  
+  
+  // Test with custom energy (single line should be marked as major due to intensity)
+  input.m_input_txt = "511 keV";
+  input.m_age = "";
+  BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
+  BOOST_REQUIRE_MESSAGE( ref_lines, "Ref lines for custom energy should not be null");
+  BOOST_CHECK( ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid );
+  BOOST_REQUIRE_EQUAL( ref_lines->m_ref_lines.size(), 1 );
+  
+  // Custom energy lines have m_attenuation_applies=true by default
+  const ReferenceLineInfo::RefLine &custom_line = ref_lines->m_ref_lines[0];
+  BOOST_CHECK_EQUAL( custom_line.m_attenuation_applies, true );
+  // Since there's only one line, it should be marked as major (100% intensity coverage)
+  BOOST_CHECK_EQUAL( custom_line.m_major_line, true );
+  
+  // Check JSON for custom energy
+  json.clear();
+  BOOST_REQUIRE_NO_THROW( ref_lines->toJson(json) );
+  
+  // Validate JSON is parseable and contains major line
+  BOOST_REQUIRE_NO_THROW( parsed_json = nlohmann::json::parse(json) );
+  BOOST_CHECK_MESSAGE( parsed_json.is_object(), "Generated JSON should be a valid object" );
+  BOOST_REQUIRE_MESSAGE( parsed_json.contains("lines") && parsed_json["lines"].is_array(),
+                        "Custom energy JSON should contain lines array" );
+  
+  // Verify the 511 keV line is marked as major in JSON
+  bool found_511_major = false;
+  for( const auto& line : parsed_json["lines"] )
+  {
+    if( line.contains("major") && line["major"] == 1 && line.contains("e") )
+    {
+      double energy = line["e"];
+      if( std::abs(energy - 511.0) < 0.1 )
+        found_511_major = true;
+    }
+  }
+  BOOST_CHECK_MESSAGE( found_511_major, "511 keV line should be marked as major in JSON" );
+  
+  
+  // Test edge case: I125 with 3 days age has very low energy gammas (~27-35 keV)
+  // that will be heavily attenuated by the 1cm Pb shielding in the algorithm
+  input.m_input_txt = "I125";
+  input.m_age = "3 days";
+  input.m_showGammas = true;
+  input.m_showXrays = true;
+  BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
+  BOOST_REQUIRE_MESSAGE( ref_lines, "Ref lines for I125 should not be null");
+  BOOST_CHECK( ref_lines->m_validity == ReferenceLineInfo::InputValidity::Valid );
+  
+  // I125 should have major lines marked from the unshielded pass,
+  // even though the Pb shielding pass will heavily attenuate them
+  size_t i125_major_count = 0;
+  for( const ReferenceLineInfo::RefLine &line : ref_lines->m_ref_lines )
+  {
+    if( line.m_major_line )
+      i125_major_count++;
+  }
+  
+  BOOST_CHECK_GT( i125_major_count, 0 );
+  BOOST_CHECK_MESSAGE( i125_major_count <= ref_lines->m_ref_lines.size(),
+                      "Not more major lines than total lines for I125" );
+  
+  // Verify the algorithm handles the case where shielding makes intensities very small
+  // without crashing and still produces valid JSON with major lines marked
+  json.clear();
+  BOOST_REQUIRE_NO_THROW( ref_lines->toJson(json) );
+  BOOST_REQUIRE_NO_THROW( parsed_json = nlohmann::json::parse(json) );
+  BOOST_CHECK_MESSAGE( parsed_json.is_object(), "I125 JSON should be valid despite heavy attenuation" );
+  
+  // Verify that some lines are marked as major in the JSON despite potential zero intensities
+  if( parsed_json.contains("lines") && parsed_json["lines"].is_array() )
+  {
+    size_t i125_json_major_count = 0;
+    for( const auto& line : parsed_json["lines"] )
+    {
+      if( line.contains("major") && line["major"] == 1 )
+        i125_json_major_count++;
+    }
+    
+    BOOST_CHECK_EQUAL( i125_json_major_count, i125_major_count );
+    BOOST_CHECK_MESSAGE( i125_json_major_count > 0, 
+                        "I125 should have major lines marked in JSON despite heavy attenuation" );
+  }
+}//BOOST_AUTO_TEST_CASE( testMajorLines )
 
 

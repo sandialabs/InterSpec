@@ -32,15 +32,6 @@
 #cmakedefine01 PERFORM_DEVELOPER_CHECKS
 #cmakedefine01 USE_OSX_NATIVE_MENU
 
-// 20210604: started playing around with using FLEX layout its not there yet, but shows some promise.
-//   Items that need to be worked on:
-//     - [ ] Controlling time chart height properly.
-//     - [ ] When tool tabs are hidden, and one of those tools is selected to show, properly handling that
-//     - [ ] Allowing to resize the tool tabs and time chart.
-//     - [ ] Propagating tool tab size changes to wtResize(...) in JS to allow those tabs layouts
-//           to change - or reimplementing their layouts using CSS grid or flex
-#cmakedefine01 USE_CSS_FLEX_LAYOUT
-
 #cmakedefine01 USE_REL_ACT_TOOL
 
 

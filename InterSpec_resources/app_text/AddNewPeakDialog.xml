@@ -13,4 +13,5 @@
   <message id="anpd-screen-to-small">Screen to small for preview.</message>
   <message id="anpd-err-preview">Error rendering preview</message>
   <message id="anpd-err-fit-failed">Fit Failed.</message>
+  <message id="anpd-associate-with">Associate with {1}</message>
 </messages>

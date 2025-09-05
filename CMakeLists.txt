@@ -126,12 +126,6 @@ set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
 option(USE_LEAFLET_MAP "Use leaflet-based maps widget" OFF)
 set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
-option(
-    USE_CSS_FLEX_LAYOUT
-    "Use CSS Flex/Grid Layout in-place of Wts layouts were possible (work in progress)"
-    OFF
-)
-
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
 option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" OFF)
@@ -263,6 +257,7 @@ set(sources
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
+    src/ReferenceLinePredef.cpp
     src/ReferencePhotopeakDisplay.cpp
     src/IsotopeNameFilterModel.cpp
     src/ReactionGamma.cpp
@@ -345,6 +340,7 @@ set(sources
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
+    src/ExternalRidResult.cpp
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
@@ -352,6 +348,7 @@ set(sources
     src/RefSpectraModel.cpp
     src/AnalystChecks.cpp
     src/SimpleActivityCalc.cpp
+    src/RefLineDynamic.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -373,6 +370,7 @@ set(headers
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
+    InterSpec/ReferenceLinePredef.h
     InterSpec/ReferencePhotopeakDisplay.h
     InterSpec/IsotopeNameFilterModel.h
     InterSpec/ReactionGamma.h
@@ -454,6 +452,7 @@ set(headers
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
     InterSpec/ExportSpecFile.h
+    InterSpec/ExternalRidResult.h
     InterSpec/EnterAppUrlWindow.h
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
@@ -463,6 +462,7 @@ set(headers
     InterSpec/RefSpectraModel.h
     InterSpec/AnalystChecks.h
     InterSpec/SimpleActivityCalc.h
+    InterSpec/RefLineDynamic.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -871,6 +871,8 @@ if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
             XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         )
     endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO") #macOS 26 requires this, or else we get some error for development
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
 if(MSVC AND (NOT hasParent))

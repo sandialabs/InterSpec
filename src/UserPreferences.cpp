@@ -395,7 +395,22 @@ void UserPreferences::setPreferenceValueInternal( const std::string &name,
                                InterSpec *viewer )
 {
   const string value_as_str = std::to_string(value);
-  UserPreferences::setPreferenceValueWorker( name, value_as_str, viewer );
+  const bool updated = UserPreferences::setPreferenceValueWorker( name, value_as_str, viewer );
+  
+  // If preference value was not updated, we wont call the callbacks - if we do, we may get stuck
+  //  in an infinite recursion loop.
+  if( !updated )
+    return;
+  
+  UserPreferences * const self = viewer->preferences();
+  assert( self );
+  
+  const auto callback_pos = self->m_onIntChangeSignals.find(name);
+  if( (callback_pos != end(self->m_onIntChangeSignals)) && callback_pos->second )
+  {
+    Wt::Signals::signal<void(int)> &signal = *callback_pos->second;
+    signal(value);
+  }
 }//void UserPreferences::setPreferenceValueInternal(int)
 
 

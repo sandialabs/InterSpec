@@ -53,7 +53,9 @@
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReferenceLineInfo.h"
+#include "InterSpec/ReferenceLinePredef.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -76,96 +78,15 @@ std::string jsQuote( const std::string &str )
 }
 
 
-struct NucMixComp
-{
-  /** An age offset, relative to the rest of the nuclides (i.e., t=0).
-   
-   A negative value will increase the age of the nuclide, and positive value reduce it.
-   
-   If a positive value is used, and it is larger than the requested mixture age in the
-   "Reference Photopeak" tool, than an age of 0 will be used.
-   
-   This value corresponds to the "age-offset" attribute of the <Nuc /> element.
-   
-   TODO: as of 20240217, the use of "age-offset" is not well tested
-   */
-  double m_age_offset;
-  
-  /** The relative activity for this nuclide - the total activity fractions dont need to add up to 1, they will be normalized. */
-  double m_rel_act;
-  
-  /** The nuclide - must not be nullptr. */
-  const SandiaDecay::Nuclide *m_nuclide;
-  
-  /** Optional color specified in `add_ref_line.xml` for this nuclide; will override user selection if specified. */
-  Wt::WColor m_color;
-};//struct NucMixComp
-
-struct NucMix
-{
-  std::string m_name;
-  double m_default_age;
-  std::string m_default_age_str;
-  
-  /** If the activity fractions are fixed, at whatever time is specified (e.g., no matter the age, the relative
-   activity fractions of the parent nuclides will always be the same).
-   
-   If the XML provides a "reference-age", then this will be false, and changing the age will change the relative
-   ratio of the activities.
-   
-   TODO: as of 20240217, the use of "reference-age" is not well tested
-   */
-  bool m_fixed_act_fractions;
-  
-  std::vector<NucMixComp> m_components;
-};//struct NucMix
-
 std::mutex sm_nuc_mix_mutex;
 bool sm_have_tried_init = false;
 /** Protected by `sm_nuc_mix_mutex`; is only read in once, and never freed or changed until end of program. */
-std::shared_ptr<const std::map<std::string,NucMix>> sm_nuc_mixes;
+std::shared_ptr<const std::map<std::string,ReferenceLinePredef::NucMix>> sm_nuc_mixes;
 
 
-struct CustomLine
-{
-  float m_energy;
-  float m_branch_ratio;
-  std::string m_info;
-  Wt::WColor m_color;
-  
-  /** The nuclide the user may have specified.
-   If user specifies the nuclide, than the transition will be picked out, assuming a weighting window of 0.25 keV (i.e., if nuclide
-   is valid, so will transition), and that gamma was intended.
-   */
-  const SandiaDecay::Nuclide *m_nuclide;
-  const SandiaDecay::Transition *m_transition;
-  
-  /** If detector efficiency and/or shielding apply to this line, for line height display purposes only. */
-  bool m_atten_applies;
-  
-  CustomLine( float ener, float br, std::string &&inf,
-             const SandiaDecay::Nuclide *nuc, const SandiaDecay::Transition *trans,
-             const bool atten, Wt::WColor &&color )
-  : m_energy(ener),
-  m_branch_ratio(br),
-  m_info( std::move(inf) ),
-  m_color( std::move(color) ),
-  m_nuclide( nuc ),
-  m_transition( trans ),
-  m_atten_applies( atten )
-  {
-  }
-};//struct CustomLine
-
-struct CustomSrcLines
-{
-  string m_name;
-  float m_max_branch_ratio;
-  std::vector<CustomLine> m_lines;
-};//struct CustomSrcLines
 
 /** Also protected by `sm_nuc_mix_mutex`; is only created once, and never freed or changed until program termination. */
-std::shared_ptr<const std::map<std::string,CustomSrcLines>> sm_custom_lines;
+std::shared_ptr<const std::map<std::string,ReferenceLinePredef::CustomSrcLines>> sm_custom_lines;
 
 /** RIght now we will only hold info about fission files in memory - we wont hold fission data in memory.
  Maybe once things are working fully, and useful, could it be useful to do this.
@@ -186,6 +107,8 @@ void sanitize_label_str( string &label )
   SpecUtils::to_lower_ascii( label );
 }//void sanitize_label_str( string &label )
 
+
+
   
 void load_custom_nuc_mixes()
 {
@@ -197,266 +120,14 @@ void load_custom_nuc_mixes()
   
   sm_have_tried_init = true;
   
-  auto load_ref_line_file = []( const string filepath, map<string,NucMix> &nuc_mixes, map<string,CustomSrcLines> &custom_lines ){
-    
-    try
-    {
-      const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-      assert( db );
-      if( !db )
-        throw std::logic_error( "invalid SandiaDecayDataBase" );
-      
-      std::vector<char> data;
-      SpecUtils::load_file_data( filepath.c_str(), data );
-      
-      rapidxml::xml_document<char> doc;
-      const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
-      doc.parse<flags>( &data.front() );
-      
-      const XmlNode *ref_lines = doc.first_node( "RefLineDefinitions" );
-      if( !ref_lines )
-        throw runtime_error( "No RefLineDefinitions node." );
-      
-      XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
-      {
-        const XmlAttribute *mix_name = XML_FIRST_ATTRIB( nuc_mix, "name" );
-        const XmlAttribute *def_age = XML_FIRST_ATTRIB( nuc_mix, "default-age" );
-        
-        string mix_name_str = SpecUtils::xml_value_str( mix_name );
-        if( mix_name_str.empty() )
-          throw runtime_error( "No mixture name" );
-        
-        NucMix mix;
-        mix.m_name = mix_name_str;
-        mix.m_default_age = 0.0;
-        mix.m_default_age_str = "";
-        mix.m_fixed_act_fractions = true;
-        if( def_age )
-        {
-          mix.m_default_age_str = SpecUtils::xml_value_str( def_age );
-          mix.m_default_age = PhysicalUnits::stringToTimeDuration( mix.m_default_age_str );
-        }
-        
-        const XmlAttribute *ref_age_attrib = XML_FIRST_ATTRIB( nuc_mix, "reference-age" );
-        const string ref_age_str = SpecUtils::xml_value_str( ref_age_attrib );
-        double ref_age = -1.0;
-        if( !ref_age_str.empty() )
-        {
-          mix.m_fixed_act_fractions = false;
-          ref_age = PhysicalUnits::stringToTimeDuration( ref_age_str );
-        }//if( !ref_age_str.empty() )
-        
-        
-        XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
-        {
-          const XmlAttribute *nuc_name = XML_FIRST_ATTRIB( nuc, "name" );
-          const XmlAttribute *nuc_act_frac = XML_FIRST_ATTRIB( nuc, "act-frac" );
-          const XmlAttribute *age_offset = XML_FIRST_ATTRIB( nuc, "age-offset" );
-          const XmlAttribute *color = XML_FIRST_ATTRIB( nuc, "color" );
-          
-          if( !nuc_name || !nuc_name->value_size() )
-            throw runtime_error( "No nuclide name" );
-          
-          const string nuc_name_str = SpecUtils::xml_value_str( nuc_name );
-          
-          if( !nuc_act_frac || !nuc_act_frac->value_size() )
-            throw runtime_error( "No activity fraction for " + nuc_name_str
-                                + " in " + mix_name_str );
-          
-          NucMixComp comp;
-          comp.m_age_offset = 0.0;
-          comp.m_nuclide = db->nuclide( nuc_name_str );
-          if( !comp.m_nuclide )
-            throw runtime_error( "Invalid nuclide: " + nuc_name_str );
-          
-          if( !SpecUtils::parse_double( nuc_act_frac->value(), nuc_act_frac->value_size(),
-                                       comp.m_rel_act )
-             || (comp.m_rel_act < 0.0) )
-            throw runtime_error( "Invalid activity fraction: " + nuc_name_str );
-          
-          if( age_offset && age_offset->value_size() )
-          {
-            const string age_offset_str = SpecUtils::xml_value_str( age_offset );
-            comp.m_age_offset = PhysicalUnits::stringToTimeDuration( age_offset_str );
-          }//if( age_offset && age_offset->value_size() )
-          
-          if( color && color->value_size() )
-          {
-            const string color_str = SpecUtils::xml_value_str(color);
-            comp.m_color = Wt::WColor( color_str );
-            if( comp.m_color.isDefault() )
-            {
-              const string msg = "NucMixture named '" + mix_name_str + "'"
-              " has invalid color value for '" + nuc_name_str + "': "
-              "'" + color_str + "' - not CSS color string.";
-              cerr << msg << endl;
-              //throw runtime_error( msg ); // we wont disregard the whole file over a single color
-            }//if( parsing of color failed )
-          }//if( user specified color )
-          
-          mix.m_components.push_back( std::move(comp) );
-        }//XML_FOREACH_CHILD( nuc, nuc_mix, "Nuc" )
-        
-        assert( mix.m_fixed_act_fractions == (ref_age < 0.0) );
-        if( !mix.m_fixed_act_fractions && (ref_age > 0.0) )
-        {
-          // Figure out activities at t=0:
-          //  specified_act = A_0 * exp( -ref_age * nuc->decayConstant() );
-          //  A_0 = specified_act / exp( -ref_age * nuc->decayConstant() );
-          
-          for( NucMixComp &m : mix.m_components )
-          {
-            const double given_act = m.m_rel_act;
-            const SandiaDecay::Nuclide *nuc = m.m_nuclide;
-            m.m_rel_act = given_act / exp( -ref_age * nuc->decayConstant() );
-            
-#if( PERFORM_DEVELOPER_CHECKS )
-            SandiaDecay::NuclideMixture decay_mix;
-            decay_mix.addNuclideByActivity( nuc, m.m_rel_act );
-            const double ref_act = decay_mix.activity(ref_age, nuc);
-            if( (given_act > 0.0)
-               && (fabs(ref_act - given_act) > 1.0E-5*std::max(ref_act,given_act)) ) //1.0E-5 arbitrary
-            {
-              log_developer_error( __func__, "Decay correction calculation has failed." );
-              assert( fabs(ref_act - given_act) < 1.0E-5*std::max(ref_act,given_act) );
-            }
-#endif
-          }//for( NucMixComp &m : mix.m_components )
-        }//if( mix.m_fixed_act_fractions )
-        
-        double act_fraction_sum = 0.0;
-        for( const NucMixComp &m : mix.m_components )
-          act_fraction_sum += m.m_rel_act;
-        
-        if( (act_fraction_sum <= 0.0) || IsNan(act_fraction_sum) || IsInf(act_fraction_sum) )
-          throw runtime_error( "Invalid activity fraction sum" );
-        
-        for( NucMixComp &m : mix.m_components )
-          m.m_rel_act /= act_fraction_sum;
-        
-        sanitize_label_str( mix_name_str );
-        nuc_mixes[mix_name_str] = std::move(mix);
-      }//XML_FOREACH_CHILD( nuc_mix, ref_lines, "NucMixture" )
-      
-      
-      XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
-      {
-        const XmlAttribute *src_name = XML_FIRST_ATTRIB( source, "name" );
-        string src_name_str = SpecUtils::xml_value_str( src_name );
-        SpecUtils::trim( src_name_str );
-        
-        if( src_name_str.empty() )
-          throw runtime_error( "No name specified for a SourceLines element" );
-        
-        CustomSrcLines src_lines;
-        src_lines.m_name = src_name_str;
-        src_lines.m_max_branch_ratio = 0.0;
-        XML_FOREACH_CHILD( line, source, "Line" )
-        {
-          const XmlAttribute *info = XML_FIRST_ATTRIB( line, "info" );
-          string info_str = SpecUtils::xml_value_str( info );
-          SpecUtils::trim( info_str );
-          
-          const string values_str = SpecUtils::xml_value_str( line );
-          
-          vector<float> values;
-          SpecUtils::split_to_floats( values_str, values );
-          if( values.size() != 2 )
-            throw runtime_error( "SourceLines named '" + src_name_str + "' provided "
-                                + std::to_string(values.size()) + " values (expected two numbers)" );
-          
-          const float energy = values[0];
-          const float br = values[1];
-          
-          if( (energy <= 0.f) || (br < 0.0f) )
-            throw runtime_error( "SourceLines named '" + src_name_str + "' has a negative value." );
-          
-          src_lines.m_max_branch_ratio = std::max( src_lines.m_max_branch_ratio, br );
-          
-          const SandiaDecay::Nuclide *nuc = nullptr;
-          const SandiaDecay::Transition *trans = nullptr;
-          const XmlAttribute *nuclide = XML_FIRST_ATTRIB( line, "nuc" );
-          if( nuclide && nuclide->value_size() )
-          {
-            const string nuc_name = SpecUtils::xml_value_str(nuclide);
-            nuc = db->nuclide( nuc_name );
-            if( !nuc )
-              throw runtime_error( "SourceLines named '" + src_name_str + "' has an invalid nuclide ('" + nuc_name + "')." );
-            
-            size_t transition_index = 0;
-            PeakDef::SourceGammaType nearestGammaType;
-            PeakDef::findNearestPhotopeak( nuc, energy, 0.25, false, -1.0,
-                                          trans, transition_index, nearestGammaType );
-            if( !trans )
-              throw runtime_error( "SourceLines named '" + src_name_str + "' with nuclide '"
-                                  + nuc_name + "', couldnt be matched to source data for energy "
-                                  + std::to_string(energy) + " keV." );
-          }//if( nuclide && nuclide->value_size() )
-          
-          bool atten_applies = true;
-          const XmlAttribute *atten = XML_FIRST_ATTRIB( line, "atten" );
-          if( atten && atten->value_size() )
-          {
-            const string atten_str = SpecUtils::xml_value_str(atten);
-            if( SpecUtils::iequals_ascii(atten_str, "0")
-               || SpecUtils::iequals_ascii(atten_str, "false")
-               || SpecUtils::iequals_ascii(atten_str, "no") )
-            {
-              atten_applies = false;
-            }else if( !SpecUtils::iequals_ascii(atten_str, "1")
-                     && !SpecUtils::iequals_ascii(atten_str, "true")
-                     && !SpecUtils::iequals_ascii(atten_str, "yes") )
-            {
-              throw runtime_error( "SourceLines named '" + src_name_str + "' has invalid value "
-                                  " for the 'atten' attribute ('" + atten_str + "')" );
-            }
-          }//if( atten && atten->value_size() )
-          
-          Wt::WColor color;
-          const XmlAttribute *color_attrib = XML_FIRST_ATTRIB( line, "color" );
-          if( color_attrib && color_attrib->value_size() )
-          {
-            const string color_str = SpecUtils::xml_value_str(color_attrib);
-            color = Wt::WColor( color_str );
-            if( color.isDefault() )
-            {
-              // Parsing of color failed
-              const string msg =  "SourceLines named '" + src_name_str + "' has invalid value "
-              " for color attribute ('" + color_str
-              + "') - could not parse as CSS color.";
-              cerr << msg << endl;
-              //throw runtime_error( msg ); //We wont disregard the whole file over an invalid file
-            }
-          }//if( color_attrib && color_attrib->value_size() )
-          
-          src_lines.m_lines.emplace_back( energy, br, std::move(info_str), nuc,
-                                         trans, atten_applies, std::move(color) );
-        }//XML_FOREACH_CHILD( line, source, "Line" )
-        
-        if( src_lines.m_lines.empty() )
-          throw runtime_error( "No lines specified for SourceLines named '" + src_name_str + "'" );
-        
-        if( src_lines.m_max_branch_ratio <= 0.0f )
-          throw runtime_error( "Lines specified for SourceLines named '" + src_name_str + "' were all zero amplitude." );
-        
-        sanitize_label_str( src_name_str );
-        custom_lines[std::move(src_name_str)] = std::move(src_lines);
-      }//XML_FOREACH_CHILD( source, ref_lines, "SourceLines" )
-    }catch( std::exception &e )
-    {
-      cerr << "Failed to load '" << filepath << "' as custom ref lines: "
-      << e.what() << endl;
-    }//try / catch to load XML data
-  };//auto load_ref_line_file lambda
-  
   
   const string data_dir = InterSpec::staticDataDirectory();
   const string add_lines_path = SpecUtils::append_path( data_dir, "add_ref_line.xml" );
   
-  auto nuc_mixes = make_shared<map<string,NucMix>>();
-  auto custom_lines = make_shared<map<string,CustomSrcLines>>();
+  auto nuc_mixes = make_shared<map<string,ReferenceLinePredef::NucMix>>();
+  auto custom_lines = make_shared<map<string,ReferenceLinePredef::CustomSrcLines>>();
   
-  load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines );
+  ReferenceLinePredef::load_ref_line_file( add_lines_path, *nuc_mixes, *custom_lines, nullptr );
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   
@@ -477,7 +148,7 @@ void load_custom_nuc_mixes()
     
     // Any duplicate names, will overwrite what comes with InterSpec
     if( SpecUtils::is_file( custom_lines_path ) )
-      load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines );
+      ReferenceLinePredef::load_ref_line_file( custom_lines_path, *nuc_mixes, *custom_lines, nullptr );
   }//if( !user_data_dir.empty() )
 #endif
   
@@ -534,7 +205,7 @@ void load_custom_nuc_mixes()
 }//void load_custom_nuc_mixes()
 
 
-const NucMix *get_custom_nuc_mix( std::string label )
+const ReferenceLinePredef::NucMix *get_custom_nuc_mix( std::string label )
 {
   sanitize_label_str( label );
   
@@ -551,10 +222,10 @@ const NucMix *get_custom_nuc_mix( std::string label )
     return nullptr;
   
   return &(pos->second);
-}//const NucMix *get_custom_nuc_mix( std::string label )
+}//const ReferenceLinePredef::NucMix *get_custom_nuc_mix( std::string label )
 
 
-const CustomSrcLines *get_custom_src_lines( std::string label )
+const ReferenceLinePredef::CustomSrcLines *get_custom_src_lines( std::string label )
 {
   sanitize_label_str( label );
   
@@ -571,7 +242,7 @@ const CustomSrcLines *get_custom_src_lines( std::string label )
     return nullptr;
   
   return &(pos->second);
-}//const NucMix *get_custom_nuc_mix( std::string label )
+}//const ReferenceLinePredef::CustomSrcLines *get_custom_src_lines( std::string label )
 
 
 //The efficiency of S.E. and D.E. peaks, relative to F.E. peak, for the 20% Generic GADRAS DRF
@@ -1702,6 +1373,7 @@ ReferenceLineInfo::RefLine::RefLine()
   m_transition( nullptr ),
   m_source_type( ReferenceLineInfo::RefLine::RefGammaType::Normal ),
   m_attenuation_applies( true ),
+  m_major_line( false ),
   m_element( nullptr ),
   m_reaction( nullptr )
 {
@@ -1845,6 +1517,7 @@ void ReferenceLineInfo::toJson( string &json ) const
       continue;
     
     const double energy = round_energy( line.m_energy );
+    bool is_major_line = false;
     
     // There are situations where two lines have either the exact same energies, or super-close
     //  energies, and the spectrum chart is not particularly smart about this, so we effectively
@@ -2006,10 +1679,16 @@ void ReferenceLineInfo::toJson( string &json ) const
         jsons << ",\"src_label\":\"" << src_label << "\"";
       }//if( ReferenceLineInfo::SourceType::NuclideMixture )
       
+      // Check if any of the combined lines is marked as major
+      for( size_t inner_index = index; !is_major_line && (inner_index < std::min(index + num_combined, m_ref_lines.size())); ++inner_index )
+        is_major_line = (m_ref_lines[inner_index].m_major_line);
+      
       // Now increment 'i' so we'll skip over these lines we've already covered.
       index += (num_combined >= 1) ? (num_combined - 1) : size_t(0);
     }else  //if( next_gamma_close )
     {
+      is_major_line = line.m_major_line;
+       
       if( IsNan(line.m_normalized_intensity) || IsInf(line.m_normalized_intensity) )
         snprintf( intensity_buffer, sizeof(intensity_buffer), "0" );
       else
@@ -2039,6 +1718,9 @@ void ReferenceLineInfo::toJson( string &json ) const
     if( !line.m_color.isDefault() )
       jsons << ",\"color\":\"" << line.m_color.cssText(false) << "\"";
     
+    if( is_major_line )
+      jsons << ",\"major\":1";
+    
     jsons << "}";
     
     printed = true;
@@ -2064,6 +1746,174 @@ void ReferenceLineInfo::sortByEnergy()
     return lhs.m_energy < rhs.m_energy;
     } );
 }//void sortByEnergy()
+
+
+void ReferenceLineInfo::markMajorLines()
+{
+  // We want to show "major" lines - however what lines are considered major is dependent on shielding and detector
+  //  efficiency.  So if no shielding is defined, then we will test under no shielding, and heavy shielding,
+  //  and mark the line as major, if it passes the criteria for either shielding sceneriou.
+  //  - If the lines intensity is greater than `intensity_threshold` times the max line intensity
+  //  - If we sum intensities, of lines ordered by decreasing intensity, the current sum is less than
+  //    `cumulative_threshold` of the total intensity
+  //
+  //  `intensity_threshold` was adjusted using a handful of common nuclides (with cumulative threshold turned off),
+  //  until seemingly major lines were marked.
+  //  `cumulative_threshold` was adjusted until the 258 keV of U238 showed, while intensity threshold is off, for
+  //  a example detector.
+  const double intensity_threshold = 0.05;  // fraction of max intensity
+  const double cumulative_threshold = 0.75; // fraction of cumulative coverage wanted
+  
+  // Mark any line where m_attenuation_applies == false as major
+  //  We'll also get the highest energy line, for later to test which shielding we should apply
+  double highest_energy_line = 0.0;
+  for( RefLine &line : m_ref_lines )
+  {
+    highest_energy_line = std::max( highest_energy_line, line.m_energy );
+    line.m_major_line = !line.m_attenuation_applies;
+  }
+  
+  // Filter lines to get gamma/x-ray lines (excluding escapes/sum peaks if gamma/xrays shown)
+  std::vector<RefLine*> gamma_xray_lines;
+  const bool gammas_shown = m_input.m_showGammas;
+  const bool xrays_shown = m_input.m_showXrays;
+  
+  for( RefLine &line : m_ref_lines )
+  {
+    const bool is_gamma_or_xray = ((line.m_particle_type == RefLine::Particle::Gamma)
+                                   || (line.m_particle_type == RefLine::Particle::Xray));
+    
+    if( is_gamma_or_xray )
+    {
+      const bool is_escape_or_sum = (line.m_source_type == RefLine::RefGammaType::SingleEscape) ||
+                                    (line.m_source_type == RefLine::RefGammaType::DoubleEscape) ||
+                                    (line.m_source_type == RefLine::RefGammaType::CoincidenceSumPeak) ||
+                                    (line.m_source_type == RefLine::RefGammaType::SumGammaPeak);
+      
+      // Include line if it's not an escape/sum peak, or if gammas/xrays are not being shown
+      if( !is_escape_or_sum || (!gammas_shown && !xrays_shown) )
+      {
+        gamma_xray_lines.push_back( &line );
+      }
+    }
+  }
+  
+  if( gamma_xray_lines.empty() )
+    return;
+  
+  // Store original intensities by index; we will re-order them, so we'll also copy the original order
+  vector<double> original_intensities( gamma_xray_lines.size() );
+  const vector<RefLine*> original_gamma_xray_lines = gamma_xray_lines;
+  for( size_t i = 0; i < original_gamma_xray_lines.size(); ++i )
+    original_intensities[i] = original_gamma_xray_lines[i]->m_normalized_intensity;
+  
+  // Check if detector response has been applied (if all drf_factor are 1.0, assume no DRF)
+  bool has_drf = false;
+  for( const RefLine *line : gamma_xray_lines )
+  {
+    if( std::abs(line->m_drf_factor - 1.0f) > 1e-6f )
+    {
+      has_drf = true;
+      break;
+    }
+  }
+  
+  // If no detector response, apply generic efficiency using hardcoded HPGe detector
+  if( !has_drf )
+  {
+    try
+    {
+      // Use hardcoded HPGe detector - we could change this in the future to make a little more realistic...
+      auto generic_detector = DetectorPeakResponse::getGenericHPGeDetector();
+      for( RefLine *line : gamma_xray_lines )
+      {
+        const double energy_kev = line->m_energy;
+        if( (generic_detector->lowerEnergy() > 10.0) && (energy_kev < generic_detector->lowerEnergy()) )
+          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( generic_detector->lowerEnergy() );
+        else if( (generic_detector->upperEnergy() > 10.0) && (energy_kev > generic_detector->upperEnergy()) )
+          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( generic_detector->upperEnergy() );
+        else
+          line->m_normalized_intensity *= generic_detector->intrinsicEfficiency( energy_kev );
+      }
+    }catch( const std::exception &e )
+    {
+      // Print error but don't modify intensities - use original values
+      std::cerr << "Warning: Failed to use hardcoded HPGe detector for major lines marking: " 
+                << e.what() << ". Using original intensities." << std::endl;
+    }
+  }//if( !has_drf )
+  
+  // Apply intensity-based marking
+  auto markLinesBasedOnIntensity = [&]() {
+    // Sort by intensity descending to get max intensity from first element
+    std::sort( begin(gamma_xray_lines), end(gamma_xray_lines),
+              []( const RefLine *lhs, const RefLine *rhs ) {
+                return lhs->m_normalized_intensity > rhs->m_normalized_intensity;
+    });
+    
+    // Get max intensity from first (highest) element
+    const double max_intensity = gamma_xray_lines[0]->m_normalized_intensity;
+    
+    if( max_intensity <= 0.0 )
+      return;
+    
+    // Calculate total intensity as sum over all intensities
+    double total_intensity = 0.0;
+    for( const RefLine *line : gamma_xray_lines )
+      total_intensity += line->m_normalized_intensity;
+    
+    // Apply intensity threshold filter and mark lines
+    const double min_intensity = max_intensity * intensity_threshold;
+    const double target_cumulative = total_intensity * cumulative_threshold;
+    
+    double cumulative_intensity = 0.0;
+    for( RefLine *line : gamma_xray_lines )
+    {
+      const bool above_min_intensity = (line->m_normalized_intensity >= min_intensity);
+      const bool below_cumulative = (cumulative_intensity < target_cumulative);
+      line->m_major_line |= (above_min_intensity || below_cumulative);
+      cumulative_intensity += line->m_normalized_intensity;
+      
+      if( !below_cumulative && !above_min_intensity )
+        break;
+    }//for( RefLine *line : gamma_xray_lines )
+  };
+  
+  // Apply initial intensity-based marking
+  markLinesBasedOnIntensity();
+  
+  // If no shielding defined, apply additional shielding an check about markings
+  const bool no_shielding = (m_input.m_shielding_name.empty()
+                             && (m_input.m_shielding_an.empty() || m_input.m_shielding_ad.empty()));
+  
+  if( no_shielding )
+  {
+    // Apply 0.5cm Pb shielding (AN=82, AD=11.34 g/cm2) by default
+    float atomic_number = 82;
+    double areal_density = 0.5*11.34 * (PhysicalUnits::gram / PhysicalUnits::cm2);
+    
+    // But if ref-lines only go up to say 200 keV (totally arbitrary!), use 0.5 cm Fe
+    if( highest_energy_line < 200.0 )
+    {
+      atomic_number = 26;
+      areal_density = 0.5*7.874 * (PhysicalUnits::gram / PhysicalUnits::cm2);
+    }
+    
+    for( RefLine *line : gamma_xray_lines )
+    {
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic( atomic_number, areal_density, line->m_energy );
+      const double attenuation = std::exp( -mu );
+      line->m_normalized_intensity *= attenuation;
+    }
+    
+    // Apply intensity-based marking again with shielding
+    markLinesBasedOnIntensity();
+  }
+  
+  // Restore original intensities
+  for( size_t i = 0; i < original_gamma_xray_lines.size(); ++i )
+    original_gamma_xray_lines[i]->m_normalized_intensity = original_intensities[i];
+}//void markMajorLines()
 
 
 void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
@@ -2619,7 +2469,19 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   
   const bool check_element = (!nuc && (input.m_input_txt.find_first_of( "0123456789" ) == string::npos));
-  const SandiaDecay::Element * const el = check_element ? db->element( input.m_input_txt ) : nullptr;
+  const SandiaDecay::Element * el = check_element ? db->element( input.m_input_txt ) : nullptr;
+  if( !el && check_element
+     && (SpecUtils::icontains(input.m_input_txt, "xray") || SpecUtils::icontains(input.m_input_txt, "x-ray")) )
+  {
+    string elstr = input.m_input_txt;
+    size_t pos = SpecUtils::ifind_substr_ascii( elstr, "xray");
+    if( pos == string::npos )
+      pos = SpecUtils::ifind_substr_ascii( elstr, "x-ray");
+    if( pos != string::npos )
+      elstr = elstr.substr(0,pos);
+    SpecUtils::ireplace_all( elstr, "-_\t ,", "" );
+    el = db->element( elstr );
+  }//
   
   if( el )
   {
@@ -2719,8 +2581,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     }
   }//if( !nuc && !el && rctnGammas.empty() )
   
-  const NucMix *nuc_mix = nullptr;
-  const CustomSrcLines *src_lines = nullptr;
+  const ReferenceLinePredef::NucMix *nuc_mix = nullptr;
+  const ReferenceLinePredef::CustomSrcLines *src_lines = nullptr;
   if( !nuc && !el && rctn_gammas.empty() && !is_background && !is_custom_energy )
   {
     nuc_mix = get_custom_nuc_mix( input.m_input_txt );
@@ -3220,7 +3082,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   
   if( nuc_mix )
   {
-    for( const NucMixComp &comp : nuc_mix->m_components )
+    for( const ReferenceLinePredef::NucMixComp &comp : nuc_mix->m_components )
     {
       assert( comp.m_nuclide );
       const double nuc_age = std::max( 0.0, age - comp.m_age_offset ); //Make sure age is at least zero
@@ -3299,7 +3161,7 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   {
     answer.m_has_coincidences = false;
     
-    for( const CustomLine &line : src_lines->m_lines )
+    for( const ReferenceLinePredef::CustomLine &line : src_lines->m_lines )
     {
       ReferenceLineInfo::RefLine refline;
       refline.m_energy = line.m_energy;
@@ -3590,8 +3452,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         if( input.m_shielding_att && line.m_attenuation_applies )
           line.m_shield_atten = input.m_shielding_att( energy );
         
-        max_photon_br = std::max( max_photon_br,
-                                 line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten );
+        const double intensity = line.m_decay_intensity * line.m_drf_factor * line.m_shield_atten;
+        max_photon_br = std::max( max_photon_br, intensity );
         break;
       }
     }//switch( line.m_particle_type )
@@ -3807,6 +3669,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     }//for( ReferenceLineInfo::RefLine &line : coinc_ref_lines )
   }//if( !gamma_coincidences.empty() )
   
+  // Mark the major lines before sorting
+  answer.markMajorLines();
   
   //Client-side javascript currently doesn't know about this guarantee that gamma
   //  lines will be sorted by energy.

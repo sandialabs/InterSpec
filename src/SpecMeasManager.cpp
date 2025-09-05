@@ -3022,7 +3022,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       }
     }catch( std::exception &e )
     {
-      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "mm-CALp-err-applying-mult";
+      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "smm-CALp-err-applying-mult";
       passMessage( WString::tr(key).arg( e.what() ), WarningWidget::WarningMsgHigh );
     }//try / catch
   };//applyLambda(...)

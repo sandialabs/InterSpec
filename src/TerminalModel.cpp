@@ -1981,7 +1981,7 @@ std::string TerminalModel::searchforPeak( const std::string& arguments )
         
         const int previousPeakVecSize = static_cast<int>( peakModel->peaks()->size() );
     
-        m_viewer->searchForSinglePeak( energy );
+        m_viewer->searchForSinglePeak( energy, "" );
         const int currentPeakVecSize = static_cast<int>( peakModel->peaks()->size() );
         PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( energy );
         

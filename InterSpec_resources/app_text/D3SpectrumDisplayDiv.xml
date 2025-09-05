@@ -46,4 +46,6 @@
   <message id="d3sdd-yaxis-upper-counts-below-zero">Upper range equal or below zero.</message>
   <message id="d3sdd-yaxis-lower-counts-below-zero">Lower range equal or below zero.</message>
   <message id="d3sdd-yaxis-below-min-non-zero">Upper range less than minimum displayed, non-zero value.</message>
+  <message id="d3sdd-candidates">Candidates:</message>
+  <message id="d3sdd-use-arrows-to-select">(use ↑ and ↓ to select)</message>
 </messages>

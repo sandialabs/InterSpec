@@ -155,6 +155,21 @@ void findCandidates( std::vector<std::string> &suggestednucs,
                      std::shared_ptr<const DetectorPeakResponse> detector,
                      std::shared_ptr<const SpecUtils::Measurement> data );
 
+  /** A first attempt to guess which nuclide most closely matches the searched
+   energy ranges, using the "profile" of the spectrum, represented by the
+   peaks fit (both aurtomated and user) - this is work in progress, and
+   there is still very much room to come up with somethign better.
+   */
+  double profile_weight( std::shared_ptr<const DetectorPeakResponse> detector,
+                        const std::shared_ptr<const SpecUtils::Measurement> displayed_measurement,
+                        const std::vector<std::shared_ptr<const PeakDef>> &user_peaks,
+                        const std::vector<std::shared_ptr<const PeakDef>> &automated_search_peaks,
+                        std::vector<SandiaDecay::EnergyRatePair> srcgammas,
+                        const std::vector<double> &energies,
+                        const std::vector<double> &windows,
+                        double shielding_an,
+                        double shielding_ad,
+                        const Wt::WString &parent_nuc_for_debug );
 } //namespace IsotopeId
 
 #endif //IsotopeId_h

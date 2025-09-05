@@ -76,6 +76,7 @@ public:
     kPhotoPeakEnergy,
     kDifference,  //calculate the difference
     kUseForShieldingSourceFit,
+    // kCandidateIsotopes appears to be deprecated and not used
     kCandidateIsotopes,
     kPeakLineColor,
     kUserLabel,

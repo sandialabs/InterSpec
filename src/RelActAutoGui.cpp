@@ -508,10 +508,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     else
       set_lin_y();
   };
-  
-  m_interspec->preferences()->addCallbackWhenChanged( "LogY", m_spectrum, 
+    
+  UserPreferences * const preferences = m_interspec->preferences();
+    
+  preferences->addCallbackWhenChanged( "LogY", m_spectrum,
                                                      &D3SpectrumDisplayDiv::setYAxisLog );
-  
+  preferences->addIntCallbackWhenChanged( "RefLineThickness", m_spectrum,
+                                             &D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback );
+  const int ref_line_thick = std::max(0, std::min(3, UserPreferences::preferenceValue<int>( "RefLineThickness", m_interspec) ));
+  m_spectrum->setRefLineThickness( static_cast<D3SpectrumDisplayDiv::RefLineThickness>(ref_line_thick) );
+
+  preferences->addIntCallbackWhenChanged( "RefLineVerbosity", m_spectrum,
+                                             &D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback );
+  const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_interspec) ));
+  m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
+    
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();
   
@@ -5221,12 +5232,14 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     info.live_time = live_time;
     if( i < answer->m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
     {
-      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4
+      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4, and peak
+      //  mean+-1sigma is fully within ROI
       for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : answer->m_obs_eff_for_each_curve[i] )
       {
         if( (obs_eff.observed_efficiency > 0.0)
            && (obs_eff.num_sigma_significance > 2.5)
-           && (obs_eff.fraction_roi_counts > 0.05) )
+           && (obs_eff.fraction_roi_counts > 0.05)
+           && obs_eff.within_roi )
         {
           info.obs_eff_data.push_back( obs_eff );
         }
