@@ -85,6 +85,12 @@
   <message id="rpd-tbl-hdr-tt-trans">Actual nuclide which decayed to give this particle.</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">Decay mode of the parent nuclide, which produced this particle.</message>
   <message id="rpd-tbl-hdr-tt-type">The type of particle produced</message>
+
+  <!-- The "fit peaks" -->
   <message id="rpd-fit-peaks-wait-title">Fitting peaks</message>
   <message id="rpd-fit-peaks-wait-content">You can close this window, and things will be updated when done.</message>
+  <message id="rpd-fit-results-dialog-title">Peak fit results</message>
+  <message id="rpd-fit-results-rel-eff_desc">The relative efficiency fit giving these peaks:</message>
+  <message id="rpd-fit-results-dialog-txt">Would you like to use these peaks?</message>
+  
 </messages>

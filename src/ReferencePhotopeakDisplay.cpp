@@ -56,6 +56,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/RelEffChart.h"
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/HelpSystem.h"
@@ -3608,7 +3609,7 @@ void ReferencePhotopeakDisplay::setReaction( const ReactionGamma::Reaction *rctn
 void ReferencePhotopeakDisplay::fitPeaks()
 {
   AnalystChecks::FitPeaksForNuclideOptions options;
-  options.doNotAddPeaksToUserSession = false;
+  options.doNotAddPeaksToUserSession = true;
   options.computeAsync = true;
   
   if( !m_currentlyShowingNuclide.m_input.m_input_txt.empty() )
@@ -3625,12 +3626,141 @@ void ReferencePhotopeakDisplay::fitPeaks()
   SimpleDialog *msg = new SimpleDialog( title, content );
   msg->rejectWhenEscapePressed();
   msg->addButton( WString::tr("Close") );
-  boost::function<void(void)> guiupdater = wApp->bind( boost::bind( &SimpleDialog::accept, msg ) );
+  boost::function<void(void)> info_dialog_closer = wApp->bind( boost::bind( &SimpleDialog::accept, msg ) );
 
-  auto callback = [guiupdater]( const AnalystChecks::FitPeaksForNuclideResult &results ){
-    guiupdater();
-    cout << "All Done" << endl;
-  };
+  auto callback = [info_dialog_closer]( const AnalystChecks::FitPeaksForNuclideResult &results ){
+    cout << "In callback" << endl;
+    info_dialog_closer();
+    
+    // Check if solution is null and handle error case
+    if( !results.solution )
+    {
+      passMessage( WString::tr("rpd-fit-peaks-no-solution"), WarningWidget::WarningMsgHigh );
+      return;
+    }
+    
+    InterSpec *interspec = InterSpec::instance();
+    assert( interspec );
+    if( !interspec )
+      return;
+    
+    shared_ptr<const SpecUtils::Measurement> foreground_orig = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    if( !foreground_orig )
+      return;
+    
+    shared_ptr<SpecUtils::Measurement> foreground = make_shared<SpecUtils::Measurement>( *foreground_orig );
+    
+    // Create dialog with 50% current width
+    const int dialog_width = std::min( 800, static_cast<int>( 0.45 * interspec->renderedWidth() ) );
+    const int dialog_height = std::min( 600, static_cast<int>( 0.8 * interspec->renderedHeight() ) );
+    
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("rpd-fit-results-dialog-title"), "" );
+    dialog->resize( dialog_width, dialog_height );
+    dialog->rejectWhenEscapePressed();
+    
+    // Create main content container
+    WContainerWidget *content = dialog->contents();
+    content->addStyleClass( "FitPeakResultContents" );
+    
+    D3SpectrumDisplayDiv *spectrumChart = new D3SpectrumDisplayDiv();
+    spectrumChart->disableLegend();
+    spectrumChart->setCompactAxis( true );
+    spectrumChart->applyColorTheme( interspec->getColorTheme() );
+    interspec->colorThemeChanged().connect( boost::bind(&D3SpectrumDisplayDiv::applyColorTheme, spectrumChart, boost::placeholders::_1) );
+    
+    WText *rel_eff_desc = new WText( WString::tr("rpd-fit-results-rel-eff_desc") );
+    rel_eff_desc->addStyleClass( "FitPeakResultRelEffDesc" );
+    
+    RelEffChart *relEffChart = new RelEffChart();
+    relEffChart->setYAxisTitle( "Rel. Eff." );
+    
+    WText *question_txt = new WText( WString::tr("rpd-fit-results-dialog-txt") );
+    question_txt->addStyleClass( "FitPeakResultTxt" );
+    
+    WGridLayout *dialog_layout = new WGridLayout();
+    dialog_layout->setVerticalSpacing( 0 );
+    dialog_layout->setHorizontalSpacing( 0 );
+    dialog_layout->setContentsMargins( 0, 0, 0, 0  );
+    content->setLayout( dialog_layout );
+    dialog_layout->addWidget( spectrumChart, 0, 0 );
+    dialog_layout->addWidget( rel_eff_desc, 1, 0 );
+    dialog_layout->addWidget( relEffChart, 2, 0 );
+    dialog_layout->addWidget( question_txt, 3, 0, Wt::AlignCenter | Wt::AlignMiddle );
+    dialog_layout->setRowStretch( 2, 1 );
+    // If we have the layout stretch things, the rel eff chart always ends up taller than the spectrum; not sure why.
+    spectrumChart->setHeight( 0.5*(dialog_height - 80) );
+  
+    
+    // Set RelEffChart data from solution
+    const auto &solution = results.solution;
+    const double live_time = solution->m_foreground ? solution->m_foreground->live_time() : 1.0;
+    
+    vector<RelEffChart::ReCurveInfo> info_sets;
+    for( size_t i = 0; i < solution->m_rel_activities.size(); ++i )
+    {
+      RelEffChart::ReCurveInfo info;
+      info.live_time = live_time;
+      
+      if( i < solution->m_obs_eff_for_each_curve.size() )
+      {
+        for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : solution->m_obs_eff_for_each_curve[i] )
+        {
+          if( (obs_eff.observed_efficiency > 0.0)
+             && (obs_eff.num_sigma_significance > 2.5)
+             && (obs_eff.fraction_roi_counts > 0.05)
+             && obs_eff.within_roi )
+          {
+            info.obs_eff_data.push_back( obs_eff );
+          }
+        }
+      }//
+      
+      info.rel_acts = solution->m_rel_activities[i];
+      info.js_rel_eff_eqn = solution->rel_eff_eqn_js_function(i);
+      info.js_rel_eff_uncert_eqn = solution->rel_eff_eqn_js_uncert_fcn(i);
+      
+      info_sets.push_back( info );
+    }//for( size_t i = 0; i < solution->m_rel_activities.size(); ++i )
+    
+    relEffChart->setData( info_sets );
+    
+
+    
+    PeakModel *peakModel = new PeakModel( spectrumChart );
+    spectrumChart->setPeakModel( peakModel );
+    
+    auto our_meas = make_shared<SpecMeas>();
+    our_meas->add_measurement( foreground, true );
+    peakModel->setPeakFromSpecMeas( our_meas, {foreground->sample_number()} );
+    spectrumChart->setData( foreground, true );
+    
+    PeakModel *interspec_peak_model = interspec->peakModel();
+    shared_ptr<const deque<PeakModel::PeakShrdPtr>> existing_peaks = interspec_peak_model ? interspec_peak_model->peaks() : nullptr;
+    
+    // Add result peaks
+    vector<shared_ptr<const PeakDef>> all_peaks;
+    std::vector<std::shared_ptr<const PeakDef>> fit_peaks = results.fitPeaks;
+    if( existing_peaks )
+      all_peaks.insert( end(all_peaks), begin(*existing_peaks), end(*existing_peaks) );
+    all_peaks.insert( end(all_peaks), begin(fit_peaks), end(fit_peaks) );
+    std::sort( begin(all_peaks), end(all_peaks), &PeakDef::lessThanByMeanShrdPtr );
+    
+    peakModel->setPeaks( all_peaks );
+    spectrumChart->setPeakModel( peakModel );
+    
+    WPushButton *yesBtn = dialog->addButton( WString::tr("Yes") );
+    dialog->addButton( WString::tr("No") );
+    yesBtn->clicked().connect( std::bind([fit_peaks,our_meas](){ //capturing `our_meas` to keep alive - not sure if we need to or not.
+      UndoRedoManager::PeakModelChange undo_redo;
+      auto dummy = our_meas;
+      if( dummy )
+        cout << "Setting peaks" << endl;
+      
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer && viewer->peakModel() )
+        viewer->peakModel()->addPeaks(fit_peaks);
+    }) );
+  };//callback( const AnalystChecks::FitPeaksForNuclideResult &results );
   
   AnalystChecks::fit_peaks_for_nuclides( options, m_spectrumViewer, callback );
 }//void fitPeaks()

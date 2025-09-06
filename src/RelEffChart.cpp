@@ -228,8 +228,8 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
         // Set up color mapping - all peaks for this source get same color as primary peak
         const string src_name = RelActCalcAuto::to_name(peak_src);
         const auto pos = relActsColors.find(src_name);
-        if( !p.lineColor().isDefault() && (pos == std::end(relActsColors)) )
-          relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, p.lineColor().cssText());
+        if( (pos == std::end(relActsColors)) || pos->second.second.empty() )
+          relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, p.lineColor().isDefault() ? "" : p.lineColor().cssText());
 
         peak.m_counts += p.amplitude();
       }//for(const PeakDef &p : obsEff.fit_peaks)

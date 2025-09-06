@@ -46,6 +46,11 @@ namespace SandiaDecay
   struct Element;
 }
 
+namespace RelActCalcAuto
+{
+  struct RelActAutoSolution;
+}//namespace RelActCalcAuto
+
 namespace AnalystChecks
 {
   /** A simple "hello world" type function for testing purposes.
@@ -114,6 +119,7 @@ namespace AnalystChecks
     bool doNotAddPeaksToUserSession;
     std::optional<std::string> userSession;
     bool computeAsync;
+    double numSigmaSignifigance;
   };
   
   enum class FitPeaksForNuclideStatus
@@ -126,7 +132,8 @@ namespace AnalystChecks
   struct FitPeaksForNuclideResult {
     FitPeaksForNuclideStatus status;
     std::string error_message;
-    
+
+    std::shared_ptr<RelActCalcAuto::RelActAutoSolution> solution;
     std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
   };
   

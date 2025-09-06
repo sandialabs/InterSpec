@@ -322,6 +322,7 @@ namespace {
     
     p.doNotAddPeaksToUserSession = j.value("doNotAddPeaksToUserSession", false);
     p.userSession = j.value("userSession", std::optional<std::string>{});
+    p.numSigmaSignifigance = j.value("numSigmaSignifigance", 1.5);
   }
 
   void to_json(json& j, const AnalystChecks::SpectrumCountsInEnergyRange::CountsWithComparisonToForeground& c) {
@@ -721,6 +722,10 @@ void ToolRegistry::registerDefaultTools() {
         "doNotAddPeaksToUserSession": {
           "type": "boolean",
           "description": "Optional: if true, fitted peaks will not be added to the user's peak collection; defaults to false."
+        },
+        "numSigmaSignifigance": {
+          "type": "number",
+          "description": "Optional: the minimum number of statistical sigma a peak's amplitude must be above zero to be included in the result; defaults to 1.5."
         }
       },
       "required": ["nuclide"]

@@ -17,6 +17,10 @@
     shape-rendering: crispEdges;
 }
 
+.RelEffPlot .xAxis text {
+  
+}
+
 .RelEffPlot circle {
     cursor: pointer;
     fill: steelblue;

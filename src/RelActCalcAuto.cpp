@@ -2476,7 +2476,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           
           
           // TODO: For cbnm9375, fill_in_nuclide_info() and add_nuclides_to_peaks() produce nearly identical results (like tiny rounding errors on yields), but this causes a notable difference in the final "auto" solution, although this manual solution apears the same - really should figure this out - and then get rid of add_nuclides_to_peaks(...) - maybe this is all a testimate to how brittle somethign else is... (20250211: should rechech this, since a number of instabilities have been corrected)
-          const double cluster_num_sigma = 1.5;
+          const double cluster_num_sigma = options.cluster_num_sigma;
           const auto peaks_with_nucs = add_nuclides_to_peaks( peaks_in_range, nuc_sources, real_time, cluster_num_sigma );
           
           
@@ -3594,7 +3594,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     //  Note: depends that the initial ages of nuclides have been set, along with most other information
     if( options.additional_br_uncert > 0.0 )
     {
-      const double cluster_num_sigma = 1.5;
+      const double cluster_num_sigma = options.cluster_num_sigma;
       cost_functor->m_peak_ranges_with_uncert = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
       
       const size_t num_pars = parameters.size() + cost_functor->m_peak_ranges_with_uncert.size();
@@ -9098,6 +9098,8 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
   
   append_float_node( base_node, "AddUncert", additional_br_uncert );
   
+  append_float_node( base_node, "ClusterNumSigma", cluster_num_sigma );
+  
   
   xml_node<char> *rel_eff_node = doc->allocate_node( node_element, "RelEffCurveInputs" );
   base_node->append_node( rel_eff_node );
@@ -9178,6 +9180,16 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent, MaterialDB *mat
     }catch( ... )
     {
       additional_br_uncert = 0.0;
+    }
+    
+    // Additional uncertainty added 202251005, so we'll allow it to be missing.
+    try
+    {
+      cluster_num_sigma = get_float_node_value( parent, "ClusterNumSigma" );
+      cluster_num_sigma = std::min( std::max( cluster_num_sigma, 0.0 ), 10.0 );
+    }catch( ... )
+    {
+      cluster_num_sigma = 1.5;
     }
     
     rel_eff_curves.clear();
@@ -13041,7 +13053,8 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
   const size_t num_skew = PeakDef::num_skew_parameters(options.skew_type);
 
   //Note: we are working in "true" energies
-  const double cluster_num_sigma = 1.5;
+  const double cluster_num_sigma = options.cluster_num_sigma;
+    
   const vector<pair<double,double>> clustered_ranges = cost_functor->cluster_photopeaks( cluster_num_sigma, parameters );
   
   vector<double> range_scales( clustered_ranges.size(), 1.0 );

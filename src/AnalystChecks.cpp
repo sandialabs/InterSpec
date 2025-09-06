@@ -650,10 +650,28 @@ namespace AnalystChecks
       if( compute_async && background )
         background = make_shared<SpecUtils::Measurement>( *background );
       
+      std::map<string,string> source_to_color;
+      ReferencePhotopeakDisplay *ref_widget = interspec->referenceLinesWidget();
+      if( ref_widget )
+      {
+        for( const string &src : nuclide_names )
+        {
+          Wt::WColor color = ref_widget->suggestColorForSource(src);
+          if( color.isDefault() )
+          {
+            color = ref_widget->nextGenericSourceColor();
+            //if( !color.isDefault() )
+            //  ref_widget->updateColorCacheForSource( src, color );
+          }
+          if( !color.isDefault() )
+            source_to_color[src] = color.cssText();
+        }//for( const string &src : nuclide_names )
+      }//if( ref_widget )
       
       auto finish_up_callback = [add_peaks_to_session,callback]( const FitPeaksForNuclideResult &result ){
         if( add_peaks_to_session && !result.fitPeaks.empty() )
         {
+          cout << "adding peaks to user session!" << endl;
           InterSpec * const interspec = InterSpec::instance();
           assert( interspec );
           if( !interspec )
@@ -671,28 +689,33 @@ namespace AnalystChecks
       };//finish_up_callback lambda
 
       
-      
-      
-      auto worker = [nuclide_names, foreground, background, drf, all_peaks, compute_async, user_session, finish_up_callback](){
+      auto worker = [nuclide_names, foreground, background, drf, all_peaks, compute_async, user_session, source_to_color,
+                     finish_up_callback, numSigmaSignifigance = options.numSigmaSignifigance](){
         // Create base nuclide info that will be reused across all attempts
         std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;
-        for (const std::string &nuc_name : nuclide_names) {
+        for( const std::string &nuc_name : nuclide_names )
+        {
           RelActCalcAuto::NucInputInfo nuc_info;
           nuc_info.source = RelActCalcAuto::source_from_string(nuc_name);
           
-          if (RelActCalcAuto::is_null(nuc_info.source)) {
+          if (RelActCalcAuto::is_null(nuc_info.source))
             throw std::runtime_error("Invalid nuclide name: " + nuc_name);
-          }
           
           // Set reasonable default age for nuclides
-          if (RelActCalcAuto::nuclide(nuc_info.source)) {
+          if( RelActCalcAuto::nuclide(nuc_info.source) )
+          {
             const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuc_info.source);
             nuc_info.age = PeakDef::defaultDecayTime(nuc);
             nuc_info.fit_age = false; // Don't fit age by default
-          }
+          }//if( RelActCalcAuto::nuclide(nuc_info.source) )
+          
+          
+          const auto color_pos = source_to_color.find(nuc_name);
+          if( color_pos != end(source_to_color) )
+            nuc_info.peak_color_css = color_pos->second;
           
           base_nuclides.push_back(nuc_info);
-        }
+        }//for( const std::string &nuc_name : nuclide_names )
         
         // Set up base ROI to cover the full spectrum energy range
         RelActCalcAuto::RoiRange base_roi;
@@ -845,9 +868,9 @@ namespace AnalystChecks
               && (solution.m_chi2 < best_chi2) )
           {
             best_chi2 = solution.m_chi2;
-            best_solution = solution;
+            best_solution = std::move(solution);
             found_valid_solution = true;
-          } else if (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+          }else if (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
           {
             last_error_message = solution.m_error_message;
             cerr << "RelActCalcAuto::solve(trial " << i << "): failed: " << solution.m_error_message << endl;
@@ -859,9 +882,26 @@ namespace AnalystChecks
         {
           try
           {
+            result.solution = make_shared<RelActCalcAuto::RelActAutoSolution>(best_solution);
+            
             const vector<PeakDef> peaks = best_solution.clustered_input_foreground_display_peaks();
             for( const PeakDef &peak : peaks )
-              result.fitPeaks.push_back(std::make_shared<PeakDef>(peak));
+            {
+              // Filter peaks based on numSigmaSignifigance - only include peaks with amplitude significance above threshold
+              const double peak_amplitude = peak.peakArea();
+              const double amplitude_uncert = peak.amplitudeUncert();
+              
+              if( (amplitude_uncert > 0.0) && (peak_amplitude > 0.0) )
+              {
+                const double num_sigma = peak_amplitude / amplitude_uncert;
+                if( num_sigma >= numSigmaSignifigance )
+                  result.fitPeaks.push_back(std::make_shared<PeakDef>(peak));
+              }else if( peak_amplitude > 0.0 )
+              {
+                // If no uncertainty info, include the peak if amplitude is positive
+                result.fitPeaks.push_back(std::make_shared<PeakDef>(peak));
+              }
+            }
             result.status = FitPeaksForNuclideStatus::Success;
           }catch( std::exception &e )
           {

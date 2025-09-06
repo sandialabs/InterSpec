@@ -220,3 +220,28 @@
 {
   margin-top: 2px;
 }
+
+
+.FitPeakResultContents
+{
+}
+
+.FitPeakResultContents .FitPeakResultRelEffDesc
+{
+  
+}
+
+.FitPeakResultContents .FitPeakResultTxt
+{
+  margin-top: 20px;
+  margin-bottom: 10px;
+  font-size: larger;
+  font-weight: bold;
+}
+
+/* .InterSpecD3Chart .axis text */
+.FitPeakResultContents .RelEffChart .xAxis .tick text,
+.FitPeakResultContents .RelEffChart .yAxis .tick text{
+  font-size: 0.8em;
+  font-family: sans-serif;
+}
