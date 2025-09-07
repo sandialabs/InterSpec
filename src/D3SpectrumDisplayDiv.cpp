@@ -220,6 +220,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_showXAxisSliderChart( false ),
   m_compactXAxisWithSliderChart( true ),
   m_showYAxisScalers( false ),
+  m_allowDragRoiExtent( true ),
   m_searchEnergies{},
   m_highlights{},
   m_peakLabelsToShow{},
@@ -353,6 +354,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", showXAxisSliderChart: " + jsbool(m_showXAxisSliderChart);
   options += ", compactXAxisWithSliderChart: " + jsbool(m_compactXAxisWithSliderChart);
   options += ", scaleBackgroundSecondary: " + jsbool(m_showYAxisScalers);
+  options += ", allowDragRoiExtent: " + jsbool(m_allowDragRoiExtent);
   options += ", wheelScrollYAxis: true";
   options += ", sliderChartHeightFraction: 0.1";  //ToDo: track this in C++
   options += ", spectrumLineWidth: 1.0";  //ToDo: Let this be specified in C++
@@ -2221,6 +2223,9 @@ void D3SpectrumDisplayDiv::setThumbnailMode()
   //Turn off the mouse-move numbers in lower-right corner
   js += m_jsgraph + ".setShowMouseStats(false);";
 
+  // Turn off the dragging cursor on edge of ROI
+  js += m_jsgraph + ".setAllowDragRoiExtent(false);";
+  m_allowDragRoiExtent = false;
 
   // Make the x-axis (energy) text nice and small.
   const string rule_name = id() + "_ThumbnailTxt";
@@ -2233,6 +2238,14 @@ void D3SpectrumDisplayDiv::setThumbnailMode()
   else
     m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::setThumbnailMode()
+
+
+void D3SpectrumDisplayDiv::setAllowDragRoiExtent( const bool allow )
+{
+  m_allowDragRoiExtent = allow;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setAllowDragRoiExtent(" + jsbool(allow) + ");" );
+}//void setAllowDragRoiExtent( const bool allow )
 
 
 void D3SpectrumDisplayDiv::setFeatureMarkerOption( FeatureMarkerType option, bool show )

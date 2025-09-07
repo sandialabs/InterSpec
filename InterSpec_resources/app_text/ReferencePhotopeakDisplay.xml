@@ -25,7 +25,8 @@
   <message id="rpd-tt-clear">Clears all persisted lines, as well as the current non-persisted lines.</message>
   <message id="rpd-more-info">more info</message>
   <message id="rpd-shield-mat">shielding material</message>
-  <message id="rpd-fit-peaks-btn">fit peaks</message>
+  <message id="rpd-fit-lines-peaks-btn">fit lines peaks</message>
+  <message id="rpd-fit-n-srcs-btn">fit {1} peaks</message>
   <message id="rpd-tt-fit-peaks-btn">Fits peaks for the nuclides of the displayed nuclides.</message>
   <message id="rpd-options">Options</message>
   <message id="rpd-opt-prompt">Prompt Only</message>
@@ -87,10 +88,20 @@
   <message id="rpd-tbl-hdr-tt-type">The type of particle produced</message>
 
   <!-- The "fit peaks" -->
-  <message id="rpd-fit-peaks-wait-title">Fitting peaks</message>
-  <message id="rpd-fit-peaks-wait-content">You can close this window, and things will be updated when done.</message>
+  <message id="rpd-fit-peaks-wait-title">Fitting peaks..</message>
+  <message id="rpd-fit-peaks-wait-content">
+    The "Isotopics by nuclides" tool is being used to fit the peaks.<br/>
+    You can close this window, and the results will be presented to you in just a moment.
+  </message>
   <message id="rpd-fit-results-dialog-title">Peak fit results</message>
   <message id="rpd-fit-results-rel-eff_desc">The relative efficiency fit giving these peaks:</message>
   <message id="rpd-fit-results-dialog-txt">Would you like to use these peaks?</message>
+  <message id="rpd-fit-all-peaks-cb">All Peaks</message>
+  <message id="rpd-tt-fit-all-peaks-cb">On the spectrum, you can either display just the peaks fit, or those peaks plus the peaks you already had fit</message>
+  <message id="rpd-fit-peaks-no-solution">No solution found: {1}</message>
+  <message id="rpd-fit-peaks-no-peaks">No peaks found in fit results</message>
+  <message id="rpd-fit-peaks-fail-setup">Setup for peak search failed: {1}</message>
+  <message id="rpd-fit-peaks-fail-computation">Peak fitting failed: {1}</message>
+
   
 </messages>

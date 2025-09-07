@@ -412,6 +412,9 @@ protected:
   std::map<std::string,std::vector<Wt::WColor>> currentlyUsedPeakColors() const;
   
   void toggleShowOptions();
+  
+  /** Updates the text of the fit peaks button based on currently displayed reference lines. */
+  void updateFitPeaksButtonText();
 
   void updateOtherNucsDisplay();
   void updateAssociatedNuclides();

@@ -687,148 +687,183 @@ namespace AnalystChecks
         
         callback( result );
       };//finish_up_callback lambda
+      
+      
+      auto post_finishup = [finish_up_callback,compute_async,user_session]( const FitPeaksForNuclideResult &result ){
+        if( !compute_async )
+        {
+          finish_up_callback( result );
+        }else
+        {
+          Wt::WServer::instance()->post( user_session, [=](){
+            finish_up_callback(result);
+            wApp->triggerUpdate();
+          } );
+        }
+      };//post_finishup
 
       
       auto worker = [nuclide_names, foreground, background, drf, all_peaks, compute_async, user_session, source_to_color,
-                     finish_up_callback, numSigmaSignifigance = options.numSigmaSignifigance](){
+                     post_finishup, numSigmaSignifigance = options.numSigmaSignifigance](){
+        
         // Create base nuclide info that will be reused across all attempts
         std::vector<RelActCalcAuto::NucInputInfo> base_nuclides;
-        for( const std::string &nuc_name : nuclide_names )
-        {
-          RelActCalcAuto::NucInputInfo nuc_info;
-          nuc_info.source = RelActCalcAuto::source_from_string(nuc_name);
-          
-          if (RelActCalcAuto::is_null(nuc_info.source))
-            throw std::runtime_error("Invalid nuclide name: " + nuc_name);
-          
-          // Set reasonable default age for nuclides
-          if( RelActCalcAuto::nuclide(nuc_info.source) )
-          {
-            const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuc_info.source);
-            nuc_info.age = PeakDef::defaultDecayTime(nuc);
-            nuc_info.fit_age = false; // Don't fit age by default
-          }//if( RelActCalcAuto::nuclide(nuc_info.source) )
-          
-          
-          const auto color_pos = source_to_color.find(nuc_name);
-          if( color_pos != end(source_to_color) )
-            nuc_info.peak_color_css = color_pos->second;
-          
-          base_nuclides.push_back(nuc_info);
-        }//for( const std::string &nuc_name : nuclide_names )
-        
         // Set up base ROI to cover the full spectrum energy range
         RelActCalcAuto::RoiRange base_roi;
-        base_roi.lower_energy = std::max( 55.0f, foreground->gamma_energy_min() );
-        base_roi.upper_energy = foreground->gamma_energy_max();
-        base_roi.continuum_type = PeakContinuum::OffsetType::Linear;
-        base_roi.force_full_range = false;
-        base_roi.allow_expand_for_peak_width = true;
-        
         // Create all trial options combinations to run in parallel
         std::vector<RelActCalcAuto::Options> trial_options;
         
-        // Define skew types to try
-        std::vector<PeakDef::SkewType> skew_types = {
-          PeakDef::SkewType::NoSkew,
-          PeakDef::SkewType::GaussExp
-        };
-        
-        for( PeakDef::SkewType skew_type : skew_types )
+        try
         {
-          // LnX equation form
+          for( const std::string &nuc_name : nuclide_names )
           {
-            RelActCalcAuto::Options solve_options;
+            RelActCalcAuto::NucInputInfo nuc_info;
+            nuc_info.source = RelActCalcAuto::source_from_string(nuc_name);
             
-            // Create relative efficiency curve with LnX
-            RelActCalcAuto::RelEffCurveInput rel_eff_curve;
-            rel_eff_curve.name = "LnX Peak Fit";
-            rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
-            rel_eff_curve.rel_eff_eqn_order = 3;
-            rel_eff_curve.nucs_of_el_same_age = true;
-            rel_eff_curve.nuclides = base_nuclides;
+            if (RelActCalcAuto::is_null(nuc_info.source))
+              throw std::runtime_error("Invalid nuclide name: " + nuc_name);
             
-            solve_options.rel_eff_curves.push_back(rel_eff_curve);
-            solve_options.rois.push_back(base_roi);
+            // Set reasonable default age for nuclides
+            if( RelActCalcAuto::nuclide(nuc_info.source) )
+            {
+              const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide(nuc_info.source);
+              nuc_info.age = PeakDef::defaultDecayTime(nuc);
+              nuc_info.fit_age = false; // Don't fit age by default
+            }//if( RelActCalcAuto::nuclide(nuc_info.source) )
             
-            // Set other options
-            solve_options.fit_energy_cal = true;
-            solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras;
-            solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
-            solve_options.skew_type = skew_type;
-            solve_options.additional_br_uncert = 0.0;
             
-            trial_options.push_back(std::move(solve_options));
-          }
+            const auto color_pos = source_to_color.find(nuc_name);
+            if( color_pos != end(source_to_color) )
+              nuc_info.peak_color_css = color_pos->second;
+            
+            base_nuclides.push_back(nuc_info);
+          }//for( const std::string &nuc_name : nuclide_names )
           
-          // FramPhysicalModel with Aluminum shielding
-          {
-            RelActCalcAuto::Options solve_options;
-            
-            RelActCalcAuto::RelEffCurveInput rel_eff_curve;
-            rel_eff_curve.name = "Physical Model Al Peak Fit";
-            rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-            rel_eff_curve.nucs_of_el_same_age = true;
-            rel_eff_curve.nuclides = base_nuclides;
-            rel_eff_curve.phys_model_use_hoerl = true;
-            
-            // Create aluminum external shielding
-            auto al_shield = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
-            al_shield->atomic_number = 13.0; // Aluminum
-            al_shield->fit_atomic_number = false;
-            al_shield->areal_density = 0.1; // Starting value in g/cm2
-            al_shield->fit_areal_density = true;
-            al_shield->lower_fit_areal_density = 0.001;
-            al_shield->upper_fit_areal_density = 10.0;
-            
-            rel_eff_curve.phys_model_external_atten.push_back(al_shield);
-            
-            solve_options.rel_eff_curves.push_back(rel_eff_curve);
-            solve_options.rois.push_back(base_roi);
-            
-            solve_options.fit_energy_cal = true;
-            solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras; //RelActCalcAuto::FwhmForm::Polynomial_3
-            solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
-            solve_options.skew_type = skew_type;
-            solve_options.additional_br_uncert = 0.0;
-            
-            trial_options.push_back(std::move(solve_options));
-          }
           
-          // FramPhysicalModel with Lead shielding
+          base_roi.lower_energy = std::max( 55.0f, foreground->gamma_energy_min() );
+          base_roi.upper_energy = foreground->gamma_energy_max();
+          base_roi.continuum_type = PeakContinuum::OffsetType::Linear;
+          base_roi.force_full_range = false;
+          base_roi.allow_expand_for_peak_width = true;
+          
+          
+          
+          // Define skew types to try
+          std::vector<PeakDef::SkewType> skew_types = {
+            PeakDef::SkewType::NoSkew,
+            PeakDef::SkewType::GaussExp
+          };
+          
+          // Blah blah blah
+          //If low res, only have no-skew; try to detect if CZT, and if so have double bell-whatever
+          //Need to break up ROIs for low-res detectors, so much better
+          //if `base_roi.allow_expand_for_peak_width` make sure doesnt overlap with other ROIs
+          
+          for( PeakDef::SkewType skew_type : skew_types )
           {
-            RelActCalcAuto::Options solve_options;
+            // LnX equation form
+            {
+              RelActCalcAuto::Options solve_options;
+              
+              // Create relative efficiency curve with LnX
+              RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+              rel_eff_curve.name = "LnX Peak Fit";
+              rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
+              rel_eff_curve.rel_eff_eqn_order = 3;
+              rel_eff_curve.nucs_of_el_same_age = true;
+              rel_eff_curve.nuclides = base_nuclides;
+              
+              solve_options.rel_eff_curves.push_back(rel_eff_curve);
+              solve_options.rois.push_back(base_roi);
+              
+              // Set other options
+              solve_options.fit_energy_cal = true;
+              solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras;
+              solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
+              solve_options.skew_type = skew_type;
+              solve_options.additional_br_uncert = 0.0;
+              
+              trial_options.push_back(std::move(solve_options));
+            }
             
-            RelActCalcAuto::RelEffCurveInput rel_eff_curve;
-            rel_eff_curve.name = "Physical Model Pb Peak Fit";
-            rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
-            rel_eff_curve.nucs_of_el_same_age = true;
-            rel_eff_curve.nuclides = base_nuclides;
-            rel_eff_curve.phys_model_use_hoerl = true;
+            // FramPhysicalModel with Aluminum shielding
+            {
+              RelActCalcAuto::Options solve_options;
+              
+              RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+              rel_eff_curve.name = "Physical Model Al Peak Fit";
+              rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+              rel_eff_curve.nucs_of_el_same_age = true;
+              rel_eff_curve.nuclides = base_nuclides;
+              rel_eff_curve.phys_model_use_hoerl = true;
+              
+              // Create aluminum external shielding
+              auto al_shield = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
+              al_shield->atomic_number = 13.0; // Aluminum
+              al_shield->fit_atomic_number = false;
+              al_shield->areal_density = 0.1; // Starting value in g/cm2
+              al_shield->fit_areal_density = true;
+              al_shield->lower_fit_areal_density = 0.001;
+              al_shield->upper_fit_areal_density = 10.0;
+              
+              rel_eff_curve.phys_model_external_atten.push_back(al_shield);
+              
+              solve_options.rel_eff_curves.push_back(rel_eff_curve);
+              solve_options.rois.push_back(base_roi);
+              
+              solve_options.fit_energy_cal = true;
+              solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras; //RelActCalcAuto::FwhmForm::Polynomial_3
+              solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
+              solve_options.skew_type = skew_type;
+              solve_options.additional_br_uncert = 0.0;
+              
+              trial_options.push_back(std::move(solve_options));
+            }
             
-            // Create lead external shielding
-            auto pb_shield = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
-            pb_shield->atomic_number = 82.0; // Lead
-            pb_shield->fit_atomic_number = false;
-            pb_shield->areal_density = 0.1; // Starting value in g/cm2
-            pb_shield->fit_areal_density = true;
-            pb_shield->lower_fit_areal_density = 0.0;
-            pb_shield->upper_fit_areal_density = 10.0;
-            
-            rel_eff_curve.phys_model_external_atten.push_back(pb_shield);
-            
-            solve_options.rel_eff_curves.push_back(rel_eff_curve);
-            solve_options.rois.push_back(base_roi);
-            
-            solve_options.fit_energy_cal = true;
-            solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras;
-            solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
-            solve_options.skew_type = skew_type;
-            solve_options.additional_br_uncert = 0.0;
-            
-            trial_options.push_back(std::move(solve_options));
+            // FramPhysicalModel with Lead shielding
+            {
+              RelActCalcAuto::Options solve_options;
+              
+              RelActCalcAuto::RelEffCurveInput rel_eff_curve;
+              rel_eff_curve.name = "Physical Model Pb Peak Fit";
+              rel_eff_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+              rel_eff_curve.nucs_of_el_same_age = true;
+              rel_eff_curve.nuclides = base_nuclides;
+              rel_eff_curve.phys_model_use_hoerl = true;
+              
+              // Create lead external shielding
+              auto pb_shield = std::make_shared<RelActCalc::PhysicalModelShieldInput>();
+              pb_shield->atomic_number = 82.0; // Lead
+              pb_shield->fit_atomic_number = false;
+              pb_shield->areal_density = 0.1; // Starting value in g/cm2
+              pb_shield->fit_areal_density = true;
+              pb_shield->lower_fit_areal_density = 0.0;
+              pb_shield->upper_fit_areal_density = 10.0;
+              
+              rel_eff_curve.phys_model_external_atten.push_back(pb_shield);
+              
+              solve_options.rel_eff_curves.push_back(rel_eff_curve);
+              solve_options.rois.push_back(base_roi);
+              
+              solve_options.fit_energy_cal = true;
+              solve_options.fwhm_form = RelActCalcAuto::FwhmForm::Gadras;
+              solve_options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum;
+              solve_options.skew_type = skew_type;
+              solve_options.additional_br_uncert = 0.0;
+              
+              trial_options.push_back(std::move(solve_options));
+            }
           }
-        }
+        }catch( std::exception &e )
+        {
+          FitPeaksForNuclideResult result;
+          result.status = FitPeaksForNuclideStatus::FailureSettingUp;
+          result.error_message = "Error determining rel. eff. setups to try: " + string(e.what());
+          cerr << result.error_message << endl;
+          
+          post_finishup( result );
+          return;
+        }// try / catc
         
         // Execute all trials in parallel using ThreadPool
         std::vector<RelActCalcAuto::RelActAutoSolution> solutions(trial_options.size());
@@ -914,16 +949,7 @@ namespace AnalystChecks
           result.error_message = "Failed to fit peaks for all attempted configurations ('" + last_error_message + "')";
         }
         
-        if( !compute_async )
-        {
-          finish_up_callback( result );
-        }else
-        {
-          Wt::WServer::instance()->post( user_session, [=](){
-            finish_up_callback(result);
-            wApp->triggerUpdate();
-          } );
-        }
+        post_finishup( result );
       };//worker lambda
       
       if( !compute_async )

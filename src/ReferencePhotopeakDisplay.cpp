@@ -1286,6 +1286,10 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
   m_fitPeaks->addStyleClass("LightButton FitPeaksBtn");
   HelpSystem::attachToolTipOn( m_fitPeaks, WString::tr("rpd-tt-fit-peaks-btn"), showToolTips );
   m_fitPeaks->clicked().connect( this, &ReferencePhotopeakDisplay::fitPeaks );
+  
+  // Connect signal to update button text when reference lines change
+  m_displayingNuclide.connect( this, &ReferencePhotopeakDisplay::updateFitPeaksButtonText );
+  m_nuclidesCleared.connect( this, &ReferencePhotopeakDisplay::updateFitPeaksButtonText );
 
   /*
    // We could have a few options
@@ -2751,7 +2755,7 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
   m_clearLines->setDisabled( m_persisted.empty() && !show_lines );
 
   m_csvDownload->setDisabled( !show_lines );
-  m_fitPeaks->setHidden( !show_lines );
+  updateFitPeaksButtonText();
 
   
   const bool isPhone = ( m_spectrumViewer && m_spectrumViewer->isPhone() );
@@ -3611,6 +3615,7 @@ void ReferencePhotopeakDisplay::fitPeaks()
   AnalystChecks::FitPeaksForNuclideOptions options;
   options.doNotAddPeaksToUserSession = true;
   options.computeAsync = true;
+  options.numSigmaSignifigance = 1.5;
   
   if( !m_currentlyShowingNuclide.m_input.m_input_txt.empty() )
     options.nuclides.push_back( m_currentlyShowingNuclide.m_input.m_input_txt );
@@ -3626,16 +3631,43 @@ void ReferencePhotopeakDisplay::fitPeaks()
   SimpleDialog *msg = new SimpleDialog( title, content );
   msg->rejectWhenEscapePressed();
   msg->addButton( WString::tr("Close") );
+  msg->setWidth( std::max( 250, std::min( 350, static_cast<int>(0.5 * m_spectrumViewer->renderedWidth()))) );
   boost::function<void(void)> info_dialog_closer = wApp->bind( boost::bind( &SimpleDialog::accept, msg ) );
 
   auto callback = [info_dialog_closer]( const AnalystChecks::FitPeaksForNuclideResult &results ){
-    cout << "In callback" << endl;
     info_dialog_closer();
     
     // Check if solution is null and handle error case
-    if( !results.solution )
+    WString error_msg;
+    switch( results.status )
     {
-      passMessage( WString::tr("rpd-fit-peaks-no-solution"), WarningWidget::WarningMsgHigh );
+      case AnalystChecks::FitPeaksForNuclideStatus::Success:
+        break;
+        
+      case AnalystChecks::FitPeaksForNuclideStatus::FailureSettingUp:
+        error_msg = WString::tr("rpd-fit-peaks-fail-setup").arg(results.error_message);
+        break;
+        
+      case AnalystChecks::FitPeaksForNuclideStatus::FailedComputation:
+        error_msg = WString::tr("rpd-fit-peaks-fail-computation").arg(results.error_message);
+        break;
+    }//switch( results.status )
+    
+    if( error_msg.empty() && !results.solution ) // Probably wont get here
+    {
+      string err_str = results.error_message.empty() ? string("unspecified reason") : results.error_message;
+      error_msg = WString::tr("rpd-fit-peaks-no-solution").arg(err_str);
+    }
+    
+    // Check if we actually have peaks in the results
+    if( error_msg.empty() && results.solution && results.fitPeaks.empty() )
+    {
+      error_msg = WString::tr("rpd-fit-peaks-no-peaks");
+    }
+    
+    if( !error_msg.empty() )
+    {
+      passMessage( error_msg, WarningWidget::WarningMsgHigh );
       return;
     }
     
@@ -3650,9 +3682,12 @@ void ReferencePhotopeakDisplay::fitPeaks()
     
     shared_ptr<SpecUtils::Measurement> foreground = make_shared<SpecUtils::Measurement>( *foreground_orig );
     
+    const bool single_peak = (results.fitPeaks.size() == 1);
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec );
+    
     // Create dialog with 50% current width
     const int dialog_width = std::min( 800, static_cast<int>( 0.45 * interspec->renderedWidth() ) );
-    const int dialog_height = std::min( 600, static_cast<int>( 0.8 * interspec->renderedHeight() ) );
+    const int dialog_height = std::min( (single_peak ? 450 : 600), static_cast<int>( 0.8*interspec->renderedHeight() ) );
     
     SimpleDialog *dialog = new SimpleDialog( WString::tr("rpd-fit-results-dialog-title"), "" );
     dialog->resize( dialog_width, dialog_height );
@@ -3665,14 +3700,10 @@ void ReferencePhotopeakDisplay::fitPeaks()
     D3SpectrumDisplayDiv *spectrumChart = new D3SpectrumDisplayDiv();
     spectrumChart->disableLegend();
     spectrumChart->setCompactAxis( true );
+    spectrumChart->setAllowDragRoiExtent( false );
     spectrumChart->applyColorTheme( interspec->getColorTheme() );
     interspec->colorThemeChanged().connect( boost::bind(&D3SpectrumDisplayDiv::applyColorTheme, spectrumChart, boost::placeholders::_1) );
     
-    WText *rel_eff_desc = new WText( WString::tr("rpd-fit-results-rel-eff_desc") );
-    rel_eff_desc->addStyleClass( "FitPeakResultRelEffDesc" );
-    
-    RelEffChart *relEffChart = new RelEffChart();
-    relEffChart->setYAxisTitle( "Rel. Eff." );
     
     WText *question_txt = new WText( WString::tr("rpd-fit-results-dialog-txt") );
     question_txt->addStyleClass( "FitPeakResultTxt" );
@@ -3683,47 +3714,72 @@ void ReferencePhotopeakDisplay::fitPeaks()
     dialog_layout->setContentsMargins( 0, 0, 0, 0  );
     content->setLayout( dialog_layout );
     dialog_layout->addWidget( spectrumChart, 0, 0 );
-    dialog_layout->addWidget( rel_eff_desc, 1, 0 );
-    dialog_layout->addWidget( relEffChart, 2, 0 );
-    dialog_layout->addWidget( question_txt, 3, 0, Wt::AlignCenter | Wt::AlignMiddle );
-    dialog_layout->setRowStretch( 2, 1 );
-    // If we have the layout stretch things, the rel eff chart always ends up taller than the spectrum; not sure why.
-    spectrumChart->setHeight( 0.5*(dialog_height - 80) );
-  
     
-    // Set RelEffChart data from solution
-    const auto &solution = results.solution;
-    const double live_time = solution->m_foreground ? solution->m_foreground->live_time() : 1.0;
-    
-    vector<RelEffChart::ReCurveInfo> info_sets;
-    for( size_t i = 0; i < solution->m_rel_activities.size(); ++i )
+    // Check if user already has peaks fit - if so, add "All Peaks" checkbox
+    WCheckBox *allPeaksCb = nullptr;
+    const bool hasExistingPeaks = (interspec->peakModel()->peaks() && !interspec->peakModel()->peaks()->empty());
+    if( hasExistingPeaks )
     {
-      RelEffChart::ReCurveInfo info;
-      info.live_time = live_time;
+      allPeaksCb = new WCheckBox( WString::tr("rpd-fit-all-peaks-cb") );
+      allPeaksCb->addStyleClass( "CbNoLineBreak" );
+      allPeaksCb->setChecked( true );  // Default to checked
+      HelpSystem::attachToolTipOn( allPeaksCb, WString::tr("rpd-tt-fit-all-peaks-cb"), showToolTips );
+      dialog_layout->addWidget( allPeaksCb, dialog_layout->rowCount(), 0, Wt::AlignRight | Wt::AlignMiddle );
+    }
+    
+    if( single_peak )
+    {
+      dialog_layout->addWidget( question_txt, dialog_layout->rowCount(), 0, Wt::AlignCenter | Wt::AlignMiddle );
+      dialog_layout->setRowStretch( 0, 1 );
+    }else
+    {
+      WText *rel_eff_desc = new WText( WString::tr("rpd-fit-results-rel-eff_desc") );
+      rel_eff_desc->addStyleClass( "FitPeakResultRelEffDesc" );
       
-      if( i < solution->m_obs_eff_for_each_curve.size() )
+      RelEffChart *relEffChart = new RelEffChart();
+      relEffChart->setYAxisTitle( "Rel. Eff." );
+      
+      dialog_layout->addWidget( rel_eff_desc, dialog_layout->rowCount(), 0 );
+      dialog_layout->addWidget( relEffChart,  dialog_layout->rowCount(), 0 );
+      dialog_layout->setRowStretch( dialog_layout->rowCount() - 1, 1 );
+      dialog_layout->addWidget( question_txt, dialog_layout->rowCount(), 0, Wt::AlignCenter | Wt::AlignMiddle );
+      
+      // If we have the layout stretch things, the rel eff chart always ends up taller than the spectrum; not sure why.
+      spectrumChart->setHeight( 0.5*(dialog_height - 80) );
+      
+      // Set RelEffChart data from solution
+      const auto &solution = results.solution;
+      const double live_time = solution->m_foreground ? solution->m_foreground->live_time() : 1.0;
+      
+      vector<RelEffChart::ReCurveInfo> info_sets;
+      for( size_t i = 0; i < solution->m_rel_activities.size(); ++i )
       {
-        for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : solution->m_obs_eff_for_each_curve[i] )
+        RelEffChart::ReCurveInfo info;
+        info.live_time = live_time;
+        
+        if( i < solution->m_obs_eff_for_each_curve.size() )
         {
-          if( (obs_eff.observed_efficiency > 0.0)
-             && (obs_eff.num_sigma_significance > 2.5)
-             && (obs_eff.fraction_roi_counts > 0.05)
-             && obs_eff.within_roi )
+          for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : solution->m_obs_eff_for_each_curve[i] )
           {
-            info.obs_eff_data.push_back( obs_eff );
+            if( (obs_eff.observed_efficiency > 0.0)
+               && (obs_eff.num_sigma_significance > 2.5)
+               && (obs_eff.fraction_roi_counts > 0.05)
+               && obs_eff.within_roi )
+            {
+              info.obs_eff_data.push_back( obs_eff );
+            }
           }
-        }
-      }//
+        }//
+        
+        info.rel_acts = solution->m_rel_activities[i];
+        info.js_rel_eff_eqn = solution->rel_eff_eqn_js_function(i);
+        info.js_rel_eff_uncert_eqn = solution->rel_eff_eqn_js_uncert_fcn(i);
+        
+        info_sets.push_back( info );
+      }//for( size_t i = 0; i < solution->m_rel_activities.size(); ++i )
       
-      info.rel_acts = solution->m_rel_activities[i];
-      info.js_rel_eff_eqn = solution->rel_eff_eqn_js_function(i);
-      info.js_rel_eff_uncert_eqn = solution->rel_eff_eqn_js_uncert_fcn(i);
-      
-      info_sets.push_back( info );
-    }//for( size_t i = 0; i < solution->m_rel_activities.size(); ++i )
-    
-    relEffChart->setData( info_sets );
-    
+      relEffChart->setData( info_sets );
+    }//if( !single_peak )
 
     
     PeakModel *peakModel = new PeakModel( spectrumChart );
@@ -3739,11 +3795,18 @@ void ReferencePhotopeakDisplay::fitPeaks()
     
     // Add result peaks
     vector<shared_ptr<const PeakDef>> all_peaks;
-    std::vector<std::shared_ptr<const PeakDef>> fit_peaks = results.fitPeaks;
+    const vector<std::shared_ptr<const PeakDef>> fit_peaks = results.fitPeaks;
     if( existing_peaks )
       all_peaks.insert( end(all_peaks), begin(*existing_peaks), end(*existing_peaks) );
     all_peaks.insert( end(all_peaks), begin(fit_peaks), end(fit_peaks) );
     std::sort( begin(all_peaks), end(all_peaks), &PeakDef::lessThanByMeanShrdPtr );
+    
+    if( allPeaksCb )
+    {
+      const auto fcn = static_cast<void (PeakModel::*)(vector<shared_ptr<const PeakDef>>)>(&PeakModel::setPeaks);
+      allPeaksCb->unChecked().connect( boost::bind( fcn, peakModel, fit_peaks ) );
+      allPeaksCb->checked().connect( boost::bind( fcn, peakModel, all_peaks ) );
+    }//if( allPeaksCb )
     
     peakModel->setPeaks( all_peaks );
     spectrumChart->setPeakModel( peakModel );
@@ -3880,4 +3943,66 @@ void ReferencePhotopeakDisplay::setCurrentColor( Wt::WColor &color )
 
   refreshLinesDisplayedToGui();
 }//void setCurrentColor( Wt::WColor &color )
+
+
+void ReferencePhotopeakDisplay::updateFitPeaksButtonText()
+{
+  if( !m_fitPeaks )
+    return;
+    
+  // Count how many reference line sets are displayed
+  vector<string> sources;
+  if( m_currentlyShowingNuclide.m_validity == ReferenceLineInfo::InputValidity::Valid )
+  {
+    RelActCalcAuto::SrcVariant src = RelActCalcAuto::source_from_string(m_currentlyShowingNuclide.m_input.m_input_txt);
+    if( !RelActCalcAuto::is_null(src) )
+      sources.push_back( m_currentlyShowingNuclide.m_input.m_input_txt );
+  }
+  
+  for( const auto &persisted : m_persisted )
+  {
+    if( persisted.m_validity != ReferenceLineInfo::InputValidity::Valid )
+      continue;
+    RelActCalcAuto::SrcVariant src = RelActCalcAuto::source_from_string(persisted.m_input.m_input_txt);
+    if( !RelActCalcAuto::is_null(src) )
+      sources.push_back( persisted.m_input.m_input_txt );
+  }
+  
+  const size_t total_displayed = sources.size();
+  const bool show_lines = (total_displayed > 0);
+  
+  // Show/hide button based on whether there are lines to fit
+  m_fitPeaks->setHidden( !show_lines );
+  
+  if( !show_lines )
+    return; // No need to update text if button is hidden
+  
+  // Determine button text based on number of displayed reference lines
+  Wt::WString buttonText;
+  if( total_displayed > 1 )
+  {
+    // Multiple reference lines - use generic text
+    buttonText = WString::tr( "rpd-fit-lines-peaks-btn" );
+  }else
+  {
+    // Single reference line - use nuclide-specific text with truncation
+    assert( sources.size() == 1 );
+    std::string display_name = sources.front();
+    
+    // Limit to ~7 characters and add ellipses if needed
+    if( display_name.length() > 7 )
+    {
+      display_name = display_name.substr( 0, 7 );
+      // Find last space to avoid cutting mid-word if possible
+      const size_t last_space = display_name.find_last_of( " \t" );
+      if( last_space != std::string::npos && last_space > 3 )
+        display_name = display_name.substr( 0, last_space );
+      display_name += "...";
+    }
+    
+    buttonText = WString::tr("rpd-fit-n-srcs-btn").arg( display_name );
+  }
+  
+  m_fitPeaks->setText( buttonText );
+}//void updateFitPeaksButtonText()
 

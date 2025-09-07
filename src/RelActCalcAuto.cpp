@@ -7955,17 +7955,23 @@ SrcVariant source_from_string( const std::string &name )
   if( el )
     return el;
   
-  const ReactionGamma * const reaction_db = ReactionGammaServer::database();
-  assert( reaction_db );
-  if( !reaction_db )
-    throw runtime_error( "Couldnt load reaction DB" );
-      
-  vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-  reaction_db->gammas( name, possible_rctns );
-      
-  // TODO: we are currently taking the first reaction; however, in principle there could be multiple - however, `ReactionGamma` doesnt have an interface to just return a reaction by name, I guess because
-  for( const ReactionGamma::ReactionPhotopeak &r : possible_rctns )
-    return r.reaction;
+  try
+  {
+    const ReactionGamma * const reaction_db = ReactionGammaServer::database();
+    assert( reaction_db );
+    if( !reaction_db )
+      throw runtime_error( "Couldnt load reaction DB" );
+    
+    vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+    reaction_db->gammas( name, possible_rctns ); //This can throw exception if name is a proper reaction name
+    
+    // TODO: we are currently taking the first reaction; however, in principle there could be multiple - however, `ReactionGamma` doesnt have an interface to just return a reaction by name, I guess because
+    for( const ReactionGamma::ReactionPhotopeak &r : possible_rctns )
+      return r.reaction;
+  }catch( std::exception &e )
+  {
+    cerr << "Error in source_from_string: " << e.what() << endl;
+  }
 
   return std::monostate();
 }//source_from_string()

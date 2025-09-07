@@ -116,10 +116,10 @@ namespace AnalystChecks
 
   struct FitPeaksForNuclideOptions {
     std::vector<std::string> nuclides;
-    bool doNotAddPeaksToUserSession;
+    bool doNotAddPeaksToUserSession = true;
     std::optional<std::string> userSession;
-    bool computeAsync;
-    double numSigmaSignifigance;
+    bool computeAsync = false;
+    double numSigmaSignifigance = 1.5;
   };
   
   enum class FitPeaksForNuclideStatus

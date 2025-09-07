@@ -441,6 +441,8 @@ public:
   void saveChartToImg( const std::string &name, const bool asPng );
   
   void setThumbnailMode();
+  
+  void setAllowDragRoiExtent( const bool allow );
 protected:
 
   //updates the data JSON for the D3 spectrum on the JS side
@@ -525,6 +527,8 @@ protected:
   bool m_showXAxisSliderChart;
   bool m_compactXAxisWithSliderChart;
   bool m_showYAxisScalers;
+  
+  bool m_allowDragRoiExtent;
   
   std::vector<std::pair<double,double> > m_searchEnergies;
   
