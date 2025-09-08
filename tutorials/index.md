@@ -1,5 +1,15 @@
 # Tutorials
 
+## Newer features (Sep 2025)
+This presentation is an update to the [Sep 2024](#newer-features-sep-2024) presentation, adding some additional features and improvements from the last year.
+* [20250910_InterSpec_notable_features.pptx](https://github.com/sandialabs/InterSpec/releases/download/20250910/20250910_InterSpec_notable_features_SAND2025-11239PE.pptx) (135 MB)
+
+
+## Enrichment and "Isotopics by nuclides" tool (Sep 2025)
+The "<code>Isotopics by nuclides</code>" tool in InterSpec allows performing advanced uranium and plutonium enrichment calculations, 
+as well as general relative efficiency analysis with any nuclide.
+* [Use instructions and information](rel_act_auto/RelActAuto_use_instructions_20250901_SAND2025-11238PE_UUR.pdf) (3 MB)
+
 ## Detection Limits (Oct 2024)
 InterSpec provides two tools for calculating detection limits: an easy to use tool to quickly place limits 
 on activities using a single Region of Interest (ROI), as well as a more advanced tool that can use multiple ROIs, place limits
