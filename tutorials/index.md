@@ -7,7 +7,10 @@ This presentation is an update to the [Sep 2024](#newer-features-sep-2024) prese
 
 ## Enrichment and "Isotopics by nuclides" tool (Sep 2025)
 The "<code>Isotopics by nuclides</code>" tool in InterSpec allows performing advanced uranium and plutonium enrichment calculations, 
-as well as general relative efficiency analysis with any nuclide.
+as well as general relative efficiency analysis with any nuclide.  This presentation covers the tool as it is currently avaiable 
+from the [bleed edge](https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge) automated build of the app, 
+as well as what is expected to be included in the forethcomming v1.0.14 release.  
+Although v1.0.13 of InterSpec includes an in-development preview of the tool, it should not be used, as it has been greatly improved for v1.0.14. 
 * [Use instructions and information](rel_act_auto/RelActAuto_use_instructions_20250901_SAND2025-11238PE_UUR.pdf) (3 MB)
 
 ## Detection Limits (Oct 2024)
