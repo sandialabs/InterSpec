@@ -45,7 +45,6 @@ class DrfChart : public Wt::WContainerWidget
 {
 protected:
   void defineJavaScript();
-  void setCssRules();
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
   std::shared_ptr<const DetectorPeakResponse> m_detector;
@@ -68,8 +67,6 @@ public:
   DrfChart( Wt::WContainerWidget *parent = 0 );
   virtual ~DrfChart();
   
-  void handleColorThemeChange( std::shared_ptr<const ColorTheme> theme );
-  
   void updateChart( std::shared_ptr<const DetectorPeakResponse> det );
   
   /** Set the x-axis range from C++ */
@@ -78,20 +75,18 @@ public:
   /** Get the current x-axis range */
   std::pair<double, double> getXAxisRange() const;
   
-  /** Set custom colors based on ColorTheme */
-  void setLineColors();
-  
-  void setLineColor( const Wt::WColor &color );
-  void setTextColor( const Wt::WColor &color );
-  void setAxisLineColor( const Wt::WColor &color );
-  void setChartBackgroundColor( const Wt::WColor &color );
-  
 protected:
   /** Send data to JavaScript chart */
-  void sendDataToJavaScript( const std::string &jsonData );
   
-  /** Convert detector data to JSON format */
-  std::string generateJsonData() const;
+  
+  /** Generate efficiency data for JavaScript */
+  std::string generateEfficiencyData() const;
+  
+  /** Generate FWHM data for JavaScript */
+  std::string generateFwhmData() const;
+  
+  /** Get the energy range for data generation */
+  std::pair<float, float> getEnergyRange() const;
   
 private:
   double m_minEnergy, m_maxEnergy;

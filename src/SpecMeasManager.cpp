@@ -3308,7 +3308,6 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       }//switch( geom_type )
         
       chart->updateChart( new_drf );
-      set_chart_y_range( new_drf );
       accept->enable();
     }catch( std::exception & )
     {
