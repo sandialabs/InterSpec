@@ -75,54 +75,78 @@ function peakResolutionFWHM(energy, form, pars) {
   switch (form) {
     case 'kGadrasResolutionFcn':
     {
-      if (pars.length < 3) return 0;
+      if (pars.length !== 3) {
+        throw new Error('DetectorPeakResponse::peakResolutionFWHM(): pars not defined');
+      }
       
-      const A = pars[0];
-      const B = pars[1]; 
-      const C = pars.length > 2 ? pars[2] : 0;
+      const a = pars[0];
+      const b = pars[1];
+      const c = pars[2];
       
-      if (energy <= 0) return 0;
+      if (energy >= 661.0 || Math.abs(a) < 1.0e-6) {
+        return 6.61 * b * Math.pow(energy / 661.0, c);
+      }
       
-      const sqrtE = Math.sqrt(energy);
-      const val = A + B * sqrtE + C * energy;
+      if (a < 0.0) {
+        const p = Math.pow(c, 1.0 / Math.log(1.0 - a));
+        return 6.61 * b * Math.pow(energy / 661.0, p);
+      }
       
-      if (val <= 0) return 0;
-      return Math.sqrt(val);
+      if (a > 6.61 * b) {
+        return a;
+      }
+      
+      const A7 = Math.sqrt(Math.pow(6.61 * b, 2.0) - a * a) / 6.61;
+      return Math.sqrt(a * a + Math.pow(6.61 * A7 * Math.pow(energy / 661.0, c), 2.0));
     }
 
     case 'kSqrtEnergyPlusInverse':
     {
-      if (pars.length < 3) return 0;
-      if (energy <= 0) return 0;
+      if (pars.length !== 3) {
+        throw new Error('DetectorPeakResponse::peakResolutionFWHM(): pars not defined');
+      }
       
-      const val2 = pars[0] + pars[1] * energy + pars[2] / energy;
-      return val2 > 0 ? Math.sqrt(val2) : 0;
+      // Convert energy from keV to keV (PhysicalUnits::keV == 1.0 in C++)
+      // energy /= PhysicalUnits::keV; // This is a no-op since PhysicalUnits::keV == 1.0
+      
+      return Math.sqrt(pars[0] + pars[1] * energy + pars[2] / energy);
     }
 
     case 'kConstantPlusSqrtEnergy':
     {
-      if (pars.length < 2) return 0;
-      if (energy <= 0) return 0;
+      if (pars.length !== 2) {
+        throw new Error('DetectorPeakResponse::peakResolutionFWHM(): pars not defined');
+      }
+      
+      // Convert energy from keV to keV (PhysicalUnits::keV == 1.0 in C++)
+      // energy /= PhysicalUnits::keV; // This is a no-op since PhysicalUnits::keV == 1.0
       
       return pars[0] + pars[1] * Math.sqrt(energy);
     }
 
     case 'kSqrtPolynomial':
     {
-      if (pars.length === 0) return 0;
-      if (energy <= 0) return 0;
+      if (pars.length < 1) {
+        throw new Error('DetectorPeakResponse::peakResolutionFWHM(): pars not defined');
+      }
       
-      // Use Horner's method to evaluate polynomial
+      // Convert energy from keV to MeV (PhysicalUnits::MeV in C++)
+      energy = energy / 1000.0;
+      
+      // Use Horner's method to evaluate the polynomial - more stable
       let val = pars[pars.length - 1];
       for (let i = pars.length - 2; i >= 0; i--) {
-        val = val * energy + pars[i];
+        val = val * energy + pars[i]; // Multiply by x and add the next coefficient
       }
       
       return Math.sqrt(val);
     }
 
+    case 'kNumResolutionFnctForm':
+      throw new Error('DetectorPeakResponse::peakResolutionFWHM(): Resolution not defined');
+
     default:
-      throw new Error('Unknown FWHM form: ' + form);
+      throw new Error('DetectorPeakResponse::peakResolutionFWHM(): Unknown FWHM form: ' + form);
   }
 }
 
@@ -130,6 +154,67 @@ function peakResolutionFWHM(energy, form, pars) {
 class DetectorPeakResponseJS {
   constructor(data) {
     this.data = data;
+    
+    // Validate JavaScript calculations against C++ values if validation data is present
+    if (data && data.validation) {
+      this.validateCalculations();
+    }
+  }
+  
+  validateCalculations() {
+    const validation = this.data.validation;
+    if (!validation.energies || !validation.efficiencies || !validation.fwhms) {
+      console.warn('DetectorPeakResponseJS: Incomplete validation data');
+      return;
+    }
+    
+    if (validation.energies.length !== validation.efficiencies.length || 
+        validation.energies.length !== validation.fwhms.length) {
+      console.warn('DetectorPeakResponseJS: Validation data arrays have mismatched lengths');
+      return;
+    }
+    
+    // We will let the tollerances be very generous on account of the C++ using floats everywhere...
+    const eff_tolerance = 1e-3; // Relative tolerance for floating point comparison
+    const fwhm_tolerance = 1e-3; // Relative tolerance for floating point comparison
+    
+    // Test efficiency calculations
+    for (let i = 0; i < validation.energies.length; i++) {
+      const energy = validation.energies[i];
+      const expectedEfficiency = validation.efficiencies[i];
+      
+      if (expectedEfficiency !== null && this.hasEfficiency()) {
+        const calculatedEfficiency = this.efficiency(energy);
+        
+        if (calculatedEfficiency === null) {
+          console.assert(false, `DetectorPeakResponseJS: efficiency(${energy}) returned null, expected ${expectedEfficiency}`);
+        } else {
+          const relativeError = Math.abs(calculatedEfficiency - expectedEfficiency) / Math.abs(expectedEfficiency);
+          console.assert(relativeError < eff_tolerance || expectedEfficiency < 1e-8, 
+            `DetectorPeakResponseJS: efficiency(${energy}) = ${calculatedEfficiency}, expected ${expectedEfficiency}, relative error = ${relativeError}`);
+        }
+      }
+    }
+    
+    // Test FWHM calculations
+    for (let i = 0; i < validation.energies.length; i++) {
+      const energy = validation.energies[i];
+      const expectedFwhm = validation.fwhms[i];
+      
+      if (expectedFwhm !== null && this.hasFwhm()) {
+        const calculatedFwhm = this.fwhm(energy);
+        
+        if (calculatedFwhm === null) {
+          console.assert(false, `DetectorPeakResponseJS: fwhm(${energy}) returned null, expected ${expectedFwhm}`);
+        } else {
+          const relativeError = Math.abs(calculatedFwhm - expectedFwhm) / Math.abs(expectedFwhm);
+          console.assert(relativeError < fwhm_tolerance, 
+            `DetectorPeakResponseJS: fwhm(${energy}) = ${calculatedFwhm}, expected ${expectedFwhm}, relative error = ${relativeError}`);
+        }
+      }
+    }
+    
+    console.log('DetectorPeakResponseJS: Validation completed successfully');
   }
   
   // Check if efficiency data is available
@@ -158,11 +243,10 @@ class DetectorPeakResponseJS {
     
     const effData = this.data.efficiency;
     
+    const energyInUnits = energy / effData.energyUnits;
     if (effData.form === 'kEnergyEfficiencyPairs') {
-      const energyInUnits = energy / effData.energyUnits;
       return akimaInterpolate(energyInUnits, effData.pairs);
     } else if (effData.form === 'kExpOfLogPowerSeries') {
-      const energyInUnits = energy / effData.energyUnits;
       return expOfLogPowerSeriesEfficiency(energyInUnits, effData.coefficients);
     }
     

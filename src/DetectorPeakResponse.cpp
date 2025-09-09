@@ -4347,6 +4347,74 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
     json << "null";
   }
   
+#ifdef PERFORM_DEVELOPER_CHECKS
+  // Add validation data for JavaScript testing
+  json << ",\"validation\":{";
+  json << "\"energies\":[";
+  
+  // Test energies in keV: some common gamma energies
+  const std::vector<float> testEnergies = {59.5f, 122.0f, 356.0f, 511.0f, 661.7f, 1173.2f, 1332.5f, 2614.5f};
+  
+  for( size_t i = 0; i < testEnergies.size(); ++i )
+  {
+    if( i > 0 )
+      json << ",";
+    json << testEnergies[i];
+  }
+  json << "],\"efficiencies\":[";
+  
+  // Calculate efficiency values in C++
+  for( size_t i = 0; i < testEnergies.size(); ++i )
+  {
+    if( i > 0 )
+      json << ",";
+    
+    if( m_efficiencyForm == kFunctialEfficienyForm || 
+        m_efficiencyForm == kEnergyEfficiencyPairs || 
+        m_efficiencyForm == kExpOfLogPowerSeries )
+    {
+      const double efficiency = intrinsicEfficiency( testEnergies[i] );
+      if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0 )
+        json << "null";
+      else
+        json << efficiency;
+    }
+    else
+    {
+      json << "null";
+    }
+  }
+  json << "],\"fwhms\":[";
+  
+  // Calculate FWHM values in C++
+  for( size_t i = 0; i < testEnergies.size(); ++i )
+  {
+    if( i > 0 )
+      json << ",";
+    
+    if( hasResolutionInfo() )
+    {
+      try
+      {
+        const double fwhm = peakResolutionFWHM( testEnergies[i] );
+        if( IsNan(fwhm) || IsInf(fwhm) || fwhm < 0.0 || fwhm >= 9999.9 )
+          json << "null";
+        else
+          json << fwhm;
+      }
+      catch( ... )
+      {
+        json << "null";
+      }
+    }
+    else
+    {
+      json << "null";
+    }
+  }
+  json << "]}";
+#endif // PERFORM_DEVELOPER_CHECKS
+  
   json << "}";
   return json.str();
 }//std::string DetectorPeakResponse::toJSON(...)
