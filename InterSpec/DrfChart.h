@@ -71,25 +71,6 @@ public:
   
   /** Set the x-axis range from C++ */
   void setXAxisRange( double minEnergy, double maxEnergy );
-  
-  /** Get the current x-axis range */
-  std::pair<double, double> getXAxisRange() const;
-  
-protected:
-  /** Send data to JavaScript chart */
-  
-  
-  /** Generate efficiency data for JavaScript */
-  std::string generateEfficiencyData() const;
-  
-  /** Generate FWHM data for JavaScript */
-  std::string generateFwhmData() const;
-  
-  /** Get the energy range for data generation */
-  std::pair<float, float> getEnergyRange() const;
-  
-private:
-  double m_minEnergy, m_maxEnergy;
 };//class DrfChart
 
 #endif //DrfChart_h

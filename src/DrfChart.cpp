@@ -49,15 +49,14 @@ using namespace Wt;
 DrfChart::DrfChart( WContainerWidget *parent )
 : WContainerWidget( parent ),
   m_detector( nullptr ),
-  m_jsgraph( jsRef() + ".chart" ),
-  m_minEnergy( 0.0 ),
-  m_maxEnergy( 3000.0 )
+  m_jsgraph( jsRef() + ".chart" )
 {
   addStyleClass( "DrfChart" );
   setOverflow( Overflow::OverflowHidden );
   
   // Require JavaScript resources
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
+  wApp->require( "InterSpec_resources/DetectorPeakResponseJS.js" );
   wApp->require( "InterSpec_resources/DrfChart.js" );
   
   wApp->useStyleSheet( "InterSpec_resources/DrfChart.css" );
@@ -68,50 +67,13 @@ void DrfChart::updateChart( std::shared_ptr<const DetectorPeakResponse> det )
 {
   m_detector = det;
   
-  if( !det || !det->isValid() )
-  {
-    // Send empty data to JavaScript
-    const string efficiencyJs = m_jsgraph + ".setEfficiencyData(null);";
-    const string fwhmJs = m_jsgraph + ".setFwhmData(null);"; 
-    if( isRendered() )
-    {
-      doJavaScript( efficiencyJs );
-      doJavaScript( fwhmJs );
-    }else
-    {
-      m_pendingJs.push_back( efficiencyJs );
-      m_pendingJs.push_back( fwhmJs );
-    }
-    return;
-  }
-  
-  // Generate and send efficiency data for JavaScript calculation
-  const string efficiencyData = generateEfficiencyData();
-  const string efficiencyJs = m_jsgraph + ".setEfficiencyData(" + efficiencyData + ");";
+  // Generate and send detector data using DetectorPeakResponse JSON generation
+  string detectorData = (!det || !det->isValid()) ? string("null") : det->toJSON();
+  const string detectorJs = m_jsgraph + ".setDetectorData(" + detectorData + ");";
   if( isRendered() )
-    doJavaScript( efficiencyJs );
+    doJavaScript( detectorJs );
   else
-    m_pendingJs.push_back( efficiencyJs );
-  
-  // Generate and send FWHM data if available
-  if( det->hasResolutionInfo() )
-  {
-    const string fwhmData = generateFwhmData();
-    const string fwhmJs = m_jsgraph + ".setFwhmData(" + fwhmData + ");";
-    if( isRendered() )
-      doJavaScript( fwhmJs );
-    else
-      m_pendingJs.push_back( fwhmJs );
-  }
-  else
-  {
-    // Clear FWHM data
-    const string fwhmJs = m_jsgraph + ".setFwhmData(null);";
-    if( isRendered() )
-      doJavaScript( fwhmJs );
-    else
-      m_pendingJs.push_back( fwhmJs );
-  }
+    m_pendingJs.push_back( detectorJs );
 } //DrfChart::updateChart()
 
 
@@ -161,209 +123,8 @@ void DrfChart::render( Wt::WFlags<Wt::RenderFlag> flags )
 }//void DrfChart::render(...)
 
 
-std::string DrfChart::generateEfficiencyData() const
-{
-  if( !m_detector || !m_detector->isValid() )
-    return "null";
-    
-  stringstream json;
-  json << "{";
-  
-  // Get efficiency form
-  const auto efficiencyForm = m_detector->efficiencyFcnType();
-  
-  // Get energy units
-  float energyUnits = m_detector->efficiencyEnergyUnits();
-  
-  if( efficiencyForm == DetectorPeakResponse::kFunctialEfficienyForm )
-  {
-    // For functional form, generate 100 points and send as kEnergyEfficiencyPairs with energyUnits=1
-    json << "\"form\":\"kEnergyEfficiencyPairs\"";
-    json << ",\"energyUnits\":1";
-    
-    float minEnergy = 50.0f, maxEnergy = 3000.0f;
-    if( m_detector->upperEnergy() > (m_detector->lowerEnergy() + 100.0) )
-    {
-      minEnergy = m_detector->lowerEnergy();
-      maxEnergy = m_detector->upperEnergy();
-    }
-    
-    // Add energy extent to JSON
-    json << ",\"energyExtent\":[" << minEnergy << "," << maxEnergy << "]";
-    
-    json << ",\"pairs\":[";
-    bool first = true;
-    for( int i = 0; i < 100; ++i )
-    {
-      const float energy = minEnergy + (float(i)/99.0f) * (maxEnergy-minEnergy);
-      const float efficiency = static_cast<float>( m_detector->intrinsicEfficiency( energy ) );
-      
-      // Skip invalid efficiency values
-      if( IsNan(efficiency) || IsInf(efficiency) || efficiency < 0.0f )
-        continue;
-        
-      if( !first )
-        json << ",";
-      first = false;
-      json << "{\"energy\":" << energy << ",\"efficiency\":" << efficiency << "}";
-    }
-    json << "]";
-  }
-  else if( efficiencyForm == DetectorPeakResponse::kEnergyEfficiencyPairs )
-  {
-    json << "\"form\":\"kEnergyEfficiencyPairs\"";
-    json << ",\"energyUnits\":" << energyUnits;
-    
-    const auto& pairs = m_detector->getEnergyEfficiencyPair();
-    
-    // Calculate energy extent from pairs data
-    float minEnergy = 0.0f, maxEnergy = 3000.0f;
-    if( !pairs.empty() )
-    {
-      minEnergy = pairs[0].energy;
-      maxEnergy = pairs[0].energy;
-      for( const auto& pair : pairs )
-      {
-        if( pair.energy < minEnergy )
-          minEnergy = pair.energy;
-        if( pair.energy > maxEnergy )
-          maxEnergy = pair.energy;
-      }
-    }
-    
-    // Use detector range if available and reasonable, but constrain by actual data range
-    if( m_detector->upperEnergy() > (m_detector->lowerEnergy() + 100.0) )
-    {
-      minEnergy = std::max(minEnergy, static_cast<float>(m_detector->lowerEnergy()));
-      maxEnergy = std::min(maxEnergy, static_cast<float>(m_detector->upperEnergy()));
-    }
-    
-    json << ",\"energyExtent\":[" << minEnergy << "," << maxEnergy << "]";
-    
-    json << ",\"pairs\":[";
-    for( size_t i = 0; i < pairs.size(); ++i )
-    {
-      if( i > 0 )
-        json << ",";
-      json << "{\"energy\":" << pairs[i].energy << ",\"efficiency\":" << pairs[i].efficiency << "}";
-    }
-    json << "]";
-  }
-  else if( efficiencyForm == DetectorPeakResponse::kExpOfLogPowerSeries )
-  {
-    json << "\"form\":\"kExpOfLogPowerSeries\"";
-    json << ",\"energyUnits\":" << energyUnits;
-    
-    // Add energy extent to JSON
-    float minEnergy = 0.0f, maxEnergy = 3000.0f;
-    if( m_detector->upperEnergy() > (m_detector->lowerEnergy() + 100.0) )
-    {
-      minEnergy = m_detector->lowerEnergy();
-      maxEnergy = m_detector->upperEnergy();
-    }
-    json << ",\"energyExtent\":[" << minEnergy << "," << maxEnergy << "]";
-    
-    const auto& coeffs = m_detector->efficiencyExpOfLogsCoeffs();
-    json << ",\"coefficients\":[";
-    for( size_t i = 0; i < coeffs.size(); ++i )
-    {
-      if( i > 0 )
-        json << ",";
-      json << coeffs[i];
-    }
-    json << "]";
-  }
-  else
-  {
-    json << "\"form\":\"unknown\"";
-    json << ",\"energyUnits\":1";
-  }
-  
-  json << "}";
-  return json.str();
-}//std::string DrfChart::generateEfficiencyData()
-
-std::pair<float, float> DrfChart::getEnergyRange() const
-{
-  if( !m_detector || !m_detector->isValid() )
-    return std::make_pair(0.0f, 3000.0f);
-    
-  float minEnergy = 50.0f, maxEnergy = 3000.0f;
-  
-  // First, try to get range from EnergyEfficiencyPair data if available
-  const auto efficiencyForm = m_detector->efficiencyFcnType();
-  if( efficiencyForm == DetectorPeakResponse::kEnergyEfficiencyPairs )
-  {
-    const auto& pairs = m_detector->getEnergyEfficiencyPair();
-    if( !pairs.empty() )
-    {
-      minEnergy = pairs[0].energy;
-      maxEnergy = pairs[0].energy;
-      for( const auto& pair : pairs )
-      {
-        if( pair.energy < minEnergy )
-          minEnergy = pair.energy;
-        if( pair.energy > maxEnergy )
-          maxEnergy = pair.energy;
-      }
-    }
-  }
-  
-  // Use detector range if available and reasonable, but constrain by actual data range
-  if( m_detector->upperEnergy() > (m_detector->lowerEnergy() + 100.0) )
-  {
-    minEnergy = std::max(minEnergy, static_cast<float>(m_detector->lowerEnergy()));
-    maxEnergy = std::min(maxEnergy, static_cast<float>(m_detector->upperEnergy()));
-  }
-  
-  return std::make_pair(minEnergy, maxEnergy);
-}
-
-std::string DrfChart::generateFwhmData() const
-{
-  if( !m_detector || !m_detector->isValid() || !m_detector->hasResolutionInfo() )
-    return "null";
-    
-  stringstream json;
-  json << "[";
-  
-  // Use the same energy range as efficiency data
-  const auto energyRange = getEnergyRange();
-  const float minEnergy = energyRange.first;
-  const float maxEnergy = energyRange.second;
-  
-  // Generate FWHM data points using the same range as efficiency data
-  int numEnergyPoints = static_cast<int>(floor(maxEnergy - minEnergy) / 2.5);
-  if( numEnergyPoints > 4500 ) //4500 chosen arbitrarily
-    numEnergyPoints = 4500;
-    
-  bool first = true;
-  for( int i = 0; i < numEnergyPoints; ++i )
-  {
-    const float energy = minEnergy + (float(i)/float(numEnergyPoints)) * (maxEnergy-minEnergy);
-    const float fwhm = m_detector->peakResolutionFWHM(energy);
-    
-    // Skip any points outside where we would expect.
-    if( IsNan(fwhm) || IsInf(fwhm) || fwhm < 0.0f || fwhm >= 9999.9f )
-      continue;
-      
-    if( !first )
-      json << ",";
-    first = false;
-    
-    json << "{\"energy\":" << energy << ",\"fwhm\":" << fwhm << "}";
-  }
-  
-  json << "]";
-  return json.str();
-}//std::string DrfChart::generateFwhmData()
-
-
 void DrfChart::setXAxisRange( double minEnergy, double maxEnergy )
 {
-  m_minEnergy = minEnergy;
-  m_maxEnergy = maxEnergy;
-  
   const string js = m_jsgraph + ".setXRange(" + std::to_string(minEnergy) + ", " + std::to_string(maxEnergy) + ");";
   
   if( isRendered() )
@@ -372,11 +133,6 @@ void DrfChart::setXAxisRange( double minEnergy, double maxEnergy )
     m_pendingJs.push_back( js );
 }//void DrfChart::setXAxisRange(...)
 
-
-std::pair<double, double> DrfChart::getXAxisRange() const
-{
-  return std::make_pair( m_minEnergy, m_maxEnergy );
-}//std::pair<double, double> DrfChart::getXAxisRange()
 
 
 DrfChart::~DrfChart()

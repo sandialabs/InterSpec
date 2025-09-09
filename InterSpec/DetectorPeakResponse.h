@@ -690,6 +690,11 @@ public:
   //std::function<float(float)> m_efficiencyFcn;
   const std::vector<float> &efficiencyExpOfLogsCoeffs() const { return m_expOfLogPowerSeriesCoeffs; }
   
+  /** Generate JSON data for JavaScript detector response */
+  std::string toJSON() const;
+  
+  /** Generate JSON data for JavaScript detector response with custom energy range */
+  std::string toJSON(float minEnergy, float maxEnergy) const;
   
   
   //Some methods to fit detector resolution from data.

@@ -1,103 +1,4 @@
-// Helper function to calculate A_i for Akima interpolation
-// This is equivalent to the calcA function in DetectorPeakResponse.cpp
-function calcA(i, xy) {
-  const n = xy.length;
-  const x_i = xy[i].energy;
-  const x_m1 = xy[i-1].energy;
-  const x_m2 = xy[i-2].energy;
-  const x_p1 = xy[i+1].energy;
-  const x_p2 = xy[i+2].energy;
-  const y_i = xy[i].efficiency;
-  const y_m1 = xy[i-1].efficiency;
-  const y_m2 = xy[i-2].efficiency;
-  const y_p1 = xy[i+1].efficiency;
-  const y_p2 = xy[i+2].efficiency;
-  const p_i = (y_p1 - y_i) / (x_p1 - x_i);
-  
-  let A_i;
-  if (i === 0) {
-    A_i = p_i;
-  } else if (i === 1) {
-    const p_0 = (xy[1].efficiency - xy[0].efficiency) / (xy[1].energy - xy[0].energy);
-    A_i = (p_0 + p_i) / 2.0;
-  } else if (i === (n-1)) {
-    A_i = p_i;
-  } else if (i === (n-2)) {
-    const p = (xy[n-2].efficiency - xy[n-3].efficiency) / (xy[n-2].energy - xy[n-3].energy);
-    A_i = (p_i + p) / 2.0;
-  } else {
-    const p_1 = (y_p2 - y_p1) / (x_p2 - x_p1);
-    const p_m1 = (y_i - y_m1) / (x_i - x_m1);
-    const p_m2 = (y_m1 - y_m2) / (x_m1 - x_m2);
-    
-    const w1 = Math.abs(p_1 - p_i);
-    const w2 = Math.abs(p_m1 - p_m2);
-    if ((w1 + w2) === 0.0) {
-      A_i = (p_m1 + p_i) / 2.0;
-    } else {
-      A_i = (w1 * p_m1 + w2 * p_i) / (w1 + w2);
-    }
-  }
-  return A_i;
-}
-
-// Akima interpolation function - equivalent to DetectorPeakResponse::akimaInterpolate
-function akimaInterpolate(z, xy) {
-  // Find position using binary search
-  let left = 0;
-  let right = xy.length;
-  while (left < right) {
-    const mid = Math.floor((left + right) / 2);
-    if (xy[mid].energy < z) {
-      left = mid + 1;
-    } else {
-      right = mid;
-    }
-  }
-  
-  const n = xy.length;
-  
-  if (left === 0) {
-    return xy[0].efficiency;
-  }
-  if (left === n) {
-    return xy[n-1].efficiency;
-  }
-  
-  const i = left - 1;
-  
-  const x_i = xy[i].energy;
-  const x_p1 = xy[i+1].energy;
-  const y_i = xy[i].efficiency;
-  const y_p1 = xy[i+1].efficiency;
-  
-  if ((n < 6) || (i < 2) || ((n-i) <= 3)) {
-    // Use linear interpolation
-    const d = (z - x_i) / (x_p1 - x_i);
-    return y_i + d * (y_p1 - y_i);
-  }
-  
-  const dx = z - x_i;
-  const h_i = (x_p1 - x_i);
-  const A_i = calcA(i, xy);
-  const A_p1 = calcA(i+1, xy);
-  const p_i = (y_p1 - y_i) / h_i;
-  const c_i = (3.0 * p_i - 2.0 * A_i - A_p1) / h_i;
-  const d_i = (A_p1 + A_i - 2.0 * p_i) / h_i / h_i;
-  
-  return y_i + dx * (A_i + dx * (c_i + dx * d_i));
-}
-
-// Exponential of log power series efficiency function - equivalent to DetectorPeakResponse::expOfLogPowerSeriesEfficiency
-function expOfLogPowerSeriesEfficiency(energy, coefs) {
-  let exparg = 0.0;
-  const x = Math.log(energy);
-  for (let i = 0; i < coefs.length; i++) {
-    exparg += coefs[i] * Math.pow(x, i);
-  }
-  const answer = Math.exp(exparg);
-  return (answer >= 0.0) ? answer : 0.0;
-}
+// Requires: DetectorPeakResponseJS.js
 
 DrfChart = function (elem, options) {
   const self = this;
@@ -432,13 +333,11 @@ DrfChart.prototype.zoomOut = function() {
   let minEnergy = 50;
   let maxEnergy = 3000;
   
-  // Get energy range from efficiency data if available
-  if (this.efficiencyData && this.efficiencyData.energyExtent) {
-    minEnergy = this.efficiencyData.energyExtent[0];
-    maxEnergy = this.efficiencyData.energyExtent[1];
-  } else if (this.m_minEnergy !== undefined && this.m_maxEnergy !== undefined) {
-    minEnergy = this.m_minEnergy;
-    maxEnergy = this.m_maxEnergy;
+  // Use detector extent if available
+  if (this.detector) {
+    const extent = this.detector.getEnergyExtent();
+    minEnergy = extent[0];
+    maxEnergy = extent[1];
   }
   
   this.setXAxisRange(minEnergy, maxEnergy);
@@ -494,59 +393,50 @@ DrfChart.prototype.updateYAxisRanges = function() {
 };
 
 
-DrfChart.prototype.setEfficiencyData = function(efficiencyData) {
-  this.efficiencyData = efficiencyData;
+DrfChart.prototype.setDetectorData = function(detectorData) {
+  if (detectorData) {
+    this.detector = new DetectorPeakResponseJS(detectorData);
+  } else {
+    this.detector = null;
+  }
   
   // Set x range if energy extent is provided
-  if (efficiencyData && efficiencyData.energyExtent) {
-    this.setXAxisRange(efficiencyData.energyExtent[0], efficiencyData.energyExtent[1]);
+  if (this.detector) {
+    const energyExtent = this.detector.getEnergyExtent();
+    this.setXAxisRange(energyExtent[0], energyExtent[1]);
   }
   
   this.updateEfficiencyLine();
   this.updateFwhmLine();
 };
 
+
 DrfChart.prototype.updateEfficiencyLine = function() {
-  if (!this.efficiencyData) {
+  if (!this.detector || !this.detector.hasEfficiency()) {
     this.efficiencyPath.style("display", "none");
     return;
   }
   
-  // Generate efficiency data points based on the efficiency form
+  // Generate efficiency data points
   let efficiencyPoints = [];
   
-  // Common setup for both efficiency forms
-  const minEnergy = this.m_minEnergy || 0;
-  const maxEnergy = this.m_maxEnergy || 3000;
+  // Get current x-axis domain
+  const xDomain = this.xScale.domain();
+  const minEnergy = xDomain[0];
+  const maxEnergy = xDomain[1];
   const numPoints = Math.max(100, Math.min(600, Math.floor(this.chartAreaWidth / 2)));
   
-  if (this.efficiencyData.form === 'kEnergyEfficiencyPairs') {
-    // Use Akima interpolation to expand the pairs to more points
-    for (let i = 0; i < numPoints; i++) {
-      const energy = minEnergy + (i / (numPoints - 1)) * (maxEnergy - minEnergy);
-      const energyInUnits = energy / this.efficiencyData.energyUnits;
-      const efficiency = akimaInterpolate(energyInUnits, this.efficiencyData.pairs);
-      
-      // Skip invalid efficiency values
-      if (!isFinite(efficiency) || efficiency < 0) {
-        continue;
-      }
-      
-      efficiencyPoints.push({ energy: energy, efficiency: efficiency });
+  // Generate points using the detector class
+  for (let i = 0; i < numPoints; i++) {
+    const energy = minEnergy + (i / (numPoints - 1)) * (maxEnergy - minEnergy);
+    const efficiency = this.detector.efficiency(energy);
+    
+    // Skip invalid efficiency values
+    if (efficiency === null || !isFinite(efficiency) || efficiency < 0) {
+      continue;
     }
-  } else if (this.efficiencyData.form === 'kExpOfLogPowerSeries') {
-    // Generate points using the coefficients
-    for (let i = 0; i < numPoints; i++) {
-      const energy = minEnergy + (i / (numPoints - 1)) * (maxEnergy - minEnergy);
-      const efficiency = this.calculateEfficiency(energy);
-      
-      // Skip invalid efficiency values
-      if (!isFinite(efficiency) || efficiency < 0) {
-        continue;
-      }
-      
-      efficiencyPoints.push({ energy: energy, efficiency: efficiency });
-    }
+    
+    efficiencyPoints.push({ energy: energy, efficiency: efficiency });
   }
   
   if (efficiencyPoints.length === 0) {
@@ -572,25 +462,38 @@ DrfChart.prototype.updateEfficiencyLine = function() {
     .style("display", null);
 };
 
-DrfChart.prototype.setFwhmData = function(fwhmData) {
-  this.fwhmData = fwhmData;
-  this.updateFwhmLine();
-};
 
 DrfChart.prototype.updateFwhmLine = function() {
-  if (!this.fwhmData || this.fwhmData.length === 0) {
+  if (!this.detector || !this.detector.hasFwhm()) {
     this.fwhmPath.style("display", "none");
     this.rightYAxisGroup.style("display", "none");
     this.rightYAxisLabel.style("display", "none");
     return;
   }
   
-  // Filter out invalid FWHM values
-  const validFwhmData = this.fwhmData.filter(d => 
-    isFinite(d.fwhm) && d.fwhm >= 0 && isFinite(d.energy)
-  );
+  // Generate FWHM data points using the detector class
+  let fwhmPoints = [];
   
-  if (validFwhmData.length === 0) {
+  // Get current visible energy range (zoomed range)
+  const xDomain = this.xScale.domain();
+  const minEnergy = xDomain[0];
+  const maxEnergy = xDomain[1];
+  
+  // Calculate number of points based on chart width
+  const numPoints = Math.max(100, Math.min(600, Math.floor(this.chartAreaWidth / 2)));
+  
+  // Generate FWHM points using the detector class
+  for (let i = 0; i < numPoints; i++) {
+    const energy = minEnergy + (i / (numPoints - 1)) * (maxEnergy - minEnergy);
+    const fwhm = this.detector.fwhm(energy);
+    
+    // Skip invalid FWHM values
+    if (fwhm !== null && isFinite(fwhm) && fwhm >= 0 && fwhm < 9999.9) {
+      fwhmPoints.push({ energy: energy, fwhm: fwhm });
+    }
+  }
+  
+  if (fwhmPoints.length === 0) {
     this.fwhmPath.style("display", "none");
     this.rightYAxisGroup.style("display", "none");
     this.rightYAxisLabel.style("display", "none");
@@ -598,12 +501,12 @@ DrfChart.prototype.updateFwhmLine = function() {
   }
   
   // Update FWHM line
-  this.fwhmPath.datum(validFwhmData)
+  this.fwhmPath.datum(fwhmPoints)
     .attr("d", this.fwhmLine)
     .style("display", null);
   
   // Update FWHM scale
-  const fwhmExtent = d3.extent(validFwhmData, d => d.fwhm);
+  const fwhmExtent = d3.extent(fwhmPoints, d => d.fwhm);
   if (fwhmExtent[0] !== undefined && fwhmExtent[1] !== undefined) {
     const fwhmRange = fwhmExtent[1] - fwhmExtent[0];
     const fwhmPadding = fwhmRange * 0.1;
@@ -618,48 +521,29 @@ DrfChart.prototype.updateFwhmLine = function() {
 
 DrfChart.prototype.updateTooltip = function(mouse) {
   // Check if we have any data to show (efficiency or FWHM)
-  if (!this.efficiencyData && (!this.fwhmData || this.fwhmData.length === 0)) return;
+  if (!this.detector) return;
   
   const energy = this.xScale.invert(mouse[0]);
   
-  // Calculate efficiency using the appropriate method
+  // Calculate efficiency using the detector class
   let efficiency = null;
-  if (this.efficiencyData) {
-    if (this.efficiencyData.form === 'kEnergyEfficiencyPairs' || this.efficiencyData.form === 'kExpOfLogPowerSeries') {
-      efficiency = this.calculateEfficiency(energy);
-    } else if (this.efficiencyData.form === 'kFunctialEfficienyForm' && this.efficiencyData.pairs) {
-      // For functional form, use the pre-generated pairs
-      const bisector = d3.bisector(d => d.energy).left;
-      const index = bisector(this.efficiencyData.pairs, energy);
-      const d0 = this.efficiencyData.pairs[index - 1];
-      const d1 = this.efficiencyData.pairs[index];
-      
-      let closestPoint = null;
-      if (!d0) closestPoint = d1;
-      else if (!d1) closestPoint = d0;
-      else closestPoint = energy - d0.energy > d1.energy - energy ? d1 : d0;
-      
-      if (closestPoint) {
-        efficiency = closestPoint.efficiency;
-      }
+  if (this.detector.hasEfficiency()) {
+    efficiency = this.detector.efficiency(energy);
+    
+    // Validate efficiency value
+    if (!isFinite(efficiency) || efficiency < 0) {
+      efficiency = null;
     }
   }
   
-  // Find FWHM data if available
+  // Calculate FWHM using the detector class
   let fwhm = null;
-  if (this.fwhmData && this.fwhmData.length > 0) {
-    const bisector = d3.bisector(d => d.energy).left;
-    const index = bisector(this.fwhmData, energy);
-    const d0 = this.fwhmData[index - 1];
-    const d1 = this.fwhmData[index];
+  if (this.detector.hasFwhm()) {
+    fwhm = this.detector.fwhm(energy);
     
-    let closestPoint = null;
-    if (!d0) closestPoint = d1;
-    else if (!d1) closestPoint = d0;
-    else closestPoint = energy - d0.energy > d1.energy - energy ? d1 : d0;
-    
-    if (closestPoint) {
-      fwhm = closestPoint.fwhm;
+    // Validate FWHM value
+    if (!isFinite(fwhm) || fwhm < 0 || fwhm >= 9999.9) {
+      fwhm = null;
     }
   }
   
@@ -690,51 +574,6 @@ DrfChart.prototype.hideTooltip = function() {
     .transition()
     .duration(500)
     .style("opacity", 0);
-};
-
-// Calculate efficiency based on efficiency form
-DrfChart.prototype.calculateEfficiency = function(energy) {
-  if (!this.efficiencyData) {
-    return 0.0;
-  }
-  
-  const energyInUnits = energy / this.efficiencyData.energyUnits;
-  
-  switch (this.efficiencyData.form) {
-    case 'kEnergyEfficiencyPairs':
-      return akimaInterpolate(energyInUnits, this.efficiencyData.pairs);
-      
-    case 'kExpOfLogPowerSeries':
-      return expOfLogPowerSeriesEfficiency(energyInUnits, this.efficiencyData.coefficients);
-      
-    case 'kFunctialEfficienyForm':
-      // For functional form, we still use the pre-calculated data points
-      // since we can't evaluate the function directly in JavaScript
-      return this.getEfficiencyFromData(energy);
-      
-    default:
-      return 0.0;
-  }
-};
-
-// Get efficiency from pre-calculated data points (for functional form or fallback)
-DrfChart.prototype.getEfficiencyFromData = function(energy) {
-  if (!this.data || this.data.length === 0) {
-    return 0.0;
-  }
-  
-  // Find closest data point
-  const bisector = d3.bisector(d => d.energy).left;
-  const index = bisector(this.data, energy);
-  const d0 = this.data[index - 1];
-  const d1 = this.data[index];
-  
-  let closestPoint = null;
-  if (!d0) closestPoint = d1;
-  else if (!d1) closestPoint = d0;
-  else closestPoint = energy - d0.energy > d1.energy - energy ? d1 : d0;
-  
-  return closestPoint ? closestPoint.efficiency : 0.0;
 };
 
 DrfChart.prototype.handleResize = function() {
