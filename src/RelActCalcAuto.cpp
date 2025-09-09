@@ -6624,14 +6624,14 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         assert( coefs.size() >= 2 );
         coefs[0] += offest_adj;
         coefs[1] += (gain_adj / num_channel);
-        if( quad_adj != 0.0 )
+        if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
         {
           if( coefs.size() > 2 )
             coefs[2] += (quad_adj / (num_channel*num_channel));
           else
             coefs.push_back( quad_adj / (num_channel*num_channel) );
-        }//if( quad_adj != 0.0 )
-        
+        }//if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
+
         const auto &dev_pairs = m_energy_cal->deviation_pairs();
         const double channel = m_energy_cal->channel_for_energy( energy );
         
@@ -6666,7 +6666,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         coefs[0] += offest_adj;
         coefs[1] += gain_adj;
         
-        if( quad_adj != 0.0 )
+        if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
         {
           if( coefs.size() > 2 )
             coefs[2] += quad_adj;
@@ -6834,7 +6834,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   /** Computes peaks for a ROI range, given current paramaters
    @param range The channel range to generate peaks for
    @param x The Ceres paramaters to use to form the peaks
-   @param multithread Wether to use a single, or multiple threads to comput the peaks
+   @param multithread Wether to use a single, or multiple threads to compute the peaks
    */
   template<typename T>
   RelActCalcAuto::PeaksForEnergyRangeImp<T> peaks_for_energy_range_imp( const RoiRangeChannels &range,
@@ -6854,7 +6854,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       channel_range = range.channel_range( adjusted_lower_energy.a, adjusted_upper_energy.a, num_channels, m_energy_cal );
     else
       channel_range = range.channel_range( adjusted_lower_energy, adjusted_upper_energy, num_channels, m_energy_cal );
-    
+
+    // TODO: find a problem that fails with energy range, and then try fixing the channels according to initial energy cal, and see if that works better
+
     const size_t first_channel = channel_range.first;
     const size_t last_channel = channel_range.second;
     
@@ -6899,7 +6901,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // Do a sanity check to make sure peak isnt getting too narrow
       const double nchannel = m_energy_cal->channel_for_energy(gamma_energy + 0.5*fwhm)
                                        - m_energy_cal->channel_for_energy(gamma_energy - 0.5*fwhm);
-      if( nchannel < 1.5 )
+      if( nchannel < 1.25 )
         throw runtime_error( "peaks_for_energy_range_imp: for peak at " + std::to_string(gamma_energy)
                             + " keV, FWHM=" + std::to_string(fwhm) + " which is only "
                             + std::to_string(nchannel) + " channels - too small." );

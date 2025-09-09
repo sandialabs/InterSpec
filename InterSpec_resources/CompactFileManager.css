@@ -137,6 +137,8 @@ div.DispType .SpecTitle {
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .CompactFileManager .StretcherRow {
