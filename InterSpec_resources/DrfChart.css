@@ -1,0 +1,106 @@
+/* DrfChart CSS with theme variables support */
+
+.DrfChart {
+  background: var(--d3spec-background-color, none);
+}
+
+/* Efficiency line styling */
+.DrfChart .efficiency-line {
+  stroke: var(--d3spec-fore-line-color, #B02B2C);
+  stroke-width: 2px;
+  fill: none;
+}
+
+/* FWHM line styling */
+.DrfChart .fwhm-line {
+  stroke: var(--d3spec-back-line-color, #3F4C6B);
+  stroke-width: 2px;
+  fill: none;
+}
+
+/* Axis styling */
+.DrfChart .x-axis path,
+.DrfChart .x-axis line,
+.DrfChart .y-axis path,
+.DrfChart .y-axis line {
+  fill: none;
+  stroke: var(--d3spec-axis-color, black);
+  stroke-width: 1px;
+  shape-rendering: crispEdges;
+}
+
+/* Axis text styling */
+.DrfChart .x-axis text,
+.DrfChart .y-axis text {
+  fill: var(--d3spec-text-color, black);
+  font-size: 12px;
+  font-family: sans-serif;
+}
+
+/* Axis label styling */
+.DrfChart .axis-label {
+  fill: var(--d3spec-text-color, black);
+  font-size: 14px;
+  font-family: sans-serif;
+  font-weight: normal;
+}
+
+/* Zoom text styling (uses global .chartLineText class) */
+.DrfChart .zoom-text {
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+/* Mouse capture area (invisible) */
+.DrfChart .mouse-capture {
+  fill: none;
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+/* Tooltip styling */
+div.DrfChartTooltip {
+  position: fixed;
+  padding: 8px;
+  font: 12px sans-serif;
+  background: var(--d3spec-background-color, #ffffcc);
+  border: 1px solid var(--d3spec-axis-color, #888);
+  border-radius: 6px;
+  pointer-events: none;
+  color: var(--d3spec-text-color, #444);
+  box-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Grid lines if needed */
+.DrfChart .grid line {
+  stroke: var(--d3spec-grid-major-color, #ccc);
+  stroke-opacity: 0.7;
+  shape-rendering: crispEdges;
+}
+
+.DrfChart .grid path {
+  stroke-width: 0;
+}
+
+/* Chart area background */
+.DrfChart .chart-area {
+  fill: var(--d3spec-chart-area-color, transparent);
+}
+
+/* Responsive design considerations */
+@media screen and (max-width: 600px) {
+  .DrfChart .axis-label {
+    font-size: 12px;
+  }
+  
+  .DrfChart .x-axis text,
+  .DrfChart .y-axis text {
+    font-size: 10px;
+  }
+  
+  div.DrfChartTooltip {
+    font-size: 11px;
+    padding: 6px;
+  }
+}
