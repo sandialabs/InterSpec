@@ -1491,14 +1491,13 @@ protected:
     kShareContinuumWithLeftPeak,
     kShareContinuumWithRightPeak,
     kMakeOwnContinuum,
-
-#if( USE_DETECTION_LIMIT_TOOL )
     kFitNewPeakNotInRoi,
     kAddPeakNotInRoi,
     kSearchEnergy,
+#if( USE_DETECTION_LIMIT_TOOL )
     kSimpleMda,
-    kSimpleActivityCalc,
 #endif
+    kSimpleActivityCalc,
     
     kNumRightClickItems
   };//enum RightClickItems

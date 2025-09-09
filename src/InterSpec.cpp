@@ -1034,13 +1034,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-combine-cont-right") );
         m_rightClickMenutItems[i]->triggered().connect( boost::bind( &InterSpec::shareContinuumWithNeighboringPeak, this, false ) );
         break;
-        
       case kMakeOwnContinuum:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-own-cont") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::makePeakFromRightClickHaveOwnContinuum );
         break;
-        
-#if( USE_DETECTION_LIMIT_TOOL )
       case kFitNewPeakNotInRoi:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-fit-new-peak") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::fitNewPeakNotInRoiFromRightClick );
@@ -1053,21 +1050,27 @@ InterSpec::InterSpec( WContainerWidget *parent )
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-mi-search-energy") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::searchOnEnergyFromRightClick );
       break;
+#if( USE_DETECTION_LIMIT_TOOL )
       case kSimpleMda:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-mda") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleMdaFromRightClick );
       break;
+#endif
       case kSimpleActivityCalc:
         m_rightClickMenutItems[i] = m_rightClickMenu->addMenuItem( WString::tr("rclick-simple-activity-calc") );
         m_rightClickMenutItems[i]->triggered().connect( this, &InterSpec::startSimpleActivityCalcFromRightClick );
       break;
-#endif
         
       case kNumRightClickItems:
         break;
     }//switch( i )
   }//for( loop over right click menu items )
 
+  // Wierd work-around for sub-menus not showing up when there are multiple peaks with sources... very wierd, dont understand
+  m_rightClickMenu->addMenuItem( " " );
+  m_rightClickMenu->addMenuItem( " " );
+  m_rightClickMenu->addMenuItem( " " );
+  
   // For touch devices, give an obvious way to close the right-click menu since they cant simply
   //  leave with the mouse (although they could just tap somewhere).
   if( app && app->isMobile() && !m_rightClickMenu->isMobile() )
@@ -2675,6 +2678,7 @@ void InterSpec::handleRightClick( double energy, double counts,
         
         break;
       }//case kSimpleMda:
+#endif  //USE_DETECTION_LIMIT_TOOL
         
       case kSimpleActivityCalc:
       {
@@ -2689,8 +2693,6 @@ void InterSpec::handleRightClick( double energy, double counts,
         
         break;
       }//case kSimpleActivityCalc:
-#endif  //USE_DETECTION_LIMIT_TOOL
-        
         
       case kNumRightClickItems:
       break;
