@@ -136,7 +136,7 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
           
           // Detector counts
           try {
-            nuc_info["detector_counts"] = solution.nuclide_counts(act.source, curve_idx);
+            nuc_info["detector_counts"] = solution.nuclide_counts(act.source, curve_idx, solution.m_final_roi_ranges);
           } catch (const std::exception& e) {
             nuc_info["counts_error"] = e.what();
           }

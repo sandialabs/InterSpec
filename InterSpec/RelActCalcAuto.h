@@ -316,6 +316,8 @@ enum class FwhmForm : int
   Polynomial_5,
   Polynomial_6,
 
+  // TODO: use `boost::math::tools::bernstein_polynomial` for fitting FWHM coefficients...
+  
   /** Do not fit the FWHM equation - use the FWHM from the detector efficiency function.
    
    #Options::fwhm_estimation_method must be set to FwhmEstimationMethod::FixedToDetectorEfficiency,
@@ -846,9 +848,13 @@ struct RelActAutoSolution
 
   Note: it actually returns the sum of peak amplitudes, for all gammas within `m_final_roi_ranges`.
 
+   @param sum_ranges The energy ranges to sum over; only RoiRange::lower_energy and RoiRange::upper_energy
+          are used
+   
   Throws exception if \c src is nullptr, or was not in the problem, or any counts were inf or NaN.
   */
-  double nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const;
+  double nuclide_counts( const SrcVariant &src, const size_t rel_eff_index,
+                        const std::vector<RoiRange> &sum_ranges ) const;
 
   /**  Gives the relative efficiency for a given energy. 
   */

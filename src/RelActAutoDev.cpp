@@ -701,8 +701,8 @@ void czt_pu_example()
   for( size_t i = 0; i < solution.m_rel_activities.size(); ++i )
   {
     const double enrichment = solution.mass_enrichment_fraction( u235, i );
-    const double u235_counts = solution.nuclide_counts( u235, i );
-    const double u238_counts = solution.nuclide_counts( u238, i );
+    const double u235_counts = solution.nuclide_counts( u235, i, solution.m_final_roi_ranges );
+    const double u238_counts = solution.nuclide_counts( u238, i solution.m_final_roi_ranges );
     cout << "Enrichment " << i << std::left << ": " << setprecision(6) << setw(11) << enrichment
     << ", counts(u235)=" << setw(11) << u235_counts
     << ", counts(u238)=" << setw(11) << u238_counts << endl;
@@ -1785,8 +1785,8 @@ void utile_ana()
   {
     pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( u235, i );
     const double enrichment = enrich.first;
-    const double u235_counts = solution.nuclide_counts( u235, i );
-    const double u238_counts = solution.nuclide_counts( u238, i );
+    const double u235_counts = solution.nuclide_counts( u235, i, solution.m_final_roi_ranges );
+    const double u238_counts = solution.nuclide_counts( u238, i, solution.m_final_roi_ranges );
     cout << "Enrichment " << i << std::left << ": "
     << setprecision(6) << setw(11) << enrichment
     << " +- " << setw(11) << (enrich.second.has_value() ? enrich.second.value() : -999.0)
@@ -1887,8 +1887,8 @@ void leu_heu_ana()
   {
     pair<double,optional<double>> enrich = solution.mass_enrichment_fraction( u235, i );
     const double enrichment = enrich.first;
-    const double u235_counts = solution.nuclide_counts( u235, i );
-    const double u238_counts = solution.nuclide_counts( u238, i );
+    const double u235_counts = solution.nuclide_counts( u235, i, solution.m_final_roi_ranges );
+    const double u238_counts = solution.nuclide_counts( u238, i, solution.m_final_roi_ranges );
     cout << "Enrichment " << i << std::left << ": "
     << setprecision(6) << setw(11) << enrichment
     << " +- " << setw(11) << (enrich.second.has_value() ? enrich.second.value() : -999.0)

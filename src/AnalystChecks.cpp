@@ -754,8 +754,7 @@ namespace AnalystChecks
             PeakDef::SkewType::GaussExp
           };
           
-          // Blah blah blah
-          //If low res, only have no-skew; try to detect if CZT, and if so have double bell-whatever
+          //TODO: If low res, only have no-skew; try to detect if CZT, and if so have double bell-whatever
           //Need to break up ROIs for low-res detectors, so much better
           //if `base_roi.allow_expand_for_peak_width` make sure doesnt overlap with other ROIs
           

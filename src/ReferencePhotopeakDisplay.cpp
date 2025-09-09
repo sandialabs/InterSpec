@@ -3704,7 +3704,6 @@ void ReferencePhotopeakDisplay::fitPeaks()
     spectrumChart->applyColorTheme( interspec->getColorTheme() );
     interspec->colorThemeChanged().connect( boost::bind(&D3SpectrumDisplayDiv::applyColorTheme, spectrumChart, boost::placeholders::_1) );
     
-    
     WText *question_txt = new WText( WString::tr("rpd-fit-results-dialog-txt") );
     question_txt->addStyleClass( "FitPeakResultTxt" );
     
@@ -3773,7 +3772,7 @@ void ReferencePhotopeakDisplay::fitPeaks()
         
         info.rel_acts = solution->m_rel_activities[i];
         info.js_rel_eff_eqn = solution->rel_eff_eqn_js_function(i);
-        info.js_rel_eff_uncert_eqn = solution->rel_eff_eqn_js_uncert_fcn(i);
+        //  info.js_rel_eff_uncert_eqn = solution->rel_eff_eqn_js_uncert_fcn(i);
         
         info_sets.push_back( info );
       }//for( size_t i = 0; i < solution->m_rel_activities.size(); ++i )
@@ -3823,6 +3822,7 @@ void ReferencePhotopeakDisplay::fitPeaks()
       if( viewer && viewer->peakModel() )
         viewer->peakModel()->addPeaks(fit_peaks);
     }) );
+    yesBtn->setFocus();
   };//callback( const AnalystChecks::FitPeaksForNuclideResult &results );
   
   AnalystChecks::fit_peaks_for_nuclides( options, m_spectrumViewer, callback );

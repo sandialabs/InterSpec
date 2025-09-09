@@ -110,7 +110,8 @@ using namespace XmlUtils;
  This value is arbitrary, and this is a very niave way to do things, but good enough for
  development purposes, at the moment.
  */
-#define DEFAULT_PEAK_HALF_WIDTH_SIGMA 5.0
+#define DEFAULT_PEAK_HALF_WIDTH_SIGMA_LOWER_RES 3.0
+#define DEFAULT_PEAK_HALF_WIDTH_SIGMA_HIGHER_RES 5.0
 
 
 // 20250324 HACK to test fitting peak skew, or use a hard-coded preset value
@@ -1552,7 +1553,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       
       //We'll try to limit/break-up energy ranges
       const double min_br = numeric_limits<double>::min();  //arbitrary
-      const double num_sigma_half_roi = DEFAULT_PEAK_HALF_WIDTH_SIGMA;
+      const double num_sigma_half_roi = highres ? DEFAULT_PEAK_HALF_WIDTH_SIGMA_HIGHER_RES : DEFAULT_PEAK_HALF_WIDTH_SIGMA_LOWER_RES;
       
       vector<pair<double,double>> gammas_in_range;
       
@@ -10796,8 +10797,8 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
 
           const double inner_activity = inner_act.rel_activity;
           const double outer_activity = outer_act.rel_activity;
-          const double inner_counts = nuclide_counts(inner_act.source, inner_re_index);
-          const double outer_counts = nuclide_counts(outer_act.source, outer_re_index);
+          const double inner_counts = nuclide_counts(inner_act.source, inner_re_index, m_final_roi_ranges );
+          const double outer_counts = nuclide_counts(outer_act.source, outer_re_index, m_final_roi_ranges );
 
           if( !printed_any_ratio )
             out << "\n";
@@ -11148,7 +11149,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
         results_html << "<td></td>" << "<td></td>" << "<td></td>";
       }
       
-      const double nuc_counts = nuclide_counts( act.source, rel_eff_index );
+      const double nuc_counts = nuclide_counts( act.source, rel_eff_index, m_final_roi_ranges );
       results_html << "<td>" << nuc_counts << "</td>";
 
 
@@ -12547,7 +12548,8 @@ pair<double,double> RelActAutoSolution::rel_activity_with_uncert( const SrcVaria
 
 
 
-double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t rel_eff_index ) const
+double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t rel_eff_index,
+                                          const std::vector<RoiRange> &sum_ranges ) const
 {
   assert( !RelActCalcAuto::is_null(src) );
   if( RelActCalcAuto::is_null(src) )
@@ -12564,7 +12566,7 @@ double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t r
   
   const vector<NuclideRelAct> &nuclides = m_rel_activities[rel_eff_index];
 
-  for( const RoiRange &range : m_final_roi_ranges )
+  for( const RoiRange &range : sum_ranges )
   {
     bool found_src = false;
     for( size_t nuc_index = 0; nuc_index < nuclides.size(); ++nuc_index )
@@ -12579,66 +12581,65 @@ double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t r
         
       const vector<pair<double,double>> &gamma_energy_br = nucinfo.gamma_energy_br;
 
-        
-        for( const pair<double,double> &gamma : gamma_energy_br )
+      for( const pair<double,double> &gamma : gamma_energy_br )
+      {
+        const double energy = gamma.first;
+        const double yield = gamma.second;
+          
+        // Filter the energy range based on true energies (i.e., not adjusted energies), and skip zero-yield gammas
+        if( (yield < std::numeric_limits<float>::min())
+          || (energy < range.lower_energy)
+          || (energy > range.upper_energy) )
         {
-          const double energy = gamma.first;
-          const double yield = gamma.second;
+          continue;
+        }
           
-          // Filter the energy range based on true energies (i.e., not adjusted energies), and skip zero-yield gammas
-          if( (yield < std::numeric_limits<float>::min())
-            || (energy < range.lower_energy) 
-            || (energy > range.upper_energy) )
-          {
-            continue;
-          }
-          
-          const double rel_eff = relative_efficiency( energy, rel_eff_index );
-          if( isinf(rel_eff) || isnan(rel_eff) )
-            throw runtime_error( "nuclide_counts: inf or NaN rel. eff for "
+        const double rel_eff = relative_efficiency( energy, rel_eff_index );
+        if( isinf(rel_eff) || isnan(rel_eff) )
+          throw runtime_error( "nuclide_counts: inf or NaN rel. eff for "
                                 + std::to_string(energy) + " keV."  );
         
-          double br_uncert_adj = 1.0;
-          if( (m_options.additional_br_uncert > 0.0) && !m_peak_ranges_with_uncert.empty() )
-          {
-            assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
-            assert( m_add_br_uncert_start_index < m_final_parameters.size() );
-            assert( (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) == m_final_parameters.size() );
+        double br_uncert_adj = 1.0;
+        if( (m_options.additional_br_uncert > 0.0) && !m_peak_ranges_with_uncert.empty() )
+        {
+          assert( m_add_br_uncert_start_index != std::numeric_limits<size_t>::max() );
+          assert( m_add_br_uncert_start_index < m_final_parameters.size() );
+          assert( (m_add_br_uncert_start_index + m_peak_ranges_with_uncert.size()) == m_final_parameters.size() );
             
-            // TODO: we could use std::lower_bound to find the applicable `m_peak_ranges_with_uncert` element
-            for( size_t range_index = 0; range_index < m_peak_ranges_with_uncert.size(); ++range_index )
+          // TODO: we could use std::lower_bound to find the applicable `m_peak_ranges_with_uncert` element
+          for( size_t range_index = 0; range_index < m_peak_ranges_with_uncert.size(); ++range_index )
+          {
+            const pair<double,double> &range = m_peak_ranges_with_uncert[range_index];
+            
+            if( (energy >= range.first) && (energy <= range.second) )
             {
-              const pair<double,double> &range = m_peak_ranges_with_uncert[range_index];
-              
-              if( (energy >= range.first) && (energy <= range.second) )
-              {
-                const size_t par_index = m_add_br_uncert_start_index + range_index;
-                const double par_value = m_final_parameters[par_index];
-                const double num_sigma_from_nominal = (par_value
-                                                        - RelActCalcAutoImp::RelActAutoCostFcn::sm_peak_range_uncert_offset)
-                                                          /RelActCalcAutoImp::RelActAutoCostFcn::sm_peak_range_uncert_par_scale;
+              const size_t par_index = m_add_br_uncert_start_index + range_index;
+              const double par_value = m_final_parameters[par_index];
+              const double num_sigma_from_nominal = (par_value
+                                                      - RelActCalcAutoImp::RelActAutoCostFcn::sm_peak_range_uncert_offset)
+                                                        /RelActCalcAutoImp::RelActAutoCostFcn::sm_peak_range_uncert_par_scale;
                 
-                br_uncert_adj = max(0.0, 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert);
+              br_uncert_adj = max(0.0, 1.0 + num_sigma_from_nominal*m_options.additional_br_uncert);
                 
-                break;
-              }//
-            }//for( find range this gamma belongs to, if any )
-          }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
+              break;
+            }//
+          }//for( find range this gamma belongs to, if any )
+        }//if( m_options.additional_br_uncert > 0.0 && !m_peak_ranges_with_uncert.empty() )
           
           
-          const double peak_amplitude = rel_act * live_time * rel_eff * yield * br_uncert_adj;
-          if( isinf(peak_amplitude) || isnan(peak_amplitude) )
-            throw runtime_error( "nuclide_counts: inf or NaN peak amplitude for "
-                                + std::to_string(energy) + " keV.");
+        const double peak_amplitude = rel_act * live_time * rel_eff * yield * br_uncert_adj;
+        if( isinf(peak_amplitude) || isnan(peak_amplitude) )
+          throw runtime_error( "nuclide_counts: inf or NaN peak amplitude for "
+                              + std::to_string(energy) + " keV.");
           
-          if( peak_amplitude > static_cast<double>( std::numeric_limits<float>::min() ) )
-            total_counts += peak_amplitude;
-        }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
-      }//for( const NucInputGamma &nucinfo : m_nuclides )
+        if( peak_amplitude > static_cast<double>( std::numeric_limits<float>::min() ) )
+          total_counts += peak_amplitude;
+      }//for( const SandiaDecay::EnergyRatePair &gamma : gammas )
+    }//for( const NucInputGamma &nucinfo : m_nuclides )
 
     if( !found_src )
       throw runtime_error( "nuclide_counts: nuclide " + (is_null(src) ? string("null") : to_name(src)) + " not found in rel eff curve" );
-  }//for( const RoiRange &range : m_final_roi_ranges )
+  }//for( const RoiRange &range : sum_ranges )
   
   return total_counts;
 }//double nuclide_counts(...)
@@ -13528,11 +13529,16 @@ std::vector<PeakDef> RelActAutoSolution::clustered_input_foreground_display_peak
     
     vector<double> fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts;
     
-    PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, num_roi_channels,
+    const double chi2 = PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, num_roi_channels,
                                     num_polynomial_terms, is_step_continuum, ref_energy, effective_means,
                                     effective_sigmas, fixed_amp_peaks, m_options.skew_type, skew_parameters,
                                     fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts, peak_counts );
     
+    // TODO: the number of degrees of freedom is not correct; we fit for the FWHM (and kinda sort energy cal), so in
+    //       principle we should include those here.  On the otherhand, not having the ability to minorly tweak the
+    //       means will make the Chi2/Dof be higher than it should be.
+    const size_t ndof = num_roi_channels - fit_amps.size() - fit_continuum_coefs.size();
+    const double chi2_dof = chi2 / ndof;
     assert( fit_amps.size() == effective_means.size() );
     auto new_continuum = make_shared<PeakContinuum>( *continuum );
     new_continuum->setParameters( ref_energy, fit_continuum_coefs, fit_continuum_uncerts );
@@ -13549,6 +13555,7 @@ std::vector<PeakDef> RelActAutoSolution::clustered_input_foreground_display_peak
       p.setAmplitude( fit_amps[i] );
       p.setAmplitudeUncert( fit_amp_uncert[i] );
       p.setContinuum( new_continuum );
+      p.set_coefficient( chi2, PeakDef::CoefficientType::Chi2DOF );
       
       answer.push_back( std::move(p) );
     }//for( size_t i = 0; i < effective_means.size(); ++i )
@@ -13603,7 +13610,7 @@ RelActAutoSolution solve( const Options options,
   int num_microseconds_eval = orig_sol.m_num_microseconds_eval;
   int num_microseconds_in_eval = orig_sol.m_num_microseconds_in_eval;
   
-  
+
   bool stop_iterating = false, errored_out_of_iterating = false;
   const size_t max_roi_adjust_iterations = 2;
   size_t num_roi_iters = 0;
@@ -13614,6 +13621,7 @@ RelActAutoSolution solve( const Options options,
            && current_sol.m_spectrum->energy_calibration()->valid() );
     
     if( !current_sol.m_spectrum
+       || !current_sol.m_cost_functor
        || !current_sol.m_spectrum->energy_calibration()
        || !current_sol.m_spectrum->energy_calibration()->valid() )
     {
@@ -13627,20 +13635,308 @@ RelActAutoSolution solve( const Options options,
         fixed_energy_ranges.push_back( roi );
     }//for( const RoiRange &roi : energy_ranges )
     
+    // The below implementation clusters photopeaks together, then tries to combine those ranges together, starting
+    //  with the largest amplitude peaks (with amplitude determined by previous fit).
+    // However, this does not work well yet.
+    //
+    const bool highres = PeakFitUtils::is_high_res( foreground );  //We could do better: PeakFitUtils::coarse_resolution_from_peaks( current_sol.m_fit_peaks );
+    const double num_sigma_half_roi = highres ? DEFAULT_PEAK_HALF_WIDTH_SIGMA_HIGHER_RES : DEFAULT_PEAK_HALF_WIDTH_SIGMA_LOWER_RES;
     
-    /** `orig_sol.m_spectrum` is background subtracted, and energy corrected, of those options were
-     selected.
-     */
+    // The minimum statistical significance of a candidate ROI, in order for us to consider the ROI to start a final ROI from
+    const double min_stat_nsigma_keep_roi = 1.0;
+    
+    // Right now how much we extend a ROI, when adding a new peak to it, is linear with the new peaks significance;
+    //  any thing above `large_peak_threshold` will extend the ROI by `max_extend_nsigma` peak-width-sigma, and less
+    //  than this will linearly go down to `min_extend_nsigma`
+    const double large_peak_threshold = 10;
+    const double max_extend_nsigma = (highres ? 3.0 : 3.0);
+    const double min_extend_nsigma = (highres ? 1.5 : 1.5);
+    
+    // The width, in FWHM multiples of a ROI before promoting the conintuum from linear to quadratic or cubic
+    //  Note that we should also consider promoting to step-continuums
+    const double num_fwhm_for_cubic_cont = 6.0; //Totally guessed number
+    const double num_fwhm_for_quad_cont = 3.0;  //Totally guessed number
+    
+    // Right now we are limiting the width of the ROI by a multiple of the sqrt(energy); this next variable controls
+    //  how many multiple of sqrt(energy) a ROI is allowed to grow to, before we stop adding ROIs
+    const double max_half_range_energy_sqrt_multiple = 2.5;
+    
+    // For each ROI, we will find the largest peaks, after clustering, and then add then see about adding
+    vector<RoiRange> updated_energy_ranges;
+    
+    // Add all the fixed energy ranges into `updated_energy_ranges` first
+    for( const RoiRange &roi : energy_ranges )
+    {
+      if( roi.force_full_range )
+        updated_energy_ranges.push_back( roi );
+    }
+
+    const double cluster_num_sigma = options.cluster_num_sigma;
+    const vector<pair<double,double>> all_clustered_photopeaks
+                 = current_sol.m_cost_functor->cluster_photopeaks( cluster_num_sigma, current_sol.m_final_parameters );
+    for( const RoiRange &roi : energy_ranges )
+    {
+      if( roi.force_full_range )
+        continue;
+      
+      // These `clustered_photopeaks` can be a pretty wide, like 1.5 peaks-sigma widths
+      vector<pair<double,double>> clustered_photopeaks = all_clustered_photopeaks;
+      const auto is_out_of_roi = [&roi]( const pair<double,double> &cluster ) -> bool {
+        return ((cluster.second < roi.lower_energy) || (cluster.first > roi.upper_energy));
+      };
+      clustered_photopeaks.erase( std::remove_if( begin(clustered_photopeaks), end(clustered_photopeaks), is_out_of_roi ),
+                              end(clustered_photopeaks) );
+      
+      struct ClusterInfo
+      {
+        double lower_energy, upper_energy, amplitude, fwhm, nsigma, weighted_mean;
+        bool already_used;
+      };
+      vector<ClusterInfo> cluster_range_amp_fwhm_nsigma_keep; //These ranges will be defined in terms of photopeak cluster ranges - not peak ranges.
+
+      for( size_t cluster_index = 0; cluster_index < clustered_photopeaks.size(); ++cluster_index )
+      {
+        const double cluster_lower = std::max(clustered_photopeaks[cluster_index].first, roi.lower_energy);
+        const double cluster_upper = std::min(clustered_photopeaks[cluster_index].second, roi.upper_energy);
+        const double cluster_center = 0.5*(cluster_lower + cluster_upper);
+        
+        double srcs_counts = 0.0, weighted_mean = 0.0;
+        RoiRange cluster_roi = roi;
+        cluster_roi.lower_energy = cluster_lower;
+        cluster_roi.upper_energy = cluster_upper;
+        
+        for( size_t rel_eff_index = 0; rel_eff_index < current_sol.m_rel_activities.size(); ++rel_eff_index )
+        {
+          const vector<NuclideRelAct> &rel_acts = current_sol.m_rel_activities[rel_eff_index];
+
+          for( const NuclideRelAct &rel_act : rel_acts )
+          {
+            assert( !is_null(rel_act.source) );
+            if( is_null(rel_act.source) )
+              continue;
+        
+            const double counts = current_sol.nuclide_counts( rel_act.source, rel_eff_index, {cluster_roi} );
+            weighted_mean += counts*cluster_center;
+            srcs_counts += counts;
+          }//for( const NuclideRelAct &rel_act : rel_acts )
+        }//for( size_t rel_eff_index = 0; rel_eff_index < current_sol.m_rel_activities.size(); ++rel_eff_index )
+        
+        weighted_mean /= srcs_counts;
+        assert( weighted_mean >= cluster_lower );
+        assert( weighted_mean <= cluster_upper );
+        
+        const double fwhm = eval_fwhm( weighted_mean, current_sol.m_fwhm_form, current_sol.m_fwhm_coefficients.data(),
+                                      current_sol.m_fwhm_coefficients.size(), current_sol.m_drf );
+        const double sigma = fwhm / 2.35482f;
+        
+        const float data_lower = static_cast<float>(weighted_mean - sigma);
+        const float data_upper = static_cast<float>(weighted_mean + sigma);
+        const double data_area = current_sol.m_spectrum->gamma_integral( data_lower, data_upper );
+        const double num_sigma = srcs_counts / sqrt( (data_area > 1.0) ? data_area : 1.0 );
+        
+        
+        ClusterInfo cluster;
+        cluster.lower_energy = cluster_lower;
+        cluster.upper_energy = cluster_upper;
+        cluster.amplitude = srcs_counts;
+        cluster.fwhm = fwhm;
+        cluster.nsigma = num_sigma;
+        cluster.weighted_mean = weighted_mean;
+        cluster.already_used = false;
+        
+        cluster_range_amp_fwhm_nsigma_keep.push_back( cluster );
+      }//for( size_t cluster_index = 0; cluster_index < clustered_photopeaks.size(); ++cluster_index )
+      
+      cout << "Clustered photopaks are: {";
+      for( const auto &r : cluster_range_amp_fwhm_nsigma_keep )
+        cout << "[" << r.lower_energy << ", " << r.upper_energy << ": " << r.nsigma << "," << r.amplitude << "], ";
+      cout << "}" << endl;
+      
+      std::sort( begin(cluster_range_amp_fwhm_nsigma_keep), end(cluster_range_amp_fwhm_nsigma_keep),
+        []( const ClusterInfo &lhs, const ClusterInfo &rhs ){
+          return lhs.amplitude > rhs.amplitude;
+      });
+    
+      vector<ClusterInfo> combined_cluster_range; //These ranges will be defined in terms of peak ranges (i.e., not in photopeak cluter ranges)
+      for( size_t index = 0; index < cluster_range_amp_fwhm_nsigma_keep.size(); ++index )
+      {
+        ClusterInfo &cluster_range = cluster_range_amp_fwhm_nsigma_keep[index];
+        if( cluster_range.already_used || (cluster_range.nsigma < min_stat_nsigma_keep_roi) )
+          continue;
+        
+        cluster_range.already_used = true;
+        
+        // Cluster lower and upper energies are something like major gamma lines +-1.5 peak sigma;
+        // so we will extend these a bit to account for `num_sigma_half_roi` around the weighted_mean.
+        const double extend_amount = num_sigma_half_roi*(cluster_range.fwhm / 2.35482);
+        double &cluster_lower_energy = cluster_range.lower_energy;
+        double &cluster_upper_energy = cluster_range.upper_energy;
+        cluster_range.lower_energy = std::min( cluster_range.lower_energy, cluster_range.weighted_mean - extend_amount );
+        cluster_range.upper_energy = std::max( cluster_range.upper_energy, cluster_range.weighted_mean + extend_amount );
+        
+        for( size_t sub_index = index + 1; sub_index < cluster_range_amp_fwhm_nsigma_keep.size(); ++sub_index )
+        {
+          ClusterInfo &sub_cluster_range = cluster_range_amp_fwhm_nsigma_keep[sub_index];
+          if( sub_cluster_range.already_used )
+            continue;
+          
+          const double extend_scale = std::min( sub_cluster_range.nsigma / large_peak_threshold, 1.0 );
+          const double extend_energy = min_extend_nsigma + (max_extend_nsigma - min_extend_nsigma)*extend_scale*(sub_cluster_range.fwhm / 2.35482f);
+          
+          //if `sub_cluster_range` is entirely within cluster_range, mark as used, and move on.
+          if( (sub_cluster_range.lower_energy >= cluster_range.lower_energy)
+             && (sub_cluster_range.upper_energy <= cluster_range.upper_energy) )
+          {
+            // I dont think we should actually get here...
+            sub_cluster_range.already_used = true;
+            cluster_range.weighted_mean = ((cluster_range.weighted_mean*cluster_range.amplitude
+                                            + sub_cluster_range.weighted_mean*sub_cluster_range.amplitude))
+                                          / (cluster_range.amplitude + sub_cluster_range.amplitude);
+            cluster_range.amplitude += sub_cluster_range.amplitude;
+            continue;
+          }
+          
+          const double sub_extend_lower = std::min( sub_cluster_range.weighted_mean - extend_energy, sub_cluster_range.lower_energy );
+          const double sub_extend_upper = std::max( sub_cluster_range.weighted_mean + extend_energy, sub_cluster_range.upper_energy );
+          assert( sub_extend_lower < sub_extend_upper );
+          if( sub_extend_upper < cluster_range.lower_energy )
+            continue;
+          
+          if( sub_extend_lower > cluster_range.upper_energy )
+            continue;
+          
+          const double new_lower = std::min(cluster_range.lower_energy, sub_extend_lower);
+          const double new_upper = std::max(cluster_range.upper_energy, sub_extend_upper);
+          
+          
+          double new_weighted_mean = ((cluster_range.weighted_mean*cluster_range.amplitude
+                                          + sub_cluster_range.weighted_mean*sub_cluster_range.amplitude))
+                                   / (cluster_range.amplitude + sub_cluster_range.amplitude);
+          double new_amplitude = cluster_range.amplitude + sub_cluster_range.amplitude;
+          
+          //We need to keep ROIs from growing too large for nuclides that have just a ton of gammas - so we'll
+          //  limit how far above or below the weghted meain average the ROI can grow - how this is done is
+          //  totally arbitrary for right now and will need to be revisited.
+          //This limiting force is totally not the correct one to use
+          const double max_half_range = max_half_range_energy_sqrt_multiple*sqrt(new_weighted_mean); //2.5 is totally arbitrary
+          if( (new_upper - new_weighted_mean) > max_half_range )
+            continue;
+          
+          if( (new_weighted_mean - new_lower) > max_half_range )
+            continue;
+          
+          cout << "Accepting range [" << sub_cluster_range.lower_energy << ", " << sub_cluster_range.upper_energy 
+          << "] with " << sub_cluster_range.amplitude  << "counts into ["
+          << cluster_lower_energy << ", " << cluster_upper_energy << "] that had " << cluster_range.amplitude
+          << " coutns at weighted mean " << cluster_range.weighted_mean << endl;
+          
+          assert( cluster_range.lower_energy < cluster_range.upper_energy );
+          
+          sub_cluster_range.already_used = true;
+          cluster_range.lower_energy = new_lower;
+          cluster_range.upper_energy = new_upper;
+          cluster_range.weighted_mean = new_weighted_mean;
+          cluster_range.amplitude = new_amplitude;
+          
+          // TODO: increase cluster_range.nsigma ?
+        }//for( size_t sub_index = index; sub_index < cluster_range_amp_fwhm_nsigma_keep.size(); ++sub_index )
+        
+        // Now check that this ROI doesnt overlap with any existing ROIs, and if so, we'll yield to those
+        for( size_t existing_index = 0; existing_index < updated_energy_ranges.size(); ++existing_index )
+        {
+          const RoiRange &existing = updated_energy_ranges[existing_index];
+          if( (cluster_range.lower_energy < existing.upper_energy) && (cluster_range.upper_energy > existing.lower_energy) )
+          {
+            cout << "Range [" << cluster_range.lower_energy << "," << cluster_range.upper_energy << "] DOES overlap with ["
+            << existing.lower_energy << "," << existing.upper_energy << "] --- [" << cluster_range.lower_energy << "," << cluster_range.upper_energy << "] --> ";
+            const double delta_energy = 1.0; //arbitrary - just so ROIs dont actually touch
+            if( cluster_range.lower_energy <= existing.upper_energy && cluster_range.lower_energy >= existing.lower_energy )
+              cluster_range.lower_energy = existing.upper_energy + delta_energy;
+            if( cluster_range.upper_energy >= existing.lower_energy && cluster_range.upper_energy <= existing.upper_energy )
+              cluster_range.upper_energy = existing.lower_energy - delta_energy;
+            
+            cout << "[" << cluster_range.lower_energy << "," << cluster_range.upper_energy << "]" << endl;
+            //assert( cluster_range.lower_energy < cluster_range.upper_energy );
+          }else
+          {
+            assert( existing.lower_energy < existing.upper_energy );
+            //cout << "Range [" << cluster_range.lower_energy << "," << cluster_range.upper_energy << "] doesnt overlap with ["
+            //<< existing.lower_energy << "," << existing.upper_energy << "]" << endl;
+          }
+        }//for( size_t existing_index = 0; existing_index < updated_energy_ranges.size(); ++existing_index )
+        
+        if( (cluster_range.upper_energy - cluster_range.lower_energy) < 0.5*cluster_range.fwhm )
+        {
+          // TODO: we should actually make a ROI by taking a littl from the left and/or right... or something
+          cout << "Not including ROI [" << cluster_range.lower_energy << ", " << cluster_range.upper_energy << "] with FWHM=" << cluster_range.fwhm
+          << " since its too narrow." << endl;
+          continue;
+        }//if( (cluster_roi.upper_energy - cluster_roi.lower_energy) > 0.5*cluster_roi.fwhm )
+        
+        combined_cluster_range.push_back( cluster_range );
+        
+        RoiRange new_roi = roi;
+        new_roi.lower_energy = cluster_range.lower_energy;
+        new_roi.upper_energy = cluster_range.upper_energy;
+        new_roi.force_full_range = true;
+        new_roi.allow_expand_for_peak_width = false;
+        
+        // If the continuum type is linear, we'll see if maybe we shouldnt increase it a bit if the ROI has become
+        //  pretty wide.
+        if( new_roi.continuum_type == PeakContinuum::OffsetType::Linear )
+        {
+          // TODO: at some point we might change to having #PeakContinuum::OffsetType::External signify to auto-choose this, but for the moment we'll rough guess somethign
+          if( (new_roi.upper_energy - new_roi.lower_energy) > num_fwhm_for_cubic_cont*cluster_range.fwhm )
+          {
+            new_roi.continuum_type = PeakContinuum::OffsetType::Cubic;
+          }else if( (new_roi.upper_energy - new_roi.lower_energy) > num_fwhm_for_quad_cont*cluster_range.fwhm )
+          {
+            new_roi.continuum_type = PeakContinuum::OffsetType::Quadratic;
+          }
+        }//if( new_roi.continuum_type == PeakContinuum::OffsetType::Linear )
+        
+        assert( new_roi.lower_energy < new_roi.upper_energy );
+        
+        updated_energy_ranges.push_back( new_roi );
+      }//for( const auto &cluter_range : cluster_range_amp_fwhm_nsigma_keep )
+      
+      
+      cout << "For input energy range [" << roi.lower_energy << ", " << roi.upper_energy << "], broke up into: {";
+      std::sort( begin(combined_cluster_range), end(combined_cluster_range), [](const auto &lhs, const auto &rhs){
+        return lhs.lower_energy < rhs.lower_energy;
+      } );
+      for( const auto &r : combined_cluster_range )
+        cout << "[" << r.lower_energy << "," << r.upper_energy << "], ";
+      cout << "}" << endl;
+    }//for( const RoiRange &roi : energy_ranges )
+    
+    sort_rois_by_energy( updated_energy_ranges );
+    
+    cout << "The updated energy ranges are: {";
+    for( const auto &r : updated_energy_ranges )
+      cout << "[" << r.lower_energy << "," << r.upper_energy << "],";
+    cout << "}" << endl;
+    
+    
+   /*
+    vector<RoiRange> fixed_energy_ranges;
+    for( const RoiRange &roi : energy_ranges )
+    {
+      if( roi.force_full_range )
+        fixed_energy_ranges.push_back( roi );
+    }//for( const RoiRange &roi : energy_ranges )
+    
+    
+    // `orig_sol.m_spectrum` is background subtracted, and energy corrected, of those options were selected.
     const auto spectrum = current_sol.m_spectrum;
     const float live_time = spectrum->live_time();
-    const double num_sigma_half_roi = DEFAULT_PEAK_HALF_WIDTH_SIGMA;
+    
+    const double num_sigma_half_roi = highres ? DEFAULT_PEAK_HALF_WIDTH_SIGMA_HIGHER_RES : DEFAULT_PEAK_HALF_WIDTH_SIGMA_LOWER_RES;
     
     // We'll collect all the individual
     vector<RoiRange> significant_peak_ranges;
     
-    /** Updates the passed in ROI to have limits for the peak mean energy passed in, and adds ROI
-     to `significant_peak_ranges`.
-     */
+    // Updates the passed in ROI to have limits for the peak mean energy passed in, and adds ROI to `significant_peak_ranges`.
     auto add_updated_roi = [&significant_peak_ranges,
                              &current_sol,
                              &fixed_energy_ranges,
@@ -13746,7 +14042,7 @@ RelActAutoSolution solve( const Options options,
         for( const NuclideRelAct &rel_act : rel_acts )
         {
           assert( !is_null(rel_act.source) );
-          if( !is_null(rel_act.source) )
+          if( is_null(rel_act.source) )
             continue;
 
           const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(rel_act.source);
@@ -13875,6 +14171,13 @@ RelActAutoSolution solve( const Options options,
         if( next_range.lower_energy > range.upper_energy )
           break; // note: doesnt increment `index`
         
+        const double mid_energy = 0.5*(next_range.upper_energy + range.lower_energy);
+        const double new_dist = next_range.upper_energy - range.lower_energy;
+        const double fwhm = eval_fwhm( mid_energy, current_sol.m_fwhm_form, current_sol.m_fwhm_coefficients.data(),
+                                      current_sol.m_fwhm_coefficients.size(), current_sol.m_drf );
+        //If the ROI will become too large - dont combine it
+        
+        
         range.upper_energy = next_range.upper_energy;
         const int cont_type_int = std::max( static_cast<int>(range.continuum_type),
                                            static_cast<int>(next_range.continuum_type) );
@@ -13892,7 +14195,7 @@ RelActAutoSolution solve( const Options options,
                                  end(combined_sig_peak_ranges) );
     
     sort_rois_by_energy( updated_energy_ranges );
-    
+    */
     cout << "\nFor iteration " << num_roi_iters << ", the energy ranges being are going from the"
     " original:\n\t{";
     for( size_t i = 0; i < energy_ranges.size(); ++i )
