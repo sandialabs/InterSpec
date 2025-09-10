@@ -1540,7 +1540,7 @@ void SpecFileQueryWidget::init()
   m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
   
   m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
-  linelayout->addWidget( m_optionsBtn, 0, 1 );
+  linelayout->addWidget( m_optionsBtn, 0, 1, AlignMiddle );
   
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
