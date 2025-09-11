@@ -1566,7 +1566,7 @@ InitialFitSolution mutate( const InitialFitSolution& X_base,
 {
   InitialFitSolution X_new;
   const double mu = 0.2*shrink_scale; // mutation radius (adjustable)
-  const double mutate_threshold = 0.15;
+  const double mutate_threshold = 0.15;  //one paper suggest 20%
   bool in_range;
 
   size_t num_tries = 0;
@@ -1662,7 +1662,7 @@ InitialFitSolution crossover( const InitialFitSolution& X1,
                              const InitialFitSolution& X2,
                              const std::function<double(void)> &rnd01 )
 {
-  const double crossover_threshold = 0.25;
+  const double crossover_threshold = 0.25;  //One paper suggest 80% crossover rate
 
   InitialFitSolution X_new;
   X_new = X1;
