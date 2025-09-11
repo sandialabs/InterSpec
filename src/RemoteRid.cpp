@@ -2125,28 +2125,42 @@ void RestRidInputResource::setDrf( const std::string &drf )
 void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
                                          Wt::Http::Response &response )
 {
-  WApplication::UpdateLock lock( m_app );
-  
-  if( !lock )
+  shared_ptr<const SpecUtils::SpecFile> spec_file;
+
+  {// Begin WApplication::UpdateLock
+    WApplication::UpdateLock lock( m_app );
+
+
+    if( !lock )
+    {
+      log("error") << "Failed to WApplication::UpdateLock in RestRidInputResource.";
+
+      response.out() << "Error grabbing application lock to form RestRidInputResource resource; please report to InterSpec@sandia.gov.";
+      response.setStatus(500);
+      assert( 0 );
+
+      return;
+    }//if( !lock )
+
+    spec_file = RemoteRid::fileForAnalysis(m_interspec, m_flags);
+    assert( spec_file );
+  }// End WApplication::UpdateLock
+
+  if( !spec_file )
   {
-    log("error") << "Failed to WApplication::UpdateLock in RestRidInputResource.";
-    
-    response.out() << "Error grabbing application lock to form RestRidInputResource resource; please report to InterSpec@sandia.gov.";
+    response.out() << "Error creating spectrum file to send.";
     response.setStatus(500);
-    assert( 0 );
-    
     return;
-  }//if( !lock )
-  
+  }//if( !spec_file )
+
   // Generate some JSON then
-  shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec, m_flags);
-  assert( spec_file );
-  
-  string options = "{\"drf\": \"" + m_drf + "\"";
+
+  Wt::Json::Object json;
+  json["drf"] = WString::fromUTF8(m_drf);
   if( spec_file && (spec_file->num_measurements() < 2) )
-    options += ", \"synthesizeBackground\": true";
-  options += "}";
-  
+    json["synthesizeBackground"] = true;
+
+  const string options = Wt::Json::serialize(json);
   const string boundary = "InterSpec_MultipartBoundary_InterSpec";
   
   string n42_content;
