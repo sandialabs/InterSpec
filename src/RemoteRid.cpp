@@ -298,6 +298,8 @@ class RestRidInputResource : public Wt::WResource
 {
   Wt::WFlags<RemoteRid::AnaFileOptions> m_flags;
   std::string m_drf;
+  std::mutex m_drf_flags_mutex;
+
   Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
   InterSpec *m_interspec;
   
@@ -2099,6 +2101,7 @@ RestRidInputResource::RestRidInputResource( InterSpec *interspec, WObject* paren
 : WResource( parent ),
 m_flags( 0 ),
 m_drf( "auto" ),
+m_drf_flags_mutex{},
 m_app( WApplication::instance() ),
 m_interspec( interspec )
 {
@@ -2113,18 +2116,30 @@ RestRidInputResource::~RestRidInputResource()
 
 void RestRidInputResource::setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
 {
+  std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
   m_flags = flags;
 }//void setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
 
 
 void RestRidInputResource::setDrf( const std::string &drf )
 {
+  std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
   m_drf = drf;
 }
 
 void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
                                          Wt::Http::Response &response )
 {
+
+  std::string ana_drf;
+  Wt::WFlags<RemoteRid::AnaFileOptions> ana_flags;
+
+  {// Begin lock on m_drf_flags_mutex
+    std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
+    ana_drf = m_drf;
+    ana_flags = m_flags;
+  }// End lock on m_drf_flags_mutex
+
   shared_ptr<const SpecUtils::SpecFile> spec_file;
 
   {// Begin WApplication::UpdateLock
@@ -2142,7 +2157,7 @@ void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
       return;
     }//if( !lock )
 
-    spec_file = RemoteRid::fileForAnalysis(m_interspec, m_flags);
+    spec_file = RemoteRid::fileForAnalysis(m_interspec, ana_flags);
     assert( spec_file );
   }// End WApplication::UpdateLock
 
@@ -2156,7 +2171,7 @@ void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
   // Generate some JSON then
 
   Wt::Json::Object json;
-  json["drf"] = WString::fromUTF8(m_drf);
+  json["drf"] = WString::fromUTF8(ana_drf);
   if( spec_file && (spec_file->num_measurements() < 2) )
     json["synthesizeBackground"] = true;
 
