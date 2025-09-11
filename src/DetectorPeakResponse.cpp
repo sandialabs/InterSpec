@@ -37,6 +37,8 @@
 #include <sstream>
 #include <numeric>
 #include <stdexcept>
+#include <iostream>
+#include <iomanip>
 
 #include <boost/tokenizer.hpp>
 #include <boost/functional/hash.hpp>
@@ -70,6 +72,11 @@ const int DetectorPeakResponse::sm_xmlSerializationVersion = 2;
 
 namespace
 {
+  /** Mutex to protect the "generic" detectors, returned by like `DetectorPeakResponse::getGenericHPGeDetector()` */
+  std::mutex s_generic_det_mutex;
+  
+  
+  
   //calcA(...) is for use from DetectorPeakResponse::akimaInterpolate(...).
   //  This function does not to any error checking that the input is valid.
   float calcA( const size_t i,
@@ -3487,11 +3494,12 @@ float DetectorPeakResponse::intrinsicEfficiencyFromExpLnEqn( float energy ) cons
 float DetectorPeakResponse::expOfLogPowerSeriesEfficiency( const float energy,
                                            const std::vector<float> &coefs )
 {
-  float exparg = 0.0f;
-  const float x = log( energy );
+  double exparg = 0.0;
+  const double x = log( static_cast<double>(energy) );
   for( size_t i = 0; i < coefs.size(); ++i )
-    exparg += coefs[i] * pow(x,static_cast<float>(i));
-  return exp( exparg );
+    exparg += coefs[i] * pow(x,static_cast<double>(i));
+  const double answer = exp( exparg );
+  return (answer >= 0.0) ? static_cast<float>(answer) : 0.0f;
 }//float expOfLogPowerSeriesEfficiency(...)
 
 
@@ -3523,6 +3531,8 @@ float DetectorPeakResponse::intrinsicEfficiency( const float energy ) const
 std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() const
 {
   const double energy_units = m_efficiencyEnergyUnits;
+  const double lowerEnergy = m_lowerEnergy;
+  const double upperEnergy = m_upperEnergy;
 
   switch( m_efficiencyForm )
   {
@@ -3544,7 +3554,12 @@ std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() con
       if( !eff_fcnt )
         return nullptr;
 
-      return [energy_units, eff_fcnt]( float energy ) -> float {
+      return [energy_units, eff_fcnt, lowerEnergy, upperEnergy]( float energy ) -> float {
+        if( (lowerEnergy > 10.0) && (energy < lowerEnergy) )
+          return eff_fcnt( lowerEnergy / energy_units );
+        if( (upperEnergy > 10.0) && (energy > upperEnergy) )
+          return eff_fcnt( upperEnergy / energy_units );
+        
         return eff_fcnt( energy / energy_units );
       };
     }//case kFunctialEfficienyForm:
@@ -3556,7 +3571,11 @@ std::function<float( float )> DetectorPeakResponse::intrinsicEfficiencyFcn() con
         return nullptr;
 
       const vector<float> coeffs = m_expOfLogPowerSeriesCoeffs;
-      return [energy_units, coeffs]( float energy ) -> float {
+      return [energy_units, coeffs, lowerEnergy, upperEnergy]( float energy ) -> float {
+        if( (lowerEnergy > 10.0) && (energy < lowerEnergy) )
+          return expOfLogPowerSeriesEfficiency( lowerEnergy / energy_units, coeffs );
+        if( (upperEnergy > 10.0) && (energy > upperEnergy) )
+          return expOfLogPowerSeriesEfficiency( upperEnergy / energy_units, coeffs );
         return expOfLogPowerSeriesEfficiency( energy / energy_units, coeffs );
       };
     }//case kExpOfLogPowerSeries:
@@ -3701,10 +3720,452 @@ float DetectorPeakResponse::peakResolutionSigma( const float energy ) const
 }//double peakResolutionSigma( float energy ) const
 
 
+std::string DetectorPeakResponse::javaScriptFwhmFunction() const
+{
+  if( !hasResolutionInfo() )
+  {
+    throw std::runtime_error( "DetectorPeakResponse::javaScriptFwhmFunction(): "
+                              "detector does not have resolution information" );
+  }
+  
+  return javaScriptFwhmFunction( m_resolutionCoeffs, m_resolutionForm );
+}//std::string javaScriptFwhmFunction() const
+
+
+std::string DetectorPeakResponse::javaScriptFwhmFunction( const std::vector<float> &coeffs,
+                                                          const ResolutionFnctForm form )
+{
+  std::string js_fwhm_fcn;
+  
+  switch( form )
+  {
+    case kGadrasResolutionFcn:
+      if( coeffs.size() >= 3 )
+      {
+        js_fwhm_fcn = "function(e) { var a=" + std::to_string(coeffs[0]) +
+        ", b=" + std::to_string(coeffs[1]) +
+        ", c=" + std::to_string(coeffs[2]) +
+        "; e = Math.max(1.0, e);" +
+        " if(e > 661.0) return 6.61 * b * Math.pow(e/661.0, c);" +
+        " if(a >= 0.0) { var ZeroLimit = Math.max(0.0, Math.abs(a)*(661.0-e)/661.0);" +
+        " var FWHM = 6.61 * b * Math.pow(e/661.0, c);" +
+        " return Math.sqrt(ZeroLimit*ZeroLimit + FWHM*FWHM); }" +
+        " if(a > 6.61*b) return a;" +
+        " var A7 = Math.sqrt(Math.pow(6.61*b, 2.0) - a*a) / 6.61;" +
+        " return Math.sqrt(a*a + Math.pow(6.61 * A7 * Math.pow(e/661.0, c), 2.0)); }";
+      }
+      break;
+      
+    case kSqrtEnergyPlusInverse:
+      if( coeffs.size() >= 3 )
+      {
+        js_fwhm_fcn = "function(e) { return Math.sqrt(" + std::to_string(coeffs[0]) +
+        " + " + std::to_string(coeffs[1]) + "*e + " + std::to_string(coeffs[2]) + "/e); }";
+      }
+      break;
+      
+    case kConstantPlusSqrtEnergy:
+      if( coeffs.size() >= 2 )
+      {
+        js_fwhm_fcn = "function(e) { return " + std::to_string(coeffs[0]) +
+        " + " + std::to_string(coeffs[1]) + "*Math.sqrt(e); }";
+      }
+      break;
+      
+    case kSqrtPolynomial:
+      if( !coeffs.empty() )
+      {
+        js_fwhm_fcn = "function(e) { e = e/1000.0; var val = " + std::to_string(coeffs.back()) + ";";
+        for( int i = static_cast<int>(coeffs.size()) - 2; i >= 0; i-- )
+        {
+          js_fwhm_fcn += " val = val * e + " + std::to_string(coeffs[i]) + ";";
+        }
+        js_fwhm_fcn += " return Math.sqrt(val); }";
+      }
+      break;
+      
+    case kNumResolutionFnctForm:
+      break;
+  }
+  
+  if( js_fwhm_fcn.empty() )
+  {
+    throw std::runtime_error( "DetectorPeakResponse::javaScriptFwhmFunction(): "
+                              "unable to generate JavaScript function for resolution form" );
+  }
+  
+  return js_fwhm_fcn;
+}//static std::string javaScriptFwhmFunction(...)
+
+
 float DetectorPeakResponse::detectorDiameter() const
 {
   return m_detectorDiameter;
 }
+
+
+void DetectorPeakResponse::printDetectorParameterizationToStdout() const
+{
+  using std::cout;
+  using std::endl;
+  
+  cout << "\n========== DETECTOR PARAMETERIZATION ===========" << endl;
+  cout << "// Copy and paste this into hardcoded detector creation code" << endl;
+  cout << "Name: \"" << m_name << "\"" << endl;
+  cout << "Description: \"" << m_description << "\"" << endl;
+  
+  // Detector diameter
+  if( m_detectorDiameter > 0.0 )
+  {
+    const std::string diam_str = PhysicalUnits::printToBestLengthUnits( m_detectorDiameter );
+    cout << "Detector Diameter: " << diam_str << " (" << m_detectorDiameter << " mm)" << endl;
+  }
+  
+  // Geometry type
+  cout << "Geometry Type: ";
+  switch( m_geomType )
+  {
+    case EffGeometryType::FarField: cout << "FarField"; break;
+    case EffGeometryType::FixedGeomTotalAct: cout << "FixedGeomTotalAct"; break;
+    case EffGeometryType::FixedGeomActPerCm2: cout << "FixedGeomActPerCm2"; break;
+    case EffGeometryType::FixedGeomActPerM2: cout << "FixedGeomActPerM2"; break;
+    default: cout << "Unknown(" << static_cast<int>(m_geomType) << ")"; break;
+  }
+  cout << endl;
+  
+  // Efficiency information
+  cout << "\n--- EFFICIENCY ---" << endl;
+  cout << "Efficiency Function Type: ";
+  switch( m_efficiencyForm )
+  {
+    case kEnergyEfficiencyPairs: cout << "EnergyEfficiencyPairs"; break;
+    case kFunctialEfficienyForm: cout << "FunctionalEfficiencyForm"; break;
+    case kExpOfLogPowerSeries: cout << "ExpOfLogPowerSeries"; break;
+    case kNumEfficiencyFnctForms: cout << "NumEfficiencyFnctForms"; break;
+  }
+  cout << endl;
+  
+  cout << "Energy Units: " << m_efficiencyEnergyUnits;
+  if( std::abs(m_efficiencyEnergyUnits - static_cast<float>(PhysicalUnits::keV)) < 0.001 )
+    cout << " (keV)";
+  else if( std::abs(m_efficiencyEnergyUnits - static_cast<float>(PhysicalUnits::MeV)) < 0.001 )
+    cout << " (MeV)";
+  cout << endl;
+  
+  if( m_efficiencyForm == kExpOfLogPowerSeries && !m_expOfLogPowerSeriesCoeffs.empty() )
+  {
+    cout << "ExpOfLogPowerSeries Coefficients: {";
+    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
+    {
+      if( i > 0 ) cout << ", ";
+      cout << std::scientific << std::setprecision(8) << m_expOfLogPowerSeriesCoeffs[i];
+    }
+    cout << "}" << endl;
+    
+    if( !m_expOfLogPowerSeriesUncerts.empty() )
+    {
+      cout << "ExpOfLogPowerSeries Uncertainties: {";
+      for( size_t i = 0; i < m_expOfLogPowerSeriesUncerts.size(); ++i )
+      {
+        if( i > 0 ) cout << ", ";
+        cout << std::scientific << std::setprecision(8) << m_expOfLogPowerSeriesUncerts[i];
+      }
+      cout << "}" << endl;
+    }
+  }
+  
+  if( m_efficiencyForm == kFunctialEfficienyForm && !m_efficiencyFormula.empty() )
+  {
+    cout << "Efficiency Formula: \"" << m_efficiencyFormula << "\"" << endl;
+  }
+  
+  if( m_efficiencyForm == kEnergyEfficiencyPairs && !m_energyEfficiencies.empty() )
+  {
+    cout << "Energy-Efficiency Pairs (" << m_energyEfficiencies.size() << " points):" << endl;
+    for( size_t i = 0; i < std::min(size_t(10), m_energyEfficiencies.size()); ++i )
+    {
+      cout << "  {" << m_energyEfficiencies[i].energy << ", " 
+           << std::scientific << std::setprecision(6) << m_energyEfficiencies[i].efficiency << "}";
+      if( i + 1 < std::min(size_t(10), m_energyEfficiencies.size()) ) cout << ",";
+      cout << endl;
+    }
+    if( m_energyEfficiencies.size() > 10 )
+      cout << "  ... (" << (m_energyEfficiencies.size() - 10) << " more points)" << endl;
+    
+    
+    const int fcnOrder = 6;
+    std::vector<float> fit_pars, fit_pars_incert;
+    std::vector<MakeDrfFit::DetEffDataPoint> eff_points;
+    for( const EnergyEfficiencyPair &eff : m_energyEfficiencies )
+    {
+      if( eff.energy < 45 || eff.energy > 3000 )
+        continue;
+      
+      MakeDrfFit::DetEffDataPoint p;
+      p.energy = eff.energy / 1000.0;
+      p.efficiency = eff.efficiency;
+      p.efficiency_uncert = 0.01*eff.efficiency;
+      eff_points.push_back( p );
+    }
+    const double chi2 = MakeDrfFit::performEfficiencyFit( eff_points, fcnOrder, fit_pars, fit_pars_incert );
+    
+    cout << "ExpOfLogPowerSeries (chi2/dof=" << chi2 << "/" << (eff_points.size() - fcnOrder) << ") equivalent Coefficients: {";
+    for( size_t i = 0; i < fit_pars.size(); ++i )
+    {
+      if( i > 0 ) cout << ", ";
+      cout << std::scientific << std::setprecision(8) << fit_pars[i];
+    }
+    cout << "}" << endl;
+    
+    cout << "\n\nComparison to original:" << endl;
+    double max_error = 0.0, min_error = 100000, average_error = 0.0, num_points = 0;
+    for( const EnergyEfficiencyPair &eff : m_energyEfficiencies )
+    {
+      const double fit_eff = expOfLogPowerSeriesEfficiency( 0.001*eff.energy, fit_pars);
+      const double percent_error = (100.0*fabs(eff.efficiency - fit_eff)/eff.efficiency);
+      if( eff.energy >= 49 && eff.energy < 2650.0 )
+      {
+        num_points += 1;
+        max_error = std::max( max_error, percent_error );
+        min_error = std::min( min_error, percent_error );
+        average_error += percent_error;
+      }
+      
+      cout << "\tEnergy: " << std::fixed << eff.energy << " keV, OrigEff: " << std::scientific << eff.efficiency
+      << ", FitEff: " << fit_eff
+      << ", error: " << std::fixed << percent_error << "%" << endl;
+    }
+    average_error /= num_points;
+    cout << "Between 50 and 2600 keV, average error is " << average_error << "%, with max error " << max_error << "%" << endl;
+    cout << "----" << endl;
+  }
+  
+  // Resolution (FWHM) information
+  if( hasResolutionInfo() )
+  {
+    cout << "\n--- RESOLUTION (FWHM) ---" << endl;
+    cout << "Resolution Function Type: ";
+    switch( m_resolutionForm )
+    {
+      case kGadrasResolutionFcn: cout << "GadrasResolutionFcn"; break;
+      case kSqrtPolynomial: cout << "SqrtPolynomial"; break;
+      case kSqrtEnergyPlusInverse: cout << "SqrtEnergyPlusInverse"; break;
+      default: cout << "Unknown(" << static_cast<int>(m_resolutionForm) << ")"; break;
+    }
+    cout << endl;
+    
+    if( !m_resolutionCoeffs.empty() )
+    {
+      cout << "Resolution Coefficients: {";
+      for( size_t i = 0; i < m_resolutionCoeffs.size(); ++i )
+      {
+        if( i > 0 ) cout << ", ";
+        cout << std::scientific << std::setprecision(8) << m_resolutionCoeffs[i];
+      }
+      cout << "}" << endl;
+      
+      if( !m_resolutionUncerts.empty() )
+      {
+        cout << "Resolution Uncertainties: {";
+        for( size_t i = 0; i < m_resolutionUncerts.size(); ++i )
+        {
+          if( i > 0 ) cout << ", ";
+          cout << std::scientific << std::setprecision(8) << m_resolutionUncerts[i];
+        }
+        cout << "}" << endl;
+      }
+    }
+  }
+  else
+  {
+    cout << "\n--- RESOLUTION (FWHM) ---" << endl;
+    cout << "No resolution information available" << endl;
+  }
+  
+  cout << "\n--- EXAMPLE CODE ---" << endl;
+  cout << "// Create detector like this:" << endl;
+  cout << "auto detector = std::make_shared<DetectorPeakResponse>(\"" << m_name << "\", \"" << m_description << "\");" << endl;
+  
+  if( m_efficiencyForm == kExpOfLogPowerSeries && !m_expOfLogPowerSeriesCoeffs.empty() )
+  {
+    cout << "std::vector<float> eff_coeffs = {";
+    for( size_t i = 0; i < m_expOfLogPowerSeriesCoeffs.size(); ++i )
+    {
+      if( i > 0 ) cout << ", ";
+      cout << m_expOfLogPowerSeriesCoeffs[i] << "f";
+    }
+    cout << "};" << endl;
+    cout << "detector->fromExpOfLogPowerSeriesAbsEff(eff_coeffs, {}, 0.0f, " 
+         << m_detectorDiameter << "f, " << m_efficiencyEnergyUnits << "f, 0.0f, 0.0f, "
+         << "DetectorPeakResponse::EffGeometryType::FarField);" << endl;
+  }
+  
+  if( hasResolutionInfo() && !m_resolutionCoeffs.empty() )
+  {
+    cout << "std::vector<float> res_coeffs = {";
+    for( size_t i = 0; i < m_resolutionCoeffs.size(); ++i )
+    {
+      if( i > 0 ) cout << ", ";
+      cout << m_resolutionCoeffs[i] << "f";
+    }
+    cout << "};" << endl;
+    cout << "detector->setResolutionFunctionCoeffs(res_coeffs, DetectorPeakResponse::";
+    switch( m_resolutionForm )
+    {
+      case kGadrasResolutionFcn: cout << "kGadrasResolutionFcn"; break;
+      case kSqrtPolynomial: cout << "kSqrtPolynomial"; break;
+      case kSqrtEnergyPlusInverse: cout << "kSqrtEnergyPlusInverse"; break;
+      default: cout << "kGadrasResolutionFcn"; break;
+    }
+    cout << ");" << endl;
+  }
+  
+  cout << "=================================================" << endl << endl;
+}
+
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericHPGeDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic HPGe", "" );
+    
+    // Eff coefficients from "ORTEC Detective-X_LANL_100cm (59%)"
+    std::vector<float> eff_coeffs = {-1.58287716e+00, -7.39438057e-01, 3.77921872e-02, -4.59978022e-02, -4.18332592e-02};
+    detector->fromExpOfLogPowerSeriesAbsEff( eff_coeffs, {}, 0.0f, 6.50*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            55.0f, 3000.0f, EffGeometryType::FarField );
+    
+    // Use FWHM from the generic 40% HPGe GADRAS detector included with InterSpec
+    std::vector<float> res_coeffs = {1.54999995e+00, 2.50000000e-01, 3.49999994e-01};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    detector->setDrfSource( DrfSource::UnknownDrfSource );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }//if( !s_detector )
+  
+  return s_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericNaIDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic NaI(Tl)", "12% Efficiency, 6.9% FWHM @661 keV" );
+    
+    // From "Canberra Inspector 1000 (12%)"
+    vector<float> eff_coeffs = {-2.22847652e+00f, -1.89709997e+00f, -1.02779996e+00f, -4.63600010e-01f, -1.06799997e-01f};
+    detector->fromExpOfLogPowerSeriesAbsEff(eff_coeffs, {}, 0.0f, 5.08*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            45.0f, 3000.0f, DetectorPeakResponse::EffGeometryType::FarField );
+    
+    // FWHM from "RadSeeker-NaI"
+    std::vector<float> res_coeffs = {-8.18999958e+00, 6.94000006e+00, 5.64000010e-01};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    detector->setDrfSource( DrfSource::UnknownDrfSource );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }
+  
+  return s_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericLaBrDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic LaBr3(Ce)", "" );
+    
+    // Fit to GADRAS efficiency of Sam-Eagle-LaBr
+    // Between 50 and 2600 keV, average error is 1.40918552%, with max error 3.70071643%
+    std::vector<float> eff_coeffs = {-1.66245103e+00, -1.07331991e+00, 9.46287289e-02, 3.29341553e-02, -7.69617930e-02, -1.86134428e-02};
+    detector->fromExpOfLogPowerSeriesAbsEff( eff_coeffs, {}, 0.0f, 3.70*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            50.0f, 2650.0f, EffGeometryType::FarField );
+    
+    // From GADRAS Sam-Eagle-LaBr
+    std::vector<float> res_coeffs = {7.0, 2.6e+00, 5.2e-01};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn /* TODO: verify resolution function type */ );
+    detector->setDrfSource( DrfSource::UnknownDrfSource );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }
+  
+  return s_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericCZTGeneralDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic CZT", "" );
+    
+    // Fit to the GADRAS efficiencies between 45 and 3000 of the Kromek GR1 detector included with InterSpec
+    //Between 50 and 2600 keV, average error is 1.36569567%, with max error 4.19282222%
+    std::vector<float> eff_coeffs = {-3.36118150e+00, -1.55648577e+00, 2.62750953e-01, -2.36228734e-01, -2.88489103e-01, -5.32837957e-02};
+    detector->fromExpOfLogPowerSeriesAbsEff( eff_coeffs, {}, 0.0f, 1.07*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            50.0f, 2650.0f, EffGeometryType::FarField );
+    
+    // FWHM from "Kromek GR1"
+    std::vector<float> res_coeffs = {8.94999981e+00f, 2.39000010e+00f, 3.44000012e-01f};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn );
+    detector->setDrfSource( DrfSource::UnknownDrfSource );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }
+  
+  return s_detector;
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DetectorPeakResponse::getGenericCZTGoodDetector()
+{
+  static std::shared_ptr<const DetectorPeakResponse> s_detector;
+  
+  std::lock_guard<std::mutex> lock( s_generic_det_mutex );
+  
+  if( !s_detector )
+  {
+    auto detector = std::make_shared<DetectorPeakResponse>( "Generic CZT High-Quality", "" );
+    
+    // A fit to a GADRAS eff points for a M400
+    // Between 50 and 2600 keV, average error is 1.50666823%, with max error 3.77653729%
+    vector<float> eff_coeffs = {-3.35549235e+00, -1.39031291e+00, 2.49679491e-01, -2.98282117e-01, -2.85447180e-01, -4.70053926e-02};
+    detector->fromExpOfLogPowerSeriesAbsEff( eff_coeffs, {}, 0.0f, 2.20*PhysicalUnits::cm, PhysicalUnits::MeV,
+                                            50.0f, 2650.0f, EffGeometryType::FarField );
+    // From M400 CZT
+    vector<float> res_coeffs = {2.7, 0.699, 0.753};
+    
+    detector->setFwhmCoefficients( res_coeffs, kGadrasResolutionFcn /* TODO: verify resolution function type */ );
+    detector->setDrfSource( DrfSource::DefaultGadrasDrf );
+    
+    s_detector = std::const_pointer_cast<const DetectorPeakResponse>( detector );
+  }
+  
+  return s_detector;
+}
+
 
 const std::string &DetectorPeakResponse::efficiencyFormula() const
 {

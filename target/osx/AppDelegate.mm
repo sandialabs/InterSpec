@@ -822,63 +822,129 @@ Wt::WApplication *createApplication(const Wt::WEnvironment& env)
 
           // Create a download task
           NSURLSessionDownloadTask *downloadTask = [session downloadTaskWithURL:url
-              completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
-                  if (error) {
-                      NSLog(@"Download failed with error: %@", error.localizedDescription);
-                  } else {
-                      NSLog(@"Download succeeded. File is located at: %@", location.path);
+            completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {
+              if( error )
+              {
+                // Display an error alert to the user
+                dispatch_async(dispatch_get_main_queue(), ^{
+                  NSAlert *alert = [[NSAlert alloc] init];
+                  alert.messageText = @"Download Failed";
+                  alert.informativeText = error.localizedDescription;
+                  alert.alertStyle = NSAlertStyleCritical;
+                  [alert addButtonWithTitle:@"OK"];
+                  [alert runModal];
+                });
+                return;
+              }else
+              {
+                NSLog(@"Download succeeded. File is located at: %@", location.path);
 
-                      // Present NSSavePanel to let the user choose where to save the file
-                      dispatch_async(dispatch_get_main_queue(), ^{
-                          NSSavePanel *savePanel = [NSSavePanel savePanel];
-                          savePanel.title = @"Save Exported File";
-                          savePanel.prompt = @"Save";
-                          savePanel.nameFieldStringValue = response.suggestedFilename ?: @"downloadedFile";
+                // Copy the temporary file to a persistent location
+                NSFileManager *fileManager = [NSFileManager defaultManager];
+                NSURL *persistentTempURL = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:response.suggestedFilename ?: @"downloadedFile"]];
 
-                          [savePanel beginWithCompletionHandler:^(NSModalResponse result) {
-                              if (result == NSModalResponseOK) {
-                                  NSURL *destinationURL = savePanel.URL;
-                                  if (destinationURL) {
-                                      NSFileManager *fileManager = [NSFileManager defaultManager];
-                                      NSError *moveError = nil;
-                                      [fileManager moveItemAtURL:location toURL:destinationURL error:&moveError];
+                NSError *copyError = nil;
+                [fileManager copyItemAtURL:location toURL:persistentTempURL error:&copyError];
 
-                                      if (moveError) {
-                                        // Show an error alert to the user
-                                        dispatch_async(dispatch_get_main_queue(), ^{
-                                          NSAlert *alert = [[NSAlert alloc] init];
-                                          alert.messageText = @"Error Saving File";
-                                          alert.informativeText = moveError.localizedDescription;
-                                          alert.alertStyle = NSAlertStyleCritical;
-                                          [alert addButtonWithTitle:@"OK"];
-                                          [alert runModal];
-                                        });
-                                        NSLog(@"Failed to move file: %@", moveError.localizedDescription);
-                                      } else {
-                                          NSLog(@"File saved to: %@", destinationURL.path);
-                                      }
-                                  }
-                              } else
-                              {
-                                NSLog(@"User canceled saving the file.");
-                                // Delete the temporary file if the user cancels
-                                NSError *deleteError = nil;
-                                NSFileManager *fileManager = [NSFileManager defaultManager];
-                                [fileManager removeItemAtURL:location error:&deleteError];
-                                if (deleteError) {
-                                  NSLog(@"Failed to delete temporary file: %@", deleteError.localizedDescription);
-                                } else {
-                                  NSLog(@"Temporary file deleted.");
-                                }
-                              }
-                          }];
-                      });
-                  }
-              }];
+                if( copyError )
+                {
+                  NSLog(@"Failed to copy temporary file: %@", copyError.localizedDescription);
+
+                  // Display an error alert to the user
+                  dispatch_async(dispatch_get_main_queue(), ^{
+                    NSAlert *alert = [[NSAlert alloc] init];
+                    alert.messageText = @"Error Copying File";
+                    alert.informativeText = copyError.localizedDescription;
+                    alert.alertStyle = NSAlertStyleCritical;
+                    [alert addButtonWithTitle:@"OK"];
+                    [alert runModal];
+                  });
+                  return;
+                }//if( copyError )
+
+                // Present NSSavePanel to let the user choose where to save the file
+                dispatch_async(dispatch_get_main_queue(), ^{
+                  NSSavePanel *savePanel = [NSSavePanel savePanel];
+                  savePanel.title = @"Save Exported File";
+                  savePanel.prompt = @"Save";
+                  savePanel.nameFieldStringValue = response.suggestedFilename ?: @"downloadedFile";
+
+                  [savePanel beginWithCompletionHandler:^(NSModalResponse result) {
+                    if( result == NSModalResponseOK )
+                    {
+                      NSURL *destinationURL = savePanel.URL;
+                      if( destinationURL )
+                      {
+                        NSError *moveError = nil;
+
+                        // Ensure parent directory exists
+                        NSURL *parentDir = [destinationURL URLByDeletingLastPathComponent];
+                        NSError *dirError = nil;
+                        [fileManager createDirectoryAtURL:parentDir
+                                    withIntermediateDirectories:YES
+                                    attributes:nil
+                                    error:&dirError];
+
+                        if( dirError )
+                        {
+                          NSLog(@"Failed to create parent directory: %@", dirError.localizedDescription);
+
+                          // Display an error alert to the user
+                          dispatch_async(dispatch_get_main_queue(), ^{
+                            NSAlert *alert = [[NSAlert alloc] init];
+                            alert.messageText = @"Error Creating Directory";
+                            alert.informativeText = dirError.localizedDescription;
+                            alert.alertStyle = NSAlertStyleCritical;
+                            [alert addButtonWithTitle:@"OK"];
+                            [alert runModal];
+                          });
+                          return;
+                        }//if( dirError )
+
+                        // Move the persistent temporary file to the chosen destination
+                        [fileManager moveItemAtURL:persistentTempURL toURL:destinationURL error:&moveError];
+
+                        if( moveError )
+                        {
+                          NSLog(@"Error saving to: %@", destinationURL.path);
+
+                          // Show an error alert to the user
+                          dispatch_async(dispatch_get_main_queue(), ^{
+                            NSAlert *alert = [[NSAlert alloc] init];
+                            alert.messageText = @"Error Saving File";
+                            alert.informativeText = moveError.localizedDescription;
+                            alert.alertStyle = NSAlertStyleCritical;
+                            [alert addButtonWithTitle:@"OK"];
+                            [alert runModal];
+                          });
+                          NSLog(@"Failed to save file: %@", moveError.localizedDescription);
+                        }else
+                        {
+                          NSLog(@"File saved to: %@", destinationURL.path);
+                        }//if( moveError ) / else
+                      }//if( destinationURL )
+                    }else
+                    {
+                      NSLog(@"User canceled saving the file.");
+                      // Delete the persistent temporary file if the user cancels
+                      NSError *deleteError = nil;
+                      [fileManager removeItemAtURL:persistentTempURL error:&deleteError];
+                      if( deleteError )
+                      {
+                        NSLog(@"Failed to delete persistent temporary file: %@", deleteError.localizedDescription);
+                      }else
+                      {
+                        NSLog(@"Persistent temporary file deleted.");
+                      }
+                    }//if( result == NSModalResponseOK ) / else
+                  }]; //[savePanel beginWithCompletionHandler:^(NSModalResponse result) {...
+                });//dispatch_async(dispatch_get_main_queue(), ^{...
+              }//if( error ) / else
+            }];//NSURLSessionDownloadTask *downloadTask....completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error) {....
 
           // Start the download task
           [downloadTask resume];
-        }
+        }//if( (host && [host isEqualToString:@"127.0.0.1"]) || ....
       }//if( request )
       
       decisionHandler(WKNavigationActionPolicyCancel);

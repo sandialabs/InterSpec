@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -33,8 +34,9 @@
 #include <Wt/WContainerWidget>
 #include <Wt/WAbstractItemModel>
 
-#include "InterSpec/ReactionGamma.h"
 #include "SandiaDecay/SandiaDecay.h"
+
+#include "InterSpec/ReactionGamma.h"
 #include "InterSpec/ReferenceLineInfo.h"
 
 class MaterialDB;
@@ -49,6 +51,11 @@ namespace SandiaDecay
   struct Element;
 }
 
+namespace SpecUtils
+{
+  enum class SpectrumType : int;
+}
+
 namespace rapidxml
 {
   template<class Ch> class xml_node;
@@ -59,6 +66,7 @@ namespace Wt
 {
   class WText;
   class WCheckBox;
+  class WComboBox;
   class WLineEdit;
   class WTreeView;
   class WGridLayout;
@@ -73,6 +81,7 @@ class DetectorDisplay;
 class D3SpectrumDisplayDiv;
 class IsotopeNameFilterModel;
 
+#include "InterSpec/ExternalRidResult.h"
 
 class DecayParticleModel : public  Wt::WAbstractItemModel
 {
@@ -253,18 +262,11 @@ public:
    
    @param algo_name The name to display as the header under "Suggestions" for these results.
           Should be short (less than ~12 characters); if empty will use "External RID".
-   @param iso_descrips The pairs of nuclide names, and thier descriptions.  For each pair,
-          if the name is a valid nuclide (or rather reference line that can be displayed), then
-          the first element should be nuclide name, and second element its description
-          (e.g., "Industrial", "SNM", etc).  If not a nuclide, then the second element should
-          be empty, which will make it so user cant click on this result to show ref. lines.
-          (I know, not a great system, but it will probably need re-vamped anyway once
-          we get a little more use-cases and experience).
+   @param iso_descrips The sources returned by the RID algorithm.
    
    \sa RemoteRid::startAutomatedOnLoadAnalysis
    */
-  void setExternalRidResults( const std::string &algo_name,
-                             const std::vector<std::pair<std::string,std::string>> &iso_descrips );
+  void setExternalRidResults( std::shared_ptr<const ExternalRidResults> results );
   
   /** Signal emmitted whenever the user selects a new nuclide to be shown. */
   Wt::Signal<> &displayingNuclide();
@@ -294,6 +296,24 @@ public:
   /** Called when user checks or unchecks to show feature markers. */
   void featureMarkerCbToggled();
   
+  /** Called when user changes reference line thickness combo box. */
+  void refLineThicknessChanged();
+  
+  /** Called when reference line thickness preference changes. */
+  void refLineThicknessPreferenceChanged();
+
+  /** Callback for RefLineThickness preference changes (takes int parameter). */
+  void refLineThicknessPreferenceChangedCallback( int thickness );
+  
+  /** Called when user changes reference line verbosity combo box. */
+  void refLineVerbosityChanged();
+  
+  /** Called when reference line verbosity preference changes. */
+  void refLineVerbosityPreferenceChanged();
+
+  /** Callback for RefLineVerbosity preference changes (takes int parameter). */
+  void refLineVerbosityPreferenceChangedCallback( int verbosity );
+  
   /** Blinks the feature marker widget a bit. */
   void emphasizeFeatureMarker();
   
@@ -316,6 +336,9 @@ public:
    This function is intended to be called by other widgets.
    */
   Wt::WColor suggestColorForSource( const std::string &src ) const;
+  
+  /** Returns the next color that would be given to a source that doesnt already have a defined color. */
+  Wt::WColor nextGenericSourceColor() const;
   
   /** Updates `m_previouslyPickedSourceColors` for the specified source.
    
@@ -360,6 +383,11 @@ protected:
 
   static std::vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
   
+  /** Function called when a new source is entered into the GUI.
+   Looks through current peaks, `m_previouslyPickedSourceColors`, and `m_specificSourcelineColors`
+   to find the color it should use, and if not returns the next `m_lineColors`.
+   Does not cache the color for the source - and may return the color of the currently showing reference lines.
+   */
   Wt::WColor colorForNewSource( const std::string &src );
 
   void handleIsotopeChange( const bool useCurrentAge );
@@ -439,6 +467,8 @@ protected:
   Wt::WCheckBox *m_showPrevNucs;
   Wt::WCheckBox *m_showAssocNucs;
   Wt::WCheckBox *m_showFeatureMarkers;
+  Wt::WComboBox *m_refLineThickness;
+  Wt::WComboBox *m_refLineVerbosity;
 
   Wt::WContainerWidget *m_otherNucsColumn;
   Wt::WContainerWidget *m_otherNucs;
@@ -447,10 +477,8 @@ protected:
   
   std::deque<RefLineInput> m_prevNucs;
   
-  /** Name of "external" RID algorithm used, as set by #setExternalRidResults. */
-  std::string m_external_algo_name;
   /** "External" RID results, as set by #setExternalRidResults. */
-  std::vector<std::pair<std::string,std::string>> m_external_ids;
+  std::shared_ptr<const ExternalRidResults> m_external_results;
   
   Wt::WContainerWidget *m_featureMarkerColumn;
   

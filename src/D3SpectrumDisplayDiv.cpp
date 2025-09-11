@@ -50,10 +50,10 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
-#include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
+#include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -260,6 +260,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_xAxisCompactnessChanged( this ),
   // These next member variables roughly track state in the JS
   m_jsgraph( jsRef() + ".chart" ),
+  m_num_render_calls( 0 ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
   m_yAxisMinimum(0.0),
@@ -267,6 +268,12 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartWidthPx(0.0),
   m_chartHeightPx(0.0),
   m_showRefLineInfoForMouseOver( true ),
+  m_refLineWidth( 1.0 ),
+  m_refLineWidthHover( 2.0 ),
+  m_refLineVerbosity( RefLineVerbosity::None ),
+  m_dynamic( nullptr ),
+  m_dynamicRefLines{},
+  m_dynamicRefLinesJsFwhmFcn{},
   m_comptonPeakAngle( 180 ),
   m_foregroundLineColor( 0x00, 0x00, 0x00 ),  //black
   m_backgroundLineColor( 0x00, 0xff, 0xff ),  //cyan
@@ -335,6 +342,9 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", compactXAxis: " + jsbool(m_compactAxis);
   options += ", allowDragRoiExtent: true";
   options += ", showRefLineInfoForMouseOver: " + jsbool(m_showRefLineInfoForMouseOver);
+  options += ", refLineWidth: " + std::to_string(m_refLineWidth);
+  options += ", refLineWidthHover: " + std::to_string(m_refLineWidthHover);
+  options += ", refLineVerbosity: " + std::to_string( static_cast<int>(m_refLineVerbosity) );
   options += ", yscale: " + string(m_yAxisIsLog ? "'log'" : "'lin'");
   options += ", backgroundSubtract: " + jsbool( m_backgroundSubtract );
   options += ", showLegend: " + jsbool(m_legendEnabled);
@@ -428,19 +438,21 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback,
                                               this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
-    m_leftClickJS.reset( new JSignal<double,double,double,double>( this, "leftclicked", true ) );
+    m_leftClickJS.reset( new JSignal<double,double,double,double,string>( this, "leftclicked", true ) );
     m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this,
                                         boost::placeholders::_1, boost::placeholders::_2,
-                                        boost::placeholders::_3, boost::placeholders::_4 ) );
+                                        boost::placeholders::_3, boost::placeholders::_4,
+                                        boost::placeholders::_5) );
     
-    m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
+    m_doubleLeftClickJS.reset( new JSignal<double,double,string>( this, "doubleclicked", true ) );
     m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback,
-                                              this, boost::placeholders::_1, boost::placeholders::_2 ) );
+                                              this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
     
-    m_rightClickJS.reset( new JSignal<double,double,double,double>( this, "rightclicked", true ) );
+    m_rightClickJS.reset( new JSignal<double,double,double,double,string>( this, "rightclicked", true ) );
     m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this,
                                          boost::placeholders::_1, boost::placeholders::_2,
-                                         boost::placeholders::_3, boost::placeholders::_4 ) );
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5) );
     
     m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
     m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this,
@@ -621,13 +633,13 @@ bool D3SpectrumDisplayDiv::showingPeakLabel( int peakLabel ) const
 }//bool showingPeakLabel( int peakLabel ) const
 
 
-Signal<double,double,int,int> &D3SpectrumDisplayDiv::chartClicked()
+Signal<double,double,int,int,string> &D3SpectrumDisplayDiv::chartClicked()
 {
   return m_leftClick;
 }//Signal<double,double,int,int> &chartClicked()
 
 
-Wt::Signal<double,double,int,int> &D3SpectrumDisplayDiv::rightClicked()
+Wt::Signal<double,double,int,int,string> &D3SpectrumDisplayDiv::rightClicked()
 {
   return m_rightClick;
 }
@@ -648,7 +660,7 @@ Wt::Signal<double,double,SpecUtils::SpectrumType> &D3SpectrumDisplayDiv::yAxisSc
   return m_yAxisScaled;
 }
 
-Wt::Signal<double,double> &D3SpectrumDisplayDiv::doubleLeftClick()
+Wt::Signal<double,double,std::string> &D3SpectrumDisplayDiv::doubleLeftClick()
 {
   return m_doubleLeftClick;
 }
@@ -777,6 +789,132 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
+void D3SpectrumDisplayDiv::setRefLineWidths( const double width, const double hoverWidth )
+{
+  m_refLineWidth = width;
+  m_refLineWidthHover = hoverWidth;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setRefLineWidths(" + std::to_string(width) + "," + std::to_string(hoverWidth) + ")" );
+}//void setRefLineWidths( const double width, const double hoverWidth )
+
+
+void D3SpectrumDisplayDiv::setRefLineThickness( const RefLineThickness thickness )
+{
+  const auto widths = getRefLineWidths( thickness );
+  setRefLineWidths( widths.first, widths.second );
+}//void setRefLineThickness( const RefLineThickness thickness )
+
+
+std::pair<double,double> D3SpectrumDisplayDiv::getRefLineWidths( const RefLineThickness thickness )
+{
+  switch( thickness )
+  {
+    case RefLineThickness::Light:   return {0.5, 1.0};
+    case RefLineThickness::Normal:  return {1.0, 2.0};
+    case RefLineThickness::Thick:   return {2.0, 3.0};
+    case RefLineThickness::Thicker: return {3.0, 5.0};
+  }
+  return {1.0, 2.0}; // Default to Normal
+}//std::pair<double,double> getRefLineWidths( const RefLineThickness thickness )
+
+
+void D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback( int thickness )
+{
+  const int clampedValue = std::max(0, std::min(3, thickness));
+  const RefLineThickness refThickness = static_cast<RefLineThickness>(clampedValue);
+  
+  setRefLineThickness( refThickness );
+}//void handleRefLineThicknessPreferenceChangeCallback( int thickness )
+
+
+void D3SpectrumDisplayDiv::setRefLineVerbosity( const RefLineVerbosity verbosity )
+{
+  m_refLineVerbosity = verbosity;
+  const int verbosityValue = static_cast<int>( verbosity );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setRefLineVerbosity(" + std::to_string(verbosityValue) + ");" );
+}//void setRefLineVerbosity( const RefLineVerbosity verbosity )
+
+
+void D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback( int verbosity )
+{
+  const int clampedValue = std::max(0, std::min(2, verbosity));
+  const RefLineVerbosity refVerbosity = static_cast<RefLineVerbosity>(clampedValue);
+  
+  setRefLineVerbosity( refVerbosity );
+}//void handleRefLineVerbosityPreferenceChangeCallback( int verbosity )
+
+
+void D3SpectrumDisplayDiv::setDynamicRefLineController( RefLineDynamic *dynamic )
+{
+  m_dynamic = dynamic;
+}
+
+
+void D3SpectrumDisplayDiv::scheduleRenderDynamicRefLine()
+{
+  m_renderFlags |= D3RenderActions::UpdateDynamicRefLines;
+  scheduleRender();
+}//void scheduleRenderDynamicRefLine();
+
+
+
+void D3SpectrumDisplayDiv::setDynamicRefernceLines( vector<pair<double,ReferenceLineInfo>> &&ref_lines,
+                             std::string &&js_fwhm_fcnt )
+{
+  if( m_dynamicRefLines.empty() && ref_lines.empty() && m_dynamicRefLinesJsFwhmFcn.empty() && js_fwhm_fcnt.empty() )
+    return;
+    
+  m_dynamicRefLines = std::move(ref_lines);
+  m_dynamicRefLinesJsFwhmFcn = std::move(js_fwhm_fcnt);
+  
+  setDynamicRefLinesToClient();
+}//void setDynamicRefernceLines(...)
+
+
+void D3SpectrumDisplayDiv::setDynamicRefLinesToClient()
+{
+  if( m_dynamicRefLines.empty() )
+  {
+    const string js = "try{" + m_jsgraph + ".setKineticReferenceLines(null);}catch(e){}";
+    if( isRendered() )
+      doJavaScript( js );
+    else
+      m_pendingJs.push_back( js );
+    return;
+  }//if( m_dynamicRefLines.empty() )
+  
+  string result = "{\n"
+  "  \"fwhm_fcn\": " + (m_dynamicRefLinesJsFwhmFcn.empty() ? "function(){return 1;}"s : m_dynamicRefLinesJsFwhmFcn) + ",\n"
+  " \"ref_lines\": [";
+  
+  for( size_t i = 0; i < m_dynamicRefLines.size(); ++i )
+  {
+    const pair<double,ReferenceLineInfo> &ref = m_dynamicRefLines[i];
+    
+    result += (i ? ",{\n" : "{\n")
+    + string("  \"weight\": ") + std::to_string(ref.first) + ",\n"
+    "  \"src_lines\": ";
+    ref.second.toJson(result);
+    result += "\n}";
+  }
+  result += "]\n"
+  "}";
+  
+  const string js =
+  "try{"
+  + m_jsgraph + ".setKineticReferenceLines(" + result + ");"
+  "}catch(e){ console.log('Exception setting ref lines: ' + e ); }";
+  
+  //cout << "setDynamicRefLinesToClient js=" << js << endl << endl << endl;
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//void setDynamicRefLinesToClient()
+
+
 void D3SpectrumDisplayDiv::highlightPeakAtEnergy( const double energy )
 {
   if( isRendered() )
@@ -828,7 +966,11 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( m_renderFlags.testFlag(D3RenderActions::UpdateRefLines) )
     setReferenceLinesToClient();
   
+  if( m_dynamic && m_renderFlags.testFlag(D3RenderActions::UpdateDynamicRefLines) )
+    m_dynamic->startPushUpdates(); //This does not immediately push updated lines, it starts the computation for this in a background thread that will then push the lines later
+  
   m_renderFlags = 0;
+  m_num_render_calls += 1;
 }//void render( flags )
 
 
@@ -878,6 +1020,8 @@ std::string D3SpectrumDisplayDiv::localizedStringsJson() const
   "recalFromTo: " + WString::tr("d3sdd-recalFromTo").jsStringLiteral() + ",\n\t"                  // "Recalibrate data from {1} to {2} keV"
   "sumFromTo: " + WString::tr("d3sdd-sumFromTo").jsStringLiteral() + ",\n\t"                      // "{1} to {2} keV"
   "comptonPeakAngle: " + WString::tr("d3sdd-comptonPeakAngle").jsStringLiteral() + ",\n\t"        // "{1}° Compton Peak"
+  "candidates: " + WString::tr("d3sdd-candidates").jsStringLiteral() + ",\n\t"                    // "Candidates:"
+  "useArrowsToSelect: " + WString::tr("d3sdd-use-arrows-to-select").jsStringLiteral() + ",\n\t"   // "(use ↑ and ↓ to select)"
   "}";
   
   // In JS, probably need to call: `self.handleResize( false );`
@@ -2019,17 +2163,7 @@ void D3SpectrumDisplayDiv::setThumbnailMode()
 
 
   // Set padding to none
-  string js = m_jsgraph + R"delim(.setChartPadding( { "top": 0, 
-  "right":0, 
-  "bottom": 0, 
-  "xTitlePad": 0,
-  "left":0, 
-  "labelPad":0,
-  "title": 0,
-  "label": 0,
-  "sliderChart": 0
-  } );
-  )delim";
+  string js = m_jsgraph + ".setChartPadding( { \"top\": 0, \"right\": 0, \"bottom\": 0, \"xTitlePad\": 0, \"left\": 0, \"labelPad\": 0, \"title\": 0, \"label\": 0, \"sliderChart\": 0 } );";
 
   //Need to set dont have y-axis numbers
   js += m_jsgraph + ".setNoYAxisNumbers(true);\n";
@@ -2148,26 +2282,22 @@ void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback( double x0, double x1 )
 
 void D3SpectrumDisplayDiv::chartRightMouseDragCallback( double x0, double x1 )
 {
-  // cout << "chartRightMouseDragCallback" << endl;
   m_rightMouseDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartRightMouseDragCallback(...)
 
-void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY )
+void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name )
 {
-  // cout << "chartLeftClickCallback" << endl;
-  m_leftClick.emit( x, y, pageX, pageY );
+  m_leftClick.emit( x, y, pageX, pageY, ref_line_name );
+}//void chartLeftClickCallback(...)
+
+void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name )
+{
+  m_doubleLeftClick.emit( x, y, ref_line_name );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
-void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y )
+void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name )
 {
-  // cout << "chartDoubleLeftClickCallback" << endl;
-  m_doubleLeftClick.emit( x, y );
-}//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
-
-void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY )
-{
-  // cout << "chartRightClickCallback" << endl;
-  m_rightClick.emit( x, y, pageX, pageY );
+  m_rightClick.emit( x, y, pageX, pageY, ref_line_name );
 }//void D3SpectrumDisplayDiv::chartRightClickCallback(...)
 
 

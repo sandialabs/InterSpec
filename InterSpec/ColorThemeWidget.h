@@ -78,6 +78,12 @@ public:
 		TimeHistoryForegroundHighlight,
 		TimeHistoryBackgroundHighlight,
 		TimeHistorySecondaryHighlight,
+		DynamicRefLineMedical,
+		DynamicRefLineIndustrial,
+		DynamicRefLineNorm,
+		DynamicRefLineSnm,
+		DynamicRefLineCommon,
+		DynamicRefLineOther,
 		NumSelectableColors
 	};//enum class EditableColor
 

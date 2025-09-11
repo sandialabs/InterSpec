@@ -812,7 +812,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         
     if( !exemplar_is_n42 && (options.use_exemplar_energy_cal || options.use_exemplar_energy_cal_for_background) )
       throw runtime_error( "Exemplar file wasnt an N42 file, but using its energy cal was specified - not allowed." );
-    
+
+    if( exemplar_is_n42 )
+      
+
     if( exemplar_is_n42 )
       exemplar_n42 = exemplar;
   }//if( !cached_exemplar_n42 )
@@ -857,7 +860,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
   }//if( exemplar_is_n42 )
 
   BatchPeakFitResult results;
-  results.file_path = exemplar_filename;
+  results.file_path = filename;
   results.options = options;
   results.exemplar = exemplar_n42;
   results.exemplar_sample_nums = exemplar_sample_nums;
@@ -878,8 +881,11 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       const bool loaded = specfile->load_file( filename, SpecUtils::ParserType::Auto, filename );
       if( !loaded || !specfile->num_measurements() )
       {
-        results.warnings.push_back( "Couldnt read in '" + filename + "' as a spectrum file -- skipping." );
-        
+        if( SpecUtils::is_file(filename) )
+          results.warnings.push_back( "Couldnt read in '" + filename + "' as a spectrum file -- skipping." );
+        else
+          results.warnings.push_back( "Could not access '" + filename + "' -- skipping." );
+
         return results;
       }//if( !loaded )
     }//if( cached_spectrum ) / else
@@ -1080,8 +1086,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         const bool no_neg = true;
         const bool do_round = false;
         
-        const bool sf = spec->live_time() / results.background->live_time();
-        
+        double sf = spec->live_time() / results.background->live_time();
+        if( IsInf(sf) || IsNan(sf) )
+          sf = 1.0; //e.g., if we dont have live-time
+
         shared_ptr<const vector<float>> fore_counts = spec->gamma_counts();
         shared_ptr<const vector<float>> back_counts = results.background->gamma_counts();
         

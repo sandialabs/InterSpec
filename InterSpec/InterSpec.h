@@ -61,6 +61,7 @@ class WarningWidget;
 class DoseCalcWindow;
 class FluxToolWindow;
 class PeakEditWindow;
+class RefLineDynamic;
 class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
@@ -72,6 +73,7 @@ class PopupDivMenuItem;
 class SpectraFileHeader;
 class PopupWarningWidget;
 class UnitsConverterTool;
+struct ExternalRidResults;
 class FeatureMarkerWindow;
 class D3SpectrumDisplayDiv;
 class DetectionLimitWindow;
@@ -83,6 +85,7 @@ class ShieldingSourceDisplay;
 class EnergyCalPreserveWindow;
 class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
+class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
@@ -356,12 +359,21 @@ public:
   void addPeakLabelSubMenu( PopupDivMenu *parentWidget );
   void addAboutMenu( Wt::WWidget *menuDiv );
 
-  //addPeak(): Adds a new peak to the peak model, and returns the models index
-  //  of the new peak. If associateShownNucXrayRctn is specified true _and_ the
-  //  user is showing some reference gamma lines, than the new peak will be
-  //  assigned to be from the shown lines if and are reasonably close.
-  //  If the returned WModelIndex is not valid, then the peak was not added.
-  Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn );
+  /** Adds a new peak to the peak model, and returns the models index of the new peak.
+   
+   @param peak the peak to add
+   @param associateShownNucXrayRctn is specified true _and_ the user is showing some
+          reference gamma lines, OR `ref_line_name` is not empty, and the peak doesnt already have
+          a source assigned to it, then the new peak will be assigned to be from the shown lines if
+          and are reasonably close.
+   @param ref_line_name optional string to specify the source name to assign to the peak.  if
+          specified, this string will be tried as a source, before the reference lines.
+   
+   @returns the WModelIndex of the added peak; if the peak was not added (because it is outside the spectrums
+            energy range, or the peak was not initialized), then the returned index will be invalid.
+   */
+  Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn,
+                          const std::string &ref_line_name = "" );
   
   
   Wt::WContainerWidget *menuDiv();
@@ -572,6 +584,15 @@ public:
    */
   Wt::Signal<SpecUtils::SpectrumType,double> &spectrumScaleFactorChanged();
   
+  /** Signal emited when the hint-peaks (the automatic search peaks) for the spectrum is set.
+   This signal will always be called after `displayedSpectrumChanged()` for foreground
+   background spectra, if either a fresh search for peaks is done, or previously found peaks are
+   re-used.
+   */
+  Wt::Signal<SpecUtils::SpectrumType> &hintPeaksSet();
+  
+  /** Signal emitted when new external RID results are recieved.  See #RemoteRid. */
+  Wt::Signal<std::shared_ptr<const ExternalRidResults>> &externalRidResultsRecieved();
   
   //addHighlightedEnergyRange(): Adds highlighted range to the energy spectrum.
   //  Returns the ID of the highlight region, which you will need to remove
@@ -717,6 +738,8 @@ public:
    */
   Wt::WSuggestionPopup *shieldingSuggester();
   
+  /** The RefLineDynamic class. */
+  RefLineDynamic *refLineDynamic();
   
   //detectorChanged(): signal emited when the detector is changed to a
   //  completely new detector.  Note that the object pointed to stays the same
@@ -907,6 +930,11 @@ public:
   void programmaticallyCloseSimpleMda();
 #endif //USE_DETECTION_LIMIT_TOOL
   
+  SimpleActivityCalcWindow *showSimpleActivityCalcWindow();
+  void handleSimpleActivityCalcWindowClose();
+  void programmaticallyCloseSimpleActivityCalc();
+  void startSimpleActivityCalcFromRightClick();
+  
   /** Brings up a dialog asking the user to confirm starting a new session, and if they select so, will start new session. */
   void startClearSession();
   
@@ -1058,9 +1086,11 @@ protected:
   
   
   void handleRightClick( const double energy, const double counts,
-                         const double pageX, const double pageY );
+                         const double pageX, const double pageY,
+                        const std::string &ref_line_name  );
   void handleLeftClick( const double energy, const double counts,
-                        const double pageX, const double pageY );
+                        const double pageX, const double pageY,
+                       const std::string &ref_line_name );
   void rightClickMenuClosed();
   
   void peakEditFromRightClick();
@@ -1114,7 +1144,7 @@ public:
                                        const bool user_interaction);
   
   //Peak finding functions
-  void searchForSinglePeak( const double x );
+  void searchForSinglePeak( const double x, const std::string &ref_line_name );
   
   
   /** Function to call when the automated search for peaks (throughout the
@@ -1333,17 +1363,11 @@ protected:
   
   SpecMeasManager        *m_fileManager; // The file manager
   
-  
-#if( USE_CSS_FLEX_LAYOUT )
-  Wt::WContainerWidget *m_chartResizer;
-  Wt::WContainerWidget *m_toolsResizer;
-#else
   Wt::WGridLayout        *m_layout;
   
   Wt::WContainerWidget   *m_charts;
   Wt::WContainerWidget   *m_chartResizer;
   Wt::WGridLayout        *m_toolsLayout;
-#endif
   
   Wt::WContainerWidget   *m_menuDiv; // The top menu bar.
 
@@ -1437,7 +1461,7 @@ protected:
     kRefitRoiStandard,
     kRefitRoiAgressive,
     kRefitPeakWithDrfFwhm,
-    kSetMeanToRefPhotopeak,
+    kSetMeanToNucOrRefLinePhotopeak,
     kChangeNuclide,
     kChangeContinuum,
     kChangeSkew,
@@ -1452,6 +1476,7 @@ protected:
     kAddPeakNotInRoi,
     kSearchEnergy,
     kSimpleMda,
+    kSimpleActivityCalc,
 #endif
     
     kNumRightClickItems
@@ -1459,6 +1484,10 @@ protected:
   
   PopupDivMenu         *m_rightClickMenu;
   double                m_rightClickEnergy;
+  /** The ref-line info from the client-side when there is a right-click.  This may be a displayed reference line, or it could be a kinematic reference line, and is in the
+   form like "Th232;S.E. of 2614.5 keV".
+   */
+  std::string           m_rightClickRefLineHint;
   Wt::WMenuItem        *m_rightClickMenutItems[kNumRightClickItems];
   PopupDivMenu         *m_rightClickNuclideSuggestMenu;
   PopupDivMenu         *m_rightClickChangeContinuumMenu;
@@ -1512,6 +1541,8 @@ protected:
   FeatureMarkerWindow *m_featureMarkersWindow;
   
   PopupDivMenuItem *m_featureMarkerMenuItem;
+  PopupDivMenuItem *m_dynamicRefLineEnableMenuItem;
+  PopupDivMenuItem *m_dynamicRefLineDisableMenuItem;
 
   SimpleDialog *m_multimedia;
 
@@ -1567,6 +1598,7 @@ protected:
   DetectionLimitSimpleWindow *m_simpleMdaWindow;
   DetectionLimitWindow *m_detectionLimitWindow;
 #endif
+  SimpleActivityCalcWindow *m_simpleActivityCalcWindow;
   
   std::set<int> m_excludedSamples;//these are samples that should not be displayed for the primary spectrum
   std::set<int> m_displayedSamples;
@@ -1594,6 +1626,7 @@ protected:
   //  reference photopeaks on the energy spectrum chart.
   ReferencePhotopeakDisplay *m_referencePhotopeakLines;
   AuxWindow                 *m_referencePhotopeakLinesWindow;
+  RefLineDynamic            *m_refLineDynamic;
 
   HelpSystem::HelpWindow *m_helpWindow;
   
@@ -1701,6 +1734,9 @@ protected:
   
   bool m_findingHintPeaks;
   std::deque<boost::function<void()> > m_hintQueue;
+  Wt::Signal<SpecUtils::SpectrumType> m_hintPeaksSet;
+  
+  Wt::Signal<std::shared_ptr<const ExternalRidResults>> m_externalRidResultsRecieved;
   
   /** Some informational messages should only be shown once, like when you click on the
    energy tab, so we'll keep track of if we have shown a message.

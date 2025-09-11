@@ -739,7 +739,7 @@ void PeakInfoDisplay::createNewPeak()
   
   const float initialEnergy = 0.5f*(xmin + xmax);
   
-  AddNewPeakDialog *window = new AddNewPeakDialog( initialEnergy );
+  AddNewPeakDialog *window = new AddNewPeakDialog( initialEnergy, "" );
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
   // We'll make it so "undo" will close the window.

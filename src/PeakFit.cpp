@@ -6412,17 +6412,16 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
 {
   //20250410: I believe `PeakFit::fit_amp_and_offset_imp(...)` should be the better function to use, as it uses SVD
   //          but currently leaving the below check in to make sure the re-implementation of this function is correct
-  //          TODO: remove this check after a while
+#define COMPARE_TO_OLD_FIT_WAY 0
   double * const dummy_channel_counts = nullptr;
-  std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
-#if( !PERFORM_DEVELOPER_CHECKS )
+#if( !COMPARE_TO_OLD_FIT_WAY )
   return PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
                   ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          amplitudes, continuum_coeffs,
                                          amplitudes_uncerts, continuum_coeffs_uncerts,
                                          dummy_channel_counts );
 #else
-
+  std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
   const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
                           ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          dummy_amplitudes, dummy_continuum_coeffs,
@@ -6852,7 +6851,7 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
   }
 
   return chi2;
-#endif // !PERFORM_DEVELOPER_CHECKS )
+#endif // if( COMPARE_TO_OLD_FIT_WAY ) / else
 }//double fit_amp_and_offset(...)
         
         
@@ -7018,12 +7017,11 @@ bool chi2_significance_test( PeakDef peak,
   const double withGausChi2 = chi2fcn( &(params[0]) );
   const double chi2Ratio = withoutGausChi2 / withGausChi2;
   
-  const bool noDeltaRequired = ((withoutPeakDSigma <= 0.0) && (chi2ratioRequired <= 0.0));
-  bool noRatioRequired = noDeltaRequired;
-          
+  const bool noDeltaRequired = (withoutPeakDSigma <= 0.0);
+  bool noRatioRequired = (chi2ratioRequired <= 0.0);
+
   if( withoutGausChi2 < 5 )
     noRatioRequired = true;
-  
   
           
   //Dont require the ratio test to apply if peaks share a continuum

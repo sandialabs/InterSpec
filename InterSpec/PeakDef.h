@@ -695,6 +695,9 @@ public:
   /** Check if nuclide, xray, or reaction has been set. */
   bool hasSourceGammaAssigned() const;
   
+  /** Returns the `nuclide->symbol`, `element->symbol`, or `reaction->name()` if defined, else an empty string.  */
+  std::string sourceName() const;
+  
   //setNuclearTransition(...): sets the inforation about what nuclide is
   //  responsible for this peak.  The transition and radParticle index specifies
   //  which decay is responsible for the gamma, however, if isAnnihilationGamma
