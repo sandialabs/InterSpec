@@ -1566,7 +1566,7 @@ InitialFitSolution mutate( const InitialFitSolution& X_base,
 {
   InitialFitSolution X_new;
   const double mu = 0.2*shrink_scale; // mutation radius (adjustable)
-  const double mutate_threshold = 0.15;  //one paper suggest 20%
+  const double mutate_threshold = PeakFitImprove::sm_ga_mutate_threshold;  //one paper suggest 20%
   bool in_range;
 
   size_t num_tries = 0;
@@ -1662,7 +1662,7 @@ InitialFitSolution crossover( const InitialFitSolution& X1,
                              const InitialFitSolution& X2,
                              const std::function<double(void)> &rnd01 )
 {
-  const double crossover_threshold = 0.25;  //One paper suggest 80% crossover rate
+  const double crossover_threshold = PeakFitImprove::sm_ga_crossover_threshold;  //One paper suggest 80% crossover rate
 
   InitialFitSolution X_new;
   X_new = X1;
@@ -1852,19 +1852,19 @@ InitialPeakFindSettings do_ga_eval( std::function<double( const InitialPeakFindS
   ga_obj.idle_delay_us = 1; // switch between threads quickly
   ga_obj.dynamic_threading = true;
   ga_obj.verbose = false;
-  ga_obj.population = 250;
-  ga_obj.generation_max = 450;
+  ga_obj.population = static_cast<unsigned int>(PeakFitImprove::sm_ga_population);
+  ga_obj.generation_max = static_cast<int>(PeakFitImprove::sm_ga_generation_max);
   ga_obj.calculate_SO_total_fitness=calculate_SO_total_fitness;
   ga_obj.init_genes=init_genes;
   ga_obj.eval_solution=eval_solution;
   ga_obj.mutate=mutate;
   ga_obj.crossover=crossover;
   ga_obj.SO_report_generation=SO_report_generation;
-  ga_obj.crossover_fraction=0.7;
-  ga_obj.mutation_rate=0.4;
-  ga_obj.best_stall_max=10;
-  ga_obj.elite_count=20;
-  ga_obj.N_threads = 8; //Keep some free cores on my M1 max so I can still use the computer
+  ga_obj.crossover_fraction = PeakFitImprove::sm_ga_crossover_fraction; //This *looks* to be the fraction of individuals that will have crossover applied to them
+  ga_obj.mutation_rate=PeakFitImprove::sm_ga_mutation_rate; //This *looks* to be the fraction of individuals that will have mutattion applied to them
+  ga_obj.best_stall_max = static_cast<int>(PeakFitImprove::sm_ga_best_stall_max);
+  ga_obj.elite_count = static_cast<int>(PeakFitImprove::sm_ga_elite_count);
+  ga_obj.N_threads = static_cast<int>(PeakFitImprove::sm_num_optimization_threads);
   EA::StopReason stop_reason = ga_obj.solve();
 
   cout<<"The problem is optimized in "<<timer.toc()<<" seconds."<<endl;

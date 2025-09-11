@@ -35,6 +35,7 @@
 #include <fstream>
 #include <numeric>
 #include <iostream>
+#include <thread>
 
 #include <boost/program_options.hpp>
 #include <boost/math/constants/constants.hpp>
@@ -75,8 +76,18 @@
 
 using namespace std;
 
-
-
+namespace PeakFitImprove
+{
+  size_t sm_num_optimization_threads = 8; // Will be set by command line or default calculation
+  size_t sm_ga_population = 1000;
+  size_t sm_ga_generation_max = 100;
+  size_t sm_ga_best_stall_max = 10;
+  size_t sm_ga_elite_count = 10;
+  double sm_ga_crossover_fraction = 0.7;
+  double sm_ga_mutation_rate = 0.4;
+  double sm_ga_mutate_threshold = 0.15;
+  double sm_ga_crossover_threshold = -1.0; // Will be set based on action if not specified
+}
 
 
 
@@ -273,7 +284,135 @@ int main( int argc, char **argv )
   const double start_wall = SpecUtils::get_wall_time();
   const double start_cpu = SpecUtils::get_cpu_time();
   
-  string datadir;
+  // Command line argument parsing
+  namespace po = boost::program_options;
+  
+  string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
+  string static_data_dir;
+  size_t number_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
+  string action_str = "FinalFit";
+  bool debug_printout_arg = false;
+  size_t ga_population = 1000;
+  size_t ga_generation_max = 100;
+  size_t ga_best_stall_max = 10;
+  size_t ga_elite_count = 10;
+  double ga_crossover_fraction = 0.7;
+  double ga_mutation_rate = 0.4;
+  double ga_mutate_threshold = 0.15;
+  double ga_crossover_threshold = -1.0; // Will be set based on action if not specified
+  
+  po::options_description desc( "Allowed options" );
+  desc.add_options()
+    ("help,h", "produce help message")
+    ("data-base-dir", po::value<string>( &data_base_dir )->default_value( data_base_dir ), "base directory for input data")
+    ("number-threads", po::value<size_t>( &number_threads )->default_value( number_threads ), "number of threads for optimization")
+    ("action", po::value<string>( &action_str )->default_value( action_str ), "optimization action: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy")
+    ("debug-printout", po::bool_switch( &debug_printout_arg ), "enable debug printout")
+    ("static-data-dir", po::value<string>( &static_data_dir ), "static data directory (optional)")
+    ("ga-population", po::value<size_t>( &ga_population )->default_value( ga_population ), "genetic algorithm population size")
+    ("ga-generation-max", po::value<size_t>( &ga_generation_max )->default_value( ga_generation_max ), "genetic algorithm maximum generations")
+    ("ga-best-stall-max", po::value<size_t>( &ga_best_stall_max )->default_value( ga_best_stall_max ), "genetic algorithm best stall maximum")
+    ("ga-elite-count", po::value<size_t>( &ga_elite_count )->default_value( ga_elite_count ), "genetic algorithm elite count")
+    ("ga-crossover-fraction", po::value<double>( &ga_crossover_fraction )->default_value( ga_crossover_fraction ), "Fraction of individuals that will have crossover applied to them every generation")
+    ("ga-mutation-rate", po::value<double>( &ga_mutation_rate )->default_value( ga_mutation_rate ), "Fraction of individuals that will have mutation applied to them every generation")
+    ("ga-mutate-threshold", po::value<double>( &ga_mutate_threshold )->default_value( ga_mutate_threshold ), "The fraction of genes that will be mutated.")
+    ("ga-crossover-threshold", po::value<double>( &ga_crossover_threshold ), "The fraction of genes that will be crossed over (default depends on action: Candidate/InitialFit=0.25, FinalFit=0.15)");
+  
+  po::variables_map vm;
+  
+  try
+  {
+    po::store( po::parse_command_line( argc, argv, desc ), vm );
+    po::notify( vm );
+  }catch( const po::error &e )
+  {
+    cerr << "Error parsing command line: " << e.what() << endl;
+    return -1;
+  }
+  
+  if( vm.count( "help" ) )
+  {
+    cout << desc << endl;
+    return 0;
+  }
+  
+  // Validate and set up directories
+  if( !SpecUtils::is_directory( data_base_dir ) )
+  {
+    cerr << "Error: data-base-dir '" << data_base_dir << "' does not exist or is not a directory." << endl;
+    return -2;
+  }
+  
+  if( !static_data_dir.empty() && !SpecUtils::is_directory( static_data_dir ) )
+  {
+    cerr << "Error: static-data-dir '" << static_data_dir << "' does not exist or is not a directory." << endl;
+    return -3;
+  }
+  
+  // Set crossover_threshold default based on action if not specified by user
+  if( ga_crossover_threshold < 0.0 )
+  {
+    if( action_str == "FinalFit" )
+      ga_crossover_threshold = 0.15;
+    else  // Candidate, InitialFit, CodeDev, AccuracyFromCsvsStudy
+      ga_crossover_threshold = 0.25;
+  }
+  
+  // Set the optimization configuration
+  PeakFitImprove::sm_num_optimization_threads = number_threads;
+  PeakFitImprove::sm_ga_population = ga_population;
+  PeakFitImprove::sm_ga_generation_max = ga_generation_max;
+  PeakFitImprove::sm_ga_best_stall_max = ga_best_stall_max;
+  PeakFitImprove::sm_ga_elite_count = ga_elite_count;
+  PeakFitImprove::sm_ga_crossover_fraction = ga_crossover_fraction;
+  PeakFitImprove::sm_ga_mutation_rate = ga_mutation_rate;
+  PeakFitImprove::sm_ga_mutate_threshold = ga_mutate_threshold;
+  PeakFitImprove::sm_ga_crossover_threshold = ga_crossover_threshold;
+  
+  // Parse action enum
+  enum class OptimizationAction : int
+  {
+    Candidate,
+    InitialFit,
+    FinalFit,
+    CodeDev,
+    AccuracyFromCsvsStudy
+  };//enum class OptimizationAction : int
+  
+  OptimizationAction action;
+  if( action_str == "Candidate" )
+    action = OptimizationAction::Candidate;
+  else if( action_str == "InitialFit" )
+    action = OptimizationAction::InitialFit;
+  else if( action_str == "FinalFit" )
+    action = OptimizationAction::FinalFit;
+  else if( action_str == "CodeDev" )
+    action = OptimizationAction::CodeDev;
+  else if( action_str == "AccuracyFromCsvsStudy" )
+    action = OptimizationAction::AccuracyFromCsvsStudy;
+  else
+  {
+    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy" << endl;
+    return -4;
+  }
+  
+  cout << "Using " << number_threads << " threads for optimization." << endl;
+  cout << "Data base directory: " << data_base_dir << endl;
+  if( !static_data_dir.empty() )
+    cout << "Static data directory: " << static_data_dir << endl;
+  cout << "Debug printout: " << ( debug_printout_arg ? "enabled" : "disabled" ) << endl;
+  cout << "Action: " << action_str << endl;
+  cout << "GA configuration:" << endl;
+  cout << "  Population: " << ga_population << endl;
+  cout << "  Max generations: " << ga_generation_max << endl;
+  cout << "  Best stall max: " << ga_best_stall_max << endl;
+  cout << "  Elite count: " << ga_elite_count << endl;
+  cout << "  Crossover fraction: " << ga_crossover_fraction << endl;
+  cout << "  Mutation rate: " << ga_mutation_rate << endl;
+  cout << "  Mutate threshold: " << ga_mutate_threshold << endl;
+  cout << "  Crossover threshold: " << ga_crossover_threshold << endl;
+  
+  string datadir = static_data_dir;
   if( datadir.empty() )
   {
     string targetfile = "data/CharacteristicGammas.txt";
@@ -299,7 +438,7 @@ int main( int argc, char **argv )
    - I dont think sum lines are accounted for
    */
 
-  const string base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
+  const string base_dir = data_base_dir;
 
   vector<string> hpges {
     "Detective-X",
@@ -311,7 +450,7 @@ int main( int argc, char **argv )
     //"HPGe_Planar_50%"
   };
 
-  if( PeakFitImprove::debug_printout )
+  if( debug_printout_arg )
     hpges = vector<string>{ "Detective-X" };
 
 #if( WRITE_ALL_SPEC_TO_HTML )
@@ -419,16 +558,6 @@ int main( int argc, char **argv )
   //eval_candidate_settings_fcn( best_settings, input_srcs, false );
 
   
-  enum class OptimizationAction : int
-  {
-    Candidate,
-    InitialFit,
-    FinalFit,
-    CodeDev,
-    AccuracyFromCsvsStudy
-  };//enum class OptimizationAction : int
-  
-  const OptimizationAction action = OptimizationAction::FinalFit; // OptimizationAction::CodeDev; //OptimizationAction::InitialFit;
 
   switch( action )
   {
@@ -1061,7 +1190,7 @@ int main( int argc, char **argv )
         num_posted += 1;
 
         auto worker = [&](){
-          if( PeakFitImprove::debug_printout )
+          if( debug_printout_arg )
           {
             std::lock_guard<std::mutex> lock( score_mutex );
             cout << "Evaluating " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name << endl;
@@ -1078,12 +1207,12 @@ int main( int argc, char **argv )
           sum_maybe_wanted_area_median_weight += weight.maybe_wanted_area_median_weight;
           sum_not_wanted_area_median_weight += weight.not_wanted_area_median_weight;
 
-          if( PeakFitImprove::debug_printout )
+          if( debug_printout_arg )
             cout << "For " << info.location_name << "/" << info.live_time_name << "/" << info.detector_name << "/" << info.src_info.src_name
             << ", got weight=" << sum_find_weight << endl;
         };
 
-        if( PeakFitImprove::debug_printout )
+        if( debug_printout_arg )
         {
           worker();
         }else

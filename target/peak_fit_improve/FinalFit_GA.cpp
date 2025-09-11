@@ -1481,7 +1481,7 @@ FinalFitSolution mutate(
 
   auto mutate_value = [&rnd01,mu](double val, double min_val, double max_val) {
 
-    const double mutate_threshold = 0.15;
+    const double mutate_threshold = PeakFitImprove::sm_ga_mutate_threshold;
     if( rnd01() > mutate_threshold )
       return val;
 
@@ -1521,7 +1521,7 @@ FinalFitSolution crossover( const FinalFitSolution& X1,
   FinalFitSolution X_new;
 
   auto cross_value = [&rnd01](double v1, double v2) {
-    const double crossover_threshold = 0.15;
+    const double crossover_threshold = PeakFitImprove::sm_ga_crossover_threshold;
     if( rnd01() > crossover_threshold )
       return (rnd01() < 0.5) ? v1 : v2;
 
@@ -1601,24 +1601,24 @@ FinalPeakFitSettings do_ga_eval( std::function<double(const FinalPeakFitSettings
     ga_obj.multi_threading = false;
   }else
   {
-    ga_obj.N_threads = std::min( 13u, std::thread::hardware_concurrency() );
+    ga_obj.N_threads = static_cast<int>(PeakFitImprove::sm_num_optimization_threads);
     cout << "Will use " << ga_obj.N_threads << " threads." << endl;
   }
 
   ga_obj.idle_delay_us = 1; // switch between threads quickly
   ga_obj.verbose = false;
-  ga_obj.population = 100;
-  ga_obj.generation_max = 100;
+  ga_obj.population = static_cast<unsigned int>(PeakFitImprove::sm_ga_population);
+  ga_obj.generation_max = static_cast<int>(PeakFitImprove::sm_ga_generation_max);
   ga_obj.calculate_SO_total_fitness = calculate_SO_total_fitness;
   ga_obj.init_genes = init_genes;
   ga_obj.eval_solution = eval_solution;
   ga_obj.mutate = mutate;
   ga_obj.crossover = crossover;
   ga_obj.SO_report_generation = SO_report_generation;
-  ga_obj.best_stall_max = 10;
-  ga_obj.elite_count = 10;
-  ga_obj.crossover_fraction = 0.7;
-  ga_obj.mutation_rate = 0.4;
+  ga_obj.best_stall_max = static_cast<int>(PeakFitImprove::sm_ga_best_stall_max);
+  ga_obj.elite_count = static_cast<int>(PeakFitImprove::sm_ga_elite_count);
+  ga_obj.crossover_fraction = PeakFitImprove::sm_ga_crossover_fraction;
+  ga_obj.mutation_rate = PeakFitImprove::sm_ga_mutation_rate;
 
   ns_ga_eval_fcn = ga_eval_fcn;
 

@@ -48,6 +48,15 @@ namespace SpecUtils
 namespace PeakFitImprove
 {
 const bool debug_printout = false;
+extern size_t sm_num_optimization_threads;
+extern size_t sm_ga_population;
+extern size_t sm_ga_generation_max;
+extern size_t sm_ga_best_stall_max;
+extern size_t sm_ga_elite_count;
+extern double sm_ga_crossover_fraction;
+extern double sm_ga_mutation_rate;
+extern double sm_ga_mutate_threshold;
+extern double sm_ga_crossover_threshold;
 }
 
 

@@ -1113,7 +1113,7 @@ CandidatePeakSolution mutate(
   CandidatePeakSolution X_new;
   const double mu = 0.2*shrink_scale; // mutation radius (adjustable)
 
-  const double mutate_threshold = 0.15;
+  const double mutate_threshold = PeakFitImprove::sm_ga_mutate_threshold;
 
   bool in_range;
 
@@ -1212,7 +1212,7 @@ CandidatePeakSolution crossover(
     const CandidatePeakSolution& X2,
     const std::function<double(void)> &rnd01)
 {
-  const double crossover_threshold = 0.25;
+  const double crossover_threshold = PeakFitImprove::sm_ga_crossover_threshold;
 
 
   CandidatePeakSolution X_new = X1;
@@ -1383,19 +1383,19 @@ FindCandidateSettings do_ga_eval( std::function<double(const FindCandidateSettin
   ga_obj.idle_delay_us=1; // switch between threads quickly
   ga_obj.dynamic_threading = true; //If false,  thread responsibilities are divided at the beginning
   ga_obj.verbose=false;
-  ga_obj.population=1000;
-  ga_obj.generation_max=1000;
+  ga_obj.population = static_cast<unsigned int>(PeakFitImprove::sm_ga_population);
+  ga_obj.generation_max = static_cast<int>(PeakFitImprove::sm_ga_generation_max);
   ga_obj.calculate_SO_total_fitness=calculate_SO_total_fitness;
   ga_obj.init_genes=init_genes;
   ga_obj.eval_solution=eval_solution;
   ga_obj.mutate=mutate;
   ga_obj.crossover=crossover;
   ga_obj.SO_report_generation=SO_report_generation;
-  ga_obj.crossover_fraction=0.7;
-  ga_obj.mutation_rate=0.4;
-  ga_obj.best_stall_max=10;
-  ga_obj.elite_count=10;
-  ga_obj.N_threads = 8; //Keep some free cores on my M1 max so I can still use the computer
+  ga_obj.crossover_fraction=PeakFitImprove::sm_ga_crossover_fraction;
+  ga_obj.mutation_rate=PeakFitImprove::sm_ga_mutation_rate;
+  ga_obj.best_stall_max = static_cast<int>(PeakFitImprove::sm_ga_best_stall_max);
+  ga_obj.elite_count = static_cast<int>(PeakFitImprove::sm_ga_elite_count);
+  ga_obj.N_threads = static_cast<int>(PeakFitImprove::sm_num_optimization_threads);
   EA::StopReason stop_reason = ga_obj.solve();
 
   cout << "Stop reason was: " << ga_obj.stop_reason_to_string( stop_reason) << endl;
