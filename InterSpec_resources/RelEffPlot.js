@@ -98,7 +98,8 @@ RelEffPlot = function (elem,options) {
 
   // Add the valueline path.
   this.path = this.plotGroup.append("path")    // Add the valueline path.
-    .attr("class", "line");
+    .attr("class", "line")
+    .style("pointer-events", "none");
 
   // Add the X Axis
   this.chartArea.append("g")
@@ -408,7 +409,8 @@ RelEffPlot.prototype.redrawData = function() {
       const path = self.plotGroup.append("path")
         .attr("class", "line dataset-" + index)
         .attr("d", valueline(dataset.fit_eqn_points))
-        .style("stroke", self.getDatasetColor(index));
+        .style("stroke", self.getDatasetColor(index))
+        .style("pointer-events", "none");
         
       // Create path for uncertainty bounds if available
       if (dataset.fit_uncert_fcn) {
@@ -791,7 +793,8 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     const path = self.plotGroup.append("path")
       .attr("class", "line dataset-" + index)
       .attr("d", valueline(fit_data.points))
-      .style("stroke", self.getDatasetColor(index));
+      .style("stroke", self.getDatasetColor(index))
+      .style("pointer-events", "none");
       
     // Create path for uncertainty bounds if available
     if (fit_data.fit_uncert_fcn) {
