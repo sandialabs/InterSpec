@@ -948,7 +948,9 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
       if( write_n42 )
       {
         const double nsgima_off = (found_peak.amplitude() - expected_area) / found_peak.amplitudeUncert();
-        string label = std::format("TrueArea: {:.0f}, σ_off: {:.1f}", expected_area, nsgima_off );
+        //string label = std::format("TrueArea: {:.0f}, σ_off: {:.1f}", expected_area, nsgima_off );
+        char label[128] = { '\0' };
+        snprintf( label, sizeof(label), "TrueArea: %.0f, σ_off: %.1f", expected_area, nsgima_off );
         found_peak.setUserLabel( label );
         found_peak.setLineColor( Wt::GlobalColor::darkGreen );
       }//if( write_n42 )

@@ -290,11 +290,11 @@ int main( int argc, char **argv )
   string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
   string static_data_dir;
   size_t number_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
-  string action_str = "Candidate";
+  string action_str = "InitialFit"; //"Candidate";
   bool debug_printout_arg = false;
-  size_t ga_population = 1000;
-  size_t ga_generation_max = 100;
-  size_t ga_best_stall_max = 10;
+  size_t ga_population = 1500;
+  size_t ga_generation_max = 250;
+  size_t ga_best_stall_max = 15;
   size_t ga_elite_count = 10;
   double ga_crossover_fraction = 0.7;
   double ga_mutation_rate = 0.4;
@@ -428,7 +428,19 @@ int main( int argc, char **argv )
   assert( SpecUtils::is_directory(datadir) );
   
   InterSpec::setStaticDataDirectory( datadir );
-  
+
+
+#if( defined(SpecUtils_USE_WT_THREADPOOL) )
+  // We need to start the WServer so we can populat the thread pool.
+  const string docroot = ".";
+  const string wt_config = "data/config/wt_config_localweb.xml";
+  const int rval = InterSpecServer::start_server( argv[0], "user_data",
+                                                   docroot.c_str(),
+                                                   wt_config.c_str(),
+                                                   static_cast<short int>(0) );
+#endif //#if( defined(SpecUtils_USE_WT_THREADPOOL) )
+
+
   /*
    Known issues with "truth" CSV files
    - The truth lines are before random-summing, so the observed peaks will be smaller than the CSV says
@@ -685,17 +697,31 @@ int main( int argc, char **argv )
     case OptimizationAction::InitialFit:
     {
       // FindCandidateSettings:
+      /*
       //   Apply best settings found; Generation 491, population best score: -18.1076, population average score: -14.9656
       best_settings.num_smooth_side_channels = 9;
       best_settings.smooth_polynomial_order = 2;
-      best_settings.threshold_FOM = 1.127040;
-      best_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.498290;
-      best_settings.pos_sum_threshold_sf = 0.081751;
+      best_settings.threshold_FOM = 0.758621;
+      best_settings.more_scrutiny_FOM_threshold = 1.598265;
+      best_settings.pos_sum_threshold_sf = 0.119178;
       best_settings.num_chan_fluctuate = 1;
       best_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 1.451548;
       best_settings.more_scrutiny_min_dev_from_line = 5.866464;
       best_settings.amp_to_apply_line_test_below = 6;
-      
+       */
+
+      //Generation [48], Best=-19.7537, Average=-19.7535, Best genes:
+      //Using all live time and HPGe detectors, and cities - 20250912
+      best_settings.num_smooth_side_channels = 9;
+      best_settings.smooth_polynomial_order = 2;
+      best_settings.threshold_FOM = 0.758621;
+      best_settings.more_scrutiny_FOM_threshold = 1.598265;
+      best_settings.pos_sum_threshold_sf = 0.119178;
+      best_settings.num_chan_fluctuate = 1;
+      best_settings.more_scrutiny_coarser_FOM = 3.001943;
+      best_settings.more_scrutiny_min_dev_from_line = 6.816465;
+      best_settings.amp_to_apply_line_test_below = 6.000000;
+
       std::function<double( const InitialPeakFindSettings &)> ga_eval_fcn 
             = [best_settings, &input_srcs]( const InitialPeakFindSettings &settings ) -> double {
         double score_sum = 0.0;
@@ -1254,7 +1280,10 @@ int main( int argc, char **argv )
     }//case OptimizationAction::CodeDev:
   }//switch( action )
 
-  
+#if( defined(SpecUtils_USE_WT_THREADPOOL) )
+  InterSpecServer::killServer();
+#endif
+
   return EXIT_SUCCESS;
 }//int main( int argc, const char * argv[] )
 

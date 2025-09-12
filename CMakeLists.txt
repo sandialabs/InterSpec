@@ -726,27 +726,6 @@ if(WIN32)
   endif( USE_BATCH_TOOLS )
 endif(WIN32)
 
-target_link_libraries(
-    InterSpecLib
-    PUBLIC
-    Threads::Threads
-    SpecUtils
-    SandiaDecay
-    Minuit2::Minuit2
-    Cuba-3.0
-    muparserx
-    Boost::thread
-    Boost::date_time
-    Boost::system
-    Boost::filesystem
-    Boost::program_options
-    Boost::regex
-    Boost::random
-    ZLIB::ZLIB
-    Eigen3::Eigen
-    Ceres::ceres
-    ${CMAKE_DL_LIBS}
-)
 
 if( USE_SPECRUM_FILE_QUERY_WIDGET )
     add_subdirectory(external_libs/pugixml-1.9)
@@ -813,6 +792,29 @@ else(WIN32)
     )
 endif(WIN32)
 
+
+
+target_link_libraries(
+    InterSpecLib
+    PUBLIC
+    Threads::Threads
+    SpecUtils
+    SandiaDecay
+    Minuit2::Minuit2
+    Cuba-3.0
+    muparserx
+    Boost::thread
+    Boost::date_time
+    Boost::system
+    Boost::filesystem
+    Boost::program_options
+    Boost::regex
+    Boost::random
+    ZLIB::ZLIB
+    Eigen3::Eigen
+    Ceres::ceres
+    ${CMAKE_DL_LIBS}
+)
 
 
 if( BUILD_AS_OSX_APP )
