@@ -2163,17 +2163,7 @@ void D3SpectrumDisplayDiv::setThumbnailMode()
 
 
   // Set padding to none
-  string js = m_jsgraph + R"delim(.setChartPadding( { "top": 0, 
-  "right":0, 
-  "bottom": 0, 
-  "xTitlePad": 0,
-  "left":0, 
-  "labelPad":0,
-  "title": 0,
-  "label": 0,
-  "sliderChart": 0
-  } );
-  )delim";
+  string js = m_jsgraph + ".setChartPadding( { \"top\": 0, \"right\": 0, \"bottom\": 0, \"xTitlePad\": 0, \"left\": 0, \"labelPad\": 0, \"title\": 0, \"label\": 0, \"sliderChart\": 0 } );";
 
   //Need to set dont have y-axis numbers
   js += m_jsgraph + ".setNoYAxisNumbers(true);\n";

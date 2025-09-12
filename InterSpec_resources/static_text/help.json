@@ -120,7 +120,7 @@
       },
       {
         "id":"rel-act-dialog",
-        "title":"Relative Activity Isotopics",
+        "title":"Isotopics by nuclides",
         "help-xml":"rel_act_help.xml",
         "keywords":"Relative Activity Efficiency Isotopics"
       },

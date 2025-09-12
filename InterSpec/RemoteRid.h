@@ -92,7 +92,15 @@ public:
   {
     OnlyDisplayedSearchSamples = 0x01
   };//enum AnaFileOptions
-  
+
+  /** Creates the SpecFile that should be sent to the external algorithm.
+
+   Must be called from within the Wt application thread.
+
+   The returned SpecFile is allocated within the function, so is not referenced anywhere else (e.g., safe to use outside the Wt event loop).
+
+   On error, returns nullptr.
+   */
   static std::shared_ptr<SpecUtils::SpecFile> fileForAnalysis( InterSpec *interspec,
                                                       const Wt::WFlags<AnaFileOptions> flags = 0 );
   
