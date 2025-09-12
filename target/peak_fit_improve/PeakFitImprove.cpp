@@ -290,7 +290,7 @@ int main( int argc, char **argv )
   string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
   string static_data_dir;
   size_t number_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
-  string action_str = "FinalFit";
+  string action_str = "Candidate";
   bool debug_printout_arg = false;
   size_t ga_population = 1000;
   size_t ga_generation_max = 100;
@@ -442,12 +442,12 @@ int main( int argc, char **argv )
 
   vector<string> hpges {
     "Detective-X",
-    //"Detective-EX",
-    //"Detective-X_noskew",
-    //"Falcon 5000",
-    //"Fulcrum40h",
-    //"LANL_X",
-    //"HPGe_Planar_50%"
+    "Detective-EX",
+    "Detective-X_noskew",
+    "Falcon 5000",
+    "Fulcrum40h",
+    "LANL_X",
+    "HPGe_Planar_50%"
   };
 
   if( debug_printout_arg )
@@ -468,9 +468,15 @@ int main( int argc, char **argv )
   live_times = {"300_seconds"};
 #endif
 
+  vector<string> wanted_cities{
+    "Livermore"
+    , "Baltimore",
+    "Denver"
+  };
+
 
   const std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> &loaded_data
-      = PeakFitImproveData::load_inject_data_with_truth_info( base_dir, hpges, live_times );
+      = PeakFitImproveData::load_inject_data_with_truth_info( base_dir, hpges, live_times, wanted_cities );
 
   const vector<DetectorInjectSet> &inject_sets = std::get<0>(loaded_data);
   const vector<DataSrcInfo> &input_srcs = std::get<1>(loaded_data);
@@ -856,8 +862,7 @@ int main( int argc, char **argv )
           g2k_peaks.emplace_back( p.Energy, p.FWHM/PhysicalUnits::fwhm_nsigma, p.NetPeakArea );
           g2k_peaks.back().setAmplitudeUncert( p.NetAreaError ); //We get 2-sigma errors from G2k
         }
-        // As of 20250418, `search_for_peaks(...)` still partially uses Minuit2 based peak-fitting,
-        //  even when USE_CERES_PEAK_FITTING is true.
+        
         vector<shared_ptr<const PeakDef> > interspec_peaks_initial
             = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, nullptr, false, true );
         vector<PeakDef> interspec_peaks;
@@ -1131,7 +1136,7 @@ int main( int argc, char **argv )
               //  `refitPeaksThatShareROI(...)` and `refit_for_new_roi(...)` and `fit_peak_for_user_click(...)`
               //And also could try using Ceres to see if it works better than Minuit.
               vector<PeakDef> peaks;
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
               vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
               for( const auto &p : candidate_peaks )
                 input_peaks_tmp.push_back( make_shared<PeakDef>(p) );

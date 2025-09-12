@@ -275,7 +275,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
   #warning "final_peak_fit_for_roi: always assuming HPGe right now - for dev"
 
   vector<PeakDef> first_fit_peaks;
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
   vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
   for( const PeakDef &p : initial_peaks )
     input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
@@ -403,7 +403,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
     vector<PeakDef> these_fit_peaks;
     try
     {
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
       vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
       for( const PeakDef &p : these_input_peaks )
         input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
@@ -601,7 +601,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
 
         try
         {
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
           vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
           for( const PeakDef &p : these_input_peaks )
             input_peaks_tmp.push_back( make_shared<PeakDef>(p) );

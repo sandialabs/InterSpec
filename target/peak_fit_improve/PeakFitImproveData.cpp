@@ -370,7 +370,8 @@ InjectSourceInfo parse_inject_source_files( const string &base_name )
 std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_data_with_truth_info(
                                                                         const std::string &base_dir,
                                                                         const std::vector<std::string> &wanted_detectors,
-                                                                        const std::vector<std::string> &live_times )
+                                                                        const std::vector<std::string> &live_times,
+                                                                        const std::vector<std::string> &wanted_cities )
 {
   vector<DetectorInjectSet> inject_sets;
   vector<DataSrcInfo> input_srcs;
@@ -412,7 +413,8 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
       const boost::filesystem::path city_path = city_itr->path();
       cout << "In city directory: " << city_path.filename() << endl;
 
-      if( city_path.filename() != "Livermore" )
+      const auto wanted_pos = std::find(begin(wanted_cities), end(wanted_cities), city_path.filename() );
+      if( !wanted_cities.empty() && (wanted_pos == end(wanted_cities)) )
       {
         cout << "Skipping city " << city_itr->path().filename() << endl;
         continue;

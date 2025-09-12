@@ -127,7 +127,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
     //while( true )
     {
       vector<PeakDef> zeroth_fit_results, initial_fit_results;
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
       vector<shared_ptr<const PeakDef>> results_tmp, input_peaks_tmp;
       for( const auto &p : candidate_peaks )
         input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
@@ -172,7 +172,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       roi_to_peaks_map[p.continuum().get()].push_back( p );
 
     vector<vector<PeakDef>> fit_rois( roi_to_peaks_map.size() );
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
     vector<vector<shared_ptr<const PeakDef>>> fit_rois_tmp( roi_to_peaks_map.size() );
 #endif
 
@@ -185,7 +185,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       {
         const vector<PeakDef> &peaks = roi_peaks.second;
 
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
         vector<shared_ptr<const PeakDef>> &results = fit_rois_tmp[fit_rois_index];
         vector<shared_ptr<const PeakDef>> input_peaks_tmp;
         for( const auto &p : peaks )
@@ -222,7 +222,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       {
         const vector<PeakDef> &peaks = roi_peaks.second;
 
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
         vector<shared_ptr<const PeakDef>> &results = fit_rois_tmp[fit_rois_index];
         vector<shared_ptr<const PeakDef>> input_peaks_tmp;
         for( const auto &p : peaks )
@@ -240,7 +240,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
       }//for( auto &roi_peaks : roi_to_peaks_map )
     }//if( multithread ) / else
 
-#if( USE_CERES_PEAK_FITTING )
+#if( USE_LM_PEAK_FIT )
     for( size_t i = 0; i < fit_rois.size(); ++i )
     {
       vector<PeakDef> &to_fil = fit_rois[i];

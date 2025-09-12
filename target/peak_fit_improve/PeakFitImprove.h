@@ -37,10 +37,7 @@ namespace SpecUtils
 // While optimizing `FindCandidateSettings`, its better to not return a bunch of PeakDefs,
 //  so while we're transitioning phases here we will return the vector of tuple results, as
 //  well as PeakDefs
-#define RETURN_PeakDef_Candidates 1
-
-
-#define USE_CERES_PEAK_FITTING 1
+#define RETURN_PeakDef_Candidates 0
 
 
 #define WRITE_ALL_SPEC_TO_HTML 0
