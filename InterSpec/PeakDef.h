@@ -227,7 +227,7 @@ struct PeakContinuum
    \param energies Array of lower channel energies; must have at least one more entry than
           `nchannel`.  For stepped continua (FlatStep, LinearStep, BiLinearStep), this must point
           into the energy calibration energies array of `data`.
-   \param channels Channel count array integrals of Gaussian and Skew will be _added_ to (e.g.,
+   \param channels Channel count array integrals of continuum; will be _added_ to (e.g.,
           will not be zeroed); must have at least `nchannel` entries
    \param nchannel The number of channels to do the integration over.
    \param data The spectrum (only used for stepped continua).

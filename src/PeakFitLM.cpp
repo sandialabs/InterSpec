@@ -680,7 +680,8 @@ struct PeakFitDiffCostFunction
     const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( m_offset_type ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( m_offset_type );
 
-    auto continuum = create_continuum( peaks.front().getContinuum() );
+    assert( !peaks.empty() || !fixed_amp_peaks.empty() );
+    auto continuum = create_continuum( (!peaks.empty()) ? peaks.front().getContinuum() : fixed_amp_peaks.front().getContinuum() );
     continuum->setRange( T(m_roi_lower_energy), T(m_roi_upper_energy) );
     continuum->setType( m_offset_type );
 
