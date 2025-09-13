@@ -405,13 +405,15 @@ protected:
   
   void setForegroundPeaksToClient();
   
-  /// TODO: currently not implemented
   void setSecondaryPeaksToClient();
   
-  /// TODO: currently not implemented
   void setBackgroundPeaksToClient();
   
   void setReferenceLinesToClient();
+
+protected:
+  /** Helper function to set peaks for secondary or background spectra to client. */
+  void setPeaksToClient( const SpecUtils::SpectrumType spectrum_type );
   
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );

@@ -1244,15 +1244,65 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
 }//void setForegroundPeaksToClient();
 
 
+void D3SpectrumDisplayDiv::setPeaksToClient( const SpecUtils::SpectrumType spectrum_type )
+{
+  string js;
+  string spectrum_name;
+  std::shared_ptr<const Measurement> spectrum_measurement;
+  
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::SecondForeground:
+      spectrum_name = "SECONDARY";
+      spectrum_measurement = m_secondary;
+      break;
+    case SpecUtils::SpectrumType::Background:
+      spectrum_name = "BACKGROUND";
+      spectrum_measurement = m_background;
+      break;
+    default:
+      return; // Only handle secondary and background
+  }
+  
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( wApp );
+  InterSpec *viewer = app ? app->viewer() : nullptr;
+  if( viewer )
+  {
+    std::shared_ptr<SpecMeas> meas = viewer->measurment( spectrum_type );
+    const std::set<int> &samples = viewer->displayedSamples( spectrum_type );
+    
+    if( meas && !samples.empty() )
+    {
+      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks = meas->peaks( samples );
+      if( peaks )
+      {
+        vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+        js = PeakDef::peak_json( inpeaks, spectrum_measurement );
+      }
+    }
+  }
+  
+  if( js.empty() )
+    js = "[]";
+  
+  js = m_jsgraph + ".setRoiData(" + js + ", '" + spectrum_name + "');";
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}
+
+
 void D3SpectrumDisplayDiv::setSecondaryPeaksToClient()
 {
-  cerr << "D3SpectrumDisplayDiv::setSecondaryPeaksToClient() not implemented" << endl;
+  setPeaksToClient( SpecUtils::SpectrumType::SecondForeground );
 }
 
 
 void D3SpectrumDisplayDiv::setBackgroundPeaksToClient()
 {
-  cerr << "D3SpectrumDisplayDiv::setBackgroundPeaksToClient() not implemented" << endl;
+  setPeaksToClient( SpecUtils::SpectrumType::Background );
 }
 
 
