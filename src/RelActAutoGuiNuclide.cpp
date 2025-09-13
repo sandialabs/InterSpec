@@ -1324,6 +1324,9 @@ void RelActAutoGuiNuclide::handleColorChange()
 std::variant<std::monostate, const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *> RelActAutoGuiNuclide::source() const
 {
   const string nucstr = m_nuclide_edit->text().toUTF8();
+  if( nucstr.empty() )
+    return std::monostate{};
+  
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
   if( !db )

@@ -69,18 +69,37 @@ RelEffPlot = function (elem,options) {
   this.chartArea = this.svg  //This holds everything except the optional x and y axis titles
     .append("g")
     .attr("transform", "translate(" + this.options.margins.left + "," + this.options.margins.top + ")");
-
+    
+  // Create clipping path to prevent elements from being drawn outside the chart area
+  this.chartArea.append("defs")
+    .append("clipPath")
+    .attr("id", "releffplot-clip-" + this.chart.id)
+    .append("rect")
+    .attr("x", 0)
+    .attr("y", 0)
+    .attr("width", chartAreaWidth)
+    .attr("height", chartAreaHeight);
+    
   this.xScale.domain([0, 3000]);
   this.yScale.domain([0, 1]);
 
-  this.path_uncert = this.chartArea.append("path")
+  // Setup mouse interactions for zoom functionality (before plotGroup so it's behind data points)
+  this.setupMouseInteractions();
+
+  // Create a clipped group for all plot elements (paths, circles, error bars)
+  this.plotGroup = this.chartArea.append("g")
+    .attr("clip-path", "url(#releffplot-clip-" + this.chart.id + ")");
+
+  this.path_uncert = this.plotGroup.append("path")
     .attr("class", "RelEffPlotErrorBounds") //Applying in CSS doesnt seem to work for some reason
     .style("fill", "rgba(0, 0, 255, 0.1)")
-    .style("stroke", "none");
+    .style("stroke", "none")
+    .style("pointer-events", "none");
 
   // Add the valueline path.
-  this.path = this.chartArea.append("path")    // Add the valueline path.
-    .attr("class", "line");
+  this.path = this.plotGroup.append("path")    // Add the valueline path.
+    .attr("class", "line")
+    .style("pointer-events", "none");
 
   // Add the X Axis
   this.chartArea.append("g")
@@ -98,7 +117,339 @@ RelEffPlot = function (elem,options) {
     
   if( this.options.yAxisTitle )
     this.setYAxisTitle( this.options.yAxisTitle, true );
+    
+  // Initialize mouse interaction variables for zoom
+  this.leftMouseDown = null;
+  this.zooming = false;
 }//RelEffPlot constructor
+
+
+RelEffPlot.prototype.setupMouseInteractions = function() {
+  const self = this;
+  
+  // Add mouse interaction rect to the chart area - positioned before plotGroup so it's behind data points
+  // This allows mouse events to reach data points for tooltips while still capturing zoom gestures
+  this.mouseCapture = this.chartArea.append("rect")
+    .attr("class", "mouse-capture")
+    .style("fill", "none")
+    .style("pointer-events", "all")
+    .on("mousedown", function() {
+      const mouse = d3.mouse(this);
+      self.leftMouseDown = mouse;
+      self.zoomStartX = self.xScale.invert(mouse[0]);
+      d3.event.preventDefault();
+      
+      // Add document listeners for mouse move and up
+      d3.select(document)
+        .on("mousemove.releffzoom", function() { self.handleMouseMove(); })
+        .on("mouseup.releffzoom", function() { self.handleMouseUp(); });
+    })
+    .on("mousemove", function() {
+      if (!self.leftMouseDown) {
+        // Could add tooltip functionality here in the future
+      }
+    });
+};//RelEffPlot.prototype.setupMouseInteractions
+
+
+RelEffPlot.prototype.handleMouseMove = function() {
+  if (!this.leftMouseDown) return;
+  
+  const currentMouse = d3.mouse(this.mouseCapture.node());
+  const startX = this.leftMouseDown[0];
+  const currentX = currentMouse[0];
+  
+  // Determine if zooming in (left to right) or out (right to left)
+  const zoomingIn = currentX > startX;
+  
+  // Update zoom box visual indicator
+  this.updateZoomBox(startX, currentX, zoomingIn);
+};//RelEffPlot.prototype.handleMouseMove
+
+
+RelEffPlot.prototype.handleMouseUp = function() {
+  if (!this.leftMouseDown) return;
+  
+  const currentMouse = d3.mouse(this.mouseCapture.node());
+  const startX = this.leftMouseDown[0];
+  const currentX = currentMouse[0];
+  
+  // Remove zoom box and text
+  this.chartArea.select(".zoom-box").remove();
+  this.chartArea.select(".zoom-text").remove();
+  
+  const startEnergy = this.xScale.invert(startX);
+  const endEnergy = this.xScale.invert(currentX);
+  
+  // Determine if zooming in or out
+  const zoomingIn = currentX > startX;
+  
+  if (Math.abs(currentX - startX) > 5) { // Minimum drag distance
+    if (zoomingIn) {
+      // Zoom in to the selected range
+      this.setXAxisRange(Math.min(startEnergy, endEnergy), Math.max(startEnergy, endEnergy));
+    } else {
+      // Zoom out
+      this.zoomOut();
+    }
+  }
+  
+  // Clean up
+  this.leftMouseDown = null;
+  this.zoomStartX = null;
+  
+  // Remove document listeners
+  d3.select(document)
+    .on("mousemove.releffzoom", null)
+    .on("mouseup.releffzoom", null);
+};//RelEffPlot.prototype.handleMouseUp
+
+
+RelEffPlot.prototype.updateZoomBox = function(startX, currentX, zoomingIn) {
+  const minX = Math.min(startX, currentX);
+  const width = Math.abs(currentX - startX);
+  
+  let zoomBox = this.chartArea.select(".zoom-box");
+  let zoomText = this.chartArea.select(".zoom-text");
+  
+  if (zoomBox.empty()) {
+    zoomBox = this.chartArea.append("rect")
+      .attr("class", "zoom-box")
+      .style("stroke-width", 1);
+      
+    zoomText = this.chartArea.append("text")
+      .attr("class", "zoom-text chartLineText")
+      .style("text-anchor", "middle")
+      .style("dominant-baseline", "middle")
+      .style("pointer-events", "none");
+  }
+  
+  // Apply appropriate CSS class and text
+  if (zoomingIn) {
+    zoomBox.attr("class", "zoom-box leftbuttonzoombox");
+    zoomText.text("Zoom In");
+  } else {
+    zoomBox.attr("class", "zoom-box leftbuttonzoomoutboxy");
+    zoomText.text("Zoom Out");
+  }
+  
+  const chartAreaHeight = this.yScale.range()[0]; // Get the height from y scale range
+  
+  zoomBox
+    .attr("x", minX)
+    .attr("y", 0)
+    .attr("width", width)
+    .attr("height", chartAreaHeight);
+    
+  // Position text in center of zoom box
+  zoomText
+    .attr("x", minX + width / 2)
+    .attr("y", chartAreaHeight / 2)
+    .style("visibility", width > 50 ? "visible" : "hidden"); // Hide text if box too small
+};//RelEffPlot.prototype.updateZoomBox
+
+
+RelEffPlot.prototype.setXAxisRange = function(minEnergy, maxEnergy) {
+  // Update x scale domain
+  this.xScale.domain([minEnergy, maxEnergy]);
+  
+  // Update x axis
+  this.chartArea.selectAll('.xAxis').call(this.xAxis);
+  
+  // Update y axis range based on visible data
+  this.updateYAxisRange();
+  
+  // Redraw the data with new ranges
+  if (this.datasets) {
+    this.redrawData();
+  }
+};//RelEffPlot.prototype.setXAxisRange
+
+
+RelEffPlot.prototype.zoomOut = function() {
+  // Zoom out to show the full data extent
+  if (!this.datasets || this.datasets.length === 0) {
+    // Default range if no data
+    this.setXAxisRange(0, 3000);
+    return;
+  }
+  
+  // Find min/max energy across all datasets
+  let min_x = Number.MAX_VALUE;
+  let max_x = Number.MIN_VALUE;
+  
+  this.datasets.forEach(function(dataset) {
+    if (dataset.data_vals && dataset.data_vals.length > 0) {
+      const data_min = d3.min(dataset.data_vals, function(d) { return d.energy; });
+      const data_max = d3.max(dataset.data_vals, function(d) { return d.energy; });
+      min_x = Math.min(min_x, data_min);
+      max_x = Math.max(max_x, data_max);
+    }
+  });
+  
+  // Handle edge case of no data
+  if (min_x === Number.MAX_VALUE) min_x = 0;
+  if (max_x === Number.MIN_VALUE) max_x = 3000;
+  
+  // Apply the same padding logic as in setRelEffData
+  const initial_x_range = max_x - min_x;
+  let lower_padding = 0.025 * initial_x_range;
+  if (Math.abs(initial_x_range) < 1.0) {
+    lower_padding = 1.0;
+  } else if (((min_x - lower_padding) < 50.0) || (lower_padding > 0.2 * min_x)) {
+    lower_padding = 0.2 * min_x;
+  }
+  
+  min_x -= lower_padding;
+  max_x += 0.025 * initial_x_range;
+  
+  this.setXAxisRange(min_x, max_x);
+};//RelEffPlot.prototype.zoomOut
+
+
+RelEffPlot.prototype.updateYAxisRange = function() {
+  if (!this.datasets || this.datasets.length === 0) return;
+  
+  const xDomain = this.xScale.domain();
+  let min_y = Number.MAX_VALUE;
+  let max_y = Number.MIN_VALUE;
+  let hasVisibleData = false;
+  
+  // Find min/max y values for visible x range across all datasets
+  this.datasets.forEach(function(dataset) {
+    if (dataset.data_vals && dataset.data_vals.length > 0) {
+      const visibleData = dataset.data_vals.filter(function(d) {
+        return d.energy >= xDomain[0] && d.energy <= xDomain[1];
+      });
+      
+      if (visibleData.length > 0) {
+        hasVisibleData = true;
+        const data_min_y = d3.min(visibleData, function(d) { return d.eff; });
+        const data_max_y = d3.max(visibleData, function(d) { return d.eff; });
+        min_y = Math.min(min_y, data_min_y);
+        max_y = Math.max(max_y, data_max_y);
+      }
+    }
+    
+    // Also check fit equation points if they exist
+    if (dataset.fit_eqn && dataset.fit_eqn_points) {
+      const visibleFitData = dataset.fit_eqn_points.filter(function(d) {
+        return d.energy >= xDomain[0] && d.energy <= xDomain[1];
+      });
+      
+      if (visibleFitData.length > 0) {
+        hasVisibleData = true;
+        visibleFitData.forEach(function(d) {
+          min_y = Math.min(min_y, d.eff - (d.eff_uncert ? 2 * d.eff_uncert : 0));
+          max_y = Math.max(max_y, d.eff + (d.eff_uncert ? 2 * d.eff_uncert : 0));
+        });
+      }
+    }
+  });
+  
+  // Handle edge case of no visible data
+  if (!hasVisibleData || min_y === Number.MAX_VALUE) {
+    min_y = 0;
+    max_y = 1;
+  }
+  
+  // Apply padding
+  const initial_y_range = max_y - min_y;
+  min_y -= 0.1 * initial_y_range;
+  max_y += 0.2 * initial_y_range;
+  
+  // Update y scale and axis
+  this.yScale.domain([min_y, max_y]);
+  this.chartArea.selectAll('.yAxis').call(this.yAxis);
+};//RelEffPlot.prototype.updateYAxisRange
+
+
+RelEffPlot.prototype.redrawData = function() {
+  // This method redraws the paths and points with the current scales
+  // We need to regenerate fit equation points for the current x-axis range
+  if (!this.datasets || this.datasets.length === 0) return;
+  
+  const self = this;
+  const xDomain = this.xScale.domain();
+  const min_x = xDomain[0];
+  const max_x = xDomain[1];
+  const chartAreaWidth = this.xScale.range()[1] - this.xScale.range()[0];
+  const num_eqn_points = chartAreaWidth / 4;
+  
+  // Regenerate fit equation points for current x-axis range
+  this.datasets.forEach(function(dataset, index) {
+    if (dataset.fit_eqn) {
+      dataset.fit_eqn_points = [];
+      for (let i = 0; i < num_eqn_points; ++i) {
+        const ene = min_x + i * (max_x - min_x) / num_eqn_points;
+        const eff = dataset.fit_eqn(ene);
+        const eff_uncert = dataset.fit_uncert_fcn ? dataset.fit_uncert_fcn(ene) : null;
+        
+        dataset.fit_eqn_points.push({ 
+          energy: ene, 
+          eff: eff, 
+          eff_uncert: eff_uncert 
+        });
+      }
+    }
+  });
+  
+  // Redraw paths with new data
+  this.plotGroup.selectAll("path.line").remove();
+  this.plotGroup.selectAll("path.RelEffPlotErrorBounds").remove();
+  
+  // Redraw fit lines and uncertainty bounds
+  this.datasets.forEach(function(dataset, index) {
+    if (dataset.fit_eqn && dataset.fit_eqn_points && dataset.fit_eqn_points.length > 0) {
+      // Create path for fit line
+      const valueline = d3.svg.line()
+        .x(function(d) { return self.xScale(d.energy); })
+        .y(function(d) { return self.yScale(d.eff); });
+        
+      const path = self.plotGroup.append("path")
+        .attr("class", "line dataset-" + index)
+        .attr("d", valueline(dataset.fit_eqn_points))
+        .style("stroke", self.getDatasetColor(index))
+        .style("pointer-events", "none");
+        
+      // Create path for uncertainty bounds if available
+      if (dataset.fit_uncert_fcn) {
+        const area = d3.svg.area()
+          .x(function(d) { return self.xScale(d.energy); })
+          .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
+          .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
+          
+        const path_uncert = self.plotGroup.append("path")
+          .attr("class", "RelEffPlotErrorBounds dataset-" + index)
+          .attr("d", area(dataset.fit_eqn_points))
+          .style("fill", self.getDatasetColor(index, 0.1))
+          .style("stroke", "none")
+          .style("pointer-events", "none");
+      }
+    }
+  });
+  
+  // Update data points positions
+  this.plotGroup.selectAll("circle")
+    .attr("cx", function(d) { return self.xScale(d.energy); })
+    .attr("cy", function(d) { 
+      const val = self.yScale(d.eff);
+      return isNaN(val) ? 0 : val;
+    });
+    
+  // Update error bars positions
+  this.plotGroup.selectAll("line.errorbar")
+    .attr('x1', function(d) { return self.xScale(d.energy); })
+    .attr('x2', function(d) { return self.xScale(d.energy); })
+    .attr('y1', function(d) {
+      const val = self.yScale(d.eff + d.eff_uncert);
+      return isNaN(val) ? 0 : val;
+    })
+    .attr('y2', function(d) {
+      const val = self.yScale(d.eff - d.eff_uncert);
+      return isNaN(val) ? 0 : val;
+    });
+};//RelEffPlot.prototype.redrawData
 
 
 RelEffPlot.prototype.setMargins = function( margins ){
@@ -256,7 +607,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     const startX = parentWidth - maxTextWidth;
     
     // Create the actual text elements stacked vertically
-    let currentY = 0;
+    let currentY = 5;
     this.chi2TxtArray.forEach((txt, index) => {
       const textElem = this.svg.append("text")
         .attr("class", "ChartInfoTitle dataset-" + index)
@@ -423,9 +774,14 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     .attr("transform", "translate(" + (this.options.margins.left + ytickw + ytitleh)
                        + "," + (this.options.margins.top + chi2_txt_pad) + ")");
     
+  // Update clipping rectangle dimensions
+  this.chartArea.select("#releffplot-clip-" + this.chart.id + " rect")
+    .attr("width", chartAreaWidth)
+    .attr("height", chartAreaHeight);
+    
   // Remove existing paths and create a group for each dataset
-  this.chartArea.selectAll("path.line").remove();
-  this.chartArea.selectAll("path.RelEffPlotErrorBounds").remove();
+  this.plotGroup.selectAll("path.line").remove();
+  this.plotGroup.selectAll("path.RelEffPlotErrorBounds").remove();
   
   // For each dataset with fit equation, create the fit line and uncertainty bounds
   all_fit_eqn_points.forEach(function(fit_data, index) {
@@ -434,10 +790,11 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       .x(function(d) { return self.xScale(d.energy); })
       .y(function(d) { return self.yScale(d.eff); });
       
-    const path = self.chartArea.append("path")
+    const path = self.plotGroup.append("path")
       .attr("class", "line dataset-" + index)
       .attr("d", valueline(fit_data.points))
-      .style("stroke", self.getDatasetColor(index));
+      .style("stroke", self.getDatasetColor(index))
+      .style("pointer-events", "none");
       
     // Create path for uncertainty bounds if available
     if (fit_data.fit_uncert_fcn) {
@@ -446,19 +803,43 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
         .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
         
-      const path_uncert = self.chartArea.append("path")
+      const path_uncert = self.plotGroup.append("path")
         .attr("class", "RelEffPlotErrorBounds dataset-" + index)
         .attr("d", area(fit_data.points))
         .style("fill", self.getDatasetColor(index, 0.1))
-        .style("stroke", "none");
+        .style("stroke", "none")
+        .style("pointer-events", "none");
     }
   });
 
   // For some reason the circles position arent being updated on resize, so we'll just remove them first
   //  With later versions of D3 there is a .merge() function that is maybe relevant
-  this.chartArea.selectAll("circle").remove();
-  this.chartArea.selectAll("line.errorbar").remove();
+  this.plotGroup.selectAll("circle").remove();
+  this.plotGroup.selectAll("line.errorbar").remove();
     
+  // Calculate min and max counts across all datasets for radius scaling
+  let minCounts = Number.MAX_VALUE;
+  let maxCounts = -Number.MAX_VALUE;
+  
+  datasets.forEach(function(dataset) {
+    if (dataset.data_vals && dataset.data_vals.length > 0) {
+      dataset.data_vals.forEach(function(d) {
+        if (d.counts > maxCounts) maxCounts = d.counts;
+        if (d.counts < minCounts) minCounts = d.counts;
+      });
+    }
+  });
+  
+  // Function to calculate radius based on counts (sqrt scaling, radius 1-4)
+  function calculateRadius(counts) {
+    if (minCounts === maxCounts) return 3; // Default radius if all counts are equal
+    
+    // Normalize counts to 0-1 range, then apply sqrt, then scale to 1-4
+    const normalized = (counts - minCounts) / (maxCounts - minCounts);
+    const sqrtNormalized = Math.sqrt(normalized);
+    return 2 + sqrtNormalized * 3; // Scale from 2 to 5
+  }
+  
   // Plot all data points across all datasets
   datasets.forEach(function(dataset, datasetIndex) {
     const data_vals = dataset.data_vals;
@@ -468,7 +849,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       return;
       
     // Add error bars
-    let lines = self.chartArea.selectAll("line.errorbar.dataset-" + datasetIndex)
+    let lines = self.plotGroup.selectAll("line.errorbar.dataset-" + datasetIndex)
       .data(data_vals);
     
     lines.enter()
@@ -511,12 +892,12 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       });
     
     // Add the data points
-    self.chartArea
+    self.plotGroup
       .selectAll("circle.dataset-" + datasetIndex)
       .data(data_vals)
       .enter()
       .append("circle")
-      .attr("r", 3)
+      .attr("r", function(d) { return calculateRadius(d.counts); })
       .attr("cx", function (d) {
         return self.xScale(d.energy)
       })
@@ -605,15 +986,31 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
           .attr('opacity', '.85')
           .attr("r", 6);
 
+        const eqn_eff = dataset.fit_eqn ? dataset.fit_eqn(d.energy) : null;
+
         let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
-          + "<div>Peak Area: " + d.counts.toFixed(1) + " &pm; " + d.counts_uncert.toFixed(1) + "</div>"
-          + "<div>Measured RelEff: " + d.eff.toPrecision(5) + "</div>";
-          
+          + "<div>Peak Area: " + d.counts.toFixed(1) + " &plusmn; " + d.counts_uncert.toFixed(1) + "</div>";
+
+
         // Add fit equation value if available for this dataset
-        if (dataset.fit_eqn) {
-          txt += "<div>RelEff Curve: " + dataset.fit_eqn(d.energy).toPrecision(5) + "</div>";
+        if (eqn_eff) {
+          txt += "<div>RelEff Curve: " + eqn_eff.toPrecision(4);
+          if( dataset.fit_uncert_fcn )
+            txt += " &plusmn " + dataset.fit_uncert_fcn(d.energy);
+          txt += "</div>";
         }
-        
+
+        txt += "<div>Measured RelEff: " + d.eff.toPrecision(4);
+        if( d.eff_uncert && (d.eff_uncert > 0) ){
+          txt += " &plusmn " + d.eff_uncert.toPrecision(4);
+        }
+        txt += "</div>";
+
+        if( d.eff_uncert && (d.eff_uncert > 0) && eqn_eff ){
+          const nsigma_off = Math.abs(d.eff - eqn_eff) / d.eff_uncert;
+          txt += "<div>Peak fit " + nsigma_off.toPrecision(3) + " &sigma; from curve (peak uncert. only)</div>";
+        }
+
         for (const el of d.nuc_info) {
           txt += "<div>&nbsp;&nbsp;" + el.nuc + ": br=" + el.br.toPrecision(4);
           if (el.rel_act)
@@ -640,12 +1037,22 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         d3.select(this).transition()
           .duration('50')
           .attr('opacity', '1')
-          .attr("r", 3);
+          .attr("r", calculateRadius(d.counts));
         self.tooltip.transition()
           .duration(500)
           .style("opacity", 0);
       });
   });
+  
+  // Auto-zoom out to show the full data extent when data is set
+  this.zoomOut();
+  
+  // Position the mouse capture rectangle to cover the chart area
+  if (this.mouseCapture) {
+    this.mouseCapture
+      .attr("width", chartAreaWidth)
+      .attr("height", chartAreaHeight);
+  }
 };//RelEffPlot.prototype.setRelEffData
 
 // Helper function to get colors for different datasets
@@ -726,5 +1133,17 @@ RelEffPlot.prototype.handleResize = function () {
     
     // Backward compatibility for older code
     this.setRelEffData(this.data_vals, this.fit_eqn, chi2_txt, this.fit_uncert_fcn);
+  }
+  
+  // Update mouse capture rectangle size if it exists
+  if (this.mouseCapture) {
+    const parentWidth = this.chart.clientWidth;
+    const parentHeight = this.chart.clientHeight;
+    const chartAreaWidth = parentWidth - this.options.margins.left - this.options.margins.right;
+    const chartAreaHeight = parentHeight - this.options.margins.top - this.options.margins.bottom;
+    
+    this.mouseCapture
+      .attr("width", chartAreaWidth)
+      .attr("height", chartAreaHeight);
   }
 };//RelEffPlot.prototype.handleResize

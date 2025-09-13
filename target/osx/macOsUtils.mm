@@ -159,4 +159,173 @@ void showFilePicker( const std::string title, const std::string message,
     } // @autoreleasepool
   }); // dispatch_async
 }//void showDirectoryPicker(...)
+
+
+bool createAndStoreSecurityScopedBookmark(const std::string &path, const std::string &bookmarkKey)
+{
+  @autoreleasepool {
+    NSString *nsPath = [NSString stringWithUTF8String:path.c_str()];
+    NSURL *url = [NSURL fileURLWithPath:nsPath];
+    
+    if( !url )
+    {
+      NSLog(@"createAndStoreSecurityScopedBookmark: Could not create NSURL for path: %s", path.c_str());
+      return false;
+    }
+    
+    NSError *error = nil;
+    NSData *bookmarkData = [url bookmarkDataWithOptions:NSURLBookmarkCreationWithSecurityScope
+                                 includingResourceValuesForKeys:nil
+                                                  relativeToURL:nil
+                                                          error:&error];
+    
+    if( !bookmarkData || error )
+    {
+      NSLog(@"createAndStoreSecurityScopedBookmark: Failed to create bookmark for path %s: %s", 
+            path.c_str(), error ? [[error localizedDescription] UTF8String] : "Unknown error");
+      return false;
+    }
+    
+    // Store in NSUserDefaults
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *nsKey = [NSString stringWithUTF8String:bookmarkKey.c_str()];
+    [defaults setObject:bookmarkData forKey:nsKey];
+    [defaults synchronize];
+    
+    NSLog(@"createAndStoreSecurityScopedBookmark: Successfully created and stored bookmark for path: %s", path.c_str());
+    return true;
+  }
+}
+
+bool resolveAndStartAccessingSecurityScopedBookmark(const std::string &bookmarkKey, std::string &resolvedPath)
+{
+  @autoreleasepool {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *nsKey = [NSString stringWithUTF8String:bookmarkKey.c_str()];
+    NSData *bookmarkData = [defaults objectForKey:nsKey];
+    
+    if( !bookmarkData )
+    {
+      NSLog(@"resolveAndStartAccessingSecurityScopedBookmark: No bookmark data found for key: %s", bookmarkKey.c_str());
+      return false;
+    }
+    
+    BOOL isStale = NO;
+    NSError *error = nil;
+    NSURL *url = [NSURL URLByResolvingBookmarkData:bookmarkData
+                                           options:NSURLBookmarkResolutionWithSecurityScope
+                                     relativeToURL:nil
+                               bookmarkDataIsStale:&isStale
+                                              error:&error];
+    
+    if( !url || error )
+    {
+      NSLog(@"resolveAndStartAccessingSecurityScopedBookmark: Failed to resolve bookmark for key %s: %s", 
+            bookmarkKey.c_str(), error ? [[error localizedDescription] UTF8String] : "Unknown error");
+      return false;
+    }
+    
+    if( isStale )
+    {
+      NSLog(@"resolveAndStartAccessingSecurityScopedBookmark: Bookmark is stale for key: %s", bookmarkKey.c_str());
+      // Could recreate the bookmark here if needed, but for now just warn
+    }
+    
+    // Start accessing the security scoped resource
+    BOOL accessStarted = [url startAccessingSecurityScopedResource];
+    if( !accessStarted )
+    {
+      NSLog(@"resolveAndStartAccessingSecurityScopedBookmark: Failed to start accessing security scoped resource for key: %s", bookmarkKey.c_str());
+      return false;
+    }
+    
+    // Get the resolved path
+    const char *fsRep = [url fileSystemRepresentation];
+    if( fsRep )
+    {
+      resolvedPath = std::string(fsRep);
+      NSLog(@"resolveAndStartAccessingSecurityScopedBookmark: Successfully resolved bookmark for key %s to path: %s", 
+            bookmarkKey.c_str(), resolvedPath.c_str());
+      return true;
+    }
+    else
+    {
+      NSLog(@"resolveAndStartAccessingSecurityScopedBookmark: Could not get filesystem representation for resolved URL");
+      [url stopAccessingSecurityScopedResource]; // Clean up
+      return false;
+    }
+  }
+}
+
+void stopAccessingSecurityScopedBookmark(const std::string &bookmarkKey)
+{
+  @autoreleasepool {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *nsKey = [NSString stringWithUTF8String:bookmarkKey.c_str()];
+    NSData *bookmarkData = [defaults objectForKey:nsKey];
+    
+    if( !bookmarkData )
+    {
+      NSLog(@"stopAccessingSecurityScopedBookmark: No bookmark data found for key: %s", bookmarkKey.c_str());
+      return;
+    }
+    
+    BOOL isStale = NO;
+    NSError *error = nil;
+    NSURL *url = [NSURL URLByResolvingBookmarkData:bookmarkData
+                                           options:NSURLBookmarkResolutionWithSecurityScope
+                                     relativeToURL:nil
+                               bookmarkDataIsStale:&isStale
+                                              error:&error];
+    
+    if( url && !error )
+    {
+      [url stopAccessingSecurityScopedResource];
+      NSLog(@"stopAccessingSecurityScopedBookmark: Stopped accessing security scoped resource for key: %s", bookmarkKey.c_str());
+    }
+    else
+    {
+      NSLog(@"stopAccessingSecurityScopedBookmark: Could not resolve bookmark to stop accessing for key: %s", bookmarkKey.c_str());
+    }
+  }
+}
+
+void removeSecurityScopedBookmark(const std::string &bookmarkKey)
+{
+  @autoreleasepool {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *nsKey = [NSString stringWithUTF8String:bookmarkKey.c_str()];
+    
+    // Stop accessing the resource first
+    stopAccessingSecurityScopedBookmark(bookmarkKey);
+    
+    // Remove from defaults
+    [defaults removeObjectForKey:nsKey];
+    [defaults synchronize];
+    
+    NSLog(@"removeSecurityScopedBookmark: Removed bookmark for key: %s", bookmarkKey.c_str());
+  }
+}
+
+std::vector<std::string> getSecurityScopedBookmarkKeys(const std::string &keyPrefix)
+{
+  std::vector<std::string> keys;
+  
+  @autoreleasepool {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSDictionary *allDefaults = [defaults dictionaryRepresentation];
+    NSString *nsPrefix = [NSString stringWithUTF8String:keyPrefix.c_str()];
+    
+    for( NSString *key in allDefaults )
+    {
+      if( [key hasPrefix:nsPrefix] )
+      {
+        keys.push_back([key UTF8String]);
+      }
+    }
+  }
+  
+  return keys;
+}
+
 }//namespace macOsUtils

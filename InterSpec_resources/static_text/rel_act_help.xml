@@ -1,6 +1,6 @@
 <div align="center">
   <h1 id="rel-act-dialog">
-    <b>Relative Activity Isotopics Tool</b>
+    <b>Isotopics by nuclides</b>
   </h1>
   <hr />
 </div>
@@ -8,6 +8,7 @@
 
 <div style="display:table-row">
 <h4>Overview</h4>
-The <em>Relative Activity Isotopics Tool</em> is under active development, and is not suitable for general use yet, and documentation or use instructions has not been created.
+Please see use instructions and information
+at <a href="https://sandialabs.github.io/InterSpec/tutorials/#enrichment-and-isotopics-by-nuclides-tool-sep-2025" target="_blank">https://sandialabs.github.io/InterSpec/tutorials/#enrichment-and-isotopics-by-nuclides-tool-sep-2025</a>
 </div>
 

@@ -24,8 +24,11 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <map>
 #include <string>
 #include <vector>
+#include <memory>
+#include <algorithm>
 #include <assert.h>
 #include <iostream> //for cout, only for debug
 #include <cstring>
@@ -33,9 +36,13 @@
 
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/SpecUtilsAsync.h"
+#include "SpecUtils/SpecFile.h"
 
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/PeakFit.h"
 #include "InterSpec/XmlUtils.hpp"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -43,6 +50,7 @@
 #include "InterSpec/GammaInteractionCalc.h"
 
 #include "InterSpec/RelActCalc_imp.hpp"
+#include "InterSpec/PeakFit_imp.hpp"
 
 using namespace std;
 
@@ -994,6 +1002,146 @@ std::string physical_model_rel_eff_eqn_js_function( const std::optional<PhysMode
   "}";
   
   return fcn;
+}
+
+std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_peaks,
+                                          std::shared_ptr<const SpecUtils::Measurement> foreground )
+{
+  using namespace std;
+  
+  // Start with a copy of all input peaks
+  vector<PeakDef> result_peaks = solution_peaks;
+  
+  if( !foreground || solution_peaks.empty() )
+    return result_peaks;
+  
+  const size_t num_channels = foreground->num_gamma_channels();
+  if( !num_channels )
+    return result_peaks;
+  
+  const vector<float> &channel_energies = *foreground->channel_energies();
+  const vector<float> &gamma_counts = *foreground->gamma_counts();
+  
+  // Group peaks by their shared continuum (only polynomial-based ones)
+  map<shared_ptr<const PeakContinuum>, vector<size_t>> continuum_to_peaks;
+  
+  for( size_t i = 0; i < result_peaks.size(); ++i )
+  {
+    const PeakDef &peak = result_peaks[i];
+    auto continuum = peak.continuum();
+    
+    // Only process polynomial-based continuums (skip NoOffset and External)
+    if( !continuum || continuum->type() == PeakContinuum::OffsetType::NoOffset ||
+        continuum->type() == PeakContinuum::OffsetType::External )
+      continue;
+      
+    continuum_to_peaks[continuum].push_back(i);
+  }
+  
+  // Create a vector of ROI groups for processing
+  vector<vector<size_t>> roi_groups;
+  for( const auto &entry : continuum_to_peaks )
+  {
+    roi_groups.push_back(entry.second);
+  }
+  
+  const size_t num_rois = roi_groups.size();
+  if( num_rois == 0 )
+  {
+    // No polynomial continuums to refit, just sort and return
+    sort( begin(result_peaks), end(result_peaks), &PeakDef::lessThanByMean );
+    return result_peaks;
+  }
+  
+  // Function to refit a single ROI's continuum
+  auto refit_roi_continuum = [&](const vector<size_t> &peak_indices) {
+    if( peak_indices.empty() )
+      return;
+      
+    const PeakDef &first_peak = result_peaks[peak_indices[0]];
+    auto continuum = first_peak.continuum();
+    if( !continuum )
+      return;
+      
+    // Get the energy range for this ROI
+    const double lower_energy = continuum->lowerEnergy();
+    const double upper_energy = continuum->upperEnergy();
+    
+    // Find channel range using find_gamma_channel
+    const size_t lower_channel = static_cast<size_t>(floor(foreground->find_gamma_channel(lower_energy)));
+    const size_t upper_channel = static_cast<size_t>(ceil(foreground->find_gamma_channel(upper_energy))) + 1;
+    
+    if( lower_channel >= upper_channel || upper_channel > num_channels )
+      return;
+      
+    const size_t roi_channels = upper_channel - lower_channel;
+    
+    // Get ROI data
+    const float *roi_energies = &channel_energies[lower_channel];
+    const float *roi_data = &gamma_counts[lower_channel];
+    const float *roi_uncerts = nullptr; // Use nullptr for uncertainties
+    
+    // Prepare peaks for this ROI
+    vector<PeakDef> roi_peaks;
+    for( size_t idx : peak_indices )
+    {
+      roi_peaks.push_back(result_peaks[idx]);
+    }
+    
+    const int num_polynomial_terms = static_cast<int>(continuum->parameters().size());
+    const bool is_step_continuum = PeakContinuum::is_step_continuum( continuum->type() );
+    const double ref_energy = continuum->referenceEnergy();
+    
+    vector<double> continuum_coeffs(num_polynomial_terms);
+    vector<double> peak_counts(roi_channels);
+    
+    try {
+      // Refit the continuum using PeakFit::fit_continuum
+      PeakFit::fit_continuum( roi_energies, roi_data, roi_uncerts, roi_channels,
+                             num_polynomial_terms, is_step_continuum, ref_energy,
+                             roi_peaks, false, continuum_coeffs.data(), peak_counts.data() );
+      
+      // Update all peaks with the new continuum coefficients
+      for( size_t idx : peak_indices )
+      {
+        auto new_continuum = make_shared<PeakContinuum>(*continuum);
+        new_continuum->setParameters( lower_energy, continuum_coeffs, {} );
+        result_peaks[idx].setContinuum(new_continuum);
+      }
+    } catch( const exception &e ) {
+      // If fitting fails, silently continue with original continuum
+    }
+  };
+  
+  // Decide whether to use threading
+  if( num_rois > 4 )
+  {
+    // Use ThreadPool for parallel processing
+    SpecUtilsAsync::ThreadPool pool;
+    
+    for( const auto &roi_group : roi_groups )
+    {
+      pool.post( [&refit_roi_continuum, roi_group]() {
+        refit_roi_continuum(roi_group);
+      });
+    }
+    
+    // Wait for all tasks to complete
+    pool.join();
+  }
+  else
+  {
+    // Process sequentially
+    for( const auto &roi_group : roi_groups )
+    {
+      refit_roi_continuum(roi_group);
+    }
+  }
+  
+  // Sort peaks by energy before returning
+  sort( begin(result_peaks), end(result_peaks), &PeakDef::lessThanByMean );
+  
+  return result_peaks;
 }
 
   

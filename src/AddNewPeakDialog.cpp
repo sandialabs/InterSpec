@@ -36,6 +36,8 @@
 #include <Wt/WTableCell>
 #include <Wt/WPushButton>
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -47,12 +49,15 @@
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/ReactionGamma.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/AddNewPeakDialog.h"
+#include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 
 
 using namespace std;
@@ -63,7 +68,7 @@ const float AddNewPeakDialog::m_minfwhm = 0.05f;
 const float AddNewPeakDialog::m_maxfwhm = 450.0f;  //reasonable range of peak widths
 
 
-AddNewPeakDialog::AddNewPeakDialog( const float initialEnergy )
+AddNewPeakDialog::AddNewPeakDialog( const float initialEnergy, const std::string &ref_line_hint )
 : AuxWindow( WString::tr("anpd-dialog-add-peak-title"),
             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
              | AuxWindowProperties::TabletNotFullScreen
@@ -84,6 +89,7 @@ m_fitBtn( nullptr ),
 m_fitEnergy( nullptr ),
 m_fitFWHM( nullptr ),
 m_fitAmplitude( nullptr ),
+m_initial_src_hint( ref_line_hint ),
 m_chart( nullptr )
 {
   m_viewer->useMessageResourceBundle( "AddNewPeakDialog" );
@@ -190,10 +196,10 @@ m_chart( nullptr )
   m_continuumType->addItem( WString::tr("pct-constant") );
   m_continuumType->addItem( WString::tr("pct-linear") );
   m_continuumType->addItem( WString::tr("pct-quadratic") );
-  //"pct-cubic"
-  //"pct-flat-step"
-  //"pct-linear-step"
-  //"pct-bilinear-step"
+  m_continuumType->addItem( WString::tr("pct-cubic") );
+  m_continuumType->addItem( WString::tr("pct-flat-step") );
+  m_continuumType->addItem( WString::tr("pct-linear-step") );
+  m_continuumType->addItem( WString::tr("pct-bilinear-step") );
   m_continuumType->addItem( WString::tr("pct-global") );
   m_continuumType->setCurrentIndex( 2 );
   
@@ -205,9 +211,11 @@ m_chart( nullptr )
   m_fitEnergy = new WCheckBox( WString::tr("Energy"), fitCell );
   m_fitFWHM = new WCheckBox( WString::tr("FWHM"), fitCell );
   m_fitAmplitude = new WCheckBox( WString::tr("Amp."), fitCell );
+  m_associateWithNuclide = new WCheckBox( WString::tr("anpd-associate-with").arg("N/A"), fitCell );
   m_fitEnergy->setMargin(3,Wt::Left);
   m_fitFWHM->setMargin(3,Wt::Left);
   m_fitAmplitude->setMargin(3,Wt::Left);
+  m_associateWithNuclide->setMargin(3,Wt::Left);
   
   WFont fitCbFont;
   fitCbFont.setWeight( WFont::Weight::NormalWeight );
@@ -216,7 +224,8 @@ m_chart( nullptr )
   m_fitEnergy->decorationStyle().setFont( fitCbFont );
   m_fitFWHM->decorationStyle().setFont( fitCbFont );
   m_fitAmplitude->decorationStyle().setFont( fitCbFont );
-  
+  m_associateWithNuclide->decorationStyle().setFont( fitCbFont );
+  m_associateWithNuclide->setHiddenKeepsGeometry( true );
   
   m_fitEnergy->setChecked( false );
   m_fitFWHM->setChecked( true );
@@ -272,7 +281,8 @@ m_chart( nullptr )
   m_roiUpperSB->valueChanged().connect( this, &AddNewPeakDialog::roiRangeChanged );
   m_continuumType->activated().connect( this, &AddNewPeakDialog::roiTypeChanged );
   m_fitBtn->clicked().connect( this, &AddNewPeakDialog::doFit );
-  
+  m_associateWithNuclide->checked().connect( this, &AddNewPeakDialog::associateWithSrcChanged );
+  m_associateWithNuclide->unChecked().connect( this, &AddNewPeakDialog::associateWithSrcChanged );
   
   WPushButton *closeButton = addCloseButtonToFooter(WString::tr("Cancel"));
   closeButton->clicked().connect( this, &AuxWindow::hide );
@@ -300,7 +310,10 @@ m_chart( nullptr )
 void AddNewPeakDialog::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
   if( m_renderFlags.testFlag(RenderActions::UpdatePreview) )
+  {
     updateCandidatePeakPreview();
+    updateAssociateWithCb();
+  }
   
   AuxWindow::render( flags );
   
@@ -367,6 +380,47 @@ void AddNewPeakDialog::updateCandidatePeakPreview()
 }//void updateCandidatePeakPreview()
 
 
+void AddNewPeakDialog::updateAssociateWithCb()
+{
+  if( !m_candidatePeak )
+  {
+    m_associateWithNuclide->hide();
+    return;
+  }
+  
+  
+  
+  const pair<unique_ptr<ReferenceLineInfo>,int> nearby_ref_line
+      = PeakSearchGuiUtils::reference_line_near_peak( m_viewer, *m_candidatePeak, false, m_initial_src_hint );
+  
+  const ReferenceLineInfo::RefLine *line = nullptr;
+  if( nearby_ref_line.first && (nearby_ref_line.second < static_cast<int>(nearby_ref_line.first->m_ref_lines.size())) )
+    line = &(nearby_ref_line.first->m_ref_lines[nearby_ref_line.second]);
+  
+  if( line && (line->m_parent_nuclide || line->m_element || line->m_reaction) )
+  {
+    string src;
+    if( line->m_parent_nuclide )
+      src = line->m_parent_nuclide->symbol;
+    else if( line->m_element )
+      src = line->m_element->symbol;
+    else if( line->m_reaction )
+      src = line->m_reaction->name();
+    
+    char buffer[32] = { '\0' };
+    snprintf( buffer, sizeof(buffer), " %.1f keV", line->m_energy );
+    src += buffer + line->particlestr();
+    
+    m_associateWithNuclide->setText( WString::tr("anpd-associate-with").arg(src) );
+  }else
+  {
+    m_associateWithNuclide->setText( WString::tr("anpd-associate-with").arg("N/A") );
+    m_associateWithNuclide->hide();
+    m_candidatePeak->clearSources();
+  }
+}//void AddNewPeakDialog::updateAssociateWithCb()
+
+
 void AddNewPeakDialog::roiTypeChanged()
 {
   auto meas = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
@@ -381,28 +435,51 @@ void AddNewPeakDialog::roiTypeChanged()
   const double roi_upper = m_candidatePeak->upperX();
   const double ref_energy = 0.5*(roi_upper + roi_lower);
   
-  switch( m_continuumType->currentIndex() )
+  const WString txt = m_continuumType->currentText();
+  PeakContinuum::OffsetType offset = PeakContinuum::OffsetType::Linear;
+  if( txt.key() == "pct-none" )
+    offset = PeakContinuum::OffsetType::NoOffset;
+  else if( txt.key() == "pct-constant" )
+    offset = PeakContinuum::OffsetType::Constant;
+  else if( txt.key() == "pct-linear" )
+    offset = PeakContinuum::OffsetType::Linear;
+  else if( txt.key() == "pct-quadratic" )
+    offset = PeakContinuum::OffsetType::Quadratic;
+  else if( txt.key() == "pct-cubic" )
+    offset = PeakContinuum::OffsetType::Cubic;
+  else if( txt.key() == "pct-flat-step" )
+    offset = PeakContinuum::OffsetType::FlatStep;
+  else if( txt.key() == "pct-linear-step" )
+    offset = PeakContinuum::OffsetType::LinearStep;
+  else if( txt.key() == "pct-bilinear-step" )
+    offset = PeakContinuum::OffsetType::BiLinearStep;
+  else if( txt.key() == "pct-global" )
+    offset = PeakContinuum::OffsetType::External;
+  else
   {
-    case 0: //None
-      m_candidatePeak->continuum()->setType( PeakContinuum::OffsetType::NoOffset );
+    cerr << "Totally whack yo - unrecognized continuum type: {val: '" << txt.toUTF8() << "', key: '" << txt.key() << "'}" << endl;
+    m_continuumType->setCurrentIndex( 2 );
+  }
+  
+  
+  switch( offset )
+  {
+    case PeakContinuum::OffsetType::NoOffset: //None
+      m_candidatePeak->continuum()->setType( offset );
       break;
       
-    case 1:  //constant
+    case PeakContinuum::OffsetType::Constant:
+    case PeakContinuum::OffsetType::Linear:
+    case PeakContinuum::OffsetType::Quadratic:
+    case PeakContinuum::OffsetType::Cubic:
+    case PeakContinuum::OffsetType::FlatStep:
+    case PeakContinuum::OffsetType::LinearStep:
+    case PeakContinuum::OffsetType::BiLinearStep:
       m_candidatePeak->continuum()->calc_linear_continuum_eqn( meas, ref_energy, roi_lower, roi_upper, 5, 5 );
-      m_candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Constant );
+      m_candidatePeak->continuum()->setType( offset );
       break;
       
-    case 2: //linear
-      m_candidatePeak->continuum()->calc_linear_continuum_eqn( meas, ref_energy, roi_lower, roi_upper, 5, 5 );
-      m_candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Linear );
-      break;
-      
-    case 3: //quadratic
-      m_candidatePeak->continuum()->calc_linear_continuum_eqn( meas, ref_energy, roi_lower, roi_upper, 5, 5 );
-      m_candidatePeak->continuum()->setType( PeakContinuum::OffsetType::Quadratic );
-      break;
-      
-    case 4: //global
+    case PeakContinuum::OffsetType::External:
     {
       auto gcontinuum = m_candidatePeak->continuum()->externalContinuum();
       if( !gcontinuum )
@@ -504,6 +581,109 @@ void AddNewPeakDialog::roiRangeChanged()
 }//void roiRangeChanged()
 
 
+void AddNewPeakDialog::associateWithSrcChanged()
+{
+  setRefLineSrcToPeak();
+  
+  m_renderFlags |= RenderActions::UpdatePreview;
+  scheduleRender();
+}//void associateWithSrcChanged()
+
+
+void AddNewPeakDialog::setRefLineSrcToPeak()
+{
+  if( !m_candidatePeak )
+    return;
+  
+  const bool asscociate = (m_associateWithNuclide->isVisible() && m_associateWithNuclide->isChecked());
+  
+  const pair<unique_ptr<ReferenceLineInfo>,int> nearby_ref_line
+    = PeakSearchGuiUtils::reference_line_near_peak( m_viewer, *m_candidatePeak, false, m_initial_src_hint );
+  
+  const ReferenceLineInfo::RefLine *line = nullptr;
+  PeakDef::SourceGammaType src_type = PeakDef::SourceGammaType::NormalGamma;
+  if( nearby_ref_line.first && (nearby_ref_line.second < static_cast<int>(nearby_ref_line.first->m_ref_lines.size())) )
+  {
+    line = &(nearby_ref_line.first->m_ref_lines[nearby_ref_line.second]);
+    
+    switch( line->m_source_type )
+    {
+      case ReferenceLineInfo::RefLine::RefGammaType::Normal:
+        src_type = PeakDef::SourceGammaType::NormalGamma;
+        break;
+        
+      case ReferenceLineInfo::RefLine::RefGammaType::Annihilation:
+        src_type = PeakDef::SourceGammaType::AnnihilationGamma;
+        break;
+        
+      case ReferenceLineInfo::RefLine::RefGammaType::SingleEscape:
+        src_type = PeakDef::SourceGammaType::SingleEscapeGamma;
+        break;
+        
+      case ReferenceLineInfo::RefLine::RefGammaType::DoubleEscape:
+        src_type = PeakDef::SourceGammaType::DoubleEscapeGamma;
+        break;
+        
+      case ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak:
+      case ReferenceLineInfo::RefLine::RefGammaType::SumGammaPeak:
+        line = nullptr; //Setting this realtion in peaks not supported yet...
+        break;
+    }//switch( line->m_source_type )
+  }//if( nearby_ref_line.first && (nearby_ref_line.second < static_cast<int>(nearby_ref_line.first->m_ref_lines.size())) )
+  
+  
+  if( asscociate && (line && (line->m_parent_nuclide || line->m_element || line->m_reaction)) )
+  {
+    if( line->m_parent_nuclide )
+    {
+      int particle_index = 0;
+      double nearest_gamma = 999999.9;
+      for( size_t i = 0; line->m_transition && (i < line->m_transition->products.size()); ++i )
+      {
+        if( (line->m_transition->products[i].type == SandiaDecay::ProductType::GammaParticle)
+           || (line->m_transition->products[i].type == SandiaDecay::ProductType::XrayParticle) )
+        {
+          double dist = fabs(line->m_energy - line->m_transition->products[i].energy);
+          if( dist < nearest_gamma )
+          {
+            nearest_gamma = dist;
+            particle_index = static_cast<int>( i );
+          }//if( dist < nearest_gamma )
+        }
+      }//for( loop over products )
+      
+      m_candidatePeak->setNuclearTransition( line->m_parent_nuclide, line->m_transition, particle_index, src_type );
+    }else if( line->m_element )
+    {
+      m_candidatePeak->setXray( line->m_element, line->m_energy );
+    }else if( line->m_reaction )
+    {
+      m_candidatePeak->setReaction( line->m_reaction, line->m_energy, src_type );
+    }
+    
+    string src;
+    if( line->m_parent_nuclide )
+      src = line->m_parent_nuclide->symbol;
+    else if( line->m_element )
+      src = line->m_element->symbol;
+    else if( line->m_reaction )
+      src = line->m_reaction->name();
+    
+    Wt::WColor color;
+    ReferencePhotopeakDisplay * const refTool = m_viewer->referenceLinesWidget();
+    if( !src.empty() && refTool )
+      color = refTool->suggestColorForSource(src);
+    if( color.isDefault() )
+      color = line->m_color;
+    m_candidatePeak->setLineColor( color );
+  }else
+  {
+    m_candidatePeak->clearSources();
+    m_candidatePeak->setLineColor( WColor{} );
+  }//if( m_associateWithNuclide->isVisible() && m_associateWithNuclide->isChecked() )
+}//void setRefLineSrcToPeak()
+
+
 void AddNewPeakDialog::doFit()
 {
   auto meas = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
@@ -532,7 +712,9 @@ void AddNewPeakDialog::doFit()
     m_energySB->setValue( m_candidatePeak->mean() );
     m_fwhmSB->setValue( m_candidatePeak->fwhm() );
     m_areaSB->setValue( m_candidatePeak->amplitude() );
-  }
+    
+    setRefLineSrcToPeak();
+  }//if( results.empty() ) / else
   
   m_renderFlags |= RenderActions::UpdatePreview;
   scheduleRender();

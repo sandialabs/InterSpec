@@ -132,6 +132,24 @@ public:
   template<class T>
   void addCallbackWhenChanged( const std::string &name,
                                const T &fcn );
+
+  /** Adds a function to callback when an integer preference changes.
+   
+   This function must be called from the application thread such that InterSpec::instance() will be
+   non-void
+   
+   Note, the function passed in must be sure that it will be safe to call until the end of the users
+   session.
+   */
+  template<class T>
+  void addIntCallbackWhenChanged( const std::string &name,
+                                  const T &fcn );
+
+  /** Member function variant for integer preference callbacks.
+   */
+  template<class T, class V>
+  void addIntCallbackWhenChanged( const std::string &name, T *target,
+                                  void (V::*method)(int) );
   
   /** Makes it so if the user changes the value via this GUI element, the value of the preference
    stored in memory and in the database will be correspondingly updated.  Also makes it so if
@@ -216,12 +234,12 @@ protected:
    
    Note that these function may be "safe" for widgets getting deleted (e.g., signals automatically
    disconnected), if the signal is connected to an object deriving from Wt::WObject.
-   
-   Currently only boolean preferences require callbacks in InterSpec; in the future, if other
-   preference types (string, int, doubles) need callbacks, we will have to re-factor things, or
-   add in analogous member variables.
    */
   std::map<std::string,std::shared_ptr<Wt::Signals::signal<void(bool)>>> m_onBoolChangeSignals;
+
+  /** Holds callbacks set from #addCallbackWhenChanged, for integer preferences.
+   */
+  std::map<std::string,std::shared_ptr<Wt::Signals::signal<void(int)>>> m_onIntChangeSignals;
 };//class UserPreferences
 
 
@@ -274,5 +292,34 @@ void UserPreferences::addCallbackWhenChanged( const std::string &name,
   
   signal->connect( boost::bind(method, target, boost::placeholders::_1) );
 }//addCallbackWhenChanged(...)
+
+
+template<class T>
+void UserPreferences::addIntCallbackWhenChanged( const std::string &name, const T &fcn )
+{
+  //Make sure a valid int preference
+  preferenceValue<int>( name, m_interspec );
+  
+  std::shared_ptr<Wt::Signals::signal<void(int)>> &signal = m_onIntChangeSignals[name];
+  if( !signal )
+    signal = std::make_shared<Wt::Signals::signal<void(int)>>();
+  signal->connect( fcn );
+}//addIntCallbackWhenChanged(...)
+
+
+template<class T, class V>
+void UserPreferences::addIntCallbackWhenChanged( const std::string &name,
+                                                T *target, void (V::*method)(int) )
+{
+  //Make sure a valid int preference
+  preferenceValue<int>( name, m_interspec );
+  
+  // Retrieve (or create) the signal, and connect things up
+  std::shared_ptr<Wt::Signals::signal<void(int)>> &signal = m_onIntChangeSignals[name];
+  if( !signal )
+    signal = std::make_shared<Wt::Signals::signal<void(int)>>();
+  
+  signal->connect( boost::bind(method, target, boost::placeholders::_1) );
+}//addIntCallbackWhenChanged(...)
 
 #endif //UserPrefernces_h

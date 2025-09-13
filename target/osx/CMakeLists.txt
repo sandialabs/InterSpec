@@ -14,7 +14,7 @@ set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "Try to statically link" )
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE INTERNAL "Set OSX deployment target to 10.15" )
 set(USE_REL_ACT_TOOL ON CACHE INTERNAL "Enable Rel. Act. Tools" )
 set(USE_LEAFLET_MAP ON CACHE INTERNAL "Use leaflet map tool" )
-option( USE_BATCH_TOOLS "Enables (command line for now) batch processing." ON )
+option( USE_BATCH_TOOLS "Enables batch processing." ON )
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../ InterSpecLib )
 
@@ -28,7 +28,7 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 51)
+set(MACOS_BUNDLE_VERSION_NUMBER 52)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )

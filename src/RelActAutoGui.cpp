@@ -25,6 +25,8 @@
 
 #include <map>
 
+#include <boost/math/distributions/chi_squared.hpp>
+
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -417,6 +419,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_presets( nullptr ),
   m_loading_preset( false ),
   m_current_preset_index( -1 ),
+  m_user_note( nullptr ),
   m_error_msg( nullptr ),
   m_fit_chi2_msg( nullptr ),
   m_rel_eff_opts_menu( nullptr ),
@@ -479,9 +482,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   WStackedWidget *upper_stack = new WStackedWidget();
   upper_stack->addStyleClass( "UpperStack" );
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
-  upper_stack->setTransitionAnimation( animation, true );
-  
+  // Adding this transformation causes the "Rel. Eff." chart to resize wrong initially when you click to it
+  //WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  //upper_stack->setTransitionAnimation( animation, true );
+
   m_upper_menu = new WMenu( upper_stack, Wt::Vertical, upper_div );
   m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
   upper_div->addWidget( upper_stack );
@@ -504,10 +508,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     else
       set_lin_y();
   };
-  
-  m_interspec->preferences()->addCallbackWhenChanged( "LogY", m_spectrum, 
+    
+  UserPreferences * const preferences = m_interspec->preferences();
+    
+  preferences->addCallbackWhenChanged( "LogY", m_spectrum,
                                                      &D3SpectrumDisplayDiv::setYAxisLog );
-  
+  preferences->addIntCallbackWhenChanged( "RefLineThickness", m_spectrum,
+                                             &D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback );
+  const int ref_line_thick = std::max(0, std::min(3, UserPreferences::preferenceValue<int>( "RefLineThickness", m_interspec) ));
+  m_spectrum->setRefLineThickness( static_cast<D3SpectrumDisplayDiv::RefLineThickness>(ref_line_thick) );
+
+  preferences->addIntCallbackWhenChanged( "RefLineVerbosity", m_spectrum,
+                                             &D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback );
+  const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_interspec) ));
+  m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
+    
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();
   
@@ -607,9 +622,20 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_presets->setCurrentIndex( 0 );
   m_current_preset_index = 0;
   m_presets->changed().connect( this, &RelActAutoGui::handlePresetChange );
-  
-  WContainerWidget *spacer = new WContainerWidget( presetDiv );
-  spacer->addStyleClass( "RelActAutoSpacer" );
+
+  // We'll add a place the user can make a note about the RelEff setup -
+  // TODO: we currently have zero discoverability that the user can enter a note
+  m_user_note = new WInPlaceEdit( presetDiv );
+  m_user_note->setButtonsEnabled( false );
+  m_user_note->addStyleClass( "RelActAutoUserNote" );
+  m_user_note->valueChanged().connect( this, &RelActAutoGui::handleUserNoteChanged );
+  // We need to make the widget clickable
+  m_user_note->setMinimumSize( 15, 10 );
+  m_user_note->textWidget()->setMinimumSize( 15, 10 );
+  m_user_note->textWidget()->setInline( false );
+
+  //WContainerWidget *spacer = new WContainerWidget( presetDiv );
+  //spacer->addStyleClass( "RelActAutoSpacer" );
 
   m_error_msg = new WText( "Not Calculated.", presetDiv );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
@@ -877,7 +903,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   tooltip = "Add a source.";
   HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
 
-  spacer = new WContainerWidget( nuc_footer );
+  WContainerWidget *spacer = new WContainerWidget( nuc_footer );
   spacer->addStyleClass( "RelActAutoSpacer" );
 
   // same_z_age is something that _could_ be a per-relative-efficiency option, 
@@ -1545,7 +1571,10 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
     auto peak = make_shared<PeakDef>(mean, sigma, amplitude );
     
     peak->continuum()->setRange( roi_lower, roi_upper );
-    peak->continuum()->calc_linear_continuum_eqn( m_foreground, mean, roi_lower, roi_upper, 3, 3 );
+    shared_ptr<const SpecUtils::Measurement> histogram = m_spectrum->data();
+    if( !histogram )
+      histogram = m_foreground;
+    peak->continuum()->calc_linear_continuum_eqn( histogram, mean, roi_lower, roi_upper, 3, 3 );
     
     m_spectrum->updateRoiBeingDragged( vector< shared_ptr<const PeakDef>>{peak} );
   }catch( std::exception &e )
@@ -2144,6 +2173,7 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
 rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
   RelActCalcAuto::RelActAutoGuiState state;
+  state.note = m_user_note->text().toUTF8();
   state.options = getCalcOptions();
   state.background_subtract = (m_background_subtract->isEnabled() && m_background_subtract->isChecked());
   state.show_ref_lines = m_hide_ref_lines_item->isEnabled();
@@ -2160,7 +2190,11 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( base_node, materialDb );
-  
+
+  const WString user_note = WString::fromUTF8(state.note);
+  m_user_note->setText( user_note );
+  m_user_note->setToolTip( user_note );
+
   m_background_subtract->setChecked( state.background_subtract );
   
   m_show_ref_lines_item->setHidden( state.show_ref_lines );
@@ -2523,6 +2557,12 @@ void RelActAutoGui::handleFitEnergyCalChanged()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFitEnergyCalChanged();
+
+
+void RelActAutoGui::handleUserNoteChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+}
 
 
 void RelActAutoGui::handleBackgroundSubtractChanged()
@@ -3313,7 +3353,7 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     return;
   }
   
-  const int orig_w_index = pos - begin( kids );
+  const int orig_w_index = static_cast<int>( pos - begin(kids) );
   RelActAutoGuiEnergyRange *range = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
   assert( range );
   if( !range )
@@ -5033,10 +5073,25 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
-  
-  WString chi2_title("χ²/dof = {1}/{2}{3}");
-  chi2_title.arg( SpecUtils::printCompact(answer->m_chi2, 3) )
-            .arg( static_cast<int>(answer->m_dof) );
+
+  const string chi2_str = SpecUtils::printCompact(answer->m_chi2, 3);
+  const int dof = static_cast<int>(answer->m_dof);
+  WString chi2_title_tooltip;
+  WString chi2_title = WString("χ²/dof = {1}/{2}{3}").arg( chi2_str ).arg( dof );
+  try
+  {
+    const double chi2_dof = answer->m_chi2 / answer->m_dof;
+    const string chi2_dof_str = SpecUtils::printCompact(chi2_dof, 3);
+    boost::math::chi_squared chi2_dist(dof);
+    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2); //Probability we would have seen a chi2 this large.
+    const double p_value = 1.0 - prob; //Probability we would have observed this good of a chi2, or better
+    const string p_value_str = SpecUtils::printCompact(p_value, 3);
+
+    chi2_title_tooltip = WString("χ²/dof = {1}/{2} = {3} --> p-value = {4}" );
+    chi2_title_tooltip.arg(chi2_str).arg(dof).arg(chi2_dof_str).arg(p_value_str);
+  }catch( std::exception & )
+  {
+  }//try / catch to compute the Chi2/DOF
 
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio
@@ -5175,7 +5230,21 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     RelEffChart::ReCurveInfo info;
     info.live_time = live_time;
-    info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
+    if( i < answer->m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
+    {
+      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4, and peak
+      //  mean+-1sigma is fully within ROI
+      for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : answer->m_obs_eff_for_each_curve[i] )
+      {
+        if( (obs_eff.observed_efficiency > 0.0)
+           && (obs_eff.num_sigma_significance > 2.5)
+           && (obs_eff.fraction_roi_counts > 0.05)
+           && obs_eff.within_roi )
+        {
+          info.obs_eff_data.push_back( obs_eff );
+        }
+      }
+    }
     info.rel_acts = answer->m_rel_activities[i];
     info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
     info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
@@ -5196,6 +5265,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   m_rel_eff_chart->setData( info_sets );
 
   m_fit_chi2_msg->setText( chi2_title );
+  m_fit_chi2_msg->setToolTip( chi2_title_tooltip );
   m_fit_chi2_msg->show();
 
 
@@ -5256,7 +5326,8 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       try
       {
         const pair<double,double> act_uncert = this->m_solution->rel_activity_with_uncert(src, rel_eff_index);
-        assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act)) );
+        assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act))
+               || (fabs(act_uncert.first - rel_act) < 1.0E-6) );
         tooltip_text += " ± " + SpecUtils::printCompact(act_uncert.second, 4);
       }catch( std::exception &e )
       {

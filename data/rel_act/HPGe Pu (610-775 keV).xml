@@ -1,0 +1,82 @@
+<RelActCalcAuto version="0">
+	<Options version="2">
+		<FitEnergyCal>true</FitEnergyCal>
+		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6">Polynomial_2</FwhmForm>
+		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
+		<Title>Foreground</Title>
+		<SkewType>GaussExp</SkewType>
+		<AddUncert>0.00000000e+00</AddUncert>
+		<RelEffCurveInputs>
+			<RelEffCurveInput version="0">
+				<Name>Curve 0</Name>
+				<NucInputInfoList>
+					<NucInputInfo version="0">
+						<Nuclide>Pu239</Nuclide>
+						<Age>12.2800000000 y</Age>
+						<FitAge>true</FitAge>
+						<PeakColorCss>#FF4500</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>Pu240</Nuclide>
+						<Age>12.2800000000 y</Age>
+						<FitAge>true</FitAge>
+						<PeakColorCss>#228B22</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>Pu241</Nuclide>
+						<Age>12.2800000000 y</Age>
+						<FitAge>true</FitAge>
+						<PeakColorCss>#CCCC00</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>Pu238</Nuclide>
+						<Age>12.2800000000 y</Age>
+						<FitAge>true</FitAge>
+						<PeakColorCss>#0000FF</PeakColorCss>
+					</NucInputInfo>
+				</NucInputInfoList>
+				<NucsOfElSameAge>true</NucsOfElSameAge>
+				<RelEffEqnType remark='Possible values: Possible values: LnX, LnY, LnXLnY, "FRAM Empirical", "FRAM Physical"'>LnY</RelEffEqnType>
+				<RelEffEqnOrder>2</RelEffEqnOrder>
+				<Pu242CorrMethod>ByPu239Only</Pu242CorrMethod>
+			</RelEffCurveInput>
+		</RelEffCurveInputs>
+		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<RoiRangeList>
+			<RoiRange version="0">
+				<LowerEnergy>6.14203003e+02</LowerEnergy>
+				<UpperEnergy>6.65471680e+02</UpperEnergy>
+				<ContinuumType>Quardratic</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>6.83247986e+02</LowerEnergy>
+				<UpperEnergy>6.92726013e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>7.15195007e+02</LowerEnergy>
+				<UpperEnergy>7.27973022e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>7.62474976e+02</LowerEnergy>
+				<UpperEnergy>7.76400513e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+		</RoiRangeList>
+		<BackgroundSubtract>true</BackgroundSubtract>
+		<ShowRefGammaLines>true</ShowRefGammaLines>
+		<LowerDisplayEnergy>572.247436</LowerDisplayEnergy>
+		<UpperDisplayEnergy>809.691944</UpperDisplayEnergy>
+	</Options>
+</RelActCalcAuto>
+
