@@ -3011,8 +3011,9 @@ void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
 {
-  //doJavaScript( "try{" + m_jsgraph + "=null;}catch(){}" );
-
+  // The below false lets the JS run before load
+  wApp->doJavaScript( "try{" + m_jsgraph + ".destroy();}catch(e){console.log('Failed to cleanup:',e);}", false );
+  
   // Cleanup the style rules we created.
   WCssStyleSheet &style = wApp->styleSheet();
   for( const auto name_rule : m_cssRules )
@@ -3022,5 +3023,3 @@ D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
     //  style.removeRule( name_rule.second );
   }
 }//~D3SpectrumDisplayDiv()
-
-
