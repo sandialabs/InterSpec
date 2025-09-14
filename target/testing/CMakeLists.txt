@@ -176,6 +176,20 @@ add_test( NAME TSimpleActivityCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_BersteinPolynomial test_BersteinPolynomial.cpp )
+target_link_libraries( test_BersteinPolynomial PRIVATE InterSpecLib )
+add_test( NAME TBersteinPolynomial
+  COMMAND $<TARGET_FILE:test_BersteinPolynomial> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_MakeDrfFit test_MakeDrfFit.cpp )
+target_link_libraries( test_MakeDrfFit PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfFit
+  COMMAND $<TARGET_FILE:test_MakeDrfFit> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 
