@@ -389,9 +389,6 @@ const char *to_str( const FwhmEstimationMethod form );
 FwhmEstimationMethod fwhm_estimation_method_from_str( const char *str );
 
 
-/** Evaluates the FWHM equation for the input energy, returning the FWHM. */
-float eval_fwhm( const float energy, const FwhmForm form, const std::vector<float> &coeffs );
-
 size_t num_parameters( const FwhmForm eqn_form );
 
 

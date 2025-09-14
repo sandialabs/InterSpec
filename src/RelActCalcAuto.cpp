@@ -8529,12 +8529,49 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
       if( !drf || !drf->hasResolutionInfo() )
         throw runtime_error( "RelActCalcAuto::eval_fwhm(): invalid detector response function - how did we get here???" );
       
+      const std::vector<float> &drf_coefs = drf->resolutionFcnCoefficients();
+      const size_t num_drf_coefs = drf_coefs.size();
+      const DetectorPeakResponse::ResolutionFnctForm fwhm_form = drf->resolutionFcnType();
+      
       if constexpr ( std::is_same_v<T, double> )
       {
-        return drf->peakResolutionFWHM( static_cast<float>(energy) );
+        const std::vector<float> &drf_coefs = drf->resolutionFcnCoefficients();
+        const double local_val = peakResolutionFWHM( static_cast<float>(energy), fwhm_form, drf_coefs.data(), num_drf_coefs );
+        
+#if( PERFORM_DEVELOPER_CHECKS )
+        const float drf_val = drf->peakResolutionFWHM( static_cast<float>(energy) );
+        const double diff = fabs(drf_val - local_val);
+        assert( (diff < 1.0E-4*std::max(local_val,1.0*drf_val)) || (diff < 1.0E-8) );
+#endif
+        return local_val;
       }else
       {
-        return T(drf->peakResolutionFWHM( static_cast<float>(energy.a) ));
+        // We will try to keep the gradients w.r.t. energy by converting the detectors paramaters into `ceres::Jets<>`
+        //  so we can use our local `peakResolutionFWHM(...)`, which should hopefully propogate things through
+        //  (minor effect, but the right thing to do).
+        T local_val;
+        if( num_drf_coefs < 7 )
+        {
+          T local_pars[6]; //Avoid allocation overhead of std::vector
+          for( size_t i = 0; i < num_drf_coefs; ++i )
+            local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
+          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, local_pars.size() );
+        }else
+        {
+          //Dont expect to ever get here
+          vector<T> local_pars( num_drf_coefs );
+          for( size_t i = 0; i < num_drf_coefs; ++i )
+            local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
+          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, local_pars.size() );
+        }//if( num_drf_coefs < 7 ) / else
+          
+#if( PERFORM_DEVELOPER_CHECKS )
+        const float drf_val = drf->peakResolutionFWHM( static_cast<float>(energy.a) );
+        const double diff = fabs(drf_val - local_val.a);
+        assert( (diff < 1.0E-4*std::max(local_val.a,1.0*drf_val)) || (diff < 1.0E-8) );
+#endif
+        
+        return local_val;
       }
       break;
   }//switch( m_options.fwhm_form )
