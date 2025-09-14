@@ -190,6 +190,13 @@ add_test( NAME TMakeDrfFit
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_EnergyCal test_EnergyCal.cpp )
+target_link_libraries( test_EnergyCal PRIVATE InterSpecLib )
+add_test( NAME TEnergyCal
+  COMMAND $<TARGET_FILE:test_EnergyCal> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 

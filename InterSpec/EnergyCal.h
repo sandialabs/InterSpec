@@ -206,6 +206,31 @@ propogate_energy_cal_change( const std::shared_ptr<const SpecUtils::EnergyCalibr
                              const std::shared_ptr<const SpecUtils::EnergyCalibration> &new_cal,
                              const std::shared_ptr<const SpecUtils::EnergyCalibration> &other_cal );
 
+
+/** Internal function for fitting polynomial coefficients from channel-energy pairs.
+ 
+ @param channels_energies Vector of (channel, energy) pairs to fit to
+ @param poly_terms Number of polynomial terms to fit
+ @returns Vector of polynomial coefficients
+ 
+ Throws exception on error.
+ */
+std::vector<float> fit_for_poly_coefs( const std::vector<std::pair<double,double>> &channels_energies,
+                                      const int poly_terms );
+
+/** Internal function for fitting full range fraction coefficients from channel-energy pairs.
+ 
+ @param channels_energies Vector of (channel, energy) pairs to fit to  
+ @param nchannels Number of channels in the spectrum
+ @param nterms Number of terms to fit (max 5, with 5th term being 1/(1+60*x))
+ @returns Vector of full range fraction coefficients
+ 
+ Throws exception on error.
+ */
+std::vector<float> fit_for_fullrangefraction_coefs( const std::vector<std::pair<double,double>> &channels_energies,
+                                                    const size_t nchannels, 
+                                                    const int nterms );
+
 }//namespace EnergyCal
 
 #endif //EnergyCal_h

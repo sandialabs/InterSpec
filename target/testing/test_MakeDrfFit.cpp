@@ -604,3 +604,167 @@ BOOST_AUTO_TEST_CASE( test_constant_plus_sqrt_fwhm_lls_consistency_check )
     BOOST_CHECK_CLOSE( fitted_fwhm, original_fwhm, 0.1 );  // Very tight tolerance for exact data
   }
 }
+
+// Forward declaration for fit_to_polynomial function (defined in PeakFit.cpp)
+double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
+                          const int polynomial_order,
+                          std::vector<double> &poly_coeffs,
+                          std::vector<double> &coeff_uncerts );
+
+BOOST_AUTO_TEST_CASE( test_fit_to_polynomial_linear )
+{
+  // Test fitting to a linear function: y = 2.5 + 1.3*x
+  const std::vector<float> true_coeffs = { 2.5f, 1.3f };
+  const std::vector<float> x_values = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f };
+  std::vector<float> y_values;
+  
+  // Generate exact linear data
+  for( const float x : x_values )
+  {
+    const float y = true_coeffs[0] + true_coeffs[1] * x;
+    y_values.push_back( y );
+  }
+  
+  std::vector<double> fitted_coeffs, uncertainties;
+  const double chi2 = fit_to_polynomial( &x_values[0], &y_values[0], x_values.size(), 
+                                         1, fitted_coeffs, uncertainties );
+  
+  BOOST_REQUIRE_EQUAL( fitted_coeffs.size(), 2 );
+  BOOST_REQUIRE_EQUAL( uncertainties.size(), 2 );
+  
+  // Check fitted coefficients match true values (allow for float precision and Poisson weighting)
+  BOOST_CHECK_CLOSE( fitted_coeffs[0], true_coeffs[0], 1e-5 );  // constant term
+  BOOST_CHECK_CLOSE( fitted_coeffs[1], true_coeffs[1], 1e-5 );  // linear term
+  
+  // Chi2 should be very small for exact data
+  BOOST_CHECK_SMALL( chi2, 1e-12 );
+  
+  // Check uncertainties are reasonable (positive and finite)
+  BOOST_CHECK_GT( uncertainties[0], 0.0 );
+  BOOST_CHECK_GT( uncertainties[1], 0.0 );
+  BOOST_CHECK( std::isfinite( uncertainties[0] ) );
+  BOOST_CHECK( std::isfinite( uncertainties[1] ) );
+}
+
+BOOST_AUTO_TEST_CASE( test_fit_to_polynomial_quadratic )
+{
+  // Test fitting to a quadratic function: y = 1.0 + 0.5*x + 0.1*x^2
+  const std::vector<double> true_coeffs = { 1.0, 0.5, 0.1 };
+  const std::vector<float> x_values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f };
+  std::vector<float> y_values;
+  
+  // Generate exact quadratic data
+  for( const float x : x_values )
+  {
+    const float y = true_coeffs[0] + true_coeffs[1] * x + true_coeffs[2] * x * x;
+    y_values.push_back( y );
+  }
+  
+  std::vector<double> fitted_coeffs, uncertainties;
+  const double chi2 = fit_to_polynomial( &x_values[0], &y_values[0], x_values.size(), 
+                                         2, fitted_coeffs, uncertainties );
+  
+  BOOST_REQUIRE_EQUAL( fitted_coeffs.size(), 3 );
+  BOOST_REQUIRE_EQUAL( uncertainties.size(), 3 );
+  
+  // Check fitted coefficients match true values (allow for float precision and Poisson weighting)
+  BOOST_CHECK_CLOSE( fitted_coeffs[0], true_coeffs[0], 1e-5 );  // constant term
+  BOOST_CHECK_CLOSE( fitted_coeffs[1], true_coeffs[1], 1e-4 );  // linear term
+  BOOST_CHECK_CLOSE( fitted_coeffs[2], true_coeffs[2], 1e-4 );  // quadratic term
+  
+  // Chi2 should be very small for exact data
+  BOOST_CHECK_SMALL( chi2, 1e-12 );
+}
+
+BOOST_AUTO_TEST_CASE( test_fit_to_polynomial_noisy_data )
+{
+  // Test with realistic noisy spectral data
+  const std::vector<double> true_coeffs = { 100.0, -5.0, 0.1 };  // Background function
+  const std::vector<float> x_values = { 10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 
+                                        60.0f, 70.0f, 80.0f, 90.0f, 100.0f };
+  std::vector<float> y_values;
+  
+  // Generate quadratic data with some realistic count values
+  for( const float x : x_values )
+  {
+    const float y = true_coeffs[0] + true_coeffs[1] * x + true_coeffs[2] * x * x;
+    y_values.push_back( std::max( 1.0f, y ) );  // Ensure positive counts
+  }
+  
+  std::vector<double> fitted_coeffs, uncertainties;
+  const double chi2 = fit_to_polynomial( &x_values[0], &y_values[0], x_values.size(), 
+                                         2, fitted_coeffs, uncertainties );
+  
+  // Check fitted coefficients are close to true values (allowing for some numerical error)
+  BOOST_CHECK_CLOSE( fitted_coeffs[0], true_coeffs[0], 5.0 );
+  BOOST_CHECK_CLOSE( fitted_coeffs[1], true_coeffs[1], 5.0 );
+  BOOST_CHECK_CLOSE( fitted_coeffs[2], true_coeffs[2], 5.0 );
+  
+  // Verify evaluation at test points
+  for( size_t i = 0; i < x_values.size(); ++i )
+  {
+    const float x = x_values[i];
+    const float original_y = y_values[i];
+    const double fitted_y = fitted_coeffs[0] + fitted_coeffs[1] * x + fitted_coeffs[2] * x * x;
+    BOOST_CHECK_CLOSE( fitted_y, original_y, 5.0 );  // Allow some fitting tolerance
+  }
+}
+
+BOOST_AUTO_TEST_CASE( test_fit_to_polynomial_edge_cases )
+{
+  const std::vector<float> x_values = { 1.0f, 2.0f, 3.0f };
+  const std::vector<float> y_values = { 1.0f, 2.0f, 3.0f };
+  
+  std::vector<double> coeffs, uncerts;
+  
+  // Test edge case: exactly enough points for fit
+  // 3 points can fit order 2 polynomial (3 coefficients)
+  BOOST_CHECK_NO_THROW(
+    fit_to_polynomial( &x_values[0], &y_values[0], 3, 2, coeffs, uncerts )
+  );
+  
+  BOOST_CHECK_EQUAL( coeffs.size(), 3 );
+  BOOST_CHECK_EQUAL( uncerts.size(), 3 );
+}
+
+BOOST_AUTO_TEST_CASE( test_fit_to_polynomial_consistency )
+{
+  // Test that fitting works correctly for higher order polynomial
+  // that can actually fit the data structure properly
+  const std::vector<float> x_values = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f };
+  
+  // Generate data from a known quadratic: y = 1 + 2x + 0.5x^2
+  std::vector<float> y_values;
+  for( const float x : x_values )
+  {
+    const float y = 1.0f + 2.0f * x + 0.5f * x * x;
+    y_values.push_back( y );
+  }
+  
+  // Fit with quadratic (should be exact)
+  std::vector<double> fitted_coeffs, uncertainties;
+  const double chi2 = fit_to_polynomial( &x_values[0], &y_values[0], x_values.size(), 
+                                         2, fitted_coeffs, uncertainties );
+  
+  BOOST_REQUIRE_EQUAL( fitted_coeffs.size(), 3 );
+  BOOST_REQUIRE_EQUAL( uncertainties.size(), 3 );
+  
+  // For exact polynomial data, should fit very well
+  BOOST_CHECK_CLOSE( fitted_coeffs[0], 1.0, 1e-3 );
+  BOOST_CHECK_CLOSE( fitted_coeffs[1], 2.0, 1e-3 );
+  BOOST_CHECK_CLOSE( fitted_coeffs[2], 0.5, 1e-3 );
+  
+  // Verify evaluation reproduces original data
+  for( size_t i = 0; i < x_values.size(); ++i )
+  {
+    const float x = x_values[i];
+    const float original_y = y_values[i];
+    
+    const double fitted_y = fitted_coeffs[0] + fitted_coeffs[1] * x + fitted_coeffs[2] * x * x;
+    BOOST_CHECK_CLOSE( fitted_y, original_y, 5.0 );  // 5% tolerance due to Poisson weighting
+  }
+  
+  // Chi2 should be reasonable
+  BOOST_CHECK_GE( chi2, 0.0 );
+  BOOST_CHECK( std::isfinite( chi2 ) );
+}

@@ -80,44 +80,68 @@ T binomial_coefficient( unsigned int n, unsigned int k )
  and C(n,i) is the binomial coefficient.
  
  @param x The evaluation point, must be in the range [0, 1]
- @param coefficients Vector of Bernstein coefficients, size determines polynomial degree
+ @param coefficients Pointer to array of Bernstein coefficients
+ @param num_coefficients Number of coefficients, determines polynomial degree
  @return The evaluated polynomial value
  
  Template parameter T can be double, float, or ceres::Jet<> types.
  */
 template<typename T>
-T evaluate( const T& x, const std::vector<T>& coefficients )
+T evaluate( const T& x, const T * const coefficients, const size_t num_coefficients )
 {
-  if( coefficients.empty() )
+  if( num_coefficients == 0 )
     throw std::invalid_argument( "BersteinPolynomial::evaluate: coefficients cannot be empty" );
   
-  const unsigned int n = static_cast<unsigned int>(coefficients.size() - 1);  // degree
-  T result = T(0);
+  const unsigned int n = static_cast<unsigned int>(num_coefficients - 1);  // degree
+  T result = T(0.0);
   
-  // For numerical stability, we'll compute using the recursive formula
-  // B_{i,n}(x) = (1-x) * B_{i,n-1}(x) + x * B_{i-1,n-1}(x)
-  // But for simplicity and given the expected low orders (up to 5-6), 
-  // we'll use the direct formula with binomial coefficients
+  // Optimized evaluation using incremental power computation
+  // This avoids O(n^2) power calculations while being cache-friendly
+  const T one_minus_x = T(1.0) - x;
   
-  for( unsigned int i = 0; i <= n; ++i )
+  // For small degrees (common case), use stack allocation to avoid heap overhead
+  if( n <= 6 )  // Matches our precomputed binomial table
   {
-    // Compute binomial coefficient C(n,i)
-    const T binomial_coeff = binomial_coefficient<T>( n, i );
+    T x_powers[7], one_minus_x_powers[7];
     
-    // Compute x^i
-    T x_pow_i = T(1);
-    for( size_t j = 0; j < i; ++j )
-      x_pow_i *= x;
+    x_powers[0] = T(1.0);
+    one_minus_x_powers[0] = T(1.0);
     
-    // Compute (1-x)^{n-i}
-    T one_minus_x_pow = T(1);
-    const T one_minus_x = T(1) - x;
-    for( size_t j = 0; j < (n - i); ++j )
-      one_minus_x_pow *= one_minus_x;
+    for( unsigned int i = 1; i <= n; ++i )
+    {
+      x_powers[i] = x_powers[i-1] * x;
+      one_minus_x_powers[i] = one_minus_x_powers[i-1] * one_minus_x;
+    }
     
-    // Add term to result
-    result += coefficients[i] * binomial_coeff * x_pow_i * one_minus_x_pow;
+    for( unsigned int i = 0; i <= n; ++i )
+    {
+      const T binomial_coeff = binomial_coefficient<T>( n, i );
+      const T basis_value = binomial_coeff * x_powers[i] * one_minus_x_powers[n-i];
+      result += coefficients[i] * basis_value;
+    }
   }
+  else
+  {
+    // For higher degrees, use the original nested loop approach to avoid heap allocation
+    // This is rare in practice (comment mentions expected orders up to 5-6)
+    for( unsigned int i = 0; i <= n; ++i )
+    {
+      const T binomial_coeff = binomial_coefficient<T>( n, i );
+      
+      T x_pow_i = T(1);
+      for( unsigned int j = 0; j < i; ++j )
+        x_pow_i *= x;
+      
+      T one_minus_x_pow = T(1);
+      for( unsigned int j = 0; j < (n - i); ++j )
+        one_minus_x_pow *= one_minus_x;
+      
+      result += coefficients[i] * binomial_coeff * x_pow_i * one_minus_x_pow;
+    }
+  }
+  
+  // TODO: Consider scalar power tracking optimization (x_power *= x, one_minus_x_power /= one_minus_x)
+  // but need to handle edge cases like x=0, x=1 more carefully to avoid division by zero
   
   return result;
 }
@@ -130,23 +154,25 @@ T evaluate( const T& x, const std::vector<T>& coefficients )
  
  The input x range [x_min, x_max] is mapped to [0, 1] for the Bernstein representation.
  
- @param power_coeffs Power series coefficients [a_0, a_1, ..., a_n]
+ @param power_coeffs Pointer to array of power series coefficients [a_0, a_1, ..., a_n]
+ @param num_coefficients Number of power series coefficients
  @param x_min Minimum x value for the power series domain
  @param x_max Maximum x value for the power series domain
  @return Vector of Bernstein coefficients
  */
 template<typename T>
-std::vector<T> power_series_to_bernstein( const std::vector<T>& power_coeffs, 
+std::vector<T> power_series_to_bernstein( const T* power_coeffs,
+                                          size_t num_coefficients,
                                           const T& x_min, 
                                           const T& x_max )
 {
-  if( power_coeffs.empty() )
+  if( num_coefficients == 0 )
     throw std::invalid_argument( "BersteinPolynomial::power_series_to_bernstein: coefficients cannot be empty" );
   
   if( x_max <= x_min )
     throw std::invalid_argument( "BersteinPolynomial::power_series_to_bernstein: x_max must be greater than x_min" );
   
-  const unsigned int n = static_cast<unsigned int>(power_coeffs.size() - 1);  // degree
+  const unsigned int n = static_cast<unsigned int>(num_coefficients - 1);  // degree
   std::vector<T> bernstein_coeffs( n + 1, T(0) );
   
   // First, transform the polynomial coefficients from domain [x_min, x_max] to [0, 1]
@@ -198,23 +224,25 @@ std::vector<T> power_series_to_bernstein( const std::vector<T>& power_coeffs,
  Converts from Bernstein representation: P(x) = sum_{i=0}^n b_i * B_{i,n}(x) defined on [0,1]
  to power series representation: P(x) = a_0 + a_1*x + a_2*x^2 + ... + a_n*x^n defined on [x_min, x_max]
  
- @param bernstein_coeffs Bernstein coefficients [b_0, b_1, ..., b_n]
+ @param bernstein_coeffs Pointer to array of Bernstein coefficients [b_0, b_1, ..., b_n]
+ @param num_coefficients Number of Bernstein coefficients
  @param x_min Minimum x value for the output power series domain  
  @param x_max Maximum x value for the output power series domain
  @return Vector of power series coefficients
  */
 template<typename T>
-std::vector<T> bernstein_to_power_series( const std::vector<T>& bernstein_coeffs,
+std::vector<T> bernstein_to_power_series( const T* bernstein_coeffs,
+                                          size_t num_coefficients,
                                           const T& x_min,
                                           const T& x_max )
 {
-  if( bernstein_coeffs.empty() )
+  if( num_coefficients == 0 )
     throw std::invalid_argument( "BersteinPolynomial::bernstein_to_power_series: coefficients cannot be empty" );
   
   if( x_max <= x_min )
     throw std::invalid_argument( "BersteinPolynomial::bernstein_to_power_series: x_max must be greater than x_min" );
   
-  const unsigned int n = static_cast<unsigned int>(bernstein_coeffs.size() - 1);  // degree
+  const unsigned int n = static_cast<unsigned int>(num_coefficients - 1);  // degree
   
   // First convert Bernstein coefficients to power series coefficients on [0,1]
   // Use the inverse of the transformation matrix M where M[i][j] = C(i,j)/C(n,j) for j<=i
@@ -280,28 +308,30 @@ std::vector<T> bernstein_to_power_series( const std::vector<T>& bernstein_coeffs
  Bernstein polynomial.
  
  @param x The evaluation point in [x_min, x_max]
- @param power_coeffs Power series coefficients
+ @param power_coeffs Pointer to array of power series coefficients
+ @param num_coefficients Number of power series coefficients
  @param x_min Minimum x value for the power series domain
  @param x_max Maximum x value for the power series domain  
  @return The evaluated polynomial value
  */
 template<typename T>
 T evaluate_power_series_via_bernstein( const T& x,
-                                       const std::vector<T>& power_coeffs,
+                                       const T* power_coeffs,
+                                       size_t num_coefficients,
                                        const T& x_min,
                                        const T& x_max )
 {
-  if( power_coeffs.empty() )
+  if( num_coefficients == 0 )
     throw std::invalid_argument( "BersteinPolynomial::evaluate_power_series_via_bernstein: coefficients cannot be empty" );
   
   // Convert to Bernstein representation
-  const std::vector<T> bernstein_coeffs = power_series_to_bernstein( power_coeffs, x_min, x_max );
+  const std::vector<T> bernstein_coeffs = power_series_to_bernstein( power_coeffs, num_coefficients, x_min, x_max );
   
   // Transform x to [0, 1]
   const T x_normalized = (x - x_min) / (x_max - x_min);
   
   // Evaluate Bernstein polynomial
-  return evaluate( x_normalized, bernstein_coeffs );
+  return evaluate( x_normalized, bernstein_coeffs.data(), bernstein_coeffs.size() );
 }
 
 
@@ -360,23 +390,47 @@ std::vector<T> fit_bernstein_lls( const std::vector<T>& x_values,
     // Normalize x to [0,1]
     const T x_norm = (x_values[i] - x_min) / x_range;
     const T inv_sigma = T(1) / uncertainties[i];
+    const T one_minus_x = T(1) - x_norm;
     
     // Fill row i of design matrix with weighted Bernstein basis functions
-    for( unsigned int j = 0; j <= degree; ++j )
+    // Use optimized power computation for common small degrees
+    if( degree <= 6 )
     {
-      // Compute B_j,degree(x_norm) 
-      const T binomial_coeff = binomial_coefficient<T>( degree, j );
+      T x_powers[7], one_minus_x_powers[7];
       
-      T x_pow_j = T(1);
-      for( unsigned int k = 0; k < j; ++k )
-        x_pow_j *= x_norm;
+      x_powers[0] = T(1);
+      one_minus_x_powers[0] = T(1);
       
-      T one_minus_x_pow = T(1);
-      const T one_minus_x = T(1) - x_norm;
-      for( unsigned int k = 0; k < (degree - j); ++k )
-        one_minus_x_pow *= one_minus_x;
+      for( unsigned int k = 1; k <= degree; ++k )
+      {
+        x_powers[k] = x_powers[k-1] * x_norm;
+        one_minus_x_powers[k] = one_minus_x_powers[k-1] * one_minus_x;
+      }
       
-      A[i][j] = binomial_coeff * x_pow_j * one_minus_x_pow * inv_sigma;
+      for( unsigned int j = 0; j <= degree; ++j )
+      {
+        const T binomial_coeff = binomial_coefficient<T>( degree, j );
+        const T basis_value = binomial_coeff * x_powers[j] * one_minus_x_powers[degree-j];
+        A[i][j] = basis_value * inv_sigma;
+      }
+    }
+    else
+    {
+      // Fallback for higher degrees (rare case)
+      for( unsigned int j = 0; j <= degree; ++j )
+      {
+        const T binomial_coeff = binomial_coefficient<T>( degree, j );
+        
+        T x_pow_j = T(1);
+        for( unsigned int k = 0; k < j; ++k )
+          x_pow_j *= x_norm;
+        
+        T one_minus_x_pow = T(1);
+        for( unsigned int k = 0; k < (degree - j); ++k )
+          one_minus_x_pow *= one_minus_x;
+        
+        A[i][j] = binomial_coeff * x_pow_j * one_minus_x_pow * inv_sigma;
+      }
     }
     
     // Weighted y value
@@ -425,6 +479,44 @@ std::vector<T> fit_bernstein_lls( const std::vector<T>& x_values,
     coeffs[i] = eigen_coeffs(i);
   
   return coeffs;
+}
+
+
+// Convenience overloads for backward compatibility with std::vector
+
+/** Convenience overload for evaluate() that accepts std::vector */
+template<typename T>
+T evaluate( const T& x, const std::vector<T>& coefficients )
+{
+  return evaluate( x, coefficients.data(), coefficients.size() );
+}
+
+/** Convenience overload for power_series_to_bernstein() that accepts std::vector */
+template<typename T>
+std::vector<T> power_series_to_bernstein( const std::vector<T>& power_coeffs, 
+                                          const T& x_min, 
+                                          const T& x_max )
+{
+  return power_series_to_bernstein( power_coeffs.data(), power_coeffs.size(), x_min, x_max );
+}
+
+/** Convenience overload for bernstein_to_power_series() that accepts std::vector */
+template<typename T>
+std::vector<T> bernstein_to_power_series( const std::vector<T>& bernstein_coeffs,
+                                          const T& x_min,
+                                          const T& x_max )
+{
+  return bernstein_to_power_series( bernstein_coeffs.data(), bernstein_coeffs.size(), x_min, x_max );
+}
+
+/** Convenience overload for evaluate_power_series_via_bernstein() that accepts std::vector */
+template<typename T>
+T evaluate_power_series_via_bernstein( const T& x,
+                                       const std::vector<T>& power_coeffs,
+                                       const T& x_min,
+                                       const T& x_max )
+{
+  return evaluate_power_series_via_bernstein( x, power_coeffs.data(), power_coeffs.size(), x_min, x_max );
 }
 
 }  // namespace BersteinPolynomial
