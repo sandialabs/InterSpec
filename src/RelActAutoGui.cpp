@@ -700,14 +700,20 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   m_fwhm_eqn_form = new WComboBox( fwhmFormDiv );
   label->setBuddy( m_fwhm_eqn_form );
+  WAbstractItemModel *fwhm_eqn_form_model = m_fwhm_eqn_form->model();
 
+  int SqrtEnergyPlusInverse_index = -1;
   for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_6); ++i )
   {
     const char *name = "";
-    switch( RelActCalcAuto::FwhmForm(i) )
+    const RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm(i);
+    switch( fwhm_form )
     {
       case RelActCalcAuto::FwhmForm::Gadras:        name = "Gadras"; break;
-      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:  name = "sqrt(A0 + A1*E + A2/E)"; break;
+      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        name = "sqrt(A0 + A1*E + A2/E)";
+        SqrtEnergyPlusInverse_index = i;
+        break;
       case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = "A0 + A1*sqrt(E)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_2:  name = "sqrt(A0 + A1*E)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_3:  name = "sqrt(A0 + A1*E + A2*E*E)"; break;
@@ -717,14 +723,16 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
       case RelActCalcAuto::FwhmForm::NotApplicable: name = "Use Det. Eff."; break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     
+    const int num_rows = fwhm_eqn_form_model->rowCount();
     m_fwhm_eqn_form->addItem( name );
+    fwhm_eqn_form_model->setData( fwhm_eqn_form_model->index(num_rows, 0), fwhm_form, Wt::UserRole );
   }//for( loop over RelActCalcAuto::FwhmForm )
   
   const char *tooltip = "The equation type used to model peak FWHM as a function of energy.";
   HelpSystem::attachToolTipOn( fwhmFormDiv, tooltip, showToolTips );
-  
+    
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
-  m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse) );
+  m_fwhm_eqn_form->setCurrentIndex( SqrtEnergyPlusInverse_index );
   m_fwhm_estimation_method->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum) );
   m_fwhm_eqn_form->changed().connect( this, &RelActAutoGui::handleFwhmFormChanged );
   m_fwhm_estimation_method->changed().connect( this, &RelActAutoGui::handleFwhmEstimationMethodChanged );
@@ -1127,7 +1135,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   
   
   options.fit_energy_cal = m_fit_energy_cal->isChecked();
-  options.fwhm_form = RelActCalcAuto::FwhmForm( std::max(0,m_fwhm_eqn_form->currentIndex()) );
+  options.fwhm_form = getFwhmFormFromCombo();
   options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod( std::max(0,m_fwhm_estimation_method->currentIndex()) );
   if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
     options.fwhm_form = RelActCalcAuto::FwhmForm::NotApplicable;
@@ -1893,7 +1901,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( m_fwhm_eqn_form->label() )
     m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
   if( !fixed_to_det_eff && (options.fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable) )
-    m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
+    setFwhmFormFromCombo( options.fwhm_form );
   
   m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
   
@@ -2532,6 +2540,75 @@ void RelActAutoGui::handleFwhmFormChanged()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFwhmFormChanged()
+
+
+RelActCalcAuto::FwhmForm RelActAutoGui::getFwhmFormFromCombo() const
+{
+  if( !m_fwhm_eqn_form )
+  {
+    cerr << "RelActAutoGui::getFwhmFormFromCombo(): m_fwhm_eqn_form is null" << endl;
+    throw std::logic_error( "m_fwhm_eqn_form is null" );
+  }
+    
+  const int current_index = m_fwhm_eqn_form->currentIndex();
+  if( current_index < 0 )
+  {
+    cerr << "RelActAutoGui::getFwhmFormFromCombo(): current_index is negative (" << current_index << ")" << endl;
+    throw std::logic_error( "m_fwhm_eqn_form has invalid current index" );
+  }
+    
+  const WAbstractItemModel *model = m_fwhm_eqn_form->model();
+  const WModelIndex model_index = model->index( current_index, 0 );
+  const boost::any data = model->data( model_index, Wt::UserRole );
+  
+  try
+  {
+    return boost::any_cast<RelActCalcAuto::FwhmForm>( data );
+  }catch( const boost::bad_any_cast &e )
+  {
+    cerr << "RelActAutoGui::getFwhmFormFromCombo(): Failed to cast model data to FwhmForm at index " 
+         << current_index << ": " << e.what() << endl;
+    throw std::logic_error( "Failed to get FwhmForm from combo box model data" );
+  }
+}//RelActCalcAuto::FwhmForm getFwhmFormFromCombo()
+
+
+void RelActAutoGui::setFwhmFormFromCombo( const RelActCalcAuto::FwhmForm form )
+{
+  if( !m_fwhm_eqn_form )
+  {
+    cerr << "RelActAutoGui::setFwhmFormFromCombo(): m_fwhm_eqn_form is null" << endl;
+    throw std::logic_error( "m_fwhm_eqn_form is null" );
+  }
+    
+  const WAbstractItemModel *model = m_fwhm_eqn_form->model();
+  const int num_rows = model->rowCount();
+  
+  for( int i = 0; i < num_rows; ++i )
+  {
+    const WModelIndex model_index = model->index( i, 0 );
+    const boost::any data = model->data( model_index, Wt::UserRole );
+    
+    try
+    {
+      const RelActCalcAuto::FwhmForm stored_form = boost::any_cast<RelActCalcAuto::FwhmForm>( data );
+      if( stored_form == form )
+      {
+        m_fwhm_eqn_form->setCurrentIndex( i );
+        return;
+      }
+    }catch( const boost::bad_any_cast &e )
+    {
+      cerr << "RelActAutoGui::setFwhmFormFromCombo(): Failed to cast model data at index " 
+           << i << ": " << e.what() << endl;
+      continue;
+    }
+  }
+  
+  cerr << "RelActAutoGui::setFwhmFormFromCombo(): Could not find FwhmForm " 
+       << static_cast<int>(form) << " in combo box model data" << endl;
+  throw std::logic_error( "Could not find specified FwhmForm in combo box model data" );
+}//void setFwhmFormFromCombo()
 
 
 void RelActAutoGui::handleFwhmEstimationMethodChanged()

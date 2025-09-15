@@ -8555,14 +8555,14 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
           T local_pars[6]; //Avoid allocation overhead of std::vector
           for( size_t i = 0; i < num_drf_coefs; ++i )
             local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
-          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, local_pars.size() );
+          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, num_drf_coefs );
         }else
         {
           //Dont expect to ever get here
           vector<T> local_pars( num_drf_coefs );
           for( size_t i = 0; i < num_drf_coefs; ++i )
             local_pars[i] = T( static_cast<double>(drf_coefs[i]) );
-          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars, local_pars.size() );
+          local_val = peakResolutionFWHM( energy, fwhm_form, local_pars.data(), num_drf_coefs );
         }//if( num_drf_coefs < 7 ) / else
           
 #if( PERFORM_DEVELOPER_CHECKS )
