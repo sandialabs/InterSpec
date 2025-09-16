@@ -268,7 +268,10 @@ void RefSpectraModel::populateNode( Node *node ) const
 {
   try 
   {
-    vector<tuple<std::string,std::string,bool>> dir_entries;
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    assert( db );
+
+    vector<tuple<std::string,std::string,bool,const SandiaDecay::Nuclide *>> dir_entries;
     for( const auto &entry : fs::directory_iterator(node->fullPath) )
     {
       const fs::path entryPath = entry.path();
@@ -285,11 +288,15 @@ void RefSpectraModel::populateNode( Node *node ) const
         continue;
       }
 
-      dir_entries.emplace_back( entryName, entryPathStr, isDir );
+      const std::string::size_type underscore_pos = entryName.find( '_' );
+      const SandiaDecay::Nuclide * const nuc = ((underscore_pos != string::npos) && !isDir)
+                                                  ? db->nuclide(entryName.substr(0,underscore_pos))
+                                                  : nullptr;
+
+      dir_entries.emplace_back( entryName, entryPathStr, isDir, nuc );
     }//for( const auto &entry : fs::directory_iterator(node->fullPath) )
 
-    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-    assert( db );
+
 
     std::sort( begin(dir_entries), end(dir_entries), [db]( const auto &lhs, const auto &rhs ) -> bool {
       const string &lhs_name = std::get<0>(lhs);
@@ -306,16 +313,16 @@ void RefSpectraModel::populateNode( Node *node ) const
       if( lhs_is_dir && rhs_is_dir )
         return lhs_name < rhs_name;
 
+      const bool lhs_is_back = SpecUtils::istarts_with(lhs_name, "background");
+      const bool rhs_is_back = SpecUtils::istarts_with(rhs_name, "background");
+      if( lhs_is_back || rhs_is_back )
+        return lhs_is_back > rhs_is_back;
 
       //If the name is like "U238_Sh_raw_...", try to extract the nuclide
       //  We could use a bit more sophisticated of a regex to extract Nuclide name, but for now we'll just try
       //  whatever comes before the first underscore.
-
-      const std::string::size_type lhs_pos = lhs_name.find( '_' );
-      const std::string::size_type rhs_pos = rhs_name.find( '_' );
-
-      const SandiaDecay::Nuclide * const lhs_nuc = (lhs_pos != string::npos) ? db->nuclide(lhs_name.substr(0,lhs_pos)) : nullptr;
-      const SandiaDecay::Nuclide * const rhs_nuc = (rhs_pos != string::npos) ? db->nuclide(rhs_name.substr(0,rhs_pos)) : nullptr;
+      const SandiaDecay::Nuclide * const lhs_nuc = std::get<3>(lhs);
+      const SandiaDecay::Nuclide * const rhs_nuc = std::get<3>(rhs);
 
       if( !lhs_nuc && !rhs_nuc )
         return lhs_name < rhs_name;
@@ -337,7 +344,7 @@ void RefSpectraModel::populateNode( Node *node ) const
     } );
 
 
-    for( const tuple<std::string,std::string,bool> &entry : dir_entries )
+    for( const tuple<std::string,std::string,bool,const SandiaDecay::Nuclide *> &entry : dir_entries )
     {
       std::string entryName = std::get<0>(entry);
       const std::string entryPathStr = std::get<1>(entry);
