@@ -703,7 +703,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   WAbstractItemModel *fwhm_eqn_form_model = m_fwhm_eqn_form->model();
 
   int SqrtEnergyPlusInverse_index = -1;
-  for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_6); ++i )
+  for( int i = 0; i < static_cast<int>(RelActCalcAuto::FwhmForm::NotApplicable); ++i )
   {
     const char *name = "";
     const RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm(i);
@@ -720,6 +720,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
       case RelActCalcAuto::FwhmForm::Polynomial_4:  name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_5:  name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
       case RelActCalcAuto::FwhmForm::Polynomial_6:  name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
+      case RelActCalcAuto::FwhmForm::Berstein_2:    name = "sqrt(A0 + A1*E) - stable"; break;
+      case RelActCalcAuto::FwhmForm::Berstein_3:    name = "sqrt(A0 + A1*E + A2*E*E) - stable"; break;
+      case RelActCalcAuto::FwhmForm::Berstein_4:    name = "sqrt(A0 + A1*E^1...A3*E^3) - stable"; break;
+      case RelActCalcAuto::FwhmForm::Berstein_5:    name = "sqrt(A0 + A1*E^1...A4*E^4) - stable"; break;
+      case RelActCalcAuto::FwhmForm::Berstein_6:    name = "sqrt(A0 + A1*E^1...A5*E^5) - stable"; break;
       case RelActCalcAuto::FwhmForm::NotApplicable: name = "Use Det. Eff."; break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     

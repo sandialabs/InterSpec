@@ -315,6 +315,21 @@ enum class FwhmForm : int
   Polynomial_4,
   Polynomial_5,
   Polynomial_6,
+  
+  /** Berstein polynomial with 2 coefficients (order 1) */
+  Berstein_2,
+  
+  /** Berstein polynomial with 3 coefficients (order 2) */
+  Berstein_3,
+  
+  /** Berstein polynomial with 4 coefficients (order 3) */
+  Berstein_4,
+  
+  /** Berstein polynomial with 5 coefficients (order 4) */
+  Berstein_5,
+  
+  /** Berstein polynomial with 6 coefficients (order 5) */
+  Berstein_6,
 
   /** Do not fit the FWHM equation - use the FWHM from the detector efficiency function.
    
