@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- 
+    This file contains the localizations for both IsotopeSearchByEnergy.cpp and IsotopeSearchByEnergyModel.cpp - e.g., the "Nuclide Search" tab.
+    (there wasnt enough content in IsotopeSearchByEnergyModel to justify the performance hit of adding in an extra localization file)
+
+    isbe- is short for IsotopeSearchByEnergy
+    isbem- is short for IsotopeSearchByEnergyModel
+  -->
+  <message id="isbe-clear-ref">Очистить реф. фотопики</message>
+  <message id="isbe-cb-gammas">Гаммы</message>
+
+  <message id="isbe-cb-rxnts">Реакции</message>
+  <message id="isbe-min-br">Мин. отн. В.Р.</message>
+  <message id="isbe-tt-min-br">Минимальная интенсивность, необходимая относительно максимальной интенсивности гаммы цепи распада.</message>
+  <message id="isbe-min-hl">Мин. T½</message>
+  <message id="isbe-tt-min-hl">
+    Минимальный период полураспада нуклидов для поиска.
+    <br />
+    <div>
+      Возраст можно указать, используя комбинацию временных единиц, например '<b>5.3y 8d 22m</b>'.
+    </div>
+    <div>
+      Допустимые единицы времени: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, или
+      можно указать период времени как <b>hh:mm:ss</b>.
+    </div>
+    <div>
+      Когда указано несколько периодов времени, они суммируются, напр. '1y6months 3m' интерпретируется как 18 месяцев и 3 минуты
+    </div>
+  </message>
+  <message id="isbe-searching">Поиск</message>
+  <message id="isbe-assign-to-btn">
+    <plural case="0">Присвоить пик {1}</plural>
+    <plural case="1">Присвоить пики {1}</plural>  <!-- Two or more peaks -->
+  </message>
+  <message id="isbe-assign-searched-energies">
+    <plural case="0">Присвоить найденную энергию {1}</plural>
+    <plural case="1">Присвоить найденные энергии {1}</plural>  <!-- Two or more peaks -->
+  </message>
+  <message id="isbe-assign-matching-peaks-no-id">Присвоить совпадающие пики без ID {1}...</message>
+  <message id="isbe-assign-all-matching-peaks">Присвоить все совпадающие пики {1}...</message>
+
+  <!-- Messages for IsotopeSearchByEnergyModel are below here; i.e. the table headers -->
+  <message id="isbem-parent-nuc">Нуклид</message>
+  <message id="isbem-diff">Разн.</message>
+  <message id="isbem-rel-br">Отн. В.Р.</message>
+  <message id="isbem-profile">Профиль</message>
+  <message id="isbem-decay">Распад</message>
+  <message id="isbem-part-hl">Родит. T½</message>
+  <message id="isbem-assumed-age">Предп. возраст</message>
+  <message id="isbem-tt-parent-nuc">Родительский нуклид цепи распада.</message>
+  <message id="isbem-tt-diff">Разность между уровнем энергии выбранного нуклида и искомым уровнем энергии</message>
+  <message id="isbem-tt-energy">Истинная энергия гаммы/рентгена</message>
+  <message id="isbem-tt-rel-bre">Коэффициент ветвления относительно наибольшего выхода гаммы нуклида
+    (т.е. 1.0 указывает на самую обильную гамму, а не одну гамму на распад)
+  </message>
+  <message id="isbem-tt-profile">Приблизительная метрика того, насколько близко наблюдаемый спектр соответствует ожидаемым пикам для выбранного источника.
+    Большее число лучше, значение 1.0 является наивысшим - рекомендуется сортировать по этому столбцу для идентификации нуклидов.  
+    См. справку по этому инструменту для более полного описания этой величины.
+  </message>
+  <message id="isbem-tt-parent-hl">Период полураспада родителя</message>
+  <message id="isbem-tt-assumed-age">Предполагаемый возраст нуклида</message>
+  
+  <!-- Categories int the drop-down-->
+  <message id="isbe-category-nuc-xray">Нуклиды + рентген</message>
+  <message id="isbe-category-nuc-xray-desc">Нуклиды + рентген</message>
+  <message id="isbe-category-nuc-xray-rctn">Нуклиды, рентген, реакции</message>
+  <message id="isbe-category-nuc-xray-rctn-desc">Все нуклиды, рентгеновские лучи (распад и флуоресценция) и реакции</message>
+  <message id="isbe-category-xray">Флуоресцентный рентген</message>
+  <message id="isbe-category-xray-desc">Только флуоресцентный рентген</message>
+  <message id="isbe-category-reactions">Реакции</message>
+  <message id="isbe-category-reactions-desc">Только реакции</message>
+  <message id="isbe-category-medical">Медицинские нуклиды</message>
+  <message id="isbe-category-medical-desc">Обычные медицинские нуклиды</message>
+  <message id="isbe-category-industrial">Промышленные нуклиды</message>
+  <message id="isbe-category-industrial-desc">Обычные промышленные нуклиды</message>
+  <message id="isbe-category-snm">ДЯМ</message>
+  <message id="isbe-category-snm-desc">Нуклиды делящихся ядерных материалов</message>
+  <message id="isbe-category-norm">NORM</message>
+  <message id="isbe-category-norm-desc">Природные радионуклиды</message>
+  <message id="isbe-category-common">Полевые источники</message>
+  <message id="isbe-category-common-desc">Обычные нуклиды и реакции, встречающиеся в полевых спектрах</message>
+  <message id="isbe-category-common-nuc">Полевые нуклиды</message>
+  <message id="isbe-category-common-nuc-desc">Обычные нуклиды, встречающиеся в полевых спектрах (без нейтронов и реакций)</message>
+  <message id="isbe-category-reactions">Ядерные реакции</message>
+  <message id="isbe-category-reactions-desc">Ядерные реакции</message>
+  <message id="isbe-category-fission">Продукты деления</message>
+  <message id="isbe-category-fission-desc">Продукты деления, которые можно увидеть в гамма-спектре (далеко не полный список)</message>
+  <message id="isbe-category-alphas">Альфы</message>
+  <message id="isbe-category-alphas-desc">Поиск по энергии альфа-частиц.</message>
+  <message id="isbe-category-betas">Граница бета</message>
+  <message id="isbe-category-betas-desc">Поиск по граничной энергии бета-частиц.</message>
+  <message id="isbe-category-no-progeny">Необработанные нуклиды</message>
+  <message id="isbe-category-no-progeny-desc">Не включать потомков нуклидов. Соответствует либо гаммам, либо рентгену распада.</message>
+</messages>

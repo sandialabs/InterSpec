@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">Отказ от ответственности</message>
+  <message id="ladw-mi-credits">Благодарности</message>
+  <message id="ladw-mi-contact">Контакты</message>
+  <message id="ladw-mi-license">Лицензия</message>
+  <message id="ladw-data-location-user">
+    Пользовательские данные хранятся в
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    Данные, поставляемые с InterSpec, такие как информация о ядерном распаде, сечения и подобные, хранятся в
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">Открыть в Проводнике</message>
+  <message id="ladw-show-data-location-macOS">Открыть в Finder</message>
+  <message id="ladw-show-data-location-win">показать</message>
+  <message id="ladw-data-location-network">
+    Вы также можете использовать InterSpec из браузера по адресу (номер порта изменится при перезапуске InterSpec):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      Вы активно использовали InterSpec примерно {1}, открыли {2} файлов за {3} сессий с {4}.
+  </message>
+  <message id="ladw-external-none">InterSpec не отправляет и не получает данные вне вашего устройства.</message>
+  <message id="ladw-external-only-remote-rid">InterSpec не отправляет и не получает данные вне вашего устройства, кроме случаев использования функции внешнего RID.</message>
+  <message id="ladw-external-only-map">InterSpec не отправляет и не получает данные вне вашего устройства, кроме случаев использования функции карты.</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec не отправляет и не получает данные вне вашего устройства, кроме случаев использования функций карт или внешнего RID.</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpec локально хранит настройки, загружаемые спектры, сохраненные состояния приложения и статистику использования.
+    Эта информация не покидает ваше устройство и может быть удалена путем удаления пользовательского каталога данных, показанного выше.
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    При использовании функции Google Maps информация о местоположении файла спектра отправляется в Google для получения карт соответствующего местоположения.
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    При использовании инструмента карт тайлы карт запрашиваются с <a href="https://arcgis.com">https://arcgis.com</a>
+    для области, охватывающей GPS-координаты радиационных измерений, но маркировка/отображение радиационных данных на картах выполняется на вашем устройстве.
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    Для инструмента внешнего RID, пожалуйста, ознакомьтесь с политикой конфиденциальности
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    Для инструмента внешнего RID, пожалуйста, ознакомьтесь с политикой конфиденциальности для URL, который вы вводите.
+  </message>
+</messages>

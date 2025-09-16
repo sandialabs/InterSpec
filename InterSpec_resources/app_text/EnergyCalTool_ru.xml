@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ect- is short for EnergyCalTool -->
+  <message id="ect-no-spec">Спектр не загружен</message>
+  <message id="ect-more-act">Дополнительные действия</message>
+  <message id="ect-linearize">Линеаризовать...</message>
+  <message id="ect-tt-linearize">Линеаризует спектры так, что каждый энергетический канал имеет одинаковую ширину.</message>
+  <message id="ect-truncate">Обрезать энергию...</message>
+  <message id="ect-tt-truncate">Обрезает энергетический диапазон спектра путём отбрасывания каналов данных.</message>
+  <message id="ect-combine">Объединить каналы...</message>
+  <message id="ect-tt-combine">Объединяет энергетические каналы так, что спектр будет иметь меньше каналов данных</message>
+  <message id="ect-to-frf">В FRF...</message>
+  <message id="ect-tt-to-frf">Конвертирует тип калибровки энергии в дробь полного диапазона</message>
+  <message id="ect-to-poly">В полином...</message>
+  <message id="ect-tt-to-poly">Конвертирует тип калибровки энергии в полиномиальный.</message>
+  <message id="ect-multi-file">Многофайловая кал...</message>
+  <message id="ect-tt-multi-file">
+    Позволяет использовать несколько спектров с подогнанными пиками из одного или нескольких файлов спектров
+    для выполнения калибровки энергии. Может быть особенно полезно для
+    детекторов низкого разрешения, где каждый спектр имеет разный тестовый источник
+  </message>
+  <message id="ect-tt-CALp">Загрузить файл .CALp, содержащий текущую калибровку энергии.
+    Вы можете перетащить этот файл обратно на InterSpec позже для повторного использования этой калибровки энергии.
+    Это особенно полезно, если вы часто используете данные с детектора, калибровка которого нуждается в
+    постоянной настройке.
+  </message>
+  <message id="ect-export-CALp-msg">Вы можете применить этот CALp файл позже к другому спектру, перетащив CALp файл на InterSpec.</message>
+  <message id="ect-fit-coeff-btn">Подогнать коэфф.</message>
+  <message id="ect-tt-fit-coeff-btn">
+    Использует ожидаемую энергию фотопиков, связанных с подогнанными пиками, для подгонки коэффициентов энергии.  
+    Эта кнопка отключена, если не выбраны коэффициенты для подгонки или выбрано меньше пиков, чем коэффициентов.
+  </message>
+  <message id="ect-apply-changes-to">Применить изменения к</message>
+  <message id="ect-disp-dets">Отображаемые детекторы</message>
+  <message id="ect-all-dets">Все детекторы</message>
+  <message id="ect-disp-samples">Отображаемые образцы</message>
+  <message id="ect-all-samples">Все образцы</message>
+  <message id="ect-calib-coeffs">Коэффициенты калибровки</message>
+  <message id="ect-cal-peaks">Калибровочные пики</message>
+  <message id="ect-CALp-no-meas">Нет отображаемого измерения для {1}</message>
+  <message id="ect-CALp-not-applic-det">Изменение калибровки неприменимо к любому детектору {1}</message>
+  <message id="ect-CALp-not-applic-sample">Изменение калибровки неприменимо к любым образцам {1}</message>
+  <message id="ect-CALp-invalid-input">Неверная входная калибровка энергии</message>
+  <message id="ect-CALp-num-channel-mismatch">Количество новых каналов калибровки ({1}) не соответствует старой калибровке ({2}).</message>
+  <message id="ect-CALp-missing-det">В CALp файле отсутствует калибровка для детекторов: {1}.{2}</message>
+  <message id="ect-CALp-extra-det">  Были дополнительные калибровки для несуществующих детекторов: {1}.</message>
+  <message id="ect-CALp-named-vs-unamed">Все калибровки в CALp файле указывают имя детектора, но детектор текущего спектра безымянный.</message>
+  <message id="ect-CALp-no-cal-for-det">"Нет доступной калибровки для детектора '{1}'"</message>
+  <message id="ect-CALp-no-prev-for-det">Не удалось определить предыдущую калибровку для использования с детектором '{1}'.</message>
+  <message id="ect-CALp-nchannel-mismatch-det">Количество новых каналов калибровки ({1}) не соответствует старой калибровке ({2}) для детектора '{3}'.</message>
+  <message id="ect-import-CALp">Импорт CALp файла</message>
+  <message id="ect-select-CALp"><p>Выберите CALp файл для использования</p></message>
+  <message id="ect-upload-CALp-to-large">Файл слишком большой для загрузки</message>
+  <message id="ect-invalid-CALp">Не является правильным CALp файлом</message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">Примечание: вы также можете перетащить CALp файлы на InterSpec<br /></p></message>
+  <message id="ect-change-made-invalid">Изменение калибровки сделало калибровку энергии недействительной{1}.  Ошибка: {2}</message>
+  <message id="ect-for-the-fore"> для основного спектра</message>
+  <message id="ect-for-the-back"> для фона</message>
+  <message id="ect-for-the-sec"> для вторичного спектра</message>
+  <message id="ect-set-cal-invalid-nchan">Образец {1}, детектор '{2}' имеет {3} каналов, но устанавливаемая калибровка имеет {4}.</message>
+  <message id="ect-error-setting-cal">Ошибка установки новой калибровки энергии: {1}</message>
+  <message id="ect-add-dev-pair-made-invalid">Добавление пары отклонений сделало калибровку энергии недействительной{1}. Ошибка: {2}</message>
+  <message id="ect-unexpected-error-prev-coefs">Неожиданная ошибка получения предыдущих коэффициентов калибровки - изменения не применяются</message>
+  <message id="ect-changed-cal-not-selected">Похоже, что изменённая вами калибровка энергии не отмечена для применения изменений; пожалуйста, исправьте это.</message>
+  <message id="ect-dev-pair-change-invalid">Изменение пары отклонений сделало калибровку энергии недействительной.  Ошибка: {1}</message>
+  <message id="ect-set-dev-pair-err">Произошла ошибка установки пар отклонений для этого детектора.</message>
+  <message id="ect-dev-applied-dets-samples">Пары отклонений применены только к детектору '{1}', но ко всем номерам образцов{2}.</message>
+  <message id="ect-dev-applied-to-samples">Пары отклонений применены ко всем номерам образцов{1}.</message>
+  <message id="ect-of-the-fore"> основного спектра.</message>
+  <message id="ect-of-the-sec"> вторичного спектра.</message>
+  <message id="ect-of-the-back"> фона.</message>
+  <message id="ect-err-not-enough-peaks">Не могу подогнать коэффициенты калибровки прямо сейчас.  Вы должны выбрать как минимум столько пиков для подгонки, сколько коэффициентов вы выбрали для подгонки.</message>
+  <message id="ect-no-peaks">Нет доступных пиков.</message>
+  <message id="ect-select-cal-of-disp-det">Пожалуйста, выберите калибровку отображаемого детектора</message>
+  <message id="ect-not-enough-channel">Недостаточно каналов в данных.</message>
+  <message id="ect-no-coeff-selected">Вы должны выбрать хотя бы один коэффициент для подгонки.</message>
+  <message id="ect-fail-min">Ошибка Не удалось подогнать калибровку энергии, используя как матричный, так и итеративный подходы</message>
+  <message id="ect-fit-successful">Калибровка энергии была обновлена из подгонки.</message>
+  <message id="ect-fail-fit">Не удалось откалибровать подгонкой средних пиков. {1}</message>
+  <message id="ect-del-graphical-msg">Если вы повторно калибруете снова ALT+CTRL+ПЕРЕТАСКИВАНИЕ на другой части спектра, вам будет предоставлена возможность сохранить эффекты этой калибровки также.</message>
+  <message id="ect-lc-disp-dets">отображаемые детекторы</message>
+  <message id="ect-lc-all-dets">все детекторы</message>
+  <message id="ect-lc-all-samples">все образцы</message>
+  <message id="ect-lc-disp-samples">отображаемые образцы</message>
+  <message id="ect-short-fore">Осн.</message>
+  <message id="ect-short-back">Фон</message>
+  <message id="ect-short-secondary">Вт.</message>
+  
+  <message id="ect-offset-label">Смещение</message>
+  <message id="ect-linear-label">Линейный</message>
+  <message id="ect-quad-label">Квадр.</message>
+  <message id="ect-cubic-label">Кубич.</message>
+  <message id="ect-nth-label">{1}-й порядок</message>
+</messages>

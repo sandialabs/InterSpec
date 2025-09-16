@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">Путь исп. файла</message>
+  <message id="rr-url-empty-text">URL сервиса FullSpectrum</message>
+  <message id="rr-exe-path-empty-text">Путь к исполняемому файлу FullSpectrum</message>
+  <message id="rr-get-detectors">Получить DRF</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">После ввода URL веб-сервиса, пожалуйста (опционально) получите DRF, затем нажмите "<em>Отправить</em>"</message>
+  <message id="rr-only-disp-samples-cb">Только отображаемые образцы</message>
+  <message id="rr-tt-only-disp-samples">Обычно данные режима поиска и портала анализируются полностью, но выбор этой опции приведет к анализу только отображаемого переднего плана/фона.</message>
+  <message id="rr-submit-ana-btn">Отправить анализ</message>
+  <message id="rr-show-dialog-cb">Показать диалог</message>
+  <message id="rr-always-call-cb">Всегда вызывать при загрузке спектра</message>
+  <message id="rr-tt-show-dialog">Если выбрано, будет показан диалог, который должен быть закрыт пользователем с результатами RID. Если не выбрано, будет показано только уведомление, которое исчезнет через короткое время, с результатами RID.</message>
+  <message id="rr-gadras-rid-error">Ошибка GADRAS RID: {1}</message>
+  <message id="rr-gadras-rid-error-code">Код ошибки GADRAS RID {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: ничего не идентифицировано</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">Не удалось разобрать результаты GADRAS RID.</message>
+  <message id="rr-rid-results-window-title">Результаты внешнего RID</message>
+  <message id="rr-rid-tool-btn">Инструмент RID</message>
+  <message id="rr-err-incorrect-url">Ошибка вызова анализа: неправильный URL или нет интернета.</message>
+  <message id="rr-err-locating-exe">Ошибка поиска исполняемого файла: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">Ошибка создания имени временного файла.</message>
+  <message id="rr-err-opening-tmp-file">Ошибка открытия временного файла.</message>
+  <message id="rr-requesting-ana">Запрос анализа</message>
+  <message id="rr-err-no-spec">Нет отображаемого спектра</message>
+  <message id="rr-requesting-service-info">Запрос информации сервиса.</message>
+  <message id="rr-error-parsing-service-info">Ошибка разбора результатов информации сервиса: <code></code></message>
+  <message id="rr-incorrect-url">неправильный URL или нет интернета.</message>
+  <message id="rr-err-requesting-service-info">Ошибка получения информации сервиса: <code>{1}</code></message>
+</messages>

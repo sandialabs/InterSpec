@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">Неопр. FWHM</message>
+  <message id="fpm-peak-source">Источник пика</message>
+  <message id="fpm-user">Пользователь</message>
+  <message id="fpm-auto-fit">Автофит</message>
+  
+  
+  <message id="mffdw-use-fwhm-btn">Использовать FWHM</message>
+  
+  <message id="mffd-eqn-type-label">Тип уравнения:</message>
+  <message id="mffd-num-terms-label">Количество терминов:</message>
+  <message id="mffd-par-vals-label">Значения параметров:</message>
+  <message id="mffd-err-no-foreground">Нет данных для поиска пиков.</message>
+  <message id="mffd-tt-par">С неопределенностью: {1}</message>
+  <message id="mffd-err-fail-fit">Не удалось фитировать уравнение FWHM: {1}</message>
+  <message id="mffd-err-waiting-for-search">В настоящее время поиск пиков - пожалуйста, подождите</message>
+</messages>

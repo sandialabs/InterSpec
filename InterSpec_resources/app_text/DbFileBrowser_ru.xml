@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">Похоже, что вы сохранили этот файл спектра как часть save-state; хотите ли вы возобновить предыдущую работу?</message>
+  <message id="sb-no-saved-states">Нет сохраненных состояний приложения</message>
+  <message id="sb-tt-del-state">Удалить состояние</message>
+  <message id="sb-tt-edit-state">Редактировать имя или описание состояния</message>
+  <message id="sb-state-HEAD-label">Сохраненное состояние</message>
+  <message id="sb-state-auto-saved-label">Автосохранено</message>
+  <message id="sb-unsaved-spectra-parent-node-label">Спектры открыты, но не сохранены явно</message>
+  <message id="sb-tt-unsaved-spectra-node">Спектры, которые вы открыли в InterSpec, но не сохранили явно.</message>
+  <message id="sb-unsaved-spectrum-node">{1} (открыт {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">Имя файла: {1}
+Время измерения: {2}
+Время загрузки: {3}
+Количество образцов: {4}
+Общее реальное время: {5}</message>
+  <message id="sb-open-spectrum-as">Открыть выбранный спектр как:</message>
+  <message id="sb-load-spectrum-only">Загрузить только спектр</message>
+  <message id="sb-load-app-state">Загрузить состояние приложения</message>
+  <message id="sb-err-making-browser-txt">Неожиданная ошибка создания браузера файлов спектра базы данных</message>
+  <message id="sb-err-making-browser-msg">Ошибка создания браузера файлов спектра базы данных: {1}</message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+</messages>

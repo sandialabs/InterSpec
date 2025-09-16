@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">Подтвердить назначение нуклида</message>
+  <message id="psw-title-check-search">Проверить результаты поиска пиков</message>
+  <message id="psw-title-prev-spec">Пики для сохранения из предыдущего спектра</message>
+  <message id="psw-title-csv-import">Пики для импорта из CSV</message>
+  <message id="psw-search-instruct-adjust">Настройте назначения нуклидов или какие пики сохранить.</message>
+  <message id="psw-search-instruct-unselect">Отмените выбор пиков, которые не хотите сохранить.</message>
+  <message id="psw-search-instruct-assign">Проверьте и исправьте назначения нуклидов.</message>
+  <message id="psw-search-instruct-keep">Выберите пики, которые хотите сохранить.</message>
+  <message id="psw-show-all-peaks">Показать все пики</message>
+  <message id="psw-show-prev-peaks">Показать предыдущие пики тоже</message>
+  <message id="psw-show-missing-peaks">Показать отсутствующие пики</message>
+  <message id="psw-keep-only-assigned-peaks">Сохранить только новые пики, назначенные {1}</message>
+  <message id="psw-orig-nuc">Исходный нуклид</message>
+  <message id="psw-assigned-nuc">Назначенный нуклид</message>
+  <message id="psw-peak-preview">Предварительный просмотр пика</message>
+  <message id="psw-not-found">Не найден</message>
+  <message id="psw-keep-peak">Сохранить пик</message>
+  <message id="psw-keep-peak-q">Сохранить пик?    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">Не изменять</message>
+  <message id="psw-no-nuc-changed">Нуклиды не изменены</message>
+  <message id="psw-rel-eff-plot-title">График относительной эффективности</message>
+  <message id="psw-rel-eff-plot-y-axis-title">Отн. площадь пика / BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">Пики не обновлены, спектр изменился.</message>
+  <message id="psgu-peaks-updated-msg">Пики обновлены.</message>
+
+  <message id="psgu-search-wait-title">Несколько моментов</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>Поиск пиков - это может занять время.</div>
+      <div>Вы можете закрыть этот диалог и когда поиск завершится,</div>
+      <div>вас уведомят</div>
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">Необходима информация FWHM</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>Текущий отклик детектора не содержит информации FWHM.</div>
+    <div>Хотите ли вы фитировать информацию FWHM из текущих спектров?</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>Отклик детектора не выбран.</div>
+    <div>Хотите ли вы фитировать информацию FWHM из текущих спектров?</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">Не удалось перефитировать пик (стал незначительным), с {1} до {2} пиков</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">Не было пика для установки на энергию гаммы</message>
+  <message id="psgu-no-ref-line-near-peak-msg">Не было референсной энергии гаммы для установки среднего пика.</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    Не удалось перефитировать пик после фиксации среднего к референсному фотопику.
+    Пик стал незначительным; с {1} до {2} пиков.
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  Изменение типа континуума на {1} привело к тому, что {2} пик стал незначительным.<br />
+  Используйте <b>Редактор пиков</b> для этого изменения.
+  </message>
+  <message id="psgu-failed-change-cont-singular">the</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">как минимум один</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  Наивное изменение типа континуума на {1} привело к тому, что пик стал незначительным.<br />
+  Используйте <b>Редактор пиков</b> для этого изменения.
+  </message>
+  <message id="psgu-change-skew-not-gaus">Пик в ROI на {1} кэВ не определен как гауссов - измените это в <b>Редакторе пиков</b> перед установкой типа скошенности.</message>
+  <message id="psgu-change-skew-make-insig">
+    Изменение типа скошенности на {1} привело к тому, что {2} пик стал незначительным.<br />
+    Используйте <b>Редактор пиков</b> для этого изменения.
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  Наивное изменение типа скошенности на {1} привело к тому, что пик стал незначительным.<br />
+  Используйте <b>Редактор пиков</b> для этого изменения.
+  </message>
+  
+</messages>

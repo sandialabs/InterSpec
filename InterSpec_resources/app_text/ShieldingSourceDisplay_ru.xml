@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    Расстояние от центра источника до поверхности детектора. Число должно быть
+    сопровождено единицами измерения; допустимые единицы: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, или ".  Вы также можете складывать несколько расстояний,
+    например '3ft 4in', или '3.6E-2 m 12 cm', что эквивалентно
+    40дюймам и 15.6см соответственно.
+  </message>
+  <message id="ssd-geom-point">Точечный/сферический</message>
+  <message id="ssd-geom-cyl-end">Цилиндрический: торцевой</message>
+  <message id="ssd-geom-cyl-side">Цилиндрический: боковой</message>
+  <message id="ssd-rectangular">Прямоугольный</message>
+  <message id="ssd-fixed-geom-notification">Используется DRF фиксированной геометрии</message>
+  <message id="ssd-tt-shieldings">
+    Экранирования обрабатываются как оболочки, причём самая внутренняя
+    оболочка - это та, которую вы добавляете первой (верхняя в этом поле), а
+    последующие экранирования наслаиваются вокруг неё. Любые источники,
+    не отнесённые к компонентам экранирований, обрабатываются как точечные
+    источники в центре.
+  </message>
+  <message id="ssd-add-shield-label">Добавить экранирование:</message>
+  <message id="ssd-tt-add-shield">Выберите из библиотеки предопределённых распространённых материалов экранирования.</message>
+  <message id="ssd-generic-btn">Общий</message>
+  <message id="ssd-tt-generic">Позволяет определить и подогнать атомный номер и поверхностную плотность.</message>
+  <message id="ssd-perform-fit-btn">Выполнить подгонку модели</message>
+  <message id="ssd-cancel-fit">Отменить подгонку модели</message>
+  <message id="ssd-mi-calc-log">Журнал вычислений</message>
+  <message id="ssd-mi-import-model">Импортировать модель...</message>
+  <message id="ssd-mi-export-model">Экспортировать модель</message>
+  <message id="ssd-mi-from-db">Открыть из базы данных...</message>
+  <message id="ssd-mi-save-to-db">Сохранить в базу данных...</message>
+  <message id="ssd-mi-clone-db-entry">Клонировать в базе данных...</message>
+  <message id="ssd-to-small-for-chart">(увеличьте окно, чтобы показать χ<sup>2</sup>)</message>
+  <message id="ssd-tt-chi2-switch">Показать хи каждого пика для текущей модели на графике или кратность площади пика между текущей моделью и наблюдаемым пиком.</message>
+  <message id="ssd-cb-all-peaks">Все пики</message>
+  <message id="ssd-multi-iso-per-peak">Коррекция интерференции</message>
+  <message id="ssd-options-title">Опции</message>
+  <message id="ssd-tt-multi-iso-per-peak">Отметив эту опцию, вы позволите другим подгоняемым нуклидам, отличным от назначенного пику, вносить вклад в ожидаемые отсчёты в наблюдаемом пике. Это может быть полезно, например, при подгонке Ho166m и U235, у которых оба есть пик около 185 кэВ.</message>
+  <message id="ssd-cluster-width-label">Ширина интерференции (число σ):</message>
+  <message id="ssd-tt-cluster-width">Число сигм от среднего значения пика, в пределах которого гамма-линии
+    от любого нуклида будут суммированы и отнесены к пику. Значение по умолчанию - 1.25 сигмы, но если пик
+    явно уширен из-за интерференции или плохо подогнан, вы можете увеличить это значение.
+    Уменьшение до 0.0 приведёт к использованию только гамма-излучений, связанных с пиком
+    (то же самое, что снятие галочки "Несколько нуклидов вносят вклад в пик").
+  </message>
+  <message id="ssd-cb-atten-for-air">Ослабление воздухом</message>
+  <message id="ssd-tt-atten-for-air">При отметке ослабление воздухом между источником или внешним экранированием и детектором будет учитываться в расчётах.</message>
+  <message id="ssd-cb-sub-back-peaks">Вычесть фоновые пики</message>
+  <message id="ssd-tt-sub-back-peaks">Это принуждает изотопы элемента иметь одинаковый возраст в подгонке.</message>
+  <message id="ssd-cb-same-el-same-age">Одинаковый Z одинаковый возраст</message>
+  <message id="ssd-tt-same-el-same-age">Принудительно задать, что изотопы одного и того же элемента должны иметь одинаковый возраст.</message>
+  <message id="ssd-cb-corr-for-decay">Коррекция на распад во время изм.</message>
+  <message id="ssd-tt-corr-for-decay">Корректирует эффекты распада и нарастания, которые происходят во время измерения. Полученные активности соответствуют времени начала измерения. Может потребовать дополнительного времени вычислений для поиска решения.</message>
+  <message id="ssd-tt-geometry">Геометрия для моделирования "следовых" источников или самоослабляющихся источников.
+    <br />
+    <br />
+    По умолчанию все источники являются точечными источниками на указанном расстоянии от детектора для всех геометрий.
+    <br />
+    Однако, если вы сделаете нуклид "следовым" источником (нажав кнопку "<em>Добавить следовый источник</em>" экранирования в правом нижнем углу экранирования) или самоослабляющимся источником (выбрав
+    флажок <em>Источник для:</em>" когда экранирование имеет тот же элемент, что и подгоняемый нуклид), то изотоп источника будет моделироваться как распределённый по всему экранированию,
+    и будет использоваться трассировка лучей для учёта различных ослаблений в каждом месте внутри
+    экранирования.
+    <br />
+    <br />
+    Для простоты выберите геометрию "Точечный/сферический", если вы не будете выполнять подгонку
+    "следового" или самоослабляющегося источника.
+  </message>
+  <message id="ssd-phone-tab-source-peaks">Пики источника</message>
+  <message id="ssd-phone-tab-source-isotopes">Изотопы источника</message>
+  <message id="ssd-phone-tab-shielding">Экранирование</message>
+  <message id="ssd-warn-no-back-peaks">Фоновые пики не определены, не вычитаем их</message>
+  <message id="ssd-warn-no-back-spec">Фоновый спектр не загружен, поэтому невозможно вычесть площади фоновых пиков из переднего плана.</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    В фоновом спектре нет идентифицированных пиков. Вы должны загрузить фоновый спектр как
+    передний план, идентифицировать пики для потенциального вычитания, а затем переключиться обратно к текущей
+    комбинации передний план/фон.
+  </message>
+  <message id="ssd-update-dim-to-be-min">Размер экранирования обновлён до минимальной толщины.</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">Толщины экранирования масштабированы так, чтобы быть меньше расстояния до детектора.</message>
+  <message id="ssd-err-fit-only-one-an">Вы можете подгонять атомный номер только одного общего экранирования за раз.</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">Недопустимое значение chi2 было вычислено для {1} кэВ, другие результаты могут быть недопустимыми</message>
+  <message id="ssd-calc-log-window-title">Журнал вычислений</message>
+  <message id="ssd-calc-log-export-txt">TXT файл</message>
+  <message id="ssd-err-opening-import-model">Ошибка открытия загруженной модели подгонки источник-экранирование: {1}</message>
+  <message id="ssd-import-model-window-title">Импорт XML-модели источник-экранирование</message>
+  <message id="ssd-err-opening-db-model">Ошибка открытия модели подгонки источник-экранирование из базы данных: {1}</message>
+  <message id="ssd-err-loading-model">Не удалось загрузить выбранную модель - извините :(</message>
+  <message id="ssd-prev-saved-window-title">Ранее сохранённые модели</message>
+  <message id="ssd-models-prev-for-fore">Модели, ранее использованные с этим передним планом:</message>
+  <message id="ssd-models-prev-saved">Ранее сохранённые вами модели:</message>
+  <message id="ssd-model-desc">Описание модели:</message>
+  <message id="ssd-cb-allow-del">Разрешить удаление</message>
+  <message id="ssd-no-model-in-db">В базе данных нет моделей для вас</message>
+  <message id="ssd-err-creating-db-browser">Ошибка создания браузера моделей базы данных</message>
+  <message id="ssd-save-model-to-db-window-title">Сохранение модели активность/экранирование в базу данных</message>
+  <message id="ssd-save-to-db-name">Введите имя модели:</message>
+  <message id="ssd-save-to-db-desc">Введите описание модели (необязательно):</message>
+  <message id="ssd-must-enter-name">Необходимо ввести имя</message>
+  <message id="ssd-err-saving-to-db">Ошибка сохранения в базу данных</message>
+  <message id="ssd-Best">Лучшая</message>
+  <message id="ssd-fit-failed">Подгонка к модели не удалась</message>
+  <message id="ssd-using-fit-anyway">Всё равно используем решение подгонки.</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    Подгонка не выполнена.
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    Перед подгонкой.
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    Подгонка не выполнена (не удалось создать Chi2Fcn).
+  </message>
+  <message id="ssd-error-create-tool">Ошибка создания дисплея подгонки активность/экранирование: {1}</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">Нуклиды добавляются или удаляются в соответствии с фотопиками, используемыми для этой подгонки, поэтому не могут редактироваться в этой таблице</message>
+  <message id="sfm-tt-header-activity">Активность нуклида. Ввод разумного начального значения может помочь подгонке, или активность не обязательно подгонять. Значения могут вводиться в форматах типа '12.4 кБк', '1.0мКи', '55.3мкКи', '15.82МБк'</message>
+  <message id="sfm-tt-header-age">Возраст нуклида. Значения могут вводиться в формате типа: '23.3с' '2 пж' - (пж означает период полураспада), '5.23г', '23:14:21.343', '19мин', и т.д. Обратите внимание, что нуклиды, распадающиеся до стабильных дочерних, не могут быть состарены.</message>
+  <message id="sfm-tt-header-fit-act">Должна ли подгонка пытаться найти активность нуклида или предполагать, что введённое значение правильное?</message>
+  <message id="sfm-tt-header-fit-age">Должна ли подгонка пытаться найти возраст нуклида или просто предполагать, что введённое значение правильное? Эта опция недоступна для нуклидов, которые распадаются только до стабильных дочерних.</message>
+  <message id="sfm-tt-header-iso-mass">Это масса чистого нуклида при условии указанной активности.</message>
+  <message id="sfm-tt-header-act-uncert">Это неопределённость активности от подгонки.</message>
+  <message id="sfm-tt-header-age-uncert">Это неопределённость возраста от подгонки.</message>
+  <message id="sfm-header-fit-act">Подг. акт.</message>
+  <message id="sfm-header-fit-age">Подг. возр.</message>
+  <message id="sfm-header-act-uncert">Неопр. акт.</message>
+  <message id="sfm-header-age-uncert">Неопр. возр.</message>
+  <message id="sfm-tt-aging-not-allowed">Дочерние нуклиды стабильны, поэтому старение не разрешено, так как оно не влияет на гамма-спектр.</message>
+
+  <!-- Chi2Graphic -->
+  <message id="x2g-yaxis-title-chi">(наблюд.-модель)/неопр.</message>
+  <message id="x2g-yaxis-title-mult">Кратн. модели</message>
+  <message id="x2g-">Ось Y - это отсчёты площади пика минус ожидаемое число отсчётов от текущих отображённых"
+    " значений источника и экранирования, всё разделённое на статистическую неопределённость. Квадрат этого"
+    " используется для оптимизации экранирования и источников.</message>
+  <message id="x2g-tt-chi-axis">Ось Y - это отсчёты площади пика минус ожидаемое число отсчётов от текущих отображённых значений источника и экранирования, всё разделённое на статистическую неопределённость. Квадрат этого используется для оптимизации экранирования и источников.</message>
+  <message id="x2g-tt-scale-axis">Ось Y - это кратность наблюдаемых отсчётов пика относительно ожидаемых от текущих значений источника и экранирования.</message>
+</messages>
