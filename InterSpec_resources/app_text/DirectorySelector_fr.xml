@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DirectorySelector -->
+  <message id="ds-path-label">Chemin :</message>
+  <message id="ds-txt-input-placeholder">Tapez chemin vers répertoire...</message>
+  <message id="ds-native-select-path-button">Sélectionner chemin</message>
+  <message id="ds-native-no-path-placeholder">(Aucun chemin sélectionné)</message>
+</messages>

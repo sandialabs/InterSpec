@@ -1,42 +1,51 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
   <message id="d3sdd-yAxisTitle">Comptes</message>
   <message id="d3sdd-yAxisTitleMulti">Comptes par {1} canaux</message>
-  <message id="d3sdd-realTime">Temps Réel</message>
-  <message id="d3sdd-liveTime">Temps Mort</message>
-  <message id="d3sdd-deadTime">Temps Mort</message>
+  <message id="d3sdd-realTime">Temps réel</message>
+  <message id="d3sdd-liveTime">Temps actif</message>
+  <message id="d3sdd-deadTime">Temps mort</message>
   <message id="d3sdd-scaledBy">Mis à l'échelle par</message>
-  <message id="d3sdd-zoomIn">Zoom Avant</message>
+  <message id="d3sdd-zoomIn">Zoom avant</message>
   <message id="d3sdd-neutrons">neutrons</message>
   <message id="d3sdd-Neutrons">Neutrons</message>
   <message id="d3sdd-cps">cps</message>
   <message id="d3sdd-roiCounts">Comptes ROI</message>
-  <message id="d3sdd-gammaCounts">Comptes Gamma</message>
+  <message id="d3sdd-gammaCounts">Comptes gamma</message>
   <message id="d3sdd-contArea">aire cont.</message>
   <message id="d3sdd-peakCps">cps pic</message>
   <message id="d3sdd-peakArea">aire pic</message>
   <message id="d3sdd-mean">moyenne</message>
   <message id="d3sdd-spectrum">Spectre</message>
-  <message id="d3sdd-comptonEdge">Bord Compton</message>
-  <message id="d3sdd-sumPeak">Pic de Somme</message>
+  <message id="d3sdd-comptonEdge">Front Compton</message>
+  <message id="d3sdd-sumPeak">Pic de somme</message>
   <message id="d3sdd-firstEnergyClick">Cliquez pour définir la première énergie du pic de somme.</message>
-  <message id="d3sdd-singleEscape">Échappement Simple</message>
-  <message id="d3sdd-doubleEscape">Échappement Double</message>
+  <message id="d3sdd-singleEscape">Échappement simple</message>
+  <message id="d3sdd-doubleEscape">Échappement double</message>
   <message id="d3sdd-eraseInRange">Effacera les pics dans la plage</message>
-  <message id="d3sdd-zoomInY">Zoom avant sur l'axe Y</message>
-  <message id="d3sdd-zoomOutY">Zoom arrière sur l'axe Y</message>
-  <message id="d3sdd-touchDefineRoi">Déplacez 2 doigts vers la droite pour définir la ROI</message>
-  <message id="d3sdd-foreNSigmaBelowBack">Le premier plan est à {1} σ en dessous de l'arrière-plan.</message>
-  <message id="d3sdd-foreNSigmaAboveBack">Le premier plan est à {1} σ au-dessus de l'arrière-plan.</message>
-  <message id="d3sdd-backSubCounts">comptes (soustraction BG)</message>
+  <message id="d3sdd-zoomInY">Zoom avant sur axe Y</message>
+  <message id="d3sdd-zoomOutY">Zoom arrière sur axe Y</message>
+  <message id="d3sdd-touchDefineRoi">Déplacer 2 doigts vers droite pour définir ROI</message>
+  <message id="d3sdd-foreNSigmaBelowBack">Premier plan {1} σ sous arrière-plan.</message>
+  <message id="d3sdd-foreNSigmaAboveBack">Premier plan {1} σ sur arrière-plan.</message>
+  <message id="d3sdd-backSubCounts">comptes (sous. BG)</message>
   <message id="d3sdd-afterScalingBy">après mise à l'échelle par </message>
   <message id="d3sdd-clickedPeak">Pic cliqué</message>
-  <message id="d3sdd-recalFromTo">Recalibrer les données de {1} à {2} keV</message>
+  <message id="d3sdd-recalFromTo">Recalibrer données de {1} à {2} keV</message>
   <message id="d3sdd-sumFromTo">{1} à {2} keV</message>
-  <message id="d3sdd-comptonPeakAngle">Pic Compton à {1}°</message>
-  <message id="d3sdd-yaxis-lower-upper-equal">Les comptes inférieurs et supérieurs sont égaux.</message>
+  <message id="d3sdd-comptonPeakAngle">Pic Compton {1}°</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">Comptes inf. et sup. égaux.</message>
   <message id="d3sdd-yaxis-no-spectrum">Aucun spectre affiché.</message>
-  <message id="d3sdd-yaxis-upper-counts-below-zero">Plage supérieure égale ou inférieure à zéro.</message>
-  <message id="d3sdd-yaxis-lower-counts-below-zero">Plage inférieure égale ou inférieure à zéro.</message>
-  <message id="d3sdd-yaxis-below-min-non-zero">Plage supérieure inférieure à la valeur minimale affichée, non nulle.</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">Plage sup. égale ou sous zéro.</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">Plage inf. égale ou sous zéro.</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">Plage sup. sous min. affiché, non nul.</message>
+  <message id="d3sdd-candidates">Candidats :</message>
+  <message id="d3sdd-use-arrows-to-select">(utiliser ↑ et ↓ pour sélectionner)</message>
 </messages>

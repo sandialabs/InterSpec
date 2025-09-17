@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">Spectres de référence</message>
+  <message id="rs-show-foreground">Afficher premier plan</message>
+  <message id="rs-show-background">Bruit de fond</message>
+  <message id="rs-tt-add-dir-btn">Ajouter répertoire pour ouvrir les spectres de référence.</message>
+  <message id="rs-tt-delete-dir-btn">Supprime le répertoire actuellement sélectionné de la liste des endroits pour afficher les spectres de référence.</message>
+  <message id="rs-no-dir-selected-desktop">
+    Sélectionnez un spectre de référence à charger. <br />
+    <br />
+    Ajoutez des répertoires de spectres de référence en utilisant l'icône
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/>.
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    Sélectionnez un spectre de référence à charger. <br /> 
+    <div style="font-size: smaller;">
+      (vous pouvez aussi ajouter votre propre répertoire de spectres de référence en créant un répertoire "reference_spectra" 
+      dans le répertoire de données d'<em>InterSpec</em> (en utilisant l'app Fichiers), puis ajouter d'autres sous-répertoires
+      avec vos spectres dedans)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} répertoires ne sont plus disponibles, et ont été supprimés.</message>
+  <message id="rs-dir-added-successfully">Chemin '{1}' ajouté.</message>
+  <message id="rs-show-as">Charger comme</message>
+  <message id="rs-add-dir-dialog-title">Ajouter répertoire spectres référence</message>
+  <message id="rs-duplicate-dir-path">Répertoire déjà sélectionné : '{1}'</message>
+  <message id="rs-dir-not-found">Répertoire non trouvé, donc pas supprimé des préférences : '{1}'</message>
+  <message id="rs-dir-info-only-spectra">Le répertoire contient {1} fichiers de spectres<br /></message>
+  <message id="rs-dir-info-only-subdir">Le répertoire contient {1} sous-répertoires<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">Le répertoire contient {1} fichiers de spectres et {2} sous-répertoires<br /></message>
+  <message id="rs-error-loading-file">Erreur chargement fichier : '{1}'</message>
+  <message id="rs-show-in-explorer">Afficher dans l'Explorateur</message>
+  <message id="rs-show-in-finder">Afficher dans le Finder</message>
+  <message id="rs-show-in-linux-file-manager">Afficher dans gestionnaire fichiers</message>
+  <message id="rs-error-invalid-file">Fichier de spectre invalide : '{1}'.</message>
+  <message id="rs-error-invalid-type-selected">Type de spectre invalide sélectionné.</message>
+  </messages>
+
+
