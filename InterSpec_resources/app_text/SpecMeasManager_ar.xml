@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">مدير الطيف</message>
+  <message id="smm-load-spec-from">تحميل الطيف من: </message>
+  <message id="smm-tt-upload-file">استيراد الطيف من ملف</message>
+
+  <message id="smm-err-zip">خطأ في استخراج الملف من zip</message>
+  <message id="smm-zip-sel-file-no-name">
+    الملف المرفوع هو ملف ZIP.
+    <br />
+    {2}
+    اختر أي ملف فيه تريد فتحه.
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b> هو ملف ZIP.
+    <br />
+    {2}
+    اختر أي ملف فيه تريد فتحه.
+  </message>
+  <message id="smm-zip-window-title">محتويات ملف ZIP المرفوع</message>
+  <message id="smm-zip-filename-hdr">اسم الملف</message>
+  <message id="smm-zip-kilobyte-hdr">كيلوبايت</message>
+  <message id="smm-zip-display-btn">عرض</message>
+  <message id="smm-empty-file">الملف كان على الأرجح ملف فارغ - وليس ملف طيف.</message>
+  <message id="smm-failed-reading-nonspec-file">فشل في قراءة ملف غير طيفي.</message>
+  <message id="smm-not-spec-file">ليس ملف طيف</message>
+  <message id="smm-image-file">تم اختيار ملف صورة</message>
+  <message id="smm-icd2">يبدو أن هذا ملف N42 ICD2 يحتوي على نتائج تحليل
+    بدلاً من أطياف خام.
+    <br />
+    إذا كنت تعتقد أن هذا ملف طيف شرعي، يرجى إرساله بالبريد الإلكتروني إلى 
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    لدعم نوع الملف هذا.
+  </message>
+  <message id="smm-invalid-zip">يبدو أن هذا الملف ملف ZIP غير صالح (أو xlsx, pptx، 
+    <br />
+    docx, odp, jar, apk، إلخ)، عذرًا لا يمكنني فتحه :(
+  </message>
+  <message id="smm-unsupported-archive">يبدو أن هذا الملف ملف أرشيف، غير مدعوم من InterSpec بعد.
+    يرجى الاتصال بـ 
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    إذا كنت تريد إضافة دعم لنوع الأرشيف هذا.
+  </message>
+  <message id="smm-unsupported-document">يبدو أن هذا الملف ملف وثيقة، وغير مدعوم من InterSpec.</message>
+  <message id="smm-invalid-peak-csv">الملف المرفوع بدا وكأنه ملف Peak CSV، لكنه كان غير صالح.</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      يبدو أن هذا الملف دالة استجابة كاشف.
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      الاسم: {1}
+    </p>
+   <p>هل تريد استخدام DRF هذا؟</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    تم حفظ '{1}' للاستخدام لاحقًا، وسيكون متاحًا في
+    جزء "<em>الكفاءة النسبية</em>" من أداة "<em>اختيار دالة استجابة الكاشف</em>".
+  </message>
+  <message id="smm-err-saving-drf">خطأ في حفظ ملف DRF للاستخدام لاحقًا.</message>
+  <message id="smm-file-is-multi-drf">هذا الملف يحتوي على دوال استجابة كاشف متعددة.</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>لا توجد مقدمة معروضة حاليًا - تخطي ملف CALp.</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      محتوى ملف CALp هذا كان
+      <br />
+      غير قابل للقراءة أو غير متوافق مع البيانات
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">يبدو أن هذا الملف يحتوي على معايرة طاقة.</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>هناك معايرات لـ {1} كاشف</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    تحذير: ملف CALp هذا يحتوي على معايرة واحدة؛ سيتم<br />
+    تطبيقها على معايرة الطاقة المعروضة الأساسية، و<br />
+    سيتم تطبيق التغيير النسبي على معايرات الطاقة<br />
+    للكواشف الأخرى، وهو على الأرجح ما تريده.
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    تحذير: معايرة الطاقة هذه قد لا تكون متسقة<br />
+    مع هيكل البيانات الحالية.
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">تطبيق على العينات المعروضة فقط</message>
+  <message id="smm-CALp-cb-apply-to-fore">تطبيق على المقدمة</message>
+  <message id="smm-CALp-cb-apply-to-back">تطبيق على الخلفية</message>
+  <message id="smm-CALp-cb-apply-to-second">تطبيق على الثانوي</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">هل تريد استخدامه؟</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      ملاحظة: معايرة الطاقة الحالية هي طاقات القناة السفلى؛<br />
+      قد تريد جعل الطيف خطيًا قبل تطبيق معايرة<br />
+      الطاقة هذه.
+    </p>
+  </message>
+
+  <message id="smm-CALp-err-applying-single">كان هناك خطأ في تطبيق المعايرة:
+    <br />
+    {1}
+    <br />
+    <br />
+    تم تطبيق المعايرة على المقدمة.
+  </message>
+  <message id="smm-CALp-err-applying-mult">كان هناك خطأ في تطبيق المعايرة:
+    <br />
+    {1}
+    <br />
+    <br />
+    تم تطبيق المعايرة على المقدمة والخلفية.
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc">خطأ في تحميل ملف تكوين XML <em>النظائر حسب النواة</em>: {1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">خطأ في تحليل XML التكوين: {1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">ملف تكوين XML <em>النظائر حسب النواة</em> غير صالح.</message>
+  <message id="smm-ecc-curve">DRF منحنى معايرة كفاءة ISOCS</message>
+  <message id="smm-ecc-how-to-interpret">كيفية التفسير</message>
+  <message id="smm-ecc-far-field">DRF المجال البعيد</message>
+  <message id="smm-ecc-fix-geom-total-act">هندسة ثابتة - النشاط الإجمالي</message>
+  <message id="smm-ecc-fix-geom-act-cm2">هندسة ثابتة - النشاط لكل سم2</message>
+  <message id="smm-ecc-fix-geom-act-m2">هندسة ثابتة - النشاط لكل م2</message>
+  <message id="smm-ecc-fix-geom-act-gram">هندسة ثابتة - النشاط لكل جرام</message>
+  <message id="smm-ecc-det-diam">قطر الكاشف</message>
+  <message id="smm-ecc-dist">المسافة</message>
+  <message id="smm-ecc-use-drf">استخدام DRF</message>
+  <message id="smm-ecc-error">خطأ في إنشاء DRF من ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">XML النشاط/التدريع</message>
+  <message id="smm-act-shield-use">استخدام إعداد ملائمة النشاط/التدريع هذا؟</message>
+  <message id="smm-err-act-shield">عذرًا، كان هناك خطأ في تحميل نموذج ملائمة النشاط/التدريع: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">ملف مكتبة مصدر التوصيف</message>
+  <message id="smm-source-source-use">
+    هذا سيستخدم ملف Source.lib هذا في أداة إنشاء استجابة الكاشف.
+    <br />
+    هل تريد ملء المصادر تلقائيًا بأول نواة مطابقة في المكتبة؟
+  </message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">ربما انتهت مهلة رفع الملف - 120 ثانية دون استلام بيانات الملف.</message>
+  <message id="smm-finishing-upload">إنهاء الرفع</message>
+  <message id="smm-finishing-copying">إنهاء نسخ الملف</message>
+  <message id="smm-finish-up-txt">من {1} {2} ملف - قد يستغرق دقيقة.</message> <!-- ex. "of 112.2 kb foreground file - may take a minute."-->
+  <message id="smm-window-title-parsing">تحليل الملف</message>
+  <message id="smm-window-msg-parsing">قد يستغرق هذا ثانية.</message>
+  <message id="smm-no-file-disp">خطأ، لا يوجد قياس {1} معروض.</message>
+  <message id="smm-no-spec-disp">عذرًا، {1} لا يبدو أنه يعرض طيف.</message>
+  <message id="smm-err-parse-spec-title">لا يمكن تحليل الملف</message>
+  <message id="smm-err-parse-spec">
+    <p>عذرًا، لم أتمكن من تحليل الملف {1}:</p>
+  <p>خطأ: <em>{2}</em></p>
+  <p>إذا كنت تعتقد أن هذا ملف طيف صالح، يرجى إرساله إلى 
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>، و
+   سنحاول إصلاح هذه المشكلة.</p>
+  </message>
+  <message id="smm-failed-combine">فشل في دمج الملفات: {1}</message>
+  <message id="smm-failed-sum">فشل في جمع الأطياف: {1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">لا توجد قياسات جاما في URL/رمز QR</message>
+  <message id="smm-qr-no-gamma">لا توجد قياسات جاما في URL/رمز QR</message>
+  <message id="smm-qr-name-placeholder">من رمز QR/URL</message>
+  <message id="smm-qr-err-decode">خطأ في فك تشفير URL/رمز QR للطيف: {1}</message>
+  <message id="smm-qr-couldnt-encode">
+    لم يتمكن من ترميز الطيف إلى رمز QR.
+    <br />
+    على الأرجح بسبب الحاجة لأكثر من 9 رموز QR.
+  </message>
+  <message id="smm-qr-encode-fail">فشل في ترميز الطيف إلى رمز QR: {1} </message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">الكواشف الافتراضية للتحميل؟</message>
+  <message id="smm-vd-load-msg">
+    <div>هذا الملف احتوى على "كواشف افتراضية" متعددة والتي</div>
+    <div>قد تكون مجاميع كواشف فيزيائية متعددة، أو لا.</div>
+    <div>إذا حملت الكل، انظر قائمة <b>عرض</b>→<b>الكواشف</b> لـ</div>
+    <div>عرض مجموعة فرعية.</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      أي بيانات كواشف تريد تحميلها؟
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>هناك {1} VDs، فقط "الكل" أو أول 5 قابلة للاختيار.</div>
+  </message>
+  <message id="smm-vd-all-btn">الكل</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">استخدام البيانات المشتقة؟</message>
+  <message id="smm-derived-window-txt">
+    <div>هذا الملف احتوى على أطياف "بيانات مشتقة"، والتي</div>
+    <div>عادة ما تُستخدم من قبل نظام الكشف للتحليل.</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      أي بيانات تريد تحميلها؟
+    </div>
+  </message>
+  <message id="smm-derived-all">جميع البيانات</message>
+  <message id="smm-derived-raw">البيانات الخام</message>
+  <message id="smm-derived-derived">البيانات المشتقة</message>
+  <message id="smm-multiple-binnings-window-title">اختيار تجميع الطاقة</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">تم العثور على تجميعات طاقة متعددة في ملف الطيف.</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">يرجى اختيار أيها تريد</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">الاحتفاظ بالكل</message>
+  <message id="smm-warn-has-intrinsic">الملف المرفوع احتوى على طيف نشاط جوهري، لكن يعرض حاليًا الطيف الآخر في الملف.</message>
+  <message id="smm-warn-upload-mult-spec">الملف المرفوع احتوى على {1} عينة<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">يتم عرض عينة المقدمة الأولى.<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">يتم عرض العينة الأولى.<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">يتم عرض العينة {1}.<br /></message>
+  <message id="smm-warn-upload-use-spec-manager">استخدم علامة تبويب <b>ملفات الطيف</b>، أو <b>مدير الملفات</b> لاختيار سجلات أخرى.</message>
+  <message id="smm-warn-upload-use-file-manager">استخدم <b>مدير الملفات</b> لاختيار أخريات.</message>
+
+  <message id="smm-multi-cal-present">الملف المرفوع احتوى على {1} عينة معايرة أو بيانات مشتقة
+    <br />
+    {2}
+    لن يتم عرضها.
+    <br />
+    استخدم علامة تبويب <b>ملفات الطيف</b> أو <b>مدير الملفات</b> لتغيير هذا.
+  </message>
+  <message id="smm-multi-cal-it">هي</message>
+  <message id="smm-multi-cal-they">هم</message>
+  <message id="smm-multi-spectra-using-back">الملف يحتوي على أطياف متعددة، لذا تم عرض طيف الخلفية فقط.</message>
+  <message id="smm-multi-spectra-using-first">الملف المرفوع احتوى على {1} عينة لذا
+    <br />
+    أعرض الأولى.
+    <br />
+    استخدم <b>مدير الملفات</b> لتغيير هذا.
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">الطيف المختار: </message>
+  <message id="smm-disp-as-btn">عرض كـ</message>
+  <message id="smm-to-new-file">إلى ملف جديد</message>
+  <message id="smm-tt-to-new-file">ينشئ ملف طيف جديد في الذاكرة من الاختيار الحالي.</message>
+  <message id="smm-as-new-file">كملف جديد</message>
+  <message id="smm-tt-as-new-file">ينشئ ملف طيف جديد في الذاكرة من الاختيار الحالي.</message>
+  <message id="smm-sum-spectra">جمع الأطياف</message>
+  <message id="smm-tt-sum-spectra">ينشئ ملف طيف جديد في الذاكرة من الاختيار الحالي.</message>
+  <message id="smm-export-btn">تصدير...</message>
+  <message id="smm-unload-btn">إلغاء تحميل</message>
+  <message id="smm-unassign-label">إلغاء تخصيص: </message>
+
+
+  <message id="smm-prev-states-window-title">الحالات المخزنة مسبقًا</message>
+  <message id="smm-err-prev-state-unexpected">مشكلة غير متوقعة في عرض الحالات المحفوظة المتاحة: {1}</message>
+  <message id="smm-tab-saved-states">الحالات المحفوظة</message>
+  <message id="smm-tab-auto-saved">الأطياف المحفوظة تلقائيًا</message>
+  <message id="smm-auto-check-prev-cb">التحقق تلقائيًا من العمل السابق.</message>
+  <message id="smm-cant-save">
+    ملف الطيف هذا كبير جدًا لحفظه في قاعدة البيانات الداخلية.<br />
+    نتيجة لذلك، لن يتم حفظ عملك تلقائيًا في قاعدة البيانات الداخلية، ولن تتمكن من الاستئناف من حيث توقفت في المرة القادمة التي تحمل فيها الملف.
+    <p>حجم هذا الملف {1}، بينما الحد الأقصى الذي يمكن حفظه {2}.</p>
+  </message>
+  <message id="smm-max-file-to-large">الملف المحاول كبير جدًا؛ الحد الأقصى للحجم {1} كيلوبايت، حاولت رفع {2} كيلوبايت.</message>
+  <message id="smm-must-specify-name">يجب تحديد اسم</message>
+  <message id="smm-save-spectype-as-window-title">حفظ طيف {1} كـ</message>
+  <message id="smm-save-spectype-name-empty-txt">(اسم للتخزين تحته)</message>
+  <message id="smm-save-spectype-desc-empty-txt">(وصف اختياري)</message>
+  <message id="smm-save-state-toast">تم حفظ حالة {1}</message>
+  <message id="smm-save-spec-version-window-title">حفظ إصدار الطيف</message>
+  <message id="smm-save-state">حفظ الحالة</message>
+  <message id="smm-create-new-tag-toast">تم إنشاء علامة جديدة: '{1}'.</message>
+
+  <message id="smm-next-qr">رمز QR التالي</message>
+  <message id="smm-qr-desc">{1}  لطيف {2}.</message>
+  <message id="smm-qr-title">ملف الطيف {1}</message>
+  <message id="smm-qr-sequence-single">رمز QR</message>
+  <message id="smm-qr-sequence-multi">رمز QR {1} من {2}</message>
+  
+  
+  <message id="smm-changed-background">
+    تم أيضًا تحديث طيف الخلفية ليكون المضمن مع الملف المحمل حديثًا.
+  </message>
+  <message id="smm-didnt-changed-background">
+    ملف المقدمة المحمل حديثًا احتوى على طيف خلفية
+    - لكن الخلفية المعروضة <b>لم يتم</b> تحديثها.
+  </message>
+  
+  <message id="fud-dialog-title">اختيار ملف للفتح</message>
+  <message id="fud-open-foreground-only-msg">{1} أدناه لاختيار ملف طيف مقدمة للفتح.</message>
+  <message id="fud-open-any-type-msg">اختر كيف تريد فتح ملف الطيف، ثم {1} أدناه لتصفح الملف.</message>
+  <message id="fud-btn-grp-title">فتح الملف كـ:</message>
+  <message id="fud-drg-n-drop-msg">
+    يمكنك أيضًا سحب وإفلات الملف مباشرة في <br />
+    نافذة التطبيق كبديل أسرع.<br />
+    <br />لفتح ومعالجة ملفات أكثر تقدمًا<br />
+    استخدم <b>مدير الملفات</b>
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      يمكنك أيضًا فتح ملفات الطيف من تطبيقات البريد الإلكتروني أو الملفات.
+    </span>
+  </message>
+  
+  <message id="musd-dialog-title">طيف QR/URL متعدد الأجزاء</message>
+  <message id="musd-err-diff-spec">URL/رمز QR المستلم كان من طيف مختلف عن URL/رمز QR السابق</message>
+  <message id="musd-err-duplicate-url">تم استلام URL/رمز QR هذا بالفعل</message>
+  <message id="musd-from-qr-file-name">من رمز QR/URL</message>
+  <message id="musd-err-decoding-url">خطأ في فك تشفير URL: {1}</message>
+  <message id="musd-received-urls-list">تم استلام urls {1} من {2}.<p>في انتظار المزيد من URLS/رموز QR</p></message>
+
+
+  <message id="uid-qr-code-pic">صورة رمز QR</message>
+  <message id="uid-no-qr-found">لم يتم العثور على رموز QR ⓘ</message>
+  <message id="uid-no-qr-found-title">لم يتم العثور على رمز QR</message>
+  <message id="uid-no-qr-content">
+    <p>
+      إذا كان هناك رمز QR في الصورة، يمكنك محاولة قص الصورة أو ضبط مستوى الألوان.
+      <br/>
+      استخدام تطبيق/موقع طرف ثالث، أو القدرات المدمجة في iOS أو Android، ستعمل أيضًا بشكل أفضل في كثير من الأحيان.
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">خطأ في البحث عن رمز QR</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      قيمة الخطأ: {1}
+    </div>
+    <p>
+      رسالة الخطأ: {2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">{1} من رموز QR كانت لها URIs غير صالحة.</message>
+  <message id="uid-qr-didnt-have-uri">رمز QR لم يحتو على URI <code>interspec://</code> أو <code>raddata://</code>.</message>
+  <message id="uid-invalid-qr">رمز QR غير صالح</message>
+  <message id="uid-invalid-uri">رمز QR احتوى على URI غير صالح</message>
+  <message id="uid-multi-qr-found-title">تم العثور على {1} رمز QR</message>
+  <message id="uid-multi-qr-found-content">هل تريد استخدام كل هذه؟</message>
+  <message id="uid-multi-qr-status">تم العثور على {1} رمز QR</message>
+  <message id="uid-qr-found-title">تم العثور على رمز QR</message>
+  <message id="uid-qr-found-content">هل تريد استخدام رمز QR الذي يبدأ بـ <br /> <code>{1}...</code></message>
+  <message id="uid-found-qr">تم العثور على رمز QR</message>
+  <message id="uid-err-getting-data">خطأ في استرداد البيانات للتضمين - لا يتم تضمين الصورة.</message>
+  <message id="uid-err-no-foreground-embedd">لا توجد مقدمة محملة - لا يتم تضمين الصورة.</message>
+  <message id="uid-image-embed-conf">تم تضمين الصورة في ملف طيف المقدمة؛ فقط التصدير بصيغة ملف N42-2012 سيحافظ على هذا.</message>
+  <message id="uid-image-not-spectrum">يبدو أن هذا الملف صورة، وليس ملف طيف.</message>
+  <message id="uid-err-to-large">الملف المرفوع كان كبير جدًا لمحاولة عرضه.</message>
+  <message id="uid-err-reading-upload">لم يتمكن من قراءة الملف المرفوع.</message>
+  <message id="uid-embed-image-btn">تضمين الصورة في ملف الطيف</message>
+  <message id="uid-no-qr-found">لم يتم العثور على رمز QR ⓘ</message>
+  <message id="uid-looking-for-qr">البحث عن رموز QR.</message>
+  <message id="uid-check-for-qr-btn">التحقق من رمز QR</message>
+  <message id="uid-tt-auto-qr">
+    يتم البحث في الصور تلقائيًا عن رموز QR التي قد تكون قابلة للاستخدام من قبل InterSpec.
+    <br/>
+    إذا كان هناك رمز QR في الصورة لم يتم العثور عليه، قد تحصل على
+    حظ أفضل باستخدام تطبيق/موقع طرف ثالث، أو القدرات المدمجة في iOS
+    أو Android.
+    <br />
+    إذا استخدمت أداة طرف ثالث لاستخراج URI من رمز QR، يمكنك
+    إدخاله في InterSpec باستخدام عنصر "<b>إدخال URL</b>"
+    في قائمة "<b>تحرير</b>".
+  </message>
+</messages>

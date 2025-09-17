@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  
+  <!-- Presets section -->
+  <message id="raag-presets">الإعدادات المسبقة</message>
+  <message id="raag-preset-blank">فارغ</message>
+  <message id="raag-user-preset">المستخدم: {1}</message>
+  
+  <!-- Status messages -->
+  <message id="raag-not-calculated">غير محسوب.</message>
+  <message id="raag-calculating">جاري الحساب...</message>
+  
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">خيارات الطيف والقمة</message>
+  <message id="raag-fit-energy-cal">ملائمة معايرة الطاقة</message>
+  <message id="raag-back-sub">طرح الخلفية</message>
+  <message id="raag-fwhm-est">تقدير FWHM</message>
+  <message id="raag-fwhm-form">شكل FWHM</message>
+  <message id="raag-peak-skew">انحراف القمة</message>
+  <message id="raag-add-uncert">عدم يقين إضافي</message>
+  <message id="raag-yield-info">معلومات الإنتاجية</message>
+  
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">البدء من الكاشف/القمم</message>
+  <message id="raag-fwhm-start-peaks">البدء من القمم</message>
+  <message id="raag-fwhm-fixed-peaks">ثابت للقمم</message>
+  <message id="raag-fwhm-start-det-eff">البدء من كفاءة الكاشف</message>
+  <message id="raag-fwhm-fixed-det-eff">ثابت لكفاءة الكاشف</message>
+  
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">إضافة قمم حرة</message>
+  <message id="raag-clear-all-ranges">مسح جميع النطاقات</message>
+  <message id="raag-continue">متابعة</message>
+  <message id="raag-html-report">تقرير HTML</message>
+  <message id="raag-xml-config">تكوين XML</message>
+  
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">مسح نطاقات الطاقة؟</message>
+  <message id="raag-cant-perform-action">لا يمكن تنفيذ هذا الإجراء.</message>
+  <message id="raag-divide-energy-range-title">تقسيم نطاق الطاقة؟</message>
+  <message id="raag-apply-fit-energy-cal-title">تطبيق ملائمة معايرة الطاقة؟</message>
+  <message id="raag-cant-continue">لا يمكن المتابعة</message>
+  <message id="raag-no-peaks-in-solution">لا توجد قمم في الحل الحالي</message>
+  <message id="raag-error">خطأ</message>
+  <message id="raag-unexpected-error-finding-original">كان هناك خطأ غير متوقع في العثور على الأصل</message>
+  
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">استيراد ملف تكوين XML</message>
+  <message id="raag-select-isotopics-xml-file">اختر ملف XML <em>النظائر حسب النواة</em> للاستخدام</message>
+  <message id="raag-file-too-large-title">الملف كبير جدًا للرفع</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">ملاحظة: يمكنك أيضًا سحب وإفلات ملفات تكوين XML على InterSpec</p>
+  </message>
+  
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">ترتيب نطاقات الطاقة.</message>
+  <message id="raag-remove-all-ranges-tt">يزيل جميع نطاقات الطاقة.</message>
+  <message id="raag-remove-free-peaks-tt">إزالة جميع القمم الحرة، وإخفاء إدخال القمم الحرة.</message>
+  <message id="raag-free-peaks-tt">&quot;القمم الحرة&quot; هي قمم بطاقة محددة، غير مرتبطة بأي نواة، وسعتها تُلائم لأفضل قيمة للبيانات. القمم قد تُحرر اختياريًا من قيد FWHM الوظيفي أيضًا.<br />القمم الحرة مفيدة للتعامل مع القمم من التفاعلات، أو من النوى غير المحددة.</message>
+  
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">ستعتمد عدم يقين القمم على ملائمة الكفاءة النسبية الإجمالية (مثل، القمم تساعد بعضها البعض لتقليل عدم اليقين)، إلا إذا اخترت إعادة ملائمتها، وفي هذه الحالة لن تكون مقيدة بمنحنى الكفاءة النسبية أو الشكل الوظيفي لـ FWHM.</message>
+  
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} كيلوإلكترون فولت موجود بالفعل في نطاق الطاقة [{2}, {3}] كيلوإلكترون فولت - لن يتم اتخاذ أي إجراء.</message>
+  <message id="raag-extended-energy-range">تم توسيع نطاق الطاقة الموجود إلى [{1}, {2}] كيلوإلكترون فولت.</message>
+  <message id="raag-added-new-energy-range">تم إضافة نطاق طاقة جديد من {1} إلى {2} كيلوإلكترون فولت.</message>
+  <message id="raag-split-roi-at">تقسيم ROI عند {1} كيلوإلكترون فولت</message>
+  <message id="raag-add-free-peak-at">إضافة قمة حرة عند {1} كيلوإلكترون فولت</message>
+  <message id="raag-energy-range-no-contributions">نطاق الطاقة من {1} كيلوإلكترون فولت إلى {2} كيلوإلكترون فولت لم يحتو على أي مساهمات جاما مهمة.</message>
+  <message id="raag-divide-energy-range-msg">
+    هذا الإجراء سيقسم نطاق الطاقة من {1} كيلوإلكترون فولت إلى {2} كيلوإلكترون فولت إلى {3} نطاقات طاقة منفصلة.
+    <br />
+    <p>هل تريد المتابعة؟</p>
+  </message>
+  <message id="raag-add-energy-offset"> إضافة إزاحة {1} كيلوإلكترون فولت</message>
+  <message id="raag-increase-gain-first"> زيادة الكسب بـ {1}</message>
+  <message id="raag-increase-gain-additional"> وزيادة الكسب بـ {1}</message>
+  <message id="raag-increase-quad-first"> زيادة التربيعي بـ {1}</message>
+  <message id="raag-increase-quad-additional"> وزيادة التربيعي بـ {1}</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">هذا سيقوم{1} للمقدمة الأساسية{2}{3}.<br />هل تريد فعل هذا؟</message>
+  <message id="raag-and-background"> والخلفية</message>
+  <message id="raag-files"> الملفات</message>
+  <message id="raag-file"> الملف</message>
+  <message id="raag-energy-cal-updated">تم تحديث معايرة الطاقة للمقدمة المعروضة{1}.</message>
+  <message id="raag-and-background-period"> والخلفية</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">خطأ في إنشاء أداة النشاط النسبي للنظائر: {1}</message>
+  <message id="raag-handle-double-click-error">خطأ handleDoubleLeftClick: {1}</message>
+  <message id="raag-expected-state-info">معلومات الحالة المتوقعة لـ '{1}' غير متاحة - هذا غير متوقع - عذرًا!</message>
+  <message id="raag-state-info-not-saved">لم يتمكن من حفظ معلومات الحالة مسبقًا لـ '{1}' - هذا غير متوقع - عذرًا!</message>
+  <message id="raag-error-deserializing">خطأ في إلغاء تسلسل حالة الأداة: {1}</message>
+  <message id="raag-error-loading-preset">خطأ في تحميل الإعداد المسبق: {1}</message>
+  <message id="raag-error-applying-energy-cal">خطأ في تطبيق معايرة الطاقة: {1}</message>
+  <message id="raag-error-loading-xml-config">خطأ في تحميل ملف تكوين XML <em>النظائر حسب النواة</em>: {1}</message>
+  
+</messages>

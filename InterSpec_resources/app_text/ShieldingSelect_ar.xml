@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ss- is short for ShieldingSelect
+  -->
+  <message id="ss-tt-shield-type-toggle">التبديل بين التدريع المادي والعام</message>
+  <message id="ss-tt-material-name">
+    يمكنك إما إدخال اسم مادة أو عنصر محدد مسبقًا هنا
+    (امسح نص النموذج وانقر على السهم على يمين النموذج لرؤية جميع الخيارات
+    المحددة مسبقًا)، أو يمكنك تحديد التركيب الذري للمادة، مثل
+    C0.5H0.2Ni0.6، حيث الأرقام هي الكثافة بالجرام/سم3 من
+    العنصر السابق في المادة، لذا المثال سيكون له كثافة إجمالية
+    0.5+0.2+0.6=1.3 جرام/سم3.
+    لإدخال مواد بمكونات نظيرية، يجب أن تضع النواة بين علامتي اقتباس مفردة أو مزدوجة،
+    مثل: 'U238'0.2'U235'0.8
+  </message>
+  <message id="ss-tt-material-name-fit">
+  ملاحظة: إذا استُخدمت كمصدر ذاتي الامتصاص، ستُستخدم المادة، كما هي محددة، لأغراض
+  الامتصاص، لكن الكسر الكتلي المحدد للنوى المصدر قد لا يطابق هذا
+  الامتصاص...
+  </message>
+  <message id="ss-tt-areal-density">الكثافة المساحية للتدريع بالجرام/سم2</message>
+  <message id="ss-areal-density-empty-txt">الكثافة المساحية</message>
+  <message id="ss-tt-atomic-number">العدد الذري للتدريع</message>
+  <message id="ss-atomic-number-empty-txt">العدد الذري</message>
+  <message id="ss-source-for-cb">
+    عندما تُستخدم هذه النوى كمصادر فهي
+    تُعامل كموزعة بانتظام في المادة
+    (التي يُفترض أنها كروية)، لذا يتم حساب الامتصاص الذاتي
+    وعوامل أخرى.
+  </message>
+  <message id="ss-fit-mass-fractions-cb">ملائمة الكسور الكتلية</message>
+  <message id="ss-thickness">السماكة</message>
+  <message id="ss-radius">نصف القطر</message>
+  <message id="ss-radial-thickness">السماكة الشعاعية</message>
+  <message id="ss-half-length">نصف الطول</message>
+  <message id="ss-length-thickness">سماكة الطول</message>
+  <message id="ss-half-width">نصف العرض</message>
+  <message id="ss-width-thickness">سماكة العرض</message>
+  <message id="ss-half-height">نصف الارتفاع</message>
+  <message id="ss-height-thickness">سماكة الارتفاع</message>
+  <message id="ss-half-depth">نصف العمق</message>
+  <message id="ss-depth-thickness">سماكة العمق</message>
+  <message id="ss-tt-fit-mass-frac">إذا تم ملائمة الكسور الكتلية، سيبقى مجموعها الكسري ثابتًا في الملائمة.</message>
+  <message id="ss-fixed-non-src-frac">افتراض {1}{2}% نظائر {3} أخرى</message>
+  <message id="ss-fixed">ثابت </message> <!-- Note: trailing space is Nbsp character -->
+  <message id="ss-generic">عام</message>
+  <message id="ss-consists-of-mass-frac">يتكون من (الكسر الكتلي، العنصر)</message>
+  <message id="ss-err-invalid-material">{1} ليست مادة صالحة</message>
+  <message id="ss-invalid-mat">مادة غير صالحة</message>
+  <message id="ss-src-mass-frac-label">الكسر الكتلي لـ {1}:</message>
+  <message id="ss-non-src-frac">كسر غير المصدر</message>
+  <message id="ss-add-shield-before">إضافة تدريع قبل</message>
+  <message id="ss-add-shield-after">إضافة تدريع بعد</message>
+  <message id="ss-add-trace-src">إضافة مصدر أثر</message>
+  <message id="ss-non-src-frac-el">{1} آخر:</message>
+  <message id="ss-tt-with-uncert">{1}</message>
+  <message id="ss-tt-without"></message>
+  <message id="ss-warning-only-one-src-frac">لملائمة الكسور الكتلية، يرجى اختيار مكونين على الأقل من {1} للملائمة.</message>
+</messages>

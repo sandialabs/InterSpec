@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-tt-material">
+    يمكنك إما إدخال اسم مادة أو عنصر محدد مسبقًا (امسح نص النموذج
+    وانقر على السهم على يمين النموذج لرؤية جميع الخيارات المحددة مسبقًا)، أو يمكنك
+    إدخال صيغة كيميائية مثل 'H0.112 O0.88' حيث الأرقام هي
+    الكثافة بالجرام/سم3، (أو استخدم الكسر الكتلي وحقل الكثافة)، من
+    العنصر السابق.
+  </message>
+  <message id="gxsg-total-atten-xs">إجمالي المقطع العرضي للامتصاص</message>
+  <message id="gxsg-compton-label">كومبتون</message>
+  <message id="gxsg-rayleigh-label">رايلي</message>
+  <message id="gxsg-photoelec-label">الكهروضوئي</message>
+  <message id="gxsg-pp-label">إنتاج الأزواج</message>
+  <message id="gxsg-mass-avrg-an">متوسط العدد الذري الكتلي</message>
+  <message id="gxsg-opt-atten">الامتصاص (اختياري):</message>
+  <message id="gxsg-density-label">الكثافة:</message>
+  <message id="gxsg-thickness-label">السماكة:</message>
+  <message id="gxsg-tt-thickness">سماكة المخفف.</message>
+  <message id="gxsg-trans-frac-label">كسر النقل</message>
+  <message id="gxsg-tt-trans-frac">هذا هو كسر أشعة الجاما التي ستمر عبر التدريع المحدد.</message>
+  <message id="gxsg-tt-distance">هذه هي المسافة من مركز المصدر إلى الكاشف.</message>
+  <message id="gxsg-intrinsic-eff-label">الكفاءة الجوهرية</message>
+  <message id="gxsg-tt-intrinsic-eff">الكفاءة الجوهرية (كفاءة الكشف داخل القمة لأشعة الجاما الضاربة لوجه الكاشف).</message>
+  <message id="gxsg-solid-angle-frac-label">كسر الزاوية المجسمة</message>
+  <message id="gxsg-tt-solid-angle-frac">كسر الزاوية المجسمة للكاشف المختار على المسافة المحددة.</message>
+  <message id="gxsg-det-eff-label">كفاءة الكشف</message>
+  <message id="gxsg-tt-det-eff">الكفاءة الجوهرية مضروبة في كسر الزاوية المجسمة. مثلاً كسر أشعة الجاما الخارجة من التدريع التي ستُكتشف. لا يشمل الامتصاص.</message>
+  <message id="gxsg-total-eff-label">الكفاءة الإجمالية</message>
+  <message id="gxsg-tt-total-eff">كسر النقل مضروب في كفاءة الكشف. مثلاً كسر أشعة الجاما المنبعثة من المصدر التي ستُكتشف.</message>
+  <message id="gxsg-warn-suspect">حساب XS قد يكون مشكوكًا فيه: {1}</message>
+  <message id="gxsg-tool-state-title">حالة أداة Gamma XS</message>
+  <message id="gxsg-tool-state-text">الحالة الحالية لأداة xs.</message>
+</messages>
