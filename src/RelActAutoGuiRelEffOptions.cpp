@@ -42,6 +42,7 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/RelActAutoGui.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/UserPreferences.h"
@@ -87,6 +88,9 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
       m_options_changed_signal(this),
       m_has_multiple_phys_models(false)
 {
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( app )
+    app->useMessageResourceBundle( "RelActAutoGuiRelEffOptions" );
   addStyleClass( "RelEffCurveOptions" );
 
   InterSpec * const viewer = InterSpec::instance();
@@ -94,8 +98,8 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
 
   m_rel_eff_curve_name = new WInPlaceEdit( this );
   m_rel_eff_curve_name->setStyleClass( "RelEffCurveName" );
-  m_rel_eff_curve_name->setPlaceholderText( "Curve Name" );
-  m_rel_eff_curve_name->setEmptyText( "Curve Name" );
+  m_rel_eff_curve_name->setPlaceholderText( WString::tr("raageo-curve-name") );
+  m_rel_eff_curve_name->setEmptyText( WString::tr("raageo-curve-name") );
   m_rel_eff_curve_name->setButtonsEnabled( false );
   m_rel_eff_curve_name->setText( name );
   m_rel_eff_curve_name->valueChanged().connect( this, &RelActAutoGuiRelEffOptions::emitNameChanged );
@@ -103,7 +107,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   WContainerWidget *eqnTypeDiv = new WContainerWidget( this );
   eqnTypeDiv->addStyleClass( "EqnTypeDiv" );
   
-  WLabel *label = new WLabel( "Eqn Type", eqnTypeDiv );
+  WLabel *label = new WLabel( WString::tr("raageo-eqn-type"), eqnTypeDiv );
   
   m_rel_eff_eqn_form = new WComboBox( eqnTypeDiv );
   m_rel_eff_eqn_form->addStyleClass( "GridSecondCol GridFirstRow" );
@@ -111,28 +115,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   m_rel_eff_eqn_form->activated().connect( this, &RelActAutoGuiRelEffOptions::handleRelEffEqnTypeChanged );
   
   
-  const char *tooltip = "The functional form to use for the relative efficiciency curve.<br />"
-  "Options are:"
-  "<table style=\"margin-left: 10px;\">"
-  "<tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>"
-  "<tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>"
-  "<tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>"
-  "<tr><th>Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>"
-  "<tr><th>Physical:</th>             <th>"
-  "  y = <span style=\"display: inline-block; vertical-align: middle;\">"
-  "        <span style=\"display: block; text-align: center;\">"
-  "         (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))"
-  "        </span>"
-  "        <span style=\"display: block; border-top: 1px solid black; text-align: center;\">"
-  "          (AD<sub>0</sub>*μ<sub>0</sub>)"
-  "        </span>"
-  "      </span>"
-  "       * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]"
-  "       * [Det. Eff.]"
-  "       * [E<sup>b</sup> * C<sup>1/E</sup>]"
-  "  </th></tr>"
-  "</table>";
-  HelpSystem::attachToolTipOn( {eqnTypeDiv}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {eqnTypeDiv}, WString::tr("raageo-eqn-type-tt"), showToolTips );
   
   // Will assume FramEmpirical is the highest
   static_assert( static_cast<int>(RelActCalc::RelEffEqnForm::FramPhysicalModel)
@@ -145,31 +128,31 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   {
     const auto eqn_form = RelActCalc::RelEffEqnForm( i );
     
-    const char *txt = "";
+    WString txt;
     switch( eqn_form )
     {
       case RelActCalc::RelEffEqnForm::LnX:
         //y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...
-        txt = "Log(x)";
+        txt = WString::tr("raageo-eqn-log-x");
         break;
         
       case RelActCalc::RelEffEqnForm::LnY:
         //y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
-        txt = "Log(y)";
+        txt = WString::tr("raageo-eqn-log-y");
         break;
         
       case RelActCalc::RelEffEqnForm::LnXLnY:
         //y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )
-        txt = "Log(x)Log(y)";
+        txt = WString::tr("raageo-eqn-log-x-log-y");
         break;
         
       case RelActCalc::RelEffEqnForm::FramEmpirical:
         //y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
-        txt = "Empirical";
+        txt = WString::tr("raageo-eqn-empirical");
         break;
         
       case RelActCalc::RelEffEqnForm::FramPhysicalModel:
-        txt = "Physical";
+        txt = WString::tr("raageo-eqn-physical");
         break;
     }
     
@@ -181,7 +164,7 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   m_eqn_order_div = new WContainerWidget( this );
   m_eqn_order_div->addStyleClass( "EqnOrderDiv" );
   
-  label = new WLabel( "Eqn Order", m_eqn_order_div );
+  label = new WLabel( WString::tr("raageo-eqn-order"), m_eqn_order_div );
   m_rel_eff_eqn_order = new WComboBox( m_eqn_order_div );
   label->setBuddy( m_rel_eff_eqn_order );
   m_rel_eff_eqn_order->activated().connect( m_gui, &RelActAutoGui::handleRelEffEqnOrderChanged );
@@ -195,21 +178,16 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   m_rel_eff_eqn_order->addItem( "6" );
   m_rel_eff_eqn_order->setCurrentIndex( 3 );
   
-  tooltip = "The order (how many energy-dependent terms) relative efficiency equation to use.";
-  HelpSystem::attachToolTipOn( {m_eqn_order_div}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_eqn_order_div}, WString::tr("raageo-eqn-order-tt"), showToolTips );
 
   m_pu_corr_div = new WContainerWidget( this );
   m_pu_corr_div->addStyleClass( "PuCorrDiv" );
   
-  label = new WLabel( "Pu242 corr", m_pu_corr_div );
+  label = new WLabel( WString::tr("raageo-pu242-corr"), m_pu_corr_div );
   m_pu_corr_method = new WComboBox( m_pu_corr_div );
   label->setBuddy( m_pu_corr_method );
   m_pu_corr_method->activated().connect( m_gui, &RelActAutoGui::handlePuByCorrelationChanged );
-  tooltip = "Pu-242 is often not directly observable in gamma spectra.  However, to"
-  " correct for this isotope when calculating enrichment, the expected contributions of this"
-  " isotope can be inferred from the other Pu isotopes."
-  "  This form allows you to select the correction method.";
-  HelpSystem::attachToolTipOn( {m_pu_corr_div}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_pu_corr_div}, WString::tr("raageo-pu242-corr-tt"), showToolTips );
   m_pu_corr_div->hide();
   m_pu_corr_enabled = false;
 
@@ -228,43 +206,40 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
 
   WContainerWidget *phys_opt_cb_row = new WContainerWidget( phys_opt_row );
   phys_opt_cb_row->addStyleClass( "PhysOptionCbDiv" );
-  m_phys_model_use_hoerl = new WCheckBox( "Use corr. fcn.", phys_opt_cb_row );
+  m_phys_model_use_hoerl = new WCheckBox( WString::tr("raageo-use-corr-fcn"), phys_opt_cb_row );
   m_phys_model_use_hoerl->addStyleClass( "UseCorrFcnCb CbNoLineBreak PhysOptionCb GridFirstRow GridFirstCol" );
   m_phys_model_use_hoerl->setChecked( true );
   m_phys_model_use_hoerl->checked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
   m_phys_model_use_hoerl->unChecked().connect( this, &RelActAutoGuiRelEffOptions::emitOptionsChanged );
 
   // Add the new checkboxes for shared settings
-  m_phys_model_same_hoerl_on_all_curves = new WCheckBox( "Share corr. fcn.", phys_opt_cb_row );
+  m_phys_model_same_hoerl_on_all_curves = new WCheckBox( WString::tr("raageo-share-corr-fcn"), phys_opt_cb_row );
   m_phys_model_same_hoerl_on_all_curves->addStyleClass( "SameHoerlAllCurvesCb CbNoLineBreak PhysOptionCb GridFirstRow GridSecondCol" );
   m_phys_model_same_hoerl_on_all_curves->setChecked( false );
   m_phys_model_same_hoerl_on_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
   m_phys_model_same_hoerl_on_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameHoerlOnAllCurvesChanged );
   m_phys_model_same_hoerl_on_all_curves->hide();
   
-  tooltip = "When checked, the Correlation Function setting will be synchronized across all Physical model curves.";
-  HelpSystem::attachToolTipOn( {m_phys_model_same_hoerl_on_all_curves}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_phys_model_same_hoerl_on_all_curves}, WString::tr("raageo-share-corr-fcn-tt"), showToolTips );
 
 
-  m_phys_model_same_ext_shield_all_curves = new WCheckBox( "Share ext. atten.", phys_opt_cb_row );
+  m_phys_model_same_ext_shield_all_curves = new WCheckBox( WString::tr("raageo-share-ext-atten"), phys_opt_cb_row );
   m_phys_model_same_ext_shield_all_curves->addStyleClass( "SameExtShieldAllCurvesCb PhysOptionCb GridSecondRow GridFirstCol" );
   m_phys_model_same_ext_shield_all_curves->setChecked( false );
   m_phys_model_same_ext_shield_all_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
   m_phys_model_same_ext_shield_all_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleSameExternalShieldingChanged );
   m_phys_model_same_ext_shield_all_curves->hide();
   
-  tooltip = "When checked, the external shielding configuration will be synchronized across all Physical model curves.";
-  HelpSystem::attachToolTipOn( {m_phys_model_same_ext_shield_all_curves}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_phys_model_same_ext_shield_all_curves}, WString::tr("raageo-share-ext-atten-tt"), showToolTips );
 
-  m_phys_model_shielded_by_other_curves = new WCheckBox( "Shielded by other curves", phys_opt_cb_row );
+  m_phys_model_shielded_by_other_curves = new WCheckBox( WString::tr("raageo-shielded-by-other-curves"), phys_opt_cb_row );
   m_phys_model_shielded_by_other_curves->addStyleClass( "ShieldedByOtherCurvesCb PhysOptionCb GridSecondRow GridSecondCol" );
   m_phys_model_shielded_by_other_curves->setChecked( false );
   m_phys_model_shielded_by_other_curves->checked().connect( this, &RelActAutoGuiRelEffOptions::handleShieldedByOtherCurvesChanged );
   m_phys_model_shielded_by_other_curves->unChecked().connect( this, &RelActAutoGuiRelEffOptions::handleShieldedByOtherCurvesChanged );
   m_phys_model_shielded_by_other_curves->hide();
 
-  tooltip = "When checked, the sources of this curve will be shielded by all other Physical model curves.";
-  HelpSystem::attachToolTipOn( {m_phys_model_shielded_by_other_curves}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_phys_model_shielded_by_other_curves}, WString::tr("raageo-shielded-by-other-curves-tt"), showToolTips );
 
   m_phys_model_shields = new WContainerWidget( m_phys_model_opts );
   m_phys_model_shields->addStyleClass( "PhysicalModelShields" );
@@ -287,15 +262,13 @@ RelActAutoGuiRelEffOptions::RelActAutoGuiRelEffOptions(RelActAutoGui *gui, Wt::W
   m_del_rel_eff_btn->clicked().connect( this, &RelActAutoGuiRelEffOptions::emitDelRelEffCurve );
   m_del_rel_eff_btn->hide();
   
-  tooltip = "Removes this relative efficiency curve.";
-  HelpSystem::attachToolTipOn( {m_del_rel_eff_btn}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_del_rel_eff_btn}, WString::tr("raageo-del-rel-eff-curve-tt"), showToolTips );
 
   m_add_rel_eff_btn = new WPushButton( m_add_del_rel_eff_div );
   m_add_rel_eff_btn->setIcon( Wt::WLink( "InterSpec_resources/images/plus_min_black.svg" ) );
   m_add_rel_eff_btn->setStyleClass( "Wt-icon AddRelEffCurve" );
   m_add_rel_eff_btn->clicked().connect( this, &RelActAutoGuiRelEffOptions::emitAddRelEffCurve );
-  tooltip = "Add another relative efficiency curve.";
-  HelpSystem::attachToolTipOn( {m_add_rel_eff_btn}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_add_rel_eff_btn}, WString::tr("raageo-add-rel-eff-curve-tt"), showToolTips );
 }
 
 RelActAutoGuiRelEffOptions::~RelActAutoGuiRelEffOptions() {

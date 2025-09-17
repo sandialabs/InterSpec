@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">Énergie inférieure</message>
+  <message id="raager-upper-energy">Énergie supérieure</message>
+  <message id="raager-kev">keV</message>
+  <message id="raager-continuum-type">Type de continuum :</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">Forcer plage complète</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">Convertit cette plage d'énergie en ROI individuelles, basé sur quels gammas doivent être groupés ensemble ou séparément (par exemple, laisse les gammas avec des pics qui se chevauchent dans une seule ROI, tandis que si deux gammas sont éloignés, ils seront divisés en ROI séparées).</message>
+  
+</messages>

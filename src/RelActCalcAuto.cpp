@@ -509,6 +509,20 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           for( size_t i = 0; i < num_berstein_coeffs; ++i )
             parameters[fwhm_start + i] = berstein_coeffs[i];
           
+#if( PERFORM_DEVELOPER_CHECKS )
+          // Verify power series and Berstein give same results
+          for( int j = 0; j <= 4; ++j ) {
+            const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
+            const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
+            double poly_val = 0.0, berstein_val = 0.0;
+            for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
+              poly_val += poly_coeffs[k] * pow(test_energy, static_cast<double>(k));
+            }
+            berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
+            assert( fabs(poly_val - berstein_val) < 1.0E-10 * std::max({poly_val, berstein_val, 1.0}) );
+          }
+#endif
+          
           // Set energy range
           parameters[fwhm_start + num_berstein_coeffs] = lowest_energy;
           parameters[fwhm_start + num_berstein_coeffs + 1] = highest_energy;
@@ -647,6 +661,20 @@ void fill_in_default_start_fwhm_pars( std::vector<double> &parameters, size_t fw
           // Set Berstein coefficients
           for( size_t i = 0; i < num_berstein_coeffs; ++i )
             parameters[fwhm_start + i] = berstein_coeffs[i];
+          
+#if( PERFORM_DEVELOPER_CHECKS )
+          // Verify power series and Berstein give same results
+          for( int j = 0; j <= 4; ++j ) {
+            const double test_energy = lowest_energy + j * (highest_energy - lowest_energy) / 4.0;
+            const double t = (test_energy - lowest_energy) / (highest_energy - lowest_energy);
+            double poly_val = 0.0, berstein_val = 0.0;
+            for( size_t k = 0; k < poly_coeffs.size(); ++k ) {
+              poly_val += poly_coeffs[k] * pow(test_energy, static_cast<double>(k));
+            }
+            berstein_val = BersteinPolynomial::evaluate( t, berstein_coeffs.data(), berstein_coeffs.size() );
+            assert( fabs(poly_val - berstein_val) < 1.0E-10 * std::max({poly_val, berstein_val, 1.0}) );
+          }
+#endif
           
           // Set energy range
           parameters[fwhm_start + num_berstein_coeffs] = lowest_energy;

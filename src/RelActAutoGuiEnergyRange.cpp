@@ -35,6 +35,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RelActAutoGuiEnergyRange.h"
@@ -56,13 +57,16 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
   m_to_individual_rois( nullptr ),
   m_highlight_region_id( 0 )
 {
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( app )
+    app->useMessageResourceBundle( "RelActAutoGuiEnergyRange" );
   addStyleClass( "RelActAutoGuiEnergyRange" );
   
   wApp->useStyleSheet( "InterSpec_resources/GridLayoutHelpers.css" );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   
-  WLabel *label = new WLabel( "Lower Energy", this );
+  WLabel *label = new WLabel( WString::tr("raager-lower-energy"), this );
   label->addStyleClass( "GridFirstCol GridFirstRow" );
   
   m_lower_energy = new NativeFloatSpinBox( this );
@@ -70,10 +74,10 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
   m_lower_energy->setSpinnerHidden( true );
   label->setBuddy( m_lower_energy );
   
-  label = new WLabel( "keV", this );
+  label = new WLabel( WString::tr("raager-kev"), this );
   label->addStyleClass( "GridThirdCol GridFirstRow" );
   
-  label = new WLabel( "Upper Energy", this );
+  label = new WLabel( WString::tr("raager-upper-energy"), this );
   label->addStyleClass( "GridFirstCol GridSecondRow" );
   
   m_upper_energy = new NativeFloatSpinBox( this );
@@ -81,13 +85,13 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
   m_upper_energy->setSpinnerHidden( true );
   label->setBuddy( m_upper_energy );
   
-  label = new WLabel( "keV", this );
+  label = new WLabel( WString::tr("raager-kev"), this );
   label->addStyleClass( "GridThirdCol GridSecondRow" );
   
   m_lower_energy->valueChanged().connect( this, &RelActAutoGuiEnergyRange::handleEnergyChange );
   m_upper_energy->valueChanged().connect( this, &RelActAutoGuiEnergyRange::handleEnergyChange );
   
-  label = new WLabel( "Continuum Type:", this );
+  label = new WLabel( WString::tr("raager-continuum-type"), this );
   label->addStyleClass( "GridFourthCol GridFirstRow" );
   m_continuum_type = new WComboBox( this );
   m_continuum_type->addStyleClass( "GridFifthCol GridFirstRow" );
@@ -103,7 +107,7 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
   m_continuum_type->setCurrentIndex( static_cast<int>(PeakContinuum::OffsetType::Linear) );
   m_continuum_type->changed().connect( this, &RelActAutoGuiEnergyRange::handleContinuumTypeChange );
   
-  m_force_full_range = new WCheckBox( "Force full-range", this );
+  m_force_full_range = new WCheckBox( WString::tr("raager-force-full-range"), this );
   m_force_full_range->addStyleClass( "GridFourthCol GridSecondRow GridSpanTwoCol" );
   m_force_full_range->checked().connect( this, &RelActAutoGuiEnergyRange::handleForceFullRangeChange );
   m_force_full_range->unChecked().connect( this, &RelActAutoGuiEnergyRange::handleForceFullRangeChange );
@@ -122,10 +126,7 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
   
   m_to_individual_rois->setHidden( m_force_full_range->isChecked() );
   
-  const char *tooltip = "Converts this energy range into individual ROIs, based on which gammas should be"
-  " grouped together vs apart (e.g., leaves gammas with overlapping peaks in a single ROI, while if two gammas"
-  " are far apart, they will be split into seperate ROIs.";
-  HelpSystem::attachToolTipOn( m_to_individual_rois, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_to_individual_rois, WString::tr("raager-split-to-individual-rois-tt"), showToolTips );
 }//RelActAutoGuiEnergyRange constructor
   
   
