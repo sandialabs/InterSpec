@@ -591,13 +591,24 @@ namespace ExportSpecFileTool_imp
             //if( title != data->title() )
             //data->set_title( title );  //JIC, proper escaping not implemented in SpecUtils yet.
             
+            int alpha = 255;
             D3SpectrumExport::D3SpectrumOptions options;
             switch( type )
             {
-              case SpecUtils::SpectrumType::Foreground: options.line_color = "black"; break;
-              case SpecUtils::SpectrumType::SecondForeground: options.line_color = "steelblue"; break;
-              case SpecUtils::SpectrumType::Background: options.line_color = "green"; break;
+              case SpecUtils::SpectrumType::Foreground:
+                alpha = 255;
+                options.line_color = "black";
+                break;
+              case SpecUtils::SpectrumType::SecondForeground:
+                alpha = 125;
+                options.line_color = "steelblue";
+                break;
+              case SpecUtils::SpectrumType::Background:
+                alpha = 125;
+                options.line_color = "green";
+                break;
             }
+            
             options.display_scale_factor = viewer->displayScaleFactor( type );
             options.spectrum_type = type;
             const std::set<int> samples = viewer->displayedSamples( type );
@@ -607,7 +618,7 @@ namespace ExportSpecFileTool_imp
             {
               vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
               std::shared_ptr<const SpecUtils::Measurement> foreground = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-              options.peaks_json = PeakDef::peak_json( inpeaks, foreground );
+              options.peaks_json = PeakDef::peak_json( inpeaks, foreground, Wt::WColor(0,51,255), alpha );
             }
             
             measurements.push_back( pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions>(histogram.get(),options) );

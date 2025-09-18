@@ -4535,7 +4535,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     vector<shared_ptr<const PeakDef>> peaks;
     for( const auto &p : display_peaks )
       peaks.push_back( make_shared<PeakDef>(*p) );
-    spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum );
+    spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum, Wt::WColor(0,51,255), 255 );
     
     
     vector<pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > meas_to_plot;

@@ -1403,9 +1403,9 @@ void RelActAutoGui::updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *chan
 
 void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
                    double new_roi_upper_energy,
-                   double new_roi_lower_px,
-                   double new_roi_upper_px,
+                   double new_roi_px,
                    const double original_roi_lower_energy,
+                   string spectrum_type,
                    const bool is_final_range )
 {
   //cout << "RelActAutoGui::handleRoiDrag: original_roi_lower_energy=" << original_roi_lower_energy
@@ -1454,7 +1454,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     return;
   }//if( failed to find continuum )
   
-  if( is_final_range && (new_roi_upper_px < new_roi_lower_px) )
+  if( is_final_range && (new_roi_px < 0.0) )
   {
     handleRemoveEnergy( range );
     return;

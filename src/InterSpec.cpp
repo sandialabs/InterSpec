@@ -3157,7 +3157,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
 }//WModelIndex addPeak( PeakDef peak )
 
 
-void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks )
+void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks )
 {
   if( !peaks )
     throw runtime_error( "InterSpec::setPeaks: peaks deque may not be null" );
@@ -3178,7 +3178,7 @@ void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_pt
     throw runtime_error( "InterSpec::setPeaks: peaks deque can not be same as current" );
   
   
-  auto set_peaks = [this,spectrum]( std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
+  auto set_peaks = [this,spectrum]( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
     if( spectrum == SpecUtils::SpectrumType::Foreground )
     {

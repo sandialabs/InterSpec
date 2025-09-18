@@ -17,6 +17,7 @@
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -1277,13 +1278,13 @@ nlohmann::json ToolRegistry::executeGetAutomatedRiidId(const nlohmann::json& par
   const ReferencePhotopeakDisplay * const refWidget = interspec->referenceLinesWidget();
   if( refWidget )
   {
-    const std::vector<std::pair<std::string,std::string>> &external_riid_results = refWidget->external_RIID_ids();
-    const std::string &external_RIID_algo_name = refWidget->external_RIID_algo_name();
-    if( !external_riid_results.empty() )
+    shared_ptr<const ExternalRidResults> riid = refWidget->currentExternalRidResults();
+    
+    if( riid && !riid->isotopes.empty() )
     {
-      result["externalRiidTool"]["description"] = external_RIID_algo_name;
-      for( const auto &v : external_riid_results )
-        result["externalRiidTool"]["nuclides"].push_back( v.first );
+      result["externalRiidTool"]["description"] = riid->algorithmName;
+      for( const ExternalRidIsotope &v : riid->isotopes )
+        result["externalRiidTool"]["nuclides"].push_back( v.name );
     }
   }//if( refWidget )
 

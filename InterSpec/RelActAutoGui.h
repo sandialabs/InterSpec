@@ -221,9 +221,9 @@ public:
 protected:
   void handleRoiDrag( double new_roi_lower_energy,
                      double new_roi_upper_energy,
-                     double new_roi_lower_px,
-                     double new_roi_upper_px,
+                     double new_roi_px,
                      const double original_roi_lower_energy,
+                     std::string spectrum_type,
                      const bool is_final_range );
   
   void handleCreateRoiDrag( const double lower_energy,

@@ -93,9 +93,9 @@ public:
    */
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
-             double /*new roi lower px*/,
-             double /*new roi upper px*/,
+             double /*new roi px (upper edge minus lower edge)*/,
              double /*original roi lower energy*/,
+             std::string /*Spectrum type ROI belongs to {"FOREGROUND","BACKGROUND","SECONDARY"}*/,
              bool /*isFinalRange*/> &existingRoiEdgeDragUpdate();
   
   /** When a ROI is being created by holding the ctrl-key and dragging, this signal is emitted as
@@ -130,8 +130,9 @@ public:
    need to hook this function up to the #existingRoiEdgeDragUpdate() signal.
    */
   void performExistingRoiEdgeDragWork( double new_lower_energy, double new_upper_energy,
-                                      double new_lower_px, double new_upper_px,
+                                      double new_roi_px,
                                       double original_lower_energy,
+                                      std::string spectrum_type,
                                       bool isfinal );
   
   /** Does the the work for the primary spectrum display in InterSpec that lets you ctrl-drag
@@ -578,7 +579,7 @@ protected:
    ToDo: Should create dedicated signals for chart size in pixel, and also Y-range.
    */
   std::unique_ptr<Wt::JSignal<double,double,double,double,bool> > m_xRangeChangedJS;
-  std::unique_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_existingRoiEdgeDragJS;
+  std::unique_ptr<Wt::JSignal<double,double,double,double,std::string,bool> > m_existingRoiEdgeDragJS;
   std::unique_ptr<Wt::JSignal<double,double,int,bool,double,double> > m_dragCreateRoiJS;
   std::unique_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
   
@@ -603,9 +604,9 @@ protected:
   
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
-             double /*new roi lower px*/,
-             double /*new roi upper px*/,
+             double /*new roi width in px (upper px minus lower px) */,
              double /*original roi lower energy*/,
+             std::string /* spectrum type - maye change to ID in the future */,
              bool /*isFinalRange*/> m_existingRoiEdgeDrag;
   
   Wt::Signal<double /*lower energy*/,
@@ -631,9 +632,10 @@ protected:
   void chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
   
   void existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
-                                           double new_lower_px, double new_upper_px,
-                                           double original_lower_energy,
-                                           bool isfinal );
+                                   double new_roi_px,
+                                   double original_lower_energy,
+                                   const std::string &spectrum_type,
+                                   bool isfinal );
   
   void dragCreateRoiCallback( double lower_energy, double upper_energy,
                                 int npeaks, bool isfinal,

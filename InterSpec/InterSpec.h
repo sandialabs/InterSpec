@@ -388,7 +388,7 @@ public:
    
    Throws exception if spectrum type specified is not displayed, or peaks is nullptr.
    */
-  void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks );
+  void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks );
   
   Wt::WContainerWidget *menuDiv();
 

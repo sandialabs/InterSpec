@@ -2286,19 +2286,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       vector<RelActCalcManual::GenericPeakInfo> peaks_in_range;
       //vector<std::shared_ptr<const PeakDef> > debug_manual_display_peaks;
 
-      for( const RelActCalcManual::GenericPeakInfo &p : all_generic_peaks )
+      for( const shared_ptr<const PeakDef> &p : all_peaks )
       {
         bool use_peak = energy_ranges.empty();
         for( const auto &r : energy_ranges )
         {
-          if( (p.m_energy >= r.lower_energy) && (p.m_energy <= r.upper_energy) )
+          if( (p->mean() >= r.lower_energy) && (p->mean() <= r.upper_energy) )
             use_peak = true;
         }
         
         if( use_peak )
         {
-          peaks_in_range.push_back( p );
-
           //debug_manual_display_peaks.push_back( p );
           //We'll make sure peaks wont have duplicate energies, so `add_nuclides_to_peaks(...)` wont throw exception.
           const auto pos = find_if( begin(peaks_in_range), end(peaks_in_range), [&p]( const RelActCalcManual::GenericPeakInfo &other_p ){
@@ -2321,8 +2319,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             peak.m_base_rel_eff_uncert = 0.1; //TODO: do we want this?
             peaks_in_range.push_back( peak );
           }
-          
-          debug_manual_display_peaks.push_back( p );
         }//if( use_peak )
       }//for( const shared_ptr<const PeakDef> &p : all_peaks )
 
@@ -11685,7 +11681,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     vector<shared_ptr<const PeakDef>> peaks;
     for( const auto &p : m_fit_peaks )
       peaks.push_back( make_shared<PeakDef>(p) );
-    spec_options.peaks_json = PeakDef::peak_json( peaks, m_spectrum );
+    spec_options.peaks_json = PeakDef::peak_json( peaks, m_spectrum, Wt::WColor(0,51,255), 255 );
     
     const SpecUtils::Measurement * const meas_ptr = m_spectrum.get();
     D3SpectrumExport::write_and_set_data_for_chart( set_js_str, "specchart", { std::make_pair(meas_ptr,spec_options) } );
