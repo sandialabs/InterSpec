@@ -79,6 +79,7 @@ using namespace std;
 namespace PeakFitImprove
 {
   size_t sm_num_optimization_threads = 8; // Will be set by command line or default calculation
+  size_t sm_num_threads_per_individual = 1;
   size_t sm_ga_population = 1000;
   size_t sm_ga_generation_max = 100;
   size_t sm_ga_best_stall_max = 10;
@@ -289,7 +290,8 @@ int main( int argc, char **argv )
   
   string data_base_dir = "/Users/wcjohns/rad_ana/peak_area_optimization/peak_fit_accuracy_inject/";
   string static_data_dir;
-  size_t number_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
+  PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
+  size_t number_threads_per_individual = 1;
   string action_str = "InitialFit"; //"Candidate";
   bool debug_printout_arg = false;
   size_t ga_population = 1500;
@@ -305,7 +307,8 @@ int main( int argc, char **argv )
   desc.add_options()
     ("help,h", "produce help message")
     ("data-base-dir", po::value<string>( &data_base_dir )->default_value( data_base_dir ), "base directory for input data")
-    ("number-threads", po::value<size_t>( &number_threads )->default_value( number_threads ), "number of threads for optimization")
+    ("number-threads", po::value<size_t>( &PeakFitImprove::sm_num_optimization_threads )->default_value( PeakFitImprove::sm_num_optimization_threads ), "number of individuals evaluated at the same time")
+    ("num-threads-per-individual", po::value<size_t>( &PeakFitImprove::sm_num_threads_per_individual )->default_value( PeakFitImprove::sm_num_threads_per_individual ), "number of threads each individual can use")
     ("action", po::value<string>( &action_str )->default_value( action_str ), "optimization action: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy")
     ("debug-printout", po::bool_switch( &debug_printout_arg ), "enable debug printout")
     ("static-data-dir", po::value<string>( &static_data_dir ), "static data directory (optional)")
@@ -359,7 +362,6 @@ int main( int argc, char **argv )
   }
   
   // Set the optimization configuration
-  PeakFitImprove::sm_num_optimization_threads = number_threads;
   PeakFitImprove::sm_ga_population = ga_population;
   PeakFitImprove::sm_ga_generation_max = ga_generation_max;
   PeakFitImprove::sm_ga_best_stall_max = ga_best_stall_max;
@@ -396,7 +398,10 @@ int main( int argc, char **argv )
     return -4;
   }
   
-  cout << "Using " << number_threads << " threads for optimization." << endl;
+  cout << "Using " << PeakFitImprove::sm_num_optimization_threads
+  << " threads for individual evaluation, with each individual using up to " << PeakFitImprove::sm_num_threads_per_individual
+  << " threads for optimization."
+  << endl;
   cout << "Data base directory: " << data_base_dir << endl;
   if( !static_data_dir.empty() )
     cout << "Static data directory: " << static_data_dir << endl;
@@ -438,6 +443,8 @@ int main( int argc, char **argv )
                                                    docroot.c_str(),
                                                    wt_config.c_str(),
                                                    static_cast<short int>(0) );
+
+  cout << "ThreadPool will have " << Wt::WServer::instance()->ioService().threadCount() << " threads." << endl;
 #endif //#if( defined(SpecUtils_USE_WT_THREADPOOL) )
 
 

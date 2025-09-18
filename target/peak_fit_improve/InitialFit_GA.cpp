@@ -28,6 +28,9 @@
 #include <fstream>
 #include <iostream>
 
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/post.hpp> // For boost::asio::post
+
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -60,6 +63,7 @@ bool sm_has_been_called = false;
 bool sm_set_best_genes = false;
 InitialFit_GA::InitialFitSolution sm_best_genes;
 double sm_best_total_cost = 1.0E99;
+
 }//namespace
 
 
@@ -176,9 +180,9 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
     vector<vector<shared_ptr<const PeakDef>>> fit_rois_tmp( roi_to_peaks_map.size() );
 #endif
 
-    if( multithread )
+    if( multithread && (PeakFitImprove::sm_num_threads_per_individual > 1) )
     {
-      SpecUtilsAsync::ThreadPool threadpool;
+      boost::asio::thread_pool pool(PeakFitImprove::sm_num_threads_per_individual);
 
       size_t fit_rois_index = 0;
       for( auto &roi_peaks : roi_to_peaks_map )
@@ -191,7 +195,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         for( const auto &p : peaks )
           input_peaks_tmp.push_back( make_shared<PeakDef>(p) );
 
-        threadpool.post( boost::bind( &PeakFitLM::fit_peaks_LM,
+        boost::asio::post(pool, boost::bind( &PeakFitLM::fit_peaks_LM,
                                      boost::ref(results),
                                      input_peaks_tmp,
                                      data,
@@ -214,7 +218,7 @@ vector<PeakDef> initial_peak_find_and_fit( const InitialPeakFindSettings &fit_se
         fit_rois_index += 1;
       }//for( auto &roi_peaks : roi_to_peaks_map )
 
-      threadpool.join();
+      pool.join();
     }else
     {
       size_t fit_rois_index = 0;
@@ -1850,9 +1854,10 @@ InitialPeakFindSettings do_ga_eval( std::function<double( const InitialPeakFindS
   ga_obj.problem_mode=EA::GA_MODE::SOGA;
   ga_obj.multi_threading = true;
   ga_obj.idle_delay_us = 1; // switch between threads quickly
-  ga_obj.dynamic_threading = true;
+  ga_obj.dynamic_threading = (PeakFitImprove::sm_ga_population > PeakFitImprove::sm_num_optimization_threads);
   ga_obj.verbose = false;
   ga_obj.population = static_cast<unsigned int>(PeakFitImprove::sm_ga_population);
+  ga_obj.N_threads = static_cast<int>(PeakFitImprove::sm_num_optimization_threads);
   ga_obj.generation_max = static_cast<int>(PeakFitImprove::sm_ga_generation_max);
   ga_obj.calculate_SO_total_fitness=calculate_SO_total_fitness;
   ga_obj.init_genes=init_genes;
@@ -1864,7 +1869,6 @@ InitialPeakFindSettings do_ga_eval( std::function<double( const InitialPeakFindS
   ga_obj.mutation_rate=PeakFitImprove::sm_ga_mutation_rate; //This *looks* to be the fraction of individuals that will have mutattion applied to them
   ga_obj.best_stall_max = static_cast<int>(PeakFitImprove::sm_ga_best_stall_max);
   ga_obj.elite_count = static_cast<int>(PeakFitImprove::sm_ga_elite_count);
-  ga_obj.N_threads = static_cast<int>(PeakFitImprove::sm_num_optimization_threads);
   EA::StopReason stop_reason = ga_obj.solve();
 
   cout<<"The problem is optimized in "<<timer.toc()<<" seconds."<<endl;

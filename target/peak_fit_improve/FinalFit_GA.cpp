@@ -80,10 +80,6 @@ std::atomic<size_t> ns_individuals_eval( 0 );
 /** Fit the ROIs in parralele, using a SpecUtilsAsync::ThreadPool, in `final_peak_fit(...)`*/
 const bool ns_final_peak_fit_parrallel = false;
 
-/** If true, uses `boost::asio::thread_pool` in `ga_eval_fcn` functor, created in `do_final_peak_fit_ga_optimization(...)`,
- This causes each spectrum to be evaluated in parralele*/
-const bool sm_multithread_individual_spectrum_eval_in_ga_eval_fcn = false;
-
 
 
 
@@ -1223,9 +1219,11 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
     static std::mutex sm_score_mutex;
     static FinalFitScore sm_best_score{ 0.0, 0.0, 0.0, 0u, 0.0, DBL_MAX, 0u };
 
-    if( sm_multithread_individual_spectrum_eval_in_ga_eval_fcn )
+
+
+    if( PeakFitImprove::sm_num_threads_per_individual > 1 )
     {
-      boost::asio::thread_pool pool(12);
+      boost::asio::thread_pool pool(PeakFitImprove::sm_num_threads_per_individual);
       sm_best_score.total_weight = DBL_MAX;
 
       for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
