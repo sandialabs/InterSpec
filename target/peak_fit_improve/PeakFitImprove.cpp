@@ -461,9 +461,9 @@ int main( int argc, char **argv )
 
   vector<string> hpges {
     "Detective-X",
-    "Detective-EX",
-    "Detective-X_noskew",
-    "Falcon 5000",
+    //"Detective-EX",
+    //"Detective-X_noskew",
+    //"Falcon 5000",
     "Fulcrum40h",
     "LANL_X",
     "HPGe_Planar_50%"
@@ -489,8 +489,8 @@ int main( int argc, char **argv )
 
   vector<string> wanted_cities{
     "Livermore"
-    , "Baltimore",
-    "Denver"
+    //, "Baltimore",
+    //"Denver"
   };
 
 
@@ -734,6 +734,7 @@ int main( int argc, char **argv )
         double score_sum = 0.0;
         for( const DataSrcInfo &info : input_srcs )
         {
+          const bool multithread = (PeakFitImprove::sm_num_threads_per_individual > 1);
           const double score = InitialFit_GA::eval_initial_peak_find_and_fit( settings, best_settings, info, false ).find_weight;
           score_sum += score;
         }

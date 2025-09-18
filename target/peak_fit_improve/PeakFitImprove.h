@@ -37,7 +37,7 @@ namespace SpecUtils
 // While optimizing `FindCandidateSettings`, its better to not return a bunch of PeakDefs,
 //  so while we're transitioning phases here we will return the vector of tuple results, as
 //  well as PeakDefs
-#define RETURN_PeakDef_Candidates 0
+#define RETURN_PeakDef_Candidates 1
 
 
 #define WRITE_ALL_SPEC_TO_HTML 0
@@ -46,6 +46,7 @@ namespace PeakFitImprove
 {
 const bool debug_printout = false;
 extern size_t sm_num_optimization_threads;
+extern size_t sm_num_threads_per_individual;
 extern size_t sm_ga_population;
 extern size_t sm_ga_generation_max;
 extern size_t sm_ga_best_stall_max;
