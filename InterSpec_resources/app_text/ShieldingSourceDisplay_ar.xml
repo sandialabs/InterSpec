@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to ShieldingSourceDisplay.cpp
+    ssd- is short for ShieldingSourceDisplay, and is basically the GUI component
+    sfm- is short for SourceFitModel
+    x2g- is short for ShieldingSourceDisplay::Chi2Graphic - e.g., the chart on this page
+  -->
+  <message id="ssd-tt-distance">
+    المسافة من مركز المصدر إلى وجه الكاشف. يجب أن يتبع الرقم
+    الوحدات؛ الوحدات الصالحة هي: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, أو ".  يمكنك أيضًا إضافة مسافات متعددة،
+    مثل '3ft 4in'، أو '3.6E-2 m 12 cm' والتي تعادل
+    40inches و 15.6cm على التوالي.
+  </message>
+  <message id="ssd-geom-point">نقطي/كروي</message>
+  <message id="ssd-geom-cyl-end">أسطواني: من النهاية</message>
+  <message id="ssd-geom-cyl-side">أسطواني: من الجانب</message>
+  <message id="ssd-rectangular">مستطيل</message>
+  <message id="ssd-fixed-geom-notification">استخدام DRF هندسة ثابتة</message>
+  <message id="ssd-tt-shieldings">
+    التدريعات تُعامل كقذائف حيث القذيفة الداخلية
+    هي الأولى التي تضيفها (العلوية في هذا الصندوق)، و
+    التدريعات اللاحقة متطبقة حول تلك. أي مصادر
+    غير منسوبة كمكونات للتدريعات تُعامل كمصادر نقطية
+    في المركز.
+  </message>
+  <message id="ssd-add-shield-label">إضافة تدريع:</message>
+  <message id="ssd-tt-add-shield">اختر من مكتبة مواد التدريع الشائعة المحددة مسبقًا.</message>
+  <message id="ssd-generic-btn">عام</message>
+  <message id="ssd-tt-generic">يسمح لك بتعريف وملاءمة العدد الذري والكثافة السطحية.</message>
+  <message id="ssd-perform-fit-btn">تنفيذ ملاءمة النموذج</message>
+  <message id="ssd-cancel-fit">إلغاء ملاءمة النموذج</message>
+  <message id="ssd-mi-calc-log">سجل الحساب</message>
+  <message id="ssd-mi-import-model">استيراد نموذج...</message>
+  <message id="ssd-mi-export-model">تصدير نموذج</message>
+  <message id="ssd-mi-from-db">فتح من قاعدة البيانات...</message>
+  <message id="ssd-mi-save-to-db">حفظ في قاعدة البيانات...</message>
+  <message id="ssd-mi-clone-db-entry">استنساخ في قاعدة البيانات...</message>
+  <message id="ssd-to-small-for-chart">(اجعل النافذة أطول لعرض χ<sup>2</sup>)</message>
+  <message id="ssd-tt-chi2-switch">عرض Chi لكل ذروة للنموذج الحالي على المخطط، أو مضاعف مساحة الذروة النسبي بين النموذج الحالي والذروة المرصودة.</message>
+  <message id="ssd-cb-all-peaks">جميع الذرى</message>
+  <message id="ssd-multi-iso-per-peak">تصحيح التداخل</message>
+  <message id="ssd-options-title">خيارات</message>
+  <message id="ssd-tt-multi-iso-per-peak">فحص هذا الخيار سيسمح للنوى الأخرى التي يتم ملاءمتها، غير تلك المخصصة لذروة، بالمساهمة في العدد المتوقع في ذروة مرصودة. هذا يمكن أن يكون مفيدًا مثلاً عند الملاءمة لكل من Ho166m وU235 التي لهما ذروة قرب 185 keV.</message>
+  <message id="ssd-cluster-width-label">عرض التداخل (عدد σ):</message>
+  <message id="ssd-tt-cluster-width">عدد سيجما بعيدًا عن متوسط الذروة التي ستُجمع خطوط الجاما،
+    من أي نواة، وتُنسب للذروة. القيمة الافتراضية هي 1.25 سيجما، لكن إذا كانت الذروة
+    موسعة بوضوح بسبب التداخلات، أو ملاءمة سيئة، قد تريد زيادة هذه القيمة.
+    تقليلها إلى 0.0 سيسبب استخدام الجاما المرتبطة بالذروة فقط
+    (نفس إلغاء فحص "نوى متعددة تساهم في الذروة").
+  </message>
+  <message id="ssd-cb-atten-for-air">توهين للهواء</message>
+  <message id="ssd-tt-atten-for-air">عند الفحص سيتم احتساب التوهين بسبب الهواء بين المصدر، أو التدريع الخارجي، والكاشف في الحسابات.</message>
+  <message id="ssd-cb-sub-back-peaks">طرح ذرى الخلفية</message>
+  <message id="ssd-tt-sub-back-peaks">هذا يجبر نظائر عنصر ما على أن تكون جميعها بنفس العمر في الملاءمة.</message>
+  <message id="ssd-cb-same-el-same-age">نفس Z نفس العمر</message>
+  <message id="ssd-tt-same-el-same-age">إنفاذ أن نظائر نفس العنصر يجب أن تكون جميعها بنفس العمر.</message>
+  <message id="ssd-cb-corr-for-decay">تصحيح للتحلل أثناء القياس.</message>
+  <message id="ssd-tt-corr-for-decay">يصحح لتأثيرات التحلل والنمو الداخلي التي تحدث أثناء وقت أخذ القياس. الأنشطة الناتجة تتوافق مع وقت بداية القياس. قد يحتاج وقت حساب إضافي لإيجاد الحل.</message>
+  <message id="ssd-tt-geometry">الهندسة المستخدمة لنمذجة المصادر "الأثر"، أو المصادر ذات التوهين الذاتي.
+    <br />
+    <br />
+    افتراضيًا، جميع المصادر هي مصادر نقطية على المسافة المحددة من الكاشف، لجميع الهندسات.
+    <br />
+    لكن، إذا جعلت نواة مصدر "أثر" (بالنقر على زر "<em>إضافة مصدر أثر</em>" للتدريع في الزاوية السفلية اليمنى للتدريع)، أو مصدر ذو توهين ذاتي (بتحديد
+    خانة الاختيار "<em>مصدر لـ:</em>" عندما يكون للتدريع نفس عنصر النواة التي
+    تلائمها)، فإن النظير المصدر سيُنمذج كموزع عبر التدريع،
+    وسيُستخدم تتبع الأشعة لاحتساب التوهينات المختلفة في كل موقع داخل
+    التدريع.
+    <br />
+    <br />
+    لإبقاء الأمور بسيطة، اختر هندسة "نقطي/كروي" إلا إذا كنت ستنفذ ملاءمة لمصدر
+    "أثر" أو ذو توهين ذاتي.
+  </message>
+  <message id="ssd-phone-tab-source-peaks">ذرى المصدر</message>
+  <message id="ssd-phone-tab-source-isotopes">نظائر المصدر</message>
+  <message id="ssd-phone-tab-shielding">التدريع</message>
+  <message id="ssd-warn-no-back-peaks">لا توجد ذرى خلفية محددة، لا يتم طرحها</message>
+  <message id="ssd-warn-no-back-spec">لا يوجد طيف خلفية محمل، لذا لا يمكن طرح مساحات ذرى الخلفية من المقدمة.</message>
+  <message id="ssd-warn-no-back-peaks-toggle">
+    طيف الخلفية لا يحتوي على أي ذرى محددة. يجب تحميل طيف الخلفية كـ
+    مقدمة، تحديد الذرى المحتمل طرحها، ثم العودة لتركيبة
+    المقدمة/الخلفية الحالية.
+  </message>
+  <message id="ssd-update-dim-to-be-min">تم تحديث بُعد التدريع ليكون سماكة دنيا.</message>
+  <message id="ssd-scaled-shield-to-be-less-dist">تم تقييس سماكات التدريع لتكون أقل من مسافة الكاشف.</message>
+  <message id="ssd-err-fit-only-one-an">يمكنك فقط ملاءمة العدد الذري لتدريع عام واحد في المرة.</message>
+  <message id="ssd-warn-invalid-chi2-for-energy">تم حساب chi2 غير صالح لـ {1} keV، النتائج الأخرى قد تكون غير صالحة</message>
+  <message id="ssd-calc-log-window-title">سجل الحساب</message>
+  <message id="ssd-calc-log-export-txt">ملف TXT</message>
+  <message id="ssd-err-opening-import-model">خطأ في فتح نموذج ملاءمة التدريع المصدر المرفوع: {1}</message>
+  <message id="ssd-import-model-window-title">استيراد نموذج XML تدريع المصدر</message>
+  <message id="ssd-err-opening-db-model">خطأ في فتح نموذج ملاءمة التدريع المصدر من قاعدة البيانات: {1}</message>
+  <message id="ssd-err-loading-model">غير قادر على تحميل النموذج المحدد - عذرًا :(</message>
+  <message id="ssd-prev-saved-window-title">النماذج المحفوظة مسبقًا</message>
+  <message id="ssd-models-prev-for-fore">النماذج المستخدمة مسبقًا مع هذه المقدمة:</message>
+  <message id="ssd-models-prev-saved">النماذج التي حفظتها مسبقًا:</message>
+  <message id="ssd-model-desc">وصف النموذج:</message>
+  <message id="ssd-cb-allow-del">السماح بالحذف</message>
+  <message id="ssd-no-model-in-db">لا توجد نماذج في قاعدة البيانات لك</message>
+  <message id="ssd-err-creating-db-browser">خطأ في إنشاء متصفح نماذج قاعدة البيانات</message>
+  <message id="ssd-save-model-to-db-window-title">حفظ نموذج النشاط/التدريع في قاعدة البيانات</message>
+  <message id="ssd-save-to-db-name">أدخل اسم النموذج:</message>
+  <message id="ssd-save-to-db-desc">أدخل وصف النموذج (اختياري):</message>
+  <message id="ssd-must-enter-name">يجب إدخال اسم</message>
+  <message id="ssd-err-saving-to-db">خطأ في الحفظ في قاعدة البيانات</message>
+  <message id="ssd-Best">الأفضل</message>
+  <message id="ssd-fit-failed">فشلت ملاءمة النموذج</message>
+  <message id="ssd-using-fit-anyway">استخدام حل الملاءمة على أي حال.</message>
+  <message id="ssd-err-fit-not-performed">
+    {1}
+    <br />
+    لم يتم تنفيذ الملاءمة.
+  </message>
+  <message id="ssd-err-before-fit">
+    {1}
+    <br />
+    قبل الملاءمة.
+  </message>
+  <message id="ssd-err-couldnt-make-chi2-fcn">
+    {1}
+    <br />
+    لم يتم تنفيذ الملاءمة (لم يتمكن من إنشاء Chi2Fcn).
+  </message>
+  <message id="ssd-error-create-tool">خطأ في إنشاء عرض ملاءمة النشاط/التدريع: {1}</message>
+
+  <!-- SourceFitModel quantities -->
+  <message id="sfm-tt-header-isotope">النوى تُضاف أو تُحذف وفقًا للذرى الضوئية المستخدمة لهذه الملاءمة، لذا قد لا تُحرر في هذا الجدول</message>
+  <message id="sfm-tt-header-activity">نشاط النواة. إدخال قيمة بداية معقولة قد يساعد الملاءمة، أو لا يجب ملاءمة النشاط. يمكن إدخال القيم بتنسيقات مشابهة لـ '12.4 kBq'، '1.0mCi'، '55.3uCi'، '15.82Mbq'</message>
+  <message id="sfm-tt-header-age">عمر النواة. يمكن إدخال القيم بتنسيق مشابه لـ: '23.3s' '2 hl' - (hl تعني أنصاف الحياة)، '5.23y'، '23:14:21.343'، '19min'، إلخ. ملاحظة أن النوى التي تتحلل إلى أطفال مستقرة لا يمكن تعميرها.</message>
+  <message id="sfm-tt-header-fit-act">هل يجب أن تحاول الملاءمة إيجاد نشاط النواة أيضًا، أم تفترض أن القيمة المدخلة صحيحة؟</message>
+  <message id="sfm-tt-header-fit-age">هل يجب أن تحاول الملاءمة إيجاد عمر النواة أيضًا، أم تفترض فقط أن القيمة المدخلة صحيحة؟ هذا الخيار غير متاح للنوى التي تتحلل إلى أطفال مستقرة فقط.</message>
+  <message id="sfm-tt-header-iso-mass">هذه كتلة النواة العارية بافتراض النشاط المذكور.</message>
+  <message id="sfm-tt-header-act-uncert">هذا عدم اليقين في النشاط من الملاءمة.</message>
+  <message id="sfm-tt-header-age-uncert">هذا عدم اليقين في العمر من الملاءمة.</message>
+  <message id="sfm-header-fit-act">ملاءمة النشاط</message>
+  <message id="sfm-header-fit-age">ملاءمة العمر</message>
+  <message id="sfm-header-act-uncert">عدم يقين النشاط</message>
+  <message id="sfm-header-age-uncert">عدم يقين العمر</message>
+  <message id="sfm-tt-aging-not-allowed">أطفال النوى مستقرة لذا التعمير غير مسموح لأنه لا يؤثر على طيف الجاما.</message>
+
+  <!-- Chi2Graphic -->
+  <message id="x2g-yaxis-title-chi">(مرصود-نموذج)/عدم يقين</message>
+  <message id="x2g-yaxis-title-mult">مضاعف النموذج</message>
+  <message id="x2g-">المحور Y هو عدد مساحة الذروة، ناقص العدد المتوقع من العدد من"
+    " المصدر والتدريع المعروضين حاليًا، كلها مقسومة على عدم اليقين الإحصائي. مربع هذا"
+    " ما يُستخدم لتحسين التدريع والمصادر.</message>
+  <message id="x2g-tt-chi-axis">المحور Y هو عدد مساحة الذروة، ناقص العدد المتوقع من المصدر وقيم التدريع المعروضة حاليًا، كلها مقسومة على عدم اليقين الإحصائي. مربع هذا ما يُستخدم لتحسين التدريع والمصادر.</message>
+  <message id="x2g-tt-scale-axis">المحور Y هو مضاعف عدد الذروة المرصودة، نسبة لما متوقع من قيم المصدر والتدريع الحالية.</message>
+</messages>

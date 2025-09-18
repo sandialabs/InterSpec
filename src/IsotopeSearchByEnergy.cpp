@@ -159,7 +159,7 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
 {
   addStyleClass( "SearchEnergy" );
   
-  WLabel *label = new WLabel( "Energy", this );
+  WLabel *label = new WLabel( WString::tr("Energy"), this );
   label->addStyleClass( "SearchEnergyLabel" );
   
   m_energy = new NativeFloatSpinBox( this );
@@ -179,7 +179,7 @@ IsotopeSearchByEnergy::SearchEnergy::SearchEnergy( Wt::WContainerWidget *p )
   m_window->setValue( 10.0f );
   m_window->enterPressed().connect( this, &SearchEnergy::emitEnter );
   
-  label = new WLabel( "keV", this );
+  label = new WLabel( WString::tr("keV"), this );
   label->addStyleClass( "KeVLabel" );
   
   m_energy->valueChanged().connect( this, &SearchEnergy::emitChanged );

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- resw- is short for RelEffShieldWidget
+  -->
+  <message id="resw-self-atten-title">Auto-atténuation</message>
+  <message id="resw-ext-atten-title">Atténuation externe</message>
+  <message id="resw-material-label">Matériau</message>
+  <message id="resw-thickness-label">Épaiss.</message>
+  <message id="resw-atomic-number-label">NA</message>
+  <message id="resw-areal-density-label">DA</message>
+  <message id="resw-material-frame-label">Matériau</message>
+  <message id="resw-generic-frame-label">Générique</message>
+  <message id="resw-areal-density-placeholder">g/cm^2</message>
+</messages>

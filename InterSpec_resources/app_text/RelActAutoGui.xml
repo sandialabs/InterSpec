@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  
+  <!-- Presets section -->
+  <message id="raag-presets">Presets</message>
+  <message id="raag-preset-blank">Blank</message>
+  <message id="raag-user-preset">User: {1}</message>
+  
+  <!-- Status messages -->
+  <message id="raag-not-calculated">Not Calculated.</message>
+  <message id="raag-calculating">Calculating...</message>
+  
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">Spectrum and Peak Options</message>
+  <message id="raag-rel-eff-curve-options">Relative Efficiency Curve Options</message>
+  <message id="raag-fit-energy-cal">Fit Energy Cal.</message>
+  <message id="raag-back-sub">Back. Sub.</message>
+  <message id="raag-fwhm-est">FWHM Est.</message>
+  <message id="raag-fwhm-form">FWHM Form</message>
+  <message id="raag-peak-skew">Peak Skew</message>
+  <message id="raag-add-uncert">Add. Uncert</message>
+  <message id="raag-yield-info">Yield Info</message>
+  
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">Start from Det/Peaks</message>
+  <message id="raag-fwhm-start-peaks">Start from Peaks</message>
+  <message id="raag-fwhm-fixed-peaks">Fixed to Peaks</message>
+  <message id="raag-fwhm-start-det-eff">Start from Det. Eff.</message>
+  <message id="raag-fwhm-fixed-det-eff">Fixed to Det. Eff.</message>
+  
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">add free peaks</message>
+  <message id="raag-clear-all-ranges">clear all ranges</message>
+  <message id="raag-continue">Continue</message>
+  <message id="raag-html-report">HTML Report</message>
+  <message id="raag-xml-config">XML Config</message>
+  
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">Clear energy ranges?</message>
+  <message id="raag-cant-perform-action">Can't perform this action.</message>
+  <message id="raag-divide-energy-range-title">Divide Energy Range Up?</message>
+  <message id="raag-apply-fit-energy-cal-title">Apply fit energy calibration?</message>
+  <message id="raag-cant-continue">Can't Continue</message>
+  <message id="raag-no-peaks-in-solution">No peaks in current solution</message>
+  <message id="raag-error">Error</message>
+  <message id="raag-unexpected-error-finding-original">There was an unexpected error finding the original</message>
+  
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">Import XML config file</message>
+  <message id="raag-select-isotopics-xml-file">Select the <em>Isotopics by nuclide</em> XML file to use</message>
+  <message id="raag-file-too-large-title">File to large to upload</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">Note: you can also drag-n-drop the XML config files onto InterSpec</p>
+  </message>
+  
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">Sort energy ranges.</message>
+  <message id="raag-remove-all-ranges-tt">Removes all energy ranges.</message>
+  <message id="raag-remove-free-peaks-tt">Remove all free peaks, and hide the free peaks input.</message>
+  <message id="raag-free-peaks-tt">&quot;Free peaks&quot; are peaks with a specific energy, that are not associated with any nuclide, and their amplitude is fit to the best value for the data.  The peaks may optionally be released from the functional FWHM constraint as well.<br />Free peaks are useful to handle peaks from reactions, or from unidentified nuclides.</message>
+  
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">Peaks uncertainties will be based on total relative efficiency fit (eg., peaks helping each other out to reduce uncertainties), unless you choose to refit them, in which case they will not be constrained by Rel. Eff. curve of FWHM functional form.</message>
+  
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} keV is already in the energy range [{2}, {3}] keV - no action will be taken.</message>
+  <message id="raag-extended-energy-range">Extended existing energy range to [{1}, {2}] keV.</message>
+  <message id="raag-added-new-energy-range">Added a new new energy range from {1} to {2} keV.</message>
+  <message id="raag-split-roi-at">Split ROI at {1} keV</message>
+  <message id="raag-add-free-peak-at">Add free peak at {1} keV</message>
+  <message id="raag-energy-range-no-contributions">The energy range {1} keV to {2} keV did not contain any significant gamma contributions.</message>
+  <message id="raag-divide-energy-range-msg">
+    This action will divide the energy range from {1} keV to {2} keV into {3} seperate energy ranges.
+    <br />
+    <p>Would you like to continue?</p>
+  </message>
+  <message id="raag-add-energy-offset"> add an offset of {1} keV</message>
+  <message id="raag-increase-gain-first"> increase gain by {1}</message>
+  <message id="raag-increase-gain-additional"> and increase gain by {1}</message>
+  <message id="raag-increase-quad-first"> increase quadratic by {1}</message>
+  <message id="raag-increase-quad-additional"> and increase quadratic by {1}</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">This will{1} for the primary foreground{2}{3}.<br />Would you like to do this?</message>
+  <message id="raag-and-background"> and background</message>
+  <message id="raag-files"> files</message>
+  <message id="raag-file"> file</message>
+  <message id="raag-energy-cal-updated">Have updated energy calibration for displayed foreground{1}.</message>
+  <message id="raag-and-background-period"> and background</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">Error creating Relative Act. Isotopics tool: {1}</message>
+  <message id="raag-handle-double-click-error">handleDoubleLeftClick error: {1}</message>
+  <message id="raag-expected-state-info">Expected state information for '{1}' is not available - this is not expected - sorry!</message>
+  <message id="raag-state-info-not-saved">State information was not previously able to be saved for '{1}' - this is not expected - sorry!</message>
+  <message id="raag-error-deserializing">Error de-serializing tool state: {1}</message>
+  <message id="raag-error-loading-preset">Error loading preset: {1}</message>
+  <message id="raag-error-applying-energy-cal">Error applying energy calibration: {1}</message>
+  <message id="raag-error-loading-xml-config">Error loading <em>Isotopics by nuclide</em> XML config file: {1}</message>
+  
+</messages>

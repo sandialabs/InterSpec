@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sb is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">يبدو أن لديك هذا الملف الطيفي محفوظ كجزء من حالة محفوظة؛ هل تريد استئناف عملك السابق؟</message>
+  <message id="sb-no-saved-states">لا توجد حالات تطبيق محفوظة</message>
+  <message id="sb-tt-del-state">حذف الحالة</message>
+  <message id="sb-tt-edit-state">تحرير اسم الحالة أو الوصف</message>
+  <message id="sb-state-HEAD-label">الحالة المحفوظة</message>
+  <message id="sb-state-auto-saved-label">محفوظ تلقائيًا</message>
+  <message id="sb-unsaved-spectra-parent-node-label">أطياف مفتوحة، لكن غير مخزنة صراحة</message>
+  <message id="sb-tt-unsaved-spectra-node">أطياف فتحتها في InterSpec، لكن لم تحفظها صراحة.</message>
+  <message id="sb-unsaved-spectrum-node">{1} (مفتوح {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">اسم الملف: {1}
+وقت القياس: {2}
+وقت التحميل: {3}
+عدد العينات: {4}
+إجمالي الوقت الحقيقي: {5}</message>
+  <message id="sb-open-spectrum-as">فتح الطيف المختار كـ:</message>
+  <message id="sb-load-spectrum-only">تحميل الطيف فقط</message>
+  <message id="sb-load-app-state">تحميل حالة التطبيق</message>
+  <message id="sb-err-making-browser-txt">خطأ غير متوقع في إنشاء متصفح ملف الطيف لقاعدة البيانات</message>
+  <message id="sb-err-making-browser-msg">خطأ في إنشاء متصفح ملف الطيف لقاعدة البيانات: {1}</message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+</messages>

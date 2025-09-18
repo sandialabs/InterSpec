@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- hw- is short for HelpWindow
+  -->
+  <message id="hw-welcome-link">Добро пожаловать...</message>
+  <message id="hw-tutorials-link">Обучающие материалы и подсказки</message>
+  <message id="hw-err-opening-xml">Страница справки не найдена</message>
+  <message id="hw-err-opening-json">Не удалось открыть JSON-файл справки по адресу '{1}'.</message>
+  <message id="hw-search-empty-text">Поиск</message>
+</messages>

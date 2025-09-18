@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sm3dc- is short for SearchMode3DChart -->
+  <message id="sm3dc-loading">جاري التحميل...</message>
+  <message id="sm3dc-min-energy">الطاقة الدنيا</message>
+  <message id="sm3dc-max-energy">الطاقة العليا</message>
+  <message id="sm3dc-min-time">الوقت الأدنى (ث)</message>
+  <message id="sm3dc-max-time">الوقت الأعلى (ث)</message>
+  <message id="sm3dc-time-bins">حاويات عرض الوقت</message>
+  <message id="sm3dc-tt-time-bins">
+    العدد الأقصى لتقسيمات الوقت للرسم؛ إذا كان لديك بيانات بعينات وقت أكثر من
+    هذا في النطاق المعروض، ستُدمج عينات الوقت معًا، حتى تصبح أقل من هذه القيمة.
+    <br />
+    <br />
+    على سبيل المثال، إذا كانت هذه القيمة 60، لكن قياسك يحتوي على 208 عينة، فسيتم
+    جمع كل 4 عينات معًا لحاوية واحدة لمحور الوقت،
+    بإجمالي 52 حاوية على محور الوقت.
+    <br />
+    إذا كان حاصل ضرب عدد قنوات الوقت، في عدد قنوات الطاقة
+    كبير جدًا، قد تواجه مشاكل في الأداء.
+  </message>
+  <message id="sm3dc-energy-bins">حاويات عرض الطاقة</message>
+  <message id="sm3dc-tt-energy-bins">
+    العدد الأقصى لتقسيمات الطاقة للرسم؛ إذا كان لديك بيانات بقنوات طاقة أكثر من
+    هذا في النطاق المعروض، ستُدمج القنوات معًا، حتى تصبح أقل من هذه القيمة.
+    <br />
+    <br />
+    إذا كان حاصل ضرب عدد قنوات الوقت، في عدد قنوات الطاقة
+    كبير جدًا، قد تواجه مشاكل في الأداء.
+  </message>
+  <message id="sm3dc-time-axis-label">الوقت (ثواني)</message>
+  <message id="sm3dc-counts-axis-label">العدد لكل قناة</message>
+</messages>

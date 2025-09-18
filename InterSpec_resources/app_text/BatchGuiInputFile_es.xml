@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+  <message id="bgw-peaks-csv-txt">Archivo CSV picos</message>
+  <message id="bgw-not-spec-preview">No es archivo de espectro</message>
+  <message id="bgw-passthrough-sum-error">Error de paso directo</message>
+  <message id="bgw-preview-error">Error renderizando vista previa</message>
+</messages>
+

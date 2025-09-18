@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">будет вычтено {1} имп/с для фона</message>
+  <message id="dp-no-peak-preview">Не удалось создать предварительный просмотр</message>
+
+  <message id="dsfs-sample">Образец</message>
+  <message id="dsfs-samples">Образцы</message>
+  <message id="dsfs-using-num-peaks"> (используется {1} из {2} пиков)</message>
+  <message id="dsfs-back-peak-txt">Эти пики будут вычтены из других образцов</message>
+  <message id="dsfs-is-background-cb">Это фон?</message>
+  <message id="dsfs-all-peaks-cb">Все пики</message>
+  
+  <message id="md-det-diam">Диам. дет.</message>
+  <message id="md-eff-type">Тип эффективности</message>
+  <message id="md-eqn-in-kev">Ур-ние в кэВ</message>
+  <message id="md-eqn-in-mev">Ур-ние в МэВ</message>
+  <message id="md-geom-intrinsic-eff">Собств. эфф.</message>
+  <message id="md-geom-fixed-geom">Фиксированная геометрия</message>
+  <message id="md-geom-fixed-cm2">Фиксированная: на см2</message>
+  <message id="md-geom-fixed-m2">Фиксированная: на м2</message>
+  <message id="md-geom-fixed-gram">Фиксированная: на грамм</message>
+  <message id="md-tt-eff-interpret">
+    Как должна интерпретироваться эта эффективность.<br />
+    <br />
+    Дальнее поле: Точечные источники или источники малые по сравнению с расстоянием до детектора; позволит
+    изменять расстояние детектирования для масштабирования на 1/r2.<br />
+    <br />
+    Фиксированная геометрия: Когда геометрия и расстояние характеризационных данных соответствует измерениям,
+    и вы захотите вычислить общую активность источника (например, стакан Маринелли).\n
+    <br />
+    Фиксированная на см2: похоже на общую активность, но когда калибровочные данные и измерения
+    для поверхностного загрязнения, со значениями на квадратный сантиметр.<br />
+    <br />
+    Фиксированная на м2: похоже на общую на см2, но на квадратный метр.<br />
+    <br />
+    Фиксированная на грамм: похоже на на см2, но на грамм источника.
+  </message>
+  <message id="md-fwhm-eqn-form-label">Ур-ние FWHM</message>
+  <message id="md-fwhm-gadras">Уравнение Gadras</message>
+  <message id="md-sqrt-series">Степенной ряд корня</message>
+  <message id="md-atten-for-air-cb">Ослабл. воздухом</message>
+  <message id="md-tt-atten-for-air">
+    Ослабление воздухом между источником и детектором будет учитываться, 
+    чтобы позволить более точное масштабирование расстояния (использование функции эффективности на разных расстояниях).
+    <br />
+    Это больший эффект при низких энергиях или больших калибровочных расстояниях.
+  </message>
+  <message id="md-show-fwhm-markers">Показать точки FWHM</message>
+  <message id="md-display-energy-lower-label">Энергия отображения, нижняя:</message>
+  <message id="md-display-energy-upper-label">Верхняя:</message>
+  <message id="md-mi-chart-phone">График/Опции</message>
+  <message id="md-mi-peaks-phone">Пики для использования</message>
+  <message id="md-export-btn">Сохранить/Экспорт...</message>
+  <message id="md-export-window-title">Сохранить/Экспорт DRF</message>
+  <message id="md-tt-name">
+    Имя функции отклика детектора для сохранения во внутреннюю базу данных <em>InterSpec</em>,
+    чтобы вы могли использовать функцию отклика позже.
+    Имя должно быть допустимым именем файла (например, без символов \, /, :, и т.д.).
+  </message>
+  <message id="md-tt-desc">Необязательное описание DRF, чтобы помочь вам вспомнить детали при использовании DRF в будущем.</message>
+  <message id="md-make-default-for-serial-cb">Сделать DRF по умолчанию для серийного номера '{1}'</message>
+  <message id="md-tt-make-default-serial">
+    Сделать так, чтобы при загрузке спектров от детектора с соответствующим серийным
+    номером в InterSpec эта функция отклика детектора
+    автоматически загружалась и использовалась.
+  </message>
+  <message id="md-make-default-for-model-cb">Сделать DRF по умолчанию для модели '{1}'</message>
+  <message id="md-tt-make-default-model">
+    Сделать так, чтобы при загрузке спектров от этой модели детектора
+    в InterSpec эта функция отклика детектора
+    автоматически загружалась и использовалась.
+  </message>
+  <message id="md-tt-export-n42">
+    Экспортировать N42-файл, содержащий все спектры и пики, используемые для создания этой DRF.
+    Информация об источнике и экранировании также обычно сохраняется в файл, чтобы,
+    в принципе, кроме диаметра детектора и порядков уравнений,
+    предоставить всю входную информацию, используемую для создания DRF.
+  </message>
+  <message id="md-export-as-csv">Экспортировать DRF как CSV.</message>
+  <message id="md-tt-export-as-csv">
+    Экспортирует DRF в CSV-файл, который содержит всю информацию о DRF.
+    Особенно полезно для использования с другими инструментами.
+  </message>
+  <message id="md-export-quick-ref">Экспорт справочной карточки</message>
+  <message id="md-tt-export-quick-ref">Экспортирует карточку размером 3x5, которая содержит краткое резюме производительности детектора.</message>
+  <message id="md-det-name-not-valid">Имя детектора недопустимо.</message>
+  <message id="md-eqn-not-valid">Уравнение собственной эффективности недопустимо.</message>
+  <message id="md-err-creating-drf">Ошибка создания DRF: {1}</message>
+  <message id="md-err-saving-to-db">Ошибка сохранения DetectorPeakResponse в базу данных: {1}</message>
+  <message id="md-saved-to-db">Сохранено '{1}' во внутреннюю базу данных.</message>
+  <message id="md-peak-counts">{1} {2} кэВ, пик {3} отсчётов</message>
+  <message id="md-peak-no-nuc">Нет связ. нуклида, {1} кэВ, пик {2} отсчётов</message>
+  <message id="md-err-det-diam-invalid">Диаметр детектора недопустим - предполагаем 2.54 см.</message>
+  <message id="md-err-some-src">У некоторых источников были ошибки.</message>
+  <message id="md-n-fit-pars">{1} параметров подгонки</message>
+  <message id="md-html-eff-table-caption">Эффективность детектирования полной энергии (% всех гамма)</message>
+  <message id="md-html-Intrinsic">Собственная</message>
+  <message id="md-chart-data-intrinsic-eff-label">Данные собств. эфф.</message>
+  <message id="md-chart-data-fwhm-label">Данные FWHM</message>
+  <message id="md-chart-fit-intrinsic-eff-label">Подгонка собств. эфф.</message>
+  <message id="md-chart-intrinsic-eff-plus-label">Собств. эфф. +2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">Подгонка собств. эфф. -2σ</message>
+  <message id="md-chart-fit-fwhm-label">Подгонка FWHM</message>
+</messages>

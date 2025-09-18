@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">Si este pico debe usarse para ayudar a calibrar energía.
+    Debe tener un nucleído, reacción o rayo X asignado al pico, y no debe haber fijado el valor de energía media usando el Editor de picos.</message>
+  <message id="pm-gaussian">Gaussiano</message>
+  <message id="pm-region">Región</message>
+  <message id="pm-err-use-fit-no-nuc">Debe asociar un nucleído con el pico antes de usarlo para ajuste de blindaje/fuente.</message>
+  <message id="pm-err-use-cal-no-nuc">Debe asociar un nucleído, rayo X o reacción con el pico antes de usarlo para calibración.</message>
+  <message id="pm-err-use-rel-act-no-nuc">Solo picos asociados con un gamma de nucleído pueden usarse para análisis de actividad relativa.</message>
+  <message id="pm-warn-use-xray-fit">Advertencia: usar rayos X para ajustar nucleídos fuente no suele ser una gran idea, así que por favor use precaución.</message>
+  
+  <message id="pm-hdr-diff">Diferencia</message>
+  <message id="pm-hdr-cal-peak">Pico calib.</message>
+  <message id="pm-hdr-rel-act">Act. rel.</message>
+  <message id="pm-hdr-label">Etiqueta</message>
+  <message id="pm-hdr-color">Color</message>
+  <message id="pm-hdr-skew-amp">Amp. asimetría</message>
+  <message id="pm-hdr-peak-type">Tipo de pico</message>
+  <message id="pm-hdr-low-energy">Energía inferior</message>
+  <message id="pm-hdr-up-energy">Energía superior</message>
+  <message id="pm-hdr-roi-counts">Cuentas ROI</message>
+  
+  
+  <message id="pm-hdr-tt-mean">Energía media</message>
+  <message id="pm-hdr-tt-fwhm">Ancho completo a media altura</message>
+  <message id="pm-hdr-tt-amp">Área del pico</message>
+  <message id="pm-hdr-tt-cps">Cuentas del pico por segundo</message>
+  <message id="pm-hdr-tt-sigma">Sigma del pico</message>
+  <message id="pm-hdr-tt-chi2dof">Chi cuadrado sobre grados de libertad</message>
+  <message id="pm-hdr-tt-cont">Tipo de continuo</message>
+  <message id="pm-hdr-tt-diff">Diferencia entre energía del pico ajustado y energía de referencia</message>
+  <message id="pm-hdr-tt-cal-peak">Si usar este pico para calibración de energía</message>
+  <message id="pm-hdr-tt-rel-act">Si usar este pico para análisis de actividad relativa</message>
+  <message id="pm-hdr-tt-label">Etiqueta definida por usuario</message>
+  <message id="pm-hdr-tt-color">Color del pico</message>
+</messages>
+

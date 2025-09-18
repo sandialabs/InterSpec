@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">إخلاء المسؤولية</message>
+  <message id="ladw-mi-credits">الاعتمادات</message>
+  <message id="ladw-mi-contact">الاتصال</message>
+  <message id="ladw-mi-license">الترخيص</message>
+  <message id="ladw-data-location-user">
+    يتم تخزين بيانات المستخدم في
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    البيانات التي تأتي مع InterSpec، مثل معلومات التحلل النووي والمقطع العرضي وما شابه، مخزنة في
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">فتح في المستكشف</message>
+  <message id="ladw-show-data-location-macOS">فتح في الباحث</message>
+  <message id="ladw-show-data-location-win">إظهار</message>
+  <message id="ladw-data-location-network">
+    يمكنك أيضًا استخدام InterSpec من متصفحك على (رقم المنفذ سيتغير عندما تعيد تشغيل InterSpec):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      لقد استخدمت InterSpec بنشاط لحوالي {1}، لفتح {2} ملف، عبر {3} جلسة منذ {4}.
+  </message>
+  <message id="ladw-external-none">InterSpec لا يرسل أو يستقبل بيانات خارجية من جهازك.</message>
+  <message id="ladw-external-only-remote-rid">InterSpec لا يرسل أو يستقبل بيانات خارجية من جهازك، إلا عند استخدام ميزة التعرف الخارجي.</message>
+  <message id="ladw-external-only-map">InterSpec لا يرسل أو يستقبل بيانات خارجية من جهازك، إلا عند استخدام ميزة الخريطة.</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec لا يرسل أو يستقبل بيانات خارجية من جهازك، إلا عند استخدام ميزات الخرائط أو التعرف الخارجي.</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpec يخزن محليًا التفضيلات والأطياف التي تحملها وحالات التطبيق المحفوظة وإحصائيات الاستخدام.
+    هذه المعلومات لا تغادر جهازك، ويمكن حذفها بإزالة دليل بيانات المستخدم المعروض أعلاه.
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    عند استخدام ميزة خرائط جوجل، يتم إرسال معلومات موقع ملف الطيف إلى جوجل من أجل الحصول على خرائط للموقع ذي الصلة.
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    عند استخدام أداة الخرائط، يتم طلب بلاطات الخريطة من <a href="https://arcgis.com">https://arcgis.com</a>
+    للمنطقة التي تشمل إحداثيات GPS لقياسات الإشعاع، لكن وضع العلامات/عرض بيانات الإشعاع على الخرائط يتم على جهازك.
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    لأداة التعرف الخارجي، يرجى مراجعة سياسة الخصوصية لـ
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    لأداة التعرف الخارجي، يرجى مراجعة سياسة الخصوصية للرابط الذي تدخله.
+  </message>
+</messages>

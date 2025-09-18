@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">Ha ezt a csúcsot használni kell az energia kalibrálásához.
+    Nuklidot, reakciót vagy röntgent kell hozzárendelnie a csúcshoz, és nem szabad rögzítenie az átlag energia értéket a csúcsszerkesztővel.</message>
+  <message id="pm-gaussian">Gauss</message>
+  <message id="pm-region">Régió</message>
+  <message id="pm-err-use-fit-no-nuc">Nuklidot kell társítania a csúcshoz, mielőtt árnyékolás/forrás-illesztéshez használná.</message>
+  <message id="pm-err-use-cal-no-nuc">Nuklidot, röntgent vagy reakciót kell társítania a csúcshoz, mielőtt kalibráláshoz használná.</message>
+  <message id="pm-err-use-rel-act-no-nuc">Csak nuklid gamma sugárzásával társított csúcsok használhatók relatív aktivitás elemzéshez.</message>
+  <message id="pm-warn-use-xray-fit">Figyelmeztetés: röntgen használata forrás nuklidok illesztéséhez általában nem jó ötlet, ezért legyen óvatos.</message>
+  
+  <message id="pm-hdr-diff">Különbség</message>
+  <message id="pm-hdr-cal-peak">Kalib. csúcs</message>
+  <message id="pm-hdr-rel-act">Rel akt</message>
+  <message id="pm-hdr-label">Címke</message>
+  <message id="pm-hdr-color">Szín</message>
+  <message id="pm-hdr-skew-amp">Aszimm. ampl.</message>
+  <message id="pm-hdr-peak-type">Csúcs típus</message>
+  <message id="pm-hdr-low-energy">Alsó energia</message>
+  <message id="pm-hdr-up-energy">Felső energia</message>
+  <message id="pm-hdr-roi-counts">ROI impulzusok</message>
+  
+  
+  <message id="pm-hdr-tt-mean">Átlag energia</message>
+  <message id="pm-hdr-tt-fwhm">Teljes szélesség fél maximumnál</message>
+  <message id="pm-hdr-tt-amp">Csúcs terület</message>
+  <message id="pm-hdr-tt-cps">Csúcs impulzusok másodpercenként</message>
+  <message id="pm-hdr-tt-photopeak-energy">Fotocsúcs energia</message>
+  <message id="pm-hdr-tt-diff">Különbség a fotocsúcs és átlag energia között</message>
+  <message id="pm-hdr-tt-man-rel-eff">Használat "Izotóparány csúcsokból" elemzéshez.</message>
+  <message id="pm-hdr-tt-color">Csúcs szín</message>
+  <message id="pm-hdr-tt-label">Felhasználó által megadott címke</message>
+  <message id="pm-hdr-tt-roi-counts">Gamma impulzusok integrálja az érdeklődési régióban</message>
+  <message id="pm-hdr-tt-"></message>
+
+</messages>

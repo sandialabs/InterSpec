@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+  
+  <!-- Labels -->
+  <message id="raagn-nuclide">Nucleído:</message>
+  <message id="raagn-age">Edad:</message>
+  <message id="raagn-min-age">Edad mín.:</message>
+  <message id="raagn-max-age">Edad máx.:</message>
+  
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">Seleccionar un tipo de restricción.</message>
+  <message id="raagn-min">mín.:</message>
+  <message id="raagn-max">máx.:</message>
+  <message id="raagn-src">fuente:</message>
+  <message id="raagn-val">val.:</message>
+  
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">Ninguna</message>
+  <message id="raagn-constraint-rel-act">Act. rel.</message>
+  <message id="raagn-constraint-act-ratio">Razón act.</message>
+  <message id="raagn-constraint-mass-frac">Frac. masa</message>
+  
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">Ajustar edad</message>
+  
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">Añadir restricción</message>
+  
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">ej. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (estado meta estable), <b>Cs137</b>, Pb, Fe(n,n), etc.</message>
+  <message id="raagn-remove-constraint-tt">Quitar esta restricción</message>
+  <message id="raagn-add-constraint-tt">Añadir una restricción a este nucleído</message>
+  
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1} no es un nucleído, rayo X o reacción válida.</message>
+  <message id="raagn-stable-nuclide">{1} es un nucleído estable.</message>
+  
+</messages>
+

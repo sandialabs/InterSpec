@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">Cuentas</message>
+  <message id="d3sdd-yAxisTitleMulti">Cuentas por {1} canales</message>
+  <message id="d3sdd-realTime">Tiempo real</message>
+  <message id="d3sdd-liveTime">Tiempo vivo</message>
+  <message id="d3sdd-deadTime">Tiempo muerto</message>
+  <message id="d3sdd-scaledBy">Escalado por</message>
+  <message id="d3sdd-zoomIn">Acercar</message>
+  <message id="d3sdd-neutrons">neutrones</message>
+  <message id="d3sdd-Neutrons">Neutrones</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">Cuentas ROI</message>
+  <message id="d3sdd-gammaCounts">Cuentas gamma</message>
+  <message id="d3sdd-contArea">área cont.</message>
+  <message id="d3sdd-peakCps">cps pico</message>
+  <message id="d3sdd-peakArea">área pico</message>
+  <message id="d3sdd-mean">media</message>
+  <message id="d3sdd-spectrum">Espectro</message>
+  <message id="d3sdd-comptonEdge">Borde Compton</message>
+  <message id="d3sdd-sumPeak">Pico suma</message>
+  <message id="d3sdd-firstEnergyClick">Hacer clic para establecer primera energía del pico suma.</message>
+  <message id="d3sdd-singleEscape">Escape simple</message>
+  <message id="d3sdd-doubleEscape">Escape doble</message>
+  <message id="d3sdd-eraseInRange">Borrará picos en rango</message>
+  <message id="d3sdd-zoomInY">Acercar en eje Y</message>
+  <message id="d3sdd-zoomOutY">Alejar en eje Y</message>
+  <message id="d3sdd-touchDefineRoi">Mover 2 dedos a la derecha para definir ROI</message>
+  <message id="d3sdd-foreNSigmaBelowBack">El primer plano está {1} σ debajo del fondo.</message>
+  <message id="d3sdd-foreNSigmaAboveBack">El primer plano está {1} σ encima del fondo.</message>
+  <message id="d3sdd-backSubCounts">cuentas (sub. fondo)</message>
+  <message id="d3sdd-afterScalingBy">después de escalar por </message>
+  <message id="d3sdd-clickedPeak">Pico clicado</message>
+  <message id="d3sdd-recalFromTo">Recalibrar datos de {1} a {2} keV</message>
+  <message id="d3sdd-sumFromTo">{1} a {2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">Pico Compton {1}°</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">Cuentas inferior y superior iguales.</message>
+  <message id="d3sdd-yaxis-no-spectrum">Sin espectro mostrado.</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">Rango superior igual o debajo de cero.</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">Rango inferior igual o debajo de cero.</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">Rango superior menor que valor mínimo mostrado, no cero.</message>
+  <message id="d3sdd-candidates">Candidatos:</message>
+  <message id="d3sdd-use-arrows-to-select">(usar ↑ y ↓ para seleccionar)</message>
+</messages>
+

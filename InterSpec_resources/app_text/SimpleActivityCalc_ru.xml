@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">Простой калькулятор активности</message>
+  <message id="simple-activity-calc-menu">Простой калк. акт.</message>
+  
+  <message id="sac-peak-label">Пик:</message>
+  <message id="sac-background-subtract-label">вычитание фона</message>
+  
+  <message id="sac-distance-label">Расстояние:</message>
+  <message id="sac-age-label">Возраст:</message>
+  <message id="sac-shielding-label">Защита:</message>
+  <message id="sac-geometry-label">Геометрия:</message>
+  <message id="sac-result-label">Активность:</message>
+  <message id="sac-advanced-btn">Продвинутый фит активности/защиты</message>
+  
+  <message id="sac-geometry-point">Точечный источник</message>
+  <message id="sac-geometry-plane">Бесконечная плоскость</message>
+  <message id="sac-geometry-self-atten">Самоослабляющая сфера</message>
+  <message id="sac-geometry-trace-src">Следовой источник</message>
+  
+  <message id="sac-error-no-peak">Пик не выбран</message>
+  <message id="sac-error-no-detector">Отклик детектора не загружен</message>
+  <message id="sac-error-invalid-distance">Введено недействительное расстояние</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>Похоже, что в фоне нет пика в том же месте, что и этот пик.</p>
+    <p>Если вы думаете, что есть, пожалуйста, поменяйте местами спектры переднего плана и фона, фитируйте пик в спектре фона, а затем поменяйте их обратно.</p>
+  </message>
+  
+  
+  <message id="sac-use-fit-background-peak">Хотите ли вы использовать автоматически фитированный пик фона?</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>Произошла ошибка при попытке фитирования пика к спектру фона:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+  
+  <message id="sac-qr-tool-state-title">Состояние инструмента простого расчета активности</message>
+  <message id="sac-qr-tool-state-txt">Текущее состояние инструмента простого расчета активности.</message>
+</messages>

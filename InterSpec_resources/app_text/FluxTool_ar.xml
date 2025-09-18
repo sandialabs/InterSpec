@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ftw- is short for FluxToolWidget or FluxToolWindow
+  -->
+  <message id="ftw-qr-tool-state-title">حالة أداة التدفق</message>
+  <message id="ftw-qr-tool-state-text">الحالة الحالية لأداة التدفق.</message>
+  <message id="ftw-hdr-intrinsic-eff">الكفاءة الجوهرية</message>
+  <message id="ftw-hdr-geom-eff">الكفاءة الهندسية</message>
+  <message id="ftw-hdr-flux-on-det">التدفق على الكاشف (ɣ/ث)</message>
+  <message id="ftw-hdr-flux-cm">التدفق (ɣ/سم²/ث)</message>
+  <message id="ftw-hdr-flux-4pi">ɣ/4π/ث</message>
+  <message id="ftw-tt-distance">
+    المسافة من مركز المصدر إلى وجه الكاشف. الرقم يجب أن يكون
+    متبوعًا بوحدات؛ الوحدات الصالحة هي: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, أو ".  يمكنك أيضًا إضافة مسافات متعددة،
+    مثل '3ft 4in'، أو '3.6E-2 m 12 cm' والتي تعادل 
+    40inches و 15.6cm على التوالي.
+  </message>
+  <message id="ftw-simple">بسيط</message>
+  <message id="ftw-standard">قياسي</message>
+  <message id="ftw-more">المزيد</message>
+  <message id="ftw-copy-btn">نسخ إلى الحافظة</message>
+  <message id="ftw-copy-btn-narrow">نسخ</message>
+  <message id="ftw-invalid-dist">مسافة غير صالحة</message>
+  <message id="ftw-no-drf">لم يتم اختيار دالة استجابة الكاشف</message>
+  <message id="ftw-no-foreground">لا يوجد طيف مقدمة محمل</message>
+  <message id="ftw-invalid-livetime">وقت حي غير صالح للمقدمة</message>
+  <message id="ftw-err-copy-clipboard">فشل في النسخ إلى الحافظة - ربما مشكلة في الصلاحيات - عذرًا.</message>
+  <message id="ftw-copied-to-clipboard">تم نسخ الجدول إلى الحافظة.</message>
+  <message id="ftw-copied-as-html">تم نسخ الجدول إلى الحافظة كنص HTML.</message>
+  <message id="ftw-copy-unknown-status">نتيجة غير معروفة لأمر النسخ - عذرًا.</message>
+</messages>

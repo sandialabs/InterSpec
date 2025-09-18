@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">Нижняя энергия</message>
+  <message id="raager-upper-energy">Верхняя энергия</message>
+  <message id="raager-continuum-type">Тип континуума:</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">Принуд. полн. диапазон</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">Преобразует этот энергетический диапазон в отдельные области интереса, основываясь на том, какие гамма-излучения должны быть сгруппированы вместе или раздельно (например, оставляет гамма-излучения с перекрывающимися пиками в одной области интереса, в то время как если два гамма-излучения находятся далеко друг от друга, они будут разделены на отдельные области интереса).</message>
+  
+</messages>

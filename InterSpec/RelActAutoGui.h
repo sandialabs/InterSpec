@@ -118,6 +118,12 @@ public:
   void handleRelEffEqnOrderChanged();
   void handleFwhmFormChanged();
   void handleFwhmEstimationMethodChanged();
+  
+  /** Helper function to get the current FwhmForm from the combo box model data. */
+  RelActCalcAuto::FwhmForm getFwhmFormFromCombo() const;
+  
+  /** Helper function to set the FwhmForm in the combo box by finding the matching model data. */
+  void setFwhmFormFromCombo( const RelActCalcAuto::FwhmForm form );
   void handleUserNoteChanged();
   void handleFitEnergyCalChanged();
   void handleBackgroundSubtractChanged();

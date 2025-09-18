@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">ملائمة FWHM...</message>
+  <message id="dls-select-drf-btn">اختيار الكاشف...</message>
+  <message id="dls-further-details-link">تفاصيل إضافية...</message>
+  <message id="dls-conf-level-label">مستوى الثقة:</message>
+  <message id="dls-roi-lower-label">الحد الأدنى لـ ROI:</message>
+  <message id="dls-roi-upper-label">الحد الأعلى لـ ROI:</message>
+  <message id="dls-num-side-channel-label">عدد القنوات الجانبية:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-decon-cont-norm-label">تطبيع المتصل:</message>
+  <message id="dls-is-background-spectrum-cb">طيف الخلفية</message>
+  <message id="dls-is-background-spectrum-tt">
+    تحديد هذا الخيار يؤكد أنه لا توجد إشارة في هذا الطيف.
+    <p>
+      منطقة القمة نفسها ستُستخدم لتقدير الخلفية المتوقعة.
+      خيار اختيار القنوات الجانبية المجاورة لمنطقة القمة يصبح غير ذي صلة، لذا سيتم إخفاؤه.
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">عائم</message>
+  <message id="dls-cont-norm-not-present">كلا إشارة</message>
+  <message id="dls-cont-norm-fixed-by-sides">من الجوانب</message>
+  <message id="dls-roi-changed-no-gamma">تغيير ROI استبعد الجاما الأولي - لا يتم التغيير</message>
+  <message id="dls-suggest-fwhm">FWHM الكاشف: {1} كيلوإلكترون فولت</message>
+  <message id="dls-rough-est-fwhm">تقدير تقريبي لـ FWHM: {1} كيلوإلكترون فولت</message>
+  <message id="dls-calc-method">طريقة الحساب:</message>
+  <message id="dls-currie-tab-title">كوري</message>
+  <message id="dls-decon-tab-title">إزالة التداخل</message>
+  <message id="dls-err-no-input">لم يتم إدخال بيانات - يرجى إدخال النواة واختيار طاقة الجاما وإدخال المسافة.</message>
+  <message id="dls-err-calculating">خطأ في حساب الإجابة: {1}</message>
+  <message id="dls-currie-desc">طريقة كوري تقارن العدد الإجمالي بتنبؤ القنوات المحيطة</message>
+  <message id="dls-decon-desc">إزالة التداخل تأخذ في الاعتبار شكل القمة وتوزيع البيانات</message>
+  <message id="dls-qr-tool-state-title">حالة أداة MDA البسيطة</message>
+  <message id="dls-qr-tool-state-txt">الحالة الحالية لأداة MDA البسيطة.</message>
+
+  <message id="dls-det-act-with-range">مكتشف: {1}، النطاق [{2}, {3}]، @{4} CL</message>
+  <message id="dls-det-no-result">عذرًا، لا توجد نتيجة</message>
+  <message id="dls-det-counts-with-range">العدد الزائد: {1}، النطاق [{2}, {3}]، @{4} CL</message>
+  <message id="dls-det-act-less-zero">النشاط &lt; 0 {1} (لوحظ عدد أقل بكثير من المتوقع).</message>
+  <message id="dls-det-counts-less-zero">العدد الزائد &lt; 0 {2} (لوحظ عدد أقل بكثير من المتوقع).</message>
+  <message id="dls-det-upper-bound">أقل من {1} موجود @{2} CL.</message>
+  <message id="dls-min-detectable-act">النشاط الأدنى القابل للكشف بشكل موثوق: {1}.</message>
+  <message id="dls-min-detectable-counts">العدد الزائد الأدنى القابل للكشف بشكل موثوق: {1}</message>
+  <message id="dls-error-computing-results">خطأ في حساب النتيجة</message>
+  <message id="dls-chart-title-estimated-counts">العدد المقدر لـ {1}.</message>
+  <message id="dls-results-txt-estimated-counts">
+    العدد المكتشف لـ {1}.
+    <br/>
+    النطاق: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">النشاط المقدر لـ {1}.</message>
+  <message id="dls-results-txt-estimated-act">
+    النشاط المكتشف لـ {1}.
+    <br/>
+    النطاق: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">القمة للحد الأعلى لـ {1} @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-act">أقل من {1} @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">القمة للحد الأعلى لـ {1} عدد @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-counts">أقل من {1} عدد إشارة موجود @{2} CL</message>
+  <message id="dls-err-no-meas">لا يوجد قياس متاح</message>
+  
+  <message id="dls-Info">معلومات</message>
+  <message id="dls-assumed-br=1">(النشاط يفترض BR=1.0)</message>
+  <message id="dls-Limit">الحد</message>
+  <message id="dls-continuum-area">مساحة المتصل</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
+  <message id="dls-Upper">أعلى</message>
+  <message id="dls-Lower">أدنى</message>
+  <message id="dls-Best">أفضل</message>
+  <message id="dls-ROI-range-label">نطاق ROI (كيلوإلكترون فولت)</message>
+  <message id="dls-ROI-Channels-label">قنوات ROI</message>
+  <message id="dls-ROI-Width">عرض ROI</message>
+  <message id="dls-det-intrinsic-eff">الكفاءة الجوهرية للكاشف</message>
+  <message id="dls-solid-angle-frac">كسر الزاوية المجسمة</message>
+  <message id="dls-air-trans">نقل الهواء</message>
+  <message id="dls-gamma-intensity">شدة الجاما</message>
+  <message id="dls-err-more-info-title">خطأ في حساب الحد...</message>
+  <message id="dls-err-more-info-content">خطأ في حساب معلومات الحد: {1}</message>
+  <message id="dls-err-select-det">يرجى اختيار دالة كفاءة الكاشف.</message>
+  <message id="dls-err-neg-distance">المسافة لا يمكن أن تكون سالبة.</message>
+  <message id="dls-err-no-fwhm-info">دالة كفاءة الكاشف لا تحتوي على معلومات FWHM - يرجى ملائمة FWHM، أو تغيير الكاشف.</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>

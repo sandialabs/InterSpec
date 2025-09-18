@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uct- is short for UnitsConverterTool
+  -->
+  <message id="uct-mult-nucs">Несколько нуклидов ({1} + {2})</message>
+  <message id="uct-instructions">Преобразование между единицами, связанными с излучением.<br />
+    Примеры: 5 МБк, 2 нКи, 1.2рад, 15E-3гр, 0.2мбэр, 8футов, 9милли-зиверт, 10 грамм U235, 1.2 мкКи Pu238
+  </message>
+  <message id="uct-input-label">Ввод: </message>
+  <message id="uct-output-label">Вывод: </message>
+  <message id="uct-qr-window-title">Состояние конвертера единиц</message>
+  <message id="uct-qr-window-txt">Текущее состояние инструмента конвертера единиц.</message>
+  <message id="uct-err-empty-input">Пустой ввод</message>
+  <message id="uct-couldnt-find-units">Не удалось определить единицы</message>
+  <message id="uct-nuc-unknown">Не удалось сделать что-либо с {1} '{2}'</message>
+  <message id="uct-invalid-input">Недействительный ввод</message>
+  <message id="uct-err-gen">Ошибка: {1}.<br />
+    Допустимые единицы активности: бк, беккерель, ки, кюри, грей, Гр, рад, зиверт, Зв, бэр,
+    рентген, м, метр, фт, дюйм, дюйм, грамм, г, унция, унц, фунт, фунт и гран.<br />
+    Допустимые (необязательные) приставки: н, нано, мк, µ, микро, м, милли,
+     к, кило, М, мега, Г, гига, Т и тера
+  </message>
+</messages>

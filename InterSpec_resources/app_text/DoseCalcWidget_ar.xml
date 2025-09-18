@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">فشل في التقارب على كمية التدريع.</message>
+  <message id="dcw-qr-tool-state-title">حالة أداة الجرعة</message>
+  <message id="dcw-qr-tool-state-txt">الحالة الحالية لأداة الجرعة.</message>
+  <message id="dcw-inputs">المدخلات</message>
+  <message id="dcw-answer">الإجابة</message>
+  <message id="dcw-intro-instructions">اختر الكمية التي تريد حسابها على اليسار</message>
+  <message id="dcw-intro-instructions-vert-phone">اختر الكمية التي تريد حسابها أعلاه</message>
+  <message id="dcw-intro-calc-desc">قيم الجرعة محسوبة باستخدام ANSI/ANS-6.1.1-1991 الحالة الأكثر تحفظًا: توجه أمامي-خلفي.
+    حسابات الجرعة هي دليل تقريبي، في أحسن الأحوال، وتخضع لعدة عوامل عدم يقين أو أخطاء.
+  </message>
+  <message id="dcw-source-label">المصدر:</message>
+  <message id="dcw-neutron">النيوترون</message>
+  <message id="dcw-tt-neut-not-imp">حساب جرعة النيوترون لم يتم تنفيذه بعد.</message>
+  <message id="dcw-tt-distance">المسافة من مركز المصدر إلى وجه الكاشف. الرقم يجب أن يكون متبوعًا بوحدات؛ الوحدات الصالحة هي: meters, m, cm, mm, km, feet, ft, ', in, inches, أو ".  يمكنك أيضًا إضافة مسافات متعددة، مثل '3ft 4in'، أو '3.6E-2 m 12 cm' والتي تعادل 40inches و 15.6cm على التوالي.</message>
+  <message id="dcw-shield-empty-text">مادة التدريع</message>
+  <message id="dcw-runtime-checks-failed">فشلت فحوصات سلامة وقت التشغيل!</message>
+  <message id="dcw-runtime-check-msg">
+    <div>لا تثق في نتائج هذه الأداة الحاسبة</div>
+    يرجى إرسال بريد إلكتروني إلى <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>
+    هذه الرسالة الخطأ وتضمين نوع وطراز جهازك (مثل، iPad pro،
+    Windows 10 Dell laptop، إلخ.)
+  </message>
+  <message id="dcw-runtime-check-err-div">النتائج مشكوك فيها - لا تثق بها</message>
+  <message id="dcw-err-no-nuc">نواة مصدر فارغة أو غير صالحة</message>
+  <message id="dcw-act-invalid">النشاط غير صالح</message>
+  <message id="dcw-shield-invalid">التدريع غير صالح</message>
+  <message id="dcw-generic-shield-invalid">خطأ في حساب الجرعة، تدريع غير صالح، عذرًا :{</message>
+  <message id="dcw-dist-invalid">المسافة غير صالحة.</message>
+  <message id="dcw-err-other">خطأ في حساب الجرعة من المصدر، عذرًا :{</message>
+  <message id="dcw-invalid-src-dose">جرعة المصدر غير صالحة.</message>
+  <message id="dcw-invalid-src-act">نشاط المصدر غير صالح.</message>
+  <message id="dcw-failed-find-lower-dist">فشل في العثور على المسافة الحدية السفلى، عند {1} سم.</message>
+  <message id="dcw-failed-find-upper-dist">فشل في العثور على المسافة الحدية العليا، عند {1} سم.</message>
+  <message id="dcw-failed-find-dist">لم يتمكن من العثور على المسافة؛ تجاوز الحد الأقصى للتكرارات.</message>
+  <message id="dcw-got-neg-dist">حصلت على مسافة سالبة: {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">خطأ في حساب الجرعة أثناء البحث عن المسافة، عذرًا :{</message>
+  <message id="dcw-material-not-valid">المادة غير صالحة</message>
+  <message id="dcw-no-an-entered">يجب إدخال العدد الذري لمادة التدريع.</message>
+  <message id="dcw-no-shield-name">يجب إدخال نوع مادة التدريع.</message>
+  <message id="dcw-brehm-warning">تحذير: إشعاع الكبح لتحللات البيتا غير محسوب، قد تكون النتائج غير موثوقة.</message>
+  <message id="dcw-no-dose-entered">لم يتم إدخال قيمة رقمية للجرعة</message>
+  <message id="dcw-stay-time">وقت البقاء</message>
+  <message id="dcw-dental-xray">الأشعة السينية للأسنان</message>
+  <message id="dcw-annual-background">الخلفية السنوية النموذجية</message>
+  <message id="dcw-annual-occ-limit">الحد المهني السنوي</message>
+  <message id="dcw-save-property">إنقاذ الممتلكات القيمة</message>
+  <message id="dcw-life-saving">إنقاذ الحياة</message>
+  <message id="dcw-radiation-sickness">مرض الإشعاع</message>
+</messages>

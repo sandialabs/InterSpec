@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagfp- is short for RelActAutoGuiFreePeak -->
+  
+  <!-- Checkboxes -->
+  <message id="raagfp-constrain-fwhm">تقييد FWHM</message>
+  <message id="raagfp-true-energy">الطاقة الحقيقية</message>
+  
+  <!-- Messages -->
+  <message id="raagfp-not-in-roi">ليس في ROI.</message>
+  
+  <!-- Tooltips -->
+  <message id="raagfp-constrain-fwhm-tt">عند التحديد، ستُقيد هذه القمة إلى الشكل الوظيفي لـ FWHM الذي تُقيد إليه قمم الجاما والأشعة السينية عادة.&lt;br /&gt;عند عدم التحديد، سيُلائم FWHM لهذه القمة من البيانات، مستقلة عن جميع عروض القمم الأخرى.&lt;br /&gt;إلغاء تحديد هذا الخيار مفيد للقمم الضوئية للإبادة والتفاعل.</message>
+  <message id="raagfp-true-energy-tt">حدد هذا الخيار إذا كانت القمة لجاما بطاقة معروفة.&lt;br /&gt;ألغ تحديد هذا الخيار إذا كانت هذه القمة قمة ملاحظة في الطيف بطاقة حقيقية غير معروفة.</message>
+  
+</messages>

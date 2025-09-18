@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  
+  <!-- Presets section -->
+  <message id="raag-presets">Предустановки</message>
+  <message id="raag-preset-blank">Пустая</message>
+  <message id="raag-user-preset">Пользователь: {1}</message>
+  
+  <!-- Status messages -->
+  <message id="raag-not-calculated">Не рассчитано.</message>
+  <message id="raag-calculating">Расчёт...</message>
+  
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">Параметры спектра и пиков</message>
+  <message id="raag-rel-eff-curve-options">Параметры кривой относительной эффективности</message>
+  <message id="raag-fit-energy-cal">Подгонка энергокал.</message>
+  <message id="raag-back-sub">Вычит. фона</message>
+  <message id="raag-fwhm-est">Оценка ПШПВ</message>
+  <message id="raag-fwhm-form">Форма ПШПВ</message>
+  <message id="raag-peak-skew">Асимметрия пика</message>
+  <message id="raag-add-uncert">Доп. неопред.</message>
+  <message id="raag-yield-info">Инф. о выходе</message>
+  
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">Начать с Дет/Пиков</message>
+  <message id="raag-fwhm-start-peaks">Начать с пиков</message>
+  <message id="raag-fwhm-fixed-peaks">Фиксир. к пикам</message>
+  <message id="raag-fwhm-start-det-eff">Начать с эфф. дет.</message>
+  <message id="raag-fwhm-fixed-det-eff">Фиксир. к эфф. дет.</message>
+  
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">добавить свободные пики</message>
+  <message id="raag-clear-all-ranges">очистить все диапазоны</message>
+  <message id="raag-continue">Продолжить</message>
+  <message id="raag-html-report">HTML отчёт</message>
+  <message id="raag-xml-config">XML конфигурация</message>
+  
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">Очистить энергетические диапазоны?</message>
+  <message id="raag-cant-perform-action">Невозможно выполнить это действие.</message>
+  <message id="raag-divide-energy-range-title">Разделить энергетический диапазон?</message>
+  <message id="raag-apply-fit-energy-cal-title">Применить подогнанную энергетическую калибровку?</message>
+  <message id="raag-cant-continue">Невозможно продолжить</message>
+  <message id="raag-no-peaks-in-solution">Нет пиков в текущем решении</message>
+  <message id="raag-error">Ошибка</message>
+  <message id="raag-unexpected-error-finding-original">Произошла неожиданная ошибка при поиске исходного</message>
+  
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">Импорт XML файла конфигурации</message>
+  <message id="raag-select-isotopics-xml-file">Выберите XML файл <em>Изотопный состав по нуклидам</em> для использования</message>
+  <message id="raag-file-too-large-title">Файл слишком большой для загрузки</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">Примечание: вы также можете перетащить XML файлы конфигурации в InterSpec</p>
+  </message>
+  
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">Сортировать энергетические диапазоны.</message>
+  <message id="raag-remove-all-ranges-tt">Удалить все энергетические диапазоны.</message>
+  <message id="raag-remove-free-peaks-tt">Удалить все свободные пики и скрыть ввод свободных пиков.</message>
+  <message id="raag-free-peaks-tt">&quot;Свободные пики&quot; - это пики с определённой энергией, которые не связаны с каким-либо нуклидом, и их амплитуда подгоняется к наилучшему значению для данных. Пики могут быть дополнительно освобождены от функционального ограничения ПШПВ.<br />Свободные пики полезны для обработки пиков от реакций или от неидентифицированных нуклидов.</message>
+  
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">Неопределённости пиков будут основаны на общей подгонке относительной эффективности (т.е. пики помогают друг другу уменьшить неопределённости), если вы не выберете их переподгонку, в этом случае они не будут ограничены кривой отн. эфф. или функциональной формой ПШПВ.</message>
+  
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} кэВ уже находится в энергетическом диапазоне [{2}, {3}] кэВ - никаких действий не будет предпринято.</message>
+  <message id="raag-extended-energy-range">Расширен существующий энергетический диапазон до [{1}, {2}] кэВ.</message>
+  <message id="raag-added-new-energy-range">Добавлен новый энергетический диапазон от {1} до {2} кэВ.</message>
+  <message id="raag-split-roi-at">Разделить область интереса на {1} кэВ</message>
+  <message id="raag-add-free-peak-at">Добавить свободный пик на {1} кэВ</message>
+  <message id="raag-energy-range-no-contributions">Энергетический диапазон от {1} кэВ до {2} кэВ не содержал значительных гамма-вкладов.</message>
+  <message id="raag-divide-energy-range-msg">
+    Это действие разделит энергетический диапазон от {1} кэВ до {2} кэВ на {3} отдельных энергетических диапазона.
+    <br />
+    <p>Хотите продолжить?</p>
+  </message>
+  <message id="raag-add-energy-offset"> добавить смещение {1} кэВ</message>
+  <message id="raag-increase-gain-first"> увеличить коэффициент усиления на {1}</message>
+  <message id="raag-increase-gain-additional"> и увеличить коэффициент усиления на {1}</message>
+  <message id="raag-increase-quad-first"> увеличить квадратичный коэффициент на {1}</message>
+  <message id="raag-increase-quad-additional"> и увеличить квадратичный коэффициент на {1}</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">Это{1} для первичного переднего плана{2}{3}.<br />Хотите это сделать?</message>
+  <message id="raag-and-background"> и фона</message>
+  <message id="raag-files"> файлов</message>
+  <message id="raag-file"> файла</message>
+  <message id="raag-energy-cal-updated">Обновлена энергетическая калибровка для отображаемого переднего плана{1}.</message>
+  <message id="raag-and-background-period"> и фона</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">Ошибка создания инструмента относительной активности изотопов: {1}</message>
+  <message id="raag-handle-double-click-error">Ошибка handleDoubleLeftClick: {1}</message>
+  <message id="raag-expected-state-info">Ожидаемая информация о состоянии для '{1}' недоступна - это неожиданно - извините!</message>
+  <message id="raag-state-info-not-saved">Информация о состоянии не могла быть сохранена ранее для '{1}' - это неожиданно - извините!</message>
+  <message id="raag-error-deserializing">Ошибка десериализации состояния инструмента: {1}</message>
+  <message id="raag-error-loading-preset">Ошибка загрузки предустановки: {1}</message>
+  <message id="raag-error-applying-energy-cal">Ошибка применения энергетической калибровки: {1}</message>
+  <message id="raag-error-loading-xml-config">Ошибка загрузки XML файла конфигурации <em>Изотопный состав по нуклидам</em>: {1}</message>
+  
+</messages>

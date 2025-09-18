@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
+  
+  <!-- Labels -->
+  <message id="raageo-eqn-type">نوع المعادلة</message>
+  <message id="raageo-eqn-order">ترتيب المعادلة</message>
+  <message id="raageo-pu242-corr">تصحيح Pu242</message>
+  
+  <!-- Checkboxes -->
+  <message id="raageo-use-corr-fcn">استخدام دالة التصحيح</message>
+  <message id="raageo-share-corr-fcn">مشاركة دالة التصحيح</message>
+  <message id="raageo-share-ext-atten">مشاركة الامتصاص الخارجي</message>
+  <message id="raageo-shielded-by-other-curves">محمي بواسطة منحنيات أخرى</message>
+  
+  <!-- Equation types -->
+  <message id="raageo-eqn-log-x">Log(x)</message>
+  <message id="raageo-eqn-log-y">Log(y)</message>
+  <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
+  <message id="raageo-eqn-empirical">تجريبي</message>
+  <message id="raageo-eqn-physical">فيزيائي</message>
+  
+  <!-- Placeholders -->
+  <message id="raageo-curve-name">اسم المنحنى</message>
+  
+  <!-- Tooltips -->
+  <message id="raageo-eqn-type-tt">الشكل الوظيفي لاستخدامه لمنحنى الكفاءة النسبية.<br />الخيارات هي:<table style="margin-left: 10px;"><tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Physical:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Det. Eff.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">الترتيب (كم عدد الحدود المعتمدة على الطاقة) لمعادلة الكفاءة النسبية للاستخدام.</message>
+  <message id="raageo-pu242-corr-tt">Pu-242 غالبًا ما لا يكون قابلاً للملاحظة مباشرة في أطياف الجاما. ومع ذلك، للتصحيح لهذا النظير عند حساب الإثراء، يمكن استنتاج المساهمات المتوقعة لهذا النظير من نظائر Pu الأخرى. هذا النموذج يسمح لك باختيار طريقة التصحيح.</message>
+  <message id="raageo-share-corr-fcn-tt">عند التحديد، سيتم مزامنة إعداد دالة الارتباط عبر جميع منحنيات النموذج الفيزيائي.</message>
+  <message id="raageo-share-ext-atten-tt">عند التحديد، سيتم مزامنة تكوين التدريع الخارجي عبر جميع منحنيات النموذج الفيزيائي.</message>
+  <message id="raageo-shielded-by-other-curves-tt">عند التحديد، ستكون مصادر هذا المنحنى محمية بواسطة جميع منحنيات النموذج الفيزيائي الأخرى.</message>
+  <message id="raageo-del-rel-eff-curve-tt">يزيل منحنى الكفاءة النسبية هذا.</message>
+  <message id="raageo-add-rel-eff-curve-tt">إضافة منحنى كفاءة نسبية آخر.</message>
+  
+</messages>
