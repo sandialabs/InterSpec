@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">Contar el número de rayos gamma en el rango de energía especificado.</message>
+  <message id="gcd-lower-energy-label">Energía inferior</message>
+  <message id="gcd-upper-energy-label">Energía superior</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-Arrastrar</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-Arrastrar</message>
+  <message id="gcd-select-shortcut">También puede <b>{1}</b> en el gráfico para seleccionar el rango de energía</message>
+  <message id="gcd-foreground-counts-label">Cuentas primer plano:</message>
+  <message id="gcd-secondary-counts-label">Cuentas secundarias:</message>
+  <message id="gcd-background-counts-label">Cuentas de fondo:</message>
+  <message id="gcd-tt-n-sigma">
+    El número de diferencia sigma se calcula dividiendo la
+    diferencia entre el primer plano y el fondo (escalado),
+    dividido por la incertidumbre. La incertidumbre se calcula
+    sumando las incertidumbres estadísticas del primer plano y fondo en
+    cuadratura, luego tomando la raíz cuadrada
+  </message>
+  <message id="gcd-qr-window-title">Estado de suma de rango de energía</message>
+  <message id="gcd-qr-window-text">Estado actual de la herramienta de suma de rango de energía.</message>
+  <message id="gcd-background-scale-note">El fondo está siendo escalado por {1}</message>
+  <message id="gcd-and-secondary-scaled"> y el secundario por </message>
+  <message id="gcd-secondary-scale-note">El fondo secundario está siendo escalado por </message>
+  <message id="gcd-foreground-above-background">El primer plano está {1} σ por encima del fondo.</message>
+  <message id="gcd-foreground-below-background">El primer plano está {1} σ por debajo del fondo.</message>
+</messages>
+

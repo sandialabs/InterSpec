@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">Úgy tűnik, hogy ezt a spektrum fájlt egy mentett állapot részeként mentette el; szeretné folytatni korábbi munkáját?</message>
+  <message id="sb-no-saved-states">Nincsenek mentett alkalmazás állapotok</message>
+  <message id="sb-tt-del-state">Állapot törlése</message>
+  <message id="sb-tt-edit-state">Állapot neve vagy leírásának szerkesztése</message>
+  <message id="sb-state-HEAD-label">Mentett-állapot</message>
+  <message id="sb-state-auto-saved-label">Auto-mentett</message>
+  <message id="sb-unsaved-spectra-parent-node-label">Megnyitott, de nem kifejezetten tárolt spektrumok</message>
+  <message id="sb-tt-unsaved-spectra-node">Spektrumok, amelyeket megnyitott az InterSpec-ben, de nem mentett el kifejezetten.</message>
+  <message id="sb-unsaved-spectrum-node">{1} (megnyitva {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">Fájlnév: {1}
+Mérési idő: {2}
+Betöltési idő: {3}
+Minták száma: {4}
+Teljes valós idő: {5}</message>
+  <message id="sb-open-spectrum-as">A kiválasztott spektrum megnyitása mint:</message>
+  <message id="sb-load-spectrum-only">Csak spektrum betöltése</message>
+  <message id="sb-load-app-state">Alkalmazás állapot betöltése</message>
+  <message id="sb-err-making-browser-txt">Váratlan hiba az adatbázis spektrum fájl böngésző létrehozásakor</message>
+  <message id="sb-err-making-browser-msg">Hiba az adatbázis spektrum fájl böngésző létrehozásakor: {1}</message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+</messages>

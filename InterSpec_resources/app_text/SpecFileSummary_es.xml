@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sfs- is short for SpecFileSummary
+  -->
+  <message id="sfs-spectrum">Espectro</message>
+  <message id="sfs-alow-edit-cb">Permitir editar</message>
+  <message id="sfs-update-display-btn">Actualizar visualizaciones</message>
+  <message id="sfs-tt-update-display">Los cambios hechos en esta pantalla pueden no propagarse a los componentes GUI hasta que recargue el espectro.</message>
+  <message id="sfs-file-info-title">Información del archivo</message>
+  <message id="sfs-file-name-label">Nombre archivo:</message>
+  <message id="sfs-memory-size-label">Tamaño mem.:</message>
+  <message id="sfs-inspection-label">Inspección:</message>
+  <message id="sfs-lane-label">Carril:</message>
+  <message id="sfs-location-label">Ubicación:</message>
+  <message id="sfs-no-det-id-btn">Sin ID det.</message>
+  <message id="sfs-show-det-id-btn">Mostrar ID det.</message>
+  <message id="sfs-show-pics-btn">Mostrar fotos</message>
+  <message id="sfs-instrument-type-label">Tipo instru.:</message>
+  <message id="sfs-manufacturer-label">Fabricante:</message>
+  <message id="sfs-model-label">Modelo:</message>
+  <message id="sfs-instrument-id-label">ID instru.:</message>
+  <message id="sfs-uuid-label">UUID:</message>
+  <message id="sfs-file-label">Archivo</message>
+  <message id="sfs-remarks-label">Observaciones:</message>
+  <message id="sfs-measurement-info-label">Información de medición</message>
+  <message id="sfs-date-time-label">Fecha/hora:</message>
+  <message id="sfs-live-time-label">Tiempo vivo:</message>
+  <message id="sfs-real-time-label">Tiempo real:</message>
+  <message id="sfs-detector-name-label">Nombre det.:</message>
+  <message id="sfs-sample-number-label">Núm. muestra:</message>
+  <message id="sfs-energy-range-label">Energía(keV):</message>
+  <message id="sfs-number-channels-label">Núm canales:</message>
+  <message id="sfs-sum-gammas-label">Suma gamma:</message>
+  <message id="sfs-gamma-cps-label">CPS gamma:</message>
+  <message id="sfs-sum-neutrons-label">Suma neutrón:</message>
+  <message id="sfs-neutrons-cps-label">CPS neutrón:</message>
+  <message id="sfs-latitude-label">Latitud:</message>
+  <message id="sfs-longitude-label">Longitud:</message>
+  <message id="sfs-position-time-label">Hora posición:</message>
+  <message id="sfs-latitude-empty-text">dec o grd min' seg" N/S</message>
+  <message id="sfs-longitude-empty-text">dec o grd min' seg" E/O</message>
+  <message id="sfs-show-map-btn">Mostrar mapa</message>
+  <message id="sfs-description-label">Descripción:</message>
+  <message id="sfs-source-type-label">Tipo fuente:</message>
+  <message id="sfs-spectra-label">Espectros</message>
+  <message id="sfs-err-show-map">Error tratando de mostrar coordenadas: {1}</message>
+  <message id="sfs-err-time-format">Error convirtiendo '{1}' a cadena de fecha/hora</message>
+  <message id="sfs-err-lat-lon">Error convirtiendo Long/Lat a flotante válido</message>
+</messages>
+

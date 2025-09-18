@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">Spektrum Kezelő</message>
+  <message id="smm-load-spec-from">Spektrum betöltése innen: </message>
+  <message id="smm-tt-upload-file">Spektrum importálása fájlból</message>
+
+  <message id="smm-err-zip">Hiba a fájl zip-ből való kicsomagolásakor</message>
+  <message id="smm-zip-sel-file-no-name">
+    A feltöltött fájl ZIP fájl.
+    <br />
+    {2}
+    Válassza ki, hogy melyik fájlt szeretné megnyitni belőle.
+  </message>
+  <message id="smm-zip-sel-file">
+    A(z) <b>{1}</b> ZIP fájl.
+    <br />
+    {2}
+    Válassza ki, hogy melyik fájlt szeretné megnyitni belőle.
+  </message>
+  <message id="smm-zip-window-title">Feltöltött ZIP Fájl Tartalma</message>
+  <message id="smm-zip-filename-hdr">Fájlnév</message>
+  <message id="smm-zip-kilobyte-hdr">kb</message>
+  <message id="smm-zip-display-btn">Megjelenítés</message>
+  <message id="smm-empty-file">A fájl valószínűleg üres fájl volt - nem spektrum fájl.</message>
+  <message id="smm-failed-reading-nonspec-file">Nem spektrum fájl olvasása sikertelen.</message>
+  <message id="smm-not-spec-file">Nem spektrum fájl</message>
+  <message id="smm-image-file">Kép Fájl Kiválasztva</message>
+  <message id="smm-icd2">Ez úgy tűnik, hogy egy N42 ICD2 fájl, amely elemzési eredményeket
+    tartalmaz, nem nyers spektrumokat.
+    <br />
+    Ha úgy véli, hogy ez legitim spektrum fájl, kérjük, küldje el 
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    címre, hogy támogassuk ezt a fájltípust.
+  </message>
+  <message id="smm-invalid-zip">Ez a fájl úgy tűnik, hogy érvénytelen ZIP fájl (vagy xlsx, pptx, 
+    <br />
+    docx, odp, jar, apk, stb), sajnálom, nem tudom megnyitni :(
+  </message>
+  <message id="smm-unsupported-archive">Ez a fájl archív fájlnak tűnik, amelyet az InterSpec még nem támogat.
+    Kérjük, vegye fel a kapcsolatot 
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    címmel, ha szeretné, hogy ezt az archív típust hozzáadjuk.
+  </message>
+  <message id="smm-unsupported-document">Ez a fájl dokumentum fájlnak tűnik, és az InterSpec nem támogatja.</message>
+  <message id="smm-invalid-peak-csv">A feltöltött fájl Csúcs CSV fájlnak tűnt, de érvénytelen volt.</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      Ez a fájl Detektor Válasz Függvénynek tűnik.
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      Név: {1}
+    </p>
+   <p>Szeretné használni ezt a DRF-et?</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    '{1}' elmentve későbbi használatra, és elérhető lesz a
+    "<em>Rel. Hat.</em>" részében a "<em>Detektor Válasz Függvény Kiválasztás</em>" eszközben.
+  </message>
+  <message id="smm-err-saving-drf">Hiba a DRF fájl későbbi használatra mentésekor.</message>
+  <message id="smm-file-is-drf">Ez a fájl Detektor Válasz Függvénynek tűnik.</message>
+  <message id="smm-file-is-multi-drf">Ez a fájl több Detektor Válasz Függvényt tartalmaz.</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>Nincs jelenleg megjelenített előtér - CALp fájl kihagyása.</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      Ennek a CALp fájlnak a tartalma
+      <br />
+      olvashatatlan vagy nem kompatibilis az adatokkal
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">Ez a fájl energia kalibrálást tartalmaz.</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>{1} detektorra vonatkozó kalibrálások vannak</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    Figyelem: Ez a CALp fájl egyetlen kalibrálást tartalmaz; ez<br />
+    az elsődleges megjelenített energia kalibrálásra lesz alkalmazva, és<br />
+    a relatív változás a többi detektor<br />
+    energia kalibrálásaira is alkalmazva lesz, ami valószínűleg az, amit szeretne.
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    Figyelem: Ez az energia kalibrálás nem feltétlenül konzisztens<br />
+    a jelenlegi adatok szerkezetével.
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">Csak a megjelenített mintákra alkalmazás</message>
+  <message id="smm-CALp-cb-apply-to-fore">Alkalmazás előtérre</message>
+  <message id="smm-CALp-cb-apply-to-back">Alkalmazás háttérre</message>
+  <message id="smm-CALp-cb-apply-to-second">Alkalmazás másodlagosra</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">Szeretné használni?</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      Megjegyzés: a jelenlegi energia kalibrálás alacsonyabb csatorna energiák;<br />
+      érdemes lehet linearizálni a spektrumot ennek az<br />
+      energia kalibrálásnak az alkalmazása előtt.
+    </p>
+  </message>
+
+  <message id="smm-CALp-err-applying-single">Hiba történt a kalibrálás alkalmazásakor:
+    <br />
+    {1}
+    <br />
+    <br />
+    A kalibrálás alkalmazva lett az előtérre.
+  </message>
+  <message id="smm-CALp-err-applying-mult">Hiba történt a kalibrálás alkalmazásakor:
+    <br />
+    {1}
+    <br />
+    <br />
+    A kalibrálás alkalmazva lett az előtérre és háttérre.
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc">Hiba az <em>Izotópok nuklidonként</em> XML konfig fájl betöltésekor: {1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">Hiba a konfig XML elemzésekor: {1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">Érvénytelen <em>Izotópok nuklidonként</em> XML konfig fájl.</message>
+  <message id="smm-ecc-curve">ISOCS Hatékonyság Kalibrálási Görbe DRF</message>
+  <message id="smm-ecc-how-to-interpret">Hogyan értelmezze</message>
+  <message id="smm-ecc-far-field">Távoli Mező DRF</message>
+  <message id="smm-ecc-fix-geom-total-act">Fix Geometria - teljes aktivitás</message>
+  <message id="smm-ecc-fix-geom-act-cm2">Fix Geometria - aktivitás per cm2</message>
+  <message id="smm-ecc-fix-geom-act-m2">Fix Geometria - aktivitás per m2</message>
+  <message id="smm-ecc-fix-geom-act-gram">Fix Geometria - aktivitás per gramm</message>
+  <message id="smm-ecc-det-diam">Detektor átmérő</message>
+  <message id="smm-ecc-dist">Távolság</message>
+  <message id="smm-ecc-use-drf">DRF Használata</message>
+  <message id="smm-ecc-error">Hiba a DRF ECC-ből való létrehozásakor: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">Aktivitás/Árnyékolás XML</message>
+  <message id="smm-act-shield-use">Használja ezt az Aktivitás/Árnyékolás illesztési beállítást?</message>
+  <message id="smm-err-act-shield">Sajnálom, hiba történt az Aktivitás/Árnyékolás Illesztési modell betöltésekor: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">Karakterizációs forrás könyvtár fájl</message>
+  <message id="smm-source-source-use">
+    Ez ezt a Source.lib fájlt fogja használni a Detektor Válasz Készítő eszközben.
+    <br />
+    Szeretné automatikusan feltölteni a forrásokat a könyvtárban első egyező nuklidokkal?
+  </message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">A fájl feltöltés talán időtúllépés miatt megszakadt - 120 másodperc fájladat fogadása nélkül.</message>
+  <message id="smm-finishing-upload">Feltöltés befejezése</message>
+  <message id="smm-finishing-copying">Fájl másolás befejezése</message>
+  <message id="smm-finish-up-txt">{1} {2} fájlból - akár egy percig is eltarthat.</message> <!-- ex. "of 112.2 kb foreground file - may take a minute."-->
+  <message id="smm-window-title-parsing">Fájl Elemzése</message>
+  <message id="smm-window-msg-parsing">Ez eltarthat egy másodpercig.</message>
+  <message id="smm-no-file-disp">Hiba, nincs {1} mérés megjelenítve.</message>
+  <message id="smm-no-spec-disp">Sajnálom, úgy tűnik, a(z) {1} nem jelenít meg spektrumot.</message>
+  <message id="smm-err-parse-spec-title">Nem Sikerült Elemezni a Fájlt</message>
+  <message id="smm-err-parse-spec">
+    <p>Sajnálom, nem tudtam elemezni a(z) {1} fájlt:</p>
+  <p>Hiba: <em>{2}</em></p>
+  <p>Ha úgy gondolja, hogy ez érvényes spektrum fájl, kérjük, küldje el 
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a> címre, és
+   megpróbáljuk javítani ezt a problémát.</p>
+  </message>
+  <message id="smm-failed-combine">Fájlok kombinálása sikertelen: {1}</message>
+  <message id="smm-failed-sum">Spektrumok összegzése sikertelen: {1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">Nincsenek gamma mérések az URL/QR kódban</message>
+  <message id="smm-qr-no-gamma">Nincsenek gamma mérések az URL/QR kódban</message>
+  <message id="smm-qr-name-placeholder">QR-kódból/URL-ből</message>
+  <message id="smm-qr-err-decode">Hiba a spektrum URL/QR kód dekódolásakor: {1}</message>
+  <message id="smm-qr-couldnt-encode">
+    A spektrum nem kódolható QR kódba.
+    <br />
+    Valószínűleg több mint 9 QR kód szükséges.
+  </message>
+  <message id="smm-qr-encode-fail">Spektrum QR kódba kódolása sikertelen: {1} </message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">Betöltendő Virtuális Detektorok?</message>
+  <message id="smm-vd-load-msg">
+    <div>Ez a fájl több "Virtuális Detektor"-t tartalmazott, amelyek</div>
+    <div>több fizikai detektor összegei lehetnek, vagy nem.</div>
+    <div>Ha mindet betölti, lásd a <b>Nézet</b>→<b>Detektorok</b> menüt egy</div>
+    <div>részlet megjelenítéséhez.</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      Melyik detektorok adatait szeretné betölteni?
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>{1} VD van, csak "Mind" vagy első 5 választható.</div>
+  </message>
+  <message id="smm-vd-all-btn">Mind</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">Származtatott Adatok Használata?</message>
+  <message id="smm-derived-window-txt">
+    <div>Ez a fájl "Származtatott Adatok" spektrumokat tartalmazott, amelyeket</div>
+    <div>általában a detektálási rendszer használ elemzésre.</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      Milyen adatokat szeretne betölteni?
+    </div>
+  </message>
+  <message id="smm-derived-all">Minden Adat</message>
+  <message id="smm-derived-raw">Nyers Adatok</message>
+  <message id="smm-derived-derived">Származtatott Adatok</message>
+  <message id="smm-multiple-binnings-window-title">Energia Rekeszezés Kiválasztása</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">Több energia rekeszezést találtunk a spektrum fájlban.</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">Kérjük, válassza ki, amelyiket szeretné</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">Mind Megtartása</message>
+  <message id="smm-warn-has-intrinsic">A feltöltött fájl belső aktivitás spektrumot tartalmazott, de jelenleg a fájl másik spektruma van megjelenítve.</message>
+  <message id="smm-warn-upload-mult-spec">A feltöltött fájl {1} mintát tartalmazott<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">Az első előtér minta van megjelenítve.<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">Az első minta van megjelenítve.<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">{1}. minta van megjelenítve.<br /></message>
+  <message id="smm-warn-upload-use-spec-manager">Használja a <b>Spektrum Fájlok</b> fület, vagy a <b>Fájlkezelőt</b> más rekordok kiválasztásához.</message>
+  <message id="smm-warn-upload-use-file-manager">Használja a <b>Fájlkezelőt</b> mások kiválasztásához.</message>
+
+  <message id="smm-multi-cal-present">A feltöltött fájl {1} kalibrálási vagy származtatott-adat mintát tartalmazott
+    <br />
+    {2}
+    nem lesz megjelenítve.
+    <br />
+    Használja a <b>Spektrum Fájlok</b> fület vagy <b>Fájlkezelőt</b> ennek megváltoztatásához.
+  </message>
+  <message id="smm-multi-cal-it">Az</message>
+  <message id="smm-multi-cal-they">Azok</message>
+  <message id="smm-multi-spectra-using-back">A fájl több spektrumot tartalmaz, így csak a háttér spektrum lett megjelenítve.</message>
+  <message id="smm-multi-spectra-using-first">A feltöltött fájl {1} mintát tartalmazott, így
+    <br />
+    az elsőt jelenítem meg.
+    <br />
+    Használja a <b>Fájlkezelőt</b> ennek megváltoztatásához.
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">Kiválasztott Spektrum: </message>
+  <message id="smm-disp-as-btn">Megjelenítés Mint</message>
+  <message id="smm-to-new-file">Új Fájlba</message>
+  <message id="smm-tt-to-new-file">Új memóriában lévő spektrum fájlt hoz létre a jelenlegi kiválasztásból.</message>
+  <message id="smm-as-new-file">Új Fájlként</message>
+  <message id="smm-tt-as-new-file">Új memóriában lévő spektrum fájlt hoz létre a jelenlegi kiválasztásból.</message>
+  <message id="smm-sum-spectra">Spektrumok Összegzése</message>
+  <message id="smm-tt-sum-spectra">Új memóriában lévő spektrum fájlt hoz létre a jelenlegi kiválasztásból.</message>
+  <message id="smm-export-btn">Export...</message>
+  <message id="smm-unload-btn">Eltávolítás</message>
+  <message id="smm-unassign-label">Hozzárendelés megszüntetése: </message>
+
+
+  <message id="smm-prev-states-window-title">Korábban Tárolt Állapotok</message>
+  <message id="smm-err-prev-state-unexpected">Váratlan probléma az elérhető mentési állapotok megjelenítésekor: {1}</message>
+  <message id="smm-tab-saved-states">Mentett Állapotok</message>
+  <message id="smm-tab-auto-saved">Auto-mentett Spektrumok</message>
+  <message id="smm-auto-check-prev-cb">Előző munka automatikus ellenőrzése.</message>
+  <message id="smm-cant-save">
+    Ez a spektrum fájl túl nagy a belső adatbázisba mentéshez.<br />
+    Ennek eredményeként a munkája nem lesz automatikusan mentve a belső adatbázisba, és nem tudja folytatni ott, ahol abbahagyta, amikor legközelebb betölti a fájlt.
+    <p>Ennek a fájlnak a mérete {1}, míg a maximálisan menthető {2}.</p>
+  </message>
+  <message id="smm-max-file-to-large">A megkísérelt fájl túl nagy; max méret {1} kb, Ön {2} kb-ot próbált feltölteni.</message>
+  <message id="smm-must-specify-name">Meg kell adnia egy nevet</message>
+  <message id="smm-save-spectype-as-window-title">{1} Spektrum Mentése Másként</message>
+  <message id="smm-save-spectype-name-empty-txt">(Név a tároláshoz)</message>
+  <message id="smm-save-spectype-desc-empty-txt">(Opcionális leírás)</message>
+  <message id="smm-save-state-toast">{1} állapota mentve</message>
+  <message id="smm-save-spec-version-window-title">Spektrum Verzió Mentése</message>
+  <message id="smm-save-state">Állapot Mentése</message>
+  <message id="smm-create-new-tag-toast">Új címke létrehozva: '{1}'.</message>
+
+  <message id="smm-next-qr">Következő QR kód</message>
+  <message id="smm-qr-desc">{1} a(z) {2} spektrumhoz.</message>
+  <message id="smm-qr-title">Spektrum Fájl {1}</message>
+  <message id="smm-qr-sequence-single">QR Kód</message>
+  <message id="smm-qr-sequence-multi">QR Kód {1} / {2}</message>
+  
+  
+  <message id="smm-changed-background">
+    A háttér spektrum is frissítésre került az újonnan betöltött fájlban foglalttal.
+  </message>
+  <message id="smm-didnt-changed-background">
+    Az újonnan betöltött előtér fájl háttér spektrumot tartalmazott
+    - de a megjelenített háttér <b>NEM</b> lett frissítve.
+  </message>
+  
+  <message id="fud-dialog-title">Megnyitandó Fájl Kiválasztása</message>
+  <message id="fud-open-foreground-only-msg">{1} alább előtér spektrum fájl megnyitásához.</message>
+  <message id="fud-open-any-type-msg">Válassza ki, hogyan szeretné megnyitni a spektrum fájlt, majd {1} alább a fájl tallózásához.</message>
+  <message id="fud-btn-grp-title">Fájl megnyitása mint:</message>
+  <message id="fud-drg-n-drop-msg">
+    A fájlt közvetlenül az alkalmazás ablakába is <br />
+    húzhatja és ejtheti gyorsabb alternatívaként.<br />
+    <br />Fejlettebb fájl megnyitáshoz és<br />
+    manipulációhoz használja a <b>Fájlkezelőt</b>
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      Spektrum fájlokat email vagy fájl alkalmazásokból is megnyithat.
+    </span>
+  </message>
+  
+  <message id="musd-dialog-title">Többrészes QR/URL Spektrum</message>
+  <message id="musd-err-diff-spec">A kapott URL/QR-kód más spektrumból származott, mint az előző URL/QR-kód</message>
+  <message id="musd-err-duplicate-url">Már megkaptuk ezt az URL/QR-kódot</message>
+  <message id="musd-from-qr-file-name">QR-kódból/URL-ből</message>
+  <message id="musd-err-decoding-url">Hiba az URL dekódolásakor: {1}</message>
+  <message id="musd-received-urls-list">{2}-ből {1} url-t kaptunk.<p>További URL-ek/QR-kódok várása</p></message>
+
+
+  <message id="uid-qr-code-pic">QR-kód Kép</message>
+  <message id="uid-no-qr-found">Nem találhatók QR-kódok ⓘ</message>
+  <message id="uid-no-qr-found-title">Nem található QR-kód</message>
+  <message id="uid-no-qr-content">
+    <p>
+      Ha van QR-kód a képen, megpróbálhatja a fénykép vágását vagy a színszint beállítását.
+      <br/>
+      Harmadik féltől származó alkalmazás/weboldal vagy az iOS vagy Android beépített képességeinek használata gyakran jobban működik.
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">Hiba a QR-kód keresésekor</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      Hiba érték: {1}
+    </div>
+    <p>
+      Hiba üzenet: {2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">{1} QR-kódnak érvénytelen URI-ja volt.</message>
+  <message id="uid-qr-didnt-have-uri">A QR-kód nem tartalmazott <code>interspec://</code> vagy <code>raddata://</code> URI-t.</message>
+  <message id="uid-invalid-qr">Érvénytelen QR-kód</message>
+  <message id="uid-invalid-uri">A QR-kód érvénytelen URI-t tartalmazott</message>
+  <message id="uid-multi-qr-found-title">{1} QR-kód található</message>
+  <message id="uid-multi-qr-found-content">Szeretné mindet használni?</message>
+  <message id="uid-multi-qr-status">{1} QR-kód található</message>
+  <message id="uid-qr-found-title">QR-kód találva</message>
+  <message id="uid-qr-found-content">Szeretné használni a QR-kódot, amely ezzel kezdődik: <br /> <code>{1}...</code></message>
+  <message id="uid-found-qr">QR-kód találva</message>
+  <message id="uid-err-getting-data">Hiba a beágyazandó adatok lekérésekor - kép beágyazása elmarad.</message>
+  <message id="uid-err-no-foreground-embedd">Nincs előtér betöltve - kép beágyazása elmarad.</message>
+  <message id="uid-image-embed-conf">A kép be lett ágyazva az előtér spektrum fájlba; csak N42-2012 fájlformátumba exportálva őrzi meg ezt.</message>
+  <message id="uid-image-not-spectrum">Ez a fájl képnek tűnik, nem spektrum fájlnak.</message>
+  <message id="uid-err-to-large">A feltöltött fájl túl nagy volt a megjelenítéshez.</message>
+  <message id="uid-err-reading-upload">Nem sikerült olvasni a feltöltött fájlt.</message>
+  <message id="uid-embed-image-btn">Kép beágyazása spektrum fájlba</message>
+  <message id="uid-no-qr-found">QR-kód nem található ⓘ</message>
+  <message id="uid-looking-for-qr">QR-kódok keresése.</message>
+  <message id="uid-check-for-qr-btn">QR-kód ellenőrzése</message>
+  <message id="uid-tt-auto-qr">
+    A képek automatikusan átkutatásra kerülnek olyan QR-kódok után, amelyeket az InterSpec használhat.
+    <br/>
+    Ha van QR-kód a képen, amit nem találnak, jobb szerencséje lehet
+    harmadik féltől származó alkalmazás/weboldal vagy az iOS
+    vagy Android beépített képességeinek használatával.
+    <br />
+    Ha harmadik féltől származó eszközt használ a QR-kódból az URI kinyerésére,
+    azt beírhatja az InterSpec-be a "<b>URL Megadása</b>"
+    elemmel a "<b>Szerkesztés</b>" menüben.
+  </message>
+</messages>

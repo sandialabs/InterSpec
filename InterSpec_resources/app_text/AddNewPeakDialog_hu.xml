@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">Csúcs hozzáadása</message>
+  <message id="anpd-err-no-foreground">Csúcs hozzáadásához előtér spektrumot kell betölteni.</message>
+  <message id="anpd-err-no-foreground-1">Nincs előtér spektrum</message>
+  <message id="anpd-peak-mean">Csúcs közép</message>
+  <message id="anpd-peak-fwhm">Csúcs FWHM</message>
+  <message id="anpd-peak-amp">Csúcs ampl.</message>
+  <message id="anpd-roi-lower">ROI alsó</message>
+  <message id="anpd-roi-upper">ROI felső</message>
+  <message id="anpd-tt-more-adv">További haladó beállításokért lásd a <em>Csúcs szerkesztőt</em> a hozzáadás után.</message>
+  <message id="anpd-screen-to-small">A képernyő túl kicsi az előnézethez.</message>
+  <message id="anpd-err-preview">Hiba az előnézet renderelésében</message>
+  <message id="anpd-err-fit-failed">Illesztés sikertelen.</message>
+  <message id="anpd-associate-with">Társítás ezzel: {1}</message>
+</messages>

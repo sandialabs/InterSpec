@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sm3dc- is short for SearchMode3DChart -->
+  <message id="sm3dc-loading">Cargando...</message>
+  <message id="sm3dc-min-energy">Energía mín.</message>
+  <message id="sm3dc-max-energy">Energía máx.</message>
+  <message id="sm3dc-min-time">Tiempo mín. (s)</message>
+  <message id="sm3dc-max-time">Tiempo máx. (s)</message>
+  <message id="sm3dc-time-bins">Bins visualización tiempo</message>
+  <message id="sm3dc-tt-time-bins">
+    El número máximo de divisiones de tiempo a graficar; si sus datos tienen más muestras de tiempo que
+    esto en el rango mostrado, las muestras de tiempo se combinarán juntas, hasta que sea menor que este valor.
+    <br />
+    <br />
+    Por ejemplo, si este valor es 60, pero su medición tiene 208 muestras, entonces cada 4
+    muestras se sumarán juntas para un solo bin para el eje de tiempo,
+    con un total de 52 bins en el eje de tiempo.
+    <br />
+    Si el producto del número de canales de tiempo, por el número de canales de energía
+    es demasiado grande, pueden encontrarse problemas de rendimiento.
+  </message>
+  <message id="sm3dc-energy-bins">Bins visualización energía</message>
+  <message id="sm3dc-tt-energy-bins">
+    El número máximo de divisiones de energía a graficar; si sus datos tienen más canales de energía que
+    esto en el rango mostrado, los canales se combinarán juntos, hasta que sea menor que este valor.
+    <br />
+    <br />
+    Si el producto del número de canales de tiempo, por el número de canales de energía
+    es demasiado grande, pueden encontrarse problemas de rendimiento.
+  </message>
+  <message id="sm3dc-time-axis-label">Tiempo (segundos)</message>
+  <message id="sm3dc-counts-axis-label">Cuentas por canal</message>
+</messages>
+

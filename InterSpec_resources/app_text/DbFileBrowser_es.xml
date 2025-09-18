@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">Parece que ha guardado este archivo de espectro como parte de un estado guardado; ¿le gustaría resumir su trabajo previo?</message>
+  <message id="sb-no-saved-states">Sin estados de aplicación guardados</message>
+  <message id="sb-tt-del-state">Borrar estado</message>
+  <message id="sb-tt-edit-state">Editar nombre o descripción del estado</message>
+  <message id="sb-state-HEAD-label">Estado guardado</message>
+  <message id="sb-state-auto-saved-label">Auto guardado</message>
+  <message id="sb-unsaved-spectra-parent-node-label">Espectros abiertos, pero no almacenados explícitamente</message>
+  <message id="sb-tt-unsaved-spectra-node">Espectros que ha abierto en InterSpec, pero no guardó explícitamente.</message>
+  <message id="sb-unsaved-spectrum-node">{1} (abierto {2})</message>
+  <message id="sb-tt-unsaved-spectrum-node">Nombre archivo: {1}
+Tiempo medición: {2}
+Tiempo cargado: {3}
+Número muestras: {4}
+Tiempo real total: {5}</message>
+  <message id="sb-open-spectrum-as">Abrir espectro seleccionado como:</message>
+  <message id="sb-load-spectrum-only">Cargar solo espectro</message>
+  <message id="sb-load-app-state">Cargar estado aplicación</message>
+  <message id="sb-err-making-browser-txt">Error inesperado creando navegador de archivos de espectro de base de datos</message>
+  <message id="sb-err-making-browser-msg">Error creando navegador de archivos de espectro de base de datos: {1}</message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+</messages>
+

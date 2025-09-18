@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">Bomlási eszköz állapota</message>
+  <message id="dw-qr-window-text">A bomlási eszköz jelenlegi állapota.</message>
+  <message id="dad-units-label">Megjelenítési egységek:</message>
+  <message id="dad-units-label-phone">Egységek:</message>
+  <message id="dad-logy-cb">Log-Y skála</message>
+  <message id="dad-grid-cb">Rácsvonalak</message>
+  <message id="dad-add-nucs">Nuklid hozzáadása...</message>
+  <message id="dad-remove-all">Mindent eltávolít</message>
+  <message id="dad-sel-nuc-window-title">Válasszon nuklidot a hozzáadáshoz</message>
+  <message id="dad-mi-act-chart">Aktivitás diagram</message>
+  <message id="dad-mi-decay-chain">Bomlási lánc</message>
+  <message id="dad-mi-calc">Számoló</message>
+  <message id="dad-arbitrary">Könnyű szerves</message>
+  <message id="dad-time-span-label">Időtartam:</message>
+  <message id="dad-tt-age">
+    <div>
+      Az életkor megadható időegységek kombinációjával, például '<b>5.3y 8d 22m</b>' vagy féléletidőkben, mint '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Elfogadott időegységek: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, vagy
+      megadhatja az időtartamot <b>hh:mm:ss</b> formátumban. Féléletidő egységek
+      megadhatók <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, vagy <b>half life</b> használatával.
+    </div>
+    <div>
+      Féléletidő egységek vagy időtartamok nem keverhetők
+      más egységekkel, és ha több nuklidot ad meg, az elsőt feltételezi. Amikor több időtartamot ad meg,
+      összegződnek, például '1y6months 3m' 18 hónapnak és 3 percnek értelmeződik
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Y-tengely:</message>
+  <message id="dad-yaxis-label">Y-tengely típusa:</message>
+  <message id="dad-gamma-rate">Gamma ráta</message>
+  <message id="dad-beta-rate">Beta ráta</message>
+  <message id="dad-alpha-rate">Alfa ráta</message>
+  <message id="dad-click-for-more-info">Kattintson további információért</message>
+  <message id="dad-tt-double-click">Dupla kattintás ezen forrás nuklid szerkesztéséhez. Egy kattintás a bomlási lánc megjelenítéséhez ezen nuklidhoz</message>
+  <message id="dad-summary-at-time">Összefoglaló t={1} időpontban</message>
+  <message id="dad-hdr-date">Dátum ({1})</message>
+  <message id="dad-hdr-total-act">Teljes aktivitás</message>
+  <message id="dad-hdr-total-gammas">Teljes gammák</message>
+  <message id="dad-yaxis-title-total-gammas">Gammák/másodperc</message>
+  <message id="dad-hdr-total-betas">Teljes beták</message>
+  <message id="dad-yaxis-title-total-betas">Beták/másodperc</message>
+  <message id="dad-hdr-total-alphas">Teljes alfák</message>
+  <message id="dad-yaxis-title-total-alphas">Alfák/másodperc</message>
+  <message id="dad-chart-click-more-info">Kattintson további információért - {1} {2} T0 után a következőnk van:</message>
+
+  <message id="dcc-window-title-decay-chain">{1} bomlási lánc</message>
+  <message id="dcc-window-title-decay-through">Bomlik {1}-en keresztül</message>
+  <message id="dcc-nuc-info-protons">Protonok: {1}</message>
+  <message id="dcc-nuc-info-mass">Tömeg: {1} Da</message>
+  <message id="dcc-nuc-info-hl-stable">Féléletidő: stabil</message>
+  <message id="dcc-nuc-info-hl">Féléletidő: {1}</message>
+  <message id="dcc-nuc-info-br-from">BR {1}-ből: {2}</message>
+  <message id="dcc-nuc-info-br-through">BR {1}-en keresztül: {2}</message>
+  <message id="dcc-nuc-info-specific-act">Specifikus akt.: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1} bomlik {2}-re, BR {3}</message>
+  <message id="dcc-particle-window-title">Bomlási részecske energiák</message>
+  <message id="dcc-particles-from">Részecskes {1}-ből</message>
+  <message id="dcc-nuc-has-no-particles">Ennek a nuklidnak nincsenek részecskéi a bomlásból</message>
+  <message id="dcc-particle">Részecske</message>
+  <message id="dcc-intensity">Intenzitás</message>
+  <message id="dcc-decay-through-window-title">Bomlik {1}-en keresztül</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">Csökkenő atomtömeg</message>
+  <message id="dcc-yAxisTitle">Növekvő atomszám</message>
+  <message id="dcc-clickNucTxt">Kattintson a nuklidra további információért.</message>
+  <message id="dcc-clickNucMoreInfoTxt1">Dupla kattintás a nuklidon az általa kibocsátott részecskesért.</message>
+  <message id="dcc-clickNucMoreInfoTxt2">Kattintson egy másik forrás nuklidra fent a</message>
+  <message id="dcc-clickNucMoreInfoTxt3">megjelenített bomlási lánc megváltoztatásához.</message>
+  <message id="dcc-clickNucMblTxt">Koppintson a nuklidra további információért.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt1">Érintse meg a nuklidot 1 másodpercig az általa kibocsátott részecskesért.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">Kattintson egy másik forrás nuklidra fent a</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">megjelenített bomlási lánc megváltoztatásához.</message>
+
+
+  <message id="dcn-initial-age">Kezdeti életkor: </message>
+
+</messages>

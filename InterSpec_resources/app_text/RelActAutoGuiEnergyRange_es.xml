@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">Energía inferior</message>
+  <message id="raager-upper-energy">Energía superior</message>
+  <message id="raager-continuum-type">Tipo continuo:</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">Forzar rango completo</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">Convierte este rango de energía en ROI individuales, basado en qué rayos gamma deben agruparse juntos vs separados (ej., deja rayos gamma con picos superpuestos en una sola ROI, mientras que si dos rayos gamma están lejos, se dividirán en ROI separadas.</message>
+  
+</messages>
+

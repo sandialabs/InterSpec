@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">Use dos mediciones en diferentes ubicaciones para encontrar la distancia a una fuente no vista. Ej. cuando la fuente está detrás de una pared.</message>
+  <message id="oor2c-near-meas-label">Intensidad de medición cercana:</message>
+  <message id="oor2c-far-meas-label">Intensidad de medición lejana:</message>
+  <message id="oor2c-background-intensity">Intensidad de fondo (opcional):</message>
+  <message id="oor2c-dist-label">Distancia entre mediciones:</message>
+  <message id="oor2c-power-law-label">Ley de potencia</message>
+  <message id="oor2c-low-scatter">Dispersión baja o usando área de pico, 1/r^2</message>
+  <message id="oor2c-mid-scatter">Tasa de dosis dispersión media, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">Tasa de dosis dispersión alta, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">Dist. medición cercana a fuente:</message>
+  <message id="oor2c-bottom-message">Use las mismas unidades para mediciones cercanas, de fondo y lejanas.
+    Los resultados están en las mismas unidades usadas para
+    distancia entre mediciones.
+  </message>
+  <message id="oor2c-qr-state-title">Estado de calculadora 1/r2</message>
+  <message id="oor2c-qr-state-txt">Estado actual de la herramienta calculadora 1/r<sup>2</sup>.</message>
+  <message id="oor2c-invalid-near">Medición cercana inválida</message>
+  <message id="oor2c-invalid-far">Medición lejana inválida</message>
+  <message id="oor2c-invalid-dist">Distancia inválida</message>
+  <message id="oor2c-far-larger-than-near">La medición lejana debe ser menor que la cercana</message>
+  <message id="oor2c-back-larger-than-far">El fondo debe ser menor que la lejana</message>
+  <message id="oor2c-near-is-zero">La medición cercana debe ser no-cero</message>
+  <message id="oor2c-far-is-zero">La medición lejana debe ser no-cero</message>
+  <message id="oor2c-dist-is-zero">La distancia entre mediciones debe ser no-cero</message>
+</messages>
+

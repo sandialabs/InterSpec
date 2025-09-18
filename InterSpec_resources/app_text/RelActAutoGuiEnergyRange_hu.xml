@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">Alsó Energia</message>
+  <message id="raager-upper-energy">Felső Energia</message>
+  <message id="raager-continuum-type">Kontinuum Típus:</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">Teljes-tartomány kényszerítése</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">Ezt az energia tartományt egyéni ROI-kká alakítja, azon alapján, hogy mely gamma sugarakat kell csoportosítani együtt vs. külön (pl. átfedő csúcsokkal rendelkező gamma sugarakat egyetlen ROI-ban hagyja, míg ha két gamma sugár távol van egymástól, külön ROI-kba lesznek osztva.</message>
+  
+</messages>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+  
+  <!-- Labels -->
+  <message id="raagn-nuclide">Nuklid:</message>
+  <message id="raagn-age">Kor:</message>
+  <message id="raagn-min-age">Min Kor:</message>
+  <message id="raagn-max-age">Max Kor:</message>
+  
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">Válasszon korlátozás típust.</message>
+  <message id="raagn-min">min:</message>
+  <message id="raagn-max">max:</message>
+  <message id="raagn-src">forr:</message>
+  <message id="raagn-val">ért:</message>
+  
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">Nincs</message>
+  <message id="raagn-constraint-rel-act">Rel. Akt</message>
+  <message id="raagn-constraint-act-ratio">Akt Arány</message>
+  <message id="raagn-constraint-mass-frac">Tömeg Tört</message>
+  
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">Kor Illesztése</message>
+  
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">Korlátozás Hozzáadása</message>
+  
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">pl. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (meta stabil állapot), <b>Cs137</b>, Pb, Fe(n,n), stb.</message>
+  <message id="raagn-remove-constraint-tt">Ennek a korlátozásnak az eltávolítása</message>
+  <message id="raagn-add-constraint-tt">Korlátozás hozzáadása ehhez a nuklidhoz</message>
+  
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1} nem érvényes nuklid, röntgen-sugár vagy reakció.</message>
+  <message id="raagn-stable-nuclide">{1} stabil nuklid.</message>
+  
+</messages>

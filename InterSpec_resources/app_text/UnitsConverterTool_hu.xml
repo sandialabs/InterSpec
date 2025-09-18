@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uct- is short for UnitsConverterTool
+  -->
+  <message id="uct-mult-nucs">Több nuklid ({1} + {2})</message>
+  <message id="uct-instructions">Sugárzással kapcsolatos egységek közötti átalakítás.<br />
+    Pl.: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert, 10 gram U235, 1.2 uCi Pu238
+  </message>
+  <message id="uct-input-label">Bemenet: </message>
+  <message id="uct-output-label">Kimenet: </message>
+  <message id="uct-qr-window-title">Egységátalakító állapot</message>
+  <message id="uct-qr-window-txt">Az egységátalakító eszköz jelenlegi állapota.</message>
+  <message id="uct-err-empty-input">Üres bemenet</message>
+  <message id="uct-couldnt-find-units">Nem sikerült meghatározni az egységeket</message>
+  <message id="uct-nuc-unknown">Nem tudtam mit csinálni ezzel: {1} '{2}'</message>
+  <message id="uct-invalid-input">Érvénytelen bemenet</message>
+  <message id="uct-err-gen">Hiba: {1}.<br />
+    Megengedett aktivitás egységek: bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,
+    roentgen, m, meter, ft, inch, in, gram, g, ounce, oz, pound, lb, és grain.<br />
+    Megengedett (opcionális) előtagok: n, nano, u, µ, micro, m, milli,
+     k, killo, M, mega, G, Giga, T, és Tera
+  </message>
+</messages>

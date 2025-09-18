@@ -1,0 +1,612 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Text labels for general buttons/prompts, and one-off words around the app.  Note the capitalization. -->
+  <message id="Cancel">Cancelar</message>
+  <message id="Yes">Sí</message>
+  <message id="No">No</message>
+  <message id="Close">Cerrar</message>
+  <message id="Save">Guardar</message>
+  <message id="Name">Nombre</message>
+  <message id="Desc.">Desc.</message>
+  <message id="Back">Atrás</message>
+  <message id="Create">Crear</message>
+  <message id="Energy">Energía</message>
+  <message id="Counts">Cuentas</message>
+  <message id="Apply">Aplicar</message>
+  <message id="Accept">Aceptar</message>
+  <message id="Okay">OK</message>
+  <message id="Foreground">Primer plano</message>
+  <message id="Background">Fondo</message>
+  <message id="Secondary">Secundario</message>
+  <message id="second-foreground">Segundo primer plano</message>
+  <message id="foreground" comment="For use in middle of sentence">primer plano</message>
+  <message id="background" comment="For use in middle of sentence">fondo</message>
+  <message id="secondary" comment="For use in middle of sentence">secundario</message>
+  <message id="Exit">Salir</message>
+  <message id="show-lines">Mostrar líneas</message>
+  <message id="Default">Por defecto</message>
+  <message id="Error">Error</message>
+  <message id="Description">Descripción</message>
+  <message id="Detector">Detector</message>
+  <message id="Distance">Distancia</message>
+  <message id="Activity">Actividad</message>
+  <message id="Remark">Observación</message>
+  <message id="Tap">Tocar</message>
+  <message id="Click">Hacer clic</message>
+  <message id="tap">tocar</message>
+  <message id="click">hacer clic</message>
+
+
+  <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
+  <message id="Continuum">Continuo</message>
+  <message id="cont-type">Tipo Cont.</message>
+  <message id="Title">Título</message>
+  <message id="Fit">Ajustar</message>
+  <message id="Use">Usar</message>
+  <message id="Mean">Media</message>
+  <message id="FWHM">FWHM</message>
+  <message id="Amp.">Amp.</message>
+  <message id="Area">Área</message>
+  <message id="Age">Edad</message>
+  <message id="Add">Añadir</message>
+  <message id="Peak">Pico</message>
+  <message id="Delete">Eliminar</message>
+  <message id="Photopeak">Fotopico</message>
+  <message id="Nuclide">Nucleído</message>
+  <message id="Nuc.">Nuc.</message>
+  <message id="Skew">Asimetría</message>
+  <message id="CPS">CPS</message>
+  <message id="CSV">CSV</message>
+  <message id="True">Verdadero</message>
+  <message id="False">Falso</message>
+  <message id="Remove">Quitar</message>
+  <message id="RemoveAll">Quitar todo</message>
+  <message id="Clear">Limpiar</message>
+  <message id="ClearAll">Limpiar todo</message>
+  <message id="T1/2">T½</message>
+  <message id="Gamma">Gamma</message>
+  <message id="X-rays">Rayos X</message>
+  <message id="x-ray">rayo X</message>
+  <message id="Live Time">Tiempo vivo</message>
+  <message id="Real Time">Tiempo real</message>
+  <message id="Geometry">Geometría</message>
+  <message id="Load">Cargar</message>
+  <message id="Mass">Masa</message>
+  <message id="NA">NA</message>
+  <message id="n/a">n/a</message>
+  <message id="N/A">N/A</message>
+  <message id="Min.">Mín.</message>
+  <message id="Max.">Máx.</message>
+  <message id="QR Code">Código QR</message>
+  <message id="Accept">Aceptar</message>
+  <message id="Dose">Dosis</message>
+  <message id="Shielding">Blindaje</message>
+  <message id="app-qr-err">Error al crear código QR: {1}</message>
+  <message id="intrinsic-activity">Actividad intrínseca</message>
+  <message id="Calibration">Calibración</message>
+  <message id="Unknown">Desconocido</message>
+  <message id="keV">keV</message>
+  <message id="Energy (keV)">Energía (keV)</message>
+  <message id="Efficiency">Eficiencia</message>
+  <message id="stable">estable</message>
+
+  <!-- Units the user may use to write time duration.
+    Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
+    in the C++ code, so to be sure the matching works, you should include common capitalization
+    schemes here - sorry.
+
+    It is important that the | character is used, with no spaces, to seperate the different possible
+    units (this is because this string will become part of a regular-expression).
+    
+    These 'units-labels-*' string also MUST NOT be empty, or regex validation inputs will fail.
+    (you can leave the whole element out, to default to English, but if you put in a localized
+    element, the node must hav a value)
+  -->
+  <message id="units-labels-second">segundos|segundo|seg|s|SEGUNDOS|SEGUNDO|SEG|S</message>
+  <message id="units-labels-minute">minuto|minutos|min|m</message>
+  <message id="units-labels-hours">horas|hora|hrs|h</message>
+  <message id="units-labels-days">días|día|d</message>
+  <message id="units-labels-year">años|año|a|y</message>
+  <message id="units-labels-half-lives">vmd|vidamedia|vidasmedias|vida-media|vidas-medias|vidas medias|vida media</message>
+  <!-- Units to use when writing a time duration out -->
+  <message id="units-label-seconds-short">s</message>
+  <message id="units-label-minutes-short">m</message>
+  <message id="units-label-hours-short">h</message>
+  <message id="units-label-days-short">d</message>
+  <message id="units-label-years-short">a</message>
+
+
+  <!-- The dialog when the user selects "Clear Session..." from the File menu -->
+  <message id="clear-session">¿Limpiar sesión?</message>
+  <message id="clear-session-msg">¿Está seguro de que desea iniciar una sesión limpia?</message>
+
+  <message id="window-title-spec-file-query">Herramienta de consulta de archivos de espectro</message>
+  <message id="window-title-notification-log">Registro de notificaciones</message>
+  <message id="notification-log-clear">Limpiar notificaciones</message>
+  <message id="window-title-peak-manager">Gestor de picos</message>
+  <message id="window-title-store-state-as">Guardar estado como</message>
+  <message id="window-title-tag-state">Etiquetar estado actual</message>
+  <message id="window-title-create-snapshot">Crear instantánea</message>
+  <message id="window-title-energy-cal">Calibración de energía</message>
+  <message id="window-title-hard-back-sub">¿Realizar sustracción dura de fondo?</message>
+  <message id="window-title-3d">Vista de datos 3D</message>
+  <message id="window-title-peak-rel-eff">Isotópicos de picos ajustados por usuario</message>
+  <message id="window-title-compact-file">Seleccionar espectros abiertos para mostrar</message>
+  <message id="window-title-feature-markers">Marcadores de características</message>
+  <message id="window-title-act-shield-fit">Ajuste de actividad/blindaje</message>
+  <message id="window-title-xs-calc">Calc. XS gamma</message>
+  <message id="window-title-dose-calc">Calc. de dosis</message>
+  <message id="window-title-1/r2-calc">Calculadora 1/r<sup>2</sup></message>
+  <message id="window-title-units-convert">Conversor de unidades</message>
+  <message id="window-title-flux-tool">Herramienta de flujo</message>
+  <message id="window-title-nuc-decay">Información de desintegración de nucleídos</message>
+  <message id="window-title-select-det-eff-fcn">Selección de función de respuesta del detector</message>
+  <message id="window-title-add-fwhm">Añadir FWHM a función de respuesta del detector</message>
+  <message id="window-title-create-drf">Crear función de respuesta del detector</message>
+  <message id="window-title-file-parameters">Parámetros del archivo</message>
+  <message id="window-title-energy-range-sum">Suma de rango de energía</message>
+  <message id="window-title-external-rid">RID externo</message>
+  <message id="window-title-license-credit">Exenciones, licencias, créditos y contacto</message>
+  <message id="window-title-help">Ayuda de InterSpec</message>
+  <message id="window-title-simple-mda">Cálculo simple de actividad mínima detectable</message>
+  <message id="window-title-peak-editor">Editor de picos</message>
+  
+
+  <!-- The names of the tool-tabs at the bottom of the app -->
+  <message id="app-tab-peak-manager">Gestor de picos</message>
+  <message id="app-tab-ref-photopeak">Fotopicos de referencia</message>
+  <message id="app-tab-energy-cal">Calibración de energía</message>
+  <message id="app-tab-nuc-search">Búsqueda de nucleídos</message>
+  <message id="app-tab-spec-files">Archivos de espectro</message>
+  <message id="app-tab-terminal">Terminal</message>
+  <message id="app-tab-isotopics">Isotópicos</message>
+
+  <message id="app-tab-tt-ref-photopeak">Permite al usuario mostrar líneas de fotopicos de referencia de rayos X,
+    rayos gamma o reacciones nucleares.  
+    <br />
+    Se pueden editar las edades de nucleídos, el blindaje aplicado y la eficiencia del detector utilizados.
+    <br />
+    En el menú de información extendida, también puede mostrar sumas de desintegración en cascada, energías alfa o puntos finales beta.
+    <br />
+    También puede exportar un archivo CSV con la información de nucleídos.
+  </message>
+  <message id="app-tab-tt-peak-manager">Muestra información de picos ajustados en una tabla editable y ordenable,
+    permite exportar un CSV de información de picos, así como utilidades para búsqueda automatizada de picos y añadir y eliminar picos.
+  </message>
+  <message id="app-tab-tt-energy-cal">Permite al usuario modificar o ajustar términos de calibración de energía y pares de desviación no lineal.
+    <br />
+    También hay opciones para linealizar el espectro, cambiar el tipo de calibración de energía, truncar el rango de energía o combinar canales.
+    <br />
+    La calibración de energía también se puede hacer gráficamente haciendo clic derecho y arrastrando el espectro de la energía original a la modificada
+    (por ejemplo, arrastrar el pico de datos a la línea de referencia apropiada).
+  </message>
+  <message id="app-tab-tt-nuc-search">Buscar nucleídos con restricciones en energía, razón de ramificación y vida media.</message>
+  <message id="app-tab-tt-auto-search">Búsqueda automática de picos</message>
+  <message id="app-tab-tt-terminal">Terminal de interacción numérica, algebraica y basada en texto con espectros.</message>
+  <message id="app-tab-tt-rel-eff">Análisis de eficiencia relativa, de picos que ha ajustado.</message>
+
+
+  <!-- App-level menu names -->
+  <message id="app-menu-file">Archivo</message>
+  <message id="app-menu-spectra">Espectros</message>
+  <message id="app-menu-edit">Editar</message>
+  <message id="app-menu-view">Ver</message>
+  <message id="app-menu-help">Ayuda</message>
+  <message id="app-menu-tools">Herramientas</message>
+  
+
+  <!-- 
+    Menu item text for the app-level menus.
+    They are in the form of "app-mi-{menu}-item-desc", or for tool tips "app-mi-tt-{menu}-item-desc"
+  -->
+  <message id="app-mi-file-about">Acerca de InterSpec</message>
+  <message id="app-mi-file-open">Abrir archivo...</message>
+  <message id="app-mi-file-loaded-spec">Espectros cargados...</message>
+  <message id="app-mi-file-manager">Gestor...</message>
+  <message id="app-mi-tt-file-manager">Gestionar espectros cargados. Sumar espectros, combinar espectros en diferentes archivos, mostrar, ...</message>
+  <message id="app-mi-file-store">Guardar</message>
+  <message id="app-mi-tt-file-store">Guarda el estado actual de la aplicación en la base de datos de InterSpec</message>
+  <message id="app-mi-file-store-as">Guardar como...</message>
+  <message id="app-mi-tt-file-store-as">Guarda el estado actual de la aplicación en una nueva entrada en la base de datos de InterSpec</message>
+  <message id="app-mi-file-tag">Etiquetar...</message>
+  <message id="app-mi-tt-file-tag">Etiqueta el estado actual de InterSpec para que pueda
+   volver a él más tarde. Al cargar un estado de aplicación,
+   puede elegir el guardado más reciente o seleccionar versiones etiquetadas anteriores.
+  </message>
+  <message id="app-mi-file-prev">Anterior...</message>
+  <message id="app-mi-tt-file-prev">Abre estados o espectros guardados anteriormente.</message>
+  <message id="app-mi-file-clear">Limpiar sesión...</message>
+  <message id="app-mi-tt-file-clear">Inicia un estado de aplicación limpio sin espectros cargados</message>
+  <message id="app-mi-samples">Muestras</message>
+  <message id="app-mi-tt-file-open">Crea un diálogo para buscar un archivo de espectro en su sistema de archivos.
+    Arrastrar y soltar el archivo directamente en la ventana de la aplicación es una alternativa más rápida.
+  </message>
+  <message id="app-mi-export-file">Exportar archivo...</message>
+
+  <message id="app-mi-samples-ba133">Ba-133 (canal 16k)</message>
+  <message id="app-mi-samples-passthrough-mobile">Paso directo (canal 16k)</message>
+  <message id="app-mi-samples-passthrough">Paso directo (16k bin ICD1, 8 det., 133 muestras)</message>
+  <message id="app-mi-samples-background">Fondo (16k bin N42)</message>
+  <message id="app-mi-samples-reference">Espectros de referencia...</message>
+
+  <!-- Items in the "Edit" menu -->
+  <message id="app-mi-edit-undo">Deshacer</message>
+  <message id="app-mi-edit-redo">Rehacer</message>
+  <message id="app-mi-edit-save-png">Guardar espectro como PNG</message>
+  <message id="app-mi-edit-save-svg">Guardar espectro como SVG</message>
+  <message id="app-mi-edit-enter-url">Introducir URL</message>
+
+  <!-- Items in the "View" menu -->
+  <message id="app-mi-view-show-tabs">Mostrar pestañas de herramientas</message>
+  <message id="app-mi-view-hide-tabs">Ocultar pestañas de herramientas</message>
+  <message id="app-mi-view-chart-opts">Opciones del gráfico</message>
+  <message id="app-mi-view-logy">Escala Y logarítmica</message>
+  <message id="app-mi-view-liny">Escala Y lineal</message>
+  <message id="app-mi-view-show-vert">Mostrar líneas verticales</message>
+  <message id="app-mi-view-hide-vert">Ocultar líneas verticales</message>
+  <message id="app-mi-view-show-horz">Mostrar líneas horizontales</message>
+  <message id="app-mi-view-hide-horz">Ocultar líneas horizontales</message>
+  <message id="app-mi-view-compact-x">Eje X compacto</message>
+  <message id="app-mi-view-normal-x">Eje X normal</message>
+  <message id="app-mi-view-show-leg">Mostrar leyenda del espectro</message>
+  <message id="app-mi-view-show-slider">Mostrar deslizador de energía</message>
+  <message id="app-mi-view-hide-slider">Ocultar deslizador de energía</message>
+  <message id="app-mi-view-show-scaler">Mostrar escaladores del eje Y</message>
+  <message id="app-mi-view-hide-scaler">Ocultar escaladores del eje Y</message>
+  <message id="app-mi-view-back-sub">Sustracción de fondo</message>
+  <message id="app-mi-view-back-unsub">Deshacer sustracción de fondo</message>
+  <message id="app-mi-view-hard-sub">Sustracción dura de fondo...</message>
+  <message id="app-mi-view-map">Mapa</message>
+  <message id="app-mi-tt-view-map">Mostrar ubicación de medición(es) en un mapa. Solo habilitado cuando hay coordenadas GPS disponibles.</message>
+  <message id="app-mi-view-3d">Mostrar vista 3D</message>
+  <message id="app-mi-tt-view-3d">Muestra vista de Tiempo vs. Energía vs. Cuentas para datos de modo de búsqueda o RPM.</message>
+  <message id="app-mi-view-rid">Mostrar resultados de ID</message>
+  <message id="app-mi-tt-view-rid">Muestra los resultados de análisis de ID del detector incluidos en el archivo de espectro.</message>
+  <message id="app-mi-view-img">Mostrar imágenes</message>
+  <message id="app-mi-tt-view-img">Muestra imágenes incluidas en el archivo de espectro.</message>
+  <message id="app-mi-view-feature-markers">Marcadores de características...</message>
+  <message id="app-mi-view-hide-feature-markers">Ocultar marcadores de características</message>
+  <message id="app-mi-view-enable-dynamic-ref-lines">Mostrar líneas de referencia dinámicas</message>
+  <message id="app-mi-view-disable-dynamic-ref-lines">Ocultar líneas de referencia dinámicas</message>
+  <message id="app-mi-tt-view-feature-markers">Herramienta para mostrar picos de escape simple/doble, pico Compton, borde Compton y picos suma.</message>
+  <message id="app-mi-view-new-win">Nueva ventana de aplicación</message>
+  <message id="app-mi-view-webbrowser">Usar en navegador externo</message>
+  <message id="app-mi-view-full">Alternar pantalla completa</message>
+  <message id="app-mi-view-act-size">Tamaño real</message>
+  <message id="app-mi-view-zin">Acercar</message>
+  <message id="app-mi-view-zout">Alejar</message>
+  <message id="app-mi-view-dev-tool">Alternar herramientas de desarrollo</message>
+  <message id="app-mi-view-dets">Detectores</message>
+  <message id="app-mi-view-peak-labels">Etiquetas de picos</message>
+  <message id="app-mi-view-lbl-usr">Mostrar etiquetas de usuario</message>
+  <message id="app-mi-view-lbl-peak-en">Mostrar energías de picos</message>
+  <message id="app-mi-view-lbl-nuc-nm">Mostrar nombres de nucleídos</message>
+  <message id="app-mi-view-lbl-nuc-en">Mostrar energías de nucleídos</message>
+
+  <!-- The Detectors sub-menu under View -->
+  <message id="app-mi-det-no-name">Det. {1} ({2})</message>
+  <message id="app-mi-det-with-name">Det. {1}</message>
+
+  
+  <!-- Items in the "Tools" menu -->
+  <message id="app-mi-tools-act-fit">Ajuste de actividad/blindaje</message>
+  <message id="app-mi-tt-tools-act-fit">Herramienta para ajustar la actividad y blindaje de nucleídos en el espectro.
+    <br />
+    También contiene capacidades para determinar edades de nucleídos, concentraciones de contaminación o enriquecimientos.
+  </message>
+  <message id="app-mi-tools-iso-by-nuc">Isotópicos por nucleídos</message>
+  <message id="app-mi-tt-tools-iso-by-nuc">
+    Ajusta automáticamente picos de nucleídos para permitir determinar las
+    actividades relativas de nucleídos. No requiere conocer la
+   respuesta del detector o información de blindaje.
+  </message>
+  <message id="app-mi-tools-iso-by-peak">Isotópicos de picos</message>
+  <message id="app-mi-tt-tools-iso-by-peak">Usa los picos que ha ajustado para determinar las actividades relativas de nucleídos. No requiere conocer la respuesta del detector o información de blindaje. </message>
+  <message id="app-mi-tools-xs-calc">Calc. XS gamma</message>
+  <message id="app-mi-tt-tools-xs-calc">Permite al usuario determinar la sección transversal para rayos gamma de
+    energía arbitraria a través de cualquier material en la biblioteca de <code>InterSpec</code>. Se pueden proporcionar estimaciones de eficiencia
+    para la detección de los rayos gamma dentro del pico de energía completa y la fracción de rayos gamma que
+    pasarán a través del material sin interactuar con él con la entrada de
+    información adicional.
+  </message>
+  <message id="app-mi-tools-dose-calc">Calc. de dosis</message>
+  <message id="app-mi-tt-tools-dose-calc">Permite calcular dosis, actividad, blindaje,
+    o distancia, dados los otros elementos de información.
+  </message>
+  <message id="app-mi-tools-1r2">Calculadora 1/r<sup>2</sup></message>
+  <message id="app-mi-tt-tools-1r2">Permite al usuario usar dos mediciones de dosis tomadas a diferentes distancias de una fuente para determinar la distancia absoluta a la fuente desde la medición más cercana.</message>
+  <message id="app-mi-tools-unit">Conversor de unidades</message>
+  <message id="app-mi-tt-tools-unit">Convertir unidades relacionadas con radiación.</message>
+  <message id="app-mi-tools-flux">Herramienta de flujo</message>
+  <message id="app-mi-tt-tools-flux">Convierte cuentas de picos detectados a rayos gamma emitidos por la fuente.</message>
+  <message id="app-mi-tools-nuc-decay">Info. desintegración de nucleídos</message>
+  <message id="app-mi-tt-tools-nuc-decay">Permite al usuario obtener información avanzada sobre actividades, tasas de producción gamma/alfa/beta, cadena de desintegración y nucleídos descendientes.</message>
+  <message id="app-mi-tools-mda">Herramienta de confianza de detección</message>
+  <message id="app-mi-tt-tools-mda">Proporciona una estimación de actividad superior para nucleídos</message>
+  <message id="app-mi-tools-select-drf">Selección de respuesta del detector</message>
+  <message id="app-mi-tt-tools-select-drf">Permite al usuario cambiar la función de respuesta del detector.</message>
+  <message id="app-mi-tools-make-drf">Crear respuesta del detector</message>
+  <message id="app-mi-tt-tools-make-drf">Crear función de respuesta del detector a partir de datos de caracterización.</message>
+  <message id="app-mi-tools-file-par">Parámetros del archivo</message>
+  <message id="app-mi-tt-tools-file-par">Permite al usuario ver/editar los parámetros del archivo. Si alguna vez la aplicación no puede renderizar el cálculo de actividad, use esta herramienta para proporcionar parámetros que el archivo original no proporcionó; <code>InterSpec</code> necesita todos los parámetros para el cálculo de actividad.</message>
+  <message id="app-mi-tools-en-sum">Suma de rango de energía</message>
+  <message id="app-mi-tt-tools-en-sum">Suma el número de rayos gamma en región de interés (ROI). También se puede acceder haciendo clic izquierdo y arrastrando sobre la ROI mientras mantiene presionadas las teclas <kbd><b>ALT</b></kbd> y <kbd><b>SHIFT</b></kbd>.</message>
+  <message id="app-mi-tools-query">Herramienta de consulta de archivos</message>
+  <message id="app-mi-tt-tools-query">Busca a través de un directorio (recursivamente) archivos de espectro que coincidan con condiciones especificadas.</message>
+  <message id="app-mi-tools-math">Terminal matemático/comando</message>
+  <message id="app-mi-tt-tools-math">Crea un terminal que proporciona cálculos numéricos y algebraicos, así como permite algunas interacciones basadas en texto con los espectros.</message>
+ <message id="app-mi-tools-ext-rid">RID externo</message>
+ <message id="app-mi-tt-tools-ext-rid">Usa una{1} URL remota para realizar identificación de nucleídos en su espectro.</message>
+ <!-- This next sentence fragment _may_ get substituted into the previous message, where there is a {1} in it -->
+ <message id="app-mi-tt-tools-ext-rid-exe"> programa externo o</message>
+
+  <!-- Items in the "Help" menu -->
+  <message id="app-mi-help-welcome">Bienvenido...</message>
+  <message id="app-mi-help-contents">Contenidos de ayuda...</message>
+  <message id="app-mi-help-notif-log">Registro de notificaciones</message>
+  <message id="app-mi-help-opts">Opciones</message>
+  <message id="app-mi-help-pref-auto-store"> Guardar automáticamente su trabajo</message>
+  <message id="app-mi-help-pref-check-prev"> Verificar trabajo anterior</message>
+  <message id="app-mi-help-pref-show-tt"> Mostrar información sobre herramientas</message>
+  <message id="app-mi-help-pref-prop-peak"> Preguntar para propagar picos</message>
+  <message id="app-mi-help-pref-disp-bq"> Mostrar en becquerel</message>
+  <message id="app-mi-help-pref-def-drfs"> Usar DRF por defecto</message>
+  <message id="app-mi-help-pref-desktop"> Interfaz de escritorio</message>
+  <message id="app-mi-help-pref-auto-dark"> Aplicar automáticamente tema "Oscuro"</message>
+  <message id="app-mi-help-pref-theme">Temas de color...</message>
+  <message id="app-mi-help-pref-prompt-prev">Preguntar para cargar estado anterior</message>
+  <message id="app-mi-help-pref-load-prev">Cargar estado anterior al iniciar</message>
+  <message id="app-mi-help-language">Idioma</message>
+  <message id="app-mi-help-about">Acerca de InterSpec...</message>
+
+  <message id="app-mi-tt-help-pref-auto-store">Guarda automáticamente el estado de la aplicación si está trabajando en
+    un estado guardado, o si no lo está, guardará sus espectros
+    y su trabajo (por ejemplo, picos ajustados, cambios de calibración de energía, etc.) en
+    la base de datos interna de InterSpec y le preguntará si desea continuar
+    donde lo dejó la próxima vez que cargue el mismo espectro.
+  </message>
+  <message id="app-mi-tt-help-pref-check-prev"> Cuando se carga un archivo de espectro, verificar si el trabajo (ajustes de picos,
+    ajustes de actividad, etc.) se ha hecho previamente en el mismo archivo.
+  </message>
+  <message id="app-mi-tt-help-pref-show-tt">Mostrar información sobre herramientas después de pasar el cursor sobre un elemento durante medio segundo.</message>
+  <message id="app-mi-tt-help-pref-prop-peak">Al cargar espectros del mismo detector,
+    preguntar si se deben reajustar los mismos picos para el nuevo espectro. Solo se aplica si el nuevo espectro no tiene picos, pero el
+    primer plano anterior sí los tenía.
+  </message>
+  <message id="app-mi-tt-help-pref-disp-bq">Mostrar actividad en unidades de becquerel, en lugar de curie.</message>
+  <message id="app-mi-tt-help-def-drfs">Cuando se carga un espectro, y no ha asociado previamente
+    una función de respuesta del detector con el modelo de
+    detector del que proviene el espectro, si se debe intentar
+    encontrar y cargar automáticamente un DRF por defecto.
+  </message>
+  <message id="app-mi-tt-help-desktop">Selecciona usar una interfaz de aplicación
+    más móvil o de escritorio. La diferencia principal es el uso de un
+    menú estilo "Hamburguesa" o una barra de menú.
+
+    Cambiar esta preferencia no tendrá efecto hasta que la aplicación se
+    reinicie, o se elija la opción "Limpiar sesión...".
+  </message>
+  <message id="app-mi-tt-help-auto-dark">Aplica el tema de color "Oscuro" automáticamente según
+    el valor actual del sistema operativo, o cuando transiciona.
+  </message>
+  <message id="app-mi-tt-help-pref-prompt-prev">Al iniciar la aplicación, preguntar para cargar el estado anterior.</message>
+  <message id="app-mi-tt-help-pref-load-prev">Al iniciar la aplicación, cargar automáticamente el estado anterior, si no está configurado para preguntar.</message>
+  <message id="warn-desktop-disp-switch">Los cambios no tendrán efecto hasta que la aplicación se reinicie o se actualice.</message>
+  <message id="warn-desktop-disp-switch-refresh">Actualizar sesión</message>
+
+
+
+  <!-- Menu item text for when you right-click on a peak. The "_mi" is menu item, and "_tt" is tool-tip -->
+  <message id="rclick-mi-peak-editor">Editor de picos...</message>
+  <message id="rclick-mi-refit-peak">Reajustar pico</message>
+  <message id="rclick-mi-use-drf-fwhm">Usar FWHM del DRF</message>
+  <message id="rclick-mi-tt-use-drf-fwhm">Fija el FWHM del pico a lo que predice la función de respuesta del detector, y luego reajusta el pico.</message>
+  <message id="rclick-mi-fix-mean">Fijar media al fotopico</message>
+  <message id="rclick-mi-tt-fix-mean">Fija el centroide del pico a la energía gamma asignada, o si no se ha asignado ninguna fuente, a la línea de fotopico de referencia probable. Después de fijar el centroide, se reajustarán los otros parámetros del pico</message>
+  
+  
+  <message id="rclick-mi-refit-roi">Reajustar ROI</message>
+  <message id="rclick-mi-tt-refit-roi">Reajusta ROI aplicando una relación lineal razonable para los FWHM a través de la ROI, para todos los FWHM que no están fijos.</message>
+  <message id="rclick-mi-refit-roi-aggressive">Reajustar ROI (agresivo)</message>
+  <message id="rclick-mi-tt-refit-roi-aggressive">Reajusta la ROI, permitiendo que el FWHM de cada pico varíe independientemente, a menos que hayan sido fijados en el <em>Editor de picos</em></message>
+  <message id="rclick-mi-delete-peak">Eliminar pico</message>
+  <message id="rclick-mi-change-nuc">Cambiar nucleído</message>
+  <message id="rclick-mi-change-cont">Cambiar continuo</message>
+  <message id="rclick-mi-skew-type">Cambiar tipo de asimetría</message>
+  <message id="rclick-mi-add-peak">Añadir pico</message>
+  <message id="rclick-mi-combine-cont-left">Combinar cont. izquierda</message>
+  <message id="rclick-mi-combine-cont-right">Combinar cont. derecha</message>
+  <message id="rclick-mi-own-cont">Continuo propio</message>
+  <message id="rclick-mi-calc-status">...calculando...</message>
+  <message id="rclick-mi-fix-energy">Fijar a {1} keV</message>
+  <message id="rclick-mi-no-nuc-suggestions">Sin sugerencias</message>
+  <message id="rclick-mi-fit-new-peak">Ajustar pico cerca de {1} keV</message>
+  <message id="rclick-mi-add-new-peak">Añadir pico...</message>
+  <message id="rclick-mi-search-energy">Buscar cerca de {1} keV</message>
+  <message id="rclick-simple-mda">MDA rápido {1}...</message>
+  <message id="rclick-simple-activity-calc">Cálculo rápido de actividad {1}...</message>
+
+
+  <!-- Error messages, the user probably wont see -->
+  <message id="err-save-sate-to-db">
+    Lo siento, hubo un error técnico al guardar su estado de usuario en la base de datos.
+    <p style="font-size: x-small;">{1}</p>
+  </message>
+  <message id="err-save-to-large-for-db">El archivo es más grande de lo permitido para guardarse en la base de datos (es {1} kb, permitido {2} kb).</message>
+  <message id="err-no-roi-to-add-peak">No había ROI a la que añadir pico.</message>
+  <message id="err-no-add-peak-to-data-roi">Lo siento, no se pueden añadir picos a una ROI con un pico definido por datos.</message>
+  <message id="err-add-peak-no-improve">Añadir un pico no mejoró el ajuste general de la ROI - no se añadió uno.</message>
+  <message id="err-no-peak-to-del">No había pico para eliminar.</message>
+  <message id="err-no-foreground">Debe cargar un espectro de primer plano antes de ver un fondo o segundo espectro de primer plano.</message>
+  <message id="err-invalid-language">El idioma seleccionado, {1}, de alguna manera no está disponible.</message>
+
+
+  <!-- Messages for saving/updating/deleting from internal state DB -->
+  <message id="db-new-tag">Se creó nueva etiqueta '{1}' bajo instantánea '{2}'.</message>
+  <message id="db-new-snapshot">Se creó nueva instantánea '{1}'.</message>
+  <message id="db-error-no-name">Debe especificar un nombre</message>
+  <message id="db-name-empty-txt">(Nombre bajo el cual guardar)</message>
+  <message id="db-dec-empty-txt">(Descripción opcional)</message>
+  <message id="db-dec-export-msg">
+    Esto guardará el estado actual de la aplicación en la base de datos - para exportar
+    <br />
+    como un archivo separado, use la opción de menú &quot;Exportar archivo&quot;
+  </message>
+  <message id="db-Tag">Etiqueta</message>
+  <message id="db-saved-state-msg">Estado guardado '{1}'</message>
+
+
+
+  <!-- Peak continuum types, returned by `PeakContinuum::offset_type_label_tr(...)` in src/PeakDef.cpp -->
+  <message id="pct-none">Ninguno</message>
+  <message id="pct-constant">Constante</message>
+  <message id="pct-linear">Lineal</message>
+  <message id="pct-quadratic">Cuadrático</message>
+  <message id="pct-cubic">Cúbico</message>
+  <message id="pct-flat-step">Escalón plano</message>
+  <message id="pct-linear-step">Escalón lineal</message>
+  <message id="pct-bilinear-step">Escalón bilineal</message>
+  <message id="pct-global">Cont. global</message>
+
+  <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
+  <message id="psd-no-source">Sin fuente</message>
+
+
+  <message id="window-content-hard-back-sub">
+    <div style="text-align: left;">
+      <p>
+        La opción normal de sustracción de fondo solo afecta la visualización de los datos, con operaciones
+        como ajuste de picos o exportación de datos que se realizan en las estadísticas completas del espectro
+        de primer plano original.
+      </p>
+      <p>
+        Una "sustracción dura de fondo" crea un primer plano modificado haciendo una
+        sustracción bin por bin del fondo del primer plano.
+      </p>
+
+      Los efectos secundarios de hacer una sustracción dura de fondo incluyen:
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>Las varianzas, es decir, la incertidumbre estadística de cada canal, ya no serán correctas.</li>
+        <li>Pequeñas diferencias de calibración de energía entre espectros pueden crear características artificiales en los datos.</li>
+        <li>
+          Si un pico en el primer plano se superpone con un pico en el fondo, la incertidumbre estadística de los picos de primer plano ajustados ya no será correcta
+        </li>
+      </ul>
+
+      Las razones principales para elegir una sustracción dura de fondo sobre la sustracción de fondo de visualización normal son:
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>Evitar artefactos en los continuos de picos ajustados.</li>
+        <li>Para simplificar la sustracción de picos de fondo en la herramienta <b>Ajuste de actividad/blindaje</b>.</li>
+        <li>No le importan las sutilezas que esto causa (que en la práctica son mínimas).</li>
+      </ul>
+    </div>
+    <br />
+    <div style="text-align: center;"><b><em>¿Le gustaría proceder?</em></b></div>
+  </message>
+  <message id="window-hard-back-sub-truncate">Truncar bins negativos en cero</message>
+  <message id="window-hard-back-sub-round">Redondear cuentas de canal al entero más cercano</message>
+
+  <message id="info-user-default-drf">Usando la función de respuesta del detector que especificó para usar como predeterminada para este detector.</message>
+  <message id="info-app-default-drf">Se ha cargado una función de respuesta del detector predeterminada para este sistema de detección.</message>
+  <message id="info-recal-tab-selected">También puede recalibrar gráficamente haciendo clic derecho y arrastrando el espectro hacia donde desee.</message>
+
+
+  <!-- Toast message shown to user when they load a spectrum that has GPS coordinates -->
+  <message id="info-has-gps-txt">El archivo contiene coordenadas GPS.</message>
+  <message id="info-has-gps-btn">Mostrar en mapa</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has results from the onboard-rid -->
+  <message id="info-has-rid-txt">El archivo contenía resultados de RID integrado</message>
+  <message id="info-has-rid-btn">Mostrar resultados completos de ID</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has an embedded image -->
+  <message id="info-has-img-txt">El archivo de espectro contenía imágenes incrustadas</message>
+  <message id="info-has-img-btn">Mostrar imágenes</message>
+
+
+  <message id="warn-no-energy-cal">Advertencia, no hay calibración de energía para las muestras seleccionadas</message>
+
+  <message id="prompt-how-open">Este archivo parece ser del mismo detector que el primer plano actual.
+    <p>¿Cómo le gustaría abrir este archivo de espectro?</p>
+  </message>
+
+
+  <!-- Error message when the selected foreground cant be plotted (inexistent, no energy calibration, no gamma spectra selected, etc)-->
+  <message id="err-no-fore-sn">
+    <p>El archivo de espectro no contenía ningún espectro con los números de muestra actuales.</p>
+    <p>Por favor, seleccione números de muestra diferentes/más.</p>
+  </message>
+  <message id="err-no-fore-det-sn">
+    <p>El archivo de espectro no contenía ningún espectro con los números de muestra y nombres de detector actuales. </p>
+    <p>Por favor, seleccione más detectores o números de muestra.</p>
+  </message>
+  <message id="err-no-fore-all-neut">
+    <p>Los números de muestra y nombres de detector actuales solo contienen datos de neutrones.</p>
+    <p>Por favor, seleccione muestras que incluyan datos espectroscópicos.</p>
+  </message>
+  <message id="err-no-fore-no-spec">
+    <p>Los números de muestra y nombres de detector actuales no incluyen ninguna medición espectroscópica.</p>
+    <p>Por favor, seleccione muestras que incluyan datos espectroscópicos.</p>
+  </message>
+  <message id="err-no-fore-no-ecal-1spec">
+    <p>No pude determinar el binning para mostrar el espectro.</p>
+  </message>
+  <message id="err-no-fore-no-ecal-g1spec">
+    <p>No pude determinar el binning para mostrar el espectro.</p>
+    <p>
+      Podría intentar seleccionar solo un espectro para mostrar en
+      el <b>Gestor de archivos</b>, o una muestra con cuentas gamma.
+    </p>
+  </message>
+
+  <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
+  <message id="app-tt-det-disp">El detector actualmente seleccionado. Haga clic para seleccionar un detector diferente, o modificar este.</message>
+  <message id="app-det-select-txt">hacer clic para seleccionar</message>
+  <message id="app-det-select-txt-mobile">tocar para seleccionar</message>
+  <message id="app-default-manual-det-name">Detector definido por usuario</message>
+
+
+  <!-- An incomplete list of possible languages - mapping the two letter code we receive as
+    part of the locale, to their native name - mostly picked by LLM result.
+    
+    A more complete listing of languages and countries can be found in commit e28dbb39.
+
+    You do not need to, and shouldnt, include these, or countries, into translations of this file.
+  -->
+  <message id="lang-en">English</message>
+  <message id="lang-fr">Français</message>
+  <message id="lang-es">Español</message>
+  <message id="lang-de">Deutsch</message>
+  <message id="lang-ja">日本語</message>
+  <message id="lang-zh">中文</message>
+  <message id="lang-pt">Português</message>
+  <message id="lang-ru">Русский</message>
+  <message id="lang-it">Italiano</message>
+  <message id="lang-ko">한국어</message>
+  <message id="lang-vi">Tiếng Việt</message>
+  <message id="lang-tr">Türkçe</message>
+  <message id="lang-ar">العربية</message>
+
+
+  <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
+  the locale, to their names to display.
+  -->
+  <message id="country-US">Estados Unidos</message>
+  <message id="country-GB">Reino Unido</message>
+  <message id="country-AU">Australia</message>
+  <message id="country-CA">Canadá</message>
+  <message id="country-FR">Francia</message>
+  <message id="country-ES">España</message>
+  <message id="country-MX">México</message>
+  <message id="country-DE">Alemania</message>
+  <message id="country-JP">Japón</message>
+  <message id="country-CN">China</message>
+  <message id="country-TW">Taiwán</message>
+  <message id="country-BR">Brasil</message>
+  <message id="country-PT">Portugal</message>
+  <message id="country-RU">Rusia</message>
+  <message id="country-IT">Italia</message>
+  <message id="country-KR">Corea del Sur</message>
+  <message id="country-TR">Turquía</message>
+</messages>
+

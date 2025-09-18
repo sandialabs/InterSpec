@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  
+  <!-- Presets section -->
+  <message id="raag-presets">Előbeállítások</message>
+  <message id="raag-preset-blank">Üres</message>
+  <message id="raag-user-preset">Felhasználói: {1}</message>
+  
+  <!-- Status messages -->
+  <message id="raag-not-calculated">Nem Számított.</message>
+  <message id="raag-calculating">Számítás...</message>
+  
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">Spektrum és Csúcs Opciók</message>
+  <message id="raag-rel-eff-curve-options">Relatív Hatékonyság Görbe Opciók</message>
+  <message id="raag-fit-energy-cal">Energia Kal. Illesztése</message>
+  <message id="raag-back-sub">Háttér Kivonás</message>
+  <message id="raag-fwhm-est">FWHM Becslés</message>
+  <message id="raag-fwhm-form">FWHM Forma</message>
+  <message id="raag-peak-skew">Csúcs Ferdítés</message>
+  <message id="raag-add-uncert">Hozzáadott Bizonytalanság</message>
+  <message id="raag-yield-info">Hozam Info</message>
+  
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">Kezdés Det/Csúcsokból</message>
+  <message id="raag-fwhm-start-peaks">Kezdés Csúcsokból</message>
+  <message id="raag-fwhm-fixed-peaks">Rögzítve Csúcsokhoz</message>
+  <message id="raag-fwhm-start-det-eff">Kezdés Det. Hat.-ból</message>
+  <message id="raag-fwhm-fixed-det-eff">Rögzítve Det. Hat.-hoz</message>
+  
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">szabad csúcsok hozzáadása</message>
+  <message id="raag-clear-all-ranges">összes tartomány törlése</message>
+  <message id="raag-continue">Folytatás</message>
+  <message id="raag-html-report">HTML Jelentés</message>
+  <message id="raag-xml-config">XML Konfig</message>
+  
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">Energia tartományok törlése?</message>
+  <message id="raag-cant-perform-action">Nem lehet végrehajtani ezt a műveletet.</message>
+  <message id="raag-divide-energy-range-title">Energia Tartomány Felosztása?</message>
+  <message id="raag-apply-fit-energy-cal-title">Illesztett energia kalibrálás alkalmazása?</message>
+  <message id="raag-cant-continue">Nem Lehet Folytatni</message>
+  <message id="raag-no-peaks-in-solution">Nincsenek csúcsok a jelenlegi megoldásban</message>
+  <message id="raag-error">Hiba</message>
+  <message id="raag-unexpected-error-finding-original">Váratlan hiba történt az eredeti keresése során</message>
+  
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">XML konfig fájl importálása</message>
+  <message id="raag-select-isotopics-xml-file">Válassza ki a használandó <em>Izotópok nuklidonként</em> XML fájlt</message>
+  <message id="raag-file-too-large-title">Fájl túl nagy a feltöltéshez</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">Megjegyzés: az XML konfig fájlokat az InterSpec-re is húzhatja és elejtheti</p>
+  </message>
+  
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">Energia tartományok rendezése.</message>
+  <message id="raag-remove-all-ranges-tt">Összes energia tartomány eltávolítása.</message>
+  <message id="raag-remove-free-peaks-tt">Összes szabad csúcs eltávolítása és a szabad csúcsok bevitel elrejtése.</message>
+  <message id="raag-free-peaks-tt">&quot;Szabad csúcsok&quot; olyan csúcsok meghatározott energiával, amelyek nincsenek nuklidhoz rendelve, és amplitúdójuk az adatokhoz legjobban illeszkedő értékre van beállítva. A csúcsok opcionálisan felszabadíthatók a funkcionális FWHM korlátozásból is.<br />A szabad csúcsok hasznosak reakciókból vagy azonosítatlan nuklidokból származó csúcsok kezelésére.</message>
+  
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">A csúcsok bizonytalanságai a teljes relatív hatékonyság illesztésen alapulnak (pl. a csúcsok segítenek egymásnak a bizonytalanságok csökkentésében), kivéve ha újraillesztést választ, ebben az esetben nem lesznek korlátozva a Rel. Hat. görbe vagy FWHM funkcionális forma által.</message>
+  
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} keV már az energia tartományban van [{2}, {3}] keV - nem történik művelet.</message>
+  <message id="raag-extended-energy-range">Meglévő energia tartomány kiterjesztve [{1}, {2}] keV-re.</message>
+  <message id="raag-added-new-energy-range">Új energia tartomány hozzáadva {1}-től {2} keV-ig.</message>
+  <message id="raag-split-roi-at">ROI felosztása {1} keV-nél</message>
+  <message id="raag-add-free-peak-at">Szabad csúcs hozzáadása {1} keV-nél</message>
+  <message id="raag-energy-range-no-contributions">Az energia tartomány {1} keV-től {2} keV-ig nem tartalmazott jelentős gamma hozzájárulásokat.</message>
+  <message id="raag-divide-energy-range-msg">
+    Ez a művelet felosztja az energia tartományt {1} keV-től {2} keV-ig {3} külön energia tartományra.
+    <br />
+    <p>Szeretné folytatni?</p>
+  </message>
+  <message id="raag-add-energy-offset"> {1} keV eltolás hozzáadása</message>
+  <message id="raag-increase-gain-first"> erősítés növelése {1}-gyel</message>
+  <message id="raag-increase-gain-additional"> és erősítés növelése {1}-gyel</message>
+  <message id="raag-increase-quad-first"> másodfokú növelése {1}-gyel</message>
+  <message id="raag-increase-quad-additional"> és másodfokú növelése {1}-gyel</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">Ez {1} fog az elsődleges előtér{2}{3} számára.<br />Szeretné ezt megtenni?</message>
+  <message id="raag-and-background"> és háttér</message>
+  <message id="raag-files"> fájlok</message>
+  <message id="raag-file"> fájl</message>
+  <message id="raag-energy-cal-updated">Energia kalibrálás frissítve a megjelenített előtér{1} számára.</message>
+  <message id="raag-and-background-period"> és háttér</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">Hiba a Relatív Akt. Izotópok eszköz létrehozásakor: {1}</message>
+  <message id="raag-handle-double-click-error">handleDoubleLeftClick hiba: {1}</message>
+  <message id="raag-expected-state-info">A '{1}' várható állapot információ nem elérhető - ez nem várható - sajnáljuk!</message>
+  <message id="raag-state-info-not-saved">Az állapot információ korábban nem volt menthető a '{1}' számára - ez nem várható - sajnáljuk!</message>
+  <message id="raag-error-deserializing">Hiba az eszköz állapot deszerializálásakor: {1}</message>
+  <message id="raag-error-loading-preset">Hiba az előbeállítás betöltésekor: {1}</message>
+  <message id="raag-error-applying-energy-cal">Hiba az energia kalibrálás alkalmazásakor: {1}</message>
+  <message id="raag-error-loading-xml-config">Hiba az <em>Izotópok nuklidonként</em> XML konfig fájl betöltésekor: {1}</message>
+  
+</messages>
