@@ -74,7 +74,7 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
   m_lower_energy->setSpinnerHidden( true );
   label->setBuddy( m_lower_energy );
   
-  label = new WLabel( WString::tr("raager-kev"), this );
+  label = new WLabel( WString::tr("keV"), this );
   label->addStyleClass( "GridThirdCol GridFirstRow" );
   
   label = new WLabel( WString::tr("raager-upper-energy"), this );
@@ -85,7 +85,7 @@ RelActAutoGuiEnergyRange::RelActAutoGuiEnergyRange( WContainerWidget *parent )
   m_upper_energy->setSpinnerHidden( true );
   label->setBuddy( m_upper_energy );
   
-  label = new WLabel( WString::tr("raager-kev"), this );
+  label = new WLabel( WString::tr("keV"), this );
   label->addStyleClass( "GridThirdCol GridSecondRow" );
   
   m_lower_energy->valueChanged().connect( this, &RelActAutoGuiEnergyRange::handleEnergyChange );

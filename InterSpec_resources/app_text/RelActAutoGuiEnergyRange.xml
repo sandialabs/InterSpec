@@ -5,7 +5,6 @@
   <!-- Labels -->
   <message id="raager-lower-energy">Lower Energy</message>
   <message id="raager-upper-energy">Upper Energy</message>
-  <message id="raager-kev">keV</message>
   <message id="raager-continuum-type">Continuum Type:</message>
   
   <!-- Checkboxes -->

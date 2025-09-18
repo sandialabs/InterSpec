@@ -86,6 +86,7 @@
   <message id="intrinsic-activity">Activité intrinsèque</message>
   <message id="Calibration">Calibrage</message>
   <message id="Unknown">Inconnu</message>
+  <message id="keV">keV</message>
   <message id="Energy (keV)">Énergie (keV)</message>
   <message id="Efficiency">Efficacité</message>
   <message id="stable">stable</message>
@@ -393,6 +394,7 @@
   <message id="app-mi-tt-help-pref-load-prev">Au démarrage de l'application, charger automatiquement l'état précédent, si pas configuré pour être invité.</message>
   <message id="warn-desktop-disp-switch">Les changements ne prendront effet qu'après le redémarrage ou la réactualisation de l'application.</message>
   <message id="warn-desktop-disp-switch-refresh">Actualiser la session</message>
+  <message id="warn-language-restart">Tous les champs ne seront pas mis à jour avec la nouvelle langue - redémarrez l'application pour une mise à jour complète.</message>
 
 
 

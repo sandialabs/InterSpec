@@ -5,7 +5,6 @@
   <!-- Labels -->
   <message id="raager-lower-energy">الطاقة الدنيا</message>
   <message id="raager-upper-energy">الطاقة العليا</message>
-  <message id="raager-kev">كيلوإلكترون فولت</message>
   <message id="raager-continuum-type">نوع المتصل:</message>
   
   <!-- Checkboxes -->

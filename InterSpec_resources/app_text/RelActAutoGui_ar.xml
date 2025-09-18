@@ -13,6 +13,7 @@
   
   <!-- General options -->
   <message id="raag-spectrum-peak-options">خيارات الطيف والقمة</message>
+  <message id="raag-rel-eff-curve-options">خيارات منحنى الكفاءة النسبية</message>
   <message id="raag-fit-energy-cal">ملائمة معايرة الطاقة</message>
   <message id="raag-back-sub">طرح الخلفية</message>
   <message id="raag-fwhm-est">تقدير FWHM</message>

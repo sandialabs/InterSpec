@@ -5,7 +5,6 @@
   <!-- Labels -->
   <message id="raager-lower-energy">Нижняя энергия</message>
   <message id="raager-upper-energy">Верхняя энергия</message>
-  <message id="raager-kev">кэВ</message>
   <message id="raager-continuum-type">Тип континуума:</message>
   
   <!-- Checkboxes -->

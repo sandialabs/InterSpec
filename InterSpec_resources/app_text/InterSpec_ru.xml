@@ -86,6 +86,7 @@
   <message id="intrinsic-activity">Внутренняя активность</message>
   <message id="Calibration">Калибровка</message>
   <message id="Unknown">Неизвестно</message>
+  <message id="keV">кэВ</message>
   <message id="Energy (keV)">Энергия (кэВ)</message>
   <message id="Efficiency">Эффективность</message>
   <message id="stable">стабильный</message>
@@ -393,6 +394,7 @@
   <message id="app-mi-tt-help-pref-load-prev">При запуске приложения автоматически загружать предыдущее состояние, если не установлено предложение.</message>
   <message id="warn-desktop-disp-switch">Изменения не вступят в силу до перезапуска или обновления приложения.</message>
   <message id="warn-desktop-disp-switch-refresh">Обновить сессию</message>
+  <message id="warn-language-restart">Не все поля будут обновлены с новым языком - перезапустите приложение для полного обновления.</message>
 
 
 

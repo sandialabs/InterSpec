@@ -393,6 +393,7 @@
   <message id="app-mi-tt-help-pref-load-prev">Al iniciar la aplicación, cargar automáticamente el estado anterior, si no está configurado para preguntar.</message>
   <message id="warn-desktop-disp-switch">Los cambios no tendrán efecto hasta que la aplicación se reinicie o se actualice.</message>
   <message id="warn-desktop-disp-switch-refresh">Actualizar sesión</message>
+  <message id="warn-language-restart">No todos los campos se actualizarán con el nuevo idioma - reinicie la aplicación para una actualización completa.</message>
 
 
 

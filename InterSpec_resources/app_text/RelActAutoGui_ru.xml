@@ -13,6 +13,7 @@
   
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Параметры спектра и пиков</message>
+  <message id="raag-rel-eff-curve-options">Параметры кривой относительной эффективности</message>
   <message id="raag-fit-energy-cal">Подгонка энергокал.</message>
   <message id="raag-back-sub">Вычит. фона</message>
   <message id="raag-fwhm-est">Оценка ПШПВ</message>

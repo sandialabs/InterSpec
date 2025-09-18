@@ -821,7 +821,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
     
   
-  WGroupBox *optionsDiv = new WGroupBox( "Relative Efficiency Curve Options", this );
+  WGroupBox *optionsDiv = new WGroupBox( WString::tr("raag-rel-eff-curve-options"), this );
   optionsDiv->addStyleClass( "RelActAutoOptions" );
 
   m_rel_eff_opts_stack = new WStackedWidget();

@@ -85,6 +85,7 @@
   <message id="intrinsic-activity">النشاط الجوهري</message>
   <message id="Calibration">المعايرة</message>
   <message id="Unknown">غير معروف</message>
+  <message id="keV">كيلوإلكترون فولت</message>
   <message id="Energy (keV)">الطاقة (كيلوإلكترون فولت)</message>
   <message id="Efficiency">الكفاءة</message>
   <message id="stable">مستقر</message>
@@ -353,6 +354,7 @@
   <message id="app-mi-tt-help-pref-load-prev">عند بدء التطبيق، قم بتحميل الحالة السابقة تلقائيًا، إذا لم يتم تعيينها للمطالبة.</message>
   <message id="warn-desktop-disp-switch">لن تسري التغييرات حتى إعادة تشغيل التطبيق أو تحديثه.</message>
   <message id="warn-desktop-disp-switch-refresh">تحديث الجلسة</message>
+  <message id="warn-language-restart">لن يتم تحديث جميع الحقول باللغة الجديدة - أعد تشغيل التطبيق للتحديث الكامل.</message>
 
 
 

@@ -13,6 +13,7 @@
   
   <!-- General options -->
   <message id="raag-spectrum-peak-options">Options de spectre et de pics</message>
+  <message id="raag-rel-eff-curve-options">Options de courbe d'efficacité relative</message>
   <message id="raag-fit-energy-cal">Ajust. énergie cal.</message>
   <message id="raag-back-sub">Soustract. fond</message>
   <message id="raag-fwhm-est">Estim. FWHM</message>

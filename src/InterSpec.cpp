@@ -1651,6 +1651,10 @@ void InterSpec::changeLocale( std::string languageCode )
   }else
   {
     wApp->setLocale( WLocale( languageCode ) );
+    
+    // Validation of distance/activity/whatever will not get updated, and ther are some strings
+    //  like `WString("{1}: ").arg(WString::tr("some-localized-str"))` that wont update.
+    passMessage( WString::tr("warn-language-restart"), WarningWidget::WarningMsgHigh );
   }
 }//void changeLocale( std::string locale );
 
