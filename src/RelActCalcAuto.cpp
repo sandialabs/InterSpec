@@ -869,8 +869,8 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
             paramaters[i] = berstein_coeffs[i];
           
           // Set energy range
-          paramaters[berstein_coeffs.size()] = lowest_energy;
-          paramaters[berstein_coeffs.size() + 1] = highest_energy;
+          paramaters[num_params - 2] = lowest_energy;
+          paramaters[num_params - 1] = highest_energy;
           
           return input_drf;
         }
@@ -980,13 +980,14 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
           const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
             poly_coeffs.data(), poly_coeffs.size(), lowest_energy/1000.0, highest_energy/1000.0 );
           
+          assert( berstein_coeffs.size() == (num_fwhm_pars + 2) );
           paramaters.resize( num_fwhm_pars );
           for( size_t i = 0; i < berstein_coeffs.size(); ++i )
             paramaters[i] = berstein_coeffs[i];
           
           // Set energy range, in keV
-          paramaters[berstein_coeffs.size()] = lowest_energy;
-          paramaters[berstein_coeffs.size() + 1] = highest_energy;
+          paramaters[num_fwhm_pars - 2] = lowest_energy;
+          paramaters[num_fwhm_pars - 1] = highest_energy;
           break;
         }
         default:
@@ -1124,7 +1125,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
         warnings.push_back( "Failed to refine FWHM fit from data: " + string(e.what()) + ".  Will use initial estimate." );
       }
     }//if( filtered_peaks->size() != all_peaks.size() )
-
+    
     paramaters.resize( fwhm_paramatersf.size() );
     for( size_t i = 0; i < fwhm_paramatersf.size(); ++i )
       paramaters[i] = static_cast<double>( fwhm_paramatersf[i] );
@@ -1177,6 +1178,28 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   
   new_drf->setFwhmCoefficients( fwhm_pars_float, form_to_fit );
 
+  switch( fwhm_form )
+  {
+    case RelActCalcAuto::FwhmForm::Berstein_2:
+    case RelActCalcAuto::FwhmForm::Berstein_3:
+    case RelActCalcAuto::FwhmForm::Berstein_4:
+    case RelActCalcAuto::FwhmForm::Berstein_5:
+    case RelActCalcAuto::FwhmForm::Berstein_6:
+    {
+      // Convert polynomial coefficients to Berstein - note that the power-series
+      //  representation uses MeV, while lowest_energy and highest_energy are in keV
+      vector<double> poly_coeffs( begin(paramaters), end(paramaters) );
+      paramaters = BersteinPolynomial::power_series_to_bernstein( poly_coeffs.data(), poly_coeffs.size(),
+                                                                 lowest_energy/1000.0, highest_energy/1000.0 );
+      paramaters.push_back( lowest_energy );
+      paramaters.push_back( highest_energy );
+      break;
+    }
+      
+    default:
+      break;
+  }//switch( fwhm_form )
+  
   return new_drf;
 };//get_fwhm_coefficients(...)
 
@@ -2524,31 +2547,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           constant_parameters.push_back( static_cast<int>(par_index) );
       }
       
-      // For Berstein forms, mark the min/max energy parameters as constant (if not already marked)
-      switch( options.fwhm_form )
-      {
-        case RelActCalcAuto::FwhmForm::Berstein_2:
-        case RelActCalcAuto::FwhmForm::Berstein_3:
-        case RelActCalcAuto::FwhmForm::Berstein_4:
-        case RelActCalcAuto::FwhmForm::Berstein_5:
-        case RelActCalcAuto::FwhmForm::Berstein_6:
-        {
-          const size_t num_berstein_coeffs = starting_fwhm_paramaters.size() - 2;
-          const size_t min_energy_par_index = cost_functor->m_fwhm_par_start_index + num_berstein_coeffs;
-          const size_t max_energy_par_index = cost_functor->m_fwhm_par_start_index + num_berstein_coeffs + 1;
-          
-          // Only add if not already in constant_parameters (could also check `options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum` )
-          if( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(min_energy_par_index) ) == constant_parameters.end() )
-            constant_parameters.push_back( static_cast<int>(min_energy_par_index) );
-          
-          if( std::find( constant_parameters.begin(), constant_parameters.end(), static_cast<int>(max_energy_par_index) ) == constant_parameters.end() )
-            constant_parameters.push_back( static_cast<int>(max_energy_par_index) );
-          
-          break;
-        }
-        default:
-          break;
-      }
       
       // Set bounds for Berstein coefficients based on expected peak width limits
       switch( options.fwhm_form )
@@ -2642,6 +2640,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             parameters[par_index] = std::max( parameters[par_index], lower_bounds[par_index].value() );
             parameters[par_index] = std::min( parameters[par_index], upper_bounds[par_index].value() );
           }//for( size_t i = 0; i < num_berstein_coeffs; ++i )
+           
+          // For Berstein forms, mark the min/max energy parameters as constant (if not already marked)
+          const int min_energy_par_index = static_cast<int>( cost_functor->m_fwhm_par_start_index + num_berstein_coeffs );
+          const int max_energy_par_index = min_energy_par_index + 1;
+          parameters[min_energy_par_index] = lowest_fwhm_energy;
+          parameters[max_energy_par_index] = highest_fwhm_energy;
+          
+          assert( starting_fwhm_paramaters[starting_fwhm_paramaters.size() - 2] == lowest_fwhm_energy );
+          assert( starting_fwhm_paramaters[starting_fwhm_paramaters.size() - 1] == highest_fwhm_energy );
+          
+          if( std::find( begin(constant_parameters), end(constant_parameters), min_energy_par_index ) == end(constant_parameters) )
+            constant_parameters.push_back( min_energy_par_index );
+          if( std::find( begin(constant_parameters), end(constant_parameters), max_energy_par_index ) == end(constant_parameters) )
+            constant_parameters.push_back( max_energy_par_index );
           
           break;
         }//case Berstein
