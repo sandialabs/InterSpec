@@ -316,10 +316,16 @@ struct PhysicalModelShieldInput
   */
   bool fit_areal_density = true;
       
-  /** The lower AD for the shielding.  Must be in range [0,500] g/cm2, if fitting AD. */
+  /** The lower AD for the shielding.  Must be in range [0,500] g/cm2, if fitting AD.
+
+   In units of `PhysicalUnits` - i.e., you need to divide by `PhysicalUnits::g_per_cm2` to printout to g/cm2 human values.
+   */
   double lower_fit_areal_density = 0.0;
       
-  /** The upper AD for the shielding.  Must be greater than to lower AD, if fitting, and must be in range [0,500] g/cm2. */
+  /** The upper AD for the shielding.  Must be greater than to lower AD, if fitting, and must be in range [0,500] g/cm2.
+
+   In units of `PhysicalUnits` - i.e., you need to divide by `PhysicalUnits::g_per_cm2` to printout to g/cm2 human values.
+   */
   double upper_fit_areal_density = 0.0;
     
   /** Checks specified constraints are obeyed - throwing an exception if not. */
