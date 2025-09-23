@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ss- is short for ShieldingSelect
+  -->
+  <message id="ss-tt-shield-type-toggle">材料と汎用遮蔽の切り替え</message>
+  <message id="ss-tt-material-name">
+    ここには事前定義された材料または元素の名前を入力できます
+    （フォームテキストをクリアし、フォーム右の矢印をクリックして
+    すべての事前定義オプションを表示）、または材料の原子構成を
+    C0.5H0.2Ni0.6のように指定できます。数値は材料中の前の
+    元素の密度をg/cm3で表し、この例では総密度は
+    0.5+0.2+0.6=1.3 g/cm3になります。
+    同位体成分を含む材料を入力するには、核種を一重または二重
+    引用符で囲みます。例：'U238'0.2'U235'0.8
+  </message>
+  <message id="ss-tt-material-name-fit">
+  注意：自己減衰線源として使用する場合、定義された材料は
+  減衰目的で使用されますが、指定された線源核種の質量分率は
+  この減衰と一致しない可能性があります...
+  </message>
+  <message id="ss-tt-areal-density">遮蔽の面密度（g/cm2）</message>
+  <message id="ss-areal-density-empty-txt">面密度</message>
+  <message id="ss-tt-atomic-number">遮蔽の原子番号</message>
+  <message id="ss-atomic-number-empty-txt">原子番号</message>
+  <message id="ss-source-for-cb">
+    これらの核種が線源として使用される場合、
+    材料中に均一に分布していると扱われ
+    （球形と仮定）、自己減衰や
+    その他の要因が考慮されます。
+  </message>
+  <message id="ss-fit-mass-fractions-cb">質量分率フィット</message>
+  <message id="ss-thickness">厚さ</message>
+  <message id="ss-radius">半径</message>
+  <message id="ss-radial-thickness">径方向厚さ</message>
+  <message id="ss-half-length">半長</message>
+  <message id="ss-length-thickness">長さ厚さ</message>
+  <message id="ss-half-width">半幅</message>
+  <message id="ss-width-thickness">幅厚さ</message>
+  <message id="ss-half-height">半高</message>
+  <message id="ss-height-thickness">高さ厚さ</message>
+  <message id="ss-half-depth">半深度</message>
+  <message id="ss-depth-thickness">深度厚さ</message>
+  <message id="ss-tt-fit-mass-frac">質量分率をフィットする場合、その分率の合計はフィット中で一定に保たれます。</message>
+  <message id="ss-fixed-non-src-frac">{1}{2}%の他の{3}同位体を仮定</message>
+  <message id="ss-fixed">固定 </message> <!-- Note: trailing space is Nbsp character -->
+  <message id="ss-generic">汎用</message>
+  <message id="ss-consists-of-mass-frac">構成（質量分率、元素）</message>
+  <message id="ss-err-invalid-material">{1}は無効な材料です</message>
+  <message id="ss-invalid-mat">無効材料</message>
+  <message id="ss-src-mass-frac-label">{1}の質量分率:</message>
+  <message id="ss-non-src-frac">非線源分率</message>
+  <message id="ss-add-shield-before">前に遮蔽追加</message>
+  <message id="ss-add-shield-after">後に遮蔽追加</message>
+  <message id="ss-add-trace-src">トレース線源追加</message>
+  <message id="ss-non-src-frac-el">他の{1}:</message>
+  <message id="ss-tt-with-uncert">{1}</message>
+  <message id="ss-tt-without"></message>
+  <message id="ss-warning-only-one-src-frac">質量分率をフィットするには、{1}の少なくとも2つの成分を選択してフィットしてください。</message>
+</messages>

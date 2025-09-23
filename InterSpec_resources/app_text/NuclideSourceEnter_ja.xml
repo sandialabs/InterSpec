@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+    <message id="dcw-tt-nuc-edit">例: <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (準安定状態), <b>Cs137</b> など。</message>
+    <message id="dcw-tt-age-edit">
+      <div>
+        年数は時間単位の組み合わせで指定でき、
+        '<b>5.3y 8d 22m</b>'のように、または半減期で
+        '<b>2.5 HL</b>'のように指定できます。
+      </div>
+      <br />
+      <div>
+        年数は入力された核種の放射能には影響せず、子孫核種の成長量にのみ影響します
+        （つまり子孫核種の放射能のみを変更し、親核種の放射能は変更しません）
+        - 入力した放射能は年数に関係なく、常に入力した親核種に使用されます。
+      </div>
+      <br />
+      <div>
+        使用可能な時間単位: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, 
+        <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>、または
+        <b>hh:mm:ss</b>で時間期間を指定できます。
+      </div>
+      <div>半減期単位または時間期間は他の単位と混在できません。</div>
+      <div>
+        複数の時間期間が指定された場合、それらは合計されます。例：'1y6months 3m'は
+        18ヶ月と3分として解釈されます。
+      </div>
+    </message>
+    <message id="dcw-age-to-big">{1}は{2}を崩壊させるには半減期が多すぎます</message>
+    <message id="dcw-nuc-is-stable">{1}は安定です</message>
+</messages>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uct- is short for UnitsConverterTool
+  -->
+  <message id="uct-mult-nucs">複数核種 ({1} + {2})</message>
+  <message id="uct-instructions">放射線関連単位間の変換。<br />
+    例: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert, 10 gram U235, 1.2 uCi Pu238
+  </message>
+  <message id="uct-input-label">入力: </message>
+  <message id="uct-output-label">出力: </message>
+  <message id="uct-qr-window-title">単位変換器状態</message>
+  <message id="uct-qr-window-txt">単位変換器ツールの現在の状態。</message>
+  <message id="uct-err-empty-input">空の入力</message>
+  <message id="uct-couldnt-find-units">単位を判定できませんでした</message>
+  <message id="uct-nuc-unknown">{1} '{2}'では何もできませんでした</message>
+  <message id="uct-invalid-input">無効な入力</message>
+  <message id="uct-err-gen">エラー: {1}。<br />
+    許可される放射能単位: bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,
+    roentgen, m, meter, ft, inch, in, gram, g, ounce, oz, pound, lb, grain。<br />
+    許可される（オプション）接頭辞: n, nano, u, µ, micro, m, milli,
+     k, killo, M, mega, G, Giga, T, Tera
+  </message>
+</messages>

@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  
+  <!-- Presets section -->
+  <message id="raag-presets">プリセット</message>
+  <message id="raag-preset-blank">空白</message>
+  <message id="raag-user-preset">ユーザー: {1}</message>
+  
+  <!-- Status messages -->
+  <message id="raag-not-calculated">未計算。</message>
+  <message id="raag-calculating">計算中...</message>
+  
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">スペクトルとピークオプション</message>
+  <message id="raag-rel-eff-curve-options">相対効率曲線オプション</message>
+  <message id="raag-fit-energy-cal">エネルギー校正フィット</message>
+  <message id="raag-back-sub">バックグラウンド減算</message>
+  <message id="raag-fwhm-est">半値幅推定</message>
+  <message id="raag-fwhm-form">半値幅形式</message>
+  <message id="raag-peak-skew">ピーク歪度</message>
+  <message id="raag-add-uncert">追加不確実性</message>
+  <message id="raag-yield-info">収率情報</message>
+  
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">検出器/ピークから開始</message>
+  <message id="raag-fwhm-start-peaks">ピークから開始</message>
+  <message id="raag-fwhm-fixed-peaks">ピークに固定</message>
+  <message id="raag-fwhm-start-det-eff">検出器効率から開始</message>
+  <message id="raag-fwhm-fixed-det-eff">検出器効率に固定</message>
+  
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">フリーピーク追加</message>
+  <message id="raag-clear-all-ranges">全範囲クリア</message>
+  <message id="raag-continue">続行</message>
+  <message id="raag-html-report">HTMLレポート</message>
+  <message id="raag-xml-config">XML設定</message>
+  
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">エネルギー範囲をクリア？</message>
+  <message id="raag-cant-perform-action">この操作を実行できません。</message>
+  <message id="raag-divide-energy-range-title">エネルギー範囲を分割？</message>
+  <message id="raag-apply-fit-energy-cal-title">フィットエネルギー校正を適用？</message>
+  <message id="raag-cant-continue">続行できません</message>
+  <message id="raag-no-peaks-in-solution">現在の解にピークがありません</message>
+  <message id="raag-error">エラー</message>
+  <message id="raag-unexpected-error-finding-original">オリジナルを見つける際に予期しないエラーが発生しました</message>
+  
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">XML設定ファイルインポート</message>
+  <message id="raag-select-isotopics-xml-file">使用する<em>核種別同位体比</em>XMLファイルを選択</message>
+  <message id="raag-file-too-large-title">ファイルが大きすぎてアップロードできません</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">注：XML設定ファイルをInterSpecにドラッグ＆ドロップすることもできます</p>
+  </message>
+  
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">エネルギー範囲をソート。</message>
+  <message id="raag-remove-all-ranges-tt">すべてのエネルギー範囲を削除。</message>
+  <message id="raag-remove-free-peaks-tt">すべてのフリーピークを削除し、フリーピーク入力を非表示。</message>
+  <message id="raag-free-peaks-tt">「フリーピーク」は特定のエネルギーを持ち、核種に関連付けられておらず、振幅がデータに最適な値にフィットされるピークです。ピークは任意で関数半値幅制約からも解放される場合があります。<br />フリーピークは反応のピークや未識別核種のピークを処理するのに有用です。</message>
+  
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">ピーク不確実性は、再フィットを選択しない限り、全相対効率フィット（例：ピークが互いに協力して不確実性を減少）に基づきます。再フィットを選択した場合、相対効率曲線や半値幅関数形式に制約されません。</message>
+  
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} keVは既にエネルギー範囲[{2}, {3}] keV内にあります - 操作は行われません。</message>
+  <message id="raag-extended-energy-range">既存のエネルギー範囲を[{1}, {2}] keVに拡張しました。</message>
+  <message id="raag-added-new-energy-range">{1}から{2} keVまでの新しいエネルギー範囲を追加しました。</message>
+  <message id="raag-split-roi-at">{1} keVでROIを分割</message>
+  <message id="raag-add-free-peak-at">{1} keVでフリーピーク追加</message>
+  <message id="raag-energy-range-no-contributions">エネルギー範囲{1} keVから{2} keVには有意なガンマ寄与が含まれていませんでした。</message>
+  <message id="raag-divide-energy-range-msg">
+    この操作は{1} keVから{2} keVまでのエネルギー範囲を{3}個の別々のエネルギー範囲に分割します。
+    <br />
+    <p>続行しますか？</p>
+  </message>
+  <message id="raag-add-energy-offset">{1} keVのオフセットを追加</message>
+  <message id="raag-increase-gain-first">ゲインを{1}増加</message>
+  <message id="raag-increase-gain-additional">およびゲインを{1}増加</message>
+  <message id="raag-increase-quad-first">二次項を{1}増加</message>
+  <message id="raag-increase-quad-additional">および二次項を{1}増加</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">これは主フォアグラウンド{2}{3}に対して{1}を行います。<br />実行しますか？</message>
+  <message id="raag-and-background">およびバックグラウンド</message>
+  <message id="raag-files">ファイル</message>
+  <message id="raag-file">ファイル</message>
+  <message id="raag-energy-cal-updated">表示されているフォアグラウンド{1}のエネルギー校正を更新しました。</message>
+  <message id="raag-and-background-period">およびバックグラウンド</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">相対放射能同位体比ツール作成エラー: {1}</message>
+  <message id="raag-handle-double-click-error">handleDoubleLeftClickエラー: {1}</message>
+  <message id="raag-expected-state-info">'{1}'の期待される状態情報が利用できません - これは予期されていません - 申し訳ありません！</message>
+  <message id="raag-state-info-not-saved">'{1}'の状態情報は以前に保存できませんでした - これは予期されていません - 申し訳ありません！</message>
+  <message id="raag-error-deserializing">ツール状態のデシリアライズエラー: {1}</message>
+  <message id="raag-error-loading-preset">プリセット読み込みエラー: {1}</message>
+  <message id="raag-error-applying-energy-cal">エネルギー校正適用エラー: {1}</message>
+  <message id="raag-error-loading-xml-config"><em>核種別同位体比</em>XML設定ファイル読み込みエラー: {1}</message>
+  
+</messages>

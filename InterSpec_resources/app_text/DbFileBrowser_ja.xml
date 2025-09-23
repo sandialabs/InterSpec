@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for SnapshotBrowser -->
+  <message id="sb-resume-from-prev">このスペクトルファイルを保存状態の一部として保存したようです。以前の作業を再開しますか？</message>
+  <message id="sb-no-saved-states">保存されたアプリケーション状態がありません</message>
+  <message id="sb-tt-del-state">状態を削除</message>
+  <message id="sb-tt-edit-state">状態名または説明を編集</message>
+  <message id="sb-state-HEAD-label">保存状態</message>
+  <message id="sb-state-auto-saved-label">自動保存</message>
+  <message id="sb-unsaved-spectra-parent-node-label">開かれたが明示的に保存されていないスペクトル</message>
+  <message id="sb-tt-unsaved-spectra-node">InterSpecで開いたが明示的に保存しなかったスペクトル。</message>
+  <message id="sb-unsaved-spectrum-node">{1} （{2}に開いた）</message>
+  <message id="sb-tt-unsaved-spectrum-node">ファイル名: {1}
+測定時刻: {2}
+読み込み時刻: {3}
+サンプル数: {4}
+総リアルタイム: {5}</message>
+  <message id="sb-open-spectrum-as">選択したスペクトルを次として開く:</message>
+  <message id="sb-load-spectrum-only">スペクトルのみ読み込み</message>
+  <message id="sb-load-app-state">アプリ状態を読み込み</message>
+  <message id="sb-err-making-browser-txt">データベーススペクトルファイルブラウザの作成中に予期しないエラー</message>
+  <message id="sb-err-making-browser-msg">データベーススペクトルファイルブラウザの作成エラー: {1}</message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+  <message id="sb-"></message>
+</messages>

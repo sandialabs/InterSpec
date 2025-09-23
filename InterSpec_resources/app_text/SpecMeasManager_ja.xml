@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">スペクトルマネージャ</message>
+  <message id="smm-load-spec-from">スペクトル読み込み元: </message>
+  <message id="smm-tt-upload-file">ファイルからスペクトルをインポート</message>
+
+  <message id="smm-err-zip">zipからファイル抽出エラー</message>
+  <message id="smm-zip-sel-file-no-name">
+    アップロードファイルはZIPファイルです。
+    <br />
+    {2}
+    開きたいファイルを選択してください。
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b>はZIPファイルです。
+    <br />
+    {2}
+    開きたいファイルを選択してください。
+  </message>
+  <message id="smm-zip-window-title">アップロードZIPファイル内容</message>
+  <message id="smm-zip-filename-hdr">ファイル名</message>
+  <message id="smm-zip-kilobyte-hdr">kb</message>
+  <message id="smm-zip-display-btn">表示</message>
+  <message id="smm-empty-file">おそらく空のファイルです - スペクトルファイルではありません。</message>
+  <message id="smm-failed-reading-nonspec-file">非スペクトルファイルの読み取りに失敗。</message>
+  <message id="smm-not-spec-file">スペクトルファイルではありません</message>
+  <message id="smm-image-file">画像ファイルが選択されました</message>
+  <message id="smm-icd2">これは生スペクトルではなく分析結果を含むN42 ICD2ファイルのようです。
+    <br />
+    これが正当なスペクトルファイルだと思われる場合は、
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    にメールしてこのファイルタイプのサポートを依頼してください。
+  </message>
+  <message id="smm-invalid-zip">このファイルは無効なZIPファイル（またはxlsx、pptx、
+    <br />
+    docx、odp、jar、apkなど）のようです。申し訳ありませんが開けません :(
+  </message>
+  <message id="smm-unsupported-archive">このファイルはアーカイブファイルのようですが、InterSpecではまだサポートされていません。
+    このアーカイブタイプのサポート追加をご希望の場合は
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    までご連絡ください。
+  </message>
+  <message id="smm-unsupported-document">このファイルは文書ファイルのようで、InterSpecではサポートされていません。</message>
+
+  <!-- Additional key messages - this is a condensed version for the main interface elements -->
+  <message id="smm-display-file">ファイル表示</message>
+  <message id="smm-sum-spectra">スペクトル合算</message>
+  <message id="smm-subtract-spectra">スペクトル減算</message>
+  <message id="smm-create-new-spec">新しいスペクトル作成</message>
+  <message id="smm-export-spec">スペクトルエクスポート</message>
+  <message id="smm-sample-numbers">サンプル番号</message>
+  <message id="smm-detector-names">検出器名</message>
+  <message id="smm-live-time">実測時間</message>
+  <message id="smm-real-time">計時時間</message>
+  <message id="smm-gamma-counts">ガンマカウント</message>
+  <message id="smm-neutron-counts">中性子カウント</message>
+  <message id="smm-occupancy-status">占有状況</message>
+  <message id="smm-filename">ファイル名</message>
+  <message id="smm-date-time">日時</message>
+  <message id="smm-close">閉じる</message>
+  <message id="smm-cancel">キャンセル</message>
+  <message id="smm-ok">OK</message>
+  <message id="smm-apply">適用</message>
+  <message id="smm-help">ヘルプ</message>
+  <message id="smm-error">エラー</message>
+  <message id="smm-warning">警告</message>
+  <message id="smm-info">情報</message>
+  <message id="smm-success">成功</message>
+</messages>
