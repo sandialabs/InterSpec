@@ -39,6 +39,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/CAMIO.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
@@ -49,6 +50,7 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace Wt;
@@ -1358,7 +1360,207 @@ bool SpecMeas::load_from_iaea( std::istream &istr )
 }//bool SpecMeas::load_from_iaea( std::istream &istr )
 
 
+void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
+{
+  cout << "SpecMeas::load_cnf_using_reader" << endl;
 
+  SpecUtils::SpecFile::load_cnf_using_reader( reader );
+
+  if( measurements_.empty() )
+    return;
+
+  assert( measurements_.size() == 1 );
+  std::shared_ptr<SpecUtils::Measurement> &meas = measurements_[0];
+  assert( meas );
+
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = meas->energy_calibration();
+  const bool valid_cal = (cal && cal->valid()
+                          && (cal->type() != SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial));
+
+  const int sample_num = meas->sample_number_; //This will be 1.
+
+  std::vector<float> fileEneCal;
+
+  shared_ptr<DetectorPeakResponse> det;
+  try
+  {
+    const vector<CAMInputOutput::EfficiencyPoint> &points = reader.GetEfficiencyPoints();
+
+    vector<DetectorPeakResponse::EnergyEffPoint> eff_points;
+
+    for( const CAMInputOutput::EfficiencyPoint &p : points )
+    {
+      DetectorPeakResponse::EnergyEffPoint ep;
+      ep.energy = p.Energy;
+      ep.efficiency = p.Efficiency;
+      ep.efficiencyUncert = p.EfficiencyUncertainty;
+      eff_points.push_back( std::move(ep) );
+    }//for( const CAMInputOutput::EfficiencyPoint &p : points )
+
+    if( eff_points.size() > 2 )
+    {
+      //const CAMInputOutput::CAMIO::EfficiencyModel eff_model = reader.GetEfficiencyModel(); //
+      // In principle, depending on `eff_model`, we could instead use `MakeDrfFit::performEfficiencyFit(...)`...
+
+      det = make_shared<DetectorPeakResponse>();
+      const float detDiameter = 0.0f;
+      // I'm not actually sure how to, or if we can, know what type of efficiency this is
+      const DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
+      det->setEfficiencyPoints( eff_points, detDiameter, geom_type );
+      m_detector = det;
+    }//if( eff_points.size() > 2 )
+  }catch( std::exception & )
+  {
+    det.reset();
+  }//try / catch to get efficiency
+
+  // If we have efficiency, try to get shape info
+  if( det )
+  {
+    cout << "Got shape cal: [";  //[0.872247, 0.0260896, 0, 0, ]
+    try
+    {
+      vector<float> coeffs = reader.GetShapeCalibration();
+      while( coeffs.empty() && (coeffs.back() == 0.0f) )
+        coeffs.resize( coeffs.size() - 1 );
+
+      if( coeffs.size() == 2 )
+      {
+        det->setFwhmCoefficients( coeffs, DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy );
+      }else if( coeffs.size() > 2 )
+      {
+        det->setFwhmCoefficients( coeffs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+      }
+    }catch( std::exception & )
+    {
+      cout << "none";
+    }
+    cout << "]" << endl;
+  }//if( det )
+
+
+  
+  try
+  {
+    deque<shared_ptr<const PeakDef>> peaks_from_file;
+
+    map<pair<int,int>,shared_ptr<PeakContinuum>> channels_to_roi;
+
+    const vector<CAMInputOutput::Peak> &peaks = reader.GetPeaks();
+    for( const CAMInputOutput::Peak &p : peaks )
+    {
+      try
+      {
+        auto peak = make_shared<PeakDef>( p.Energy, p.FullWidthAtHalfMaximum/2.35482, p.Area );
+
+        if( (p.Centroid > 0.0) && (p.CentroidUncertainty > 0.0) )
+          peak->setMeanUncert( p.Energy * p.CentroidUncertainty / p.Centroid );
+        if( p.AreaUncertainty > 0.0 )
+          peak->setPeakAreaUncert( p.AreaUncertainty );
+
+        //p.LowTail
+
+        double lower_energy, upper_energy;
+        if( valid_cal )
+        {
+          lower_energy = cal->energy_for_channel(p.LeftChannel);
+          upper_energy = cal->energy_for_channel(p.RightChannel + 1);
+        }else
+        {
+          lower_energy = p.Energy - ((p.Centroid - p.LeftChannel) * (p.Energy / p.Centroid));
+          upper_energy = p.Energy + ((p.RightChannel - p.Centroid) * (p.Energy / p.Centroid));
+        }//if( valid_cal ) / else
+
+        const pair<int,int> channel_pair( p.LeftChannel, p.RightChannel );
+        const auto pos = channels_to_roi.find( channel_pair );
+        if( pos != end(channels_to_roi) )
+        {
+          peak->setContinuum( pos->second );
+        }else
+        {
+          // We may be able to parse a little more out of the peak continuum in the future.
+          auto cont = make_shared<PeakContinuum>();
+          cont->setRange( p.Energy - p.FullWidthAtHalfMaximum, p.Energy + p.FullWidthAtHalfMaximum );
+          cont->setType(PeakContinuum::OffsetType::Linear);
+          cont->calc_linear_continuum_eqn( measurements_[0], p.Energy, lower_energy, upper_energy, 3, 3 );
+
+          channels_to_roi[channel_pair] = cont;
+
+          peak->setContinuum( cont );
+        }//if( pos != end ) / else
+
+/*
+        try
+        {
+          const vector<CAMInputOutput::Line> &lines = reader.GetLines();
+          const vector<CAMInputOutput::Nuclide> &nucs = reader.GetNuclides();
+
+          for( const CAMInputOutput::Line &line : lines )
+          {
+            const CAMInputOutput::Nuclide *cam_nuc = nullptr;
+            for( const CAMInputOutput::Nuclide &nuc : nucs )
+            {
+              if( (nuc.Index >= 0) && (nuc.Index == line.NuclideIndex) )
+              {
+                cam_nuc = &nuc;
+                break;
+              }
+            }
+
+            if( (fabs(line.Energy - p.Energy) < 0.25*p.FullWidthAtHalfMaximum) && cam_nuc )
+            {
+              string nuc = cam_nuc->Name;
+              SpecUtils::trim( nuc );
+
+              const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+              const SandiaDecay::Nuclide * nuclide = db ? db->nuclide(nuc) : nullptr;
+              if( db && !nuclide && SpecUtils::icontains(nuc, "dau") )
+              {
+                SpecUtils::ireplace_all(nuc, "dau", "");
+                nuclide = db->nuclide(nuc);
+              }
+
+              if( nuclide )
+              {
+                const double window_width = 0.25*p.FullWidthAtHalfMaximum;
+                PeakModel::setNuclide( *peak, PeakDef::SourceGammaType::NormalGamma, nuclide, line.Energy, window_width );
+              }
+            }
+          }//for( const CAMInputOutput::Line &line : lines )
+
+        }catch( std::exception & )
+        {
+          //cerr << "Failed to get lines or nucs: " << e.what() << endl;
+        }
+ */
+
+
+        peaks_from_file.push_back( peak );
+      }catch( std::exception & )
+      {
+        //cerr << "Failed to add peak from CNF file: " << e.what() << endl;
+      }
+    }//for( const CAMInputOutput::Peak &p : peaks )
+
+
+    if( !peaks_from_file.empty() )
+      setPeaks( peaks_from_file, set<int>{sample_num} );
+  }catch ( std::exception & )
+  {
+  }
+
+  try
+  {
+    cout << "DetInfo.Type=" << reader.GetDetectorInfo().Type
+    << ", DetInfo.Name=" << reader.GetDetectorInfo().Name
+    << ", DetInfo.SerialNo=" << reader.GetDetectorInfo().SerialNo
+    << ", DetInfo.MCAType=" << reader.GetDetectorInfo().MCAType
+    << endl;
+  }catch ( std::exception & )
+  {
+    cout << "No detector info" << endl;
+  }
+}//virtual void load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
 
 
 void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *interspecnode )

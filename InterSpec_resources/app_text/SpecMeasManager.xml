@@ -133,7 +133,7 @@
   <message id="smm-ecc-fix-geom-act-m2">Fixed Geometry - activity per m2</message>
   <message id="smm-ecc-fix-geom-act-gram">Fixed Geometry - activity per gram</message>
   <message id="smm-ecc-det-diam">Detector diam.</message>
-  <message id="smm-ecc-dist">Distance.</message>
+  <message id="smm-ecc-dist">Distance</message>
   <message id="smm-ecc-use-drf">Use DRF</message>
   <message id="smm-ecc-error">Error creating DRF from ECC: {1}</message>
 

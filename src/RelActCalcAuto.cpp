@@ -63,8 +63,9 @@
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
-#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 #include "SpecUtils/D3SpectrumExport.h"
@@ -980,7 +981,7 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
           const std::vector<double> berstein_coeffs = BersteinPolynomial::power_series_to_bernstein( 
             poly_coeffs.data(), poly_coeffs.size(), lowest_energy/1000.0, highest_energy/1000.0 );
           
-          assert( berstein_coeffs.size() == (num_fwhm_pars + 2) );
+          assert( berstein_coeffs.size() == (num_fwhm_pars - 2) );
           paramaters.resize( num_fwhm_pars );
           for( size_t i = 0; i < berstein_coeffs.size(); ++i )
             paramaters[i] = berstein_coeffs[i];
@@ -1146,20 +1147,42 @@ std::shared_ptr<const DetectorPeakResponse> get_fwhm_coefficients( const RelActC
   
   if( !new_drf )
   {
-    const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
-    const string drf_dir = SpecUtils::append_path( drfpaths, highres ? "HPGe 40%" : "LaBr 10%" );
-    try
+    const string drf_file = SpecUtils::append_path( InterSpec::staticDataDirectory(), "common_drfs.tsv" );
+
+#ifdef _WIN32
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(drf_file);
+    std::ifstream input( wfilename.c_str() );
+#else
+    std::ifstream input( drf_file.c_str() );
+#endif
+    string line;
+    while( !new_drf && SpecUtils::safe_get_line( input, line, 2048 ) )
     {
-      new_drf = std::make_shared<DetectorPeakResponse>();
-      new_drf->fromGadrasDirectory( drf_dir );
-      new_drf->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm ); //just to be sure
-    }catch( std::exception &e )
+      SpecUtils::trim( line );
+      auto det = (!line.empty() && line[0]!='#') ? DetectorPeakResponse::parseSingleCsvLineRelEffDrf( line ) : nullptr;
+      if( det && (det->name() == "Cx033%_56x56mm_100cm_ISOCS (33%)") )
+        new_drf = det;
+    }//while( SpecUtils::safe_get_line( input, line, 2048 ) )
+
+    assert( new_drf );
+
+    if( !new_drf )
     {
-      //throw runtime_error( "RelActAutoCostFcn: failed to open default DRF." );
-      cerr << "RelActAutoCostFcn: failed to open default DRF." << endl;
-      assert( 0 );
-      new_drf.reset();
-    }
+      const string drfpaths = SpecUtils::append_path( InterSpec::staticDataDirectory(), "GenericGadrasDetectors" );
+      const string drf_dir = SpecUtils::append_path( drfpaths, highres ? "HPGe 40%" : "LaBr 10%" );
+      try
+      {
+        new_drf = std::make_shared<DetectorPeakResponse>();
+        new_drf->fromGadrasDirectory( drf_dir );
+        new_drf->setFwhmCoefficients( {}, DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm ); //just to be sure
+      }catch( std::exception &e )
+      {
+        //throw runtime_error( "RelActAutoCostFcn: failed to open default DRF." );
+        cerr << "RelActAutoCostFcn: failed to open default DRF." << endl;
+        assert( 0 );
+        new_drf.reset();
+      }
+    }//if( !new_drf )
   }//if( !new_drf )
   
   assert( !!new_drf );
@@ -1485,7 +1508,7 @@ void setup_physical_model_shield_par( vector<optional<double>> &lower_bounds,
   
   if( (ad == 0.0) && opt->fit_areal_density )
   {
-    ad = 2.5; // We want something away from zero, because Ceres doesnt like zero values much - 2.5 is arbitrary
+    ad = std::min( std::max( 0.5, lower_ad), upper_ad ); // We want something away from zero, because Ceres doesnt like zero values much - 0.5 is arbitrary
     //  ad = 0.5*(lower_ad + upper_ad); //Something like 250 would be way too much
   }
   if( (ad < 0.0) || (ad > max_ad) )
@@ -2224,20 +2247,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         
         for( const RelActCalcAuto::RoiRange &r : options.rois )
         {
-          lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy );
-          highest_fwhm_energy = std::max( highest_fwhm_energy, r.upper_energy );
-          
-          if( r.allow_expand_for_peak_width )
-          {
-            float min_sigma, max_sigma;
-            expected_peak_width_limits( static_cast<float>(r.lower_energy), highres, spectrum, min_sigma, max_sigma );
-            lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy - DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
-            lowest_fwhm_energy = std::max( lowest_fwhm_energy, 10.0 );
+          lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy );   //Unnecassary, but JIC
+          highest_fwhm_energy = std::max( highest_fwhm_energy, r.upper_energy ); //Unnecassary, but JIC
+
+          // We want to account for peaks outside of the ROI that will contribute to the ROI, as well as if the ROI
+          //  is allow to expand for peak width.
+          //  In the end, the range of FWHM on matters if we are using the Berstein polynomials, and even then it
+          //  doesnt matter a ton if we say its larger than we need - it should only ever-so-slightly reduce our
+          //  allowed variation of FWHM, for a given order.
+          const double aditional_factor = r.allow_expand_for_peak_width ? 2.0 : 1.5;
+          float min_sigma, max_sigma;
+          expected_peak_width_limits( static_cast<float>(r.lower_energy), highres, spectrum, min_sigma, max_sigma );
+          lowest_fwhm_energy = std::min( lowest_fwhm_energy, r.lower_energy - aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
+          lowest_fwhm_energy = std::max( lowest_fwhm_energy, 10.0 );
             
-            expected_peak_width_limits( static_cast<float>(r.upper_energy), highres, spectrum, min_sigma, max_sigma );
-            highest_fwhm_energy = std::max( highest_fwhm_energy, r.upper_energy + DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
-            highest_fwhm_energy = std::min( highest_fwhm_energy, 10000.0 );
-          }
+          expected_peak_width_limits( static_cast<float>(r.upper_energy), highres, spectrum, min_sigma, max_sigma );
+          highest_fwhm_energy = std::max( highest_fwhm_energy, r.upper_energy + aditional_factor*DEFAULT_PEAK_HALF_WIDTH_SIGMA*max_sigma );
+          highest_fwhm_energy = std::min( highest_fwhm_energy, 10000.0 );
         }//for( const RelActCalcAuto::RoiRange &r : options.rois )
           
         // This next call may return `input_drf` if its valid and has FWHM info,
@@ -2398,7 +2424,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 #if( PEAK_SKEW_HACK == 2 )
     vector<int> initial_const_parameters;
 #endif
-    
+
+    // If we are fitting the Physical model with a Hoerl function, we will do the first fit without the Hoerl,
+    //  but after the initial fit, we will want to restore some parameters back to inital values
+    vector<pair<int,double>> initial_par_vals_to_restore_after_initial_fit;
+
     assert( cost_functor->m_energy_cal && cost_functor->m_energy_cal->valid() );
     for( size_t i = 0; i < RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars; ++i )
       parameters[i] = RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset;
@@ -3137,20 +3167,45 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             size_t manual_index = 0;
             if( rel_eff_curve.phys_model_self_atten )
             {
-              if( rel_eff_curve.phys_model_self_atten->fit_atomic_number )
+              const RelActCalc::PhysicalModelShieldInput &self_atten = *rel_eff_curve.phys_model_self_atten;
+
+              if( self_atten.fit_atomic_number )
               {
                 assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
                 parameters[this_rel_eff_start + 0] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Atomic number; note both manual and auto RelEff use RelActCalc::ns_an_ceres_mult
                 manual_index += 1;
               }
-              
-              assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-              parameters[this_rel_eff_start + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Areal density; both manual and auto RelEff use g/cm2
 
-              if( rel_eff_curve.phys_model_self_atten->fit_areal_density )
+              const int ad_index = static_cast<int>( this_rel_eff_start + 1 );
+
+              assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
+              parameters[ad_index] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index); //Areal density; both manual and auto RelEff use g/cm2
+
+              if( self_atten.fit_areal_density )
               {
-                if( parameters[this_rel_eff_start + 1]  < 1.0E-4 )
-                  parameters[this_rel_eff_start + 1] = std::min( std::max( 1.0, rel_eff_curve.phys_model_self_atten->lower_fit_areal_density), rel_eff_curve.phys_model_self_atten->upper_fit_areal_density );
+                if( parameters[ad_index]  < 0.25 )
+                {
+                  double lower_ad = self_atten.lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+                  double upper_ad = self_atten.upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+
+                  if( (lower_ad == upper_ad) && (lower_ad == 0.0) )
+                  {
+                    lower_ad = 0.0;
+                    upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
+                  }
+
+                  //TODO: add and use the following variables for both Auto and Manual solutions
+                  //const double RelActCalc::ns_ad_ceres_offset = 1.0;
+                  //const double RelActCalc::ns_ad_ceres_multiple = 0.5;
+
+                  const double reasonable_starting_ad = 2.5; //pretty arbitrary - just something away from zero
+                  const double mid_allowed_ad = 0.5*(lower_ad + upper_ad);
+                  const double starting_ad = std::max( std::min(mid_allowed_ad, reasonable_starting_ad), lower_ad );
+
+                  parameters[ad_index] = starting_ad;
+                }
+
+                initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_index, parameters[ad_index] );
               }//if( rel_eff_curve.phys_model_self_atten->fit_areal_density )
 
               manual_index += 1;
@@ -3179,7 +3234,40 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               }
                 
               assert( manual_solution.m_rel_eff_eqn_coefficients.size() > manual_index );
-              parameters[this_rel_eff_start + 2 + 2*i + 1] = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+              const int ad_par_index = static_cast<int>( this_rel_eff_start + 2 + 2*i + 1 );
+              double ad_par = manual_solution.m_rel_eff_eqn_coefficients.at(manual_index);
+
+              if( ext_att->fit_areal_density )
+              {
+                if( ad_par  < 0.25 )
+                {
+                  double lower_ad = ext_att->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+                  double upper_ad = ext_att->upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+
+                  if( (lower_ad == upper_ad) && (lower_ad == 0.0) )
+                  {
+                    lower_ad = 0.0;
+                    upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
+                  }
+
+                  //TODO: add and use the following variables for both Auto and Manual solutions
+                  //const double RelActCalc::ns_ad_ceres_offset = 1.0;
+                  //const double RelActCalc::ns_ad_ceres_multiple = 0.5;
+
+                  const double reasonable_starting_ad = 1.0; //pretty arbitrary - just something away from zero
+                  const double mid_allowed_ad = 0.5*(lower_ad + upper_ad);
+                  const double starting_ad = std::max( std::min(mid_allowed_ad, reasonable_starting_ad), lower_ad );
+
+                  ad_par = starting_ad;
+                }
+
+                // For an example problem, it looks like we dont want to go back to starting paramters after initial fit
+                //if( rel_eff_curve.phys_model_self_atten && rel_eff_curve.phys_model_self_atten->fit_areal_density )
+                  //initial_par_vals_to_restore_after_initial_fit.emplace_back( ad_par_index, ad_par );
+              }//if( ext_att->fit_areal_density )
+
+              parameters[ad_par_index] = ad_par;
+
               manual_index += 1;
             }//for( loop over options.phys_model_external_atten )
               
@@ -3773,7 +3861,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           elements_starting_mass_fracs[nuc->atomicNumber] += starting_mass_frac;
         }//for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint : rel_eff_curve.mass_fraction_constraints )
 
-        //Now go threw and check if any sum is greater than or equal to 1.0
+        //Now go through and check if any sum is greater than or equal to 1.0
         for( const map<short int,double>::value_type &an_sum : elements_starting_mass_fracs )
         {
           const short int atomic_number = an_sum.first;
@@ -4120,7 +4208,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres::LossFunction *lossfcn = nullptr;
     // For an example problem, the loss function didnt seem to have a impact, or if they did, it wasnt good.
     //lossfcn = new ceres::HuberLoss( 25.0 );  //The Huber loss function is quadratic for small residuals and linear for large residuals - probably what we would want to use
-    lossfcn = new ceres::CauchyLoss( 25.0 ); //The Cauchy loss function is less sensitive to large residuals than the Huber loss.
+    //lossfcn = new ceres::CauchyLoss( 25.0 ); //The Cauchy loss function is less sensitive to large residuals than the Huber loss.
     //lossfcn = new ceres::SoftLOneLoss(5.0);
     //lossfcn = new ceres::TukeyLoss(10.0); //Quadratic for small residuals and zero for large residuals - not good if initial guess isnt great
     problem.AddResidualBlock( cost_function, lossfcn, pars );
@@ -4272,6 +4360,83 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.num_threads = static_cast<int>( std::thread::hardware_concurrency(), 2 );
 
     cost_functor->m_solution_finished = false;
+
+    // If we are using the Physical model with Hoerl corerction function, we will first fit the solution
+    //  without the function, then we will re-fit...
+    vector<size_t> hoerl_par_indexes;
+    for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
+    {
+      const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[rel_eff_index];
+
+      if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) || !rel_eff.phys_model_use_hoerl )
+        continue;
+
+      const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter( rel_eff_index );
+      const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 0;
+      const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 1;
+
+      if( options.same_hoerl_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
+      {
+        assert( parameters[b_index] == -1.0 ); //Just a consistency/sanity check
+        assert( parameters[c_index] == -1.0 );
+      }else
+      {
+        // Right now we hard-wire not using Hoerl correction for manual Physical Rel Eff solution, so `b` and `c` should be at their starting values
+        assert( parameters[b_index] == ((0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset) );  //(energy/1000)^b
+        assert( parameters[c_index] == ((1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset) );  //c^(1000/energy)
+        hoerl_par_indexes.push_back( b_index );
+        hoerl_par_indexes.push_back( c_index );
+      }//
+    }//for( const RelActCalcAuto::RelEffCurveInput &rel_eff : options.rel_eff_curves )
+
+    if( !hoerl_par_indexes.empty() )
+    {
+      vector<int> tmp_constant_parameters = constant_parameters;
+      for( const size_t index : hoerl_par_indexes )
+      {
+        const auto pos = std::find(begin(tmp_constant_parameters), end(tmp_constant_parameters), static_cast<int>(index));
+        assert( pos == end(tmp_constant_parameters) );
+        if( pos == end(tmp_constant_parameters) )
+          tmp_constant_parameters.push_back( static_cast<int>(index) );
+      }
+      ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), tmp_constant_parameters );
+      problem.SetManifold( pars, subset_manifold );
+      ceres::Solver::Summary summary;
+      ceres::Solve(ceres_options, &problem, &summary);
+      switch( summary.termination_type )
+      {
+        case ceres::CONVERGENCE:
+        case ceres::USER_SUCCESS:
+          cout << "Initial fit without the Hoerl correction was successful with FinalCost="
+          << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")." << endl;
+          break;
+
+        case ceres::NO_CONVERGENCE:
+          cout << "Initial fit without the Hoerl correction did not converge" << endl;
+          break;
+
+        case ceres::FAILURE:
+          cout << "Initial fit without the Hoerl correction failed" << endl;
+          break;
+
+        case ceres::USER_FAILURE:
+          cout << "Initial fit without the Hoerl correction was user-cancelled" << endl;
+          //if( cancel_calc && cancel_calc->load() )
+          break;
+      }//switch( summary.termination_type )
+
+      for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
+        parameters[intial_vals.first] = intial_vals.second;
+
+      // We could alter things a little here to try and get a better answer - at the cost of more time
+      //ceres_options.function_tolerance = 1e-9;
+      //ceres_options.initial_trust_region_radius = std::min( std::max( par_area, 10.0 ), 1.0*num_fit_par );
+
+      // Restore the original manifold we want
+      subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
+      problem.SetManifold( pars, subset_manifold );
+    }//if( !hoerl_par_indexes.empty() )
+
 
     ceres::Solver::Summary summary;
     ceres::Solve(ceres_options, &problem, &summary);
@@ -7348,15 +7513,27 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                   || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
 
     const double missing_frac = is_crystal_ball ? 1.0E-3 : 1.0E-4;
-    const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, 20.0 );
-    const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, 20.0 );
+    const double max_nsigma = is_crystal_ball ? 20.0 : 15.0; //arbitrarily chosen - but it seems like using CrystalBall is the standard for really large skews
+    const pair<double,double> lower_peak_limits = lower_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
+    const pair<double,double> upper_peak_limits = upper_range_peak.peak_coverage_limits( missing_frac, max_nsigma );
 
     assert( range.lower_energy >= lower_peak_limits.first );
     assert( range.upper_energy <= upper_peak_limits.second );
 
+    // We will approximate what peaks might affect this ROI, using the coverage limits of the lower and upper peaks
     // TODO: for Crystal Ball dists, they can have really far-reaching tails - perhaps we should limit the max extent of peaks to save CPU, or whatever
-    const double lower_mean = lower_peak_limits.first;
-    const double upper_mean = upper_peak_limits.second;
+    //const double lower_mean = lower_peak_limits.first;
+    //const double upper_mean = upper_peak_limits.second;
+    double lower_mean, upper_mean;
+    if constexpr ( !std::is_same_v<T, double> )
+    {
+      lower_mean = range.lower_energy - (lower_peak_limits.second - lower_range_peak.m_mean.a);
+      upper_mean = range.upper_energy + (upper_range_peak.m_mean.a - upper_peak_limits.first);
+    }else
+    {
+      lower_mean = range.lower_energy - (lower_peak_limits.second - lower_range_peak.m_mean);
+      upper_mean = range.upper_energy + (upper_range_peak.m_mean - upper_peak_limits.first);
+    }
 
 
     size_t num_free_peak_pars = 0;
@@ -8920,19 +9097,40 @@ T bersteinPeakResolutionFWHM( T energy, const T * const pars, const size_t num_p
   const T max_energy = pars[num_berstein_coeffs + 1];
   
   // Check energy bounds and clamp if necessary
-  if( energy < min_energy )
+  if( energy < (min_energy - 10.0) )
   {
-    std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy 
-              << " below minimum " << min_energy << ", clamping to minimum" << std::endl;
-    assert( 0 );  // For debug builds
+#ifndef NDEBUG
+    // This can happen for really large skew peaks so there are peaks from well outside the ROI range
+    //  contributing to the peak.
+    //  TODO: We could probably do a little better job of preventing this from happening, but its not the biggest fish to fry atm
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy
+      //<< " below minimum " << min_energy << ", clamping to minimum: " << min_energy << std::endl;
+    }else
+    {
+      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy.a
+      //<< " below minimum " << min_energy.a << ", clamping to minimum: " << min_energy.a << std::endl;
+    }
+#endif
+
     energy = min_energy;
   }
   
-  if( energy > max_energy )
+  if( energy > (max_energy + 10.0) )
   {
-    std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy 
-              << " above maximum " << max_energy << ", clamping to maximum" << std::endl;
-    assert( 0 );  // For debug builds
+#ifndef NDEBUG
+    if constexpr ( std::is_same_v<T, double> )
+    {
+      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy
+      //<< " above maximum " << max_energy << ", clamping to maximum: " << max_energy << std::endl;
+    }else
+    {
+      //std::cerr << "Warning: bersteinPeakResolutionFWHM() - energy " << energy.a
+      //<< " above maximum " << max_energy.a << ", clamping to maximum: " << max_energy.a << std::endl;
+    }
+#endif
+
     energy = max_energy;
   }
   

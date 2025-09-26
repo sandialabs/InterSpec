@@ -84,11 +84,15 @@ using namespace Wt;
 //#define USE_TEXT_FOR_BLOB 0
 //static_assert( 0, "Serialization to database hasnt been checked (but is probably okay, assuming this version of Wt doesnt have the bug 3.3.4 does)" );
 #define USE_TEXT_FOR_BLOB 1
+
+#if( WT_VERSION >= 0x4000000)
 #ifdef _MSC_VER
 #pragma message("You should check if USE_TEXT_FOR_BLOB can be set to zero, for better serialization to database, since Wt is newer than 3.3.4")
 #else
 #warning "You should check if USE_TEXT_FOR_BLOB can be set to zero, for better serialization to database, since Wt is newer than 3.3.4"
 #endif
+#endif //#if( WT_VERSION >= 0x4000000)
+
 #endif
 
 namespace
