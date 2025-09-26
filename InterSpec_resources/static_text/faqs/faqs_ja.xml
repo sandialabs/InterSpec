@@ -1,0 +1,1184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+<!-- SAND2023-10095O -->
+
+<!-- Potential additional topics to include:
+  - How statistical significance tests are applied when (trying to) fit a peak
+  - ...
+-->
+
+  <message id="intro">
+    これらは、ユーザーが尋ねた質問、または<code>InterSpec</code>を使用中に問題や誤解の原因となることが
+    確認された事項です。<br />
+    <br />
+    質問がある場合、何かが思うより難しい場合、困難を抱えている場合、
+    または機能の要求やバグの報告をしたい場合は、以下にメールしてください： 
+    <div style="text-align: center; font-size: larger; margin-top: 5px;"><a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a></div>
+  </message>
+
+  <message id="warm-start" title="他の分光学ソフトウェアから来る方への注意">
+    <p>
+      他のスペクトル解析パッケージに慣れ親しんでいる場合、InterSpecを使用する際は、
+      解析手順の実行方法について思考モデルを切り替える必要があります。<br />      
+      しかし、<code>InterSpec</code>の方法論が直感的であることを期待しています。<br />
+      <br />
+      主要開発者の<code>InterSpec</code>の最も一般的な使用法は、様々な検出システムや場所から
+      現場で収集されたスペクトルを解析することで、線源同位体、遮蔽、年齢、
+      その他の情報が頻繁に不明です。したがって<code>InterSpec</code>は柔軟な対話型解析に焦点を当て、
+      これを可能にする支援ツールと、放射線データに関連する状況評価の関連質問に答える支援に重点を置いています。<br />
+      <code>InterSpec</code>は反復測定の解析や正式な報告書の作成、
+      または固定された方法論の使用に焦点を当てていませんが、一般的な操作を迅速かつ簡単にしようとします。
+
+      <br />
+      <code>InterSpec</code>と他のソフトウェアスイートとの注目すべき思考モデルの違いは以下の通りです：
+    </p>
+
+    <ul>
+      <li>
+        <code>InterSpec</code>では、ピークをフィットする際（最も簡単な方法は、スペクトラム上でピークがありそうな場所をダブルクリックすることです）、
+        同時にそのピークに核種を割り当てたいと思うでしょう。<br />
+        最も簡単な方法は、ピークをフィットする際に参照光電ピークラインを表示していることです。
+        関連付けは自動的に行われます。しかし、フィット後でも、ピークを右クリックする、
+        「ピークエディタ」を使用する、ピーク情報をリストするテーブルの「核種」セルに入力する、
+        またはいくつかの他の方法により割り当てを行うか変更することができます。<br />
+        核種IDをピークに割り当てることで、線源核種活性のフィット、エネルギー較正、
+        相対効率解析、検出器効率特性評価などが可能になります。
+      </li>
+
+      <li>
+        <code>InterSpec</code>はユーザー作成の核種ライブラリを使用しません。<br />
+        代わりに、核種をピークに割り当て、利用可能な約4000の核種から常に選択できます。
+        またはピークの識別のために核種を検索する際、すべての約4k核種が使用されます。
+        ガンマ線が子孫核種からのものである場合（例：U238崩壊鎖のPa234mからU234への崩壊による1001 keVガンマ）、
+        ピークを親核種に割り当て（例：1001 keVピークはU238に割り当て）、<code>InterSpec</code>が
+        崩壊計算を実行して特定のガンマの分岐比を決定します。
+        ピークに割り当てられた核種は、活性をフィットしたり他の操作を実行するために使用される核種です。
+      </li>
+
+      <li>
+        <code>InterSpec</code>では、ピークフィットは手動で行うのが最適です。すなわち、ピークがどこにありそうかを
+        特定してから、InterSpecにそこでピークをフィットするよう指示します（例：スペクトラムのピーク付近をダブルクリックなど）。
+        最初は少し面倒に思えるかもしれませんが、進行中に慎重に核種識別を実行でき（ピークをフィット時に核種を割り当て）、
+        良好なフィットを確保できます。実際には、このプロセスは非常に迅速になります。
+        <br />
+        自動的にピークをフィットしてほしい場合、「ピーク管理」タブに
+        「ピーク検索」ボタンがあり、参照光電ピークを表示している場合、核種の割り当ても
+        自動的に実行できますが、注意が必要です。
+
+        <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+          <div style="display: flex; align-content: space-around;">
+              <img src="/InterSpec_resources/static_text/faqs/auto_peak_search_btn.png" style="height: 175px; max-width: 49.5%;" />
+              <img src="/InterSpec_resources/static_text/faqs/auto_peak_search_dialog.png" style="height: 175px; max-width: 49.5%;" />
+          </div>
+          <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+             （左）フォアグラウンドスペクトラム内のすべてのピークに対して自動ピーク検索を実行するボタン。<br />
+             （右）自動検索の結果；参照光電ピークラインを表示している場合、その核種をピークに割り当て、
+             参照光電ピークライン付近のピークのみを保持するオプションがあります。
+          </div>
+        </div>
+        また、あるスペクトラムから次のスペクトラムへ同じピークを自動的にフィットするオプションもあります。
+        この文書の「類似核種のスペクトラムでの作業」トピックを参照してください。
+      </li>  
+      
+      <li>
+        <code>InterSpec</code>はデータ解析のみを対象としており、取得機能はありません。これにより、アプリケーションが
+        特定のタイプの検出器に縛られたり、ハードウェアや性能について仮定することを避けます。解析を
+        取得から明確に分離することで、ユーザーインターフェースも簡素化・明確化されます。
+      </li>
+
+      <li>
+        ピークフィッティング、核種識別、エネルギー較正、同位体比、その他多数の機能について、
+        検出器応答関数は必要ありません。
+      </li>
+    </ul>
+  </message>
+
+
+  <message id="save-work" title="作業の保存">
+    <code>InterSpec</code>で作業を保存する方法はいくつかあります
+    <ul>
+      <li>
+        <code>名前を付けて保存...</code>メニューオプションを使用して、「アプリケーションステート」を内部アプリケーションデータベースに保存できます。
+        アプリケーションステートのほとんどの側面が保存されます（表示されたスペクトラムファイル、フィットしたピーク、核種識別、現在開いている
+        ほとんどのツールとその状態など）ので、後で中断した場所から再開できます。作業の「タグ」や
+        スナップショットも作成でき、後で戻ることができます。
+        <br />
+        状態を保存した後、そのスペクトラムファイルの1つを後で読み込むと、<code>InterSpec</code>は内部データベースを確認し、
+        そのファイルで作業したかどうかを調べ、そうであれば中断した場所から再開する機会が与えられます。
+        <br />
+        このデータがコンピュータのどこにあるかは、<code>InterSpecについて</code>ダイアログの<code>データ</code>タブを参照してください
+        （または同等に<a href="interspec://about/disclaimer">ここをクリック</a>）。
+      </li>
+      <li> 
+        <code>ファイルのエクスポート...</code>メニュー項目を使用してスペクトラムを<code>N42-2012</code>ファイルにエクスポートすると、
+        フィットしたすべてのピーク、核種識別、エネルギー較正変更、「活性/遮蔽フィット」の結果、
+        現在の検出器応答関数（DRF）、「ピークからの同位体」、「核種による同位体」の結果、
+        その他いくつかが保存されます。<br />
+        後で<code>N42-2012</code>ファイルを<code>InterSpec</code>に読み込んで中断した場所から再開するか、
+        特定の答えをどのように得たかの記録を持つことができます。ただし、断面積や
+        線量計算機などのより小さなツールの状態は<code>N42-2012</code>ファイルに保存されません。
+      </li>
+      <li>
+        アプリケーション全体の様々なツールで、<code>CSV</code>、<code>XML</code>、<code>CALp</code>、または<code>QRコード</code>ファイルを
+        エクスポートして、そのツールの状態を表現できます。これらのファイルは多くの場合、
+        アプリケーションにドラッグ&ドロップしてその作業を使用できます。
+        例えば、「ピーク管理」タブには<code>CSV</code>エクスポートリンクがあり、結果の<code>CSV</code>ファイルは
+        他のプログラムで使用したり、<code>InterSpec</code>に戻してドラッグ&ドロップすると、異なるが類似したスペクトラムファイルでも
+        <code>InterSpec</code>は同じピークをフィットします。エネルギー較正とCALpファイルも同様です。
+        「活性/遮蔽フィット」ツールはXMLファイルをエクスポートでき、後でインポートして類似の設定を使用できます。
+        QRコードにもURIリンクが含まれており、<code>InterSpec</code>に特定のツールを特定の状態で開かせることができます
+        （例えば、<a href="interspec://decay/chart%3fgrid%3d0%26logy%3d0%26actunits%3dci%26charttype%3dactivity%26timespan%3d20%20d%26nuc%3dI131%26act%3d1%20uCi%26nuc%3dI129%26act%3d1.5%20uCi">これ</a>は崩壊ツールを開いてI131とI129を表示します）。
+      </li>
+      <li>
+        「作業の自動保存」オプションもあり、上述の内部データベースにほとんどの変更/作業を保存します
+        （これはInterSpecを正常終了時に発生）。ただし現在、<code>InterSpec</code> v1.0.11では、
+        この作業を取得する唯一の方法は、フォアグラウンドスペクトラムファイルを再度読み込むことです
+        （例：ファイルを<code>InterSpec</code>にドラッグ&ドロップ）。「前回の作業をチェック」オプションが
+        trueに設定されている間に、古い状態から再開するかどうかを尋ねられます。<br />
+        ただし、この方法は潜在的に信頼できず、依存すべきではありません。
+      </li>
+    </ul>
+  </message>
+
+
+  <message id="orig-file-mod" title="元のスペクトラムファイルは変更されますか？">
+    スペクトラムファイルを<code>InterSpec</code>に読み込むと、元のファイルを変更することなく
+    メモリに読み込まれます。元のファイルは二度と読み込み、書き込み、
+    参照されることはありません。
+  </message>
+
+  <message id="mult-open-files" title="複数のスペクトラムファイルを開く">
+    <p>
+      新しいスペクトラムファイルを開くと、以前に開いたスペクトラムファイルとそれらに行った作業
+      （エネルギー較正、フィットしたピーク、割り当てた核種、活性/遮蔽フィットなど）はメモリに残ります。
+      下図のように、作業を失うことなく開いているスペクトラムファイル間を切り替えることができます。
+    </p>
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: space-around;">
+          <img src="/InterSpec_resources/static_text/faqs/changing_spec_files.png" style="max-height: 150px; width: 49.5%;" />
+          <img src="/InterSpec_resources/static_text/faqs/spec_meas_manager_1.png" style="max-height: 150px; width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         （左）「スペクトラムファイル」タブを使用してメモリ内の異なるスペクトラムファイルの表示と作業を切り替える。<br />
+         （右）「スペクトラム管理」（<code>管理...</code>メニュー項目を使用して表示）を使用してメモリ内のどのファイルを表示するか、またはファイルの結合やエクスポートを選択する。
+      </div>
+    </div>
+
+    <p>
+      スペクトラムファイルに複数のサンプルが含まれている場合（例：対象項目と背景スペクトラムの両方）、
+      フィットしたピークは、フォアグラウンドとして表示した<em>サンプル番号</em>に関連付けられます。
+      「スペクトラムファイル」タブでフォアグラウンドとして表示するサンプルを変更すると、
+      フィットしたピークは表示されなくなり、現在表示されているフォアグラウンドサンプルに
+      新しいピークをフィットできます。元のサンプル番号に戻すと、元のピークが再び表示されます。<br />
+      信号ピークの1つ以上が背景ピークと一致する場合、背景スペクトラムを
+      フォアグラウンドとして表示し、その中のピークをフィットし、次に信号スペクトラムをフォアグラウンドに戻し、
+      背景サンプルを背景として表示すると、核種活性をフィットする際に
+      フォアグラウンドピークから背景ピークを差し引くオプションがあります。
+    </p>
+    <p>
+      「活性/遮蔽フィット」、検出器応答関数、「ピークからの同位体」、
+      「核種による同位体」、その他いくつかのツール状態は、メモリ内のフォアグラウンドスペクトラム
+      ファイルに関連付けられます。つまり、スペクトラムファイル内でフォアグラウンドとして表示される
+      サンプル番号を変更しても、これらのツール状態は変更されません。
+    </p>
+    <p><em>サンプル番号</em>とのこれらのピーク関連付け、およびエネルギー較正は、
+      スペクトラムファイルを<code>N42-2012</code>形式でエクスポートした場合に保持されます。
+      様々なツール状態も<code>N42</code>ファイルに保存されます。
+    </p>
+    <p>
+      一度に多くのスペクトラムファイルを開いていても、通常問題は発生しません。開いているスペクトラム
+      ファイルのメモリ使用量が約256 MBを超えると、スペクトラムファイルは一時スワップファイルに
+      アンロードされ、表示に戻す場合はシームレスにメモリに読み戻されます。<br />
+      ただし、<code>セッションクリア</code>メニューオプションがあり、
+      すべてのスペクトラムファイルをメモリから効果的に削除し、ユーザーインターフェースを新しい状態に戻します。
+    </p>
+  </message>
+
+  <message id="sample-nums-dets" title="サンプル番号と検出器名の理解">
+    一部の放射線検出システムは、複数のサンプルを含む
+    出力スペクトラムファイルを提供します。つまり、異なる時間に行われた測定です。
+    「スペクトラムファイル」タブで、これらのサンプルのどれを
+    フォアグラウンド/背景/セカンダリスペクトラムとして表示するかを選択できます。
+    個別の<em>サンプル番号</em>を表示したり、
+    複数のサンプル番号を組み合わせたり、範囲を指定したりできます。
+    <br />
+    一部のシステムでは複数の検出要素があり、そのスペクトラムはスペクトラムファイル内で
+    個別に記録されます。個別の検出要素は<code>InterSpec</code>で名前が付けられ、
+    <b>表示</b> &rarr; <b>検出器</b>メニューでどれを表示するかを選択できます。
+    検出器名はスペクトラムファイルで指定されることが多いですが、そうでない場合は<code>InterSpec</code>が
+    デフォルト名を選択します。
+    <br />
+    フォアグラウンド、背景、または
+    セカンダリスペクトラムとして表示することを選択した<em>サンプル番号</em>と検出器は、
+    表示、ピークフィット、その他の目的のために合計されます。
+
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: center;">
+          <img src="/InterSpec_resources/static_text/faqs/sample_dets.png" style="max-height: 250px; max-width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        フォアグラウンドとしてサンプル82から94、背景としてサンプル1から20を読み込み、
+        検出システムの8つの検出器のうち2つのみを表示している例のパススルースペクトラムファイル。
+      </div>
+    </div>
+
+    <p>
+      スペクトラムファイルを読み込む際、複数の検出器がある場合、スペクトラムは通常、
+      測定が行われた時期に応じてグループ化されます。つまり、特定の<em>サンプル番号</em>のすべてのスペクトラムは
+      <i>通常</i>同じ測定開始時刻を持ちます。
+    </p>
+    <p>
+      フォアグラウンドとして表示される<em>サンプル番号</em>のセットが、フィットするピークが関連付けられるものです。
+      表示される検出器（測定システムに複数の検出器がある場合）はピークの関連付けに影響しません。
+      特定の<em>サンプル番号</em>セットでピークをフィットし、表示されるサンプル番号を変更して
+      他のピークをフィットし、元のサンプル番号に戻すと、元のピークが表示されます。
+    </p>
+    <p>
+      「スペクトラムファイル」タブで、「1」（サンプル1のみ）、「1-5」（サンプル1から5）、
+      「1-3,8,12-20,10」（サンプル1から3、8、12から20、および10）などの形式で
+      サンプル番号を手動入力して、どの<em>サンプル番号</em>が表示されるかを指定できます。
+    </p>
+    <p>
+      データが検索モードまたはポータルデータの場合、スペクトラムの下にタイムチャートも表示されます。
+      このタイムチャートを使用して、フォアグラウンド、背景、セカンダリスペクトラムの<em>サンプル番号</em>を選択できます。
+      （ヒント：タイムチャートの右上にある<img src="/InterSpec_resources/images/more_menu_icon.svg" style="display: inline-block; height: 15px;"></img>
+      メニューを使用して選択モードの制御を支援してください）。
+    </p>
+  </message>
+
+  <message id="multi-iso-peak" title="複数の同位体によるピークへの寄与">
+    <p>
+      <code>InterSpec</code>のユーザーインターフェースでは、核種崩壊鎖からの
+      特定のガンマ線またはX線のみをフィットしたピークに割り当てることができます。<br />
+      しかし、核種崩壊鎖からの複数のガンマ線やX線が
+      フィットしたピークに寄与することは一般的です。または、まったく異なる親核種からのガンマ線やX線も
+      ピークに寄与する場合があります。
+    </p>
+    <p>
+      「活性/遮蔽フィット」または「ピークからの同位体」解析を実行する際、
+      「<em>複数の核種がピークに寄与</em>」オプションがあります：
+      <img src="/InterSpec_resources/static_text/faqs/mult_nuc_contrib_cb.png" style="display: block; height: 20px; margin-left: 20px"></img>
+      このオプションを選択すると（デフォルト）、使用中のピークに関連付けられた核種からの、
+      ピーク平均の1.25 FWHM以内のすべてのガンマ線とX線の寄与が含まれます。これは一般的に
+      干渉を考慮する良い仕事をすることが示されています。
+      <br />
+      通常、ピークに割り当てる核種（したがってガンマ線/X線）は、そのピークの
+      主要な寄与源です。ただし、時々核種が観測された光電ピークの主要源ではない場合があります。
+      このような場合、核種が寄与するピークのいずれかを選択し、ピークをその核種に割り当てることで問題ありません。
+      そのピークと、その核種が寄与する他のピークについて、（期待される）振幅はすべて正しく
+      計算され、問題の核種が含まれます。
+    </p>
+  </message>
+
+  <message id="background-peak-fit" title="背景のピークを考慮する">
+    現在表示されているフォアグラウンドスペクトラムのピークのみをフィットできます。ただし、
+    測定の背景スペクトラムのピークをフィットしたい場合は、「スペクトラムファイル」タブを使用して
+    背景測定をフォアグラウンドスペクトラムとして表示できます。その後、ピークをフィットし、
+    対象項目スペクトラムをフォアグラウンドとして表示し、測定背景を表示される背景スペクトラムとして戻すことができます。<br />
+    「活性/遮蔽フィット」ツール、その他いくつかの場所で、背景スペクトラムのピークを差し引く
+    オプションを選択できます。この背景ピークフィット方法を使用する利点は、
+    <code>InterSpec</code>が活性と遮蔽を計算する際に不確実性を適切に考慮することです。
+    「ハード背景差分...」を行うと、各チャネルのデータ分散は現在失われ、ピークフィットは
+    人工的に低い統計的不確実性を持ちます。
+  </message>
+
+  <message id="fit-source-over-background-peaks" title="活性の背景補正">
+    上記のトピックを参照してください。
+  </message>
+
+  <message id="create-drf" title="検出器応答関数（DRF）の作成">
+    <code>InterSpec</code>では、いくつかの一般的なソースから
+    検出器応答関数（DRF）をインポートできますが、<code>InterSpec</code>を使用して
+    検出器のDRFを作成することもできます。
+    <br/>
+    プロセスの説明については、以下を参照してください
+    <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/#making-a-detector-response-function">https://sandialabs.github.io/InterSpec/tutorials/#making-a-detector-response-function</a>
+  </message>
+
+  <message id="re-using-drfs" title="検出器応答関数（DRF）の再利用">
+    <code>InterSpec</code>でDRFを作成したら、将来それらを再利用する方法がいくつかあります：
+    <ul>
+      <li>
+        <code>InterSpec</code>でDRFを作成し、「保存/エクスポート...」ボタンをクリックすると、
+        以下が表示されます：
+        <img src="/InterSpec_resources/static_text/faqs/drf_save_dialog.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+        DRFを<code>CSV</code>ファイルとしてエクスポートして、後で<code>InterSpec</code>にドラッグ&ドロップして
+        使用したり、DRFを<code>InterSpec</code>の内部データベースに保存して
+        後で簡単に取り戻すことを選択できます。<code>N42-2012</code>ファイルをエクスポートすると、DRFが
+        後で使用するためにそこに保存されます。クイックリファレンスカードには、
+        すべてのDRF情報が組み込まれたQRコードが含まれ、後でスキャンしてDRFを使用することもできます。<br />
+        特定の検出器または同じモデルの検出器からデータを読み込むたびに、
+        このDRFを自動的に使用するオプションもあります。
+      </li>
+      <li>
+        <code>InterSpec</code>は以前に使用したDRFを内部データベースに保存します。アプリケーション全体の
+        様々な場所にあるDRF選択ボタンをクリックすると、以下のように表示されます：
+        <img src="/InterSpec_resources/static_text/faqs/drf_select_btn.png" style="height: 20px; display: block; margin-left: 20px" />
+        「前回」タブを選択して、DRFをスクロールできます。<br />
+        インターフェースは以下のようになります：
+        <img src="/InterSpec_resources/static_text/faqs/drf_prev_dialog.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+      </li>
+      <li>
+        上記に示したDRF選択ダイアログのフッターには、DRFをXMLファイルにエクスポートして後で
+        <code>InterSpec</code>にドラッグ&ドロップして使用するオプション、またはQRコードを表示してDRF情報を
+        QRコードに組み込むオプションがあります。QRコードダイアログには、
+        <code>interspec://drf/specify?CREATED%3d1682954314%...</code>のようなURIをコピーするオプションもあり、
+        これをどこかのハイパーリンクに入れてクリックしたり、
+        ウェブブラウザのアドレスバーに貼り付けてオペレーティングシステムが<code>InterSpec</code>で開くようにしたり、
+        <code>InterSpec</code>の<b>編集</b> &rarr; <b>URL入力</b>メニュー項目で作成されたダイアログにURIを貼り付けることができます。
+      </li>
+      <li>
+        DRFは<code>N42-2012</code>スペクトラムファイルにも保存されるため、後でファイルを読み込むと
+        DRFが自動的に使用されます。
+      </li>
+    </ul>
+  </message>
+
+  <message id="using-default-drfs" title="内蔵検出器応答関数（DRF）の使用">
+    <code>InterSpec</code>には、一般的な携帯型放射線検出器用の多数の検出器応答関数（DRF）が付属しています。
+    いくつかの汎用応答関数も含まれています。<br />
+    スペクトラムファイルから放射線検出器モデルを決定でき、そのモデル用のデフォルトDRFがある場合、
+    スペクトラムファイルを読み込むとデフォルトDRFも読み込まれます。<br />
+    デフォルトDRFが読み込まれない場合、または間違ったDRFが読み込まれた場合は、
+    検出器選択アイコンをクリックまたはタップできます：
+
+    <img src="/InterSpec_resources/static_text/faqs/drf_select_btn_empty.png" style="height: 20px; display: block; margin-top: 5px; margin-bottom: 5px; margin-left: 35px;" />
+    
+    ダイアログが表示され、「<b>GADRAS</b>」タブをクリックすると
+    いくつかの汎用DRFオプションが提供され、「<b>相対効率</b>」タブを選択すると
+    選択する特定の検出器モデルのリストが表示されます。<br />
+
+    <img src="/InterSpec_resources/static_text/faqs/drf_select_defaults.png" style="height: 170px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    
+    <img src="/InterSpec_resources/images/plus_min_black.svg" style="display: inline-block; height: 15px;"></img>アイコンをクリックして
+    ファイルからより多くのDRFをインポートでき、将来このダイアログ/タブにも表示されるように保存することを選択できます。
+  </message>
+
+  <message id="input-spectrum-file-formats" title="受け入れられる入力スペクトラムファイル形式">
+    <code>InterSpec</code>は、市販の検出器で生成される一般的なスペクトラムファイルタイプ、
+    および多数の一回限りやテキストベースの形式をサポートすることを目指しています。
+    <p>
+      <code>InterSpec</code>でサポートされていないスペクトラムファイル形式に遭遇した場合は、
+      お持ちの文書と共にサンプルファイルを<a href="mailto:interspec@sandia.gov">InterSpec@sandia.gov</a>にメールしてください。<br />
+      ただし、実装する開発者の可用性は非常に限られているため、広く使用されている、または
+      戦略的に使用されている形式が優先されます。<br />
+      <code>InterSpec</code>に含めるために
+      <a target="_blank" href="https://github.com/sandialabs/SpecUtils">https://github.com/sandialabs/SpecUtils</a>で
+      スペクトラムファイル形式のサポートを実装することも歓迎します。
+    </p>
+    
+  <p>
+    <code>InterSpec</code>は以下の形式にスペクトラムをエクスポートできます：<code>N42-2012</code>、
+    <code>N42-2006</code>、<code>CHN</code>、<code>IAEA</code>、<code>SPE</code>、<code>CSV</code>、
+    <code>TXT</code>、<code>PCF</code>、<code>CNF</code>、<code>SPC</code>（浮動小数点、整数、ascii）、
+     <code>TKA</code>、<code>EXPLORANIUM GR-130/135</code>、自己完結型HTMLファイル、QRコード、
+     <code>raddata://</code> URI
+     （<a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/references/spectrum_in_a_qr_code_uur_latest.pdf">ここ</a>を参照）。
+  </p>
+  </message>
+
+  <message id="marinelli-meas" title="マリネリビーカーと他の固定ジオメトリの使用">
+    <p>
+    マリネリビーカー、または通常の遠距離場検出器応答関数近似が崩れる他の固定ジオメトリ
+    （つまり、線源と検出器間の距離が検出器と線源の寸法の最大値の約3倍未満）で活性を決定するには、
+    専用の検出器応答関数（DRF）が必要です。
+  </p>
+
+  <p>
+    マリネリビーカーの場合、多同位体較正標準を使用して
+    検出器のエネルギー依存効率を計算することがよくあります。この場合、「検出器応答作成」
+    ツールを使用してDRFを作成できます。ランダムな距離（1メートルなど）を入力し、後で
+    活性をフィットする際に同じ距離（通常は遮蔽なし）を使用するか、
+    <code>InterSpec</code> v1.0.12以降では、<em>検出器応答作成</em>ツールで「固定ジオメトリ」オプションを
+    チェックできます。これにより、このツールと「活性/遮蔽フィット」ツールの両方から距離入力が削除されます。
+    <em>検出器応答作成</em>ツールの「固定ジオメトリ」は以下で囲まれています：
+    <img src="/InterSpec_resources/static_text/faqs/make_drf_fixed_geom.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </p>
+    
+  <p>
+    <em>その場</em>土壌汚染測定（例：地上1メートルの検出器で下向き）などのジオメトリで、
+    効率を導出するために多同位体較正標準が実用的でない場合、
+    通常モンテカルロ法や
+    <a target="_blank" href="https://www.mirion.com/products/technologies/spectroscopy-scientific-analysis/gamma-spectroscopy/gamma-spectroscopy-software/lab-applications/s573-isocs-calibration-software">Mirion ISOCS</a>
+    などのモデリングソフトウェアを使用して、他の方法で効率を計算する必要があります。
+    <br />
+    <code>InterSpec</code> v1.0.12以降では、ISCSが生成した<em>.ecc</em>ファイルを
+    <em>.ecc</em>ファイルを<code>InterSpec</code>にドラッグ&ドロップして
+    <code>InterSpec</code>にインポートできます。以下のようなダイアログが表示されます：
+    <img src="/InterSpec_resources/static_text/faqs/isocs_ecc_import.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </p>
+    
+  <p>
+    いくらかのモデリング誤差が許容できる場合、標準の<em>遠距離場</em>DRFを使用した「活性/遮蔽フィット」ツールは
+    しばしば許容可能な結果を提供するようです。例えば、<code>InterSpec</code>での<em>その場</em>
+    （つまり、地上1メートルの検出器で下向き）測定解析は通常、
+    検出器応答の角度依存性を適切に考慮する方法/パッケージと10%以内、または
+    それ以上で一致します（少なくとも数百keV前後以上のエネルギーで、より低いエネルギーでは
+    より大きな誤差が生じる可能性があります）。
+    ただし、非常に近い測定（つまり、検出器から約10cm未満のサンプル）では、カスケード合計が重要になり、
+    この効果だけで最大30%程度の誤差が生じる可能性があることに注意してください。<code>InterSpec</code>は現在これを考慮していません。
+  </p>
+  </message>
+
+  <message id="soil-contamination" title="土壌の表面汚染の決定">
+    <code>InterSpec</code>は、「活性/遮蔽フィット」ツールを使用して
+    円筒または矩形ジオメトリとトレース線源を使用することで、表面汚染や
+    土壌中の指数分布汚染の決定を支援できます。<br/>
+    詳細については、以下を参照してください：
+    <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/#soil-contamination-and-trace-sources" style="display: block; margin-left: 25px;">https://sandialabs.github.io/InterSpec/tutorials/#soil-contamination-and-trace-sources</a>
+    <br />
+    制限として、バージョン1.0.12の時点で、<code>InterSpec</code>は「固定ジオメトリ」DRFを使用しない限り
+    検出器の角度依存性を考慮しません。つまり、
+    測定にOrtec Detective-Xを使用し、<code>InterSpec</code>に付属するデフォルトDRFを使用した場合、
+    この効果は考慮されません。ただし、結果は通常、この効果を適切に考慮する方法/パッケージと
+    10%以内、またはそれ以上で良く一致します（少なくとも高エネルギーで）。
+  </message>
+
+  <message id="out-of-equilibrium" title="崩壊鎖が平衡状態にあるかどうかの確認">
+    親核種の平衡状態をチェックするいくつかの可能な方法：
+    <ul>
+      <li>「ピークからの同位体」ツールを使用すると、
+        崩壊鎖が平衡から外れているか、仮定と大幅に異なる年齢にあることを確認する良い方法です。
+        検出効率がエネルギーの概ね滑らかな関数であることを期待し、
+        検出器応答、遮蔽、距離を知る必要がないためです。
+        以下は平衡から外れたTh232測定のツールの例です。
+        平衡状態のサンプルでは期待されない、明らかに2つの別々の相対効率曲線があります。
+        <img src="/InterSpec_resources/static_text/faqs/th232_out_of_equilibrium.png" style="max-height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+      </li>
+      <li>「活性/遮蔽フィット」ツールを使用して親核種の年齢をフィットでき、
+        化学分離の時間を得ることができます。
+      </li>
+      <li>「参照光電ピーク」ツールを使用して、異なる年齢での親核種のラインを表示でき、
+        光電ピークライン高さを参照とする相対ピーク高さの迅速な視覚的検査により、
+        明らかな不一致を示したり、大まかな年齢推定を可能にすることがあります。
+      </li>
+      <li>通常はピークを親核種に割り当て、<code>InterSpec</code>が
+        崩壊を実行し、子孫ラインの正しい分岐比を得ます。
+        ただし、代わりに各ピークをそのガンマの直接責任者である核種に割り当てる場合
+        （例：Th232の2614 keVピークをTl208に割り当て）、
+        「活性/遮蔽フィット」ツールで子孫活性をフィットして
+        崩壊鎖のどの核種で中断が始まったかを特定できます（例：U238崩壊鎖でRa226以下の活性の変化が見られる可能性があります）。
+      </li>
+    </ul>
+  </message>
+
+  <message id="decay-chain-assign" title="親核種をピークに割り当てる">
+    線源核種をピークに割り当てる際（例：参照光電ピークラインを表示してから
+    ライン近くのピークをフィット）、通常は親核種をそれに割り当てます。
+    例えば、Th232崩壊系列の2614 keVピークはTl208の崩壊によって作成されますが、
+    <code>InterSpec</code>では通常2614 keVピークをTh232に割り当てます
+    （フィット前にTh232参照光電ピークラインを表示するか、
+    ピーク情報を表示するテーブルの<em>核種</em>列に「Th232」と入力するか、ピークを右クリックして
+    核種割り当てを選択）。これを行うと、
+    <code>InterSpec</code>は内部的にTh232を崩壊させ、このガンマにつながる特定の核転移を
+    ピークに割り当てます。<br />
+    ピークを作成した特定の子孫ではなく親同位体にピークを割り当てる主な動機は、
+    サンプルの年齢に応じた異なる分岐比を考慮したり、
+    複数の子孫からのガンマライン強度を使用して遮蔽厚さや
+    タイプを差分減衰でフィットすることを可能にすることです。
+  </message>
+
+  <message id="default-age" title="核種のデフォルト年齢">
+    核種のデフォルト年齢を推測するためにいくつかの単純なヒューリスティックが使用されており、
+    ロジックは<a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/bbc3d420a80f03a47ec1341909421cf450624571/src/PeakDef.cpp#L3217">PeakDef::defaultDecayTime(...)</a>
+    関数で見つけることができますが、大まかに以下に従います：
+    <ul>
+      <li>永年平衡が得られる場合は10永年平衡半減期を使用し、そうでなければ7即時平衡半減期を使用</li>
+      <li>上記の値が親核種の半減期の半分未満の場合は、親核種の2.5半減期</li>
+      <li>核種が安定した子に崩壊する場合は、0秒の年齢を使用</li>
+      <li>核種の半減期が100年を超える場合、またはウランやプルトニウム同位体の場合は、20年の年齢を使用</li>
+      <li>上記の後で値が親核種の100半減期を超える場合は、親の7半減期を使用</li>
+    </ul>
+  </message>
+ 
+  <message id="livetime-normalization" title="フォアグラウンド/背景の正規化と変更方法">  
+    <p>
+      背景またはセカンダリスペクトラムが表示される場合、デフォルトでは
+      フォアグラウンドスペクトラムに対してライブタイム正規化されます（例：背景のライブタイムがフォアグラウンドの2倍の場合、
+      背景スペクトラムの振幅は2で割られます）。これにより、視覚的にスペクトラムが<em>計数率</em>で比較されます。
+      スペクトラム上の凡例は背景またはセカンダリスペクトラムがどの程度スケールされているかを示し、
+      背景/セカンダリスペクトラムに表示されるライブタイムはフォアグラウンドのものと一致し、
+      凡例に表示される背景/セカンダリスペクトラムの総計数も同じファクターでスケールされます。
+    </p>
+    <p>
+    スペクトラムの右側のスライダーを使用するか、
+    「スペクトラムファイル」タブで希望するスケールファクターを手動入力することで、
+    正規化ファクターを調整できます。ここで赤で囲まれているように：
+    <img src="/InterSpec_resources/static_text/faqs/normalize_spectra.png" style="max-height: 350px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    ライブタイム正規化から正規化を調整すると、上記に示された「正規化」ボタン
+    （セカンダリスペクトラムの右下）が表示され、クリックすると
+    正規化をライブタイムに戻します。
+    </p>
+  </message>
+
+  <message id="time-chart-display" title="タイムチャート表示オプション">
+    <code>InterSpec</code>で検索モードまたはポータルデータを表示する際、タイムチャートが表示されます。
+    このタイムチャートを使用して、フォアグラウンド/背景/セカンダリとして合計して使用する時間部分を選択できますが、
+    これを定期的に行わない限り、キーボードショートカットは覚えられないため、代わりに
+    タイムチャートの右上にある<img src="/InterSpec_resources/images/more_menu_icon.svg" style="display: inline-block; height: 15px;"></img>
+    アイコンをクリックして、使用するデータの時間期間を選択または変更するためのやや使いやすいモードを表示できます：
+    <img src="/InterSpec_resources/static_text/faqs/time_opt_int.png" style="max-height: 150px; max-width: 25%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <br />
+    「Filt」タブを使用してタイムチャートを形成するために合計されるエネルギー範囲をフィルタリングすることもできます。
+    正規化範囲も選択できます。例えば、170 keVと200 keV間で合計し、
+    250 keV以上のエネルギーで正規化することを選択すると、通常U235信号が本当に際立ちます。下図では
+    同じソースデータが使用されていますが、この比を使用すると関心のある信号が際立ち、
+    元のレートチャートでは示されませんでした。
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: space-around;">
+          <img src="/InterSpec_resources/static_text/faqs/time_history_full_energy_range.jpg" style="height: 115px; max-width: 49.5%;" />
+          <img src="/InterSpec_resources/static_text/faqs/time_history_u235_energy_range.jpg" style="height: 115px; max-width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         （左）エネルギー範囲フィルタなしの検索データのタイム履歴。<br />
+         （右）同じデータですが、170 keVから190 keVの範囲を220 keV以上と比率化。
+      </div>
+    </div>
+    <br />
+    「Opt」にはデータのプロット方法のいくつかのオプションがあります。時々「再ビン化しない」は
+    非常に長いタイム履歴データで狭いホットスポットを発見するのに役立ちます。<br />
+    「相対y最大」はガンマまたは中性子データを（非）強調するのに役立ちます。
+    値は0.04と25の間で調整できます。1.0より大きな値は、中性子y軸範囲を
+    中性子データ範囲のその倍数にし、ガンマy軸範囲には影響しません。1未満の値はガンマデータに対して同様のことを行います。
+    この値を変更する効果の例：
+    <img src="/InterSpec_resources/static_text/faqs/time_char_opt_2.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <img src="/InterSpec_resources/static_text/faqs/time_char_opt.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </message>
+
+  <message id="energy-cal-quick" title="エネルギー較正の実行概要">
+    <code>InterSpec</code>でエネルギー較正を実行する最も簡単な方法は、多くの場合
+    1つ以上の光電ピークをフィットし、それらに核種を割り当て（したがってガンマライン エネルギー）、次に
+    「エネルギー較正」タブで使用するピークを選択し、
+    フィットする係数を選択して、「係数フィット」ボタンをクリックすることです：
+    <img src="/InterSpec_resources/static_text/faqs/energy_cal_tab.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <br />
+    「エネルギー較正」タブにはさらに多くの機能があります。詳細については、ツールのヘルプトピック（タブの左下の
+    疑問符をクリック）を参照してください。
+    <p>
+    <code>CTRL + ALT</code>（またはmacOSでは<code>CTRL + OPT</code>）とマウスの左ボタンを使用して
+    スペクトラムを視覚的に正しい場所にクリック&ドラッグすることもできます。
+    この動作を再度行う場合、最初に高エネルギーピーク、次に低エネルギーピーク（またはその逆）で行うと、
+    表示されるダイアログでオフセットとゲインの両方を調整して両方のアクションを保持するオプションが提供され、
+    これにより両方のピークがドラッグしたエネルギーに留まります。
+    </p>
+    <p>連続するスペクトラム間でエネルギー較正を継承する、
+      または<b>CALp</b>ファイルを使用する可能性もあります。詳細については次のトピックを参照してください。
+    </p>
+  </message>
+
+  <message id="reuse-energy-cal" title="エネルギー較正の再利用">
+    あるスペクトラムから別のスペクトラムへエネルギー較正を再利用するオプションが2つあります。
+    <ol>
+      <li>スペクトラムを表示しているが、同じ検出器からの別のスペクトラムを開く場合
+        （つまり、同じモデルとシリアル番号）、しかしエネルギー較正が最初のものと異なる場合、
+        <code>InterSpec</code>は最初のファイルのエネルギー較正を
+        新しく読み込んだファイルで使用するかどうかを尋ねるはずです。
+      </li>
+      <li>以下で説明する「<b>CALp</b>」ファイルの使用により。</li>
+    </ol>
+
+    <p>
+      エネルギー較正ツールの左下隅に、<b>CALp</b>エネルギー較正ファイルをエクスポートまたはインポートするための
+      リンクがあります。
+      <b>CALp</b>ファイルには現在のエネルギー較正情報が単純なテキスト形式で含まれ、
+      他のスペクトラムファイルに簡単に適用するために一般的に使用されるエネルギー較正を保存できます。
+      エネルギー較正を提供しないか、
+      貧弱なエネルギー較正を提供する検出器で作業する際に特に有用です。<br />
+      後で使用したいエネルギー較正を見つけたら、下に示すエクスポートアイコンを
+      クリック/タップして、ファイルシステムの便利な場所にファイルを保存するだけです。後で
+      異なるスペクトラムファイルでそのエネルギー較正を再利用したい場合は、<b>CALp</b>ファイルを
+      <b>InterSpec</b>にドラッグ&ドロップするだけで、そのエネルギー較正が新しいスペクトラムファイルに適用されます。
+      
+      <div style="padding-top: 10px; text-align: center;">
+        <img src="/InterSpec_resources/static_text/images/CALp_down_up.png" style="width: 120px; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+        <div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+          <b>CALp</b>エネルギー較正ファイルのエクスポートまたはインポートに使用するアイコン。
+          オペレーティングシステムのファイルシステムから<b>CALp</b>ファイルを<b>InterSpec</b>に
+          ドラッグ&ドロップして<b>CALp</b>ファイルを適用することもできます。
+        </div>
+      </div>
+    </p>
+  </message>
+
+  <message id="how-drf-model" title="検出器応答関数モデリング">
+    <p>
+    <code>InterSpec</code>のデフォルト検出器応答関数（DRF）は、
+    検出器表面に当たったガンマ線の全エネルギー検出の効率をエネルギーの関数として保持します。
+    検出器が線源を向いており、ガンマ線が検出器に到達する頃には
+    ほぼ平行であるという仮定があります。実際には、線源と検出器の間の距離が
+    検出器または線源の寸法の最大値の少なくとも3倍であることを意味します。<br />
+    DRFには検出器表面の直径（円形であると仮定）も保持されているため、
+    立体角補正を正確に実行できます。
+    </p>
+    <p>DRFには検出器のパラメータ化されたFWHMも保持される場合があります。
+      ただし、この情報は必須ではなく（<code>InterSpec</code>に付属するデフォルトDRFの多くには
+      この情報は含まれていません）、利用可能な場合にのみ、ピークをフィットする際の
+      初期ピーク幅として使用されます。ただし、この情報が利用できない場合でも
+      適切な推定が行われるため、通常は違いを生じません。
+    </p>
+    <p><code>InterSpec</code> v1.0.12以降では、DRFが
+      「固定ジオメトリ」DRFである可能性もあります。この場合、
+      「活性/遮蔽フィット」ツールで<em>距離</em>オプションは利用できません。
+      DRFがこれ、オブジェクトの内部減衰、および検出器の効率をすでに考慮しているためです。
+      ただし、問題に追加の吸収体を追加することは可能です。
+    </p>
+    <p>DRF効率は内部的に以下によって表現されます：
+      <ul>
+        <li>エネルギー効率ペアのセット（間を補間）</li>
+        <li>次の方程式の係数のセット：<br />
+            &nbsp;&nbsp;&nbsp;&nbsp;<code>eff = exp( c0 + c1*x<sup>1</sup> + c2*x<sup>2</sup> + c3*x<sup>3</sup> + ...)</code>
+        </li>
+        <li>入力可能な任意の数式</li>
+      </ul>
+    </p>
+    <p>
+      現在、<code>InterSpec</code>は検出器の角度応答を考慮していません。
+    </p>
+  </message>
+
+  <message id="how-sum-peaks-handled" title="和ピークはどのように処理されますか？">
+    <p>
+    活性をフィットする際、和ピーク（ランダム和または真の同時計数）は現在
+    考慮されていません。
+    </p>
+    <p>これが問題になる可能性がある場合、サンプルを検出器から10cm以上離して測定することをお勧めします。
+      そうすることで、真の同時計数（カスケード）和算が無視できるようになり、
+      ランダム和算のためにデッドタイムを削減できます。
+    </p>
+    <p>「参照光電ピーク」タブには、これらの問題を検出するために
+      カスケード和を表示するオプションがあります。下の囲まれたオプションを参照してください：
+      <img src="/InterSpec_resources/static_text/faqs/ref_photopeak_cascade_opt.png" style="max-height: 125px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    </p>
+  </message>
+
+  <message id="reusing-peaks" title="類似核種のスペクトラムでの作業">
+    同じような光電ピークを持つと予想される複数のスペクトラムで作業している場合、
+    いくつかの方法で一つのスペクトラムから次のスペクトラムにピークを伝播できます：
+
+    <ul>
+      <li>「ピーク管理」タブには、ピーク情報を含む<code>CSV</code>ファイルをエクスポートする
+        オプションがあります。最初のスペクトラムで関連するすべてのピークをフィットし、
+        核種を割り当てた場合（必要に応じて）、<code>CSV</code>ファイルをコンピュータの場所に
+        エクスポートできます。<br />
+        その後、後続のスペクトラムを読み込む際、<code>CSV</code>ファイルを<code>InterSpec</code>に
+        ドラッグ&ドロップすると、新しいスペクトラムで同じ元のピークを関連核種と共に
+        再フィットするオプションが表示されます。振幅と連続体は、元々使用した
+        連続体モデルとROI範囲を使用して完全に再フィットされます。FWHMとピーク平均は
+        小さなエネルギー較正や温度ドリフトを考慮するため、少し変動が許可されます。
+      </li>
+      <li><b>ヘルプ</b> → <b>オプション</b> → <b>ピーク伝播確認</b>のオプションがあります。
+        これをチェックして同じ検出器（同じシリアル番号とモデル）から新しいスペクトラムを読み込むと、
+        <code>InterSpec</code>は古いスペクトラムから新しいスペクトラムにピークを伝播するかどうかを
+        尋ねます - 上記の<code>CSV</code>方法と類似しています。
+      </li>
+    </ul>
+    
+    コマンドラインを使用して「バッチ」モードでピークをフィットできる機能も開発中です。
+    ただし、この機能や他の「バッチ」機能の利用可能予定日はありません。
+  </message>
+
+  <message id="peak-area" title="ピーク面積の決定方法">
+    <p>
+    <code>InterSpec</code>によって報告されるピーク面積は、実際には
+    非線形最適化ルーチンから決定されるガウス振幅です。
+    デフォルトでは、ピークは連続体プラスガウスとしてモデル化され、
+    連続体パラメータ化がガウス振幅と幅と同時にフィットされます。<br />
+    一部のソフトウェアパッケージは最初に連続体を決定し、その後に
+    ガウスまたは残りのデータ面積を決定します - これは<code>InterSpec</code>の方法ではありません。
+    </p>
+    <p>ピークを右クリックすると、「<b>ピークエディタ...</b>」オプションがあります。
+      このツールから連続体モデルを変更したり、ピークタイプを
+      「データ領域」ピークに変更したりできるため、報告される面積は
+      データマイナス連続体面積になります。
+      ピークのフィットをカスタマイズしたり、核種を割り当てるための
+      他の多くのオプションもあります。
+    </p>
+  </message>
+
+  <message id="peak-area-uncert" title="ピーク面積不確実性の決定方法">
+    <p>
+      ピーク面積不確実性は、ピークパラメータをフィットする際の
+      非線形最適化中に決定されます。フィットされるパラメータの不確実性は
+      同時に決定され、パラメータ間の相互関係/効果や相関を考慮に入れます。
+      非線形オプティマイザーは、フィットされるパラメータを変動させ、
+      データと比較したピークのχ²への効果を観察することでこれを行います。
+    </p>
+    <p>
+     不確実性は統計のみであり、ピークスキューモデルや連続体モデルが
+     正しくないなどの系統的効果は含まれません。必要に応じて、
+     「ピークエディタ」を使用してピーク面積不確実性を手動で編集できます。
+    </p>
+  </message>
+
+  <message id="short-lived-isos" title="短寿命同位体活性の決定">
+    スペクトラム取得時間が核種の半減期に関連するようになると、
+    「活性/遮蔽フィット」ダイアログには「測定中の減衰を補正」オプションがあり、
+    これはデフォルトでチェックされ、滞留中の核種減衰の効果を考慮します。
+    子孫の増殖と減衰を含む完全な減衰鎖が考慮されます。
+  </message>
+
+  <message id="cascade-summing" title="カスケード和算">
+    <p>
+    <code>InterSpec</code>は現在、活性をフィットする際にカスケード（真の同時計数）和算を
+    考慮していません。これらの効果が重要になる可能性がある場合は、
+    可能であれば検出器から10cm以上でサンプルを測定することをお勧めします。
+    </p>
+    <p>「参照光電ピーク」タブには、これらの問題を検出するために
+      カスケード和を表示するオプションがあります。下の囲まれたオプションを参照してください：
+      <img src="/InterSpec_resources/static_text/faqs/ref_photopeak_cascade_opt.png" style="max-height: 125px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    </p>
+  </message>
+
+  <message id="nuc-data-origin" title="使用される核データソース">
+    核減衰データ（半減期、ガンマ強度とエネルギーなど）は主に
+    ENSDF-Vに由来しますが、観察および
+    他のデータソースからの重要な追加補正があります。X線データはLBNL ToRIデータベースに由来します。<br />
+    この情報はすべて<code>SandiaDecay</code>ライブラリ
+    （<a target="_blank" href="https://github.com/sandialabs/SandiaDecay">https://github.com/sandialabs/SandiaDecay</a>）
+    を介してアクセスされます。
+    ガンマ/X線断面積もENSDFに由来します。<br />
+    反応データは、「<em>原子炉高速中性子の非弾性散乱からのガンマ線スペクトラムアトラス</em>」
+    （A.M. Demidov <i>他</i>）、および「<em>IAEA即発ガンマ活性化分析（PGAA）データベース</em>」
+    を含むさまざまな場所から来ています。
+  </message>
+
+  <message id="unit-definitions" title="年、日などの単位の定義方法">
+    使用される正確な定義は<a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/InterSpec/PhysicalUnits.h">PhysicalUnits.h</a>で見つけることができますが、
+    内部的に<code>InterSpec</code>は距離の基本単位としてミリメートル、
+    時間は秒、エネルギーはkeV、活性はベクレル、電荷はクーロンを使用し、
+    他のすべての単位はこれらから構築されます。<br />
+
+    使用される時間単位の定義で、曖昧に定義される可能性があるものは次のとおりです：
+    <ul>
+      <li>1日 = 24×60×60秒</li>
+      <li>1年 = 365.2425日</li>
+      <li>1か月 = 1/12年</li>
+    </ul>
+  </message>
+
+  <message id="act-mass-conv" title="質量から活性への変換方法">
+    「単位変換器」ツールは活性を質量に変換できます。<br />
+    例えば、テキスト
+    <pre style="margin-left: 20px;">10 gram Th232</pre>
+    を入力すると、
+    <pre style="margin-left: 20px;">1.10 uCi</pre>
+    の答えになります
+    核種の活性を入力すると、逆も機能します。
+    <br />
+    <p>
+    「核種減衰情報」ツールも「減衰鎖」タブで核種の比活性を提供します。
+    核種をクリック/タップすると表示されます。
+    </p>
+  </message>
+
+  <message id="interspec-arc" title="&lt;code&gt;InterSpec&lt;/code&gt;のソフトウェアアーキテクチャ">
+    <p>
+    本質的に、<code>InterSpec</code>はHTMLとJavascriptにレンダリングされるWebアプリであり、
+    すべての<em>ビジネス</em>ロジックはC++で記述されています。<br />
+    <code>InterSpec</code>をアプリケーション（Windows、macOS、Linux、iOS、またはAndroid）として実行する際、
+    アプリケーションはコンピュータ上でのみアクセス可能な「サーバー」を作成し
+    （<code>127.0.0.1</code>でランダムな高番号ポートを開く）、次に
+    <code>WebView</code>（OSによって提供、Linuxでは<a target="_blank" href="https://www.electronjs.org">Electron</a>が使用される）
+    を表示するウィンドウを開き、<code>WebView</code>にローカルサーバーに接続するよう指示します。
+    デフォルトでは、追加の秘密トークンも使用して、希望する<code>WebView</code>インスタンスのみが
+    localhostサーバーに接続できることを保証します。GUIと<em>ビジネス</em>ロジック間の相互作用は
+    localhostネットワーク（コンピュータの内部ネットワークバス - すべてコンピュータ上に留まる）を通じて発生します。
+    </p>
+    <p>このアーキテクチャは、<code>InterSpec</code>のクロスプラットフォーム開発を可能にする
+      安定した方法となっています。ユーザーインターフェースにHTML/Javascriptを使用することで、
+      他のプロジェクト間で相当なコードの再利用を伴って、ほぼすべてのデバイスタイプを
+      ターゲットにすることができ、HTMLとJSツールおよびライブラリの大きなエコシステムを
+      活用できます。<br />
+      ビジネスロジックにC++を使用することで、効率的な計算とメモリ管理が可能になり、
+      アプリケーションの応答性を犠牲にすることなく、より豊富なアルゴリズムの使用が可能になります。
+    </p>
+  </message>
+
+  <message id="data-privacy" title="情報と使用プライバシー">
+    <p>
+    サンディア国立研究所によって構築されたInterSpecアプリは、個人情報を収集せず、
+    以下で説明する2つのユーザートリガーアクション以外は、デバイスから情報を送信しません。
+    </p>
+
+    <p>
+      <code>InterSpec</code>がデバイスから情報を送信する可能性がある2つのインスタンスは：
+      <ol>
+        <li>「マップ」ツールが使用される際、マップタイルがhttps://arcgisonline.comから
+          リクエストされます。<br /> 
+          これらの外部ネットワークリクエストが行われる前にユーザーに警告され、
+          独自のarcgisonline.comアカウントを使用してマップタイルをリクエストする
+          オプションがあります（詳細についてはアプリ内マップツールヘルプを参照）。<br /> 
+          タイル位置のみが外部サーバーに中継され、マップ上の放射線データのすべてのプロットは
+          デバイス上でローカルに行われます。<br />
+          <code>InterSpec</code>の主要開発者が知る限り、個別のマップリクエストまたは
+          個人のリクエストに関する情報は
+          サンディア国立研究所では利用できません。
+        </li>
+        <li>
+          「外部RID」ツールは放射線データを外部サーバー（またはデバイス上の実行可能ファイル）に
+          送信して核種ID実行ができます。<br />
+          このツールを使用する前にユーザーに警告され、
+          核種IDサービスに使用するサーバーのURLを明示的に入力する必要があります。<br />
+          サンディア国立研究所はこのサービスのために自由に利用可能なサーバーを提供していますが、
+          ユーザーがこのアクションを実行することを明示的に望み、明示的に有効化し、
+          データがどこに送信されるかを正確に認識することを確実にするため、
+          URLは<code>InterSpec</code>に事前設定されていません。
+        </li>
+      </ol>
+    </p>
+
+    <p>
+    さらに、<code>InterSpec</code>はアプリで変更できる設定や、読み込んだスペクトラム、
+    明示的に保存した状態、および終了時のアプリ状態をローカルに保存します。この情報は
+    デバイスから離れることはなく、オペレーティングシステムのアプリ用標準場所にある
+    アプリケーションデータフォルダーを削除することで削除できます
+    （この場所については<b>ヘルプ</b> → <b>InterSpecについて...</b> → <b>データ</b>を参照）。
+    現在、この情報を複数のコンピュータから単一の情報源にマージする方法はありませんが、
+    古いコンピュータから新しいコンピュータにこのフォルダーをコピーして、
+    すべての古い情報と設定を保持することができます。
+    </p>
+    <p>
+      使用統計と診断はサンディア国立研究所によって収集されません。私たちは
+      <code>InterSpec</code>を誰が、あるいは何人の人が使用しているか、どの程度使用しているかを、
+      <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>へのサポート要求、
+      ウェビナーへの出席、または類似の手段を通じて推測できることを除いて知りません。<br />
+      ただし、オペレーティングシステムのアプリストア（macOS、iOS、Android）を通じて
+      <code>InterSpec</code>をインストールした場合、オペレーティングシステムが
+      統計やクラッシュレポートをオペレーティングシステムベンダーに報告する場合があります。
+      これの無効化は通常オペレーティングシステムの設定であり、iOSを除いて、
+      アプリストアを通さずにアプリをインストールできます（Androidでサイドロードなど）。
+    </p>
+  </message>
+
+  <message id="bleeding-edge" title="&lt;code&gt;InterSpec&lt;/code&gt;の最新ビルド">
+    <p>
+      <code>InterSpec</code>アプリケーションの自動ビルドはWindowsプラットフォーム用に以下で利用できます：
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge" style="display: block; margin-left: 20px">https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge</a>
+      このビルドは、コードがgithubリポジトリにプッシュされ、実行可能ファイルが
+      正常にビルドでき、小さなサニティチェックが通過するたびに更新されます。
+    </p>
+    <p>この<code>InterSpec</code>のビルドは、githubインフラストラクチャ上で
+      公開利用可能なソースコードから完全にコンパイルされるため、
+      実行可能ファイルの作成に何が使用されたかを確認できます。<br />
+      ただし、公式リリースとは異なり、実行可能ファイルはコード署名されていないため、
+      ウイルス対策ツールや<code>Windows Defender</code>がEXEの初回実行をブロックする場合があります。
+      通常、結果として表示されるダイアログの「詳細情報」リンクをクリックすることで
+      これを回避できるか、<code>Windows Defender</code>オプションで例外を追加できます。
+    </p>
+    <p>この自動ビルドの主要な価値は、コードで修正されたバグを報告したり、
+      実装された機能を要求したりした場合、次の公式リリースまで待たずに
+      それを活用できることです。
+    </p>
+    <p>公式リリースについてのメールアップデートをご希望の場合は、
+      <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>にメールを送ってください。
+    </p>
+  </message>
+
+  <message id="add-spectra" title="スペクトラムの追加方法">
+    現在、<code>InterSpec</code>には複数のスペクトラムファイルから
+    個別のスペクトラム測定を「追加」または合計する専用ツールはありません。<br />
+    ただし、複数のスペクトラムファイルを「スペクトラム管理」ツールに読み込み
+    （<b>管理...</b>メニュー項目を使用）、「合計」ボタンをクリックすることで
+    複数のスペクトラムファイルを合計できます。
+    <br />
+    スペクトラムファイルの<em>サンプル番号</em>の合計も、
+    「スペクトラムファイル」タブで複数のサンプル番号を指定することで実行できます
+    （例：「1-10,15,18-25」はサンプル1-10、15、18-25を合計します）。
+  </message>
+
+  <message id="back-sub" title="背景差し引きスペクトラム">
+    <p>
+    「スペクトラムファイル」タブの「オプション...」セクションに、
+    背景を「ハード差し引き」するオプションがあります。これは、表示されたスペクトラムが
+    フォアグラウンドマイナス背景になることを意味します。
+    </p>
+    <p>
+      この操作により、各チャネルの統計情報（不確実性）が失われることに注意してください。
+      そのため、この操作後にフィットされたピークは
+      人工的に低い統計的不確実性を持つことになります。
+    </p>
+    <p>背景補正活性の決定には、「活性/遮蔽フィット」ツールで背景ピークを使用する
+      ことをお勧めします。背景ピークをフィットする方法については、
+      「背景のピークを考慮する」トピックを参照してください。
+    </p>
+  </message>
+
+  <message id="isolate-spectra" title="測定のサブセットでスペクトラムファイルを作成">
+    現在、<code>InterSpec</code>内からスペクトラムファイルの測定のサブセットのみを
+    含む新しいスペクトラムファイルを作成する簡単な方法はありません。<br />
+    ただし、「スペクトラムファイル」タブでサンプルまたは検出器のサブセットを表示し、
+    次に「ファイルのエクスポート...」を使用して<code>N42-2012</code>または他の
+    形式にエクスポートすることで、表示されているサンプルと検出器のみを
+    含むファイルを作成できます。
+  </message>
+
+  <message id="unknown-shielding" title="線源周りの未知の遮蔽への対処">
+    線源の周りに未知の材料や厚さの遮蔽がある場合、「活性/遮蔽フィット」ツールで
+    一般的な材料を試してみることができます。一般的な材料には、コンクリート、鉄、鉛、
+    アルミニウム、水、空気、ポリエチレンが含まれます。<br />
+    また、「差分減衰」オプションを使用すると、使用中の複数のピークのエネルギーでの
+    減衰の違いを使用して、遮蔽材料の原子番号について情報を得ることができます。
+  </message>
+
+  <message id="timezone" title="タイムゾーンの処理方法">
+    <code>InterSpec</code>は現在、測定日時をスペクトラムファイルで指定されたとおりに
+    表示します。つまり、ファイル内で指定されたタイムゾーン情報は、
+    時間をローカルタイムゾーンに変換するために使用されません。
+    <br />
+    一部の分析（「活性/遮蔽フィット」ツールでの核種年齢フィットなど）では、
+    時間の精度が重要になる場合があるため、必要に応じて手動で時間を調整する必要があります。
+  </message>
+
+  <message id="move-work" title="作業を他のコンピュータに移動、または作業のアーカイブ">
+    <code>InterSpec</code>で行った作業を他のコンピュータに移動したり、アーカイブしたりする
+    いくつかの方法があります：
+    <ul>
+      <li><code>N42-2012</code>ファイルでエクスポートされた作業は、任意の<code>InterSpec</code>
+        インストールで開くことができ、ほとんどの作業（ピーク、DRF、活性/遮蔽フィット結果など）
+        が保持されます。</li>
+      <li>アプリケーションデータディレクトリ全体（<b>ヘルプ</b> → <b>InterSpecについて...</b> → 
+        <b>データ</b>を参照）を他のコンピュータにコピーして、すべての状態、設定、
+        履歴を転送できます。</li>
+      <li>特定のツール（エネルギー較正、DRF、活性/遮蔽フィットなど）はCSV、XML、または
+        その他の形式にエクスポートして、後で使用できます。</li>
+    </ul>
+  </message>
+
+  <message id="how-compile" title="&lt;code&gt;InterSpec&lt;/code&gt;をソースからコンパイルする方法">
+    <code>InterSpec</code>をソースからコンパイルする詳細な指示は、githubリポジトリの
+    ルートにある<code>README.md</code>ファイルにあります：<br />
+    <a target="_blank" href="https://github.com/sandialabs/InterSpec#compiling">https://github.com/sandialabs/InterSpec#compiling</a>
+    <br />
+    一般的に、CMakeビルドシステムが使用され、依存関係にはBoost、ROOT（オプション）、
+    およびWt web frameworkが含まれます。
+  </message>
+
+  <message id="se-de-peak-id" title="単一および二重エスケープピークIDの割り当て">
+    エネルギーが1022 keV以上のガンマ線は、検出器内で単一（511 keV低い）または
+    二重（1022 keV低い）エスケープピークを生成する可能性があります。<br />
+    ピークを右クリックすると、「核種変更」サブメニューに、そのピークエネルギーで
+    可能なエスケープピークオプションが表示されます（該当する場合）。
+  </message>
+
+  <message id="fit-age" title="核種年齢のフィット">
+    「活性/遮蔽フィット」ツールでは、親核種の年齢（最後の化学分離からの時間）を
+    フィット可能なパラメータとしてフィットできます。これは、
+    崩壊鎖が平衡から外れている場合に特に有用です。
+  </message>
+
+  <message id="fit-separate" title="スペクトラム内の核種を個別にフィット">
+    「活性/遮蔽フィット」ツールでは、異なる核種に対して異なる遮蔽や距離を仮定できます。
+    これにより、サンプル内に複数の独立した線源がある場合に有用です。
+  </message>
+
+  <message id="app-state" title="アプリケーション状態の保存">
+    <code>InterSpec</code>は、<code>名前を付けて保存...</code>メニューオプションを使用して
+    現在のアプリケーション状態（開いているスペクトラム、フィットピーク、ツール状態など）を
+    保存できます。この状態は後で復元できます。<br />
+    自動保存オプションもあり、終了時に作業を自動的に保存します。
+  </message>
+
+  <message id="max-file-size" title="開くことができるファイルの最大サイズ">
+    デフォルトでは、<code>InterSpec</code>のWindowsバージョンで開くことができる
+    最大スペクトラムファイルサイズは512 MBです。ただし、より大きなファイルを開く必要がある場合は、
+    <code>InterSpec\data\config\wt_config_wx.xml</code>ファイルの「max-memory-request-size」
+    要素を編集して増やすことができます（サイズに実際の厳しい制限はありませんが、
+    解析はメモリ内で行われるため、非常に大きなファイルはRAMを消費します）。<br />
+    ファイルをzipファイルに圧縮して、それが512 MB未満になる場合、
+    <code>InterSpec</code>で開くこともできます。
+  </message>
+
+  <message id="isocs-drf" title="他のプログラムからの検出器応答関数（DRF）">
+    <p>
+      <code>InterSpec</code>はいくつかの形式で検出器応答関数（DRF）を受け入れます。<br />
+      <ul>
+        <li>「検出器応答作成」を使用して作成されたDRF（<code>CSV</code>、<code>XML</code>、<code>URI</code>、または<code>QRコード</code>形式）</li>
+        <li><a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&id=P00610&cpu=PCX86&v=04&t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a>から</li>
+        <li>いくつかの<code>CSV</code>/<code>TSV</code>形式</li>
+        <li><a target="_blank" href="https://www.mirion.com/products/technologies/spectroscopy-scientific-analysis/gamma-spectroscopy/gamma-spectroscopy-software/lab-applications/s573-isocs-calibration-software">Mirion ISOCS</a>によって生成された<code>.ECC</code>ファイル</li>
+        <li>「検出器応答関数選択」ツールで直接数式を入力</li>
+      </ul>
+      
+      詳細については、「検出器応答関数選択」ツールの<em>ヘルプ</em>ページを参照してください。
+    </p>
+  </message>
+
+  <message id="multi-ref-lines" title="複数の参照光電ピーク参照線を同時に表示">
+    複数の核種や反応の参照光電ピーク線を同時に表示できます。まず、
+    最初の核種を<b>参照光電ピーク</b>タブに入力し、次に
+    「<b>別の追加</b>」ボタンをクリックして2番目の核種を入力します。<br />
+    「<b>別の追加</b>」ボタンをクリックする前に入力した値が使用されるため、
+    各核種の遮蔽と核種年齢を、将来追加される核種に使用する値とは
+    独立して変更できます。<br />
+    追加する各核種はそれ自体に正規化されます。つまり、各核種の最大収率ガンマ/X線線は
+    スペクトラムの上部付近にスケールされます - 現在、核種間の相対スケーリングを
+    指定する方法はありません。
+  </message>
+
+  <message id="dist-def" title="活性フィットでの「距離」の定義方法">
+    「活性/遮蔽フィット」ツールおよび他の場所では、距離は
+    常に検出器面から線源の<em>中心</em>まで定義されます。<br />
+    メジャーで測定する場合の遮蔽の端<em>ではありません</em>。
+    つまり、線源が箱であり、検出器面から箱の表面までを測定する場合、
+    <code>InterSpec</code>に入力する値には、箱の深さの半分を
+    この測定に追加する必要があります。
+  </message>
+
+  <message id="act-line-weighting" title="複数のガンマ線間での活性の重み付け方法">
+    「活性/遮蔽フィット」ツールで親核種に複数のピークを使用する場合、
+    報告される活性はそれらすべての加重平均であり、重み付けは
+    ピーク面積不確実性によって定義されます（DRF不確実性は将来追加される予定です - 現在は無視されます）。
+  </message>
+
+  <message id="key-line" title="キー線はありますか">
+    <p>
+      <code>InterSpec</code>は他のソフトウェアが使用するような<em>キー線</em>の概念をサポートしていません。
+      単一のガンマエネルギーに基づいて活性を推定したい場合は、
+      「活性/遮蔽フィット」ツールで他のすべてのピークの選択を解除し、
+      遮蔽の任意のフィットオプションの選択を解除してから、「モデルフィット」ボタンを押すと、
+      その単一ピークの活性が得られます。
+    </p>
+    <p>
+      「活性/遮蔽フィット」ツールのチャートは、各ピークの統計的偏差と
+      加重平均値と比較した各ピークの振幅差異の表示を切り替えることができます。このチャートは
+      各ピークがどの程度一貫して活性を推定するかの良い指標を提供し、
+      遮蔽、DRF、核種年齢がすべて適切にモデル化されている場合、チャートは
+      ピークが互いに一貫していることを示します。
+    </p>
+  </message>
+
+  <message id="how-make-nuc-library" title="核種ライブラリの作成方法">
+    <code>InterSpec</code>は核種ライブラリの概念をサポートしていません。<br />
+    ピークに核種、X線、または反応を割り当て、
+    行った割り当てが「活性/遮蔽フィット」ツールでフィットできる活性を決定します。
+  </message>
+
+  <message id="zero-amp-fit" title="零振幅ピークのフィット">
+    低い、または零の振幅ピークをフィットしたい場合、<b>CTRL</b>キーを押しながら
+    マウスで関心領域（ROI）をドラッグすると、強制的にピークがフィットされます。
+    スペクトラムをダブルクリックした場合のような統計的有意性閾値は適用されません。<br />
+    代わりに「ピーク管理」タブの「追加...」ボタンを使用してピークを強制追加することもできます。
+  </message>
+
+  <message id="search-profile" title="核種検索時の「プロファイル」順序の定義方法">
+    <p>
+      「核種検索」タブでエネルギーを検索すると、デフォルトで結果は
+      「<b>プロファイル</b>」列で並べられます。<br />
+      他の列のヘッダーをクリックしてその列で結果を並べることもできますが、通常は
+      「<b>プロファイル</b>」が最良のオプションです。
+    </p>
+    <p>
+      大まかに、「<b>プロファイル</b>」列は、いくつかの遮蔽条件（なし、軽度、重度）と年齢の下で
+      核種から素朴に予想されるピークを探し、
+      観察されたピークを予測されたものと比較することで計算されます。スペクトラムに余分なピークがある場合、
+      ペナルティは追加されませんが、期待されたピークが観察されない場合
+      （例：予測され観察された2つの他のピーク間に予測されたピークがあるが、中央のピークが観察されない場合）、
+      ペナルティが課されます。スコアには、期待に対する複数ピークの相対高さの素朴な評価も含まれます。
+      この評価に使用されるピークは、ユーザーがフィットしたピークと
+      スペクトラムでの自動ピーク検索の組み合わせです。
+    </p>
+    <p>
+      この重み付けは、一般的に見られる核種や予想される半減期などのバイアスを導入せずに、
+      <code>InterSpec</code>で利用可能な約4000核種からの結果の
+      合理的な順序付けを提供することを意図したヒューリスティックです。<br />
+      バイアスを導入しないようにすることの欠点は、2614.53 keVのようなエネルギーを検索した場合、
+      トップ結果は一般的なTh232の答えではなく、代わりに
+      Tl208を通じて崩壊するすべての可能な核種の結果を含むことです
+      （2614.53 keVガンマをもたらす崩壊）。これは、U232やTh228、Pu236が
+      すべてこの線を持つ可能性があることを捉えることが重要かもしれないため、
+      単にTh232と仮定する代わりに意図的です。<br />
+      実際には、使用されるヒューリスティックは、結果に注入された事前情報がないことを考えると、
+      非常によく機能するようです。
+    </p>
+    <p>
+      よく遭遇する核種に基づく事前情報をご希望の場合は、
+      ピークを右クリックして、「<b>核種変更</b>」サブメニューで
+      提案を受けることができます。
+    </p>
+    <p>この採点方法の実装は、コードの
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/b38a80b6ef14a8ea21940fb8fc2558aee8a3aaf1/src/IsotopeSearchByEnergyModel.cpp#L240">profile_weight(...)</a>
+      関数にあります。コード内のコメントは、上記の手順が
+      非形式的、非厳密な実験を通じて開発されたことを明確に示しており、
+      改善の明確な余地があるようです - <code>InterSpec</code>のどの部分に対しても
+      フィードバックは常に歓迎されます。
+    </p>
+  </message>
+
+  <message id="peak-suggestions" title="右クリックでの核種提案の出所">
+    ピークを右クリックして「<b>核種変更</b>」メニューに移動すると、
+    提案される核種はいくつかの異なる場所から来ています。
+    
+    <ul>
+      <li>現在表示されている参照光電ピーク線が、ピーク近くのエネルギーでチェックされます</li>
+      <li>識別された他のピークの核種が、ピーク近くのエネルギーでチェックされます</li>
+      <li><code>InterSpec</code>に含まれているファイル
+        <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/PhotoPeak.lis">PhotoPeak.lis</a>
+        （元は<a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&id=P00610&cpu=PCX86&v=04&t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a>から）
+        には、約10,000のエネルギーがその可能な核種、X線、または反応源にマップされています。
+      </li>
+      <li>
+        <code>InterSpec</code>に含まれているファイル
+        <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/CharacteristicGammas.txt">CharacteristicGammas.txt</a>
+        （元は<a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&id=P00610&cpu=PCX86&v=04&t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a>から）
+        には、約50の一般的な核種とそれらに特徴的なエネルギーがあります。
+      </li>
+      <li>上記からの単一および二重エスケープピークがチェックされます。
+        スペクトラムでの自動検索で見つかったピークからも同様です
+      </li>
+      <li>スペクトラムでの自動検索で見つかったピークからの和ピークもチェックされます
+        （ただし、これらの和ピークオプションは現在、ピークの核種割り当てには選択できません）</li>
+    </ul>
+    
+    <p>スペクトラム内の他のピークが割り当てられている核種、X線、または反応に
+      ピークを割り当てることを選択すると、問題のピークの色が
+      他のピークの色に変更されます。
+    </p>
+
+    <p>この採点方法の実装は、コードの
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/b38a80b6ef14a8ea21940fb8fc2558aee8a3aaf1/src/IsotopeId.cpp#L1466">IsotopeId::populateCandidateNuclides(...)</a>
+      関数にあり、これ自体が作業を行うための他の多数の関数を呼び出します。
+    </p>
+  </message>
+
+  <message id="file-query" title="スペクトラムファイルの山を「データマイニング」する方法">  
+    ファイルシステムにスペクトラムファイルのアーカイブがある場合、「ファイルクエリツール」を
+    使用してそれらを調べ、RID核種結果、ライブタイム、デッドタイム、
+    測定日、使用された検出器などの基準と一致させることができます。<br />
+    このツールからは、スプレッドシートアプリケーションでのより深い分析のために、
+    結果の<code>CSV</code>ファイルもエクスポートできます。
+  </message>
+
+  <message id="feature-requests" title="サポート、新機能の要求、バグの報告方法">
+    <p>
+      フィードバック、機能要求、バグ報告、批評、そして<code>InterSpec</code>で何かをする方法を単に尋ねることは、
+      すべて大いに歓迎されています！<br />
+      <br />
+      以下にメールしてください：
+      <div style="text-align: center; font-size: larger; margin-top: 5px;"><a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a></div>
+    </p>
+    <p>2019年以降に<code>InterSpec</code>に実装されたほとんどの改善と機能は
+      ユーザーフィードバックの結果でした。ユーザーが何かをする方法がわからないと表現したり、
+      何かをするのがいかに難しいかで frustration を表現したりした多くの場合、これが
+      非常に良い改善につながりました。ユーザーの要求は、どの新機能を実装するかを決定する際にも
+      大きく重要視されます。直接的なフィードバックでなくても、すべてのフィードバックは真剣に考慮され
+      記録されます。数日または数週間の考慮の後、
+      最初は範囲外に見えたり、非常に特定の使用例にのみ適用可能に見えたりしたフィードバックが、
+      主要開発者に<em>ひらめき</em>を与え、より一般化された解決策を実装して
+      全体的な体験を改善できる場合が何度もありました。
+    </p>
+    <p>
+      <code>InterSpec</code>への貢献も歓迎され、大いに感謝されます。
+      githubプルリクエストまたは他の手段を通じて。軽微なバグや修正のプルリクエストは
+      通常、比較的簡単に受け入れることができます。より大きな機能追加については、
+      調整のために最初に<a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>にメールし、
+      <code>InterSpec</code>を自由に配布する能力を保護するために
+      authorship memoへの署名も求められます。
+    </p>
+    <p><code>InterSpec</code>は主に主要開発者の時間のほんの一部で開発・サポートされているため、
+      すべてを実装することはできませんし、何かに取り組めるまでに
+      時間がかかる場合があります。
+      開発者が出張中や休暇中の場合、メールへの返答に時間がかかる場合があり、
+      要求されたサポートを提供するリソースが利用できない可能性もあります。
+    </p>
+  </message>
+</messages>

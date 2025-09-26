@@ -20,18 +20,37 @@
   <message id="sb-load-app-state">تحميل حالة التطبيق</message>
   <message id="sb-err-making-browser-txt">خطأ غير متوقع في إنشاء متصفح ملف الطيف لقاعدة البيانات</message>
   <message id="sb-err-making-browser-msg">خطأ في إنشاء متصفح ملف الطيف لقاعدة البيانات: {1}</message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
-  <message id="sb-"></message>
+  
+  <!-- DbSpecFileItem messages -->
+  <message id="sb-loaded-label">Loaded: {1}</message>
+  <message id="sb-loaded-modified-label">Loaded: {1}, was modified</message>
+  <message id="sb-resume-from-btn">Resume From</message>
+  <message id="sb-err-displaying-measurement">Error displaying previous measurement, things may not be as expected</message>
+  
+  <!-- SnapshotBrowser error messages -->
+  <message id="sb-no-active-db-session">No active database session</message>
+  <message id="sb-invalid-state-selected">Invalid state selected</message>
+  <message id="sb-must-enter-name">You must enter a name</message>
+  <message id="sb-err-modifying-state">Error modifying state - probably not changed</message>
+  <message id="sb-couldnt-load-snapshot">Sorry, couldnt load requested snapshot</message>
+  <message id="sb-no-state-selected">No state selected to delete</message>
+  <message id="sb-snapshot-removed">Snapshot '{1}' removed from database.</message>
+  <message id="sb-err-removing-snapshot">Error removing snapshot from database.</message>
+  <message id="sb-err-loading-from-db">Error loading from the database</message>
+  <message id="sb-failed-to-load-state">Failed to load state</message>
+  <message id="sb-already-opened">Already opened</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="sb-confirm-delete-title">Confirm Delete</message>
+  <message id="sb-confirm-delete-msg"><div>Are you sure you want to delete:</div><div style="white-space: nowrap; text-align: center; text-overflow: ellipsis; overflow: hidden; font-weight: bold; max-width:98%;">{1}</div><div>?</div></message>
+  
+  <!-- Constructor error messages -->
+  <message id="sb-err-creating-browser"><b>Error creating SnapshotBrowser</b> - sorry :(<br />Error: {1}</message>
+  <message id="sb-unexpected-issue"><b>Unexpected issue creating SnapshotBrowser</b> - sorry :(</message>
+  
+  <!-- Edit dialog -->
+  <message id="sb-edit-name-label">Name</message>
+  <message id="sb-edit-name-placeholder">(Name to store under)</message>
+  <message id="sb-edit-desc-label">Desc.</message>
+  <message id="sb-edit-desc-placeholder">(Optional description)</message>
 </messages>

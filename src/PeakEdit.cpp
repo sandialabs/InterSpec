@@ -551,7 +551,7 @@ void PeakEdit::init()
   
   
   
-  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );//new WPushButton( "Cancel", m_footer );
+  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );
   m_refit  = new WSplitButton( WString::tr("pe-btn-refit"), m_footer );
   m_apply  = new WPushButton( WString::tr("Apply"),  m_footer );
   m_accept = new WPushButton( WString::tr("Accept"), m_footer );

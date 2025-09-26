@@ -46,4 +46,5 @@
   <message id="sfs-err-show-map">座標表示エラー: {1}</message>
   <message id="sfs-err-time-format">'{1}'を日時文字列に変換するエラー</message>
   <message id="sfs-err-lat-lon">経度/緯度を有効なfloatに変換するエラー</message>
+  <message id="sfs-no-spectrum-to-update">更新するスペクトラムがありません</message>
 </messages>

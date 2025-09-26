@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">Относит. акт. изотопики</message>
   
   <!-- Presets section -->
   <message id="raag-presets">Предустановки</message>
@@ -29,10 +30,42 @@
   <message id="raag-fwhm-start-det-eff">Начать с эфф. дет.</message>
   <message id="raag-fwhm-fixed-det-eff">Фиксир. к эфф. дет.</message>
   
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">Одинаковый Z одинаковый возраст</message>
+  <message id="raag-refit-peaks">Переподогнать пики</message>
+  <message id="raag-use-det-eff">Исп. дет. эфф.</message>
+  <message id="raag-none">Нет</message>
+  <message id="raag-nuclides">Нуклиды</message>
+  <message id="raag-energy-ranges">Диапазоны энергий</message>
+  <message id="raag-free-peaks">Свободные пики</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">Спектр</message>
+  <message id="raag-rel-eff">Отн. эфф.</message>
+  <message id="raag-result">Результат</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">Применить калибровку энергии</message>
+  <message id="raag-show-ref-lines">Показать референсные гамма-линии</message>
+  <message id="raag-hide-ref-lines">Скрыть референсные гамма-линии</message>
+  <message id="raag-set-peaks-foreground">Установить пики на передний план</message>
+  <message id="raag-show-background">Показать фон</message>
+  <message id="raag-hide-background">Скрыть фон</message>
+  <message id="raag-roi-options">Опции ROI:</message>
+  <message id="raag-remove-roi">Удалить ROI</message>
+  <message id="raag-combine-roi-left">Объединить с ROI слева</message>
+  <message id="raag-combine-roi-right">Объединить с ROI справа</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">Тип уравнения для моделирования FWHM пика как функции энергии.</message>
+  <message id="raag-tt-skew-type">Тип скоса, применяемый к пикам; параметры скоса будут подогнаны.</message>
+  <message id="raag-tt-u-pu-data-source">Источник ядерных данных для коэффициентов ветвления гамма-излучения урана и плутония.</message>
+  <message id="raag-tt-add-source">Добавить источник.</message>
+  <message id="raag-tt-add-energy-range">Добавить диапазон энергий.</message>
+
   <!-- Buttons -->
   <message id="raag-add-free-peaks">добавить свободные пики</message>
   <message id="raag-clear-all-ranges">очистить все диапазоны</message>
-  <message id="raag-continue">Продолжить</message>
   <message id="raag-html-report">HTML отчёт</message>
   <message id="raag-xml-config">XML конфигурация</message>
   

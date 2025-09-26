@@ -6,6 +6,7 @@
   <message id="ladw-mi-credits">الاعتمادات</message>
   <message id="ladw-mi-contact">الاتصال</message>
   <message id="ladw-mi-license">الترخيص</message>
+  <message id="ladw-mi-data">البيانات</message>
   <message id="ladw-data-location-user">
     يتم تخزين بيانات المستخدم في
     <div class="DataLocation">{1}</div>

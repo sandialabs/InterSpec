@@ -366,4 +366,16 @@
     can enter it into InterSpec using the "<b>Enter URL</b>"
     item in the "<b>Edit</b>" menu.
   </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">File</message>
+  <message id="sfm-col-n-samples">N-Samples</message>
+  <message id="sfm-col-live-time">Live Time (s)</message>
+  <message id="sfm-col-real-time">Real Time (s)</message>
+  <message id="sfm-col-gam-count">Gam. Count</message>
+  <message id="sfm-col-neut-count">Neut. Count</message>
+  <message id="sfm-col-time-taken">Time Taken</message>
+  <message id="sfm-col-n-dets">N-Dets.</message>
+  <message id="sfm-col-loaded">Loaded</message>
+  <message id="sfm-col-file-rid">File RID</message>
 </messages>

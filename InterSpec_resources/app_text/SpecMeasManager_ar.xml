@@ -365,4 +365,16 @@
     إدخاله في InterSpec باستخدام عنصر "<b>إدخال URL</b>"
     في قائمة "<b>تحرير</b>".
   </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">ملف</message>
+  <message id="sfm-col-n-samples">ع-عينات</message>
+  <message id="sfm-col-live-time">وقت حي (ث)</message>
+  <message id="sfm-col-real-time">وقت حقيقي (ث)</message>
+  <message id="sfm-col-gam-count">عدد جاما</message>
+  <message id="sfm-col-neut-count">عدد نيوترون</message>
+  <message id="sfm-col-time-taken">وقت الأخذ</message>
+  <message id="sfm-col-n-dets">ع-كاشفات</message>
+  <message id="sfm-col-loaded">محمل</message>
+  <message id="sfm-col-file-rid">RID ملف</message>
 </messages>

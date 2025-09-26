@@ -87,7 +87,7 @@ namespace
     : WContainerWidget( parent )
     {
       m_text = new WText( this );
-      m_load = new WPushButton( "Load", this );
+      m_load = new WPushButton( WString::tr("uiw-load-btn"), this );
       
       // We need this, or else by the time we get to loadSampleSelected(), no row will be
       this->touchStarted().preventPropagation();
@@ -163,6 +163,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   m_menu( nullptr )
   //, m_videoTab( nullptr )
 {
+  m_viewer->useMessageResourceBundle( "UseInfoWindow" );
+  
   rejectWhenEscapePressed();
   
   WStackedWidget *stack = new WStackedWidget();
@@ -218,8 +220,8 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   //  This is super confusing, and I dont understand it.  This manifests
   //  particularly on Android native version of app, but I think it might
   //  elsewhere as well.  (wcjohns 20150124)
-  tabW->addTab( spectrumContainer, "Saved States", WTabWidget::PreLoading );
-  tabW->addTab( samplesContainer, "Example Spectra", WTabWidget::PreLoading ); 
+  tabW->addTab( spectrumContainer, WString::tr("uiw-tab-saved-states"), WTabWidget::PreLoading );
+  tabW->addTab( samplesContainer, WString::tr("uiw-tab-example-spectra"), WTabWidget::PreLoading ); 
   
   if( m_viewer->isMobile() )
   {
@@ -227,7 +229,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     importLayout = new WGridLayout();
     importContainer->setLayout( importLayout );
     
-    tabW->addTab( importContainer, "Import Spectra", WTabWidget::PreLoading );
+    tabW->addTab( importContainer, WString::tr("uiw-tab-import-spectra"), WTabWidget::PreLoading );
   }//if( m_viewer->isMobile() )
   
   
@@ -361,7 +363,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     //Import tab
     if( importContainer )
     {
-      string msg = "<p>Tap <em>Choose File</em> to browse for the file you want to open.</p>";
+      string msg = WString::tr("uiw-tap-choose-file").toUTF8();
       WText *desc = new WText( msg );
       desc->setTextAlignment( Wt::AlignmentFlag::AlignCenter );
       importLayout->addWidget( desc, 0, 0, AlignCenter );
@@ -371,7 +373,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       
       upload->fileTooLarge().connect( std::bind( [desc,upload](){
         upload->hide();
-        desc->setText( "<span style=\"color: red;\">Too Large of file.</span>" );
+        desc->setText( WString::tr("uiw-file-too-large") );
       }) );
       
       upload->uploaded().connect( std::bind( [this,upload](){
@@ -384,10 +386,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
       
       
       
-      msg = "<p>You can also open spectra files by selecting <em>Open File</em> in the <code>InterSpec</code> sub menu after exiting thie screen.<br />"
-      "For email attachments, or files in apps like <code>Files</code>, <code>Dropbox</code>, <code>Google Drive</code>, etc., you can open"
-      " spectra files in <code>InterSpec</code> by selecting &quot;Copy To InterSpec&quot;"
-      "</p>";
+      msg = WString::tr("uiw-open-file-instructions").toUTF8();
       desc = new WText( msg );
       importLayout->addWidget( desc, 2, 0, AlignBottom );
     }//if( importContainer )
@@ -409,7 +408,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
   
   
   //----------Add left menu --------
-  SideMenuItem *item = new SideMenuItem( (m_viewer->isPhone() ? "" : "Welcome"), welcomeContainer );
+  SideMenuItem *item = new SideMenuItem( (m_viewer->isPhone() ? WString() : WString::tr("uiw-welcome")), welcomeContainer );
   if( m_viewer->isPhone() )
   {
     //item->setIcon( "InterSpec_resources/images/home_small.svg" );
@@ -598,7 +597,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     }//try / catch
     
     
-    item = new SideMenuItem( "Controls", controlContainer );
+    item = new SideMenuItem( WString::tr("uiw-controls"), controlContainer );
     item->clicked().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     item->mouseWentDown().connect( boost::bind( &UseInfoWindow::right_select_item, this, item) );
     m_menu->addItem( item );
@@ -625,9 +624,9 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     anchor->setLink(WLink("InterSpec_resources/static_text/InteractionCheatSheet.pdf"));
     //anchor->setImage(new WImage("InterSpec_resources/images/pdf_page.png"));
     anchor->setTarget( Wt::TargetNewWindow );
-    anchor->setText("Cheat Sheet (PDF)");
+    anchor->setText(WString::tr("uiw-cheat-sheet"));
 
-    auto cheatTxt = new WText("Print out this cheat sheet (PDF format) to quickly reference actions, shortcut keys and troubleshooting.");
+    auto cheatTxt = new WText(WString::tr("uiw-cheat-sheet-desc"));
     controlLayout->addWidget(cheatTxt,0,0);
     controlLayout->addWidget(anchor,1,0);
     controlLayout->setRowStretch(1, 1);
@@ -652,41 +651,27 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     msg += "<div align=\"left\">";
 #if( USE_DB_TO_STORE_SPECTRA )
     if( m_snapshotModel && !m_snapshotModel->numSnaphots() )
-      msg += "You can start by opening an example spectra below, or you can use the <em>Import Spectra</em> tab to load external files."
-      "<br />";
+      msg += WString::tr("uiw-mobile-start-example").toUTF8();
     else
-      msg += "<p>Your previously saved spectra are shown below.  You can use the other tabs to open example spectra, or to import external spectral files.<br />You can also open spectra attached to email, or cloud storage apps.</p>";
+      msg += WString::tr("uiw-mobile-saved-spectra").toUTF8();
 #else
-    msg += "<p>You can select an example spectrum file below, or use the import tab to open one from your iCloud, Dropbox, Google Drive, etc.<br />You can also open spectrum files attached to eamils.</p>";
+    msg += WString::tr("uiw-mobile-select-example").toUTF8();
 #endif
    
   }else
   {
-    msg += "<h1 align=\"center\">Welcome To <code>InterSpec</code>"
-           "</h1><div align=\"left\">";
-    msg += "<p>You can use the references on the left to become "
-                        "more familiar with <code>InterSpec</code>, or you can "
-                        "pick up from a previous session or spectrum below.";
-    msg += " Alternatively, you can also drag and drop your "
-    "own spectrum file onto <code>InterSpec</code>.</p>";
+    msg += WString::tr("uiw-desktop-welcome-title").toUTF8();
+    msg += WString::tr("uiw-desktop-welcome-text").toUTF8();
+    msg += WString::tr("uiw-desktop-drag-drop").toUTF8();
   }
 
   msg += "</div>";
   
   WText *text = new WText( msg );
   
-  const char *mobilePostcriptText = "<p>Tap on the "
-  "<img src=\"InterSpec_resources/images/phone_tips.png\" width=12 height=12 alt=\"information icon\" class=\"WhiteIcon\" /> "
-  "icon to the left for the basics of interacting with the chart and fitting for peaks."
-  "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" class=\"WhiteIcon\" /> "
-  "icon for detailed information about <code>InterSpec</code>s tools and features."
-  "</p>";
+  WString mobilePostcriptText = WString::tr("uiw-mobile-phone-postscript");
   if( m_viewer->isTablet() )
-    mobilePostcriptText = "<p>Tap on the <b>Use Info</b> button to the left for"
-     " the basics of interacting with the chart and fitting for peaks."
-     "Tap the <img src=\"InterSpec_resources/images/help_mobile.svg\" width=12 height=12 alt=\"help icon\" class=\"WhiteIcon\" /> "
-     "icon for detailed information about <code>InterSpec</code>s tools and features."
-     "</p>";
+    mobilePostcriptText = WString::tr("uiw-mobile-tablet-postscript");
   
   WGridLayout *rightLayout = nullptr;
   if( m_viewer->isPhone() )
@@ -756,7 +741,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     //  Not worth the effort to fix this, atm.
     
     //Add link for license and terms
-    WAnchor *more = new WAnchor( WLink(), "License and Terms" );
+    WAnchor *more = new WAnchor( WLink(), WString::tr("uiw-license-and-terms") );
     
     auto showLicenceAndTerms = [](){
       // We'll keep from capturing closing the window and opening the new window as two
@@ -790,7 +775,7 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     layout->addWidget( more, 1, 0 );
     
     //regular locations
-    more = new WAnchor( WLink(), "More in depth information" );
+    more = new WAnchor( WLink(), WString::tr("uiw-more-info") );
     
     auto showMoreInDepth = [](){
       // We'll keep from capturing closing the window and opening the new window as two
@@ -849,13 +834,13 @@ UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
     assert( rightLayout );
     if( isVertical && rightLayout )
     {
-      showAgainCb = new WCheckBox( "show at start when no spectra" );
+      showAgainCb = new WCheckBox( WString::tr("uiw-show-at-start-cb") );
       showAgainCb->addStyleClass( "CbNoLineBreak" );
       rightLayout->addWidget( showAgainCb, rightLayout->rowCount(), 0 );
     }else
     {
       // Put CB into header
-      showAgainCb = new WCheckBox( "show at start when no spectra", bottom );
+      showAgainCb = new WCheckBox( WString::tr("uiw-show-at-start-cb"), bottom );
     }
     showAgainCb->setFloatSide( Left );
     
@@ -1130,20 +1115,7 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
     // We want to load the topics in the order they are in the file, not alphabetical like
     //  `bundle.keys(WMessageResourceBundle::Scope::Default)` would return.
     {// Begin scope to manually parse out XML file
-      // The locale name comes from the HTTP Accept-Language header, which may be like
-      //  fr-CH, fr, en-US, en, de-DE-1996, de-CH
-      string locale = WLocale::currentLocale().name();
-      string resource_file = resource_base + (locale.empty() ? "" : "_") + locale + ".xml";
-      
-      do
-      {
-        if( SpecUtils::is_file(resource_file) )
-          break;
-        
-        const size_t pos = locale.rfind( '-' );
-        locale.erase( (pos == string::npos) ? size_t(0) : pos );
-        resource_file = resource_base + (locale.empty() ? "" : "_") + locale + ".xml";
-      }while( !locale.empty() );
+      string resource_file = AppUtils::find_localized_xml_file( resource_base );
       
       vector<char> data;
       SpecUtils::load_file_data( resource_file.c_str(), data );
@@ -1228,7 +1200,7 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
       WContainerWidget *title = new WContainerWidget( w );
       title->addStyleClass( resource_name + "-subject-title" );
       WPushButton *up_btn = new WPushButton( title );
-      up_btn->setToolTip( "Back to top" );
+      HelpSystem::attachToolTipOn( {up_btn}, WString::tr("uiw-back-to-top"), true );
       up_btn->setIcon( WLink("InterSpec_resources/images/minimal_go_up_arrow.svg") );
       up_btn->clicked().connect( "function(){ document.getElementById('" + parent->id() + "').scrollTop = '0px'; }" );
       WText *title_txt = new WText( key_title.second, title );
@@ -1254,7 +1226,7 @@ void UseInfoWindow::textItemCreator( const std::string &resource, Wt::WContainer
     }//for( const pair<string,string> &key_title : topic_keys )
   }catch( std::exception &e )
   {
-    new WText( "Error loading FAQ topics: " + string(e.what()), parent );
+    new WText( WString::tr("uiw-error-loading-faq").arg(e.what()), parent );
   }//try catch
 }//void textItemCreator( const std::string &resource, Wt::WContainerWidget *parent )
 

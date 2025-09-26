@@ -20,7 +20,7 @@
   <message id="pid-tt-add-peak-btn">手動で新しいピークを追加。</message>
   <message id="pid-tt-del-peaks">現在編集中のピークを削除。</message>
   <message id="pid-better-editor-hint">より良いエディタはピークを右クリック</message>
-  <message id="pid-better-editor-hint-mobile">より良いエディタはピークをタップ&ホールド</message>
+  <message id="pid-better-editor-hint-mobile">より良いエディタはピークをタップ&amp;ホールド</message>
   <message id="pid-tt-csv-export">識別されたピークの情報をカンマ区切り形式でエクスポート。</message>
   <message id="pid-tt-csv-copy">ピークCSV情報をクリップボードにコピー。
     <p>ピークデータはフォーマット版とプレーンテキスト版の両方で

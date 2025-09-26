@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+  
+  <!-- Window title -->
+  <message id="esf-window-title">Экспорт файла спектра</message>
+  
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">Файл для экспорта</message>
+  <message id="esf-file-format">Формат файла</message>
+  <message id="esf-samples-to-include">Образцы для включения</message>
+  
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">Файл</message>
+  <message id="esf-format-tab">Формат</message>
+  <message id="esf-options-tab">Опции</message>
+  
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + Фон</message>
+  <message id="esf-plus-secondary"> + Втор.</message>
+  <message id="esf-fore-plus-back-tt">Экспорт переднего плана и фона и/или вторичных спектров вместе в один файл.</message>
+  
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">Отображ. передний план</message>
+  <message id="esf-disp-background">Отображ. фон</message>
+  <message id="esf-disp-secondary">Отображ. вторичный</message>
+  <message id="esf-all-samples">Все образцы</message>
+  <message id="esf-custom-samples">Пользовательские образцы</message>
+  <message id="esf-custom-samples-tt">Введите здесь номер образца, который хотите отобразить. Можно ввести диапазон номеров образцов типа '33-39' или '33 to 39', или номера образцов через запятую типа '34,39,84'</message>
+  <message id="esf-filter-detectors">Фильтр детекторов</message>
+  
+  <!-- Options section -->
+  <message id="esf-options">Опции</message>
+  <message id="esf-sum-to-single-record">Суммировать в одну запись</message>
+  <message id="esf-sum-to-single-record-tt">Все выбранные образцы и/или детекторы будут суммированы вместе в один спектр.<br />Осторожно: если выбраны и передний план, и фон, они будут суммированы вместе.</message>
+  
+  <message id="esf-sum-fore-to-single-record">Сумм. передний план в одну запись</message>
+  <message id="esf-sum-fore-to-single-record-tt">Имеется либо несколько номеров образцов, либо несколько детекторов, составляющих отображаемый передний план; отметка этой опции суммирует все это в один спектр в выходном файле.</message>
+  
+  <message id="esf-sum-back-to-single-record">Сумм. фон в одну запись</message>
+  <message id="esf-sum-back-to-single-record-tt">Имеется либо несколько номеров образцов, либо несколько детекторов, составляющих отображаемый фон; отметка этой опции суммирует все это в один спектр в выходном файле.</message>
+  
+  <message id="esf-sum-sec-to-single-record">Сумм. втор. в одну запись</message>
+  
+  <message id="esf-background-subtract">Вычесть фон</message>
+  <message id="esf-background-subtract-tt">Выходной спектр будет передним планом минус фон.</message>
+  
+  <message id="esf-sum-det-per-sample">Сумм. дет. на образец</message>
+  <message id="esf-sum-det-per-sample-tt">Для каждого номера образца суммировать все детекторы для этого номера образца вместе.<br />Например, если у вас 8 детекторов в файле спектра, каждый с 120 образцами, то результаты будут содержать 120 спектров, каждый из которых является суммой 8 детекторов соответствующих образцов.</message>
+  
+  <message id="esf-sum-samples-per-det">Сумм. образцы на дет.</message>
+  <message id="esf-sum-samples-per-det-tt">Для каждого детектора суммировать все номера образцов вместе.<br />Например, если у вас 8 детекторов в файле спектра, каждый с 120 образцами, то результаты будут содержать 8 спектров, каждый из которых является суммой 120 образцов их соответствующих детекторов.</message>
+  
+  <message id="esf-remove-interspec-info">Удалить информацию InterSpec</message>
+  <message id="esf-remove-interspec-info-tt">Удаляет отклик детектора, пики и другие результаты анализа, которые вы могли добавить в InterSpec.</message>
+  
+  <message id="esf-remove-gps">Удалить GPS</message>
+  
+  <!-- Status text -->
+  <message id="esf-not-applicable">Неприменимо</message>
+  <message id="esf-none-available">Недоступно</message>
+  
+  <!-- Buttons -->
+  <message id="esf-export">Экспорт</message>
+  <message id="esf-show-qr-code">Показать QR-код</message>
+  
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">Отображается как</message>
+  <message id="esf-fore-abbrev">Пер.</message>
+  <message id="esf-back-abbrev">Фон</message>
+  <message id="esf-sec-abbrev">Втор</message>
+  
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">Следующий QR код</message>
+  <message id="esf-url-link">URL ссылка</message>
+  <message id="esf-email-link">Email ссылка</message>
+  
+  <!-- Error dialogs -->
+  <message id="esf-error-title">Ошибка</message>
+  <message id="esf-qr-encode-failed">Не удалось отобразить спектр как QR код: {1}</message>
+  
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">Отобр.&nbsp;Образец</plural>
+    <plural case="1">Отобр.&nbsp;Образцы</plural>
+  </message>
+  
+  <!-- Table headers -->
+  <message id="esf-start-time">Время начала</message>
+  <message id="esf-end-time">Время окончания</message>
+  <message id="esf-first-sample">Первый образец</message>
+  <message id="esf-last-sample">Последний образец</message>
+  <message id="esf-num-samples">Кол. образцов</message>
+  <message id="esf-neut-dets">Нейтр. дет.</message>
+  <message id="esf-gamma-dets">Гамма дет.</message>
+  <message id="esf-num-dets">Кол. дет.</message>
+  <message id="esf-latitude">Широта</message>
+  <message id="esf-longitude">Долгота</message>
+  <message id="esf-total-time">Общее время</message>
+  <message id="esf-sum-gamma">Сумма гамма</message>
+  <message id="esf-sum-neut">Сумма нейтр.</message>
+  <message id="esf-manufacturer">Производитель</message>
+  <message id="esf-model">Модель</message>
+  <message id="esf-serial">Серийный номер</message>
+</messages>

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">材料/式</message>
   <message id="gxsg-tt-material">
     事前定義された材料または元素の名前を入力するか（フォームテキストをクリアして
     フォーム右側の矢印をクリックして全ての事前定義オプションを表示）、または

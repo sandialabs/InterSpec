@@ -46,4 +46,5 @@
   <message id="sfs-err-show-map">Hiba a koordináták megjelenítése során: {1}</message>
   <message id="sfs-err-time-format">Hiba a(z) '{1}' dátum/idő karakterlánccá alakításakor</message>
   <message id="sfs-err-lat-lon">Hiba a Hossz/Szél érvényes float-tá alakításakor</message>
+  <message id="sfs-no-spectrum-to-update">Nincs frissítendő spektrum</message>
 </messages>

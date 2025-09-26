@@ -5,6 +5,7 @@
   <message id="Yes">Oui</message>
   <message id="No">Non</message>
   <message id="Close">Fermer</message>
+  <message id="Continue">Continuer</message>
   <message id="Save">Enregistrer</message>
   <message id="Name">Nom</message>
   <message id="Desc.">Desc.</message>
@@ -23,6 +24,7 @@
   <message id="background" comment="For use in middle of sentence">arrière-plan</message>
   <message id="secondary" comment="For use in middle of sentence">secondaire</message>
   <message id="Exit">Quitter</message>
+  <message id="Enter">Entrer</message>
   <message id="show-lines">Afficher lignes</message>
   <message id="Default">Défaut</message>
   <message id="Error">Erreur</message>
@@ -73,6 +75,7 @@
   <message id="Geometry">Géométrie</message>
   <message id="Load">Charger</message>
   <message id="Mass">Masse</message>
+  <message id="Material">Matériau</message>
   <message id="NA">ND</message>
   <message id="n/a">n/d</message>
   <message id="N/A">N/D</message>

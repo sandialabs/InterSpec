@@ -6,6 +6,7 @@
   <message id="ladw-mi-credits">クレジット</message>
   <message id="ladw-mi-contact">連絡先</message>
   <message id="ladw-mi-license">ライセンス</message>
+  <message id="ladw-mi-data">データ</message>
   <message id="ladw-data-location-user">
     ユーザーデータは次に保存されています
     <div class="DataLocation">{1}</div>

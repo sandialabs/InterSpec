@@ -6,6 +6,7 @@
   <message id="ladw-mi-credits">Благодарности</message>
   <message id="ladw-mi-contact">Контакты</message>
   <message id="ladw-mi-license">Лицензия</message>
+  <message id="ladw-mi-data">Данные</message>
   <message id="ladw-data-location-user">
     Пользовательские данные хранятся в
     <div class="DataLocation">{1}</div>

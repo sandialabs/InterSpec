@@ -274,9 +274,9 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   
   AuxWindow::addHelpInFooter( buttonDiv, "multi-file-calibration-dialog" );
   
-  m_cancel = new WPushButton( "Cancel", buttonDiv );
-  m_fit    = new WPushButton( "Fit", buttonDiv );
-  m_use    = new WPushButton( "Use", buttonDiv );
+  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
+  m_fit    = new WPushButton( WString::tr("Fit"), buttonDiv );
+  m_use    = new WPushButton( WString::tr("Use"), buttonDiv );
   
   m_use->disable();
   m_cancel->clicked().connect( boost::bind( &EnergyCalMultiFile::handleFinish, this, WDialog::Rejected ) );

@@ -20,10 +20,10 @@
     低分解能検出器に特に有用です
   </message>
   <message id="ect-tt-CALp">現在のエネルギー校正を含む.CALpファイルをダウンロードします。
-    このファイルを後でInterSpecにドラッグ&ドロップして、このエネルギー校正を再利用できます。
+    このファイルを後でInterSpecにドラッグ&amp;ドロップして、このエネルギー校正を再利用できます。
     これは校正を一貫して調整する必要がある検出器のデータを頻繁に使用する場合に特に有用です。
   </message>
-  <message id="ect-export-CALp-msg">このCALpファイルをInterSpecにドラッグ&ドロップして、後で異なるスペクトルに適用できます。</message>
+  <message id="ect-export-CALp-msg">このCALpファイルをInterSpecにドラッグ&amp;ドロップして、後で異なるスペクトルに適用できます。</message>
   <message id="ect-fit-coeff-btn">係数をフィット</message>
   <message id="ect-tt-fit-coeff-btn">
     フィットピークに関連するフォトピークの期待エネルギーを使用してエネルギー係数をフィットします。
@@ -51,7 +51,7 @@
   <message id="ect-select-CALp"><p>使用するCALpファイルを選択</p></message>
   <message id="ect-upload-CALp-to-large">ファイルが大きすぎてアップロードできません</message>
   <message id="ect-invalid-CALp">有効なCALpファイルではありません</message>
-  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">注: CALpファイルをInterSpecにドラッグ&ドロップすることもできます<br /></p></message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">注: CALpファイルをInterSpecにドラッグ&amp;ドロップすることもできます<br /></p></message>
   <message id="ect-change-made-invalid">校正変更によりエネルギー校正が無効になりました{1}。エラー: {2}</message>
   <message id="ect-for-the-fore"> フォアグラウンド用</message>
   <message id="ect-for-the-back"> バックグラウンド用</message>

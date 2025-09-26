@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">相対放射能同位体</message>
   
   <!-- Presets section -->
   <message id="raag-presets">プリセット</message>
@@ -29,10 +30,42 @@
   <message id="raag-fwhm-start-det-eff">検出器効率から開始</message>
   <message id="raag-fwhm-fixed-det-eff">検出器効率に固定</message>
   
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">同一Z同一年代</message>
+  <message id="raag-refit-peaks">ピーク再フィット</message>
+  <message id="raag-use-det-eff">検出効率使用</message>
+  <message id="raag-none">なし</message>
+  <message id="raag-nuclides">核種</message>
+  <message id="raag-energy-ranges">エネルギー範囲</message>
+  <message id="raag-free-peaks">フリーピーク</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">スペク</message>
+  <message id="raag-rel-eff">相対効率</message>
+  <message id="raag-result">結果</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">エネルギー較正適用</message>
+  <message id="raag-show-ref-lines">参照ガンマ線表示</message>
+  <message id="raag-hide-ref-lines">参照ガンマ線非表示</message>
+  <message id="raag-set-peaks-foreground">ピークを前景に設定</message>
+  <message id="raag-show-background">バックグラウンド表示</message>
+  <message id="raag-hide-background">バックグラウンド非表示</message>
+  <message id="raag-roi-options">ROIオプション：</message>
+  <message id="raag-remove-roi">ROI削除</message>
+  <message id="raag-combine-roi-left">左のROIと結合</message>
+  <message id="raag-combine-roi-right">右のROIと結合</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">エネルギーの関数としてピークFWHMをモデル化する方程式タイプ。</message>
+  <message id="raag-tt-skew-type">ピークに適用するスキュータイプ；スキューパラメータがフィットされます。</message>
+  <message id="raag-tt-u-pu-data-source">ウランとプルトニウムのガンマ分岐比の核データソース。</message>
+  <message id="raag-tt-add-source">ソースを追加。</message>
+  <message id="raag-tt-add-energy-range">エネルギー範囲を追加。</message>
+
   <!-- Buttons -->
   <message id="raag-add-free-peaks">フリーピーク追加</message>
   <message id="raag-clear-all-ranges">全範囲クリア</message>
-  <message id="raag-continue">続行</message>
   <message id="raag-html-report">HTMLレポート</message>
   <message id="raag-xml-config">XML設定</message>
   

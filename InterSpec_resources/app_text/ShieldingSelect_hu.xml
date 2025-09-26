@@ -55,4 +55,10 @@
   <message id="ss-tt-with-uncert">{1}</message>
   <message id="ss-tt-without"></message>
   <message id="ss-warning-only-one-src-frac">A tömegfrakciók illesztéséhez kérjük, válasszon legalább két komponenst a(z) {1}-ből illesztésre.</message>
+  
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">Nyomjelző Forrás</message>
+  <message id="ss-select-option">Kiválasztás</message>
+  <message id="ss-fit-activity-cb">Aktivitás érték illesztése</message>
+  <message id="ss-total-activity">Összes</message>
 </messages>

@@ -6,6 +6,7 @@
   <message id="ladw-mi-credits">Közreműködők</message>
   <message id="ladw-mi-contact">Kapcsolat</message>
   <message id="ladw-mi-license">Licenc</message>
+  <message id="ladw-mi-data">Adatok</message>
   <message id="ladw-data-location-user">
     A felhasználói adatok tárolási helye:
     <div class="DataLocation">{1}</div>

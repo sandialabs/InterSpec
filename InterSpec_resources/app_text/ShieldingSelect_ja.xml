@@ -56,4 +56,10 @@
   <message id="ss-tt-with-uncert">{1}</message>
   <message id="ss-tt-without"></message>
   <message id="ss-warning-only-one-src-frac">質量分率をフィットするには、{1}の少なくとも2つの成分を選択してフィットしてください。</message>
+  
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">トレース源</message>
+  <message id="ss-select-option">選択</message>
+  <message id="ss-fit-activity-cb">放射能値をフィット</message>
+  <message id="ss-total-activity">合計</message>
 </messages>

@@ -5,6 +5,7 @@
   <message id="Yes">はい</message>
   <message id="No">いいえ</message>
   <message id="Close">閉じる</message>
+  <message id="Continue">続行</message>
   <message id="Save">保存</message>
   <message id="Name">名前</message>
   <message id="Desc.">説明</message>
@@ -23,6 +24,7 @@
   <message id="background" comment="For use in middle of sentence">バックグラウンド</message>
   <message id="secondary" comment="For use in middle of sentence">セカンダリ</message>
   <message id="Exit">終了</message>
+  <message id="Enter">入力</message>
   <message id="show-lines">線表示</message>
   <message id="Default">デフォルト</message>
   <message id="Error">エラー</message>
@@ -72,6 +74,7 @@
   <message id="Geometry">ジオメトリ</message>
   <message id="Load">読込</message>
   <message id="Mass">質量</message>
+  <message id="Material">素材</message>
   <message id="NA">該当なし</message>
   <message id="n/a">該当なし</message>
   <message id="N/A">該当なし</message>

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">Relative Act. Isotopics</message>
   
   <!-- Presets section -->
   <message id="raag-presets">Presets</message>
@@ -29,10 +30,42 @@
   <message id="raag-fwhm-start-det-eff">Start from Det. Eff.</message>
   <message id="raag-fwhm-fixed-det-eff">Fixed to Det. Eff.</message>
   
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">Same Z same age</message>
+  <message id="raag-refit-peaks">Refit Peaks</message>
+  <message id="raag-use-det-eff">Use Det. Eff.</message>
+  <message id="raag-none">None</message>
+  <message id="raag-nuclides">Nuclides</message>
+  <message id="raag-energy-ranges">Energy Ranges</message>
+  <message id="raag-free-peaks">Free Peaks</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">Spec.</message>
+  <message id="raag-rel-eff">Rel. Eff.</message>
+  <message id="raag-result">Result</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">Apply Energy Cal</message>
+  <message id="raag-show-ref-lines">Show Ref. Gamma Lines</message>
+  <message id="raag-hide-ref-lines">Hide Ref. Gamma Lines</message>
+  <message id="raag-set-peaks-foreground">Set Peaks to foreground</message>
+  <message id="raag-show-background">Show Background</message>
+  <message id="raag-hide-background">Hide Background</message>
+  <message id="raag-roi-options">ROI options:</message>
+  <message id="raag-remove-roi">Remove ROI</message>
+  <message id="raag-combine-roi-left">Combine with ROI to left</message>
+  <message id="raag-combine-roi-right">Combine with ROI to right</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">The equation type used to model peak FWHM as a function of energy.</message>
+  <message id="raag-tt-skew-type">The type of skew to apply to the peaks; skew parameters will be fit.</message>
+  <message id="raag-tt-u-pu-data-source">The nuclear data source for gamma branching ratios of uranium and plutonium.</message>
+  <message id="raag-tt-add-source">Add a source.</message>
+  <message id="raag-tt-add-energy-range">Add an energy range.</message>
+
   <!-- Buttons -->
   <message id="raag-add-free-peaks">add free peaks</message>
   <message id="raag-clear-all-ranges">clear all ranges</message>
-  <message id="raag-continue">Continue</message>
   <message id="raag-html-report">HTML Report</message>
   <message id="raag-xml-config">XML Config</message>
   

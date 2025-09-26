@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">مادة/صيغة</message>
   <message id="gxsg-tt-material">
     يمكنك إما إدخال اسم مادة أو عنصر محدد مسبقًا (امسح نص النموذج
     وانقر على السهم على يمين النموذج لرؤية جميع الخيارات المحددة مسبقًا)، أو يمكنك

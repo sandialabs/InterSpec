@@ -56,4 +56,10 @@
   <message id="ss-tt-with-uncert">{1}</message>
   <message id="ss-tt-without"></message>
   <message id="ss-warning-only-one-src-frac">Для фитирования массовых долей выберите как минимум два компонента {1} для фитирования.</message>
+  
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">Трассировочный Источник</message>
+  <message id="ss-select-option">Выбрать</message>
+  <message id="ss-fit-activity-cb">Подгонка значения активности</message>
+  <message id="ss-total-activity">Всего</message>
 </messages>

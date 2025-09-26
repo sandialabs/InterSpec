@@ -3200,6 +3200,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         SpectraFileModel *fileModel = m_fileManager->model();
         assert( measurment(type) == file );
         
+        //InterSpec::loadStateFromDb(Dbo::ptr<UserState>) has already called `m_fileManager->removeAllFiles()`
         const WModelIndex index = fileModel->index( file );
         assert( index.isValid() );
         
@@ -3623,7 +3624,14 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   
   try
   {
-    //Essentially reset the state of the app
+    // Store current state to the database (if applicable)
+    saveStateAtForegroundChange( false );
+    
+    // Disconnect ourselves from the state
+    if( m_dataMeasurement )
+      m_dataMeasurement->clearAllDbStateId();
+    
+    // Reset the state of the app (mostly/essentually)
     closeShieldingSourceFit();
 #if( USE_REL_ACT_TOOL )
     if( m_relActAutoGui )
@@ -3642,9 +3650,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     deleteGammaCountDialog();
     closeNuclideSearchWindow();
     
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Foreground, 0 );
     setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
     setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
-
     
     switch( entry->stateType )
     {
@@ -5566,11 +5574,11 @@ void InterSpec::startN42TestStates()
   for( const string &name : dispfiles )
     filesbox->addItem( name );
   
-  WPushButton *button = new WPushButton( "Cancel" );
+  WPushButton *button = new WPushButton( WString::tr("Cancel") );
   layout->addWidget( button, 1, 0, AlignCenter );
   button->clicked().connect( boost::bind(&AuxWindow::deleteAuxWindow, window) );
   
-  button = new WPushButton( "Load" );
+  button = new WPushButton( WString::tr("Load") );
   button->disable();
   button->clicked().connect( boost::bind( &doTestStateLoad, filesbox, window, this ) );
   

@@ -5,6 +5,7 @@
   <message id="Yes">Sí</message>
   <message id="No">No</message>
   <message id="Close">Cerrar</message>
+  <message id="Continue">Continuar</message>
   <message id="Save">Guardar</message>
   <message id="Name">Nombre</message>
   <message id="Desc.">Desc.</message>
@@ -23,6 +24,7 @@
   <message id="background" comment="For use in middle of sentence">fondo</message>
   <message id="secondary" comment="For use in middle of sentence">secundario</message>
   <message id="Exit">Salir</message>
+  <message id="Enter">Introducir</message>
   <message id="show-lines">Mostrar líneas</message>
   <message id="Default">Por defecto</message>
   <message id="Error">Error</message>
@@ -72,6 +74,7 @@
   <message id="Geometry">Geometría</message>
   <message id="Load">Cargar</message>
   <message id="Mass">Masa</message>
+  <message id="Material">Material</message>
   <message id="NA">NA</message>
   <message id="n/a">n/a</message>
   <message id="N/A">N/A</message>
@@ -610,4 +613,5 @@
   <message id="country-KR">Corea del Sur</message>
   <message id="country-TR">Turquía</message>
 </messages>
+
 

@@ -340,4 +340,16 @@
     pouvez l'entrer dans InterSpec en utilisant l'élément "<b>Entrer l'URL</b>"
     dans le menu "<b>Édition</b>".
   </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">Fichier</message>
+  <message id="sfm-col-n-samples">N-Échant.</message>
+  <message id="sfm-col-live-time">Temps direct (s)</message>
+  <message id="sfm-col-real-time">Temps réel (s)</message>
+  <message id="sfm-col-gam-count">Compt. gam.</message>
+  <message id="sfm-col-neut-count">Compt. neut.</message>
+  <message id="sfm-col-time-taken">Temps pris</message>
+  <message id="sfm-col-n-dets">N-Dét.</message>
+  <message id="sfm-col-loaded">Chargé</message>
+  <message id="sfm-col-file-rid">RID fichier</message>
 </messages>

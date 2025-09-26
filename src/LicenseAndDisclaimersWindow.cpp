@@ -562,7 +562,7 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );
   
-  SideMenuItem *item = new SideMenuItem( "Data", w );
+  SideMenuItem *item = new SideMenuItem( WString::tr("ladw-mi-data"), w );
   
   item->clicked().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
   item->mouseWentDown().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );

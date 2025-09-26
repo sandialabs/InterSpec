@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">Act. Rel. Isotópicos</message>
   
   <!-- Presets section -->
   <message id="raag-presets">Preajustes</message>
@@ -29,10 +30,42 @@
   <message id="raag-fwhm-start-det-eff">Iniciar desde ef. det.</message>
   <message id="raag-fwhm-fixed-det-eff">Fijo a ef. det.</message>
   
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">Mismo Z misma edad</message>
+  <message id="raag-refit-peaks">Reajustar picos</message>
+  <message id="raag-use-det-eff">Usar ef. det.</message>
+  <message id="raag-none">Ninguno</message>
+  <message id="raag-nuclides">Nucleidos</message>
+  <message id="raag-energy-ranges">Rangos de energía</message>
+  <message id="raag-free-peaks">Picos libres</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">Espectro</message>
+  <message id="raag-rel-eff">Ef. rel.</message>
+  <message id="raag-result">Resultado</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">Aplicar cal. energía</message>
+  <message id="raag-show-ref-lines">Mostrar líneas gamma ref.</message>
+  <message id="raag-hide-ref-lines">Ocultar líneas gamma ref.</message>
+  <message id="raag-set-peaks-foreground">Establecer picos en primer plano</message>
+  <message id="raag-show-background">Mostrar fondo</message>
+  <message id="raag-hide-background">Ocultar fondo</message>
+  <message id="raag-roi-options">Opciones ROI:</message>
+  <message id="raag-remove-roi">Eliminar ROI</message>
+  <message id="raag-combine-roi-left">Combinar con ROI izquierdo</message>
+  <message id="raag-combine-roi-right">Combinar con ROI derecho</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">El tipo de ecuación para modelar FWHM de pico como función de energía.</message>
+  <message id="raag-tt-skew-type">El tipo de asimetría a aplicar a los picos; parámetros de asimetría serán ajustados.</message>
+  <message id="raag-tt-u-pu-data-source">La fuente de datos nucleares para razones de ramificación gamma de uranio y plutonio.</message>
+  <message id="raag-tt-add-source">Añadir fuente.</message>
+  <message id="raag-tt-add-energy-range">Añadir rango de energía.</message>
+
   <!-- Buttons -->
   <message id="raag-add-free-peaks">añadir picos libres</message>
   <message id="raag-clear-all-ranges">limpiar todos rangos</message>
-  <message id="raag-continue">Continuar</message>
   <message id="raag-html-report">Reporte HTML</message>
   <message id="raag-xml-config">Config XML</message>
   
@@ -100,4 +133,5 @@
   <message id="raag-error-loading-xml-config">Error cargando archivo de config XML <em>Isotópicos por nucleído</em>: {1}</message>
   
 </messages>
+
 

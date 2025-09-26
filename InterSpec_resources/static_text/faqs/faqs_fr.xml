@@ -1,0 +1,1291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+<!-- SAND2023-10095O -->
+
+<!-- Potential additional topics to include:
+  - How statistical significance tests are applied when (trying to) fit a peak
+  - ...
+-->
+
+  <message id="intro">
+    Voici les questions que les utilisateurs ont posées, ou les problèmes qui ont été observés comme causant des difficultés 
+    ou des malentendus lors de l'utilisation d'<code>InterSpec</code>.<br />
+    <br />
+    Si vous avez des questions, si quelque chose semble plus difficile qu'il ne devrait l'être, si vous rencontrez des difficultés, 
+    ou si vous souhaitez demander des fonctionnalités ou signaler un bug, veuillez envoyer un e-mail à : 
+    <div style="text-align: center; font-size: larger; margin-top: 5px;"><a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a></div>
+  </message>
+
+  <message id="warm-start" title="Remarques pour ceux venant d'autres logiciels de spectroscopie">
+    <p>
+      Si vous êtes familier avec un autre logiciel d'analyse spectrale, vous devrez 
+      changer votre modèle mental de la façon dont la procédure d'analyse est effectuée lors de l'utilisation d'InterSpec.<br />      
+      Mais nous espérons que vous trouverez la méthodologie d'<code>InterSpec</code> intuitive.<br />
+      <br />
+      L'utilisation la plus courante d'<code>InterSpec</code> pour le développeur principal est d'analyser des spectres collectés sur le terrain
+      provenant d'une grande variété de systèmes de détection et d'emplacements, où les isotopes sources, le blindage, l'âge, 
+      et d'autres informations sont souvent inconnus. Ainsi <code>InterSpec</code> se concentre sur une analyse interactive flexible, 
+      avec des outils de support pour permettre cela, et pour aider à répondre aux questions pertinentes pour 
+      l'évaluation situationnelle liée aux données de rayonnement.<br />
+      <code>InterSpec</code> ne se concentre pas sur l'analyse de mesures répétitives, ou la création de rapports formels, 
+      ou l'utilisation d'une méthodologie fixe, mais il essaie de rendre les opérations courantes rapides et faciles.
+
+      <br />
+      Quelques différences notables de modèle mental entre <code>InterSpec</code> et d'autres suites logicielles sont :
+    </p>
+
+    <ul>
+      <li>
+        Dans <code>InterSpec</code>, lorsque vous ajustez un pic (ce qui, la façon la plus simple est de double-cliquer où le pic semble être sur le spectre), 
+        vous voulez probablement aussi assigner un nucléide à ce pic en même temps.<br />
+        La façon la plus simple de faire cela est si vous affichez des lignes de photopeaks de référence lorsque vous ajustez un pic, l'
+        association est automatiquement faite. Mais après l'ajustement, vous pouvez encore faire ou modifier l'assignation en cliquant droit sur un pic, 
+        en utilisant l'&quot;Éditeur de Pics&quot;, en tapant dans les cellules &quot;Nucléide&quot; de tout tableau listant les informations de pics, 
+        ou quelques autres méthodes.<br />
+        Assigner l'ID du nucléide aux pics permet l'ajustement pour l'activité du nucléide source, la calibration en énergie, 
+        l'analyse d'efficacité relative, les caractérisations d'efficacité du détecteur, et plus.
+      </li>
+
+      <li>
+        <code>InterSpec</code> n'utilise pas de bibliothèques de nucléides créées par l'utilisateur.<br />
+        Au lieu de cela, vous assignez des nucléides aux pics, et vous pouvez toujours choisir des nucléides parmi les ~4000 nucléides disponibles au total.  
+        Ou lors de la recherche de nucléides pour faire une identification pour un pic, tous les ~4k nucléides sont utilisés.
+        Si un rayon gamma provient d'un nucléide progéniteur (ex., le gamma de 1001 keV de la désintégration de Pa234m vers U234, dans la chaîne de désintégration U238),
+        vous assignez le pic au nucléide parent (ex, le pic de 1001 keV serait assigné à U238), et <code>InterSpec</code>
+        effectuera des calculs de désintégration pour déterminer le rapport de branchement du gamma spécifique.
+        Les nucléides assignés aux pics sont les nucléides qui seront utilisés pour ajuster les activités, ou effectuer d'autres opérations.
+      </li>
+
+      <li>
+        L'ajustement de pics est mieux fait manuellement dans <code>InterSpec</code> - c'est-à-dire, vous identifiant où les pics sont probablement, et ensuite
+        dire à InterSpec d'ajuster un pic là (par exemple, en double-cliquant sur le spectre près du pic, etc). 
+        Cela peut sembler un peu fastidieux au début, mais cela vous permet d'effectuer soigneusement l'ID de nucléide au fur et à mesure (assignant le 
+        nucléide au pic lorsque vous l'ajustez), et d'assurer de bons ajustements - le processus devient assez rapide en pratique.
+        <br />
+        Si vous voulez vraiment avoir des pics automatiquement ajustés pour vous, sur l'onglet &quot;Gestionnaire de Pics&quot;, 
+        il y a un bouton &quot;Rechercher des Pics&quot;, qui si vous affichez des photopeaks de référence, l'assignation de nucléide 
+        peut être automatiquement faite aussi - mais il faut faire attention.
+
+        <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+          <div style="display: flex; align-content: space-around;">
+              <img src="/InterSpec_resources/static_text/faqs/auto_peak_search_btn.png" style="height: 175px; max-width: 49.5%;" />
+              <img src="/InterSpec_resources/static_text/faqs/auto_peak_search_dialog.png" style="height: 175px; max-width: 49.5%;" />
+          </div>
+          <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+             (gauche) Bouton pour effectuer une recherche automatique de pics pour tous les pics dans votre spectre de premier plan.<br />
+             (droite) Résultats d'effectuer une recherche automatique ; si vous affichez des lignes de photopeaks de référence, vous avez l'
+             option d'assigner ce nucléide aux pics, et ne garder que les pics près des lignes de photopeaks de référence.
+          </div>
+        </div>
+        Il y a aussi des options pour automatiquement ajuster les mêmes pics d'un spectre au suivant ; voir le sujet &quot;Travailler avec des spectres avec des nucléides similaires&quot;
+        dans ce document.
+      </li>  
+      
+      <li>
+        <code>InterSpec</code> est seulement pour analyser les données - il n'a aucune capacité d'acquisition ; cela empêche l'application 
+        d'être liée à un type particulier de détecteur, ou de faire des suppositions sur le matériel ou la performance. Séparer clairement l'analyse 
+        de l'acquisition simplifie et clarifie aussi l'interface utilisateur.
+      </li>
+
+      <li>
+        Pour l'ajustement de pics, l'ID de nucléides, la calibration en énergie, les rapports isotopiques, et un certain nombre d'autres fonctions,
+        aucune fonction de réponse du détecteur n'est nécessaire.
+      </li>
+    </ul>
+  </message>
+
+
+  <message id="save-work" title="Sauvegarder votre travail">
+    Vous avez quelques options pour sauvegarder votre travail dans <code>InterSpec</code>
+    <ul>
+      <li>
+        Vous pouvez sauvegarder l'&quot;état de l'application&quot; dans une base de données interne de l'application, en utilisant l'option de menu <code>Enregistrer sous...</code>.  
+        La plupart des aspects de l'état de l'application sont stockés (les fichiers de spectre affichés, les pics ajustés, les identifications de nucléides, la plupart des outils 
+        actuellement ouverts et leur état, etc), donc vous pouvez reprendre là où vous vous étiez arrêté plus tard. Vous pouvez aussi créer des &quot;étiquettes&quot;
+        ou des instantanés de votre travail, pour pouvoir y revenir plus tard.
+        <br />
+        Après avoir sauvegardé un état, si vous chargez un de ses fichiers de spectre plus tard, <code>InterSpec</code> vérifiera sa base de données interne, 
+        pour voir si vous avez travaillé dessus, et si c'est le cas, vous aurez la chance de reprendre là où vous vous étiez arrêté.
+        <br />
+        Voir l'onglet <code>données</code> dans la boîte de dialogue <code>À propos d'InterSpec</code> pour savoir où ces données se trouvent sur votre ordinateur 
+        (ou équivalemment <a href="interspec://about/disclaimer">cliquez ici</a>).
+      </li>
+      <li> 
+        Exporter les spectres vers un fichier <code>N42-2012</code>, via l'élément de menu <code>Exporter le fichier...</code>, sauvegardera tous les
+        pics que vous avez ajustés, les identifications de nucléides, les changements de calibration en énergie, ainsi que les résultats de &quot;Ajustement d'Activité/Blindage&quot;, 
+        votre fonction de réponse du détecteur (FRD) actuelle, les résultats d'&quot;Isotopiques à partir des pics&quot;, d'&quot;Isotopiques par nucléides&quot; 
+        et quelques autres choses.<br />
+        Vous pouvez alors charger le fichier <code>N42-2012</code> plus tard dans <code>InterSpec</code>, et reprendre là où vous vous étiez arrêté, ou 
+        avoir un enregistrement de comment vous avez obtenu une réponse particulière. Cependant, l'état d'outils plus mineurs comme les calculatrices de section efficace ou 
+        de dose ne sera pas sauvegardé dans le fichier <code>N42-2012</code>.
+      </li>
+      <li>
+        Dans les divers outils à travers l'application, vous pouvez exporter <code>CSV</code>, <code>XML</code>, <code>CALp</code>, ou <code>codes QR</code>, pour représenter l'
+        état de cet outil. Ces fichiers peuvent, beaucoup de fois, être glissés-déposés de retour sur l'application pour utiliser ce travail.
+        Par exemple, l'onglet &quot;Gestionnaire de Pics&quot; a un lien d'exportation <code>CSV</code> ; le fichier <code>CSV</code> résultant peut être utilisé avec
+        d'autres programmes, ou si vous le glissez-déposez de retour sur <code>InterSpec</code>, même avec un fichier de spectre différent mais similaire,
+        <code>InterSpec</code> ajustera ces mêmes pics. De même avec la calibration en énergie et les fichiers CALp.  
+        L'outil &quot;Ajustement d'Activité/Blindage&quot; peut exporter un fichier XML, que vous pouvez importer plus tard pour utiliser la configuration similaire.
+        Et les codes QR contiennent aussi des liens URI qui peuvent être utilisés pour qu'<code>InterSpec</code> ouvre un certain outil, dans un certain état 
+        (par exemple, <a href="interspec://decay/chart%3fgrid%3d0%26logy%3d0%26actunits%3dci%26charttype%3dactivity%26timespan%3d20%20d%26nuc%3dI131%26act%3d1%20uCi%26nuc%3dI129%26act%3d1.5%20uCi">celui-ci</a> ouvrira l'outil de désintégration pour afficher I131 et I129).
+      </li>
+      <li>
+        Il y a aussi une option &quot;Auto stocker votre travail&quot;, qui stocke la plupart de vos changements/travail dans la 
+        base de données interne mentionnée ci-dessus (cela se produit lorsque vous quittez InterSpec proprement), mais actuellement, à partir d'
+        <code>InterSpec</code> v1.0.11, la seule façon de récupérer ce travail est en chargeant le fichier de spectre de premier plan 
+        à nouveau (par exemple, en glissant-déposant le fichier sur <code>InterSpec</code>), tandis que l'
+        option &quot;Vérifier le travail précédent&quot; est définie sur vrai ; vous serez invité si vous voulez reprendre
+        à partir de votre ancien état.<br />
+        Cependant, cette méthode est potentiellement non fiable, et ne devrait probablement pas être dépendante.
+      </li>
+    </ul>
+  </message>
+
+
+  <message id="orig-file-mod" title="Le fichier de spectre original est-il modifié ?">
+    Lorsque vous chargez un fichier de spectre dans <code>InterSpec</code>, il est lu en mémoire,
+    sans modifier le fichier original ; le fichier original n'est jamais lu, écrit, 
+    ou référencé à nouveau.
+  </message>
+
+  <message id="mult-open-files" title="Avoir plusieurs fichiers de spectre ouverts">
+    <p>
+      Lorsque vous ouvrez un nouveau fichier de spectre, tous les fichiers de spectre précédemment ouverts, et tout le travail que vous avez fait sur eux 
+      (calibration en énergie, pics ajustés, nucléides assignés, ajustements activité/blindage, etc) reste en mémoire.
+      Comme montré ci-dessous, vous pouvez basculer d'avant en arrière entre les fichiers de spectre ouverts, sans perdre le travail.
+    </p>
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: space-around;">
+          <img src="/InterSpec_resources/static_text/faqs/changing_spec_files.png" style="max-height: 150px; width: 49.5%;" />
+          <img src="/InterSpec_resources/static_text/faqs/spec_meas_manager_1.png" style="max-height: 150px; width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         (gauche) Utilisation de l'onglet &quot;Fichiers de Spectre&quot; pour changer entre l'affichage et le travail avec différents fichiers de spectre en mémoire.<br />
+         (droite) Utilisation du &quot;Gestionnaire de Spectre&quot; (utilisez l'élément de menu <code>Gestionnaire...</code> pour afficher) pour sélectionner quels fichiers en mémoire afficher, ou pour combiner ou exporter des fichiers.
+      </div>
+    </div>
+
+    <p>
+      Lorsqu'un fichier de spectre contient plusieurs échantillons (par exemple, à la fois un élément d'intérêt et un spectre de fond),
+      Les pics que vous ajustez sont associés aux <em>numéros d'échantillon</em> que vous avez affichés comme premier plan.
+      Donc si sur l'onglet &quot;Fichiers de Spectre&quot;, vous changez quels échantillons vous avez affichés comme premier plan,
+      vos pics ajustés ne seront plus affichés, et vous pouvez ajuster de nouveaux pics pour les échantillons de premier plan actuellement affichés ; si vous rebasculez vers les numéros d'échantillon originaux, vos pics originaux seront affichés à nouveau.<br />
+      Si un ou plusieurs de vos pics de signal coïncident avec un pic de fond, vous pourriez afficher le spectre de fond 
+      comme premier plan, ajuster les pics dans celui-ci, et ensuite rebasculer vers votre spectre de signal comme premier plan,
+      et l'échantillon de fond affiché comme fond, et quand vous ajusterez pour l'activité de nucléide, vous aurez 
+      l'option de soustraire en arrière-plan vos pics de fond des pics de premier plan.
+    </p>
+    <p>
+      L'&quot;Ajustement d'Activité/Blindage&quot;, la fonction de réponse du détecteur, les &quot;Isotopiques à partir des pics&quot;, 
+      les &quot;Isotopiques par nucléides&quot;, et quelques autres états d'outils sont associés au fichier de spectre de premier plan 
+      en mémoire. C'est-à-dire, si vous changez quels numéros d'échantillon sont affichés comme premier plan dans un fichier de spectre,
+      ces états d'outils ne seront pas changés.
+    </p>
+    <p>Ces associations de pics avec les <em>numéros d'échantillon</em>, ainsi que les calibrations en énergie, seront préservées
+      si vous exportez un fichier de spectre au format <code>N42-2012</code> ; les divers états d'outils seront aussi 
+      sauvegardés dans le fichier <code>N42</code>.
+    </p>
+    <p>
+      Avoir beaucoup de fichiers de spectre ouverts à la fois ne cause habituellement aucun problème ; si l'utilisation de mémoire des fichiers de spectre ouverts 
+      dépasse environ 256 MB, alors les fichiers de spectre seront déchargés vers des fichiers d'échange temporaires,
+      et lus de nouveau en mémoire de façon transparente si vous rebasculez pour les afficher.<br />
+      Cependant, il y a une option de menu <code>Effacer la Session</code> qui supprimera effectivement
+      tous les fichiers de spectre de la mémoire, et remettra l'interface utilisateur dans un état frais.
+    </p>
+  </message>
+
+  <message id="sample-nums-dets" title="Comprendre les numéros d'échantillon et les noms de détecteurs">
+    Certains systèmes de détection de radiation fournissent des fichiers de spectre de sortie qui peuvent avoir plusieurs 
+    échantillons dedans ; c'est-à-dire, des mesures faites à différents moments. Vous pouvez sélectionner lesquels 
+    de ces échantillons sont affichés comme spectre de premier plan/fond/secondaire
+    dans l'onglet &quot;Fichiers de Spectre&quot; ; vous pouvez afficher des <em>numéros d'échantillon</em> individuels,
+    combiner plusieurs numéros d'échantillon, et/ou spécifier des plages.
+    <br />
+    Certains systèmes peuvent avoir plusieurs éléments de détection, dont les spectres sont enregistrés séparément
+    dans le fichier de spectre. Les éléments de détection individuels seront nommés dans <code>InterSpec</code>,
+    et vous pouvez choisir lesquels afficher dans le menu <b>Vue</b> &rarr; <b>Détecteurs</b>. 
+    Les noms de détecteurs sont souvent spécifiés dans le fichier de spectre, mais sinon, <code>InterSpec</code>
+    choisira des noms par défaut.
+    <br />
+    Les <em>numéros d'échantillon</em>, et détecteurs que vous choisissez d'afficher comme premier plan, ou fond,
+    ou spectre secondaire, sont additionnés ensemble pour l'affichage, ou l'ajustement de pics, ou quoi que ce soit.
+
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: center;">
+          <img src="/InterSpec_resources/static_text/faqs/sample_dets.png" style="max-height: 250px; max-width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        L'exemple de fichier de spectre de passage qui a les échantillons 82 à 94 chargés comme premier plan, 
+        les échantillons 1 à 20 comme fond, et affiche seulement deux des huit détecteurs dans le 
+        système de détection.
+      </div>
+    </div>
+
+    <p>
+      Lors de la lecture du fichier de spectre, s'il y a plusieurs détecteurs, les spectres sont habituellement groupés 
+      ensemble selon le moment où les mesures ont été prises ; c'est-à-dire, tous les spectres pour des <em>numéros d'échantillon</em> donnés,
+      auront <i>habituellement</i> le même temps de début de mesure.
+    </p>
+    <p>
+      L'ensemble des <em>numéros d'échantillon</em> affichés comme premier plan, est ce à quoi les pics que vous ajustez sont associés ; les 
+      détecteurs affichés (si le système de mesure avait plus d'un détecteur) n'affectent pas les associations de pics. Si vous ajustez 
+      des pics pour un ensemble donné de <em>numéros d'échantillon</em>, puis changez les numéros d'échantillon affichés, et éventuellement ajustez
+      d'autres pics, puis rechangez vers les numéros d'échantillon originaux, vos pics originaux seront affichés.
+    </p>
+    <p>
+      Sur l'onglet &quot;Fichiers de Spectre&quot;, vous pouvez spécifier quels <em>numéros d'échantillon</em> sont affichés en entrant manuellement
+      les numéros d'échantillon, dans des formats comme &quot;1&quot; (seulement l'échantillon 1), &quot;1-5&quot; (échantillons 1 à 5), 
+      &quot;1-3,8,12-20,10&quot; (échantillons 1 à 3, 8, 12 à 20, et 10).
+    </p>
+    <p>
+      Si les données sont en mode recherche ou des données de portail, un graphique temporel sera aussi affiché sous le spectre ; vous pouvez utiliser ce graphique temporel
+      pour sélectionner les <em>numéros d'échantillon</em> de spectres de premier plan, fond, et secondaire.
+      (conseil : utilisez le menu <img src="/InterSpec_resources/images/more_menu_icon.svg" style="display: inline-block; height: 15px;"></img>
+      dans le coin supérieur droit du graphique temporel pour aider à contrôler le mode de sélection).
+    </p>
+  </message>
+
+  <message id="multi-iso-peak" title="Contributions à un pic par plusieurs isotopes">
+    <p>
+      Dans l'interface utilisateur d'<code>InterSpec</code>, seulement un seul gamma ou rayon X spécifique d'une 
+      seule chaîne de désintégration de nucléides peut être assigné à un pic ajusté.<br />
+      Cependant, il est commun que plusieurs gammas, ou rayons X, de la chaîne de désintégration du nucléide puissent contribuer au 
+      pic ajusté. Ou il pourrait être qu'un gamma ou rayon X d'un nucléide parent complètement différent contribue aussi
+      au pic.
+    </p>
+    <p>
+      Lors de l'exécution d'une analyse &quot;Ajustement d'Activité/Blindage&quot; ou &quot;Isotopiques à partir des pics&quot;, il y a
+      une option &quot;<em>Plusieurs nucléides contribuent au pic</em>&quot; :
+      <img src="/InterSpec_resources/static_text/faqs/mult_nuc_contrib_cb.png" style="display: block; height: 20px; margin-left: 20px"></img>
+      Quand cette option est sélectionnée (qui est par défaut), les contributions de tous les gammas et rayons X dans 1.25 FWHM de la moyenne du pic, 
+      de tout nucléide associé à n'importe lequel des pics utilisés, seront incluses. Cela s'est montré faire généralement un bon travail
+      de prise en compte des interférences.
+      <br />
+      Typiquement le nucléide (et donc gamma/rayon X) que vous assignez à un pic est la source contribuant dominamment pour le 
+      pic. Cependant, occasionnellement un nucléide peut ne pas être la source dominante pour aucun photopeak observé ; dans ces cas, 
+      il est correct de choisir n'importe lequel des pics auxquels le nucléide contribue, et d'assigner le pic au nucléide. Alors pour 
+      ce pic, et tout autre pic auquel le nucléide contribue, les amplitudes (attendues) seront toutes proprement 
+      calculées, et incluront le nucléide en question.
+    </p>
+  </message>
+
+  <message id="background-peak-fit" title="Prendre en compte les pics dans le fond">
+    Vous ne pouvez ajuster des pics que pour le spectre de premier plan actuellement affiché ; cependant, si vous voulez ajuster les
+    pics pour le spectre de fond des mesures, vous pouvez utiliser l'onglet &quot;Fichiers de Spectre&quot; pour afficher
+    la mesure de fond comme spectre de premier plan. Vous pouvez alors ajuster des pics, et rebasculer vers l'affichage
+    du spectre de l'élément d'intérêt comme premier plan, et le fond des mesures comme spectre de fond 
+    affiché.<br />
+    Puis dans l'outil &quot;Ajustement d'Activité/Blindage&quot;, et quelques autres endroits, vous pouvez sélectionner l'option de soustraire 
+    le pic du spectre de fond. Utiliser cette méthode d'ajustement des pics de fond a l'avantage que
+    <code>InterSpec</code> prendra proprement en compte les incertitudes dans le calcul des activités et blindage. Si vous
+    faites un &quot;Sous. Fond Dur...&quot;, la variance de données dans chaque canal est actuellement perdue, et les ajustements de pics
+    auront une incertitude statistique artificiellement faible.
+  </message>
+
+  <message id="fit-source-over-background-peaks" title="Correction de fond des activités">
+    Veuillez voir le sujet immédiatement au-dessus ici.
+  </message>
+
+  <message id="create-drf" title="Créer des fonctions de réponse de détecteur (FRD)">
+    <code>InterSpec</code> permet d'importer des fonctions de réponse de détecteur (FRD) de quelques 
+    sources communes, mais vous pouvez aussi utiliser <code>InterSpec</code> pour créer la FRD
+    pour votre détecteur.
+    <br/>
+    Veuillez voir
+    <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/#making-a-detector-response-function">https://sandialabs.github.io/InterSpec/tutorials/#making-a-detector-response-function</a>
+    pour une description du processus.
+  </message>
+
+  <message id="energy-cal-quick" title="Aperçu de l'exécution des calibrations en énergie">
+    La façon la plus simple d'effectuer une calibration en énergie dans <code>InterSpec</code> est souvent 
+    d'ajuster un ou plusieurs photopeaks, de leur assigner un nucléide (et donc une énergie de ligne gamma), et ensuite sur l'
+    onglet &quot;Calibration en Énergie&quot; sélectionner quels pics utiliser, et
+    quel(s) coefficient(s) ajuster, et cliquer le bouton &quot;Ajuster Coeffs&quot; :
+    <img src="/InterSpec_resources/static_text/faqs/energy_cal_tab.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <br />
+    L'onglet &quot;Calibration en Énergie&quot; a beaucoup plus de fonctionnalités ; voir le sujet d'aide sur l'outil (cliquez
+    le point d'interrogation dans le coin inférieur gauche de l'onglet) pour plus d'informations.
+    <p>
+    Vous pouvez aussi utiliser <code>CTRL + ALT</code> (ou sur macOS, <code>CTRL + OPT</code>), et le bouton gauche de la souris
+    pour cliquer-et-glisser le spectre visuellement vers l'emplacement correct.
+    Si vous faites alors cette action à nouveau, comme d'abord sur un pic haute énergie, puis sur un pic basse énergie (ou vice versa), 
+    la boîte de dialogue qui apparaît vous donnera l'option de préserver les deux actions en ajustant à la fois l'offset et le gain 
+    donc de cette façon les deux pics resteront aux énergies où vous les avez glissés.
+    </p>
+    <p>Il y a aussi la possibilité d'hériter de la calibration en énergie entre spectres successifs,
+      ou d'utiliser un fichier <b>CALp</b> - voir le prochain sujet pour plus d'infos.
+    </p>
+  </message>
+
+  <message id="feature-requests" title="Comment demander du support, de nouvelles fonctionnalités, ou signaler des bugs">
+    <p>
+      Les commentaires, demandes de fonctionnalités, rapports de bugs, critiques, et simplement demander comment faire quelque chose dans 
+      <code>InterSpec</code> sont tous grandement appréciés !<br />
+      <br />
+      Veuillez envoyer un e-mail à :
+      <div style="text-align: center; font-size: larger; margin-top: 5px;"><a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a></div>
+    </p>
+    <p>La plupart des améliorations et fonctionnalités implémentées dans <code>InterSpec</code> depuis 2019 ont
+      été le résultat de commentaires d'utilisateurs. Beaucoup de fois quand un utilisateur a exprimé ne pas savoir
+      comment faire quelque chose, ou exprimé de la frustration sur la difficulté de faire quelque chose, cela a
+      mené à de très belles améliorations. Les demandes d'utilisateurs pèsent aussi lourdement dans la décision de quelles
+      nouvelles fonctionnalités implémenter. Tous les commentaires, même s'ils ne sont pas des commentaires directs, sont pris en considération sérieuse
+      et enregistrés ; plusieurs fois après quelques jours ou semaines de réflexion, 
+      les commentaires qui initialement pouvaient ne pas sembler dans le scope, ou seulement applicables à un cas d'usage très spécifique,
+      feront <em>tilt</em> avec l'auteur principal et une solution plus généralisée peut être implémentée
+      améliorant l'expérience globale.
+    </p>
+    <p>
+      Les contributions à <code>InterSpec</code> sont aussi bienvenues et grandement appréciées, soit 
+      à travers des pull-requests github, soit via d'autres moyens. Les pull-requests pour des bugs mineurs ou des corrections
+      peuvent habituellement être acceptées assez facilement. Pour des ajouts de fonctionnalités plus importantes, veuillez 
+      envoyer un e-mail à <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a> d'abord pour coordonner,
+      et on vous demandera aussi de signer un mémo d'auteur pour protéger notre capacité à librement
+      distribuer <code>InterSpec</code>.
+    </p>
+    <p><code>InterSpec</code> est principalement développé et supporté avec seulement une fraction minoritaire 
+      du temps de l'auteur principal, donc tout ne peut pas être implémenté, ou cela peut prendre 
+      du temps avant que quelque chose puisse être abordé.
+      Les réponses aux e-mails peuvent prendre du temps si l'auteur est en voyage ou en vacances, 
+      et il est possible que les ressources ne soient pas disponibles pour fournir le support demandé.
+    </p>
+  </message>
+
+  <message id="re-using-drfs" title="Réutilisation des fonctions de réponse de détecteur (FRD)">
+    Une fois que vous avez une FRD dans <code>InterSpec</code>, il y a quelques façons de les réutiliser dans le futur :
+    <ul>
+      <li>
+        Quand vous créez une FRD dans <code>InterSpec</code>, et que vous cliquez le bouton &quot;Stocker/Exporter...&quot;, 
+        vous verrez :
+        <img src="/InterSpec_resources/static_text/faqs/drf_save_dialog.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+        Vous pouvez exporter la FRD comme un fichier <code>CSV</code> que vous pourrez glisser-déposer plus tard sur <code>InterSpec</code> pour
+        l'utiliser, vous pouvez choisir de sauvegarder la FRD dans la base de données interne d'<code>InterSpec</code>, que vous pouvez 
+        facilement récupérer plus tard. Ou si vous exportez le fichier <code>N42-2012</code>, la FRD sera
+        sauvegardée dedans, pour une utilisation ultérieure. La carte de référence rapide contiendra un code QR qui 
+        a toute l'information de la FRD intégrée, que vous pouvez scanner plus tard pour utiliser la FRD aussi.<br />
+        Il y a aussi l'option d'utiliser cette FRD automatiquement chaque fois que vous chargez des données soit du 
+        détecteur spécifique, soit du même modèle de détecteur.
+      </li>
+      <li>
+        <code>InterSpec</code> stocke les FRD précédemment utilisées dans sa base de données interne ; si vous cliquez sur le bouton de sélection de FRD, localisé 
+        à divers endroits à travers l'application, et qui ressemble à :
+        <img src="/InterSpec_resources/static_text/faqs/drf_select_btn.png" style="height: 20px; display: block; margin-left: 20px" />
+        Vous pouvez sélectionner l'onglet &quot;Précédent&quot;, et parcourir les FRD.<br />
+        L'interface ressemble à :
+        <img src="/InterSpec_resources/static_text/faqs/drf_prev_dialog.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+      </li>
+      <li>
+        Dans le pied de page de la boîte de dialogue de sélection de FRD, montrée ci-dessus, il y a des options pour exporter une FRD vers un fichier XML, qui peut plus tard être 
+        glissé-déposé sur <code>InterSpec</code> pour utilisation, ou vous pouvez afficher un code QR, qui intégrera l'information de la FRD
+        dans le code QR. Dans la boîte de dialogue du code QR il y a aussi une option pour copier un URI, qui ressemblera à quelque chose comme
+        <code>interspec://drf/specify?CREATED%3d1682954314%...</code>, que vous pouvez mettre dans un hyperlien quelque part et cliquer dessus,
+        coller dans la barre d'adresse d'un navigateur web pour que votre Système d'Exploitation l'ouvre alors dans <code>InterSpec</code>, ou 
+        vous pouvez coller l'URI dans la boîte de dialogue créée par l'élément de menu <b>Éditer</b> &rarr; <b>Entrer URL</b> d'<code>InterSpec</code>.
+      </li>
+      <li>
+        La FRD est sauvegardée dans les fichiers de spectre <code>N42-2012</code> aussi, donc si vous chargez le fichier plus tard, la FRD sera 
+        automatiquement utilisée.
+      </li>
+    </ul>
+  </message>
+
+  <message id="using-default-drfs" title="Utilisation des fonctions de réponse de détecteur intégrées (FRD)">
+    <code>InterSpec</code> vient avec un certain nombre de fonctions de réponse de détecteur (FRD) pour des détecteurs de rayonnement portables courants ; 
+    il vient aussi avec quelques fonctions de réponse génériques.<br />
+    Si un modèle de détecteur de rayonnement peut être déterminé à partir du fichier de spectre, et qu'il y a une FRD par défaut
+    pour ce modèle, quand vous chargez un fichier de spectre, la FRD par défaut sera aussi chargée.<br />
+    Si la FRD par défaut n'est pas chargée, ou qu'une FRD incorrecte est chargée, vous pouvez cliquer ou appuyer sur l'icône de sélection 
+    de détecteur :
+
+    <img src="/InterSpec_resources/static_text/faqs/drf_select_btn_empty.png" style="height: 20px; display: block; margin-top: 5px; margin-bottom: 5px; margin-left: 35px;" />
+    
+    Vous serez alors présenté avec une boîte de dialogue, où cliquer sur l'onglet &quot;<b>GADRAS</b>&quot; 
+    fournira quelques options de FRD génériques, ou sélectionner l'onglet &quot;<b>Rel. Eff.</b>&quot; vous 
+    présentera une liste de modèles de détecteurs spécifiques à choisir.<br />
+
+    <img src="/InterSpec_resources/static_text/faqs/drf_select_defaults.png" style="height: 170px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    
+    Vous pouvez cliquer l'icône <img src="/InterSpec_resources/images/plus_min_black.svg" style="display: inline-block; height: 15px;"></img> 
+    pour importer plus de FRD à partir de fichiers, que vous pouvez choisir de sauvegarder pour qu'elles soient aussi dans cette boîte de dialogue/onglet dans le futur.
+  </message>
+
+  <message id="input-spectrum-file-formats" title="Formats de fichiers de spectre d'entrée qui sont acceptés">
+    <code>InterSpec</code> vise à supporter les types de fichiers de spectre courants produits par des détecteurs commercialement disponibles, ainsi
+    qu'un certain nombre de formats uniques et basés sur du texte.
+    <p>
+      Si vous rencontrez un format de fichier de spectre non supporté par <code>InterSpec</code>, veuillez envoyer 
+      un fichier d'exemple par e-mail à <a href="mailto:interspec@sandia.gov">InterSpec@sandia.gov</a>, avec toute
+      documentation que vous pourriez avoir.<br />
+      Cependant, la disponibilité du développeur pour implémenter est très limitée, donc la priorité sera donnée aux formats largement, ou 
+      stratégiquement utilisés.<br />
+      Vous êtes aussi bienvenu d'implémenter le support pour un format de fichier de spectre dans 
+      <a target="_blank" href="https://github.com/sandialabs/SpecUtils">https://github.com/sandialabs/SpecUtils</a>, pour inclusion 
+      dans <code>InterSpec</code>.
+    </p>
+    
+  <p>
+    <code>InterSpec</code> peut exporter des spectres vers les formats suivants : <code>N42-2012</code>, 
+    <code>N42-2006</code>, <code>CHN</code>, <code>IAEA</code>, <code>SPE</code>, <code>CSV</code>, 
+    <code>TXT</code>, <code>PCF</code>, <code>CNF</code>, <code>SPC</code> (virgule flottante, entier, et ascii),
+     <code>TKA</code>, <code>EXPLORANIUM GR-130/135</code>, fichier HTML autonome, codes QR, et 
+     URI <code>raddata://</code> 
+     (voir <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/references/spectrum_in_a_qr_code_uur_latest.pdf">ici</a>).
+  </p>
+  </message>
+
+  <message id="marinelli-meas" title="Utilisation des béchers Marinelli et autres géométries fixes">
+    <p>
+    Pour déterminer les activités pour un bécher Marinelli, ou autres géométries fixes où l'approximation normale de fonction de réponse de détecteur en champ lointain 
+    se décompose (c'est-à-dire, la distance entre la source et 
+    le détecteur est inférieure à environ trois fois la plus grande des dimensions du détecteur et de la source), vous aurez
+    besoin d'une fonction de réponse de détecteur spécialisée (FRD).
+  </p>
+
+  <p>
+    Pour le cas du bécher Marinelli, souvent un étalon de calibration multi-isotope est utilisé pour calculer
+    l'efficacité dépendante de l'énergie du détecteur. Dans ce cas vous pouvez utiliser l'outil &quot;Faire Réponse de Détecteur&quot;
+    pour créer une FRD. Vous pouvez soit entrer une distance aléatoire (comme 1 mètre), et ensuite plus tard quand vous 
+    ajustez pour l'activité, utiliser cette même distance (et habituellement pas de blindage), ou à partir de 
+    <code>InterSpec</code> v1.0.12, il y a une option &quot;Géométrie Fixe&quot; que vous pouvez cocher dans l'
+    outil <em>Faire Réponse de Détecteur</em>, qui supprimera les entrées de distance à la fois de cet outil, ainsi que de 
+    l'outil &quot;Ajustement d'Activité/Blindage&quot;.  
+    La &quot;Géométrie Fixe&quot; dans l'outil <em>Faire Réponse de Détecteur</em> est entourée ci-dessous :
+    <img src="/InterSpec_resources/static_text/faqs/make_drf_fixed_geom.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </p>
+    
+  <p>
+    Pour les géométries, telles que les mesures de contamination de sol <em>in-situ</em> (ex., un détecteur à 1 mètre du 
+    sol, pointant vers le bas), où les étalons de calibration multi-isotope ne sont pas pratiques pour dériver les efficacités, 
+    vous devrez calculer les efficacités d'une autre manière, habituellement en utilisant quelque chose comme une méthode Monte Carlo, ou un 
+    logiciel de modélisation comme 
+    <a target="_blank" href="https://www.mirion.com/products/technologies/spectroscopy-scientific-analysis/gamma-spectroscopy/gamma-spectroscopy-software/lab-applications/s573-isocs-calibration-software">Mirion ISOCS</a>.
+    <br />
+    À partir d'<code>InterSpec</code> v1.0.12, vous pouvez importer les fichiers <em>.ecc</em> produits par ISOCS
+    dans <code>InterSpec</code>, en glissant et déposant le fichier <em>.ecc</em> sur <code>InterSpec</code>,
+    ce qui résultera en une boîte de dialogue similaire à :
+    <img src="/InterSpec_resources/static_text/faqs/isocs_ecc_import.png" style="height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </p>
+    
+  <p>
+    Si une certaine erreur de modélisation est acceptable, utiliser l'outil &quot;Ajustement d'Activité/Blindage&quot; avec une FRD standard de 
+    <em>champ lointain</em> semble souvent fournir des résultats acceptables ; par exemple, l'analyse de mesures <em>in-situ</em>
+    (c'est-à-dire, détecteur à 1 mètre du sol, pointant vers le bas) dans <code>InterSpec</code> s'accordent habituellement 
+    à moins de 10%, ou mieux, avec les méthodes/packages qui prennent proprement en compte la dépendance angulaire de la réponse du détecteur 
+    (au moins pour les énergies au-dessus d'environ quelques centaines de keV, les énergies plus basses auraient probablement
+    des erreurs plus importantes).  
+    Mais veuillez aussi noter que pour des mesures très proches (c'est-à-dire, échantillon à moins de ~10 cm du détecteur) la sommation en cascade peut devenir significative, menant 
+    à des erreurs allant jusqu'à 30% environ, juste de cet effet, que <code>InterSpec</code> ne prend actuellement pas en compte.
+  </p>
+  </message>
+
+  <message id="soil-contamination" title="Détermination de la contamination de surface du sol">
+    <code>InterSpec</code> peut être utilisé pour aider à déterminer la contamination de surface, ainsi que 
+    la contamination distribuée exponentiellement dans le sol, en utilisant l'outil &quot;Ajustement d'Activité/Blindage&quot;
+    en utilisant des géométries cylindriques ou rectangulaires et des sources-traces.<br/>
+    Pour des informations complètes, veuillez voir :
+    <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/#soil-contamination-and-trace-sources" style="display: block; margin-left: 25px;">https://sandialabs.github.io/InterSpec/tutorials/#soil-contamination-and-trace-sources</a>
+    <br />
+    Une limitation est qu'à partir de la version 1.0.12, <code>InterSpec</code> ne prend pas en compte
+    la dépendance angulaire du détecteur, sauf si une FRD de &quot;Géométrie Fixe&quot; est utilisée ; c'est-à-dire,
+    si vous utilisiez un Ortec Detective-X pour prendre la mesure, et la FRD par défaut qui vient avec 
+    <code>InterSpec</code>, cet effet ne serait pas pris en compte. Cependant, les résultats s'accordent habituellement 
+    bien à moins de 10%, ou mieux, avec les méthodes/packages qui prennent proprement en compte cet 
+    effet, au moins pour les énergies plus hautes.
+  </message>
+
+  <message id="out-of-equilibrium" title="Vérification si une chaîne de désintégration est en équilibre">
+    Quelques méthodes possibles pour vérifier le statut d'équilibre des nucléides parents :
+    <ul>
+      <li>Utiliser l'outil &quot;Isotopiques à partir des pics&quot;, peut être une belle façon de voir qu'une 
+        chaîne de désintégration est hors équilibre, ou à un âge significativement différent de celui supposé,
+        parce que nous nous attendons à ce que l'efficacité de détection soit approximativement une fonction lisse
+        de l'énergie, et la réponse du détecteur, le blindage, ou la distance n'ont pas besoin d'être connus.
+        Voici un exemple de l'outil pour une mesure de Th232 hors équilibre ; il y a 
+        clairement deux courbes d'Efficacité Relative séparées, ce qui ne serait pas attendu 
+        pour un échantillon en équilibre.
+        <img src="/InterSpec_resources/static_text/faqs/th232_out_of_equilibrium.png" style="max-height: 150px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+      </li>
+      <li> L'outil &quot;Ajustement d'Activité/Blindage&quot; peut être utilisé pour ajuster l'âge d'un nucléide parent,
+        ce qui peut vous donner le temps de séparation chimique.
+      </li>
+      <li> L'outil &quot;Photopeak de Référence&quot; peut être utilisé pour montrer des lignes pour le nucléide parent
+        à différents âges, avec une inspection visuelle rapide des hauteurs relatives de pics, référencées aux 
+        hauteurs des lignes de photopeak, indiquant parfois des écarts évidents, ou permettant même des estimations d'âge 
+        approximatives.
+      </li>
+      <li>Normalement vous assignez un pic au nucléide parent, et alors <code>InterSpec</code> prendra
+        soin d'effectuer la désintégration, et d'obtenir les rapports de branchement corrects pour les lignes de progéniture.
+        Cependant, si à la place vous assignez chaque pic au nucléide directement responsable de ce gamma
+        (ex., le pic de 2614 keV de Th232, serait assigné à Tl208), vous pouvez
+        alors ajuster pour les activités de progéniture dans l'outil &quot;Ajustement d'Activité/Blindage&quot;
+        pour déterminer à quel nucléide dans la chaîne de désintégration l'interruption a commencé (ex., vous pourriez
+        voir un changement dans les activités pour Ra226 et en dessous, pour la chaîne de désintégration U238).
+      </li>
+    </ul>
+  </message>
+
+  <message id="decay-chain-assign" title="Assigner le nucléide parent aux pics">
+    Quand vous assignez un nucléide source à un pic (ex., vous affichez des lignes de photopeaks de 
+    référence, et ajustez ensuite un pic près d'une ligne), vous assignez normalement le nucléide parent à celui-ci.
+    Par exemple, le pic de 2614 keV dans la série de désintégration Th232 est créé par la désintégration de Tl208,
+    cependant, dans <code>InterSpec</code> vous assigneriez normalement le pic de 2614 keV à Th232 
+    (soit en affichant les lignes de photopeaks de référence Th232 avant l'ajustement, soit en tapant &quot;Th232&quot;
+    dans la colonne <em>Nucléide</em> de tout tableau montrant les informations de pics, ou en cliquant droit sur le pic
+    et choisissant d'assigner un nucléide). Quand vous faites cela,
+    <code>InterSpec</code> désintègre Th232 en interne et assigne la transition nucléaire spécifique 
+    menant à ce gamma, au pic.<br />
+    La motivation majeure pour assigner des pics à l'isotope parent, plutôt qu'à la progéniture spécifique 
+    qui l'a créé, est de permettre la prise en compte de différents rapports de branchement, quand l'échantillon vieillit, ou
+    d'utiliser les intensités de ligne gamma de multiples progénitures pour faire des choses comme ajuster les épaisseurs de blindage, 
+    ou les types, en utilisant l'atténuation différentielle.
+  </message>
+
+  <message id="default-age" title="Âges par défaut des nucléides">
+    Quelques heuristiques simples sont utilisées pour deviner les âges par défaut des nucléides, la logique peut être trouvée dans la
+    fonction <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/bbc3d420a80f03a47ec1341909421cf450624571/src/PeakDef.cpp#L3217">PeakDef::defaultDecayTime(...)</a>, 
+    mais elle suit approximativement :
+    <ul>
+      <li>Si l'équilibre séculaire peut être obtenu, utilisera 10 demi-vies d'équilibre séculaire, sinon 7 demi-vies d'équilibre instantané</li>
+      <li>Si la valeur ci-dessus est inférieure à la moitié de la demi-vie du nucléide parent, alors 2,5 demi-vies du nucléide parent</li>
+      <li>Si le nucléide se désintègre vers des enfants stables, un âge de zéro seconde est utilisé</li>
+      <li>Si la demi-vie du nucléide est supérieure à 100 ans, ou pour tout isotope d'Uranium ou de Plutonium, un âge de 20 ans sera utilisé</li>
+      <li>Si après ce qui précède, la valeur est plus de 100 demi-vies du nucléide parent, alors 7 demi-vies du parent seront utilisées</li>
+    </ul>
+  </message>
+ 
+  <message id="livetime-normalization" title="Normalisation premier plan/arrière-plan, et comment changer">  
+    <p>
+      Quand un spectre d'arrière-plan ou secondaire est affiché, par défaut il est normalisé au temps réel sur le 
+      spectre de premier plan (ex., si le temps réel d'arrière-plan est deux fois celui du premier plan, alors l'amplitude du spectre d'arrière-plan
+      sera divisée par 2), de sorte que visuellement les spectres sont comparés selon leur <em>taux de comptage</em>.
+      La légende sur le spectre indiquera de combien le spectre d'arrière-plan ou secondaire est mis à l'échelle, et le 
+      temps réel affiché pour le spectre d'arrière-plan/secondaire correspondra à celui du premier plan ; le total des comptages du
+      spectre d'arrière-plan/secondaire affiché dans la légende sera aussi mis à l'échelle par ce même facteur.
+    </p>
+    <p>
+    Vous pouvez ajuster les facteurs de normalisation en utilisant soit les curseurs à droite des spectres,
+    soit en tapant manuellement le facteur d'échelle désiré sur l'onglet &quot;Fichiers de Spectre&quot;, comme montré
+    entouré en rouge ici :
+    <img src="/InterSpec_resources/static_text/faqs/normalize_spectra.png" style="max-height: 350px; max-width: 90%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    Si vous ajustez la normalisation loin de la normalisation au temps réel, le bouton &quot;Normaliser&quot;
+    montré ci-dessus (en bas à droite, pour le spectre secondaire) apparaîtra, et quand cliqué 
+    retournera la normalisation au temps réel.
+    </p>
+  </message>
+
+  <message id="time-chart-display" title="Options d'affichage du graphique temporel">
+    Quand on affiche des données de mode recherche, ou de portail dans <code>InterSpec</code>, un graphique temporel sera affiché.
+    Ce graphique temporel peut être utilisé pour sélectionner des portions de temps à sommer et utiliser comme premier plan/arrière-plan/secondaire, cependant,
+    sauf si vous faites cela régulièrement, les raccourcis clavier ne seront pas retenus, donc à la place vous pouvez cliquer l'
+    icône <img src="/InterSpec_resources/images/more_menu_icon.svg" style="display: inline-block; height: 15px;"></img>
+    dans le coin supérieur droit du graphique temporel, pour montrer quelques modes légèrement plus faciles à utiliser pour sélectionner ou changer 
+    les périodes temporelles de données à utiliser :
+    <img src="/InterSpec_resources/static_text/faqs/time_opt_int.png" style="max-height: 150px; max-width: 25%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <br />
+    Vous pouvez aussi utiliser l'onglet &quot;Filt&quot; pour filtrer la plage d'énergie qui est sommée pour former le graphique temporel ; 
+    une plage de normalisation peut aussi être choisie. Par exemple, choisir de sommer entre 170 keV et 200 keV, 
+    et normaliser aux énergies au-dessus de 250 keV, fera habituellement vraiment ressortir le signal U235 ; dans la figure ci-dessous
+    les mêmes données source sont utilisées, mais utiliser ce ratio-age fera ressortir le signal d'intérêt, quand
+    le graphique de taux original ne l'indiquait pas.
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: space-around;">
+          <img src="/InterSpec_resources/static_text/faqs/time_history_full_energy_range.jpg" style="height: 115px; max-width: 49.5%;" />
+          <img src="/InterSpec_resources/static_text/faqs/time_history_u235_energy_range.jpg" style="height: 115px; max-width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         (gauche) Historique temporel de données de recherche sans filtre de plage d'énergie.<br />
+         (droite) Les mêmes données, mais avec la plage 170 keV à 190 keV ratio-ée avec 220 keV et au-dessus.
+      </div>
+    </div>
+    <br />
+    L'onglet &quot;Opt&quot; a quelques options pour comment les données sont tracées ; parfois le &quot;Ne pas rebinner&quot; peut être utile pour
+    repérer des points chauds étroits dans des données d'historique temporel vraiment longues.<br />
+    Le &quot;Rel. y-max&quot; peut être utile pour (dé-)accentuer les données gamma ou neutron. 
+    La valeur peut être ajustée entre 0,04 et 25. Des valeurs supérieures à 1,0 causeront que la plage de l'axe y des neutrons soit ce 
+    multiple de la plage de données des neutrons, sans affecter la plage de l'axe y des gammas. Des valeurs inférieures à un feront une chose similaire pour les données gamma.
+    Des exemples d'effets du changement de cette valeur sont :
+    <img src="/InterSpec_resources/static_text/faqs/time_char_opt_2.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <img src="/InterSpec_resources/static_text/faqs/time_char_opt.png" style="max-height: 150px; max-width: 65%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+  </message>
+
+  <message id="reuse-energy-cal" title="Réutilisation des calibrations en énergie">
+    Il y a deux options pour réutiliser la calibration en énergie d'un spectre à l'autre.
+    <ol>
+      <li>Si vous affichez un spectre, mais ouvrez ensuite un autre spectre du même détecteur 
+        (c'est-à-dire, même modèle et numéro de série), mais sa calibration en énergie est différente du premier, 
+        <code>InterSpec</code> devrait vous demander si vous souhaitez utiliser la calibration en énergie du 
+        premier fichier, avec celui nouvellement chargé.
+      </li>
+      <li>Par l'utilisation d'un fichier &quot;<b>CALp</b>&quot;, décrit ci-dessous.</li>
+    </ol>
+
+    <p>
+      Dans le coin inférieur gauche de l'outil de calibration en énergie il y a des liens pour exporter ou importer
+      des fichiers de calibration en énergie <b>CALp</b>.
+      Les fichiers <b>CALp</b> contiennent les informations de calibration en énergie actuelles dans un format texte simple, et
+      permettent de sauvegarder des calibrations en énergie couramment utilisées pour une application facile à d'autres fichiers de spectre.
+      Ils sont particulièrement utiles pour travailler avec des détecteurs qui soit ne fournissent pas de calibration 
+      en énergie, soit fournissent de pauvres calibrations en énergie.<br />
+      Une fois que vous avez trouvé une calibration en énergie que vous souhaitez utiliser plus tard, cliquez/appuyez simplement l'icône d'exportation
+      montrée ci-dessous, et sauvegardez le fichier quelque part de pratique sur votre système de fichiers. Quand vous voudrez plus tard
+      réutiliser cette calibration en énergie avec un fichier de spectre différent, glissez-déposez simplement le fichier <b>CALp</b>
+      sur <b>InterSpec</b> et cette calibration en énergie sera appliquée au nouveau fichier de spectre.
+      
+      <div style="padding-top: 10px; text-align: center;">
+        <img src="/InterSpec_resources/static_text/images/CALp_down_up.png" style="width: 120px; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+        <div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+          Icônes à utiliser pour exporter ou importer des fichiers de calibration en énergie <b>CALp</b>.
+          Vous pouvez aussi glisser-déposer des fichiers <b>CALp</b> depuis le système de fichiers de votre système d'exploitation sur
+          <b>InterSpec</b> pour appliquer les fichiers <b>CALp</b>.
+        </div>
+      </div>
+    </p>
+  </message>
+
+  <message id="how-drf-model" title="Modélisation de fonction de réponse de détecteur">
+    <p>
+    Les Fonctions de Réponse de Détecteur (FRD) par défaut dans <code>InterSpec</code>
+    contiennent l'efficacité, en fonction de l'énergie, pour une détection pleine-énergie d'un gamma
+    frappant la face du détecteur. L'hypothèse est que le détecteur pointe
+    vers la source, et les rayons gamma sont approximativement parallèles au moment où ils atteignent le 
+    détecteur ; en pratique cela signifie que la distance entre la source et le détecteur devrait
+    être au moins 3 fois la plus grande des dimensions du détecteur ou de la source.<br/>
+    La FRD contient aussi le diamètre de face du détecteur (supposant qu'elle soit circulaire) de sorte que les corrections d'angle solide 
+    puissent être faites avec précision.
+    </p>
+    <p> La FRD peut aussi contenir la FWHM paramétrée du détecteur. Cependant cette information
+      n'est pas obligatoire (beaucoup des FRD par défaut qui viennent avec <code>InterSpec</code> n'incluent
+      pas cette information), et est seulement utilisée, si disponible, comme la largeur de pic 
+      initiale lors de l'ajustement de pics ; mais si cette information n'est pas disponible des estimations appropriées sont
+      faites de toute façon, donc cela ne résulte habituellement en aucune différence.
+    </p>
+    <p> À partir d'<code>InterSpec</code> v1.0.12, il y a aussi une option que la FRD
+      puisse être une FRD de &quot;Géométrie Fixe&quot;. Si c'est le cas, alors l'option <em>distance</em>
+      ne sera pas disponible dans l'outil &quot;Ajustement d'Activité/Blindage&quot;, car il est 
+      supposé que la FRD prend déjà cela en compte, toute atténuation interne de l'objet, et 
+      l'efficacité du détecteur. Bien que vous puissiez encore ajouter des absorbeurs additionnels dans 
+      le problème.
+    </p>
+    <p> L'efficacité de FRD est représentée en interne par :
+      <ul>
+        <li>Un ensemble de paires énergie-efficacité, qui sont interpolées entre elles</li>
+        <li>Un ensemble de coefficients pour l'équation :<br />
+            &nbsp;&nbsp;&nbsp;&nbsp;<code>eff = exp( c0 + c1*x<sup>1</sup> + c2*x<sup>2</sup> + c3*x<sup>3</sup> + ...)</code>
+        </li>
+        <li>Une formule mathématique arbitraire qui peut être entrée</li>
+      </ul>
+    </p>
+    <p>
+      Actuellement <code>InterSpec</code> ne prend pas en compte la réponse angulaire des détecteurs.
+    </p>
+  </message>
+
+  <message id="how-sum-peaks-handled" title="Comment les pics de somme sont-ils traités ?">
+    <p>
+    Lors de l'ajustement pour l'activité, les pics de somme (soit somme aléatoire, soit vraie-coïncidence) ne sont actuellement
+    pas pris en compte.
+    </p>
+    <p> Si cela pourrait être un problème, il est recommandé de déplacer l'échantillon à 10 cm ou plus du détecteur
+      où la somme de vraie-coïncidence (aussi appelée cascade) devient négligeable, et/ou de réduire le temps mort pour
+      la somme aléatoire.
+    </p>
+    <p> L'onglet &quot;Photopeak de Référence&quot; offre l'option de montrer les sommes en cascade, pour aider 
+      à détecter ces problèmes ; voir les options entourées ci-dessous :
+      <img src="/InterSpec_resources/static_text/faqs/ref_photopeak_cascade_opt.png" style="max-height: 125px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    </p>
+  </message>
+
+  <message id="reusing-peaks" title="Travailler avec des spectres avec des nucléides similaires">
+    Si vous travaillez avec plusieurs spectres que vous vous attendez à avoir à peu près les mêmes photopeaks, 
+    vous pouvez propager les pics d'un spectre au suivant de quelques façons :
+
+    <ul>
+      <li>Sur l'onglet &quot;Gestionnaire de Pics&quot; il y a une option pour exporter un fichier <code>CSV</code> qui contient les
+        informations de pics. Si vous ajustez tous les pics pertinents, et leur assignez des nucléides (si désiré), sur le
+        premier spectre, vous pouvez alors exporter le fichier <code>CSV</code> vers un emplacement sur votre ordinateur.<br />
+        Puis quand vous chargez des spectres subséquents, vous pouvez glisser-déposer le fichier <code>CSV</code> de retour sur 
+        <code>InterSpec</code>, et vous aurez l'option de ré-ajuster ces mêmes pics originaux, avec 
+        nucléides associés, dans le nouveau spectre. Les amplitudes et continuum seront totalement ré-ajustés, en utilisant
+        le même modèle de continuum et les étendues de ROI que vous avez originalement utilisées. La FWHM et les moyennes de pics seront autorisées à 
+        varier un peu pour tenir compte de petites dérives de calibration en énergie ou de température.
+      </li>
+      <li> Il y a une option, <b>Aide</b> &rarr; <b>Options</b> &rarr; <b>Demander à Propager les Pics</b>, qui quand cochée,
+        et que vous chargez un nouveau spectre du même détecteur (même numéro de série et modèle), <code>InterSpec</code>
+        vous demandera alors si vous voulez propager les pics de l'ancien spectre vers le nouveau - similaire à l'utilisation de la 
+        méthode <code>CSV</code> décrite ci-dessus.
+      </li>
+    </ul>
+    
+    Il y a aussi une fonctionnalité en développement pour permettre l'ajustement de pics dans un mode &quot;lot&quot;
+    en utilisant la ligne de commande. Cependant, il n'y a aucune date estimée de disponibilité pour cela ou d'autres 
+    fonctionnalités de &quot;lot&quot;.
+  </message>
+
+  <message id="peak-area" title="Comment l'aire de pic est déterminée">
+    <p>
+    L'aire de pic rapportée par <code>InterSpec</code> est en fait l'amplitude Gaussienne qui 
+    est déterminée à partir d'une routine d'optimisation non-linéaire.
+    Par défaut les pics sont modélisés comme le continuum plus une Gaussienne, avec la paramétrisation du continuum
+    étant ajustée en même temps que l'amplitude et largeur Gaussienne. <br />
+    Certains packages logiciels déterminent d'abord le continuum, puis après que cela soit déterminé la Gaussienne, 
+    ou l'aire de données restante - ce n'est pas comme cela qu'<code>InterSpec</code> le fait.
+    </p>
+    <p> Si vous cliquez droit sur un pic, il y a une option pour un &quot;<b>Éditeur de Pics...</b>&quot;.  
+      De cet outil vous pouvez changer le modèle de continuum, ou changer le type de pic pour être un 
+      pic de &quot;Région de Données&quot;, de sorte que l'aire rapportée sera les données, moins l'aire de continuum.
+      Il y a aussi un nombre d'autres options pour personnaliser l'ajustement de pics, ou assigner des nucléides.
+    </p>
+  </message>
+
+  <message id="peak-area-uncert" title="Comment l'incertitude de l'aire de pic est déterminée">
+    <p>
+      L'incertitude de l'aire de pic est déterminée durant l'optimisation non-linéaire lors de
+      l'ajustement pour les paramètres de pics. Les incertitudes des paramètres étant ajustés
+      sont déterminées simultanément, et prenant chacun d'autre, et corrélations/effets,
+      entre paramètres en compte.
+      L'optimiseur non-linéaire fait cela en variant les paramètres étant ajustés, et
+      observant l'effet sur le &chi;<sup>2</sup> du pic comparé aux données.
+    </p>
+    <p>
+     Les incertitudes sont seulement statistiques, et n'incluent aucun effet systématique
+     comme les modèles d'asymétrie de pic ou de continuum n'étant pas corrects. Si vous voulez, vous pouvez
+     éditer manuellement l'incertitude d'aire de pic en utilisant l'&quot;Éditeur de Pics&quot;.
+    </p>
+  </message>
+
+  <message id="short-lived-isos" title="Détermination des activités d'isotopes à vie courte">
+    Quand le temps d'acquisition de spectre devient pertinent à la demi-vie d'un nucléide,
+    la boîte de dialogue &quot;Ajustement d'Activité/Blindage&quot; a une option, &quot;Corriger pour désintégration durant meas.&quot;,
+    qui est cochée par défaut, et tiendra compte des effets du nucléide se désintégrant durant la mesure.
+    La chaîne de désintégration complète est prise en compte, incluant la croissance et désintégration de progéniture.
+  </message>
+
+  <message id="cascade-summing" title="Sommation en cascade">
+    <p>
+    <code>InterSpec</code> ne prend actuellement pas en compte la sommation en cascade (ex., vraie-coïncidence) 
+    lors de l'ajustement d'activités. Si ces effets pourraient devenir significatifs, il est recommandé de 
+    mesurer l'échantillon à 10 cm, ou plus, du détecteur, si possible.
+    </p>
+    <p> L'onglet &quot;Photopeak de Référence&quot; offre l'option de montrer les sommes en cascade, pour aider 
+      à détecter ces problèmes ; voir les options entourées ci-dessous :
+      <img src="/InterSpec_resources/static_text/faqs/ref_photopeak_cascade_opt.png" style="max-height: 125px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    </p>
+  </message>
+
+  <message id="nuc-data-origin" title="Sources de données nucléaires utilisées">
+    Les données de désintégration nucléaire (demi-vies, intensités et énergies gamma, etc) viennent largement
+    d'ENSDF-V, mais ont des corrections additionnelles significatives d'observations et 
+    d'autres sources de données. Les données de rayons X viennent de la base de données LBNL ToRI.<br />
+    Toute cette information est accédée via la bibliothèque <code>SandiaDecay</code> 
+    (<a target="_blank" href="https://github.com/sandialabs/SandiaDecay">https://github.com/sandialabs/SandiaDecay</a>).
+    Les sections efficaces gamma/rayons x viennent aussi d'ENSDF.<br />
+    Les données de réaction viennent de divers endroits, incluant 
+    &quot;<em>Atlas of Gamma-Ray Spectra from the Inelastic Scattering of Reactor Fast Neutrons</em>&quot; (A.M. Demidov <i>et al.</i>), 
+    et la &quot;<em>base de données IAEA Prompt Gamma Activation Analysis (PGAA)</em>&quot;.
+  </message>
+
+  <message id="unit-definitions" title="Comment les unités comme année, jour, etc. sont définies">
+    Les définitions exactes utilisées peuvent être trouvées dans <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/InterSpec/PhysicalUnits.h">PhysicalUnits.h</a>,
+    mais en interne, <code>InterSpec</code> utilise les millimètres comme unité de distance de base, 
+    les secondes pour le temps, les keV pour l'énergie, le becquerel pour l'activité, et le coulomb pour la charge ; toutes les autres 
+    unités sont construites à partir de celles-ci.<br />
+
+    Quelques définitions d'unités de temps utilisées, qui pourraient être définies ambiguëment, sont :
+    <ul>
+      <li>1 jour = 24&times;60&times;60 secondes</li>
+      <li>1 année = 365,2425 jours</li>
+      <li>1 mois = 1/12 années</li>
+    </ul>
+  </message>
+
+  <message id="act-mass-conv" title="Comment convertir de la masse à l'activité">
+    L'outil &quot;Convertisseur d'Unités&quot; peut convertir une activité en une masse.<br />
+    Par exemple, entrer le texte 
+    <pre style="margin-left: 20px;">10 gram Th232</pre>
+    résultera en une réponse de 
+    <pre style="margin-left: 20px;">1.10 uCi</pre>
+    Cela fonctionne aussi en sens inverse si vous entrez l'activité d'un nucléide.
+    <br />
+    <p>
+    L'outil &quot;Info de Désintégration de Nucléide&quot; donne aussi l'activité spécifique des nucléides dans l'
+    onglet &quot;Chaîne de Désintégration&quot;, quand vous cliquez/appuyez sur un nucléide.
+    </p>
+  </message>
+
+  <message id="interspec-arc" title="Architecture logicielle d'&lt;code&gt;InterSpec&lt;/code&gt;">
+    <p>
+    À son cœur, <code>InterSpec</code> est une application web qui est rendue en HTML et Javascript,
+    avec toute la logique <em>métier</em> écrite en C++.<br />
+    Quand vous exécutez <code>InterSpec</code> comme une application (c'est-à-dire, sur Windows, macOS, Linux, iOS, ou Android),
+    l'application crée un &quot;serveur&quot; qui peut seulement être accédé sur votre ordinateur 
+    (c'est-à-dire, il ouvre un port à numéro élevé aléatoire sur <code>127.0.0.1</code>), puis il ouvre une fenêtre
+    qui affiche une <code>WebView</code> (fournie par l'OS, sauf sur Linux où 
+    <a target="_blank" href="https://www.electronjs.org">Electron</a> est utilisé), et instruit la 
+    <code>WebView</code> de se connecter au serveur local. Par défaut, un jeton secret additionnel est 
+    aussi utilisé pour assurer que seulement l'instance <code>WebView</code> voulue peut se connecter au serveur 
+    localhost. Les interactions entre la GUI et la logique <em>métier</em> se passent sur le
+    réseau localhost (c'est-à-dire, le bus réseau interne de votre ordinateur - tout reste sur votre ordinateur).
+    </p>
+    <p>Cette architecture a été une façon stable de permettre le développement multi-plateforme d'
+      <code>InterSpec</code>. Utiliser HTML/Javascript pour l'interface utilisateur permet de cibler
+      presque tous types d'appareils, avec une quantité appréciable de réutilisation de code à travers d'autres 
+      projets, tout en profitant du large écosystème d'outils et bibliothèques HTML et JS.<br />
+      Utiliser C++ pour la logique métier permet un calcul et gestion de mémoire efficaces, 
+      permettant l'utilisation d'algorithmes plus riches, sans sacrifier la réactivité de l'application.
+    </p>
+  </message>
+
+  <message id="data-privacy" title="Confidentialité des informations et de l'usage">
+    <p>
+    Les applications InterSpec construites par Sandia National Laboratories, ne collectent aucune information personnelle,
+    et n'envoient aucune information hors de votre appareil, sauf pour les deux actions déclenchées par l'utilisateur 
+    décrites ci-dessous.
+    </p>
+
+    <p>
+      Les deux instances où <code>InterSpec</code> peut causer que de l'information soit envoyée hors de votre appareil, sont :
+      <ol>
+        <li>Quand l'outil &quot;Carte&quot; est utilisé, des tuiles de carte seront demandées 
+          depuis https://arcgisonline.com.<br /> 
+          Les utilisateurs seront avertis avant que ces requêtes réseau externes soient faites, 
+          et il y a une option d'utiliser votre propre compte arcgisonline.com pour demander les tuiles de carte sous 
+          (voir l'aide des Outils de Carte dans l'app pour plus d'informations).<br /> 
+          Seules les emplacements de tuiles sont relayés au serveur externe ; tout le tracé de 
+          données de rayonnement sur la carte est fait localement sur votre appareil.<br />
+          Autant que le développeur principal d'<code>InterSpec</code> le sache, aucune information
+          sur les requêtes de carte individuelles, ou les requêtes d'une personne individuelle, n'est disponible à 
+          Sandia National Laboratories.
+        </li>
+        <li>
+          L'outil &quot;RID Externe&quot; peut envoyer vos données de rayonnement
+          à un serveur externe (ou exécutable sur votre appareil) pour avoir une 
+          ID de nucléide effectuée.<br />
+          Les utilisateurs sont avertis avant d'utiliser cet outil, et ils doivent explicitement entrer
+          l'URL du serveur à utiliser pour le service d'ID de nucléide.<br />
+          Sandia National Laboratories fournit un serveur librement disponible pour ce 
+          service, mais l'URL n'est pas pré-remplie dans <code>InterSpec</code> pour explicitement 
+          assurer que l'utilisateur veut effectuer cette action, l'active explicitement,
+          et est conscient d'exactement où les données seront envoyées.
+        </li>
+      </ol>
+    </p>
+
+    <p>
+    Additionnellement, <code>InterSpec</code> stocke localement les préférences que vous pourriez changer dans l'app ainsi que les spectres que vous chargez, 
+    états explicitement sauvegardés, et l'état de l'app quand elle est fermée. Cette information ne quitte pas 
+    votre appareil, et peut être supprimée en enlevant le dossier de données d'application dans l'
+    emplacement standard du système d'exploitation pour l'app 
+    (voir <b>Aide</b> &rarr; <b>À propos d'InterSpec...</b> &rarr; <b>Données</b> pour cet emplacement).
+    Il n'y a actuellement aucune façon de fusionner ces données de multiples ordinateurs en une seule source d'information,
+    mais vous pouvez copier ce dossier d'un ancien ordinateur vers un nouveau pour retenir toute votre ancienne information et préférences.
+    </p>
+    <p>
+      Les statistiques d'usage et diagnostics ne sont pas collectés par Sandia National Laboratories ; nous ne 
+      savons pas qui, ou même combien de personnes utilisent <code>InterSpec</code>, ou pour combien, sauf comme
+      peut être inféré à travers les requêtes de support à 
+      <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>, ou la participation aux webinaires, ou similaire.<br />
+      Cependant, si vous installez <code>InterSpec</code> à travers le magasin d'applications de votre système d'exploitation 
+      (macOS, iOS, et Android), votre système d'exploitation peut rapporter des statistiques ou rapports de crash
+      à votre fournisseur de système d'exploitation ; désactiver cela est habituellement une préférence de système d'exploitation, et 
+      sauf pour iOS, vous pouvez installer l'app pas à travers le magasin d'app (ex., installer en parallèle sur Android).
+    </p>
+  </message>
+
+  <message id="bleeding-edge" title="Constructions de pointe d'&lt;code&gt;InterSpec&lt;/code&gt;">
+    <p>
+      Une construction automatisée de l'application <code>InterSpec</code> est disponible pour la plateforme Windows à :
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge" style="display: block; margin-left: 20px">https://github.com/sandialabs/InterSpec/releases/tag/bleeding-edge</a>
+      Cette construction est mise à jour chaque fois que du code est poussé vers le dépôt github, et l'exécutable est
+      capable d'être construit avec succès, et quelques vérifications de sanité mentale sont passées.
+    </p>
+    <p> Cette construction d'<code>InterSpec</code> est compilée complètement à partir de code source publiquement disponible
+      sur l'infrastructure github, donc vous pouvez être sûr de ce qui est entré dans la fabrication de l'exécutable.<br />
+      Cependant, contrairement aux versions officielles, l'exécutable n'est pas signé par code, signifiant que
+      les outils antivirus, ou <code>Windows Defender</code>, peuvent bloquer l'exécution initiale de l'EXE.
+      Habituellement cliquer sur le lien &quot;plus d'info&quot; de la boîte de dialogue résultante vous permettra
+      de contourner cela, ou vous pouvez ajouter une exception dans les options de <code>Windows Defender</code>.
+    </p>
+    <p> La valeur principale de cette construction automatisée est que si vous rapportez un bug qui a
+      été corrigé dans le code, ou demandez une fonctionnalité qui a été implémentée, vous
+      n'avez pas besoin d'attendre jusqu'à la prochaine version officielle pour en profiter.
+    </p>
+    <p>Si vous souhaitez des mises à jour par e-mail sur les versions officielles, veuillez envoyer un e-mail à 
+      <a href="mailto:InterSpec@sandia.gov">InterSpec@sandia.gov</a>, et vous serez notifié 
+      de nouvelles versions tous les quelques mois.
+    </p>
+  </message>
+  
+  <message id="add-spectra" title="Comment additionner des spectres ensemble">
+    <p>
+      Si vous voulez sommer plusieurs spectres ensemble, qui viennent de différents 
+      fichiers de spectre : chargez tous les fichiers de spectre dans <code>InterSpec</code> 
+      (ex., glissez-déposez les fichiers sur <code>InterSpec</code>, un par un), 
+      puis allez au &quot;Gestionnaire de Spectre&quot; (<b>InterSpec</b> &rarr; <b>Gestionnaire...</b>)
+      et sélectionnez les fichiers ou échantillons spécifiques que vous souhaitez sommer (tenez la touche <code>CTRL</code>
+      pendant que vous cliquez sur les enregistrements/fichiers, ou tenez la touche <code>SHIFT</code> pour sélectionner
+      une plage), puis cliquez le bouton &quot;<b>Sommer Spectres</b>&quot; comme montré ci-dessous.
+      Un nouveau fichier de spectre en mémoire sera créé au bas de la zone d'affichage, 
+      habituellement nommé &quot;sommé&quot;, qui aura un seul enregistrement.
+      <img src="/InterSpec_resources/static_text/faqs/manager_sum_spectra.png" style="max-height: 200px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    </p>
+    <p>
+      Une autre façon de potentiellement faire cela, si tous les échantillons sont dans le même fichier de spectre original,
+      est d'utiliser l'onglet &quot;<b>Fichiers de Spectre</b>&quot; pour afficher tous les échantillons que vous souhaitez 
+      sommer, par exemple vous pourriez entrer le texte 
+      <pre style="margin-left: 20px;">1,3,8-12</pre>
+      pour sommer les échantillons 1, 3, et 8 à 12. Vous pouvez maintenant soit travailler avec ce spectre de premier plan
+      dans l'application, ou si vous utilisez l'
+      utilitaire d'exportation de fichier de spectre (&quot;<b>InterSpec</b>&quot; &rarr; &quot;<b>Exporter Fichier...</b>&quot;)
+      vous pouvez choisir d'exporter seulement ces échantillons affichés, et de les sommer ensemble (ou pour les formats qui 
+      permettent seulement un seul spectre, la sommation sera forcée).
+    </p>
+  </message>
+
+  <message id="back-sub" title="Soustraction d'arrière-plan des spectres">
+    <p>
+      Il y a deux façons d'effectuer une soustraction d'arrière-plan canal par canal :
+      <ol>
+        <li>L'option &quot;<b>Soustraire Arrière-plan</b>&quot; sous le menu &quot;<b>Vue</b>&quot; 
+          effectue une soustraction d'arrière-plan <em>visuelle</em> sur le tracé affiché. Aucune
+          soustraction réelle n'arrive, et effectuer des opérations comme ajuster des pics sont encore
+          effectuées sur le premier plan original à statistiques complètes. Ce mode de soustraction d'arrière-plan
+          est prévu pour principalement aider à visualiser et inspecter les données.<br />
+          Ce mode peut être désactivé par l'élément de menu, &quot;<b>Annuler Soustraction Arrière-plan</b>&quot;,
+          qui sera montré à la place de l'élément de menu original.<br />
+          Les continuums de pics peuvent montrer des distorsions de ce mode de soustraction d'arrière-plan ; c'est un
+          artéfact visuel de soustraire les données variables de, ce qui serait une ligne lisse.
+        </li>
+        <li>
+          L'option &quot;<b>Sous. Arrière-plan Dur...</b>&quot; sous le menu &quot;<b>Vue</b>&quot;
+          effectue une soustraction canal par canal de l'arrière-plan du premier plan 
+          actuellement affiché. Quand cela est effectué, un nouveau fichier de spectre en mémoire avec un seul enregistrement 
+          est créé, et défini comme le premier plan affiché (ex., vous pouvez rebasculer vers le premier plan 
+          original - il est gardé en mémoire, inchangé). Toutes les opérations ultérieures sont effectuées
+          sur le spectre à statistiques réduites, mais supposant l'incertitude de Poisson de chaque canal
+          est encore la racine carrée de son amplitude, ce qui n'est pas correct (mais presque toujours assez proche).
+        </li>
+      </ol>
+    </p>
+
+    <p> Quand on traite avec des pics qui peuvent chevaucher des pics d'arrière-plan, vous pouvez charger l'arrière-plan comme un premier plan
+      et ajuster tous les pics pertinents (vous n'avez pas besoin d'associer des nucléides avec eux), puis charger votre
+      spectre d'intérêt, et définir votre arrière-plan (qui a maintenant des pics associés avec lui), comme votre arrière-plan,
+      et dans l'outil &quot;Ajustement d'Activité/Blindage&quot;, et les &quot;Isotopiques à partir des pics&quot;, et autres
+      outils, une option &quot;soustraire arrière-plan&quot; deviendra disponible, qui propagera proprement 
+      les incertitudes statistiques ; cette méthode de correction pour les pics d'arrière-plan est généralement préférée 
+      par l'auteur du logiciel, par rapport à une soustraction &quot;<b>Sous. Arrière-plan Dur...</b>&quot; - mais en pratique
+      l'une ou l'autre façon devrait donner des réponses similaires.
+    </p>
+  </message>
+
+  <message id="isolate-spectra" title="Faire un fichier de spectre avec un sous-ensemble de mesures">
+    Si vous avez chargé un fichier de spectre avec beaucoup d'enregistrements dedans, mais vous souhaiteriez faire un 
+    fichier de spectre avec un sous-ensemble des enregistrements, il y a quelques façons dont vous pouvez faire cela :
+    <ol>
+      <li>
+        La façon la plus facile est si vous utilisez l'onglet &quot;<b>Fichiers de Spectre</b>&quot; pour afficher 
+        une somme d'enregistrements, pour disons, le premier plan (par exemple, entrer le texte 
+        &quot;<code>1,3,8-12</code>&quot;, pour les échantillons 1, 3, et 8 à 12),
+        puis vous utilisez l'utilitaire d'exportation de fichier de spectre 
+        (&quot;<b>InterSpec</b>&quot; &rarr; &quot;<b>Exporter Fichier...</b>&quot;)
+        et choisissez d'exporter seulement ces échantillons affichés, sans les sommer.
+      </li>
+      <li>
+        Vous pouvez utiliser le &quot;Gestionnaire de Spectre&quot; (<b>InterSpec</b> &rarr; <b>Gestionnaire...</b>)
+        pour sélectionner les échantillons que vous voulez, et alors créer un nouveau fichier de spectre en mémoire, et 
+        alors l'exporter.
+      </li>
+    </ol>
+  </message>
+
+  <message id="unknown-shielding" title="Traiter avec du blindage inconnu autour d'une source">
+    L'outil &quot;Ajustement d'Activité/Blindage&quot; vous permet d'utiliser un type de blindage &quot;<em>Générique</em>&quot;
+    qui est spécifié par le numéro atomique et la densité aréale.<br />
+    Si vous avez des pics du même nucléide (parent), à multiples énergies, vous 
+    pouvez ajuster pour le numéro atomique effectif. Cependant, dû à la nature de la section efficace d'atténuation
+    en fonction du numéro atomique et de l'énergie, vous avez vraiment besoin d'au moins un pic sous 300 keV,
+    et de préférence quelques-uns (au-dessus de 300 keV, la <em>forme</em> de l'atténuation, en fonction 
+    de l'énergie, devient très similaire entre éléments).<br />
+    Vous pouvez ajouter un blindage générique, ou basculer un blindage de matériau vers son équivalent de blindage générique effectif, comme montré ci-dessous :
+
+    <div style="border:1px solid black; width: 90%; margin-left: auto; margin-right: auto;">
+      <div style="display: flex; align-content: space-around;">
+          <img src="/InterSpec_resources/static_text/faqs/shielding_toggle.png" style="max-height: 175px; width: 49.5%;" />
+          <img src="/InterSpec_resources/static_text/faqs/shielding_toggle_generic.png" style="max-height: 175px; width: 49.5%;" />
+      </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         (gauche) Comment ajouter un blindage &quot;<em>Générique</em>&quot;, ou basculer un matériau vers son blindage générique effectif.<br />
+         (droite) L'option à cocher pour ajuster le numéro atomique effectif du blindage générique.
+      </div>
+    </div>
+
+    
+  </message>
+
+  <message id="timezone" title="Comment les fuseaux horaires sont traités">
+    Les fuseaux horaires sont complètement ignorés par <code>InterSpec</code>.  
+    Dans un fichier de spectre, si une date/heure est spécifiée avec un fuseau horaire, le composant de fuseau horaire est écarté.
+    Il a été trouvé que l'usage des fuseaux horaires était trop incohérent à travers différents modèles de détecteurs et agences de déploiement
+    pour largement gagner quelque chose en utilisant l'information de fuseau horaire.<br />
+    Le résultat de ceci est que si le temps est proprement suivi par le système de détection, alors l'heure locale du 
+    détecteur est ce qui sera affiché à l'utilisateur dans <code>InterSpec</code>, habituellement.
+  </message>
+
+  <message id="move-work" title="Déplacer le travail vers un autre ordinateur, ou archiver le travail fait">
+    <p>
+      Si, après que vous fassiez tout votre travail (ajuster pics, calibrer énergie, ajuster activités, faire isotopiques, etc), 
+      vous exportez votre fichier de spectre vers un fichier <code>N42-2012</code>, tout ce travail sera inclus dans le fichier
+      résultant.<br />
+      Si quelque temps plus tard vous chargez le fichier <code>N42-2012</code>, tous vos pics seront présents - le modèle et solution d'
+      &quot;Ajustement d'Activité/Blindage&quot; que vous avez trouvés seront affichés si vous ouvrez cet outil, etc.
+    </p>
+    <p>
+      <code>InterSpec</code> a aussi une base de données interne où vous pouvez stocker l'état de vos applications en allant
+      à l'élément de menu &quot;<b>InterSpec</b>&quot; &rarr; &quot;<b>Stocker Sous...</b>&quot;. Cependant, cela est effectivement
+      lié à votre ordinateur (bien que vous puissiez copier cette base de données interne d'un ancien ordinateur vers un nouveau
+      en copiant les fichiers dans le répertoire de données d'application spécifié par l'OS 
+      (voir <b>Aide</b> &rarr; <b>À propos d'InterSpec...</b> &rarr; <b>Données</b> pour cet emplacement)).
+    </p>
+    <p>
+      La plupart des outils offrent aussi des exportations <code>CSV</code> et/ou <em>XML</em> et/ou <em>code QR/URI</em> 
+      qui capturent l'état de cet outil, et qui peuvent habituellement être ré-importés dans l'
+      outil (ou glissés-déposés sur l'application).
+    </p>
+  </message>
+
+  <message id="how-compile" title="Comment compiler &lt;code&gt;InterSpec&lt;/code&gt; à partir du source">
+    Le répertoire <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/target/patches">InterSpec/target/patches</a> 
+    dans le code (disponible à <a target="_blank" href="https://github.com/sandialabs/InterSpec">https://github.com/sandialabs/InterSpec</a>)
+    fournit des instructions pour cela.
+  </message>
+
+  <message id="se-de-peak-id" title="Assigner les IDs de pics d'échappement simple et double">
+    Si vous affichez des photopeaks de référence pour un nucléide, et vous ajustez un pic dans le spectre
+    qui est probablement un pic d'échappement simple ou double, il est probable qu'<code>InterSpec</code> le reconnaîtra automatiquement,
+    et l'associera, par exemple, comme &quot;<code>S.E 2614.53 keV, Th232&quot;</code> pour un 
+    pic ajusté à 2013.14 keV.<br />
+    Cependant, si <code>InterSpec</code> n'attrape pas proprement cela, ou vous voulez faire l'assignation 
+    après ajustement, vous pouvez essayer de cliquer droit sur le pic (mieux pendant que vous affichez les lignes de photopeaks de référence du nucléide parent), et aller au sous-menu &quot;<b>Changer Nucléide</b>&quot;, et sélectionner l'ID approprié, comme montré ci-dessous :
+    <img src="/InterSpec_resources/static_text/faqs/se_right_click.png" style="max-height: 200px; max-width: 85%; display: block; margin-top: 10px; margin-bottom: 10px; margin-left: auto; margin-right: auto;" />
+    <br />
+    Vous pouvez aussi taper quelque chose comme &quot;<code>2614 keV S.E.</code>&quot; dans la colonne &quot;<b>Photopeak</b>&quot; 
+    de tout tableau affichant les informations de pics.
+  </message>
+
+  <message id="fit-age" title="Ajuster l'âge d'un nucléide">
+    Dans l'outil &quot;Ajustement d'Activité/Blindage&quot;, quand vous avez sélectionné plusieurs pics avec 
+    le même nucléide parent, une case à cocher &quot;<b>Ajuster Âge</b>&quot; peut apparaître dans le 
+    tableau central, que vous pouvez cocher pour alors ajuster l'âge.<br />
+    Si les pics que vous avez sélectionnés sont tous de la même progéniture, ou qu'il n'y a autrement aucun espoir d'
+    ajuster l'âge, cette case à cocher peut ne pas apparaître.<br />
+    Cependant, veuillez noter que souvent vous <em>pourriez ne pas</em> avoir le pouvoir d'ajuster pour l'âge, 
+    ou faire une bonne estimation de cela.<br />
+    Ou, votre nucléide pourrait être en équilibre, signifiant qu'un âge aléatoire, relativement grand sera ajusté, avec
+    habituellement une valeur d'incertitude importante.<br />
+    <code>InterSpec</code> ne vous protège pas (actuellement) bien contre l'un ou l'autre de ces cas.
+  </message>
+
+  <message id="fit-separate" title="Ajuster séparément des nucléides dans un spectre">
+    Dans l'outil &quot;Ajustement d'Activité/Blindage&quot; vous avez l'option d'utiliser quels 
+    pics vous souhaitez dans un ajustement. Habituellement si vous avez plusieurs nucléides, vous pouvez ajuster pour 
+    toutes leurs activités, et les quantités de blindage, tout en même temps. Cependant, parfois
+    vous pourriez vouloir d'abord utiliser les pics pour un seul isotope, en qui vous avez confiance, pour d'abord 
+    ajuster pour la quantité de blindage, puis dé-sélectionner l'ajustement pour le blindage, et alors ajouter des pics
+    pour d'autres nucléides, et ajuster leurs activités, ou âges, ou quoi que ce soit.<br />
+    Des cas comme cela tendent à être rares, mais cela peut occasionnellement être utile de faire des choses comme cela.
+  </message>
+
+  <message id="app-state" title="Sauvegarder l'état de l'application">
+    <p>
+    Stocker l'état de votre application dans la base de données interne d'<code>InterSpec</code> 
+    (via &quot;<b>InterSpec</b>&quot; &rarr; &quot;<b>Stocker Sous...</b>&quot;)
+    stockera vos fichiers de spectre de premier plan/arrière-plan/secondaire actuellement ouverts, votre travail
+    (pics ajustés, activités, enrichissements, etc), et l'état de la plupart des outils que vous
+    pourriez avoir ouverts (<em>Calc de Dose</em>, <em>Calc de XS Gamma</em>, etc), 
+    vos préférences/options actuelles, et quelques autres choses.<br />
+    Exporter vers un fichier de spectre <code>N42-2012</code> capturera beaucoup de votre travail, mais pas des choses comme vos 
+    préférences actuelles, ou l'état de la plupart des outils (les outils &quot;Ajustement d'Activité/Blindage&quot; et isotopiques sont 
+    les exceptions notables qui sont stockées dans le fichier <code>N42-2012</code>).
+    </p>
+    <p> Stocker dans la base de données interne vous permettra de sauvegarder des instantanés auxquels vous pouvez revenir si vous voulez 
+      (ex, si vous voulez analyser le spectre en utilisant quelques hypothèses différentes). Cela permettra aussi que si
+      vous ouvrez plus tard le même fichier de spectre, une boîte de dialogue apparaîtra vous permettant de reprendre là où vous
+      aviez précédemment laissé.
+    </p>
+  </message>
+
+  <message id="max-file-size" title="Taille maximale de fichier qui peut être ouverte">
+    Par défaut le plus gros fichier de spectre qui peut être ouvert dans la version Windows d'<code>InterSpec</code>
+    est 512 MB. Cependant, si vous avez besoin d'ouvrir un fichier plus gros vous pouvez éditer l'élément &quot;max-memory-request-size&quot;
+    du fichier <code>InterSpec\data\config\wt_config_wx.xml</code>, pour augmenter cela
+    (il n'y a pas vraiment de limite dure sur la taille, mais l'analyse est faite en mémoire, donc des fichiers vraiment gros
+    mangeront votre ram).<br />
+    Vous pourriez aussi essayer de comprimer le fichier en un fichier zip, et si c'est sous 512 MB, vous pouvez alors l'ouvrir dans 
+    <code>InterSpec</code>.
+  </message>
+
+  <message id="isocs-drf" title="Fonctions de réponse de détecteur (FRD) d'autres programmes">
+    <p>
+      <code>InterSpec</code> accepte les fonctions de réponse de détecteur (FRD) sous quelques formes.<br />
+      <ul>
+        <li>FRD créées en utilisant la &quot;Faire Réponse de Détecteur&quot;, sous forme <code>CSV</code>, <code>XML</code>, <code>URI</code>, ou <code>code QR</code></li>
+        <li>De <a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&amp;id=P00610&amp;cpu=PCX86&amp;v=04&amp;t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a></li>
+        <li>Dans quelques formats <code>CSV</code>/<code>TSV</code></li>
+        <li>Fichiers <code>.ECC</code> produits par
+          <a target="_blank" href="https://www.mirion.com/products/technologies/spectroscopy-scientific-analysis/gamma-spectroscopy/gamma-spectroscopy-software/lab-applications/s573-isocs-calibration-software">Mirion ISOCS</a>
+        </li>
+        <li>À travers l'entrée directe d'une fonction mathématique dans l'outil &quot;Sélection de Fonction de Réponse de Détecteur&quot;.</li>
+      </ul>
+      
+      Voir la page d'<em>aide</em> pour l'outil &quot;Sélection de Fonction de Réponse de Détecteur&quot; pour plus d'informations.
+    </p>
+  </message>
+
+  <message id="multi-ref-lines" title="Afficher plusieurs lignes de référence de photopeaks à la fois">
+    Vous pouvez afficher les lignes de photopeaks de référence pour plusieurs nucléides et/ou réaction à la fois, en d'abord 
+    entrant le premier nucléide dans l'onglet <b>Photopeak de Référence</b>, puis cliquant le 
+    bouton &quot;<b>Ajouter Un Autre</b>&quot; et entrant votre second nucléide, et ainsi de suite. <br/>
+    Vous pouvez changer le blindage et l'âge de nucléide pour chaque nucléide, avec les valeurs que vous entrez avant 
+    de cliquer le bouton &quot;<b>Ajouter Un Autre</b>&quot;, étant ce qui sera utilisé, indépendamment de ce que 
+    vous utilisez pour les futurs nucléides ajoutés.<br/>
+    Chaque nucléide que vous ajoutez sera normalisé à lui-même ; c'est-à-dire, la ligne gamma/rayon x de rendement maximum
+    pour chaque nucléide s'échellera à environ le haut du spectre - il n'y a (actuellement) aucune façon
+    de spécifier une échelle relative entre nucléides.
+  </message>
+
+  <message id="dist-def" title="Comment la &quot;Distance&quot; est définie pour ajuster l'activité">
+    Dans l'outil &quot;Ajustement d'Activité/Blindage&quot;, et d'autres endroits, la distance
+    est toujours définie de la face du détecteur, au <em>centre</em> de la source.<br/>
+    <em>Pas</em> le bord du blindage, comme si vous mesuriez avec un mètre ruban.
+    C'est-à-dire, si votre source est une boîte, et vous mesurez de la face du détecteur à la surface de la
+    boîte, vous devrez ajouter la moitié de la profondeur de la boîte à cette mesure, pour la valeur
+    que vous entrez dans <code>InterSpec</code>.
+  </message>
+
+  <message id="act-line-weighting" title="Comment l'activité est pondérée entre multiples lignes gamma">
+    Dans l'outil &quot;Ajustement d'Activité/Blindage&quot; si vous utilisez plusieurs pics pour un nucléide parent,
+    l'activité rapportée est une moyenne pondérée de tous, avec la pondération étant définie par
+    les incertitudes d'aire de pic (les incertitudes de FRD seront ajoutées dans le futur - elles sont actuellement ignorées).
+  </message>
+
+  <message id="key-line" title="Y a-t-il une ligne clé">
+    <p>
+      <code>InterSpec</code> ne supporte pas le concept d'une <em>ligne-clé</em>, comme d'autres logiciels utilisent.
+      Si vous voulez estimer une activité basée sur une seule énergie gamma, alors dans l'
+      outil &quot;Ajustement d'Activité/Blindage&quot;, dé-sélectionnez tous les autres pics, et dé-sélectionnez toutes les 
+      options d'ajustement pour le blindage, puis appuyez le bouton &quot;Ajuster Modèle&quot;, 
+      et vous obtiendrez l'activité de ce pic unique.
+    </p>
+    <p>
+      Le graphique sur l'outil &quot;Ajustement d'Activité/Blindage&quot; peut être basculé 
+      entre montrer les déviations statistiques de chaque pic, et les écarts d'amplitude 
+      de chaque pic, comparé à la valeur moyenne pondérée. Ce graphique fournit 
+      une bonne indication de combien chaque pic estime l'activité de façon cohérente, et si le
+      blindage, FRD, et âge de nucléide sont tous bien modélisés, alors le graphique
+      montrera que les pics sont cohérents les uns avec les autres.
+    </p>
+  </message>
+
+  <message id="how-make-nuc-library" title="Comment faire une bibliothèque de nucléides">
+    <code>InterSpec</code> ne supporte pas le concept d'une bibliothèque de nucléides.<br/>
+    Vous assignez un nucléide, rayon x, ou réaction aux pics, et les
+    assignations que vous faites déterminent quelles activités peuvent être ajustées dans l'
+    outil &quot;Ajustement d'Activité/Blindage&quot;.
+  </message>
+
+  <message id="zero-amp-fit" title="Ajuster des pics d'amplitude zéro">
+    Si vous voulez ajuster un pic d'amplitude faible, ou zéro, tenir la touche <b>CTRL</b>, plus glisser 
+    sur la région d'intérêt (ROI) avec la souris forcera un pic à être ajusté ; aucun seuil de signification 
+    statistique n'est appliqué, comme si vous double-cliquiez sur le spectre.<br/>
+    À la place vous pouvez aussi utiliser le bouton &quot;Ajouter...&quot; sur l'onglet &quot;Gestionnaire de Pics&quot;
+    pour forcer l'ajout d'un pic.
+  </message>
+
+  <message id="search-profile" title="Comment l'ordonnancement &quot;Profil&quot; est défini lors de la recherche de nucléides">
+    <p>
+      Sur l'onglet &quot;Recherche de Nucléides&quot;, quand vous recherchez sur une énergie, par défaut les résultats
+      sont ordonnés par la colonne &quot;<b>Profil</b>&quot;.<br/>
+      Vous pouvez cliquer sur l'en-tête de toute autre colonne pour ordonner les résultats par cette colonne, mais habituellement
+      &quot;<b>Profil</b>&quot; est la meilleure option.
+    </p>
+    <p>
+      Grossièrement, la colonne &quot;<b>Profil</b>&quot; est calculée en cherchant des pics qui seraient 
+      naïvement attendus d'un nucléide, sous quelques conditions de blindage (aucun, léger, lourd) et âges,
+      et comparant les pics observés, aux prédits. S'il y a des pics supplémentaires dans le spectre, aucune 
+      pénalité n'est ajoutée, mais si un pic qui était attendu n'est pas observé (ex., si un pic est prédit 
+      entre deux autres pics qui sont prédits et observés, mais le pic du milieu n'est pas observé), 
+      alors une pénalité est évaluée. Le score inclut aussi une évaluation naïve des hauteurs relatives 
+      de multiples pics, comparé aux attentes. Les pics utilisés pour cette évaluation est une combinaison
+      de pics ajustés par l'utilisateur, ainsi qu'une recherche automatisée de pics dans le spectre.
+    </p>
+    <p>
+      Cette pondération est une heuristique qui est prévue pour fournir un ordonnancement raisonnable
+      des résultats des ~4000 nucléides disponibles dans <code>InterSpec</code>, sans 
+      introduire des biais de nucléides couramment vus, ou demi-vies attendues, etc.<br/>
+      Un inconvénient d'essayer de ne pas biaiser les choses, est que si vous recherchez sur une énergie
+      comme 2614.53 keV, le résultat du haut ne sera pas la réponse commune de Th232, mais à la place 
+      inclura les résultats de tous les nucléides possibles qui se désintègrent à travers Tl208 (dont
+      la désintégration est celle qui résulte en le gamma de 2614.53 keV). Cela est prévu, parce qu'il pourrait être
+      critique que vous attrapiez U232, ou Th228, ou Pu236 peuvent tous avoir cette ligne, au lieu
+      de juste supposer Th232.<br/>
+      En pratique l'heuristique utilisée semble marcher assez bien, étant donné qu'elle n'a aucun a priori 
+      injecté dans ses résultats.  
+    </p>
+    <p>
+      Si vous souhaitez quelques a priori basés sur des nucléides probablement rencontrés, vous pouvez 
+      cliquer droit sur un pic, et aller au sous-menu &quot;<b>Changer Nucléide</b>&quot;
+      pour des suggestions.
+    </p>
+    <p>L'implémentation de cette méthode de notation peut être trouvée dans la 
+      fonction <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/b38a80b6ef14a8ea21940fb8fc2558aee8a3aaf1/src/IsotopeSearchByEnergyModel.cpp#L240">profile_weight(...)</a>
+      dans le code ; les commentaires dans le code indiquent clairement comment la procédure ci-dessus 
+      a été développée à travers de l'expérimentation informelle, non rigoureuse, et il semble qu'il y ait 
+      clairement place à amélioration - les commentaires sont toujours bienvenus pour toute partie d'<code>InterSpec</code>.
+    </p>
+  </message>
+
+  <message id="peak-suggestions" title="D'où viennent les suggestions de nucléides sur les clics droits">
+    Quand vous cliquez droit sur un pic, et allez au menu &quot;<b>Changer Nucléide</b>&quot;,
+    les nucléides suggérés viennent de quelques endroits différents.
+    
+    <ul>
+      <li>Les lignes de photopeaks de référence actuellement affichées sont vérifiées pour des énergies près du pic</li>
+      <li>Les nucléides d'autres pics qui ont été identifiés sont vérifiés pour des énergies près du pic</li>
+      <li>Un fichier, 
+        <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/PhotoPeak.lis">PhotoPeak.lis</a>
+        est inclus avec <code>InterSpec</code> (le fichier est originalement de 
+        <a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&amp;id=P00610&amp;cpu=PCX86&amp;v=04&amp;t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a>)
+        qui a environ 10,000 énergies mappées à leur source probable de nucléide, rayon x, ou réaction.
+      </li>
+      <li>
+        Un fichier, 
+        <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/CharacteristicGammas.txt">CharacteristicGammas.txt</a>
+        est inclus avec <code>InterSpec</code> (le fichier est originalement de 
+        <a target="_blank" href="https://rsicc.ornl.gov/PackageDetail.aspx?p=GADRAS-DRF-18.8.13&amp;id=P00610&amp;cpu=PCX86&amp;v=04&amp;t=Gamma%20Detector%20Response%20and%20Analysis%20Software–Detector%20Response%20Function.">GADRAS-DRF</a>)
+        qui a environ 50 nucléides communs avec les énergies qui leur sont caractéristiques.
+      </li>
+      <li>Les pics d'échappement simple et double de ce qui précède sont vérifiés, 
+        comme ils le sont pour les pics trouvés en faisant une recherche automatique de pics dans le spectre
+      </li>
+      <li>Les pics de somme de pics trouvés en faisant une recherche automatique de pics dans le spectre, sont aussi vérifiés 
+        (bien que ces options de pic de somme ne peuvent actuellement pas être sélectionnées pour l'assignation de nucléide du pic)</li>
+    </ul>
+    
+    <p>Si vous choisissez d'assigner le pic à un nucléide, rayon x, ou réaction auquel tout autre pic dans le spectre 
+      est assigné, alors la couleur du pic en question sera changée à la couleur de l'autre pic.
+    </p>
+
+    <p>L'implémentation de cette méthode de notation peut être trouvée dans la 
+      fonction <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/b38a80b6ef14a8ea21940fb8fc2558aee8a3aaf1/src/IsotopeId.cpp#L1466">IsotopeId::populateCandidateNuclides(...)</a>
+      dans le code, qui elle-même appelle un certain nombre d'autres fonctions pour faire le travail.
+    </p>
+  </message>
+
+  <message id="file-query" title="Comment &quot;Extraire des données&quot; d'un tas de fichiers de spectre">  
+    Si vous avez une archive de fichiers de spectre sur votre système de fichiers, l'&quot;Outil de Requête de Fichier&quot;
+    peut être utilisé pour les parcourir, et faire correspondre des critères comme les résultats de nucléides RID, temps réel, temps mort,
+    date de mesure, détecteur utilisé, etc.<br />
+    Un fichier <code>CSV</code> des résultats peut aussi être exporté de cet outil aussi pour une analyse plus profonde
+    dans une application de tableur.
+  </message>
+</messages>

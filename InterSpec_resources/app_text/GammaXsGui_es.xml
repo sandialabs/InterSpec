@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">Material/Fórmula</message>
   <message id="gxsg-tt-material">
     Puede ingresar el nombre de un material o elemento predefinido (limpie el texto del formulario
     y haga clic en la flecha a la derecha del formulario para ver todas las opciones predefinidas), o puede
@@ -33,4 +34,5 @@
   <message id="gxsg-tool-state-title">Estado de herramienta XS gamma</message>
   <message id="gxsg-tool-state-text">Estado actual de la herramienta xs.</message>
 </messages>
+
 

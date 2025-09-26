@@ -46,4 +46,5 @@
   <message id="sfs-err-show-map">خطأ في محاولة عرض الإحداثيات: {1}</message>
   <message id="sfs-err-time-format">خطأ في تحويل '{1}' إلى نص تاريخ/وقت</message>
   <message id="sfs-err-lat-lon">خطأ في تحويل الطول/العرض إلى عدد صحيح صالح</message>
+  <message id="sfs-no-spectrum-to-update">لا يوجد طيف للتحديث</message>
 </messages>

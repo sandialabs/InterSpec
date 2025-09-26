@@ -46,5 +46,7 @@
   <message id="sfs-err-show-map">Error tratando de mostrar coordenadas: {1}</message>
   <message id="sfs-err-time-format">Error convirtiendo '{1}' a cadena de fecha/hora</message>
   <message id="sfs-err-lat-lon">Error convirtiendo Long/Lat a flotante válido</message>
+  <message id="sfs-no-spectrum-to-update">No hay espectro para actualizar</message>
 </messages>
+
 

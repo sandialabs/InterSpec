@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">Act. Rel. Isotopiques</message>
   
   <!-- Presets section -->
   <message id="raag-presets">Préréglages</message>
@@ -29,10 +30,42 @@
   <message id="raag-fwhm-start-det-eff">Démarrer eff. dét.</message>
   <message id="raag-fwhm-fixed-det-eff">Fixé à eff. dét.</message>
   
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">Même Z même âge</message>
+  <message id="raag-refit-peaks">Réajuster pics</message>
+  <message id="raag-use-det-eff">Utiliser eff. dét.</message>
+  <message id="raag-none">Aucun</message>
+  <message id="raag-nuclides">Nucléides</message>
+  <message id="raag-energy-ranges">Plages d'énergie</message>
+  <message id="raag-free-peaks">Pics libres</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">Spectre</message>
+  <message id="raag-rel-eff">Eff. rel.</message>
+  <message id="raag-result">Résultat</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">Appliquer cal. énergie</message>
+  <message id="raag-show-ref-lines">Montrer lignes gamma réf.</message>
+  <message id="raag-hide-ref-lines">Masquer lignes gamma réf.</message>
+  <message id="raag-set-peaks-foreground">Mettre pics au premier plan</message>
+  <message id="raag-show-background">Afficher arrière-plan</message>
+  <message id="raag-hide-background">Masquer arrière-plan</message>
+  <message id="raag-roi-options">Options ROI :</message>
+  <message id="raag-remove-roi">Supprimer ROI</message>
+  <message id="raag-combine-roi-left">Combiner avec ROI gauche</message>
+  <message id="raag-combine-roi-right">Combiner avec ROI droit</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">Le type d'équation pour modéliser la FWHM des pics en fonction de l'énergie.</message>
+  <message id="raag-tt-skew-type">Le type d'asymétrie à appliquer aux pics ; les paramètres d'asymétrie seront ajustés.</message>
+  <message id="raag-tt-u-pu-data-source">La source de données nucléaires pour les rapports de branchement gamma de l'uranium et du plutonium.</message>
+  <message id="raag-tt-add-source">Ajouter une source.</message>
+  <message id="raag-tt-add-energy-range">Ajouter une plage d'énergie.</message>
+
   <!-- Buttons -->
   <message id="raag-add-free-peaks">ajouter pics libres</message>
   <message id="raag-clear-all-ranges">effacer toutes plages</message>
-  <message id="raag-continue">Continuer</message>
   <message id="raag-html-report">Rapport HTML</message>
   <message id="raag-xml-config">Config XML</message>
   
