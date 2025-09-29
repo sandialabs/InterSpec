@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">値</message>
+  <message id="pe-uncertainty">不確実性</message>
+  <message id="pe-parameter">パラメータ</message>
+  <message id="pe-label">ラベル</message>
+  <message id="pe-peak-type">ピークタイプ</message>
+  <message id="pe-peak-model-gaussian">ガウシアン</message>
+  <message id="pe-peak-model-data">データ領域</message>
+  <message id="pe-skew-type">歪度タイプ</message>
+  <message id="pe-btn-refit">再フィット</message>
+  <message id="pe-btn-refit-roi-standard">ROI再フィット: 関連半値幅</message>
+  <message id="pe-btn-refit-roi-independent">ROI再フィット: 独立半値幅</message>
+  <message id="pe-btn-refit-roi-fine">ROI再フィット: 微調整</message>
+  <message id="pe-btn-refit-roi-independent-fine">ROI再フィット: 独立半値幅で微調整</message>
+  
+  <message id="pe-label-centroid">重心</message>
+  <message id="pe-label-drf-fwhm">DRF予測半値幅</message>
+  <message id="pe-label-amp">振幅</message>
+  <message id="pe-label-skew0">歪度0</message>
+  <message id="pe-label-skew1">歪度1</message>
+  <message id="pe-label-skew2">歪度2</message>
+  <message id="pe-label-skew3">歪度3</message>
+  <message id="pe-label-cont-p0">連続成分P0</message>
+  <message id="pe-label-cont-p1">連続成分P1</message>
+  <message id="pe-label-cont-p2">連続成分P2</message>
+  <message id="pe-label-cont-p3">連続成分P3</message>
+  <message id="pe-label-cont-p4">連続成分P4</message>
+  <message id="pe-label-roi-start">ROI開始 (keV)</message>
+  <message id="pe-label-roi-end">ROI終了 (keV)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">ピーク色</message>
+
+  <message id="pe-multipeak-in-roi">ROI内のピーク{1} / {2}</message>
+  <message id="pe-apply-all-of-type">すべての{1}ピーク</message>
+  <message id="pe-drf-predict-fwhm-txt">DRFは{1} keVの半値幅を予測</message>
+  <message id="pe-btn-cont-to-linear">線形連続成分推定</message>
+  <message id="pe-tt-btn-cont-to-linear">ROIの左右のチャンネルを使用して直線連続成分を推定します。</message>
+  <message id="pe-failed-refit-insig">ピークの再フィットに失敗（有意でなくなった）したため、何もしません</message>
+
+  <message id="pe-est-lin-cont-no-data">連続成分を推定する前にフォアグラウンドスペクトルを読み込んでください。</message>
+  <message id="pe-failed-est-lin-cont">ROI端からの連続成分推定に失敗: {1}</message>
+  
+  
+  
+</messages>

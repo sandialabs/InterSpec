@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">Не удалось сойтись на количестве экранирования.</message>
+  <message id="dcw-qr-tool-state-title">Состояние инструмента дозы</message>
+  <message id="dcw-qr-tool-state-txt">Текущее состояние инструмента дозы.</message>
+  <message id="dcw-inputs">Входные данные</message>
+  <message id="dcw-answer">Ответ</message>
+  <message id="dcw-intro-instructions">Выберите величину, которую хотите вычислить, слева</message>
+  <message id="dcw-intro-instructions-vert-phone">Выберите величину, которую хотите вычислить, выше</message>
+  <message id="dcw-intro-calc-desc">Значения дозы вычислены с использованием ANSI/ANS-6.1.1-1991, наиболее
+    консервативный случай: ориентация передне-задняя.
+    Расчёты дозы являются приблизительным руководством, в лучшем случае, и
+    подвержены многим неопределённостям или ошибкам.
+  </message>
+  <message id="dcw-source-label">Источник:</message>
+  <message id="dcw-neutron">Нейтрон</message>
+  <message id="dcw-tt-neut-not-imp">Расчёт нейтронной дозы пока не реализован.</message>
+  <message id="dcw-tt-distance">Расстояние от центра источника до лица детектора. Число должно быть"
+    " сопровождено единицами; действительные единицы: метры, м, см, мм, км, футы,"
+    " фт, ', дюймы, дюйм, или \".  Вы также можете добавить несколько расстояний,"
+    " например '3ft 4in', или '3.6E-2 m 12 cm', которые эквивалентны "
+    " 40 дюймам и 15.6 см соответственно.</message>
+  <message id="dcw-shield-empty-text">Экранирующий материал</message>
+  <message id="dcw-runtime-checks-failed">Проверки времени выполнения не прошли!</message>
+  <message id="dcw-runtime-check-msg">
+    <div>Не доверяйте результатам этой утилиты калькулятора</div>
+    Пожалуйста, отправьте <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>
+    это сообщение об ошибке и укажите тип и модель вашего устройства (например, iPad pro,
+    ноутбук Windows 10 Dell и т.д.)
+  </message>
+  <message id="dcw-runtime-check-err-div">Результаты подозрительны - не доверяйте</message>
+  <message id="dcw-err-no-nuc">Пустой или недействительный исходный нуклид</message>
+  <message id="dcw-act-invalid">Активность недействительна</message>
+  <message id="dcw-shield-invalid">Недействительное экранирование</message>
+  <message id="dcw-generic-shield-invalid">Ошибка вычисления дозы, недействительное экранирование, извините :{</message>
+  <message id="dcw-dist-invalid">Расстояние недействительно.</message>
+  <message id="dcw-err-other">Ошибка вычисления дозы от источника, извините :{</message>
+  <message id="dcw-invalid-src-dose">Недействительная доза источника.</message>
+  <message id="dcw-invalid-src-act">Недействительная активность источника.</message>
+  <message id="dcw-invalid-src-dose">Недействительная доза источника.</message>
+  <message id="dcw-failed-find-lower-dist">Не удалось найти нижнее граничное расстояние в {1} см.</message>
+  <message id="dcw-failed-find-upper-dist">Не удалось найти верхнее граничное расстояние в {1} см.</message>
+  <message id="dcw-failed-find-dist">Не удалось найти расстояние; превышено максимальное количество итераций.</message>
+  <message id="dcw-got-neg-dist">Получено отрицательное расстояние: {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">Ошибка вычисления дозы при поиске расстояния, извините :{</message>
+  <message id="dcw-material-not-valid">Материал недействителен</message>
+  <message id="dcw-no-an-entered">Вы должны ввести атомный номер экранирующего материала.</message>
+  <message id="dcw-no-shield-name">Вы должны ввести тип экранирующего материала.</message>
+  <message id="dcw-brehm-warning">Предупреждение: тормозное излучение бета-распадов не учитывается, результаты могут быть недостоверными.</message>
+  <message id="dcw-no-dose-entered">Не введено числовое значение дозы</message>
+  <message id="dcw-stay-time">Время пребывания</message>
+  <message id="dcw-dental-xray">Зубной рентген</message>
+  <message id="dcw-annual-background">Типич. годовой фон</message>
+  <message id="dcw-annual-occ-limit">Годовой проф. лимит</message>
+  <message id="dcw-save-property">Спасти ценное имущество</message>
+  <message id="dcw-life-saving">Спасение жизни</message>
+  <message id="dcw-radiation-sickness">Лучевая болезнь</message>
+</messages>

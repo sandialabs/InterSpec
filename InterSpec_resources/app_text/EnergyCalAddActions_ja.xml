@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">スペクトラム線形化</message>
+  <message id="ecaa-truncate-title">ガンマチャネル切り詰め</message>
+  <message id="ecaa-combine-title">ガンマチャネル結合</message>
+  <message id="ecaa-convert-frf-title">フルレンジ分数校正への変換</message>
+  <message id="ecaa-convert-poly-title">多項式校正への変換</message>
+  <message id="ecaa-multi-file-title">マルチファイル校正</message>
+  
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">変換はスペクトラムに影響しません；「変更を適用する」基準をもっと選択してください。</message>
+  <message id="ecaa-already-polynomial">これが適用されるすべてのスペクトラムは既に多項式です。</message>
+  <message id="ecaa-already-frf">これが適用されるすべてのスペクトラムは既にフルレンジ分数です。</message>
+  <message id="ecaa-multiple-cal-types">選択されたソーススペクトラムに複数の校正タイプがあります；「変更を適用する」基準を制限してください。</message>
+  <message id="ecaa-changes-applied-to">変更は次に適用されます：{1}</message>
+  <message id="ecaa-terms-lost">類似項がないため、第4項以降の項は失われます。</message>
+  <message id="ecaa-no-info-lost">続行しても情報は失われません。</message>
+  <message id="ecaa-conversion-question">変換をどのように実行しますか？</message>
+  
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">{1}チャネルスペクトラムの場合：</message>
+  <message id="ecaa-lower-energy">下限エネルギー</message>
+  <message id="ecaa-upper-energy">上限エネルギー</message>
+  <message id="ecaa-num-channels">チャネル数</message>
+  <message id="ecaa-no-undo-note">この操作は元に戻すことができません。</message>
+  <message id="ecaa-combine-channels-desc">これにより、連続する後続チャネルが一緒に結合されます</message>
+  <message id="ecaa-num-channels-to-combine">結合するチャネル数：</message>
+  <message id="ecaa-first-channel-to-keep">保持する最初のチャネル</message>
+  <message id="ecaa-last-channel-to-keep">保持する最後のチャネル</message>
+  <message id="ecaa-keep-overflow">オーバーフローカウントを保持</message>
+  <message id="ecaa-tt-keep-overflow">選択すると、破棄されたチャネルからのすべてのカウントが新しい最初または最後のチャネルに追加されます。</message>
+  <message id="ecaa-first-channel-note">最初のチャネルがチャネル0であることに注意してください。</message>
+  
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">Linearize, rebinning counts to match new widths</message>
+  <message id="ecaa-linearize-same-counts">Linearize, leaving counts in channels the same</message>
+  <message id="ecaa-fit-quadratic">Fit channel energies to quadratic equation.</message>
+  <message id="ecaa-fit-cubic">Fit channel energies to cubic equation.</message>
+  
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">The channels in the resulting spectra will all have the same width, but counts in each channel will not be integer; this option preserves spectral shape (counts per keV).</message>
+  <message id="ecaa-tt-linearize-same">The channel energies will be reassigned so that each channel will have same width, without taking into account the channels original width; i.e., the counts in each channel will remain the same, but spectral shape (counts per keV) will be changed.</message>
+</messages>

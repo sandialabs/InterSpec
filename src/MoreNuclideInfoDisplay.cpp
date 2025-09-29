@@ -198,6 +198,10 @@ MoreNuclideInfoDisplay::MoreNuclideInfoDisplay( const SandiaDecay::Nuclide *cons
 {
   try
   {
+    InterSpec *interspec = InterSpec::instance();
+    if( interspec )
+      interspec->useMessageResourceBundle( "MoreNuclideInfoDisplay" );
+    
     setTemplateTxt();
   }catch( std::exception &e )
   {
@@ -452,7 +456,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
     const string natabun = SpecUtils::printCompact( 100.0*natural_abundance, 4 ) + "%";
     tmplt.bindString( "natural-abundance", natabun, Wt::TextFormat::PlainText );
     
-    WPushButton *decayChainBtn = new WPushButton( "Show Decay Chain" );
+    WPushButton *decayChainBtn = new WPushButton( WString::tr("mnid-show-decay-chain") );
     decayChainBtn->addStyleClass( "LightButton DecayBtn" );
     decayChainBtn->clicked().connect( this, &MoreNuclideInfoDisplay::showDecayChainChart );
     tmplt.bindWidget( "decay-chain-btn", decayChainBtn );
@@ -460,7 +464,7 @@ void MoreNuclideInfoDisplay::setNuclide( const SandiaDecay::Nuclide *const nuc,
     tmplt.setCondition( "if-has-parents", !nuc->decaysFromParents.empty() );
     if( !nuc->decaysFromParents.empty() )
     {
-      WPushButton *decayThroughBtn = new WPushButton( "Show Decays Through" );
+      WPushButton *decayThroughBtn = new WPushButton( WString::tr("mnid-show-decays-through") );
       decayThroughBtn->addStyleClass( "LightButton DecayBtn" );
       decayThroughBtn->clicked().connect( this, &MoreNuclideInfoDisplay::showDecayThroughChart );
       tmplt.bindWidget( "decay-through-btn", decayThroughBtn );

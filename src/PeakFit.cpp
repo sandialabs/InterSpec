@@ -37,6 +37,7 @@
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/triangular.hpp>
 #include <boost/math/distributions/poisson.hpp>
+#include "Eigen/Dense"
 
 
 //Roots Minuit2 includes
@@ -6350,11 +6351,10 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
                                  std::vector<double> &coeff_uncerts )
 {
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
-  using namespace boost::numeric;
+  //Implementation using Eigen SVD for numerical stability
   const int poly_terms = polynomial_order + 1;
-  ublas::matrix<double> A( nbin, poly_terms );
-  ublas::vector<double> b( nbin );
+  Eigen::MatrixX<double> A( nbin, poly_terms );
+  Eigen::VectorX<double> b( nbin );
   
   for( size_t row = 0; row < nbin; ++row )
   {
@@ -6364,15 +6364,17 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
       A(row,col) = std::pow( double(x[row]), double(col)) / uncert;
   }//for( int col = 0; col < poly_terms; ++col )
   
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "fit_to_polynomial(...): trouble inverting matrix" );
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
   
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  const Eigen::MatrixX<double> A_transpose = A.transpose();
+  const Eigen::MatrixX<double> alpha = A_transpose * A;
+  const Eigen::MatrixX<double> C = alpha.inverse();
   
   poly_coeffs.resize( poly_terms );
   coeff_uncerts.resize( poly_terms );

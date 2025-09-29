@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">Линеаризация Спектра</message>
+  <message id="ecaa-truncate-title">Усечение Гамма Каналов</message>
+  <message id="ecaa-combine-title">Объединение Гамма Каналов</message>
+  <message id="ecaa-convert-frf-title">Преобразование в Калибровку Полного Диапазона</message>
+  <message id="ecaa-convert-poly-title">Преобразование в Полиномиальную Калибровку</message>
+  <message id="ecaa-multi-file-title">Многофайловая Калибровка</message>
+  
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">Преобразование не повлияет ни на один спектр; попробуйте выбрать больше критериев "Применить Изменения К".</message>
+  <message id="ecaa-already-polynomial">Все спектры, к которым это будет применено, уже полиномиальные.</message>
+  <message id="ecaa-already-frf">Все спектры, к которым это будет применено, уже являются дробью полного диапазона.</message>
+  <message id="ecaa-multiple-cal-types">Существует более одного типа калибровки выбранных исходных спектров; попробуйте ограничить критерии "Применить Изменения К".</message>
+  <message id="ecaa-changes-applied-to">Изменения будут применены к: {1}</message>
+  <message id="ecaa-terms-lost">Термы после четвертого терма будут потеряны, так как нет аналогичных термов.</message>
+  <message id="ecaa-no-info-lost">Никакая информация не будет потеряна, если вы продолжите.</message>
+  <message id="ecaa-conversion-question">Как вы хотите выполнить преобразование?</message>
+  
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">Для спектров с {1} каналами:</message>
+  <message id="ecaa-lower-energy">Нижняя Энергия</message>
+  <message id="ecaa-upper-energy">Верхняя Энергия</message>
+  <message id="ecaa-num-channels">Количество Каналов</message>
+  <message id="ecaa-no-undo-note">Это действие нельзя отменить.</message>
+  <message id="ecaa-combine-channels-desc">Это объединит последовательные последующие каналы вместе</message>
+  <message id="ecaa-num-channels-to-combine">Количество каналов для объединения:</message>
+  <message id="ecaa-first-channel-to-keep">Первый Канал для Сохранения</message>
+  <message id="ecaa-last-channel-to-keep">Последний Канал для Сохранения</message>
+  <message id="ecaa-keep-overflow">Сохранить переполнение счетчиков</message>
+  <message id="ecaa-tt-keep-overflow">Если выбрано, все счетчики из отброшенных каналов будут добавлены к новому первому или последнему каналу.</message>
+  <message id="ecaa-first-channel-note">Обратите внимание, что первый канал - это канал 0.</message>
+  
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">Linearize, rebinning counts to match new widths</message>
+  <message id="ecaa-linearize-same-counts">Linearize, leaving counts in channels the same</message>
+  <message id="ecaa-fit-quadratic">Fit channel energies to quadratic equation.</message>
+  <message id="ecaa-fit-cubic">Fit channel energies to cubic equation.</message>
+  
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">The channels in the resulting spectra will all have the same width, but counts in each channel will not be integer; this option preserves spectral shape (counts per keV).</message>
+  <message id="ecaa-tt-linearize-same">The channel energies will be reassigned so that each channel will have same width, without taking into account the channels original width; i.e., the counts in each channel will remain the same, but spectral shape (counts per keV) will be changed.</message>
+</messages>

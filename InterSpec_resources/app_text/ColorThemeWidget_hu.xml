@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+  
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">Téma Neve</message>
+  <message id="ctwidget-description">Leírás</message>
+  <message id="ctwidget-title-placeholder">Cím nincs hozzárendelve</message>
+  <message id="ctwidget-desc-placeholder">Leírás nincs hozzárendelve</message>
+  <message id="ctwidget-empty">(üres)</message>
+  
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">Nem-Diagram Terület</message>
+  <message id="ctwidget-backdrop-theme">Háttér Téma</message>
+  <message id="ctwidget-backdrop-desc">Téma minden nem-diagram területhez</message>
+  
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">Diagram Színek</message>
+  
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">Spektr. Előtér</message>
+  <message id="ctwidget-spec-foreground-desc">Vonal szín az előtér spektrumhoz</message>
+  <message id="ctwidget-spec-background">Spektr. Háttér</message>
+  <message id="ctwidget-spec-background-desc">Vonal szín a háttér spektrumhoz</message>
+  <message id="ctwidget-spec-secondary">Spektr. Másodlagos</message>
+  <message id="ctwidget-spec-secondary-desc">Vonal szín a másodlagos spektrumhoz</message>
+  
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">Csúcsok Használják Referencia Vonal Színt</message>
+  <message id="ctwidget-peaks-use-ref-desc">Meghatározza, hogy újonnan illesztett csúcsok átveszik-e a referencia vonal színét.</message>
+  <message id="ctwidget-default-peak-color">Alapértelmezett Csúcs Szín</message>
+  <message id="ctwidget-default-peak-desc">Szín csúcsokhoz amelyeknek nincs hozzárendelt színük</message>
+  
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">Spektrum Diagram Tengely</message>
+  <message id="ctwidget-spectrum-axis-desc">Vonal szín spektrum X és Y tengelyhez</message>
+  <message id="ctwidget-spectrum-text">Spektrum Diagram Szöveg</message>
+  <message id="ctwidget-spectrum-text-desc">Spektrum diagram szöveg (y és x tengely címkék) szín</message>
+  <message id="ctwidget-spectrum-area">Spektrum Terület</message>
+  <message id="ctwidget-spectrum-area-desc">Háttér szín spektrum diagramhoz</message>
+  <message id="ctwidget-spectrum-margin">Spektrum Diagram Háttere</message>
+  <message id="ctwidget-spectrum-margin-desc">Szín spektrum diagram margókhoz</message>
+  <message id="ctwidget-same-as-spectrum">Ugyanaz mint spektrum terület</message>
+  
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">Idő Gamma Számolás</message>
+  <message id="ctwidget-time-gamma-desc">Vonal szín gamma számoláshoz idő diagramban</message>
+  <message id="ctwidget-time-neutron">Idő Neutron Számolás</message>
+  <message id="ctwidget-time-neutron-desc">Vonal szín neutron számoláshoz idő diagramban</message>
+  <message id="ctwidget-time-axis">Idő Diagram Tengely</message>
+  <message id="ctwidget-time-axis-desc">Vonal szín idő diagram X és Y tengelyhez</message>
+  <message id="ctwidget-time-background">Idő Diagram Háttér</message>
+  <message id="ctwidget-time-background-desc">Háttér szín idő diagramhoz</message>
+  <message id="ctwidget-time-margins">Idő Diagram Margók</message>
+  <message id="ctwidget-time-margins-desc">Szín spektrum diagram margókhoz</message>
+  <message id="ctwidget-same-as-background">Ugyanaz mint háttér</message>
+  <message id="ctwidget-time-text">Idő Diagram Szöveg</message>
+  <message id="ctwidget-time-text-desc">Szöveg szín idő diagramhoz (x és y-tengely címkék)</message>
+  
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">Foglaltság Jelző Vonalak</message>
+  <message id="ctwidget-occ-lines-desc">Vonalak amelyek jelzik foglaltság kezdetét és végét (portál adatok) vagy érdekes időszakot (keresés mód adatok)</message>
+  <message id="ctwidget-time-fore-highlight">Idő előtér kiemelés</message>
+  <message id="ctwidget-time-fore-highlight-desc">Szín jelzésre idő diagramon, mely idő szegmensek összegződnek előtér spektrumhoz.</message>
+  <message id="ctwidget-time-back-highlight">Idő háttér kiemelés</message>
+  <message id="ctwidget-time-back-highlight-desc">Szín jelzésre idő diagramon, mely idő szegmensek összegződnek háttér spektrumhoz.</message>
+  <message id="ctwidget-time-sec-highlight">Idő másodlagos kiemelés</message>
+  <message id="ctwidget-time-sec-highlight-desc">Szín jelzésre idő diagramon, mely idő szegmensek összegződnek másodlagos spektrumhoz.</message>
+  
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">Referencia Vonal Színek</message>
+  <message id="ctwidget-ref-line-colors-desc">Rendezett színek referencia vonalakhoz</message>
+  <message id="ctwidget-specific-ref-colors">Specifikus Forrás Ref. Vonal Színek</message>
+  <message id="ctwidget-specific-ref-desc">Színek referencia vonalakhoz adott forrásokhoz</message>
+  <message id="ctwidget-dynamic-ref-lines">Dinamikus Referencia Vonalak</message>
+  <message id="ctwidget-dynamic-ref-desc">Használandó színek, nuklidák típusa alapján</message>
+  
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">Orvosi</message>
+  <message id="ctwidget-industrial">Ipari</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">Közös</message>
+  <message id="ctwidget-other">Egyéb</message>
+  
+  <!-- Other options -->
+  <message id="ctwidget-other-options">Egyéb Opciók</message>
+  <message id="ctwidget-peak-label-size">Csúcs címke méret</message>
+  <message id="ctwidget-peak-label-size-desc">Megadja csúcs címkék betűméretét</message>
+  <message id="ctwidget-peak-label-angle">Csúcs címke szög</message>
+  <message id="ctwidget-peak-label-angle-desc">Forgatás, fokban, csúcs címkék</message>
+  <message id="ctwidget-log-y-min">Log-Y minimum</message>
+  <message id="ctwidget-log-y-min-desc">Minimum érték logaritmikus y-tengelyen, amikor van csatorna nulla vagy negatív számlálással megjelenített x-tartományban.</message>
+</messages>

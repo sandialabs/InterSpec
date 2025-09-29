@@ -140,9 +140,11 @@ public:
                                const std::set<int> &det_nums ) const;
   /** Adds reading back in peak information (only from InterSpec exported SPE files though). */
   virtual bool load_from_iaea( std::istream &istr );
-  
+
+  virtual void load_cnf_using_reader( CAMInputOutput::CAMIO &reader );
+
   virtual std::shared_ptr< ::rapidxml::xml_document<char> > create_2012_N42_xml() const;
-  
+
   /** Same as #SpecFile::set_energy_calibration, but marks this SpecMeas as modified. */
   virtual void set_energy_calibration( const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal,
                                       const std::shared_ptr<const SpecUtils::Measurement> &measurement );

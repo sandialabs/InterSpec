@@ -898,6 +898,46 @@ void DetectorPeakResponse::fromEnergyEfficiencyCsv( std::istream &input,
 }//void fromEnergyEfficiencyCsv(...)
 
 
+void DetectorPeakResponse::setEfficiencyPoints( const std::vector<DetectorPeakResponse::EnergyEffPoint> &efficiencies,
+                         const float detectorDiameter,
+                         const EffGeometryType geometry_type )
+{
+  if( (geometry_type == EffGeometryType::FarField)
+     && ((detectorDiameter <= 0.0) || IsInf(detectorDiameter) || IsNan(detectorDiameter)) )
+    throw runtime_error( "Detector diameter must be greater than 0.0" );
+
+  if( efficiencies.size() < 2 )
+    throw runtime_error( "DetectorPeakResponse::setEfficiencyPoints(): need at least two efficiency points." );
+
+  m_energyEfficiencies.clear();
+  for( const EnergyEffPoint &p : efficiencies )
+  {
+    if( p.energy < 0.0 || p.efficiency < 0.0 )
+      throw runtime_error( "Energy and efficiency musst be >= 0" );
+
+    EnergyEfficiencyPair eep;
+    eep.energy = p.energy;
+    eep.efficiency = p.efficiency;
+
+    m_energyEfficiencies.push_back( std::move(eep) );
+  }//for( const EnergyEffPoint &p : efficiencies )
+
+  std::sort( begin(m_energyEfficiencies), end(m_energyEfficiencies) );
+
+  m_detectorDiameter = detectorDiameter;
+  m_efficiencyEnergyUnits = static_cast<float>(PhysicalUnits::keV);
+
+  m_flags = 0;
+
+  m_lowerEnergy = m_energyEfficiencies.front().energy;
+  m_upperEnergy = m_energyEfficiencies.back().energy;
+
+  m_lastUsedUtc = m_createdUtc = std::time(nullptr);
+  m_geomType = geometry_type;
+
+  computeHash();
+}//void setEfficiencyPoints(...)
+
 
 void DetectorPeakResponse::setIntrinsicEfficiencyFormula( const string &fcnstr,
                                                           const float diameter,

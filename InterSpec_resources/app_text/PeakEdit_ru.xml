@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">Значение</message>
+  <message id="pe-uncertainty">Неопределённость</message>
+  <message id="pe-parameter">Параметр</message>
+  <message id="pe-label">Метка</message>
+  <message id="pe-peak-type">Тип пика</message>
+  <message id="pe-peak-model-gaussian">Гауссов</message>
+  <message id="pe-peak-model-data">Область данных</message>
+  <message id="pe-skew-type">Тип асимметрии</message>
+  <message id="pe-btn-refit">Переподогнать</message>
+  <message id="pe-btn-refit-roi-standard">Переподогнать ROI: связанные FWHM</message>
+  <message id="pe-btn-refit-roi-independent">Переподогнать ROI: независимые FWHM</message>
+  <message id="pe-btn-refit-roi-fine">Переподогнать ROI: небольшие уточнения</message>
+  <message id="pe-btn-refit-roi-independent-fine">Переподогнать ROI: уточнить с незав. FWHM</message>
+  
+  <message id="pe-label-centroid">Центроид</message>
+  <message id="pe-label-drf-fwhm">DRF пред. FWHM</message>
+  <message id="pe-label-amp">Амплитуда</message>
+  <message id="pe-label-skew0">Асимм. 0</message>
+  <message id="pe-label-skew1">Асимм. 1</message>
+  <message id="pe-label-skew2">Асимм. 2</message>
+  <message id="pe-label-skew3">Асимм. 3</message>
+  <message id="pe-label-cont-p0">Конт. P0</message>
+  <message id="pe-label-cont-p1">Конт. P1</message>
+  <message id="pe-label-cont-p2">Конт. P2</message>
+  <message id="pe-label-cont-p3">Конт. P3</message>
+  <message id="pe-label-cont-p4">Конт. P4</message>
+  <message id="pe-label-roi-start">Начало ROI (кэВ)</message>
+  <message id="pe-label-roi-end">Конец ROI (кэВ)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">Цвет пика</message>
+
+  <message id="pe-multipeak-in-roi">Пик {1} из {2} в ROI</message>
+  <message id="pe-apply-all-of-type">Все {1} пики</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF предсказывает FWHM {1} кэВ</message>
+  <message id="pe-btn-cont-to-linear">Оценить линейный континуум</message>
+  <message id="pe-tt-btn-cont-to-linear">Использует каналы справа и слева от ROI для оценки прямолинейного континуума.</message>
+  <message id="pe-failed-refit-insig">Не удалось переподогнать пик (стал незначимым), поэтому ничего не делаем</message>
+
+  <message id="pe-est-lin-cont-no-data">Пожалуйста, загрузите основной спектр перед оценкой континуума.</message>
+  <message id="pe-failed-est-lin-cont">Не удалось оценить континуум по краям ROI: {1}</message>
+  
+  
+  
+</messages>

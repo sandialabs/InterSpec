@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+  
+  <!-- Labels -->
+  <message id="raagn-nuclide">النواة:</message>
+  <message id="raagn-age">العمر:</message>
+  <message id="raagn-min-age">العمر الأدنى:</message>
+  <message id="raagn-max-age">العمر الأعلى:</message>
+  
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">اختر نوع القيد.</message>
+  <message id="raagn-min">أدنى:</message>
+  <message id="raagn-max">أعلى:</message>
+  <message id="raagn-src">المصدر:</message>
+  <message id="raagn-val">القيمة:</message>
+  
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">لا شيء</message>
+  <message id="raagn-constraint-rel-act">النشاط النسبي</message>
+  <message id="raagn-constraint-act-ratio">نسبة النشاط</message>
+  <message id="raagn-constraint-mass-frac">الكسر الكتلي</message>
+  
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">ملائمة العمر</message>
+  
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">إضافة قيد</message>
+  
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">مثل <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (حالة ما وراء مستقرة), <b>Cs137</b>, Pb, Fe(n,n), إلخ.</message>
+  <message id="raagn-remove-constraint-tt">إزالة هذا القيد</message>
+  <message id="raagn-add-constraint-tt">إضافة قيد لهذه النواة</message>
+  
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1} ليست نواة أو أشعة سينية أو تفاعل صالح.</message>
+  <message id="raagn-stable-nuclide">{1} نواة مستقرة.</message>
+  
+</messages>

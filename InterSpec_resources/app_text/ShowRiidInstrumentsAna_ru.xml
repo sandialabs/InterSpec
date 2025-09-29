@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- srria- is short for ShowRiidIntrumentAna -->
+  <message id="srria-algo-info-label">Информация алгоритма:</message>
+  <message id="srria-creator">Создатель</message>
+  <message id="srria-version">Версия</message>
+  <message id="srria-remarks">Примечания</message>
+  <message id="srria-category">Категория</message>
+  <message id="srria-confidence">Достоверность</message>
+  <message id="srria-no-id-provided">Идентификация нуклидов не предоставлена.</message>
+  <message id="srria-algo-results">Результаты алгоритма</message>
+  <message id="srria-no-algo-results">Результаты алгоритма недоступны.</message>
+  <message id="srria-no-nucs">нуклиды не идентифицированы.</message>
+  <message id="srria-inst-ana-window-title">Результаты ID детектора</message>
+</messages>

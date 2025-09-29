@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">Отсчёты</message>
+  <message id="d3sdd-yAxisTitleMulti">Отсчёты на {1} каналов</message>
+  <message id="d3sdd-realTime">Реальное время</message>
+  <message id="d3sdd-liveTime">Живое время</message>
+  <message id="d3sdd-deadTime">Мёртвое время</message>
+  <message id="d3sdd-scaledBy">Масштабировано на</message>
+  <message id="d3sdd-zoomIn">Увеличить</message>
+  <message id="d3sdd-neutrons">нейтроны</message>
+  <message id="d3sdd-Neutrons">Нейтроны</message>
+  <message id="d3sdd-cps">имп/с</message>
+  <message id="d3sdd-roiCounts">Отсчёты ROI</message>
+  <message id="d3sdd-gammaCounts">Гамма-отсчёты</message>
+  <message id="d3sdd-contArea">площ. континуума</message>
+  <message id="d3sdd-peakCps">имп/с пика</message>
+  <message id="d3sdd-peakArea">площадь пика</message>
+  <message id="d3sdd-mean">среднее</message>
+  <message id="d3sdd-spectrum">Спектр</message>
+  <message id="d3sdd-comptonEdge">Комптон-кант</message>
+  <message id="d3sdd-sumPeak">Суммарный пик</message>
+  <message id="d3sdd-firstEnergyClick">Нажмите для задания первой энергии сумм. пика.</message>
+  <message id="d3sdd-singleEscape">Однократное аннигил.</message>
+  <message id="d3sdd-doubleEscape">Двукратное аннигил.</message>
+  <message id="d3sdd-eraseInRange">Удалит пики в диапазоне</message>
+  <message id="d3sdd-zoomInY">Увеличить по оси Y</message>
+  <message id="d3sdd-zoomOutY">Уменьшить по оси Y</message>
+  <message id="d3sdd-touchDefineRoi">Двигайте 2 пальца вправо для задания ROI</message>
+  <message id="d3sdd-foreNSigmaBelowBack">Передний план на {1} σ ниже фона.</message>
+  <message id="d3sdd-foreNSigmaAboveBack">Передний план на {1} σ выше фона.</message>
+  <message id="d3sdd-backSubCounts">отсчёты (вычет фона)</message>
+  <message id="d3sdd-afterScalingBy">после масштабирования на </message>
+  <message id="d3sdd-clickedPeak">Выбранный пик</message>
+  <message id="d3sdd-recalFromTo">Перекалибровать данные от {1} до {2} кэВ</message>
+  <message id="d3sdd-sumFromTo">{1} до {2} кэВ</message>
+  <message id="d3sdd-comptonPeakAngle">Комптон-пик {1}°</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">Нижний и верхний пределы отсчётов равны.</message>
+  <message id="d3sdd-yaxis-no-spectrum">Спектр не отображён.</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">Верхний предел равен или меньше нуля.</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">Нижний предел равен или меньше нуля.</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">Верхний предел меньше минимального отображ. ненулевого значения.</message>
+  <message id="d3sdd-candidates">Кандидаты:</message>
+  <message id="d3sdd-use-arrows-to-select">(используйте ↑ и ↓ для выбора)</message>
+</messages>

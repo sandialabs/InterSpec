@@ -34,10 +34,7 @@
 #include <iostream>
 #include <stdexcept>
 
-#define BOOST_UBLAS_TYPE_CHECK 0
-#include <boost/numeric/ublas/lu.hpp>
-#include <boost/numeric/ublas/matrix.hpp>
-#include <boost/numeric/ublas/triangular.hpp>
+#include "Eigen/Dense"
 
 
 //Minuit2 includes
@@ -66,101 +63,6 @@ using namespace std;
 
 namespace
 {
-template<class T>
-bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
-                   boost::numeric::ublas::matrix<T> &inverse )
-{
-  using namespace boost::numeric;
-  ublas::matrix<T> A( input );
-  ublas::permutation_matrix<std::size_t> pm( A.size1() );
-  const size_t res = lu_factorize(A, pm);
-  if( res != 0 )
-    return false;
-  inverse.assign( ublas::identity_matrix<T>( A.size1() ) );
-  lu_substitute(A, pm, inverse);
-  return true;
-}//matrix_invert
-
-
-
-vector<float> fit_for_poly_coefs( const vector<pair<double,double>> &channels_energies,
-                            const int poly_terms )
-{
-  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
-  using namespace boost::numeric;
-  
-  const size_t npoints = channels_energies.size();
-  ublas::matrix<double> A( npoints, poly_terms );
-  ublas::vector<double> b( npoints );
-  
-  for( size_t row = 0; row < npoints; ++row )
-  {
-    b(row) = channels_energies[row].second;
-    for( int col = 0; col < poly_terms; ++col )
-      A(row,col) = std::pow( channels_energies[row].first, double(col) );
-  }//for( int col = 0; col < poly_terms; ++col )
-  
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "fit_for_poly_coefs(...): trouble inverting matrix" );
-  
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
-  
-  vector<float> poly_coeffs( poly_terms );
-  for( int coef = 0; coef < poly_terms; ++coef )
-    poly_coeffs[coef] = static_cast<float>( a(coef) );
-  
-  return poly_coeffs;
-}//void fit_for_poly_coefs(...)
-
-
-vector<float> fit_for_fullrangefraction_coefs( const vector<pair<double,double>> &channels_energies,
-                            const size_t nchannels, const int nterms )
-{
-  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
-  using namespace boost::numeric;
-  
-  const int polyterms = std::min( nterms, 5 );
-  const size_t npoints = channels_energies.size();
-  
-  ublas::matrix<double> A( npoints, polyterms );
-  ublas::vector<double> b( npoints );
-  
-  for( size_t row = 0; row < npoints; ++row )
-  {
-    const double x = channels_energies[row].first / nchannels;
-    
-    b(row) = channels_energies[row].second;
-    for( int col = 0; col < std::min(4,polyterms); ++col )
-      A(row,col) = std::pow( x, static_cast<double>(col) );
-    if( polyterms > 4 )
-      A(row,5) = 1.0 / (1.0 + 60.0*x);
-  }//for( int col = 0; col < poly_terms; ++col )
-  
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "fit_for_fullrangefraction_coefs(...): trouble inverting matrix" );
-  
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
-  
-  vector<float> frf_coeffs( polyterms );
-  for( int coef = 0; coef < polyterms; ++coef )
-    frf_coeffs[coef] = static_cast<float>( a(coef) );
-  
-  return frf_coeffs;
-}//void fit_for_fullrangefraction_coefs(...)
-
-
 double poly_coef_fcn( size_t order, double channel, size_t nchannel )
 {
   return pow( channel, static_cast<double>(order) );
@@ -212,12 +114,11 @@ double fit_energy_cal_imp( const std::vector<EnergyCal::RecalPeakInfo> &peakinfo
   
   //General Linear Least Squares fit
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
+  //Implementation using Eigen SVD for numerical stability
   //Energy_i = P0 + P1*pow(i,1) + P2*pow(i,2) + P3*pow(i,3)  (for polynomial)
-  using namespace boost::numeric;
   
-  ublas::matrix<double> A( npeaks, nparsfit );
-  ublas::vector<double> b( npeaks );
+  Eigen::MatrixX<double> A( npeaks, nparsfit );
+  Eigen::VectorX<double> b( npeaks );
   
   for( size_t row = 0; row < npeaks; ++row )
   {
@@ -242,15 +143,20 @@ double fit_energy_cal_imp( const std::vector<EnergyCal::RecalPeakInfo> &peakinfo
     b(row) = data_y / data_y_uncert;
   }//for( int col = 0; col < order; ++col )
   
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "Trouble inverting least linear squares matrix" );
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
   
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  // Compute uncertainties using normal equations for compatibility
+  // Note: For maximum numerical stability, we could extract uncertainties from the SVD,
+  // but for consistency with existing code behavior, we use the normal equations approach
+  const Eigen::MatrixX<double> A_transpose = A.transpose();
+  const Eigen::MatrixX<double> alpha = A_transpose * A;
+  const Eigen::MatrixX<double> C = alpha.inverse();
   
   coefs.resize( fitfor.size(), 0.0 );
   coefs_uncert.resize( fitfor.size(), 0.0 );
@@ -307,11 +213,10 @@ double fit_from_channel_energies_imp( const size_t ncoeffs, const vector<float> 
   
   //General Linear Least Squares fit
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inefficient
-  using namespace boost::numeric;
+  //Implementation using Eigen SVD for numerical stability
   
-  ublas::matrix<double> A( nenergies, ncoeffs );
-  ublas::vector<double> b( nenergies );
+  Eigen::MatrixX<double> A( nenergies, ncoeffs );
+  Eigen::VectorX<double> b( nenergies );
   
   for( size_t row = 0; row < nenergies; ++row )
   {
@@ -322,15 +227,13 @@ double fit_from_channel_energies_imp( const size_t ncoeffs, const vector<float> 
     b(row) = channel_energies[row] / uncert;
   }//for( int col = 0; col < order; ++col )
   
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A ); //alpha is ncoeffs x ncoeffs matrix
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "Trouble inverting least linear squares matrix" );
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
   
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
+  const Eigen::VectorXd a = svd.solve(b);
   
   coefs.resize( ncoeffs, 0.0 );
   for( size_t col = 0; col < ncoeffs; ++col )
@@ -1026,14 +929,14 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
     case SpecUtils::EnergyCalType::Polynomial:
     case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
     {
-      const vector<float> new_other_coefs = fit_for_poly_coefs( channels_energies, static_cast<int>(order) );
+      const vector<float> new_other_coefs = EnergyCal::fit_for_poly_coefs( channels_energies, static_cast<int>(order) );
       answer->set_polynomial( other_num_channel, new_other_coefs, dev_pairs );
       break;
     }
       
     case SpecUtils::EnergyCalType::FullRangeFraction:
     {
-      const vector<float> new_other_coefs = fit_for_fullrangefraction_coefs( channels_energies,
+      const vector<float> new_other_coefs = EnergyCal::fit_for_fullrangefraction_coefs( channels_energies,
                                                                         other_num_channel, static_cast<int>(order) );
       answer->set_full_range_fraction( other_num_channel, new_other_coefs, dev_pairs );
       break;
@@ -1050,5 +953,76 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
   return answer;
 }//propogate_energy_cal_change(...)
 
+
+std::vector<float> EnergyCal::fit_for_poly_coefs( const std::vector<std::pair<double,double>> &channels_energies,
+                            const int poly_terms )
+{
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation using Eigen SVD for numerical stability
+  
+  const size_t npoints = channels_energies.size();
+  Eigen::MatrixX<double> A( npoints, poly_terms );
+  Eigen::VectorX<double> b( npoints );
+  
+  for( size_t row = 0; row < npoints; ++row )
+  {
+    b(row) = channels_energies[row].second;
+    for( int col = 0; col < poly_terms; ++col )
+      A(row,col) = std::pow( channels_energies[row].first, double(col) );
+  }//for( int col = 0; col < poly_terms; ++col )
+  
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
+  
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  vector<float> poly_coeffs( poly_terms );
+  for( int coef = 0; coef < poly_terms; ++coef )
+    poly_coeffs[coef] = static_cast<float>( a(coef) );
+  
+  return poly_coeffs;
+}//void fit_for_poly_coefs(...)
+
+
+std::vector<float> EnergyCal::fit_for_fullrangefraction_coefs( const std::vector<std::pair<double,double>> &channels_energies,
+                            const size_t nchannels, const int nterms )
+{
+  //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
+  //Implementation using Eigen SVD for numerical stability
+  
+  const int polyterms = std::min( nterms, 5 );
+  const size_t npoints = channels_energies.size();
+  
+  Eigen::MatrixX<double> A( npoints, polyterms );
+  Eigen::VectorX<double> b( npoints );
+  
+  for( size_t row = 0; row < npoints; ++row )
+  {
+    const double x = channels_energies[row].first / nchannels;
+    
+    b(row) = channels_energies[row].second;
+    for( int col = 0; col < std::min(4,polyterms); ++col )
+      A(row,col) = std::pow( x, static_cast<double>(col) );
+    if( polyterms > 4 )
+      A(row,4) = 1.0 / (1.0 + 60.0*x);
+  }//for( int col = 0; col < poly_terms; ++col )
+  
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
+  
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  vector<float> frf_coeffs( polyterms );
+  for( int coef = 0; coef < polyterms; ++coef )
+    frf_coeffs[coef] = static_cast<float>( a(coef) );
+  
+  return frf_coeffs;
+}//void fit_for_fullrangefraction_coefs(...)
 
 

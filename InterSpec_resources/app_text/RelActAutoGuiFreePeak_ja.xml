@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagfp- is short for RelActAutoGuiFreePeak -->
+  
+  <!-- Checkboxes -->
+  <message id="raagfp-constrain-fwhm">半値幅制約</message>
+  <message id="raagfp-true-energy">真のエネルギー</message>
+  
+  <!-- Messages -->
+  <message id="raagfp-not-in-roi">ROI内にありません。</message>
+  
+  <!-- Tooltips -->
+  <message id="raagfp-constrain-fwhm-tt">チェックすると、このピークは通常ガンマ線およびX線ピークが制約される半値幅関数形式に制約されます。&lt;br /&gt;チェックを外すと、このピークの半値幅は他のすべてのピーク幅とは独立してデータからフィットされます。&lt;br /&gt;このオプションのチェックを外すことは、消滅や反応光電ピークに有用です。</message>
+  <message id="raagfp-true-energy-tt">ピークが既知エネルギーのガンマである場合、このオプションをチェックしてください。&lt;br /&gt;このピークが真のエネルギーが不明なスペクトル内の観測ピークである場合、このオプションのチェックを外してください。</message>
+  
+</messages>

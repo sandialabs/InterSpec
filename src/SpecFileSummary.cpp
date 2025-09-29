@@ -1040,7 +1040,7 @@ void SpecFileSummary::handleFieldUpdate( EditableFields field )
 
   if( !sample || !meas )
   {
-    passMessage( "No spectrum to update", WarningWidget::WarningMsgInfo );
+    passMessage( WString::tr("sfs-no-spectrum-to-update"), WarningWidget::WarningMsgInfo );
     return;
   }//if( !sample )
 

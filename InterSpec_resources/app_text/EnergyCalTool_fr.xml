@@ -81,4 +81,14 @@
   <message id="ect-short-fore">Prem. pl.</message>
   <message id="ect-short-back">Arr. pl</message>
   <message id="ect-short-secondary">Sec.</message>
+  
+  <message id="ect-of-the-fore"> du premier plan.</message>
+  <message id="ect-of-the-sec"> du secondaire.</message>
+  <message id="ect-of-the-back"> de l'arrière-plan.</message>
+
+  <message id="ect-offset-label">Décalage</message>
+  <message id="ect-linear-label">Linéaire</message>
+  <message id="ect-quad-label">Quad.</message>
+  <message id="ect-cubic-label">Cubique</message>
+  <message id="ect-nth-label">{1}ème ordre</message>
 </messages>

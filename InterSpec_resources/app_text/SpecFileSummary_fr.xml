@@ -44,4 +44,5 @@
   <message id="sfs-err-show-map">Erreur lors de l'affichage des coordonnées : {1}</message>
   <message id="sfs-err-time-format">Erreur lors de la conversion de '{1}' en chaîne de date/heure</message>
   <message id="sfs-err-lat-lon">Erreur lors de la conversion Long/Lat en float valide</message>
+  <message id="sfs-no-spectrum-to-update">Aucun spectre à mettre à jour</message>
 </messages>

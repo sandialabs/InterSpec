@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ftw- is short for FluxToolWidget or FluxToolWindow
+  -->
+  <message id="ftw-qr-tool-state-title">Fluxus eszköz állapot</message>
+  <message id="ftw-qr-tool-state-text">A fluxus eszköz jelenlegi állapota.</message>
+  <message id="ftw-hdr-intrinsic-eff">Belső hat.</message>
+  <message id="ftw-hdr-geom-eff">Geom. hat.</message>
+  <message id="ftw-hdr-flux-on-det">Fluxus det.-on (ɣ/s)</message>
+  <message id="ftw-hdr-flux-cm">Fluxus (ɣ/cm²/s)</message>
+  <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-tt-distance">
+    Távolság a forrás középpontjától a detektor felületéig. A számot
+    egységekkel kell követni; érvényes egységek: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, vagy ".  Több távolságot is hozzáadhat,
+    mint például '3ft 4in', vagy '3.6E-2 m 12 cm' amelyek megfelelnek 
+    40 hüvelyknek és 15.6 cm-nek.
+  </message>
+  <message id="ftw-simple">Egyszerű</message>
+  <message id="ftw-standard">Standard</message>
+  <message id="ftw-more">Több</message>
+  <message id="ftw-copy-btn">Másolás vágólapra</message>
+  <message id="ftw-copy-btn-narrow">Másolás</message>
+  <message id="ftw-invalid-dist">Érvénytelen távolság</message>
+  <message id="ftw-no-drf">Nincs detektor válaszfüggvény kiválasztva</message>
+  <message id="ftw-no-foreground">Nincs előtér spektrum betöltve</message>
+  <message id="ftw-invalid-livetime">Érvénytelen előtér élő-idő</message>
+  <message id="ftw-err-copy-clipboard">Nem sikerült a vágólapra másolás - talán jogosultsági probléma - sajnálom.</message>
+  <message id="ftw-copied-to-clipboard">Táblázat vágólapra másolva.</message>
+  <message id="ftw-copied-as-html">Táblázat vágólapra másolva HTML szövegként.</message>
+  <message id="ftw-copy-unknown-status">Ismeretlen eredmény a másolási parancsnál - sajnálom.</message>
+</messages>

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">النموذج</message>
+  <message id="bgw-exemplar-use-current-fore">استخدام المقدمة الحالية</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">الخلفية</message>
+  <message id="bgw-back-use-current">استخدام الخلفية الحالية</message>
+  <message id="bgw-back-none">لا توجد خلفية</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">ملائمة جميع القمم</message>
+  <message id="bgw-refit-energy-cal">إعادة ملائمة معايرة الطاقة</message>
+  <message id="bgw-use-exemplar-energy-cal">استخدام معايرة طاقة النموذج</message>
+  <message id="bgw-write-n42-with-results">كتابة N42 مع النتائج</message>
+  <message id="bgw-show-nonfit-peaks">إظهار القمم غير الملائمة</message>
+  <message id="bgw-overwrite-output-files">استبدال ملفات الإخراج</message>
+  <message id="bgw-create-csv-output">CSV القمة</message>
+  <message id="bgw-create-json-output">كتابة JSON</message>
+  <message id="bgw-use-existing-background-peaks">استخدام قمم الخلفية الموجودة</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">استخدام معايرة طاقة النموذج للخلفية</message>
+  
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">عتبة إحصائيات القمة:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">عتبة فرضية القمة:</message>
+  
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">استبدال الإخراج</message>
+  <message id="bgw-sum-multirecord-to-single">جمع الملفات متعددة السجلات إلى سجل واحد</message>
+  <message id="bgw-info-will-convert-file-type">سيتم تحويل الملفات إلى النوع المختار.</message>
+  
+  
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">التقارير للكتابة</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">كتابة تقرير HTML لنتائج التحليل.</message>
+  <message id="bgw-reports-write-csv">ملخص CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">كتابة ملف CSV ملخص مع نتائج التحليل من جميع ملفات الإدخال.</message>
+  <message id="bgw-reports-write-custom-per-file">مخصص لكل ملف</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">رفع قالب تقرير مخصص لاستخدامه لكل ملف.</message>
+  <message id="bgw-reports-write-custom-summary">ملخص مخصص</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">ملف أو أكثر من ملفات القوالب المستخدمة لتوفير ملخص لجميع ملفات الإدخال.</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">لا توجد قمم في النموذج.</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">نحتاج لطيف نموذج مع قمم، أو ملف CSV للقمم.</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">نحتاج لخلفية صالحة</message>
+  <message id="bgw-no-ana-act-shield-no-drf">لا توجد كفاءة كاشف متاحة.</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">لا يوجد طيف نموذج مختار.</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">لا توجد قمم في طيف النموذج المختار.</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">لا يوجد نموذج ملائمة النشاط/التدريع في النموذج.</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">خلفية غير صالحة</message>
+  <message id="bgw-no-ana-no-input-files">لا توجد ملفات إدخال.</message>
+  <message id="bgw-no-ana-invalid-output-path">يرجى اختيار دليل إخراج صالح.</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">تنفيذ العمل</message>
+  <message id="bgw-performing-work-msg">يرجى الانتظار أثناء تنفيذ التحليل المجمع...</message>
+  <message id="bgw-error-analysis-title">خطأ في تنفيذ التحليل المجمع</message>
+  <message id="bgw-error-analysis-msg">خطأ: {1}</message>
+  <message id="bgw-analysis-summary-title">ملخص التحليل المجمع</message>
+  <message id="bgw-json-parse-error">
+    <p>خطأ في تحليل نتائج JSON:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>خطأ في إنشاء HTML بسبب استثناء:</p>
+    <code>{1}</code>
+    <br />
+    من السطر {2}، العمود {3}
+  </message>
+  <message id="bgw-misc-error">
+    <p>غير قادر على إنتاج ملخص النتائج بسبب استثناء:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">تحذير</message>
+ 
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">بدلاً من ملائمة القمم في ملف النموذج - سيتم ملائمة جميع القمم في الطيف.</message>
+  
+  <message id="bgw-refit-energy-cal-tt">بعد ملائمة القمة الأولية، يستخدم تلك القمم (والنوى المخصصة لها) لضبط كسب الطاقة، ثم يعيد ملائمة القمم مع معايرة الطاقة المحدثة.
+  هذا ينطبق أيضًا على ملف الخلفية إذا كنت تلائم للنشاط/التدريع.
+  </message>
+  
+  <message id="bgw-use-exemplar-energy-cal-tt">استخدم معايرة طاقة N42 النموذج مع ملفات المقدمة المدخلة.
+إذا تم تحديد refit-energy-cal كصحيح، فسيتم استخدام معايرة طاقة النموذج للملائمة الأولية، ثم تنقيحها وإعادة ملائمة القمم.
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">يضيف القمم الملائمة إلى ملف الطيف المدخل، ثم يحفظ كـ N42. يجب تحديد 'output_path' إذا حددت هذا الخيار؛ أيضًا، سيرفض استبدال الملفات الموجودة.</message>
+  
+  <message id="bgw-show-nonfit-peaks-tt">تضمين القمم التي لم يتم ملائمتها في نتائج CSV للقمة؛ هذه القمم ستحصل على سعة صفر.</message>
+  
+  <message id="bgw-overwrite-output-files-tt">يسمح بالكتابة فوق ملفات الإخراج N42 أو CSV أو التقرير. بشكل افتراضي لن يستبدل الملفات.</message>
+  
+  <message id="bgw-create-csv-output-tt">إخراج CSV ملائمة القمة.</message>
+  
+  <message id="bgw-create-json-output-tt">يكتب JSON المستخدم لإنشاء قوالب التقرير، إلى ملف.</message>
+  
+  <message id="bgw-use-existing-background-peaks-tt">يستخدم القمم الملائمة للخلفية المحددة، بدلاً من إعادة ملائمة القمم.
+يجب أن تكون القمم من InterSpec موجودة في ملف الطيف، ولا يمكن استخدام هذا الخيار مع طرح الخلفية الثابت.</message>
+  
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">استخدم معايرة طاقة N42 النموذج لملف الخلفية.
+ينطبق فقط إذا تم استخدام ملف N42 للنموذج.</message>
+  
+  <message id="bgw-peak-stat-threshold-tt">التحسن في Chi2 لملائمة القمة المطلوب، على مجرد ملائمة المتصل، إلى ROI.
+قيمة سالبة أو صفر تشير إلى عدم وجود متطلب (والافتراضي، حيث نؤكد أن القمة محتملة في الطيف للتحليل المجمع)، وللبحث العام عن القمة، القيم المعقولة بين ~1 (قمة ضعيفة) و ~5 (قمة مهمة).</message>
+  
+  <message id="bgw-peak-hypothesis-threshold-tt">متطلب لمدى توافق ROI مع القمم الغاوسية + المتصل.
+هو نسبة chi2 الفرضية الصفرية (متصل فقط، لا غاوسي)، إلى chi2 فرضية الاختبار (متصل + غاوسي).
+قيمة معقولة لهذا تبدو في نطاق 1 إلى 5.
+قيمة صفر أو سالبة ستعني عدم وجود متطلب، وأيضًا لا متطلب 'peak-stat-threshold'.</message>
+  
+  <message id="bgw-reports-write-custom-per-file-tooltip">ملف أو أكثر من ملفات قالب تقرير الطيف - لكل ملف إدخال، سيتم إنتاج تقرير مع كل قالب محدد.</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">ملف أو أكثر من ملفات القوالب المستخدمة لتوفير ملخص لجميع ملفات الإدخال.</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">استخدام وحدات Bq</message>
+  <message id="bgw-hard-background-sub">طرح الخلفية الثابت</message>
+  
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">دالة استجابة الكاشف</message>
+  <message id="bgw-use-detector-override">استخدام كاشف مخصص</message>
+  
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">تجاوز المسافة</message>
+  <message id="bgw-distance-label">المسافة:</message>
+  
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">لا يوجد طيف نموذج متاح. يرجى اختيار طيف مقدمة أو رفع ملف نموذج.</message>
+</messages>

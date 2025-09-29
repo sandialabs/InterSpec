@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ftw- is short for FluxToolWidget or FluxToolWindow
+  -->
+  <message id="ftw-qr-tool-state-title">Состояние инструмента потока</message>
+  <message id="ftw-qr-tool-state-text">Текущее состояние инструмента потока.</message>
+  <message id="ftw-hdr-intrinsic-eff">Собств. эфф.</message>
+  <message id="ftw-hdr-geom-eff">Геом. эфф.</message>
+  <message id="ftw-hdr-flux-on-det">Поток на дет. (ɣ/с)</message>
+  <message id="ftw-hdr-flux-cm">Поток (ɣ/см²/с)</message>
+  <message id="ftw-hdr-flux-4pi">ɣ/4π/с</message>
+  <message id="ftw-tt-distance">
+    Расстояние от центра источника до поверхности детектора. Число должно быть
+    сопровождено единицами измерения; допустимые единицы: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, или ".  Вы также можете складывать несколько расстояний,
+    например '3ft 4in', или '3.6E-2 m 12 cm', что эквивалентно 
+    40дюймам и 15.6см соответственно.
+  </message>
+  <message id="ftw-simple">Простой</message>
+  <message id="ftw-standard">Стандартный</message>
+  <message id="ftw-more">Больше</message>
+  <message id="ftw-copy-btn">Копировать в буфер</message>
+  <message id="ftw-copy-btn-narrow">Копировать</message>
+  <message id="ftw-invalid-dist">Недопустимое расстояние</message>
+  <message id="ftw-no-drf">Не выбрана функция отклика детектора</message>
+  <message id="ftw-no-foreground">Спектр переднего плана не загружен</message>
+  <message id="ftw-invalid-livetime">Недопустимое живое время переднего плана</message>
+  <message id="ftw-err-copy-clipboard">Не удалось скопировать в буфер - возможно, проблема с разрешениями - извините.</message>
+  <message id="ftw-copied-to-clipboard">Таблица скопирована в буфер обмена.</message>
+  <message id="ftw-copied-as-html">Таблица скопирована в буфер обмена как HTML-текст.</message>
+  <message id="ftw-copy-unknown-status">Неизвестный результат команды копирования - извините.</message>
+</messages>

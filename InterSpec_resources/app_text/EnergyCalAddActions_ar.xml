@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">خطية الطيف</message>
+  <message id="ecaa-truncate-title">قطع القنوات الجاما</message>
+  <message id="ecaa-combine-title">دمج القنوات الجاما</message>
+  <message id="ecaa-convert-frf-title">تحويل إلى معايرة الكسر الكامل</message>
+  <message id="ecaa-convert-poly-title">تحويل إلى معايرة متعددة الحدود</message>
+  <message id="ecaa-multi-file-title">معايرة متعددة الملفات</message>
+  
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">التحويل لن يؤثر على أي أطياف؛ جرب اختيار المزيد من معايير "تطبيق التغييرات على".</message>
+  <message id="ecaa-already-polynomial">جميع الأطياف التي سيتم تطبيق هذا عليها هي بالفعل متعددة الحدود.</message>
+  <message id="ecaa-already-frf">جميع الأطياف التي سيتم تطبيق هذا عليها هي بالفعل كسر النطاق الكامل.</message>
+  <message id="ecaa-multiple-cal-types">هناك أكثر من نوع واحد من أنواع المعايرة للأطياف المصدر المحددة؛ جرب تقييد معايير "تطبيق التغييرات على".</message>
+  <message id="ecaa-changes-applied-to">سيتم تطبيق التغييرات على: {1}</message>
+  <message id="ecaa-terms-lost">ستفقد المصطلحات بعد المصطلح الرابع لأنه لا توجد مصطلحات مماثلة.</message>
+  <message id="ecaa-no-info-lost">لن تفقد أي معلومات إذا تابعت.</message>
+  <message id="ecaa-conversion-question">كيف تريد أن يتم التحويل؟</message>
+  
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">لأطياف {1} قناة:</message>
+  <message id="ecaa-lower-energy">الطاقة السفلى</message>
+  <message id="ecaa-upper-energy">الطاقة العليا</message>
+  <message id="ecaa-num-channels">عدد القنوات</message>
+  <message id="ecaa-no-undo-note">لا يمكن التراجع عن هذا الإجراء.</message>
+  <message id="ecaa-combine-channels-desc">سيدمج هذا القنوات المتتالية معًا</message>
+  <message id="ecaa-num-channels-to-combine">عدد القنوات المراد دمجها:</message>
+  <message id="ecaa-first-channel-to-keep">أول قناة للاحتفاظ بها</message>
+  <message id="ecaa-last-channel-to-keep">آخر قناة للاحتفاظ بها</message>
+  <message id="ecaa-keep-overflow">الاحتفاظ بعدادات الفيض</message>
+  <message id="ecaa-tt-keep-overflow">إذا تم التحديد، ستتم إضافة جميع العدادات من القنوات المرفوضة إلى القناة الأولى أو الأخيرة الجديدة.</message>
+  <message id="ecaa-first-channel-note">لاحظ أن القناة الأولى هي القناة 0.</message>
+  
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">Linearize, rebinning counts to match new widths</message>
+  <message id="ecaa-linearize-same-counts">Linearize, leaving counts in channels the same</message>
+  <message id="ecaa-fit-quadratic">Fit channel energies to quadratic equation.</message>
+  <message id="ecaa-fit-cubic">Fit channel energies to cubic equation.</message>
+  
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">The channels in the resulting spectra will all have the same width, but counts in each channel will not be integer; this option preserves spectral shape (counts per keV).</message>
+  <message id="ecaa-tt-linearize-same">The channel energies will be reassigned so that each channel will have same width, without taking into account the channels original width; i.e., the counts in each channel will remain the same, but spectral shape (counts per keV) will be changed.</message>
+</messages>

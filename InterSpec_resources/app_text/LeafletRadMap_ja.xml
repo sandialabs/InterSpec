@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">続行する前に</message>
+  <message id="lrm-pre-warn-content">
+    マップタイルは<a href="https://arcgis.com" target="_blank">https://arcgis.com</a>から要求されます。
+    放射線データはあなたのデバイスから離れることはありませんが、
+    測定を含むマップタイルの要求がこのサービスに対して行われます。
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>'{1}'で始まるあなたのカスタムarcgisキーがマップタイルの要求に使用されます。</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>arcgis_key.txtで無効なarcgisキーが指定されたため、組み込みキーが使用されます。</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">今後確認しない</message>
+  <message id="lrm-pre-warn-proceed-btn">続行</message>
+  <message id="lrm-window-title">マップツール</message>
+  <message id="lrm-will-use-user-key">'{1}'で始まるユーザー指定のarcgisキーを使用してマップを要求します。</message>
+  <message id="lrm-user-key-invalid">arcgis_key.txtファイルがありましたが、有効なキーが含まれていませんでした</message>
+  <message id="lrm-err-loading-samples">マップ選択サンプルの読み込みエラー: {1}</message>
+  <message id="lrm-displayed-as">表示形式</message>
+  <message id="lrm-measurements-as">測定として</message>
+  <message id="lrm-load-meas-as-short">読み込み形式</message>
+</messages>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+    <message id="dcw-tt-nuc-edit">pl. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (meta stabil állapot), <b>Cs137</b>, stb.</message>
+    <message id="dcw-tt-age-edit">
+      <div>
+        Az életkor időegységek kombinációjával adható meg,
+        hasonlóan ehhez: '<b>5.3y 8d 22m</b>' vagy felezési időkben mint 
+        '<b>2.5 HL</b>'.
+      </div>
+      <br />
+      <div>
+        Az életkor nem befolyásolja a megadott nuklid aktivitását, csak az utódok
+        benövésének mértékét (azaz csak az utód aktivitásokat változtatja meg, nem a szülő nuklid aktivitását)
+        - a megadott aktivitás mindig a megadott szülő nuklidra lesz használva,
+        az életkortól függetlenül.
+      </div>
+      <br />
+      <div>
+        Elfogadható időegységek: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, 
+        <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, vagy
+        megadhatja az időperiódust <b>óó:pp:mm</b> formátumban.
+      </div>
+      <div>A felezési idő egységek vagy időperiódusok nem keverhetők más egységekkel.</div>
+      <div>
+        Ha több időperiódust ad meg, azokat összeadja, pl. '1y6months 3m' értelmezése 
+        18 hónap és 3 perc.
+      </div>
+    </message>
+    <message id="dcw-age-to-big">{1} túl sok felezési idő {2} bomlásakor</message>
+    <message id="dcw-nuc-is-stable">{1} stabil</message>
+    <message id="dcw-made-age-reasonable">Az életkor megváltoztatva {1} számára ésszerűbb értékre '{2}'-ról '{3}'-ra</message>
+</messages>

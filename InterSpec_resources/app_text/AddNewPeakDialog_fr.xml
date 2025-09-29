@@ -12,4 +12,5 @@
   <message id="anpd-screen-to-small">Écran trop petit pour l'aperçu.</message>
   <message id="anpd-err-preview">Erreur lors du rendu de l'aperçu</message>
   <message id="anpd-err-fit-failed">Échec de l'ajustement.</message>
+  <message id="anpd-associate-with">Associer avec {1}</message>
 </messages>

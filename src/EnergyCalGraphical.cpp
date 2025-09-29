@@ -194,10 +194,10 @@ EnergyCalGraphicalConfirm::EnergyCalGraphicalConfirm( double lowe, double highe,
   AuxWindow::addHelpInFooter( footer(), "graphical-recal-dialog" );
   
   
-  WPushButton *button = new WPushButton( "Cancel", footer() );
+  WPushButton *button = new WPushButton( WString::tr("Cancel"), footer() );
   button->clicked().connect( this, &AuxWindow::hide );
   
-  button = new WPushButton( "Accept", footer()  );
+  button = new WPushButton( WString::tr("Accept"), footer()  );
   button->setIcon( "InterSpec_resources/images/accept.png" );
   button->clicked().connect( this, &EnergyCalGraphicalConfirm::apply );
   

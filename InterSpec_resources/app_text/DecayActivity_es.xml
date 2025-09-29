@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">Estado de herramienta de desintegración</message>
+  <message id="dw-qr-window-text">Estado actual de la herramienta de desintegración.</message>
+  <message id="dad-units-label">Unidades de visualización:</message>
+  <message id="dad-units-label-phone">Unidades:</message>
+  <message id="dad-logy-cb">Escala Log-Y</message>
+  <message id="dad-grid-cb">Líneas de cuadrícula</message>
+  <message id="dad-add-nucs">Añadir nucleído...</message>
+  <message id="dad-remove-all">Quitar todo</message>
+  <message id="dad-sel-nuc-window-title">Seleccionar nucleído para añadir</message>
+  <message id="dad-mi-act-chart">Gráfico de actividad</message>
+  <message id="dad-mi-decay-chain">Cadena de desintegración</message>
+  <message id="dad-mi-calc">Calculadora</message>
+  <message id="dad-arbitrary">Arbitrario</message>
+  <message id="dad-time-span-label">Período de tiempo:</message>
+  <message id="dad-tt-age">
+    <div>
+      La edad puede especificarse usando una combinación de unidades de tiempo, similar a '<b>5.3y 8d 22m</b>' o en vidas medias como '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Unidades de tiempo aceptables: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, o
+      puede especificar período de tiempo por <b>hh:mm:ss</b>. Las unidades de vida media pueden
+      especificarse usando <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, o <b>half life</b>.
+    </div>
+    <div>
+      Las unidades de vida media o períodos de tiempo no pueden mezclarse con
+      otras unidades, y si se especifican múltiples nucleídos se asume el primero. Cuando se
+      especifican múltiples períodos de tiempo, se suman, ej. '1y6months 3m' se interpreta como
+      18 meses y 3 minutos
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Eje Y:</message>
+  <message id="dad-yaxis-label">Tipo de eje Y:</message>
+  <message id="dad-gamma-rate">Tasa gamma</message>
+  <message id="dad-beta-rate">Tasa beta</message>
+  <message id="dad-alpha-rate">Tasa alfa</message>
+  <message id="dad-click-for-more-info">Hacer clic para más información</message>
+  <message id="dad-tt-double-click">Doble clic para editar este nucleído fuente. Un clic para hacer que la cadena de desintegración muestre este nucleído</message>
+  <message id="dad-summary-at-time">Resumen en t={1}</message>
+  <message id="dad-hdr-date">Fecha ({1})</message>
+  <message id="dad-hdr-total-act">Actividad total</message>
+  <message id="dad-hdr-total-gammas">Gammas totales</message>
+  <message id="dad-yaxis-title-total-gammas">Gammas/segundo</message>
+  <message id="dad-hdr-total-betas">Betas totales</message>
+  <message id="dad-yaxis-title-total-betas">Betas/segundo</message>
+  <message id="dad-hdr-total-alphas">Alfas totales</message>
+  <message id="dad-yaxis-title-total-alphas">Alfas/segundo</message>
+  <message id="dad-chart-click-more-info">Hacer clic para más información - {1} {2} después de T0 tenemos:</message>
+
+  <message id="dcc-window-title-decay-chain">Cadena de desintegración {1}</message>
+  <message id="dcc-window-title-decay-through">Se desintegra a través de {1}</message>
+  <message id="dcc-nuc-info-protons">Protones: {1}</message>
+  <message id="dcc-nuc-info-mass">Masa: {1} Da</message>
+  <message id="dcc-nuc-info-hl-stable">Vida media: estable</message>
+  <message id="dcc-nuc-info-hl">Vida media: {1}</message>
+  <message id="dcc-nuc-info-br-from">BR de {1}: {2}</message>
+  <message id="dcc-nuc-info-br-through">BR a través de {1}: {2}</message>
+  <message id="dcc-nuc-info-specific-act">Act. específica: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1} se desintegra a {2}, BR {3}</message>
+  <message id="dcc-particle-window-title">Energías de partículas de desintegración</message>
+  <message id="dcc-particles-from">Partículas de {1}</message>
+  <message id="dcc-nuc-has-no-particles">Este nucleído no tiene partículas de desintegración</message>
+  <message id="dcc-particle">Partícula</message>
+  <message id="dcc-intensity">Intensidad</message>
+  <message id="dcc-decay-through-window-title">Se desintegra a través de {1}</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">Masa atómica decreciente</message>
+  <message id="dcc-yAxisTitle">Número atómico creciente</message>
+  <message id="dcc-clickNucTxt">Hacer clic en nucleído para más información.</message>
+  <message id="dcc-clickNucMoreInfoTxt1">Doble clic en nucleído para partículas que emite.</message>
+  <message id="dcc-clickNucMoreInfoTxt2">Hacer clic en un nucleído fuente diferente arriba para</message>
+  <message id="dcc-clickNucMoreInfoTxt3">cambiar cadena de desintegración mostrada.</message>
+  <message id="dcc-clickNucMblTxt">Tocar nucleído para más información.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt1">Tocar nucleído por 1 segundo para partículas que emite.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">Hacer clic en un nucleído fuente diferente arriba para</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">cambiar cadena de desintegración mostrada.</message>
+
+
+  <message id="dcn-initial-age">Edad inicial: </message>
+
+</messages>
+
+

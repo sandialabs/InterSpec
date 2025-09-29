@@ -1728,7 +1728,7 @@ FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
   if( !isMobile )
   {
     const string docroot = wApp->docRoot();
-    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/spectrum_file_format_descriptions" );
+    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/app_text/spectrum_file_format_descriptions" );
     descrip_bundle.use(bundle_file,true);
   }//if( !isMobile )
   

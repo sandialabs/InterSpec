@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+  
+  <!-- Labels -->
+  <message id="raagn-nuclide">Nuclide:</message>
+  <message id="raagn-age">Age:</message>
+  <message id="raagn-min-age">Min Age:</message>
+  <message id="raagn-max-age">Max Age:</message>
+  
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">Select a constraint type.</message>
+  <message id="raagn-min">min:</message>
+  <message id="raagn-max">max:</message>
+  <message id="raagn-src">src:</message>
+  <message id="raagn-val">val:</message>
+  
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">None</message>
+  <message id="raagn-constraint-rel-act">Rel. Act</message>
+  <message id="raagn-constraint-act-ratio">Act Ratio</message>
+  <message id="raagn-constraint-mass-frac">Mass Frac.</message>
+  
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">Fit Age</message>
+  
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">Add Constraint</message>
+  
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (meta stable state), <b>Cs137</b>, Pb, Fe(n,n), etc.</message>
+  <message id="raagn-remove-constraint-tt">Remove this constraint</message>
+  <message id="raagn-add-constraint-tt">Add a constraint to this nuclide</message>
+  
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1} is not a valid nuclide, x-ray, or reaction.</message>
+  <message id="raagn-stable-nuclide">{1} is a stable nuclide.</message>
+  
+</messages>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiWidget -->
+  <message id="bgw-analyze-button">تحليل</message>
+  <message id="bgw-output-dir-label">دليل الإخراج:</message>
+  <message id="bgw-type-select-label">خيارات نوع التحليل</message>
+  <message id="bgw-input-files-label">ملفات الإدخال</message>
+  <message id="bgw-act-shield-ana-opts-label">النشاط/التدريع</message>
+  <message id="bgw-peak-fit-opts-label">ملائمة القمة</message>
+  <message id="bgw-file-convert-opts-label">تحويل</message>
+</messages>

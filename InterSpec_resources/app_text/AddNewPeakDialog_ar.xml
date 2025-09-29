@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">إضافة قمة</message>
+  <message id="anpd-err-no-foreground">يجب تحميل طيف مقدمة لإضافة قمة.</message>
+  <message id="anpd-err-no-foreground-1">لا يوجد طيف مقدمة</message>
+  <message id="anpd-peak-mean">متوسط القمة</message>
+  <message id="anpd-peak-fwhm">العرض نصف الأقصى للقمة</message>
+  <message id="anpd-peak-amp">سعة القمة</message>
+  <message id="anpd-roi-lower">الحد الأدنى لـ ROI</message>
+  <message id="anpd-roi-upper">الحد الأعلى لـ ROI</message>
+  <message id="anpd-tt-more-adv">للخيارات الأكثر تقدمًا، انظر <em>محرر القمة</em> بعد الإضافة.</message>
+  <message id="anpd-screen-to-small">الشاشة صغيرة جدًا للمعاينة.</message>
+  <message id="anpd-err-preview">خطأ في عرض المعاينة</message>
+  <message id="anpd-err-fit-failed">فشلت الملائمة.</message>
+  <message id="anpd-associate-with">ربط مع {1}</message>
+</messages>

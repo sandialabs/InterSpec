@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- 
+    This file contains the localizations for both IsotopeSearchByEnergy.cpp and IsotopeSearchByEnergyModel.cpp - e.g., the "Nuclide Search" tab.
+    (there wasnt enough content in IsotopeSearchByEnergyModel to justify the performance hit of adding in an extra localization file)
+
+    isbe- is short for IsotopeSearchByEnergy
+    isbem- is short for IsotopeSearchByEnergyModel
+  -->
+  <message id="isbe-clear-ref">Limpiar fotopicos ref.</message>
+  <message id="isbe-cb-gammas">Gammas</message>
+
+  <message id="isbe-cb-rxnts">Reacciones</message>
+  <message id="isbe-min-br">BR rel. mín.</message>
+  <message id="isbe-tt-min-br">Intensidad mínima requerida, relativa al gamma de intensidad máxima de la cadena de desintegración.</message>
+  <message id="isbe-min-hl">T½ mín.</message>
+  <message id="isbe-tt-min-hl">
+    Vida media mínima de nucleídos a buscar.
+    <br />
+    <div>
+      La edad puede especificarse usando una combinación de unidades de tiempo, similar a '<b>5.3y 8d 22m</b>'.
+    </div>
+    <div>
+      Unidades de tiempo aceptables: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, o
+      puede especificar período de tiempo por <b>hh:mm:ss</b>.
+    </div>
+    <div>
+      Cuando se especifican múltiples períodos de tiempo, se suman, ej. '1y6months 3m' se interpreta como 18 meses y 3 minutos
+    </div>
+  </message>
+  <message id="isbe-searching">Buscando</message>
+  <message id="isbe-assign-to-btn">
+    <plural case="0">Asignar pico a {1}</plural>
+    <plural case="1">Asignar picos a {1}</plural>  <!-- Two or more peaks -->
+  </message>
+  <message id="isbe-assign-searched-energies">
+    <plural case="0">Asignar energía buscada a {1}</plural>
+    <plural case="1">Asignar energías buscadas a {1}</plural>  <!-- Two or more peaks -->
+  </message>
+  <message id="isbe-assign-matching-peaks-no-id">Asignar picos coincidentes sin ID a {1}...</message>
+  <message id="isbe-assign-all-matching-peaks">Asignar todos los picos coincidentes a {1}...</message>
+
+  <!-- Messages for IsotopeSearchByEnergyModel are below here; i.e. the table headers -->
+  <message id="isbem-parent-nuc">Nucleído</message>
+  <message id="isbem-diff">Dif.</message>
+  <message id="isbem-rel-br">BR rel.</message>
+  <message id="isbem-profile">Perfil</message>
+  <message id="isbem-decay">Desintegración</message>
+  <message id="isbem-part-hl">T½ padre</message>
+  <message id="isbem-assumed-age">Edad asumida</message>
+  <message id="isbem-tt-parent-nuc">Nucleído padre de la cadena de desintegración.</message>
+  <message id="isbem-tt-diff">Diferencia entre el nivel de energía del nucleído seleccionado y el nivel de energía buscado</message>
+  <message id="isbem-tt-energy">Energía verdadera de gamma/rayo X</message>
+  <message id="isbem-tt-rel-bre">Razón de ramificación, relativa al gamma de mayor rendimiento del nucleído
+    (es decir, 1.0 indica el gamma más abundante, no un gamma por desintegración)
+  </message>
+  <message id="isbem-tt-profile">Una métrica aproximada de qué tan cerca está el espectro observado de tener los picos esperados para la fuente seleccionada.
+    Un número mayor es mejor, con un valor de 1.0 siendo el más alto - se recomienda ordenar por esta columna para ID de nucleído.  
+    Vea la ayuda para esta herramienta para una descripción más completa de esta cantidad.
+  </message>
+  <message id="isbem-tt-parent-hl">Vida media del padre</message>
+  <message id="isbem-tt-assumed-age">Edad asumida del nucleído</message>
+  
+  <!-- Categories int the drop-down-->
+  <message id="isbe-category-nuc-xray">Nucleídos + rayos X</message>
+  <message id="isbe-category-nuc-xray-desc">Nucleídos + rayos X</message>
+  <message id="isbe-category-nuc-xray-rctn">Nucleídos, rayos X, reacciones</message>
+  <message id="isbe-category-nuc-xray-rctn-desc">Todos los nucleídos, rayos X (desintegración y fluorescencia), y reacciones</message>
+  <message id="isbe-category-xray">Rayos X fluorescencia</message>
+  <message id="isbe-category-xray-desc">Solo rayos X de fluorescencia</message>
+  <message id="isbe-category-reactions">Reacciones</message>
+  <message id="isbe-category-reactions-desc">Solo reacciones</message>
+  <message id="isbe-category-medical">Nucleídos médicos</message>
+  <message id="isbe-category-medical-desc">Nucleídos médicos comunes</message>
+  <message id="isbe-category-industrial">Nucleídos industriales</message>
+  <message id="isbe-category-industrial-desc">Nucleídos industriales comunes</message>
+  <message id="isbe-category-snm">SNM</message>
+  <message id="isbe-category-snm-desc">Nucleídos SNM</message>
+  <message id="isbe-category-norm">NORM</message>
+  <message id="isbe-category-norm-desc">Radio-nucleídos de ocurrencia natural</message>
+  <message id="isbe-category-common">Fuentes encontradas en campo</message>
+  <message id="isbe-category-common-desc">Nucleídos y reacciones comunes encontrados en espectros recolectados en campo</message>
+  <message id="isbe-category-common-nuc">Nucleídos encontrados en campo</message>
+  <message id="isbe-category-common-nuc-desc">Nucleídos comunes encontrados en espectros recolectados en campo (sin neutrones o reacciones)</message>
+  <message id="isbe-category-reactions">Reacciones nucleares</message>
+  <message id="isbe-category-reactions-desc">Reacciones nucleares</message>
+  <message id="isbe-category-fission">Productos de fisión</message>
+  <message id="isbe-category-fission-desc">Productos de fisión que podría ver en un espectro gamma (de ninguna manera lista completa)</message>
+  <message id="isbe-category-alphas">Alfas</message>
+  <message id="isbe-category-alphas-desc">Buscar en energía de partícula alfa.</message>
+  <message id="isbe-category-betas">Punto final beta</message>
+  <message id="isbe-category-betas-desc">Buscar en energía de punto final de partícula beta.</message>
+  <message id="isbe-category-no-progeny">Nucleídos sin envejecer</message>
+  <message id="isbe-category-no-progeny-desc">No incluir la progenie de nucleídos. Coincide con gammas o rayos X de desintegración.</message>
+</messages>
+
+

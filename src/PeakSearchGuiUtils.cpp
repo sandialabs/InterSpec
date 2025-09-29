@@ -2821,12 +2821,13 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
     server->post( sessionID, callback );
     return;
   }
-  
+
+  auto results = make_shared<vector<shared_ptr<const PeakDef>>>();
+
   try
   {
-    *resultpeaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
-    
-    *resultpeaks = assign_srcs_from_ref_lines( data, *resultpeaks, displayed, setColor, false, true );
+    *results = ExperimentalAutomatedPeakSearch::search_for_peaks( data, drf, existingPeaks, singleThread, isHPGe );
+    *results = assign_srcs_from_ref_lines( data, *results, displayed, setColor, false, true );
   }catch( std::exception &e )
   {
     string msg = "InterSpec::search_for_peaks_worker(): caught exception: '";
@@ -2841,7 +2842,11 @@ void search_for_peaks_worker( std::weak_ptr<const SpecUtils::Measurement> weak_d
   }//try / catch
   
   
-  server->post( sessionID, callback );
+  server->post( sessionID, [callback,results,resultpeaks](){
+    if( resultpeaks )
+      *resultpeaks = *results;
+    callback();
+  } );
 }//void search_for_peaks_worker(...)
 
   

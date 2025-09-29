@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder 
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this 
+      video to a video playing widget in the WTemplate widget.  However since we 
+      dont want to have to hard code the bind placeholder name, and which video 
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [ 
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"Введение в мышь"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"Гамма-линии"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"Калибровка"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"Идентификация пиков"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"Экранирование активности"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Увеличение</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Чтобы увеличить определенную часть спектра,
+         <u>разведите</u> два пальца друг от друга.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Уменьшение</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Чтобы уменьшить масштаб,
+         <u>сожмите</u> два пальца друг к другу.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Изменение диапазона энергий</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Чтобы перемещаться по оси x (энергии) графика,
+         поместите палец на график и двигайте его влево или вправо для изменения отображаемой энергии.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Подгонка пика(ов)</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>Способ 1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      <u>Дважды коснитесь</u> спектра в месте, где хотите подогнать пик.
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        <u>Повторное двойное касание</u> рядом с существующим пиком подгонит больше пиков.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Способ 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      Если вы хотите задать определенное количество пиков в области интереса:
+      <u>проведите</u> двумя горизонтально выровненными пальцами по области интереса.
+      <u>Уберите</u> пальцы и <u>выберите</u> количество пиков для идентификации.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Другие способы</b></h3>
+      В <em>Меню</em>&rarr;<em>Инструменты</em>&rarr;<em>Менеджер пиков</em> вы можете автоматически подогнать
+      все пики в спектре используя кнопку
+      <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" />.
+      Рекомендуется показать референсные линии нуклидов перед использованием этого
+      автоматического поиска пиков, чтобы пики автоматически ассоциировались с нуклидами,
+      ответственными за создание пика.
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Запуск редактора пиков</div>
+         Если вы хотите переподогнать или вручную настроить пик, используйте <em>Редактор пиков</em>,
+         удерживая палец на пике около секунды, и появится меню
+         для выбора желаемого действия.
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Удаление пика(ов)</div>
+      <p>
+        Самый простой способ удалить пик - удерживать на нем палец около секунды,
+        и появится меню, где можно выбрать удаление пика.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        Вы также можете поместить два пальца, охватывающих диапазон энергий пиков, которые хотите удалить, на экран и двигать их вверх.
+        Любые пики с центроидами между вашими пальцами будут полностью удалены; вы также можете уменьшить энергетический диапазон пиков
+        используя тот же жест, пока центроид пика не попадет между вашими пальцами.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        <em>Менеджер пиков</em> (<b>Меню</b>&rarr;<b>Инструменты</b>&rarr;<b>Менеджер пиков</b>) и
+        <em>Редактор пиков</em> (удерживайте палец на пике секунду, выберите <b>Редактор пиков</b>) также могут удалять пики.
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "Увеличение/Уменьшение",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "Панорамирование энергии",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "Ползунок энергии",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "Подгонка пика",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "Подгонка ROI",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "Удаление пика",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "Калибровка энергии",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "Редактор пиков",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "Настройка ROI",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "Масштаб Y",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "Подсчет гамм",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "Горячие клавиши",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>Щелчок левой кнопкой с перетаскиванием <b>вправо</b> для увеличения.</center></div>
+<div><center>Щелчок левой кнопкой с перетаскиванием <b>влево</b> для уменьшения.</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>Щелчок правой кнопкой с перетаскиванием</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center> Из меню <b>Вид</b> выберите "<b>Показать ползунок энергии</b>".</center>
+<div>Это простой способ настройки диапазона энергий спектра.</div>
+<div><b>InterSpec</b> запомнит, хотите ли вы показывать ползунок энергии.</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">Есть несколько способов подгонки пиков, включая: </p>
+</center>
+<ol>
+  <li>Двойной щелчок левой кнопкой. Вы можете дважды щелкнуть рядом с тем же пиком снова, чтобы добавить еще один.</li>
+  <li><b><kbd>CTRL</kbd></b> + Щелчок левой кнопкой с перетаскиванием &rarr; Щелчок левой кнопкой (см. "Подгонка ROI") </li>
+  <li>На вкладке "<b>Менеджер пиков</b>" нажмите "<b>Добавить</b>" &rarr;. Затем можно настроить параметры в таблице на нужные значения.</li>
+  <li>На вкладке "<b>Менеджер пиков</b>" нажмите "<b>Поиск пиков</b>", чтобы найти все пики в спектре.</li>
+<li>Щелкните правой кнопкой на существующем пике и выберите "<b>Добавить пик</b>", чтобы добавить пик в ту же ROI.</li>
+</ol>
+
+<p>Подсказка: перед подгонкой пика полезно показать референсные линии
+нуклида, ответственного за него, чтобы при подгонке пика он ассоциировался
+с этим нуклидом. Эта информация используется для подгонки калибровки энергии, отклика детектора, активности и экранирования.
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>Чтобы подогнать определенное количество пиков в области интереса (ROI):</div>
+<center>
+<b><kbd>CTRL</kbd></b> + Щелчок левой кнопкой с перетаскиванием &rarr; и затем выберите количество пиков.
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>Щелчок правой кнопкой &rarr; "<b>Удалить пик</b>"</li>
+<li>Щелчок правой кнопкой &rarr; "<b>Редактор пиков</b>" &rarr; "<b>Удалить</b>"</li>
+<li><b><kbd>SHIFT</kbd></b> + Щелчок левой кнопкой с перетаскиванием</li>
+<li>Щелчок левой кнопкой "<b>Очистить все пики</b>" &rarr; Щелчок левой кнопкой "<b>Да</b>"</li>
+<li>Перетащите одну сторону ROI за другую сторону.</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>Для графической настройки калибровки энергии:</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Щелчок левой кнопкой с перетаскиванием &rarr; <u>Опционально</u>: Настроить количества &rarr; "<b>Принять</b>"</center>
+<div>Примечание: если повторить это действие, например, сначала на высокоэнергетическом пике, затем на низкоэнергетическом пике (или наоборот), всплывающий диалог
+даст возможность сохранить оба действия, настроив как смещение, так и коэффициент усиления, чтобы оба пика остались на энергиях, куда вы их перетащили.
+</div>
+<p>Вкладка "Калибровка энергии" также позволяет либо вручную настроить
+коэффициенты калибровки энергии, либо подогнать их, используя нуклиды, связанные с пиками.
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>Щелчок правой кнопкой &rarr; "Редактор пиков"</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>Поместите мышь рядом с краем области интереса (ROI) и перетащите.</div></center>
+<div>Мышь должна находиться в пределах y-диапазона пика и в пределах 10 пикселей от края ROI.</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center>Масштабируйте амплитуду фона и/или вторичных спектров относительно переднего плана,
+выбрав <b>Вид</b> &rarr; "<b>Показать масштабировщики оси Y</b>".
+</center>
+<p>Чтобы восстановить фон или вторичный спектр к нормализации по времени жизни, нажмите кнопку "Нормализовать" на вкладке "Файлы спектров".</p>
+<p><b>InterSpec</b> запомнит, хотите ли вы показывать эти ползунки при наличии фона или вторичного спектра,
+но пункты меню будут отключены, если фон или вторичный спектр не загружен.</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Щелчок левой кнопкой с перетаскиванием &rarr; <u>Опционально</u>: Настроить количества</li>
+      <li><b>Инструменты</b> &rarr; <b>Сумма диапазона энергий</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <ul>
+    <li>
+      <b><code>Ctrl-s</code></b>: Переключается на вкладку "<em>Файлы <u>с</u>пектров</em>", или
+      если <em>Вкладки инструментов</em> скрыты, показывает инструмент <em>Файлы спектров</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-p</code></b>: Переключается на вкладку "<em>Менеджер <u>п</u>иков</em>", или
+      показывает инструмент.
+    </li>
+    <li>
+      <b><code>Ctrl-r</code></b>: Переключается на вкладку "<em><u>Р</u>еференсные фотопики</em>",
+      или показывает инструмент.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: Переключается на вкладку "<em>Калибровка <u>э</u>нергии</em>",
+      или показывает инструмент.
+    </li>
+    <li>
+      <b><code>Ctrl-n</code></b>: Переключается на вкладку "<em>Поиск <u>н</u>уклидов</em>",
+      или показывает инструмент.
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>: Показывает внутриприложенческую <em><u>П</u>омощь</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>: Показывает экран <em><u>И</u>нформации о добро пожаловать</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>: Переключает ось y спектра между <u>л</u>огарифмической и <u>л</u>инейной.
+    </li>
+    <li>
+      <b><code>Ctrl-c</code></b>: <u>О</u>чищает все показываемые референсные линии.
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    Текущие известные проблемы:
+    <ul>
+<li><b>Все:</b> (Менеджер пиков) "ID нуклида" в редких случаях не работает </li>
+        <li><b>Все:</b> "Сохранить состояние при выходе" в редких случаях не работает</li>
+    </ul>
+  </message>
+</messages>
