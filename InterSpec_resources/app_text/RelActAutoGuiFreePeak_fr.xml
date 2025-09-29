@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagfp- is short for RelActAutoGuiFreePeak -->
+  
+  <!-- Checkboxes -->
+  <message id="raagfp-constrain-fwhm">Contraindre FWHM</message>
+  <message id="raagfp-true-energy">Énergie vraie</message>
+  
+  <!-- Messages -->
+  <message id="raagfp-not-in-roi">Pas dans une ROI.</message>
+  
+  <!-- Tooltips -->
+  <message id="raagfp-constrain-fwhm-tt">Lorsque coché, ce pic sera contraint à la forme fonctionnelle FWHM à laquelle les pics gamma et rayons X sont normalement contraints.<br />Lorsque décoché, la FWHM pour ce pic sera ajustée à partir des données, indépendamment de toutes les autres largeurs de pic.<br />Décocher cette option est utile pour les photopics d'annihilation et de réaction.</message>
+  <message id="raagfp-true-energy-tt">Cochez cette option si le pic correspond à un gamma d'énergie connue.<br />Décochez cette option si ce pic est un pic observé dans le spectre avec une énergie vraie inconnue.</message>
+  
+</messages>

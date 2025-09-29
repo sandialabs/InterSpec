@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- cfm is short for CompactFileManager -->
+  <message id='cfm-tt-sample-num'>
+    Введите номер образца, который вы хотите отобразить здесь. 
+    Вы можете ввести диапазон номеров образцов типа '33-39' или '33 to 39'; 
+    или номера образцов CSV типа '34,39,84'.
+  </message>
+  <message id='cfm-scale-factor-label'>Коэффициент масштаба: </message>
+  <message id='cfm-tt-scale-factor'>
+    Коэффициент для масштабирования спектра. Ввод пустой строки приведёт к тому, что 
+    спектр будет нормализован по живому времени к основному спектру.
+  </message>
+
+  <message id='cfm-norm-btn'>Нормализовать</message>
+  <message id='cfm-more-info-btn'>доп. информация</message>
+  <message id='cfm-show-rid-result-btn'>результаты RID</message>
+  <message id='cfm-show-image-btn'>встроенное изображение</message>
+
+  <message id='cfm-db-spec'>Ранее сохранённые спектры</message>
+  <message id='cfm-ref-spectra-btn'>Референсные спектры...</message>
+  <message id='cfm-err-invalid-sample-num'>Запрошенный номер образца не существует.</message>
+  <message id='cfm-err-no-meas'>Не могу изменить номера образцов, нет текущего измерения.</message>
+  <message id='cfm-err-missing-sample-num'>Один из запрошенных номеров образцов не существует.</message>
+  <message id='cfm-err-sample-num-doesnt-exist'>Номер образца {1} не существует.</message>
+  <message id='cfm-err-sample-num-doesnt-exist-2'>Номер образца {1} не существует в измерении.</message>
+  <message id='cfm-err-general-1'>Ошибка изменения на запрошенный номер(а) образца</message>
+  <message id='cfm-err-advancing'>Ошибка продвижения спектра</message>
+  <message id='cfm-no-spectra'>Нет загруженных/доступных спектров.</message>
+
+  <message id='cfm-no-fore'>Нет основного</message>
+  <message id='cfm-no-back'>Нет фона</message>
+  <message id='cfm-no-second'>Нет второго основного</message>
+
+  <message id='cfm-date'>Дата</message>
+  <message id='cfm-start-time'>Время начала</message>
+  <message id='cfm-gamma-cps'>Гамма CPS</message>
+  <message id='cfm-neut-live-time'>Нейтр. Ж.В.</message>
+  <message id='cfm-neut-counts'>Нейтр. отсчёты</message>
+  <message id='cfm-neut-cps'>Нейтр. CPS</message>
+  <message id='cfm-gps'>шир/долг</message>
+  <message id='cfm-manufacturer'>Производитель</message>
+  <message id='cfm-model'>Модель</message>
+  <message id='cfm-meas-type'>Тип записи</message>
+  <message id='cfm-tt-meas-type'>Тип записей, записанных в файле спектра.</message>
+
+  <message id='cfm-tt-clear-spectrum'>Очищает текущий спектр.</message>
+  
+  <message id='cfm-swap-back-with-foreground-btn'>основной↔фон</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>Поменять местами основной и фоновый спектры</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>основной↔вторичный</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>Поменять местами основной и вторичный спектры</message>
+</messages>

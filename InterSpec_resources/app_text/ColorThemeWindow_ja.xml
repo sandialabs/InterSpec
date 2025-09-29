@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+  
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">カラーテーマ</message>
+  
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">現在選択されているテーマを削除します。</message>
+  <message id="ctw-clone-tooltip">現在選択されているテーマに基づいて新しいカラーテーマを作成します。</message>
+  <message id="ctw-upload-tooltip">使用するカラーテーマJSONファイルをインポートします。</message>
+  <message id="ctw-download-tooltip">現在選択されているテーマをJSONファイルにエクスポートします。</message>
+  
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">OSから「ダーク」を自動適用</message>
+  <message id="ctw-auto-dark-tooltip">オペレーティングシステムの現在の値に従って、または切り替え時に「ダーク」カラーテーマを自動的に適用します。</message>
+  
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (複製)</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">{1}を削除？</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;"><em>{1}</em>を削除してもよろしいですか？</span>]]></message>
+  
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">カラーテーマJSONアップロード</message>
+  <message id="ctw-upload-error-open">アップロードファイル開けませんでした。</message>
+  <message id="ctw-upload-error-empty">アップロードファイルが空です。</message>
+  <message id="ctw-upload-error-large">アップロードファイルが大きすぎます；最大64kb。</message>
+  <message id="ctw-upload-error-read">アップロードファイルを読み込めません。</message>
+  <message id="ctw-upload-error-json">無効なJSON、または必要な情報がありません。</message>
+  <message id="ctw-upload-too-large">ファイルが大きすぎます。</message>
+  <message id="ctw-import-confirm"><![CDATA[<em>{1}</em>をインポートしますか？]]></message>
+  
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">変更を保存？</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;"><em>{1}</em>への変更を保存？</span>]]></message>
+  <message id="ctw-discard-btn">破棄</message>
+</messages>

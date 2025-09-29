@@ -1509,11 +1509,20 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     options.min_trust_region_radius = 1e-32;
     // Lower bound for the relative decrease before a step is accepted.
     options.min_relative_decrease = 1e-3; //pseudo optimized based on success rate of fitting peaks - but unknown effect on accuracy of fits.
-    options.max_num_iterations = 50000;
+
+    // It looks like it usually takes well below 100 calls to solve most problems, but a tail up to ~500, and then rare
+    //  (pathelogical?) cases that can take >50k
+    //  However, for these pathological cases, if we just try again starting from where it left off, it will solve
+    //  it super quick - I guess because there will be more "momentum" to find the minimum, or something, not totally
+    //  sure.
+    //  We could probably reduce this number of iterations to ~100 - but the effects or impact of this hasnt been
+    //  evaluated.
+    //  Also, have not checked dependence on number of peaks at all
+    options.max_num_iterations = (coFitPeaks.size() > 2) ? 1000 : 500;
 #ifndef NDEBUG
-    options.max_solver_time_in_seconds = 300.0;
+    options.max_solver_time_in_seconds = (coFitPeaks.size() > 2) ? 180.0 : 120;
 #else
-    options.max_solver_time_in_seconds = 30.0;
+    options.max_solver_time_in_seconds = (coFitPeaks.size() > 2) ? 30.0 : 150.0;
 #endif
 
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
@@ -1546,7 +1555,7 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     std::cout << summary.FullReport() << "\n";
     cout << "Took " << cost_functor->m_ncalls.load() << " calls to solve." << endl;
 #endif
-    
+
     switch( summary.termination_type )
     {
       case ceres::CONVERGENCE:
@@ -1554,10 +1563,40 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
         break;
         
       case ceres::NO_CONVERGENCE:
+      {
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )
         cerr << "The L-M ceres::Solver solving failed - NO_CONVERGENCE:\n" << summary.FullReport() << endl;
 #endif
+        // We will give it another go - for most cases it seems the solution will now be succesffuly found really
+        //  quickly.  The guess is this is from momentum, or whatever, but not really sure.
+        //cerr << "Initial L-M ceres::Solver failed with " << cost_functor->m_ncalls.load() << " calls and "
+        //  << summary.num_successful_steps << " steps - will try again" << endl;
+
+        options.max_num_iterations = 5000;
+        // TODO: see if we should loosed any of the following up.
+        //options.function_tolerance = 1e-6;
+        //options.parameter_tolerance = 1e-9;
+        //options.initial_trust_region_radius = 35*(cost_functor->number_parameters() - prob_setup.m_constant_parameters.size());
+        cost_functor->m_ncalls = 0;
+
+        summary = ceres::Solver::Summary();
+
+        ceres::Solve(options, &problem, &summary);
+
+        if( (summary.termination_type == ceres::CONVERGENCE)
+            || (summary.termination_type == ceres::USER_SUCCESS) )
+        {
+          //cerr << "Retry of L-M ceres::Solver worked with "
+          //<< cost_functor->m_ncalls.load() << " fcn additional calls in "
+          //<< summary.num_successful_steps << " succesfull steps"
+          //<< endl;
+          break;
+        }
+
+        cerr << "Retry of L-M ceres::Solver Failed with " << cost_functor->m_ncalls.load() << " additional calls" << endl;
+
         throw runtime_error( "The L-M ceres::Solver solving failed - NO_CONVERGENCE." );
+      }
 
       case ceres::FAILURE:
 #if( PRINT_VERBOSE_PEAK_FIT_LM_INFO )

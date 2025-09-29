@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">سيطرح {1} عدد/ثانية للخلفية</message>
+  <message id="dp-no-peak-preview">غير قادر على إنتاج معاينة</message>
+
+  <message id="dsfs-sample">عينة</message>
+  <message id="dsfs-samples">عينات</message>
+  <message id="dsfs-using-num-peaks"> (استخدام {1} من {2} قمة)</message>
+  <message id="dsfs-back-peak-txt">هذه القمم ستُطرح من العينات الأخرى</message>
+  <message id="dsfs-is-background-cb">هل هي خلفية؟</message>
+  <message id="dsfs-all-peaks-cb">جميع القمم</message>
+  
+  <message id="md-det-diam">قطر الكاشف</message>
+  <message id="md-eff-type">نوع الكفاءة</message>
+  <message id="md-eqn-in-kev">المعادلة بالكيلوإلكترون فولت</message>
+  <message id="md-eqn-in-mev">المعادلة بالميجا إلكترون فولت</message>
+  <message id="md-geom-intrinsic-eff">الكفاءة الجوهرية</message>
+  <message id="md-geom-fixed-geom">هندسة ثابتة</message>
+  <message id="md-geom-fixed-cm2">ثابت: لكل سم²</message>
+  <message id="md-geom-fixed-m2">ثابت: لكل م²</message>
+  <message id="md-geom-fixed-gram">ثابت: لكل جرام</message>
+  <message id="md-tt-eff-interpret">
+    كيف يجب تفسير هذه الكفاءة.<br />
+    <br />
+    المجال البعيد: المصادر النقطية، أو المصادر الصغيرة مقارنة بالمسافة إلى الكاشف؛ سيسمح
+    بتغيير مسافة الكشف للتحجيم لـ 1/r2.<br />
+    <br />
+    الهندسة الثابتة: عندما تطابق هندسة ومسافة بيانات التوصيف القياسات،
+    وتريد حساب النشاط الإجمالي للمصدر (مثل كوب مارينيلي).\n
+    <br />
+    ثابت لكل سم2: مشابه للنشاط الإجمالي، لكن عندما تكون بيانات المعايرة والقياسات
+    لتلوث السطح، مع القيم المعطاة لكل سنتيمتر مربع.<br />
+    <br />
+    ثابت لكل م2: مشابه للإجمالي لكل سم2، لكن لكل متر مربع.<br />
+    <br />
+    ثابت لكل جرام: مشابه لكل سم2، لكن لكل جرام من المصدر.
+  </message>
+  <message id="md-fwhm-eqn-form-label">معادلة FWHM</message>
+  <message id="md-fwhm-gadras">معادلة جادراس</message>
+  <message id="md-sqrt-series">سلسلة قوى الجذر التربيعي</message>
+  <message id="md-atten-for-air-cb">امتصاص للهواء</message>
+  <message id="md-tt-atten-for-air">
+    سيتم حساب الامتصاص بواسطة الهواء، بين المصدر والكاشف، 
+    للسماح بتحجيم المسافة (استخدام دالة الكفاءة على مسافات مختلفة) بدقة أكبر.
+    <br />
+    هذا تأثير أكبر في الطاقات المنخفضة، أو مسافات المعايرة الأكبر.
+  </message>
+  <message id="md-show-fwhm-markers">إظهار نقاط FWHM</message>
+  <message id="md-display-energy-lower-label">طاقة العرض، الأدنى:</message>
+  <message id="md-display-energy-upper-label">الأعلى:</message>
+  <message id="md-mi-chart-phone">المخطط/الخيارات</message>
+  <message id="md-mi-peaks-phone">القمم للاستخدام</message>
+  <message id="md-export-btn">تخزين/تصدير...</message>
+  <message id="md-export-window-title">تخزين/تصدير DRF</message>
+  <message id="md-tt-name">
+    اسم دالة استجابة الكاشف لحفظها في قاعدة البيانات الداخلية
+    لـ <em>InterSpec</em> بحيث يمكنك استخدام دالة الاستجابة لاحقًا.
+    الاسم يجب أن يكون اسم ملف صالح (مثل، لا يحتوي على \, /, :, إلخ من الأحرف).
+  </message>
+  <message id="md-tt-desc">وصف اختياري لـ DRF لمساعدتك على تذكر التفاصيل عند استخدام DRF في المستقبل.</message>
+  <message id="md-make-default-for-serial-cb">جعل DRF افتراضي للرقم التسلسلي '{1}'</message>
+  <message id="md-tt-make-default-serial">
+    اجعل الأمر بحيث عندما يتم تحميل أطياف من كاشف برقم تسلسلي مطابق
+    إلى InterSpec، ستُحمل دالة استجابة الكاشف هذه
+    وتُستخدم تلقائيًا.
+  </message>
+  <message id="md-make-default-for-model-cb">جعل DRF افتراضي للطراز '{1}'</message>
+  <message id="md-tt-make-default-model">
+    اجعل الأمر بحيث عندما يتم تحميل أطياف من كاشف هذا الطراز
+    إلى InterSpec، ستُحمل دالة استجابة الكاشف هذه
+    وتُستخدم تلقائيًا.
+  </message>
+  <message id="md-tt-export-n42">
+    تصدير ملف N42 يحتوي على جميع الأطياف والقمم المستخدمة لإنشاء DRF هذا.
+    عادة ما يتم تخزين معلومات المصدر والتدريع في الملف أيضًا،
+    من حيث المبدأ، باستثناء قطر الكاشف وترتيبات المعادلة،
+    توفير جميع معلومات الإدخال المستخدمة لإنشاء DRF.
+  </message>
+  <message id="md-export-as-csv">تصدير DRF كـ CSV.</message>
+  <message id="md-tt-export-as-csv">
+    يصدر DRF إلى ملف CSV يحتوي على جميع معلومات DRF.
+    مفيد بشكل خاص للاستخدام مع أدوات أخرى.
+  </message>
+  <message id="md-export-quick-ref">تصدير بطاقة مرجع سريع</message>
+  <message id="md-tt-export-quick-ref">يصدر بطاقة بنمط 3×5 تحتوي على ملخص موجز لأداء الكاشف.</message>
+  <message id="md-det-name-not-valid">اسم الكاشف غير صالح.</message>
+  <message id="md-eqn-not-valid">معادلة الكفاءة الجوهرية غير صالحة.</message>
+  <message id="md-err-creating-drf">خطأ في إنشاء DRF: {1}</message>
+  <message id="md-err-saving-to-db">خطأ في حفظ DetectorPeakResponse في قاعدة البيانات: {1}</message>
+  <message id="md-saved-to-db">تم حفظ '{1}' في قاعدة البيانات الداخلية.</message>
+  <message id="md-peak-counts">{1} {2} كيلوإلكترون فولت، القمة {3} عدد</message>
+  <message id="md-peak-no-nuc">لا توجد نواة مرتبطة، {1} كيلوإلكترون فولت، القمة {2} عدد</message>
+  <message id="md-err-det-diam-invalid">قطر الكاشف غير صالح - افتراض 2.54 سم.</message>
+  <message id="md-err-some-src">بعض المصادر كان بها أخطاء.</message>
+  <message id="md-n-fit-pars">{1} معاملات الملائمة</message>
+  <message id="md-html-eff-table-caption">كفاءة الكشف كاملة الطاقة (% إجمالي الجاما)</message>
+  <message id="md-html-Intrinsic">جوهري</message>
+  <message id="md-chart-data-intrinsic-eff-label">الكفاءة الجوهرية للبيانات</message>
+  <message id="md-chart-data-fwhm-label">FWHM البيانات</message>
+  <message id="md-chart-fit-intrinsic-eff-label">الكفاءة الجوهرية للملائمة</message>
+  <message id="md-chart-intrinsic-eff-plus-label">الكفاءة الجوهرية +2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">الكفاءة الجوهرية للملائمة -2σ</message>
+  <message id="md-chart-fit-fwhm-label">FWHM الملائمة</message>
+</messages>

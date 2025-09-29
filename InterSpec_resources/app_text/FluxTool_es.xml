@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ftw- is short for FluxToolWidget or FluxToolWindow
+  -->
+  <message id="ftw-qr-tool-state-title">Estado de herramienta de flujo</message>
+  <message id="ftw-qr-tool-state-text">Estado actual de la herramienta de flujo.</message>
+  <message id="ftw-hdr-intrinsic-eff">Ef. intr.</message>
+  <message id="ftw-hdr-geom-eff">Ef. geom.</message>
+  <message id="ftw-hdr-flux-on-det">Flujo en det. (ɣ/s)</message>
+  <message id="ftw-hdr-flux-cm">Flujo (ɣ/cm²/s)</message>
+  <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-tt-distance">
+    Distancia desde el centro de la fuente hasta la cara del detector. El número debe
+    estar seguido de unidades; las unidades válidas son: metros, m, cm, mm, km, pies,
+    ft, ', in, pulgadas, o ". También puede añadir múltiples distancias,
+    como '3ft 4in', o '3.6E-2 m 12 cm' que son equivalentes a 
+    40 pulgadas y 15.6cm respectivamente.
+  </message>
+  <message id="ftw-simple">Simple</message>
+  <message id="ftw-standard">Estándar</message>
+  <message id="ftw-more">Más</message>
+  <message id="ftw-copy-btn">Copiar al portapapeles</message>
+  <message id="ftw-copy-btn-narrow">Copiar</message>
+  <message id="ftw-invalid-dist">Distancia inválida</message>
+  <message id="ftw-no-drf">No se eligió función de respuesta del detector</message>
+  <message id="ftw-no-foreground">No se cargó espectro de primer plano</message>
+  <message id="ftw-invalid-livetime">Tiempo vivo de primer plano inválido</message>
+  <message id="ftw-err-copy-clipboard">Error al copiar al portapapeles - tal vez un problema de permisos - lo siento.</message>
+  <message id="ftw-copied-to-clipboard">Tabla copiada al portapapeles.</message>
+  <message id="ftw-copied-as-html">Tabla copiada al portapapeles como texto HTML.</message>
+  <message id="ftw-copy-unknown-status">Resultado desconocido del comando copiar - lo siento.</message>
+</messages>
+
+

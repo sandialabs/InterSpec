@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">ピーク追加</message>
+  <message id="anpd-err-no-foreground">ピークを追加するにはフォアグラウンドスペクトルを読み込む必要があります。</message>
+  <message id="anpd-err-no-foreground-1">フォアグラウンドスペクトルなし</message>
+  <message id="anpd-peak-mean">ピーク平均</message>
+  <message id="anpd-peak-fwhm">ピーク半値幅</message>
+  <message id="anpd-peak-amp">ピーク振幅</message>
+  <message id="anpd-roi-lower">ROI下限</message>
+  <message id="anpd-roi-upper">ROI上限</message>
+  <message id="anpd-tt-more-adv">より詳細なオプションについては、追加後の<em>ピークエディタ</em>をご覧ください。</message>
+  <message id="anpd-screen-to-small">プレビューには画面が小さすぎます。</message>
+  <message id="anpd-err-preview">プレビューレンダリングエラー</message>
+  <message id="anpd-err-fit-failed">フィット失敗。</message>
+  <message id="anpd-associate-with">{1}と関連付け</message>
+</messages>

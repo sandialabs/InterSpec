@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">Linéariser le Spectre</message>
+  <message id="ecaa-truncate-title">Tronquer les Canaux Gamma</message>
+  <message id="ecaa-combine-title">Combiner les Canaux Gamma</message>
+  <message id="ecaa-convert-frf-title">Convertir en Étalonnage Fraction Pleine Gamme</message>
+  <message id="ecaa-convert-poly-title">Convertir en Étalonnage Polynomial</message>
+  <message id="ecaa-multi-file-title">Étalonnage Multi-Fichiers</message>
+  
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">La conversion n'affecterait aucun spectre ; essayez de sélectionner plus de critères "Appliquer les Changements À".</message>
+  <message id="ecaa-already-polynomial">Tous les spectres auxquels ceci serait appliqué sont déjà polynomiaux.</message>
+  <message id="ecaa-already-frf">Tous les spectres auxquels ceci serait appliqué sont déjà en fraction de gamme complète.</message>
+  <message id="ecaa-multiple-cal-types">Il y a plus d'un type de calibration des spectres source sélectionnés ; essayez de restreindre les critères "Appliquer les Changements À".</message>
+  <message id="ecaa-changes-applied-to">Les changements seront appliqués à : {1}</message>
+  <message id="ecaa-terms-lost">Les termes au-delà du quatrième terme seront perdus car il n'y a pas de termes analogues.</message>
+  <message id="ecaa-no-info-lost">Aucune information ne sera perdue si vous continuez.</message>
+  <message id="ecaa-conversion-question">Comment souhaitez-vous que la conversion soit effectuée ?</message>
+  
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">Pour les spectres à {1} canaux :</message>
+  <message id="ecaa-lower-energy">Énergie Inférieure</message>
+  <message id="ecaa-upper-energy">Énergie Supérieure</message>
+  <message id="ecaa-num-channels">Nb Canaux</message>
+  <message id="ecaa-no-undo-note">Cette action ne peut pas être annulée.</message>
+  <message id="ecaa-combine-channels-desc">Ceci combinera les canaux successifs suivants ensemble</message>
+  <message id="ecaa-num-channels-to-combine">Nombre de canaux à combiner :</message>
+  <message id="ecaa-first-channel-to-keep">Premier Canal à Conserver</message>
+  <message id="ecaa-last-channel-to-keep">Dernier Canal à Conserver</message>
+  <message id="ecaa-keep-overflow">Conserver les comptages de débordement</message>
+  <message id="ecaa-tt-keep-overflow">Si sélectionné, tous les comptages des canaux supprimés seront ajoutés au nouveau premier ou dernier canal.</message>
+  <message id="ecaa-first-channel-note">Notez que le premier canal est le canal 0.</message>
+  
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">Linearize, rebinning counts to match new widths</message>
+  <message id="ecaa-linearize-same-counts">Linearize, leaving counts in channels the same</message>
+  <message id="ecaa-fit-quadratic">Fit channel energies to quadratic equation.</message>
+  <message id="ecaa-fit-cubic">Fit channel energies to cubic equation.</message>
+  
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">The channels in the resulting spectra will all have the same width, but counts in each channel will not be integer; this option preserves spectral shape (counts per keV).</message>
+  <message id="ecaa-tt-linearize-same">The channel energies will be reassigned so that each channel will have same width, without taking into account the channels original width; i.e., the counts in each channel will remain the same, but spectral shape (counts per keV) will be changed.</message>
+</messages>

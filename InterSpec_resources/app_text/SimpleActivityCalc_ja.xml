@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">簡易放射能計算機</message>
+  <message id="simple-activity-calc-menu">簡易放射能計算</message>
+  
+  <message id="sac-peak-label">ピーク:</message>
+  <message id="sac-background-subtract-label">バックグラウンド減算</message>
+  
+  <message id="sac-distance-label">距離:</message>
+  <message id="sac-age-label">年数:</message>
+  <message id="sac-shielding-label">遮蔽:</message>
+  <message id="sac-geometry-label">ジオメトリ:</message>
+  <message id="sac-result-label">放射能:</message>
+  <message id="sac-advanced-btn">高度な放射能/遮蔽フィット</message>
+  
+  <message id="sac-geometry-point">点線源</message>
+  <message id="sac-geometry-plane">無限平面</message>
+  <message id="sac-geometry-self-atten">自己減衰球</message>
+  <message id="sac-geometry-trace-src">トレース線源</message>
+  
+  <message id="sac-error-no-peak">ピークが選択されていません</message>
+  <message id="sac-error-no-detector">検出器応答が読み込まれていません</message>
+  <message id="sac-error-invalid-distance">無効な距離が入力されました</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>このピークと同じ位置のバックグラウンドにピークがないようです。</p>
+    <p>存在すると思われる場合は、フォアグラウンドとバックグラウンドスペクトルを交換し、バックグラウンドスペクトルでピークをフィットしてから、再び交換してください。</p>
+  </message>
+  
+
+  <message id="sac-use-fit-background-peak">自動フィットされたバックグラウンドピークを使用しますか？</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>バックグラウンドスペクトルにピークをフィットしようとした際にエラーが発生しました:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+
+  <message id="sac-qr-tool-state-title">簡易放射能計算ツール状態</message>
+  <message id="sac-qr-tool-state-txt">簡易放射能計算ツールの現在状態。</message>
+</messages>

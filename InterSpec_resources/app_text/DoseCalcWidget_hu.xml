@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">Nem sikerült konvergálni az árnyékolás mennyiségére.</message>
+  <message id="dcw-qr-tool-state-title">Dózis eszköz állapota</message>
+  <message id="dcw-qr-tool-state-txt">A dózis eszköz jelenlegi állapota.</message>
+  <message id="dcw-inputs">Bemenetek</message>
+  <message id="dcw-answer">Válasz</message>
+  <message id="dcw-intro-instructions">Válassza ki a számítani kívánt mennyiséget a bal oldalon</message>
+  <message id="dcw-intro-instructions-vert-phone">Válassza ki a számítani kívánt mennyiséget fent</message>
+  <message id="dcw-intro-calc-desc">A dózis értékek az ANSI/ANS-6.1.1-1991 legkonzervatívabb esetével 
+    számítva: Anterior-Posterior orientáció.
+    A dózis számítások legjobb esetben durva útmutatók, és
+    sok bizonytalanságnak vagy hibának vannak kitéve.
+  </message>
+  <message id="dcw-source-label">Forrás:</message>
+  <message id="dcw-neutron">Neutron</message>
+  <message id="dcw-tt-neut-not-imp">A neutron dózis számítás még nincs implementálva.</message>
+  <message id="dcw-tt-distance">Távolság a forrás középpontjától a detektor felületéig. A számot"
+    " egységeknek kell követniük; érvényes egységek: meters, m, cm, mm, km, feet,"
+    " ft, ', in, inches, vagy \".  Több távolságot is hozzáadhat,"
+    " például '3ft 4in', vagy '3.6E-2 m 12 cm' amelyek 40 hüvelyknek "
+    " és 15.6cm-nek felelnek meg.</message>
+  <message id="dcw-shield-empty-text">Árnyékoló anyag</message>
+  <message id="dcw-runtime-checks-failed">A futásidejű józanság ellenőrzések sikertelenek!</message>
+  <message id="dcw-runtime-check-msg">
+    <div>Ne bízzon ennek a számológép segédprogramnak az eredményeiben</div>
+    Kérjük, küldje el az <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a> címre
+    ezt a hibaüzenetet és adja meg az eszköz típusát és modelljét (pl. iPad pro,
+    Windows 10 Dell laptop, stb.)
+  </message>
+  <message id="dcw-runtime-check-err-div">Az eredmények gyanúsak - Ne bízzon bennük</message>
+  <message id="dcw-err-no-nuc">Üres vagy érvénytelen forrás nuklid</message>
+  <message id="dcw-act-invalid">Az aktivitás érvénytelen</message>
+  <message id="dcw-shield-invalid">Érvénytelen árnyékolás</message>
+  <message id="dcw-generic-shield-invalid">Hiba a dózis számításában, érvénytelen árnyékolás, sajnáljuk :{</message>
+  <message id="dcw-dist-invalid">A távolság érvénytelen.</message>
+  <message id="dcw-err-other">Hiba a dózis számításában a forrásból, sajnáljuk :{</message>
+  <message id="dcw-invalid-src-dose">Érvénytelen forrás dózis.</message>
+  <message id="dcw-invalid-src-act">Érvénytelen forrás aktivitás.</message>
+  <message id="dcw-invalid-src-dose">Érvénytelen forrás dózis.</message>
+  <message id="dcw-failed-find-lower-dist">Nem sikerült megtalálni az alsó határoló távolságot, {1} cm-nél.</message>
+  <message id="dcw-failed-find-upper-dist">Nem sikerült megtalálni a felső határoló távolságot, {1} cm-nél.</message>
+  <message id="dcw-failed-find-dist">Nem sikerült megtalálni a távolságot; túllépte a maximális iterációkat.</message>
+  <message id="dcw-got-neg-dist">Negatív távolságot kaptunk: {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">Hiba a dózis számításában a távolság keresése közben, sajnáljuk :{</message>
+  <message id="dcw-material-not-valid">Az anyag nem érvényes</message>
+  <message id="dcw-no-an-entered">Meg kell adnia az árnyékoló anyag atomszámát.</message>
+  <message id="dcw-no-shield-name">Meg kell adnia az árnyékoló anyag típusát.</message>
+  <message id="dcw-brehm-warning">Figyelmeztetés: A béta bomlások fékezési sugárzása nincs figyelembe véve, az eredmények nem lehetnek megbízhatóak.</message>
+  <message id="dcw-no-dose-entered">Nincs numerikus érték megadva a dózishoz</message>
+  <message id="dcw-stay-time">Tartózkodási idő</message>
+  <message id="dcw-dental-xray">Fogorvosi röntgen</message>
+  <message id="dcw-annual-background">Típ. éves háttér</message>
+  <message id="dcw-annual-occ-limit">Éves occ. határ</message>
+  <message id="dcw-save-property">Értékes vagyon mentése</message>
+  <message id="dcw-life-saving">Életmentés</message>
+  <message id="dcw-radiation-sickness">Sugárbetegség</message>
+</messages>

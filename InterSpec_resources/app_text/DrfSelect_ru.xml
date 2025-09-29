@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">Пользовательский детектор</message>
+
+  <message id="ref-tt-remove-drf-file">Удалить файл из списка файлов, в которых InterSpec будет искать функции отклика детектора.</message>
+  <message id="ref-remove-drf-window-title">Удалить отклики детектора?</message>
+  <message id="ref-remove-drf-window-txt">Хотите ли вы удалить эти DRF из будущего использования?</message>
+  <message id="ref-file-removed-toast">Файл '{1}' удален из будущего использования.</message>
+  <message id="ref-file-saved-for-later">Сохранен '{1}' для последующего использования и будет доступен в разделе "<em>Отн. эфф.</em>" инструмента "<em>Выбор функции отклика детектора</em>".</message>
+  <message id="ref-err-saving-drf-file">Ошибка сохранения файла DRF для последующего использования; извините.</message>
+  <message id="ref-err-invalid-csv-drf">Не действительный TSV или CSV файл относительной эффективности DRF.</message>
+  <message id="ref-save-drf-window-title">Сохранить отклики детектора?</message>
+  <message id="ref-save-drf-window-txt">Хотите ли вы сохранить эти отклики детектора для последующего использования?</message>
+  <message id="ref-upload-csv-file">Загрузить TSV/CSV файл.</message>
+  <message id="ref-dont-use-drf-in-file">нет откликов в файле</message>
+  <message id="ref-select-det-from-file">выбрать детектор</message>
+  <message id="ref-no-drfs-in-file">Нет действительных DRF в файле.</message>
+  <message id="ref-couldnt-open-drf-file">Не удалось открыть файл DRF.</message>
+  <message id="ref-no-rel-eff-drfs-in-file">Нет доступных DRF относительной эффективности.</message>
+  <message id="ref-no-drfs-available">нет доступных откликов</message>
+  <message id="ref-file-has-no-drfs">Файл не содержит DRF</message>
+  <message id="reds-tt-add-drf-btn">Нажмите кнопку плюс, чтобы добавить дополнительный файл функции отклика детектора относительной эффективности.</message>
+  <message id="reds-tt-add-dir">Нажмите кнопку плюс, чтобы добавить дополнительный каталог для рекурсивного поиска функций отклика детектора.</message>
+  <message id="reds-gadras-drf-info-ios">Вы можете поместить функции отклика детектора, импортированные из GADRAS-DRF, в каталог <code>InterSpec</code> в приложении <b>Файлы</b>.</message>
+  <message id="reds-gadras-drf-info">Это функции отклика детектора, импортированные из GADRAS-DRF. В настоящее время используются только размеры детектора, абсолютные эффективности и разрешения FWHM.</message>
+  <message id="reds-failed-parse-gadras-det">Не удалось разобрать детектор GADRAS: {1}</message>
+  <message id="reds-err-saving-gad-path">Ошибка сохранения пути GADRAS в пользовательские настройки: {1}</message>
+  <message id="reds-tt-remove-gad-dir">Удалить каталог из списка каталогов, в которых InterSpec будет искать функции отклика детектора.</message>
+  <message id="reds-tt-gad-set-dir">Установить введенный каталог для рекурсивного поиска функций отклика детектора.</message>
+  <message id="reds-err-not-valid-dir">Не действительный каталог.</message>
+  <message id="reds-invalid-dir">недействительный каталог</message>
+  <message id="reds-no-drf-in-dir">нет откликов в каталоге</message>
+  <message id="reds-recursive-no-drfs-in-dir">Нет действительных DRF в каталоге или его подкаталогах.</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      CSV файл собственной эффективности:
+    </div>
+    <div>
+      Первый столбец - энергия в кэВ.
+      Второй столбец - % эффективности (от 0 до 100) для гамм этой
+      энергии, падающих на детектор, для регистрации в фотопике.
+    </div>
+    <div>
+      Вам также нужно будет загрузить файл GADRAS Detector.dat или ввести
+      диаметр детектора после загрузки файла эффективности.
+    </div>
+    <div>
+      Вы также можете загрузить CSV, экспортированный из инструмента <em>Создание отклика детектора</em>.
+    </div>
+  </message>
+  <message id="ds-enter-gad-det-diam">Введите диаметр детектора или загрузите файл Detector.dat:</message>
+  <message id="ds-det-diam">Диаметр детектора:</message>
+  <message id="ds-fixed-geom">Фиксированная геометрия</message>
+  <message id="ds-gad-det-file-label">Файл GADRAS Detector.Dat:</message>
+  <message id="ds-manual-det-empty-fcn">Пример: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
+    Или эквивалентно: -9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">Эффективность детектора, определенная математической формулой для энергии x;
+     или вы можете ввести коэффициенты для стандартной формы уравнения. Нажмите иконку вопроса для дополнительной информации.
+  </message>
+  <message id="ds-manual-det-name-label">Имя детектора </message>
+  <message id="ds-manual-det-name-empty-txt">Уникальное имя детектора</message>
+  <message id="ds-manual-function-label">Эффективность f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">Единица энергии для формулы эффективности</message>
+  <message id="ds-tt-manual-desc">Описание этого отклика детектора</message>
+  <message id="ds-manual-det-diam-label">Диам. детектора</message>
+  <message id="ds-energy-range">Диапазон энергий</message>
+  <message id="ds-(optional)">(необязательно)</message>
+  <message id="ds-min.">Мин.</message>
+  <message id="ds-max.">Макс.</message>
+  <message id="ds-intrinsic-eff">Собственная эффективность</message>
+  <message id="ds-abs-eff">Абсолютная эффективность</message>
+  <message id="ds-fixed-geom-total">Фиксированная геометрия - общая активность</message>
+  <message id="ds-fixed-geom-cm2">Фиксированная геометрия - активность на см²</message>
+  <message id="ds-fixed-geom-m2">Фиксированная геометрия - активность на м²</message>
+  <message id="ds-fixed-geom-gram">Фиксированная геометрия - активность на грамм</message>
+
+  <message id="ds-tt-manual-drf-type">Как следует интерпретировать эту эффективность.<br />
+    <br />
+    Собственная эффективность: вероятность того, что рентгеновский или гамма-луч, попадающий на
+    поверхность детектора, зарегистрирует событие обнаружения полной энергии.<br />
+    <br />
+    Абсолютная эффективность: вероятность того, что рентгеновский или гамма-луч от источника
+    зарегистрирует событие обнаружения полной энергии, с возможностью
+    масштабирования этой эффективности на 1/r2 для других расстояний (т.е. для точечного источника).<br />
+    <br />
+    Фиксированная геометрия - общая активность: вероятность того, что рентгеновский или гамма-луч от источника
+    зарегистрирует событие обнаружения полной энергии, и неуместно позволять масштабирование этой
+    эффективности для других расстояний (например, для близкого или большого протяженного источника).<br />
+    <br />
+    Фиксированная геометрия - активность на см2: похоже на общую активность, но кривая эффективности
+    представляет эффективность на распад, на квадратный сантиметр (т.е. поверхностное загрязнение).<br />
+    <br />
+    Фиксированная геометрия - активность на м2: похоже на см2, но на квадратный метр.<br />
+    <br />
+    Фиксированная геометрия - активность на г: похоже на см2, но на грамм источника.
+  </message>
+  <message id="ds-dist-label">Расст.:</message>
+  <message id="ds-set-btn">Установить</message>
+  <message id="ds-last-used">Последний использованный</message>
+  <message id="ds-det-type-filter-all">Все</message>
+  <message id="ds-det-type-filter-uploaded">Загруженные</message>
+  <message id="ds-det-type-filter-formula">Введенная формула</message>
+  <message id="ds-det-type-filter-data">Созданные из данных</message>
+  <message id="ds-det-type-filter-N42">Включенные в файл N42</message>
+  <message id="ds-show-label">Показать:</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">Отн. эфф.</message>
+  <message id="ds-mi-import">Импорт</message>
+  <message id="ds-mi-formula">Формула</message>
+  <message id="ds-mi-previous">Предыдущие</message>
+  <message id="ds-use-for-serialnum-cb">Использовать как DRF по умолчанию для SN '{1}'</message>
+  <message id="ds-use-for-model-cb">Использовать как DRF по умолчанию для модели '{1}'</message>
+  <message id="ds-no-drf-loaded">DRF не загружен</message>
+  <message id="ds-no-det-btn">Без детектора</message>
+  <message id="ds-fit-fwhm-btn">Фитировать FWHM...</message>
+  <message id="ds-tt-cancel">Удалить все изменения или выборы, сделанные в этом диалоге, и закрыть диалог.</message>
+  <message id="ds-tt-accept">Принять все изменения/выборы и закрыть диалог.</message>
+  <message id="ds-use-det-btn">Использовать детектор</message>
+  <message id="ds-use-drf">Использовать DRF?</message>
+  <message id="ds-select-drf">Выбрать DRF для использования</message>
+  <message id="ds-drf-desc">Описание DRF</message>
+  <message id="ds-save-for-later-cb">Сохранить для последующего использования?</message>
+  <message id="ds-err-drf-uri-invalid">URL функции отклика детектора был недействительным.</message>
+  <message id="ds-err-det-diam-pos">Диаметры детекторов должны быть положительными</message>
+  <message id="ds-err-det-dist-pos">Расстояние должно быть положительным для абсолютных эффективностей</message>
+  <message id="ds-warn-min-max-energy-swapped">Минимальная энергия детектора была больше максимальной энергии; игнорирую диапазон энергий.</message>
+  <message id="ds-need-det-diam">Нужен диаметр детектора</message>
+</messages>

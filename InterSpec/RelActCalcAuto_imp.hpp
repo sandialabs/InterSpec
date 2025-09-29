@@ -110,7 +110,7 @@ struct PeakDefImp
 
   /** Gives lower and upper energies that contain `1.0 - missing_frac` of the peak,
 
-   For skewed distributions, particularly Crystal Bal, the energy range given by the desired
+   For skewed distributions, particularly Crystal Ball, the energy range given by the desired
    peak coverage can get huge, so you can also specify the max number of FWHM to use, which will
    truncate the range in these cases of very large skew.
 

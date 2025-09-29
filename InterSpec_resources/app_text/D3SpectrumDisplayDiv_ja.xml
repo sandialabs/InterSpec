@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">カウント</message>
+  <message id="d3sdd-yAxisTitleMulti">{1} チャンネルあたりのカウント</message>
+  <message id="d3sdd-realTime">リアルタイム</message>
+  <message id="d3sdd-liveTime">ライブタイム</message>
+  <message id="d3sdd-deadTime">デッドタイム</message>
+  <message id="d3sdd-scaledBy">スケール係数</message>
+  <message id="d3sdd-zoomIn">ズームイン</message>
+  <message id="d3sdd-neutrons">中性子</message>
+  <message id="d3sdd-Neutrons">中性子</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">ROIカウント</message>
+  <message id="d3sdd-gammaCounts">ガンマカウント</message>
+  <message id="d3sdd-contArea">コンティニューア面積</message>
+  <message id="d3sdd-peakCps">ピークcps</message>
+  <message id="d3sdd-peakArea">ピーク面積</message>
+  <message id="d3sdd-mean">平均</message>
+  <message id="d3sdd-spectrum">スペクトル</message>
+  <message id="d3sdd-comptonEdge">コンプトンエッジ</message>
+  <message id="d3sdd-sumPeak">サムピーク</message>
+  <message id="d3sdd-firstEnergyClick">サムピークの最初のエネルギーを設定するためにクリックしてください。</message>
+  <message id="d3sdd-singleEscape">シングルエスケープ</message>
+  <message id="d3sdd-doubleEscape">ダブルエスケープ</message>
+  <message id="d3sdd-eraseInRange">範囲内のピークを消去します</message>
+  <message id="d3sdd-zoomInY">Y軸をズームイン</message>
+  <message id="d3sdd-zoomOutY">Y軸をズームアウト</message>
+  <message id="d3sdd-touchDefineRoi">ROIを定義するには2本の指を右に動かしてください</message>
+  <message id="d3sdd-foreNSigmaBelowBack">フォアグラウンドはバックグラウンドより{1} σ下です。</message>
+  <message id="d3sdd-foreNSigmaAboveBack">フォアグラウンドはバックグラウンドより{1} σ上です。</message>
+  <message id="d3sdd-backSubCounts">カウント（BG減算）</message>
+  <message id="d3sdd-afterScalingBy">スケール後 </message>
+  <message id="d3sdd-clickedPeak">クリックされたピーク</message>
+  <message id="d3sdd-recalFromTo">{1} から {2} keVまでのデータを再校正</message>
+  <message id="d3sdd-sumFromTo">{1} から {2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">{1}° コンプトンピーク</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">下限と上限のカウントが等しいです。</message>
+  <message id="d3sdd-yaxis-no-spectrum">表示されているスペクトルがありません。</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">上限範囲がゼロ以下です。</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">下限範囲がゼロ以下です。</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">上限範囲が表示される最小の非ゼロ値より小さいです。</message>
+  <message id="d3sdd-candidates">候補:</message>
+  <message id="d3sdd-use-arrows-to-select">(↑と↓を使用して選択)</message>
+</messages>

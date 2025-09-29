@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fmw- is short for FeatureMarkerWidget
+  -->
+  <message id="fmw-escape-peaks">Пики ухода</message>
+  <message id="fmw-compton-peak">Комптоновский пик</message>
+  <message id="fmw-angle">Угол</message>
+  <message id="fmw-compton-edge">Комптоновский край</message>
+  <message id="fmw-sum-peak">Суммарный пик</message>
+</messages>

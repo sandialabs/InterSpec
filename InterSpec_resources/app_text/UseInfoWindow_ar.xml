@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+  
+  <!-- Button text -->
+  <message id="uiw-load-btn">تحميل</message>
+  
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">ملف كبير جدا.</span>]]></message>
+  
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">ورقة غش (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">اطبع ورقة الغش هذه (تنسيق PDF) للرجوع السريع للإجراءات ومفاتيح الاختصار واستكشاف الأخطاء.</message>
+  
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">عرض عند البدء عندما لا توجد أطياف</message>
+  
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">العودة للأعلى</message>
+  
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">خطأ في تحميل مواضيع الأسئلة الشائعة: {1}</message>
+  
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[يمكنك البدء بفتح أطياف مثال أدناه، أو يمكنك استخدام تبويب <em>استيراد الأطياف</em> لتحميل ملفات خارجية.<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>أطيافك المحفوظة سابقا معروضة أدناه. يمكنك استخدام التبويبات الأخرى لفتح أطياف مثال، أو لاستيراد ملفات طيفية خارجية.<br />يمكنك أيضا فتح أطياف مرفقة بالبريد الإلكتروني، أو تطبيقات التخزين السحابي.</p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>يمكنك اختيار ملف طيف مثال أدناه، أو استخدام تبويب الاستيراد لفتح واحد من iCloud، Dropbox، Google Drive، إلخ.<br />يمكنك أيضا فتح ملفات أطياف مرفقة بالبريد الإلكتروني.</p>]]></message>
+  
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center">مرحبا بك في <code>InterSpec</code></h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>يمكنك استخدام المراجع على اليسار للتعرف أكثر على <code>InterSpec</code>، أو يمكنك المتابعة من جلسة أو طيف سابق أدناه.]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[ بدلا من ذلك، يمكنك أيضا سحب وإفلات ملف الطيف الخاص بك على <code>InterSpec</code>.</p>]]></message>
+  
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>اضغط على أيقونة <img src="InterSpec_resources/images/phone_tips.png" width=12 height=12 alt="information icon" class="WhiteIcon" /> على اليسار لأساسيات التفاعل مع المخطط وتركيب القمم.اضغط على أيقونة <img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /> للحصول على معلومات مفصلة حول أدوات وميزات <code>InterSpec</code>.</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>اضغط على زر <b>معلومات الاستخدام</b> على اليسار لأساسيات التفاعل مع المخطط وتركيب القمم.اضغط على أيقونة <img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /> للحصول على معلومات مفصلة حول أدوات وميزات <code>InterSpec</code>.</p>]]></message>
+  
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p>اضغط على <em>اختيار ملف</em> للبحث عن الملف الذي تريد فتحه.</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>يمكنك أيضاً فتح ملفات الأطياف عن طريق تحديد <em>فتح ملف</em> في قائمة <code>InterSpec</code> الفرعية بعد الخروج من هذه الشاشة.<br />بالنسبة لمرفقات البريد الإلكتروني، أو الملفات في تطبيقات مثل <code>Files</code>، <code>Dropbox</code>، <code>Google Drive</code>، إلخ، يمكنك فتح ملفات الأطياف في <code>InterSpec</code> عن طريق تحديد "انسخ إلى InterSpec"</p>]]></message>
+  
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">الحالات المحفوظة</message>
+  <message id="uiw-tab-example-spectra">أطياف الأمثلة</message>
+  <message id="uiw-tab-import-spectra">استيراد الأطياف</message>
+  
+  <!-- Welcome section -->
+  <message id="uiw-welcome">مرحبا</message>
+  <message id="uiw-controls">التحكمات</message>
+  
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">الترخيص والشروط</message>
+  <message id="uiw-more-info">معلومات أكثر تفصيلاً</message>
+</messages>

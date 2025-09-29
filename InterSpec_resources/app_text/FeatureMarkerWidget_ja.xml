@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fmw- is short for FeatureMarkerWidget
+  -->
+  <message id="fmw-escape-peaks">エスケープピーク</message>
+  <message id="fmw-compton-peak">コンプトンピーク</message>
+  <message id="fmw-angle">角度</message>
+  <message id="fmw-compton-edge">コンプトンエッジ</message>
+  <message id="fmw-sum-peak">サムピーク</message>
+</messages>

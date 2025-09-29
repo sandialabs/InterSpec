@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiInputFile -->
+  <message id="bgw-peaks-csv-txt">ملف CSV للقمم</message>
+  <message id="bgw-not-spec-preview">ليس ملف طيف</message>
+  <message id="bgw-passthrough-sum-error">خطأ في المرور</message>
+  <message id="bgw-preview-error">خطأ في عرض المعاينة</message>
+</messages>

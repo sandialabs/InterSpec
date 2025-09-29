@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
-  <message id="pm-tt-use-for-cal">Si ce pic doit être utilisé pour aider à étalonner l'énergie.
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">Si ce pic doit être utilisé pour aider à calibrer l'énergie.
     Vous devez avoir un nucléide, une réaction ou un rayon X associé au pic, et vous ne devez pas avoir fixé la valeur d'énergie moyenne à l'aide de l'éditeur de pics.</message>
   <message id="pm-gaussian">Gaussien</message>
   <message id="pm-region">Région</message>

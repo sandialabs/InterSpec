@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">كاشف محدد من قبل المستخدم</message>
+
+  <message id="ref-tt-remove-drf-file">إزالة الملف من قائمة الملفات التي سيبحث فيها InterSpec عن دوال استجابة الكاشف.</message>
+  <message id="ref-remove-drf-window-title">إزالة استجابات الكاشف؟</message>
+  <message id="ref-remove-drf-window-txt">هل تريد إزالة هذه DRFs من الاستخدام المستقبلي أيضًا؟</message>
+  <message id="ref-file-removed-toast">تم إزالة الملف '{1}' من الاستخدام المستقبلي.</message>
+  <message id="ref-file-saved-for-later">تم حفظ '{1}' للاستخدام لاحقًا، وسيكون متاحًا في جزء "<em>الكفاءة النسبية</em>" من أداة "<em>اختيار دالة استجابة الكاشف</em>".</message>
+  <message id="ref-err-saving-drf-file">خطأ في حفظ ملف DRF للاستخدام لاحقًا؛ عذرًا.</message>
+  <message id="ref-err-invalid-csv-drf">ليس ملف DRF للكفاءة النسبية TSV أو CSV صالح.</message>
+  <message id="ref-save-drf-window-title">حفظ استجابات الكاشف؟</message>
+  <message id="ref-save-drf-window-txt">هل تريد حفظ استجابات الكاشف هذه للاستخدام لاحقًا؟</message>
+  <message id="ref-upload-csv-file">رفع ملف TSV/CSV.</message>
+  <message id="ref-dont-use-drf-in-file">لا توجد استجابات في الملف</message>
+  <message id="ref-select-det-from-file">اختيار الكاشف</message>
+  <message id="ref-no-drfs-in-file">لا توجد DRFs صالحة في الملف.</message>
+  <message id="ref-couldnt-open-drf-file">لم يتمكن من فتح ملف DRF.</message>
+  <message id="ref-no-rel-eff-drfs-in-file">لا توجد DRFs للكفاءة النسبية متاحة.</message>
+  <message id="ref-no-drfs-available">لا توجد استجابات متاحة</message>
+  <message id="ref-file-has-no-drfs">الملف لا يحتوي على أي DRFs</message>
+  <message id="reds-tt-add-drf-btn">انقر على زر الزائد لإضافة ملف دالة استجابة كاشف كفاءة نسبية إضافي.</message>
+  <message id="reds-tt-add-dir">انقر على زر الزائد لإضافة دليل إضافي للبحث بشكل تكراري عن دوال استجابة الكاشف فيه.</message>
+  <message id="reds-gadras-drf-info-ios">يمكنك وضع دوال استجابة الكاشف المستوردة من GADRAS-DRF في دليل <code>InterSpec</code> داخل تطبيق <b>الملفات</b>.</message>
+  <message id="reds-gadras-drf-info">هذه دوال استجابة كاشف مستوردة من GADRAS-DRF. حاليًا يتم استخدام أبعاد الكاشف والكفاءات المطلقة ودقة FWHM فقط.</message>
+  <message id="reds-failed-parse-gadras-det">فشل في تحليل كاشف GADRAS: {1}</message>
+  <message id="reds-err-saving-gad-path">خطأ في حفظ مسار GADRAS في تفضيلات المستخدم: {1}</message>
+  <message id="reds-tt-remove-gad-dir">إزالة الدليل من قائمة الأدلة التي سيبحث فيها InterSpec عن دوال استجابة الكاشف.</message>
+  <message id="reds-tt-gad-set-dir">تعيين الدليل المدخل للبحث بشكل تكراري عن دوال استجابة الكاشف فيه.</message>
+  <message id="reds-err-not-valid-dir">ليس دليلًا صالحًا.</message>
+  <message id="reds-invalid-dir">دليل غير صالح</message>
+  <message id="reds-no-drf-in-dir">لا توجد استجابات في الدليل</message>
+  <message id="reds-recursive-no-drfs-in-dir">لا توجد DRFs صالحة في الدليل، أو أدلته الفرعية.</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      ملف CSV للكفاءة الجوهرية:
+    </div>
+    <div>
+      العمود الأول هو الطاقة بالكيلوإلكترون فولت.
+      العمود الثاني هو النسبة المئوية للكفاءة (0 إلى 100) لأشعة الجاما بتلك الطاقة،
+      الساقطة على الكاشف، لتسجيلها في القمة الضوئية.
+    </div>
+    <div>
+      ستحتاج أيضًا لرفع ملف GADRAS Detector.dat، أو إدخال قطر الكاشف،
+      بعد رفع ملف الكفاءة.
+    </div>
+    <div>
+      يمكنك أيضًا رفع CSV مُصدر من أداة <em>إنشاء استجابة الكاشف</em>.
+    </div>
+  </message>
+  <message id="ds-enter-gad-det-diam">أدخل قطر الكاشف أو ارفع ملف Detector.dat:</message>
+  <message id="ds-det-diam">قطر الكاشف:</message>
+  <message id="ds-fixed-geom">هندسة ثابتة</message>
+  <message id="ds-gad-det-file-label">ملف GADRAS Detector.Dat:</message>
+  <message id="ds-manual-det-empty-fcn">مثال: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
+    أو بشكل مكافئ: -9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">كفاءة الكاشف محددة بصيغة رياضية، بإعطاء الطاقة x؛
+     أو يمكنك إدخال المعاملات لشكل المعادلة القياسية. انقر على أيقونة علامة الاستفهام للمزيد من المعلومات.
+  </message>
+  <message id="ds-manual-det-name-label">اسم الكاشف </message>
+  <message id="ds-manual-det-name-empty-txt">اسم كاشف فريد</message>
+  <message id="ds-manual-function-label">الكفاءة f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">وحدة الطاقة لصيغة الكفاءة</message>
+  <message id="ds-tt-manual-desc">وصف استجابة الكاشف هذه</message>
+  <message id="ds-manual-det-diam-label">قطر الكاشف</message>
+  <message id="ds-energy-range">نطاق الطاقة</message>
+  <message id="ds-(optional)">(اختياري)</message>
+  <message id="ds-min.">أدنى</message>
+  <message id="ds-max.">أعلى</message>
+  <message id="ds-intrinsic-eff">الكفاءة الجوهرية</message>
+  <message id="ds-abs-eff">الكفاءة المطلقة</message>
+  <message id="ds-fixed-geom-total">هندسة ثابتة - النشاط الإجمالي</message>
+  <message id="ds-fixed-geom-cm2">هندسة ثابتة - النشاط لكل سم²</message>
+  <message id="ds-fixed-geom-m2">هندسة ثابتة - النشاط لكل م²</message>
+  <message id="ds-fixed-geom-gram">هندسة ثابتة - النشاط لكل جرام</message>
+
+  <message id="ds-tt-manual-drf-type">كيف يجب تفسير هذه الكفاءة.<br />
+    <br />
+    الكفاءة الجوهرية: احتمالية أن الأشعة السينية أو الجاما التي تصطدم بوجه الكاشف،
+    تسجل حدث كشف كامل الطاقة.<br />
+    <br />
+    الكفاءة المطلقة: احتمالية أن الأشعة السينية أو الجاما من المصدر تسجل حدث كشف كامل الطاقة،
+    مع كونه مناسبًا للسماح بتحجيم هذه الكفاءة بـ 1/r2 لمسافات أخرى (أي، لمصدر نقطي).<br />
+    <br />
+    هندسة ثابتة - النشاط الإجمالي: احتمالية أن الأشعة السينية أو الجاما من المصدر تسجل حدث كشف كامل الطاقة،
+    وليس من المناسب السماح بتحجيم هذه الكفاءة لمسافات أخرى (مثل، لمصدر قريب، أو كبير ممتد).<br />
+    <br />
+    هندسة ثابتة - النشاط لكل سم2: مشابه للنشاط الإجمالي، لكن منحنى الكفاءة
+    يمثل الكفاءة لكل تحلل، لكل سنتيمتر مربع (أي، تلوث السطح).<br />
+    <br />
+    هندسة ثابتة - النشاط لكل م2: مشابه لكل سم2، لكن لكل متر مربع.<br />
+    <br />
+    هندسة ثابتة - النشاط لكل جرام: مشابه لكل سم2، لكن لكل جرام من المصدر.
+  </message>
+  <message id="ds-dist-label">المسافة:</message>
+  <message id="ds-set-btn">تعيين</message>
+  <message id="ds-last-used">آخر استخدام</message>
+  <message id="ds-det-type-filter-all">الكل</message>
+  <message id="ds-det-type-filter-uploaded">مرفوع</message>
+  <message id="ds-det-type-filter-formula">صيغة مدخلة</message>
+  <message id="ds-det-type-filter-data">مصنوع من البيانات</message>
+  <message id="ds-det-type-filter-N42">مضمن في ملف N42</message>
+  <message id="ds-show-label">إظهار:</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">الكفاءة النسبية</message>
+  <message id="ds-mi-import">استيراد</message>
+  <message id="ds-mi-formula">صيغة</message>
+  <message id="ds-mi-previous">سابق</message>
+  <message id="ds-use-for-serialnum-cb">استخدام كـ DRF افتراضي للرقم التسلسلي '{1}'</message>
+  <message id="ds-use-for-model-cb">استخدام كـ DRF افتراضي للطراز '{1}'</message>
+  <message id="ds-no-drf-loaded">لا يوجد DRF محمل</message>
+  <message id="ds-no-det-btn">لا يوجد كاشف</message>
+  <message id="ds-fit-fwhm-btn">ملائمة FWHM...</message>
+  <message id="ds-tt-cancel">إزالة جميع التغييرات أو الاختيارات التي تم إجراؤها بواسطة هذا الحوار، وإغلاق الحوار.</message>
+  <message id="ds-tt-accept">قبول جميع التغييرات/الاختيارات المجراة وإغلاق الحوار.</message>
+  <message id="ds-use-det-btn">استخدام الكاشف</message>
+  <message id="ds-use-drf">استخدام DRF؟</message>
+  <message id="ds-select-drf">اختيار DRF للاستخدام</message>
+  <message id="ds-drf-desc">وصف DRF</message>
+  <message id="ds-save-for-later-cb">حفظ للاستخدام لاحقًا؟</message>
+  <message id="ds-err-drf-uri-invalid">كان URL دالة استجابة الكاشف غير صالح.</message>
+  <message id="ds-err-det-diam-pos">أقطار الكاشف يجب أن تكون موجبة</message>
+  <message id="ds-err-det-dist-pos">المسافة يجب أن تكون موجبة للكفاءات المطلقة</message>
+  <message id="ds-warn-min-max-energy-swapped">كانت أدنى طاقة للكاشف أكبر من أعلى طاقة؛ تجاهل نطاق الطاقة.</message>
+  <message id="ds-need-det-diam">نحتاج لقطر الكاشف</message>
+</messages>

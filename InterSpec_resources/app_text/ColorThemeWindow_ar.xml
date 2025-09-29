@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+  
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">سمات الألوان</message>
+  
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">يزيل السمة المحددة حاليا.</message>
+  <message id="ctw-clone-tooltip">ينشئ سمة ألوان جديدة بناء على السمة المحددة حاليا.</message>
+  <message id="ctw-upload-tooltip">يستورد ملف JSON لسمة الألوان لاستخدامه.</message>
+  <message id="ctw-download-tooltip">يصدر السمة المحددة حاليا إلى ملف JSON.</message>
+  
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">تطبيق "الداكن" تلقائيا من النظام</message>
+  <message id="ctw-auto-dark-tooltip">تطبيق سمة الألوان "الداكنة" تلقائيا وفقا لقيمة نظام التشغيل الحالية، أو عند التحول.</message>
+  
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (منسوخ)</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">حذف {1}؟</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">هل أنت متأكد من أنك تريد حذف <em>{1}</em>؟</span>]]></message>
+  
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">رفع JSON سمة الألوان</message>
+  <message id="ctw-upload-error-open">خطأ في فتح الملف المرفوع.</message>
+  <message id="ctw-upload-error-empty">الملف المرفوع فارغ.</message>
+  <message id="ctw-upload-error-large">الملف المرفوع كبير جدا؛ الحد الأقصى 64 كيلوبايت.</message>
+  <message id="ctw-upload-error-read">غير قادر على قراءة الملف المرفوع.</message>
+  <message id="ctw-upload-error-json">JSON غير صحيح، أو معلومات مطلوبة مفقودة.</message>
+  <message id="ctw-upload-too-large">ملف كبير جدا.</message>
+  <message id="ctw-import-confirm"><![CDATA[هل تريد استيراد <em>{1}</em>؟]]></message>
+  
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">حفظ التغييرات؟</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;">حفظ التغييرات إلى <em>{1}</em>؟</span>]]></message>
+  <message id="ctw-discard-btn">تجاهل</message>
+</messages>

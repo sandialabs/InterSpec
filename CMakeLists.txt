@@ -450,6 +450,7 @@ set(headers
     InterSpec/MoreNuclideInfoDisplay.h
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
+    InterSpec/BersteinPolynomial.hpp
     InterSpec/ExportSpecFile.h
     InterSpec/ExternalRidResult.h
     InterSpec/EnterAppUrlWindow.h

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">Incert. FWHM</message>
+  <message id="fpm-peak-source">Fuente pico</message>
+  <message id="fpm-user">Usuario</message>
+  <message id="fpm-auto-fit">Ajuste auto</message>
+  
+  
+  <message id="mffdw-use-fwhm-btn">Usar FWHM</message>
+  
+  <message id="mffd-eqn-type-label">Tipo ecuación:</message>
+  <message id="mffd-num-terms-label">Núm. términos:</message>
+  <message id="mffd-par-vals-label">Valores parámetros:</message>
+  <message id="mffd-err-no-foreground">No hay datos para buscar picos.</message>
+  <message id="mffd-tt-par">Con incertidumbre: {1}</message>
+  <message id="mffd-err-fail-fit">Error al ajustar ecuación FWHM: {1}</message>
+  <message id="mffd-err-waiting-for-search">Actualmente buscando picos - por favor sea paciente</message>
+</messages>
+
+

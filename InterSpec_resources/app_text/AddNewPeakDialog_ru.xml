@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">Добавить пик</message>
+  <message id="anpd-err-no-foreground">Для добавления пика должен быть загружен основной спектр.</message>
+  <message id="anpd-err-no-foreground-1">Нет основного спектра</message>
+  <message id="anpd-peak-mean">Среднее пика</message>
+  <message id="anpd-peak-fwhm">FWHM пика</message>
+  <message id="anpd-peak-amp">Ампл. пика</message>
+  <message id="anpd-roi-lower">Нижний ROI</message>
+  <message id="anpd-roi-upper">Верхний ROI</message>
+  <message id="anpd-tt-more-adv">Для более продвинутых опций см. <em>Редактор пиков</em> после добавления.</message>
+  <message id="anpd-screen-to-small">Экран слишком мал для предпросмотра.</message>
+  <message id="anpd-err-preview">Ошибка рендеринга предпросмотра</message>
+  <message id="anpd-err-fit-failed">Подгонка не удалась.</message>
+  <message id="anpd-associate-with">Связать с {1}</message>
+</messages>

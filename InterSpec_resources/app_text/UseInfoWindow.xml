@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+  
+  <!-- Button text -->
+  <message id="uiw-load-btn">Load</message>
+  
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Too Large of file.</span>]]></message>
+  
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">Cheat Sheet (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">Print out this cheat sheet (PDF format) to quickly reference actions, shortcut keys and troubleshooting.</message>
+  
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">show at start when no spectra</message>
+  
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">Back to top</message>
+  
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">Error loading FAQ topics: {1}</message>
+  
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[You can start by opening an example spectra below, or you can use the <em>Import Spectra</em> tab to load external files.<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>Your previously saved spectra are shown below.  You can use the other tabs to open example spectra, or to import external spectral files.<br />You can also open spectra attached to email, or cloud storage apps.</p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>You can select an example spectrum file below, or use the import tab to open one from your iCloud, Dropbox, Google Drive, etc.<br />You can also open spectrum files attached to eamils.</p>]]></message>
+  
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center">Welcome To <code>InterSpec</code></h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>You can use the references on the left to become more familiar with <code>InterSpec</code>, or you can pick up from a previous session or spectrum below.]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[ Alternatively, you can also drag and drop your own spectrum file onto <code>InterSpec</code>.</p>]]></message>
+  
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>Tap on the <img src="InterSpec_resources/images/phone_tips.png" width=12 height=12 alt="information icon" class="WhiteIcon" /> icon to the left for the basics of interacting with the chart and fitting for peaks.Tap the <img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /> icon for detailed information about <code>InterSpec</code>s tools and features.</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>Tap on the <b>Use Info</b> button to the left for the basics of interacting with the chart and fitting for peaks.Tap the <img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /> icon for detailed information about <code>InterSpec</code>s tools and features.</p>]]></message>
+  
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p>Tap <em>Choose File</em> to browse for the file you want to open.</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>You can also open spectra files by selecting <em>Open File</em> in the <code>InterSpec</code> sub menu after exiting thie screen.<br />For email attachments, or files in apps like <code>Files</code>, <code>Dropbox</code>, <code>Google Drive</code>, etc., you can open spectra files in <code>InterSpec</code> by selecting "Copy To InterSpec"</p>]]></message>
+  
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">Saved States</message>
+  <message id="uiw-tab-example-spectra">Example Spectra</message>
+  <message id="uiw-tab-import-spectra">Import Spectra</message>
+  
+  <!-- Welcome section -->
+  <message id="uiw-welcome">Welcome</message>
+  <message id="uiw-controls">Controls</message>
+  
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">License and Terms</message>
+  <message id="uiw-more-info">More in depth information</message>
+</messages>

@@ -1,0 +1,594 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Text labels for general buttons/prompts, and one-off words around the app.  Note the capitalization. -->
+  <message id="Cancel">キャンセル</message>
+  <message id="Yes">はい</message>
+  <message id="No">いいえ</message>
+  <message id="Close">閉じる</message>
+  <message id="Continue">続行</message>
+  <message id="Save">保存</message>
+  <message id="Name">名前</message>
+  <message id="Desc.">説明</message>
+  <message id="Back">戻る</message>
+  <message id="Create">作成</message>
+  <message id="Energy">エネルギー</message>
+  <message id="Counts">カウント</message>
+  <message id="Apply">適用</message>
+  <message id="Accept">受入</message>
+  <message id="Okay">OK</message>
+  <message id="Foreground">フォアグラウンド</message>
+  <message id="Background">バックグラウンド</message>
+  <message id="Secondary">セカンダリ</message>
+  <message id="second-foreground">第2フォアグラウンド</message>
+  <message id="foreground" comment="For use in middle of sentence">フォアグラウンド</message>
+  <message id="background" comment="For use in middle of sentence">バックグラウンド</message>
+  <message id="secondary" comment="For use in middle of sentence">セカンダリ</message>
+  <message id="Exit">終了</message>
+  <message id="Enter">入力</message>
+  <message id="show-lines">線表示</message>
+  <message id="Default">デフォルト</message>
+  <message id="Error">エラー</message>
+  <message id="Description">説明</message>
+  <message id="Detector">検出器</message>
+  <message id="Distance">距離</message>
+  <message id="Activity">放射能</message>
+  <message id="Remark">備考</message>
+  <message id="Tap">タップ</message>
+  <message id="Click">クリック</message>
+  <message id="tap">タップ</message>
+  <message id="click">クリック</message>
+
+
+  <!-- Words not used in InterSpec.cpp, but at least a few places throughout the app --> 
+  <message id="Continuum">連続成分</message>
+  <message id="cont-type">連続成分タイプ</message>
+  <message id="Title">タイトル</message>
+  <message id="Fit">フィット</message>
+  <message id="Use">使用</message>
+  <message id="Mean">平均</message>
+  <message id="FWHM">半値幅</message>
+  <message id="Amp.">振幅</message>
+  <message id="Area">面積</message>
+  <message id="Age">年齢</message>
+  <message id="Add">追加</message>
+  <message id="Peak">ピーク</message>
+  <message id="Delete">削除</message>
+  <message id="Photopeak">光電ピーク</message>
+  <message id="Nuclide">核種</message>
+  <message id="Nuc.">核種</message>
+  <message id="Skew">歪度</message>
+  <message id="CPS">CPS</message>
+  <message id="CSV">CSV</message>
+  <message id="True">真</message>
+  <message id="False">偽</message>
+  <message id="Remove">除去</message>
+  <message id="RemoveAll">全除去</message>
+  <message id="Clear">クリア</message>
+  <message id="ClearAll">全クリア</message>
+  <message id="T1/2">半減期</message>
+  <message id="Gamma">ガンマ</message>
+  <message id="X-rays">X線</message>
+  <message id="x-ray">x線</message>
+  <message id="Live Time">実測時間</message>
+  <message id="Real Time">計時時間</message>
+  <message id="Geometry">ジオメトリ</message>
+  <message id="Load">読込</message>
+  <message id="Mass">質量</message>
+  <message id="Material">素材</message>
+  <message id="NA">該当なし</message>
+  <message id="n/a">該当なし</message>
+  <message id="N/A">該当なし</message>
+  <message id="Min.">最小</message>
+  <message id="Max.">最大</message>
+  <message id="QR Code">QRコード</message>
+  <message id="Accept">受入</message>
+  <message id="Dose">線量</message>
+  <message id="Shielding">遮蔽</message>
+  <message id="app-qr-err">QRコード作成エラー: {1}</message>
+  <message id="intrinsic-activity">内在放射能</message>
+  <message id="Calibration">校正</message>
+  <message id="Unknown">不明</message>
+  <message id="keV">keV</message>
+  <message id="Energy (keV)">エネルギー (keV)</message>
+  <message id="Efficiency">効率</message>
+  <message id="stable">安定</message>
+
+  <!-- Units the user may use to write time duration.
+    Note that we dont have very good changing case (i.e., from lower to upper, or upper to lower)
+    in the C++ code, so to be sure the matching works, you should include common capitalization
+    schemes here - sorry.
+
+    It is important that the | character is used, with no spaces, to seperate the different possible
+    units (this is because this string will become part of a regular-expression).
+    
+    These 'units-labels-*' string also MUST NOT be empty, or regex validation inputs will fail.
+    (you can leave the whole element out, to default to English, but if you put in a localized
+    element, the node must hav a value)
+  -->
+  <message id="units-labels-second">秒|秒間|sec|s|SECONDS|SECOND|SEC|S</message>
+  <message id="units-labels-minute">分|分間|min|m</message>
+  <message id="units-labels-hours">時間|時|hrs|h</message>
+  <message id="units-labels-days">日|日間|d</message>
+  <message id="units-labels-year">年|年間|yr|y</message>
+  <message id="units-labels-half-lives">hl|半減期|half-life|half-lives|half lives|half life</message>
+  <!-- Units to use when writing a time duration out -->
+  <message id="units-label-seconds-short">秒</message>
+  <message id="units-label-minutes-short">分</message>
+  <message id="units-label-hours-short">時</message>
+  <message id="units-label-days-short">日</message>
+  <message id="units-label-years-short">年</message>
+
+
+  <!-- The dialog when the user selects "Clear Session..." from the File menu -->
+  <message id="clear-session">セッションをクリア？</message>
+  <message id="clear-session-msg">新しいセッションを開始してもよろしいですか？</message>
+
+  <message id="window-title-spec-file-query">スペクトルファイル検索ツール</message>
+  <message id="window-title-notification-log">通知ログ</message>
+  <message id="notification-log-clear">通知をクリア</message>
+  <message id="window-title-peak-manager">ピークマネージャ</message>
+  <message id="window-title-store-state-as">状態を保存</message>
+  <message id="window-title-tag-state">現在の状態をタグ付け</message>
+  <message id="window-title-create-snapshot">スナップショット作成</message>
+  <message id="window-title-energy-cal">エネルギー校正</message>
+  <message id="window-title-hard-back-sub">ハードバックグラウンド減算を実行？</message>
+  <message id="window-title-3d">3Dデータビュー</message>
+  <message id="window-title-peak-rel-eff">ユーザーフィットピークからの同位体比</message>
+  <message id="window-title-compact-file">表示する開いたスペクトルを選択</message>
+  <message id="window-title-feature-markers">特徴マーカー</message>
+  <message id="window-title-act-shield-fit">放射能/遮蔽フィット</message>
+  <message id="window-title-xs-calc">ガンマ断面積計算</message>
+  <message id="window-title-dose-calc">線量計算</message>
+  <message id="window-title-1/r2-calc">1/r<sup>2</sup>計算機</message>
+  <message id="window-title-units-convert">単位変換</message>
+  <message id="window-title-flux-tool">フラックスツール</message>
+  <message id="window-title-nuc-decay">核種崩壊情報</message>
+  <message id="window-title-select-det-eff-fcn">検出器応答関数選択</message>
+  <message id="window-title-add-fwhm">検出器応答関数に半値幅追加</message>
+  <message id="window-title-create-drf">検出器応答関数作成</message>
+  <message id="window-title-file-parameters">ファイルパラメータ</message>
+  <message id="window-title-energy-range-sum">エネルギー範囲和</message>
+  <message id="window-title-external-rid">外部RID</message>
+  <message id="window-title-license-credit">免責事項、ライセンス、クレジット、お問い合わせ</message>
+  <message id="window-title-help">InterSpecヘルプ</message>
+  <message id="window-title-simple-mda">簡易最小検出放射能計算</message>
+  <message id="window-title-peak-editor">ピークエディタ</message>
+  
+
+  <!-- The names of the tool-tabs at the bottom of the app -->
+  <message id="app-tab-peak-manager">ピークマネージャ</message>
+  <message id="app-tab-ref-photopeak">参照光電ピーク</message>
+  <message id="app-tab-energy-cal">エネルギー校正</message>
+  <message id="app-tab-nuc-search">核種検索</message>
+  <message id="app-tab-spec-files">スペクトルファイル</message>
+  <message id="app-tab-terminal">ターミナル</message>
+  <message id="app-tab-isotopics">同位体比</message>
+
+  <message id="app-tab-tt-ref-photopeak">X線、ガンマ線、または核反応からの参照光電ピーク線を表示できます。
+    <br />
+    核種の年数、適用遮蔽、使用する検出器効率を編集できます。
+    <br />
+    拡張情報メニューでは、カスケード崩壊和、アルファエネルギー、またはベータ端点も表示できます。
+    <br />
+    核種情報を含むCSVファイルもエクスポートできます。
+  </message>
+  <message id="app-tab-tt-peak-manager">フィットされたピークの情報を編集可能でソート可能なテーブルで表示し、
+    ピーク情報のCSVエクスポート、および自動ピーク検索とピークの追加・削除のユーティリティを提供します。
+  </message>
+  <message id="app-tab-tt-energy-cal">エネルギー校正項と非線形偏差ペアの変更またはフィットを可能にします。
+    <br />
+    スペクトルの線形化、エネルギー校正タイプの変更、エネルギー範囲の切り詰め、チャンネルの結合のオプションもあります。
+    <br />
+    エネルギー校正は、スペクトルを元のエネルギーから変更エネルギーに右クリックドラッグすることでグラフィカルに行うこともできます
+    （例：データピークを適切な参照線にドラッグ）。
+  </message>
+  <message id="app-tab-tt-nuc-search">エネルギー、分岐比、半減期の制約で核種を検索します。</message>
+  <message id="app-tab-tt-auto-search">自動ピーク検索</message>
+  <message id="app-tab-tt-terminal">数値、代数、テキストベースのスペクトル相互作用ターミナル。</message>
+  <message id="app-tab-tt-rel-eff">フィットしたピークからの相対効率分析。</message>
+
+
+  <!-- App-level menu names -->
+  <message id="app-menu-file">ファイル</message>
+  <message id="app-menu-spectra">スペクトル</message>
+  <message id="app-menu-edit">編集</message>
+  <message id="app-menu-view">表示</message>
+  <message id="app-menu-help">ヘルプ</message>
+  <message id="app-menu-tools">ツール</message>
+  
+
+  <!-- 
+    Menu item text for the app-level menus.
+    They are in the form of "app-mi-{menu}-item-desc", or for tool tips "app-mi-tt-{menu}-item-desc"
+  -->
+  <message id="app-mi-file-about">InterSpecについて</message>
+  <message id="app-mi-file-open">ファイルを開く...</message>
+  <message id="app-mi-file-loaded-spec">読み込み済みスペクトル...</message>
+  <message id="app-mi-file-manager">マネージャ...</message>
+  <message id="app-mi-tt-file-manager">読み込み済みスペクトルを管理。スペクトルの合算、異なるファイルへのスペクトル結合、表示など</message>
+  <message id="app-mi-file-store">保存</message>
+  <message id="app-mi-tt-file-store">現在のアプリ状態をInterSpecのデータベースに保存</message>
+  <message id="app-mi-file-store-as">名前を付けて保存...</message>
+  <message id="app-mi-tt-file-store-as">現在のアプリ状態をInterSpecのデータベースの新しいリストに保存</message>
+  <message id="app-mi-file-tag">タグ...</message>
+  <message id="app-mi-tt-file-tag">現在のInterspec状態にタグを付けて、
+   後で戻ることができるようにします。アプリ状態を読み込むとき、
+   最新の保存を選択するか、過去のタグ付きバージョンを選択できます。
+  </message>
+  <message id="app-mi-file-prev">前の状態...</message>
+  <message id="app-mi-tt-file-prev">以前に保存された状態またはスペクトルを開きます。</message>
+  <message id="app-mi-file-clear">セッションをクリア...</message>
+  <message id="app-mi-tt-file-clear">スペクトルが読み込まれていないクリーンなアプリケーション状態を開始</message>
+  <message id="app-mi-samples">サンプル</message>
+  <message id="app-mi-tt-file-open">ファイルシステム上のスペクトルファイルを参照するダイアログを作成。
+    より迅速な代替手段として、ファイルを直接アプリウィンドウにドラッグアンドドロップできます。
+  </message>
+  <message id="app-mi-export-file">ファイルエクスポート...</message>
+
+  <message id="app-mi-samples-ba133">Ba-133 (16kチャンネル)</message>
+  <message id="app-mi-samples-passthrough-mobile">パススルー (16kチャンネル)</message>
+  <message id="app-mi-samples-passthrough">パススルー (16k bin ICD1, 8検出器, 133サンプル)</message>
+  <message id="app-mi-samples-background">バックグラウンド (16k bin N42)</message>
+  <message id="app-mi-samples-reference">参照スペクトル...</message>
+
+  <!-- Items in the "Edit" menu -->
+  <message id="app-mi-edit-undo">元に戻す</message>
+  <message id="app-mi-edit-redo">やり直し</message>
+  <message id="app-mi-edit-save-png">スペクトルをPNGで保存</message>
+  <message id="app-mi-edit-save-svg">スペクトルをSVGで保存</message>
+  <message id="app-mi-edit-enter-url">URL入力</message>
+
+  <!-- Items in the "View" menu -->
+  <message id="app-mi-view-show-tabs">ツールタブ表示</message>
+  <message id="app-mi-view-hide-tabs">ツールタブ非表示</message>
+  <message id="app-mi-view-chart-opts">チャートオプション</message>
+  <message id="app-mi-view-logy">対数Y軸</message>
+  <message id="app-mi-view-liny">線形Y軸</message>
+  <message id="app-mi-view-show-vert">垂直線表示</message>
+  <message id="app-mi-view-hide-vert">垂直線非表示</message>
+  <message id="app-mi-view-show-horz">水平線表示</message>
+  <message id="app-mi-view-hide-horz">水平線非表示</message>
+  <message id="app-mi-view-compact-x">コンパクトX軸</message>
+  <message id="app-mi-view-normal-x">通常X軸</message>
+  <message id="app-mi-view-show-leg">スペクトル凡例表示</message>
+  <message id="app-mi-view-show-slider">エネルギースライダー表示</message>
+  <message id="app-mi-view-hide-slider">エネルギースライダー非表示</message>
+  <message id="app-mi-view-show-scaler">Y軸スケーラー表示</message>
+  <message id="app-mi-view-hide-scaler">Y軸スケーラー非表示</message>
+  <message id="app-mi-view-back-sub">バックグラウンド減算</message>
+  <message id="app-mi-view-back-unsub">バックグラウンド減算解除</message>
+  <message id="app-mi-view-hard-sub">ハードバックグラウンド減算...</message>
+  <message id="app-mi-view-map">マップ</message>
+  <message id="app-mi-tt-view-map">マップ上に測定位置を表示。GPS座標が利用可能な場合のみ有効。</message>
+  <message id="app-mi-view-3d">3Dビュー表示</message>
+  <message id="app-mi-tt-view-3d">検索モードまたはRPMデータの時間対エネルギー対カウントビューを表示。</message>
+  <message id="app-mi-view-rid">ID結果表示</message>
+  <message id="app-mi-tt-view-rid">スペクトルファイルに含まれる検出器のID分析結果を表示。</message>
+  <message id="app-mi-view-img">画像表示</message>
+  <message id="app-mi-tt-view-img">スペクトルファイルに含まれる画像を表示。</message>
+  <message id="app-mi-view-feature-markers">特徴マーカー...</message>
+  <message id="app-mi-view-hide-feature-markers">特徴マーカー非表示</message>
+  <message id="app-mi-view-enable-dynamic-ref-lines">動的参照線表示</message>
+  <message id="app-mi-view-disable-dynamic-ref-lines">動的参照線非表示</message>
+  <message id="app-mi-tt-view-feature-markers">単一/二重エスケープピーク、コンプトンピーク、コンプトンエッジ、サムピークを表示するツール。</message>
+  <message id="app-mi-view-new-win">新しいアプリウィンドウ</message>
+  <message id="app-mi-view-webbrowser">外部ブラウザで使用</message>
+  <message id="app-mi-view-full">フルスクリーン切替</message>
+  <message id="app-mi-view-act-size">実際のサイズ</message>
+  <message id="app-mi-view-zin">ズームイン</message>
+  <message id="app-mi-view-zout">ズームアウト</message>
+  <message id="app-mi-view-dev-tool">開発者ツール切替</message>
+  <message id="app-mi-view-dets">検出器</message>
+  <message id="app-mi-view-peak-labels">ピークラベル</message>
+  <message id="app-mi-view-lbl-usr">ユーザーラベル表示</message>
+  <message id="app-mi-view-lbl-peak-en">ピークエネルギー表示</message>
+  <message id="app-mi-view-lbl-nuc-nm">核種名表示</message>
+  <message id="app-mi-view-lbl-nuc-en">核種エネルギー表示</message>
+
+  <!-- The Detectors sub-menu under View -->
+  <message id="app-mi-det-no-name">検出器{1} ({2})</message>
+  <message id="app-mi-det-with-name">検出器{1}</message>
+
+  
+  <!-- Items in the "Tools" menu -->
+  <message id="app-mi-tools-act-fit">放射能/遮蔽フィット</message>
+  <message id="app-mi-tt-tools-act-fit">スペクトル内の核種の放射能と遮蔽をフィットするツール。
+    <br />
+    核種年齢、汚染濃度、または濃縮度を決定する機能も含まれています。
+  </message>
+  <message id="app-mi-tools-iso-by-nuc">核種別同位体比</message>
+  <message id="app-mi-tt-tools-iso-by-nuc">
+    核種の相対放射能を決定するために核種ピークを自動的にフィット。検出器
+    応答や遮蔽情報を知る必要はありません。
+  </message>
+  <message id="app-mi-tools-iso-by-peak">ピークからの同位体比</message>
+  <message id="app-mi-tt-tools-iso-by-peak">フィットしたピークを使用して核種の相対放射能を決定。検出器応答や遮蔽情報を知る必要はありません。</message>
+  <message id="app-mi-tools-xs-calc">ガンマ断面積計算</message>
+  <message id="app-mi-tt-tools-xs-calc"><code>InterSpec</code>のライブラリ内の任意の材料を通る任意のエネルギーのガンマの断面積を決定できます。追加情報を入力することで、全エネルギーピーク内でのガンマ線検出効率の推定値と、材料と相互作用せずに通過するガンマ線の割合を提供できます。
+  </message>
+  <message id="app-mi-tools-dose-calc">線量計算</message>
+  <message id="app-mi-tt-tools-dose-calc">他の情報が与えられた場合の線量、放射能、遮蔽、
+    または距離を計算できます。
+  </message>
+  <message id="app-mi-tools-1r2">1/r<sup>2</sup>計算機</message>
+  <message id="app-mi-tt-tools-1r2">線源から異なる距離で取得した2つの線量測定を使用して、近い方の測定から線源までの絶対距離を決定できます。</message>
+  <message id="app-mi-tools-unit">単位変換</message>
+  <message id="app-mi-tt-tools-unit">放射線関連単位を変換。</message>
+  <message id="app-mi-tools-flux">フラックスツール</message>
+  <message id="app-mi-tt-tools-flux">検出されたピークカウントを線源から放出されるガンマに変換。</message>
+  <message id="app-mi-tools-nuc-decay">核種崩壊情報</message>
+  <message id="app-mi-tt-tools-nuc-decay">放射能、ガンマ/アルファ/ベータ生成率、崩壊チェーン、子孫核種に関する詳細情報を取得できます。</message>
+  <message id="app-mi-tools-mda">検出信頼度ツール</message>
+  <message id="app-mi-tt-tools-mda">核種の上限放射能推定値を提供</message>
+  <message id="app-mi-tools-select-drf">検出器応答選択</message>
+  <message id="app-mi-tt-tools-select-drf">検出器応答関数を変更できます。</message>
+  <message id="app-mi-tools-make-drf">検出器応答作成</message>
+  <message id="app-mi-tt-tools-make-drf">特性評価データから検出器応答関数を作成。</message>
+  <message id="app-mi-tools-file-par">ファイルパラメータ</message>
+  <message id="app-mi-tt-tools-file-par">ファイルパラメータの表示/編集ができます。アプリケーションが放射能計算をレンダリングできない場合は、このツールを使用して元のファイルが提供しなかったパラメータを提供してください。<code>InterSpec</code>は放射能計算にすべてのパラメータが必要です。</message>
+  <message id="app-mi-tools-en-sum">エネルギー範囲和</message>
+  <message id="app-mi-tt-tools-en-sum">関心領域（ROI）内のガンマ数を合計。<kbd><b>ALT</b></kbd>と<kbd><b>SHIFT</b></kbd>キーを両方押しながらROI上で左クリックドラッグすることでもアクセス可能。</message>
+  <message id="app-mi-tools-query">ファイル検索ツール</message>
+  <message id="app-mi-tt-tools-query">指定された条件に一致するスペクトルファイルをディレクトリ内で（再帰的に）検索。</message>
+  <message id="app-mi-tools-math">数式/コマンドターミナル</message>
+  <message id="app-mi-tt-tools-math">数値および代数計算を提供し、スペクトルとのテキストベースの相互作用も可能なターミナルを作成。</message>
+ <message id="app-mi-tools-ext-rid">外部RID</message>
+ <message id="app-mi-tt-tools-ext-rid">{1}リモートURLを使用してスペクトルの核種識別を実行。</message>
+ <!-- This next sentence fragment _may_ get substituted into the previous message, where there is a {1} in it -->
+ <message id="app-mi-tt-tools-ext-rid-exe">外部プログラムまたは</message>
+
+  <!-- Items in the "Help" menu -->
+  <message id="app-mi-help-welcome">ようこそ...</message>
+  <message id="app-mi-help-contents">ヘルプ内容...</message>
+  <message id="app-mi-help-notif-log">通知ログ</message>
+  <message id="app-mi-help-opts">オプション</message>
+  <message id="app-mi-help-pref-auto-store">作業を自動保存</message>
+  <message id="app-mi-help-pref-check-prev">前の作業を確認</message>
+  <message id="app-mi-help-pref-show-tt">ツールチップ表示</message>
+  <message id="app-mi-help-pref-prop-peak">ピーク伝播を確認</message>
+  <message id="app-mi-help-pref-disp-bq">ベクレル単位で表示</message>
+  <message id="app-mi-help-pref-def-drfs">デフォルトDRF使用</message>
+  <message id="app-mi-help-pref-desktop">デスクトップインターフェース</message>
+  <message id="app-mi-help-pref-auto-dark">「ダーク」テーマ自動適用</message>
+  <message id="app-mi-help-pref-theme">カラーテーマ...</message>
+  <message id="app-mi-help-pref-prompt-prev">前の状態読込を確認</message>
+  <message id="app-mi-help-pref-load-prev">開始時に前の状態を読込</message>
+  <message id="app-mi-help-language">言語</message>
+  <message id="app-mi-help-about">InterSpecについて...</message>
+
+  <message id="app-mi-tt-help-pref-auto-store">保存された状態で作業している場合はアプリケーション状態を自動的に保存し、そうでない場合はスペクトルと作業（例：フィットされたピーク、エネルギー校正変更など）をInterSpecの内部データベースに保存し、次回同じスペクトルを読み込むときに作業を再開するかプロンプトします。
+  </message>
+  <message id="app-mi-tt-help-pref-check-prev">スペクトルファイルが読み込まれたときに、同じファイルで以前に作業（ピークフィット、
+    放射能フィットなど）が行われているかチェック。
+  </message>
+  <message id="app-mi-tt-help-pref-show-tt">要素上でホバーしてから0.5秒後にツールチップを表示。</message>
+  <message id="app-mi-tt-help-pref-prop-peak">同じ検出器からのスペクトルを読み込むときに、
+    新しいスペクトルで同じピークを再フィットするか確認。新しいスペクトルにピークがないが、以前のフォアグラウンドにはある場合のみ適用。
+  </message>
+  <message id="app-mi-tt-help-pref-disp-bq">放射能をキュリーではなくベクレル単位で表示。</message>
+  <message id="app-mi-tt-help-def-drfs">スペクトルが読み込まれ、スペクトルの検出器モデルに検出器応答関数を以前に関連付けていない場合、デフォルトのDRFを自動的に見つけて読み込むかどうか。
+  </message>
+  <message id="app-mi-tt-help-desktop">モバイルまたはデスクトップスタイルのアプリケーションインターフェースの使用を選択。主な違いは「ハンバーガー」スタイルメニューまたはメニューバーの使用。
+
+    この設定の変更は、アプリが再起動されるか「セッションをクリア...」オプションが選択されるまで有効になりません。
+  </message>
+  <message id="app-mi-tt-help-auto-dark">オペレーティングシステムの現在の値に従って、または移行時に「ダーク」カラーテーマを自動的に適用。
+  </message>
+  <message id="app-mi-tt-help-pref-prompt-prev">アプリケーション開始時に、前の状態を読み込むか確認。</message>
+  <message id="app-mi-tt-help-pref-load-prev">アプリケーション開始時に、プロンプトが設定されていない場合は前の状態を自動的に読み込み。</message>
+  <message id="warn-desktop-disp-switch">変更はアプリが再起動またはリフレッシュされるまで有効になりません。</message>
+  <message id="warn-desktop-disp-switch-refresh">セッションをリフレッシュ</message>
+  <message id="warn-language-restart">すべてのフィールドが新しい言語で更新されるわけではありません - 完全な更新にはアプリケーションを再起動してください。</message>
+
+
+
+  <!-- Menu item text for when you right-click on a peak. The "_mi" is menu item, and "_tt" is tool-tip -->
+  <message id="rclick-mi-peak-editor">ピークエディタ...</message>
+  <message id="rclick-mi-refit-peak">ピーク再フィット</message>
+  <message id="rclick-mi-use-drf-fwhm">DRF半値幅使用</message>
+  <message id="rclick-mi-tt-use-drf-fwhm">ピークの半値幅を検出器応答関数が予測する値に固定し、ピークを再フィット。</message>
+  <message id="rclick-mi-fix-mean">平均を光電ピークに設定</message>
+  <message id="rclick-mi-tt-fix-mean">ピーク重心を割り当てられたガンマエネルギーに固定、または線源が割り当てられていない場合は、可能性の高い参照光電ピーク線に固定。重心を設定後、他のピークパラメータが再フィットされます</message>
+  
+  
+  <message id="rclick-mi-refit-roi">ROI再フィット</message>
+  <message id="rclick-mi-tt-refit-roi">固定されていないすべての半値幅に対して、ROI全体で半値幅の合理的な線形関係を強制してROIを再フィット。</message>
+  <message id="rclick-mi-refit-roi-aggressive">ROI再フィット（アグレッシブ）</message>
+  <message id="rclick-mi-tt-refit-roi-aggressive"><em>ピークエディタ</em>で固定されていない限り、各ピークの半値幅が独立して変化できるようにしてROIを再フィット</message>
+  <message id="rclick-mi-delete-peak">ピーク削除</message>
+  <message id="rclick-mi-change-nuc">核種変更</message>
+  <message id="rclick-mi-change-cont">連続成分変更</message>
+  <message id="rclick-mi-skew-type">歪度タイプ変更</message>
+  <message id="rclick-mi-add-peak">ピーク追加</message>
+  <message id="rclick-mi-combine-cont-left">左の連続成分結合</message>
+  <message id="rclick-mi-combine-cont-right">右の連続成分結合</message>
+  <message id="rclick-mi-own-cont">独自連続成分</message>
+  <message id="rclick-mi-calc-status">...計算中...</message>
+  <message id="rclick-mi-fix-energy">{1} keVに固定</message>
+  <message id="rclick-mi-no-nuc-suggestions">提案なし</message>
+  <message id="rclick-mi-fit-new-peak">{1} keV付近のピークをフィット</message>
+  <message id="rclick-mi-add-new-peak">ピーク追加...</message>
+  <message id="rclick-mi-search-energy">{1} keV付近を検索</message>
+  <message id="rclick-simple-mda">簡易MDA {1}...</message>
+  <message id="rclick-simple-activity-calc">簡易{1}放射能...</message>
+
+
+  <!-- Error messages, the user probably wont see -->
+  <message id="err-save-sate-to-db">
+    申し訳ございませんが、ユーザー状態をデータベースに保存する際に技術的エラーが発生しました。
+    <p style="font-size: x-small;">{1}</p>
+  </message>
+  <message id="err-save-to-large-for-db">ファイルがデータベースに保存できる許可サイズより大きい（{1} kb、許可は{2} kb）。</message>
+  <message id="err-no-roi-to-add-peak">ピークを追加するROIがありませんでした。</message>
+  <message id="err-no-add-peak-to-data-roi">申し訳ございませんが、データ定義ピークを持つROIにはピークを追加できません。</message>
+  <message id="err-add-peak-no-improve">ピークの追加がROI全体のフィットを改善しませんでした - 追加しません。</message>
+  <message id="err-no-peak-to-del">削除するピークがありませんでした。</message>
+  <message id="err-no-foreground">バックグラウンドまたは第2フォアグラウンドスペクトルを表示する前に、フォアグラウンドスペクトルを読み込む必要があります。</message>
+  <message id="err-invalid-language">選択された言語{1}は、なぜか利用できません。</message>
+
+
+  <!-- Messages for saving/updating/deleting from internal state DB -->
+  <message id="db-new-tag">スナップショット'{2}'の下に新しいタグ'{1}'を作成しました。</message>
+  <message id="db-new-snapshot">新しいスナップショット'{1}'を作成しました。</message>
+  <message id="db-error-no-name">名前を指定する必要があります</message>
+  <message id="db-name-empty-txt">(保存する名前)</message>
+  <message id="db-dec-empty-txt">(オプションの説明)</message>
+  <message id="db-dec-export-msg">
+    これは現在のアプリ状態をデータベースに保存します - エクスポートするには
+    <br />
+    個別のファイルとして「ファイルエクスポート」メニューオプションを使用してください
+  </message>
+  <message id="db-Tag">タグ</message>
+  <message id="db-saved-state-msg">状態'{1}'を保存しました</message>
+
+
+
+  <!-- Peak continuum types, returned by `PeakContinuum::offset_type_label_tr(...)` in src/PeakDef.cpp -->
+  <message id="pct-none">なし</message>
+  <message id="pct-constant">定数</message>
+  <message id="pct-linear">線形</message>
+  <message id="pct-quadratic">二次</message>
+  <message id="pct-cubic">三次</message>
+  <message id="pct-flat-step">平坦ステップ</message>
+  <message id="pct-linear-step">線形ステップ</message>
+  <message id="pct-bilinear-step">双線形ステップ</message>
+  <message id="pct-global">グローバル連続成分</message>
+
+  <!-- populateNuclideSelects() in PeakSearchGuiUtils.cpp -->
+  <message id="psd-no-source">線源なし</message>
+
+
+  <message id="window-content-hard-back-sub">
+    <div style="text-align: left;">
+      <p>
+        通常のバックグラウンド減算オプションはデータの表示にのみ影響し、ピークフィッティングやデータエクスポートなどの操作は統計的に完全な元のフォアグラウンドスペクトルで行われます。
+      </p>
+      <p>
+        「ハードバックグラウンド減算」は、フォアグラウンドからバックグラウンドをビンごとに減算して変更されたフォアグラウンドを作成します。
+      </p>
+
+      ハードバックグラウンド減算を行う副作用には以下が含まれます：
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>各チャンネルの統計的不確実性である分散が正しくなくなります。</li>
+        <li>スペクトル間の小さなエネルギー校正差がデータに人工的な特徴を作り出す可能性があります。</li>
+        <li>
+          フォアグラウンドのピークがバックグラウンドのピークと重複する場合、フィットされたフォアグラウンドピークの統計的不確実性が正しくなくなります
+        </li>
+      </ul>
+
+      通常の表示バックグラウンド減算よりもハードバックグラウンド減算を選択する主な理由：
+      <ul style="list-style-type: square; margin-top: 4px;">
+        <li>フィットピーク連続成分のアーティファクトを回避する。</li>
+        <li><b>放射能/遮蔽フィット</b>ツールでのバックグラウンドピーク減算を簡素化する。</li>
+        <li>これが引き起こす微妙な影響を気にしない（実際には最小限）。</li>
+      </ul>
+    </div>
+    <br />
+    <div style="text-align: center;"><b><em>続行しますか？</em></b></div>
+  </message>
+  <message id="window-hard-back-sub-truncate">負のビンをゼロで切り詰め</message>
+  <message id="window-hard-back-sub-round">チャンネルカウントを最近接整数に丸め</message>
+
+  <message id="info-user-default-drf">この検出器のデフォルトとして指定した検出器応答関数を使用しています。</message>
+  <message id="info-app-default-drf">この検出システムのデフォルト検出器応答関数を読み込みました。</message>
+  <message id="info-recal-tab-selected">右クリックしてスペクトルを希望の位置にドラッグすることでグラフィカルに再校正することもできます。</message>
+
+
+  <!-- Toast message shown to user when they load a spectrum that has GPS coordinates -->
+  <message id="info-has-gps-txt">ファイルにGPS座標が含まれています。</message>
+  <message id="info-has-gps-btn">マップで表示</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has results from the onboard-rid -->
+  <message id="info-has-rid-txt">ファイルにオンボードRID結果が含まれていました</message>
+  <message id="info-has-rid-btn">完全ID結果を表示</message>
+
+  <!-- Toast message shown to user when they load a spectrum that has an embedded image -->
+  <message id="info-has-img-txt">スペクトルファイルに埋め込み画像が含まれていました</message>
+  <message id="info-has-img-btn">画像を表示</message>
+
+
+  <message id="warn-no-energy-cal">警告、選択されたサンプルにエネルギー校正がありません</message>
+
+  <message id="prompt-how-open">このファイルは現在のフォアグラウンドと同じ検出器からのもののようです。
+    <p>このスペクトルファイルをどのように開きますか？</p>
+  </message>
+
+
+  <!-- Error message when the selected foreground cant be plotted (inexistent, no energy calibration, no gamma spectra selected, etc)-->
+  <message id="err-no-fore-sn">
+    <p>スペクトルファイルには現在のサンプル番号を持つスペクトルが含まれていませんでした。</p>
+    <p>異なる/より多くのサンプル番号を選択してください。</p>
+  </message>
+  <message id="err-no-fore-det-sn">
+    <p>スペクトルファイルには現在のサンプル番号と検出器名を持つスペクトルが含まれていませんでした。</p>
+    <p>より多くの検出器またはサンプル番号を選択してください。</p>
+  </message>
+  <message id="err-no-fore-all-neut">
+    <p>現在のサンプル番号と検出器名は中性子データのみを含んでいます。</p>
+    <p>分光データを含むサンプルを選択してください。</p>
+  </message>
+  <message id="err-no-fore-no-spec">
+    <p>現在のサンプル番号と検出器名には分光測定が含まれていません。</p>
+    <p>分光データを含むサンプルを選択してください。</p>
+  </message>
+  <message id="err-no-fore-no-ecal-1spec">
+    <p>スペクトルを表示するビニングを決定できませんでした。</p>
+  </message>
+  <message id="err-no-fore-no-ecal-g1spec">
+    <p>スペクトルを表示するビニングを決定できませんでした。</p>
+    <p>
+      <b>ファイルマネージャ</b>で単一のスペクトルのみを表示するように選択するか、ガンマカウントを持つサンプルを試してみてください。
+    </p>
+  </message>
+
+  <!-- The detector display.  Defined here so we dont have to load a whole new XML file for just these few entries. -->
+  <message id="app-tt-det-disp">現在選択されている検出器。クリックして異なる検出器を選択するか、これを変更します。</message>
+  <message id="app-det-select-txt">クリックして選択</message>
+  <message id="app-det-select-txt-mobile">タップして選択</message>
+  <message id="app-default-manual-det-name">ユーザー定義検出器</message>
+
+
+  <!-- An incomplete list of possible languages - mapping the two letter code we receive as
+    part of the locale, to their native name - mostly picked by LLM result.
+    
+    A more complete listing of languages and countries can be found in commit e28dbb39.
+
+    You do not need to, and shouldnt, include these, or countries, into translations of this file.
+  -->
+  <message id="lang-en">English</message>
+  <message id="lang-fr">Français</message>
+  <message id="lang-es">Español</message>
+  <message id="lang-de">Deutsch</message>
+  <message id="lang-ja">日本語</message>
+  <message id="lang-zh">中文</message>
+  <message id="lang-pt">Português</message>
+  <message id="lang-ru">Русский</message>
+  <message id="lang-it">Italiano</message>
+  <message id="lang-ko">한국어</message>
+  <message id="lang-vi">Tiếng Việt</message>
+  <message id="lang-tr">Türkçe</message>
+  <message id="lang-ar">العربية</message>
+  <message id="lang-hu">Magyar</message>
+
+
+  <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
+  the locale, to their names to display.
+  -->
+  <message id="country-US">アメリカ合衆国</message>
+  <message id="country-GB">イギリス</message>
+  <message id="country-AU">オーストラリア</message>
+  <message id="country-CA">カナダ</message>
+  <message id="country-FR">フランス</message>
+  <message id="country-ES">スペイン</message>
+  <message id="country-MX">メキシコ</message>
+  <message id="country-DE">ドイツ</message>
+  <message id="country-JP">日本</message>
+  <message id="country-CN">中国</message>
+  <message id="country-TW">台湾</message>
+  <message id="country-BR">ブラジル</message>
+  <message id="country-PT">ポルトガル</message>
+  <message id="country-RU">ロシア</message>
+  <message id="country-IT">イタリア</message>
+  <message id="country-KR">韓国</message>
+  <message id="country-TR">トルコ</message>
+</messages>

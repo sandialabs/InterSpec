@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+  
+  <!-- Window title -->
+  <message id="esf-window-title">スペクトルファイルエクスポート</message>
+  
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">エクスポートするファイル</message>
+  <message id="esf-file-format">ファイル形式</message>
+  <message id="esf-samples-to-include">含めるサンプル</message>
+  
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">ファイル</message>
+  <message id="esf-format-tab">形式</message>
+  <message id="esf-options-tab">オプション</message>
+  
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + バック</message>
+  <message id="esf-plus-secondary"> + セカン</message>
+  <message id="esf-fore-plus-back-tt">フォアグラウンドとバックグラウンドおよび/またはセカンダリスペクトルを同じファイルに一緒にエクスポートします。</message>
+  
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">表示フォアグラウンド</message>
+  <message id="esf-disp-background">表示バックグラウンド</message>
+  <message id="esf-disp-secondary">表示セカンダリ</message>
+  <message id="esf-all-samples">すべてのサンプル</message>
+  <message id="esf-custom-samples">カスタムサンプル</message>
+  <message id="esf-custom-samples-tt">ここに表示したいサンプル番号を入力してください。'33-39'や'33 to 39'のようなサンプル番号の範囲、または'34,39,84'のようなCSVサンプル番号を入力できます</message>
+  <message id="esf-filter-detectors">検出器をフィルタ</message>
+  
+  <!-- Options section -->
+  <message id="esf-options">オプション</message>
+  <message id="esf-sum-to-single-record">単一レコードに合計</message>
+  <message id="esf-sum-to-single-record-tt">選択されたすべてのサンプルおよび/または検出器が単一のスペクトルに合計されます。<br />注意：フォアグラウンドとバックグラウンドの両方が選択されている場合、それらは一緒に合計されます。</message>
+  
+  <message id="esf-sum-fore-to-single-record">フォアを単一レコードに合計</message>
+  <message id="esf-sum-fore-to-single-record-tt">表示されたフォアグラウンドを構成する複数のサンプル番号または複数の検出器があります；このオプションをチェックすると、これらすべてを出力ファイルの単一スペクトルに合計します。</message>
+  
+  <message id="esf-sum-back-to-single-record">バックを単一レコードに合計</message>
+  <message id="esf-sum-back-to-single-record-tt">表示されたバックグラウンドを構成する複数のサンプル番号または複数の検出器があります；このオプションをチェックすると、これらすべてを出力ファイルの単一スペクトルに合計します。</message>
+  
+  <message id="esf-sum-sec-to-single-record">セカンを単一レコードに合計</message>
+  
+  <message id="esf-background-subtract">バックグラウンド減算</message>
+  <message id="esf-background-subtract-tt">出力スペクトルはフォアグラウンドからバックグラウンドを引いたものになります。</message>
+  
+  <message id="esf-sum-det-per-sample">サンプル毎に検出器を合計</message>
+  <message id="esf-sum-det-per-sample-tt">各サンプル番号について、そのサンプル番号のすべての検出器を合計します。<br />例：スペクトルファイルに8つの検出器があり、それぞれが120サンプルを持つ場合、結果は120のスペクトルを持ち、それぞれは対応するサンプルの8つの検出器の合計です。</message>
+  
+  <message id="esf-sum-samples-per-det">検出器毎にサンプルを合計</message>
+  <message id="esf-sum-samples-per-det-tt">各検出器について、すべてのサンプル番号を合計します。<br />例：スペクトルファイルに8つの検出器があり、それぞれが120サンプルを持つ場合、結果は8つのスペクトルを持ち、それぞれはそれぞれの検出器の120サンプルの合計です。</message>
+  
+  <message id="esf-remove-interspec-info">InterSpec情報を削除</message>
+  <message id="esf-remove-interspec-info-tt">InterSpecで追加した可能性のある検出器応答、ピーク、その他の分析結果を削除します。</message>
+  
+  <message id="esf-remove-gps">GPS削除</message>
+  
+  <!-- Status text -->
+  <message id="esf-not-applicable">適用不可</message>
+  <message id="esf-none-available">利用不可</message>
+  
+  <!-- Buttons -->
+  <message id="esf-export">エクスポート</message>
+  <message id="esf-show-qr-code">QRコード表示</message>
+  
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">表示として</message>
+  <message id="esf-fore-abbrev">フォア</message>
+  <message id="esf-back-abbrev">バック</message>
+  <message id="esf-sec-abbrev">セカン</message>
+  
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">次のQRコード</message>
+  <message id="esf-url-link">URLリンク</message>
+  <message id="esf-email-link">メールリンク</message>
+  
+  <!-- Error dialogs -->
+  <message id="esf-error-title">エラー</message>
+  <message id="esf-qr-encode-failed">スペクトルをQRコードとして表示できませんでした：{1}</message>
+  
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">表示&nbsp;サンプル</plural>
+    <plural case="1">表示&nbsp;サンプル</plural>
+  </message>
+  
+  <!-- Table headers -->
+  <message id="esf-start-time">開始時刻</message>
+  <message id="esf-end-time">終了時刻</message>
+  <message id="esf-first-sample">最初サンプル</message>
+  <message id="esf-last-sample">最後サンプル</message>
+  <message id="esf-num-samples">サンプル数</message>
+  <message id="esf-neut-dets">中性子検出器</message>
+  <message id="esf-gamma-dets">ガンマ検出器</message>
+  <message id="esf-num-dets">検出器数</message>
+  <message id="esf-latitude">緯度</message>
+  <message id="esf-longitude">経度</message>
+  <message id="esf-total-time">合計時間</message>
+  <message id="esf-sum-gamma">ガンマ合計</message>
+  <message id="esf-sum-neut">中性子合計</message>
+  <message id="esf-manufacturer">製造業者</message>
+  <message id="esf-model">モデル</message>
+  <message id="esf-serial">シリアル</message>
+</messages>

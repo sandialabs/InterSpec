@@ -2010,16 +2010,16 @@ boost::any SpectraFileModel::headerData( int section, Orientation orientation, i
     const DisplayFields field = DisplayFields( section );
     switch( field )
     {
-      case kDisplayName:     return boost::any( WString("File") );
-      case kNumMeasurements: return boost::any( WString("N-Samples") );
-      case kLiveTime:        return boost::any( WString("Live Time (s)") );
-      case kRealTime:        return boost::any( WString("Real Time (s)") );
-      case kGammaCounts:     return boost::any( WString("Gam. Count") );
-      case kNeutronCounts:   return boost::any( WString("Neut. Count") );
-      case kSpectrumTime:    return boost::any( WString("Time Taken") );
-      case kNumDetectors:    return boost::any( WString("N-Dets.") );
-      case kUploadTime:      return boost::any( WString("Loaded") );
-      case kRiidResult:      return boost::any( WString("File RID") );
+      case kDisplayName:     return boost::any( WString::tr("sfm-col-file") );
+      case kNumMeasurements: return boost::any( WString::tr("sfm-col-n-samples") );
+      case kLiveTime:        return boost::any( WString::tr("sfm-col-live-time") );
+      case kRealTime:        return boost::any( WString::tr("sfm-col-real-time") );
+      case kGammaCounts:     return boost::any( WString::tr("sfm-col-gam-count") );
+      case kNeutronCounts:   return boost::any( WString::tr("sfm-col-neut-count") );
+      case kSpectrumTime:    return boost::any( WString::tr("sfm-col-time-taken") );
+      case kNumDetectors:    return boost::any( WString::tr("sfm-col-n-dets") );
+      case kUploadTime:      return boost::any( WString::tr("sfm-col-loaded") );
+      case kRiidResult:      return boost::any( WString::tr("sfm-col-file-rid") );
       case NumDisplayFields: break;
     };//switch( field )
 

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">核種割り当て確認</message>
+  <message id="psw-title-check-search">ピーク検索結果確認</message>
+  <message id="psw-title-prev-spec">前のスペクトルから保持するピーク</message>
+  <message id="psw-title-csv-import">CSVからインポートするピーク</message>
+  <message id="psw-search-instruct-adjust">核種割り当て、または保持するピークを調整。</message>
+  <message id="psw-search-instruct-unselect">保持したくないピークの選択を解除。</message>
+  <message id="psw-search-instruct-assign">核種割り当てを確認し修正。</message>
+  <message id="psw-search-instruct-keep">保持したいピークを選択。</message>
+  <message id="psw-show-all-peaks">全ピーク表示</message>
+  <message id="psw-show-prev-peaks">前のピークも表示</message>
+  <message id="psw-show-missing-peaks">欠如ピーク表示</message>
+  <message id="psw-keep-only-assigned-peaks">{1}に割り当てられた新しいピークのみ保持</message>
+  <message id="psw-orig-nuc">元の核種</message>
+  <message id="psw-assigned-nuc">割り当て核種</message>
+  <message id="psw-peak-preview">ピークプレビュー</message>
+  <message id="psw-not-found">見つかりません</message>
+  <message id="psw-keep-peak">ピーク保持</message>
+  <message id="psw-keep-peak-q">ピーク保持？    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">変更しない</message>
+  <message id="psw-no-nuc-changed">核種変更なし</message>
+  <message id="psw-rel-eff-plot-title">相対効率プロット</message>
+  <message id="psw-rel-eff-plot-y-axis-title">相対ピーク面積 / BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">ピーク未更新、スペクトルが変更されました。</message>
+  <message id="psgu-peaks-updated-msg">ピーク更新済み。</message>
+
+  <message id="psgu-search-wait-title">少しお待ちください</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>ピーク検索中 - 少し時間がかかる場合があります。</div>
+      <div>このダイアログを閉じることができ、検索が完了すると</div>
+      通知されます
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">半値幅情報が必要です</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>現在の検出器応答に半値幅情報が含まれていません。</div>
+    <div>現在のスペクトルから半値幅情報をフィットしますか？</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>検出器応答が選択されていません。</div>
+    <div>現在のスペクトルから半値幅情報をフィットしますか？</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">ピークの再フィットに失敗（有意でなくなった）、{1}から{2}ピークに</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">ガンマエネルギーに設定するピークがありませんでした</message>
+  <message id="psgu-no-ref-line-near-peak-msg">ピーク平均に設定する参照ガンマエネルギーがありませんでした。</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    平均を参照光電ピークに固定した後のピーク再フィットに失敗。
+    ピークが有意でなくなりました；{1}から{2}ピークに。
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  連続成分タイプを{1}に変更すると{2}ピークが有意でなくなりました。<br />
+  この変更には<b>ピークエディタ</b>を使用してください。
+  </message>
+  <message id="psgu-failed-change-cont-singular">そのピークが</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">少なくとも1つのピークが</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  連続成分タイプを{1}に単純に変更するとピークが有意でなくなりました。<br />
+  この変更には<b>ピークエディタ</b>を使用してください。
+  </message>
+  <message id="psgu-change-skew-not-gaus">{1} keVのROI内のピークはガウシアン定義ではありません - 歪度タイプを設定する前に<b>ピークエディタ</b>でこれを変更してください。</message>
+  <message id="psgu-change-skew-make-insig">
+    歪度タイプを{1}に変更すると{2}ピークが有意でなくなりました。<br />
+    この変更には<b>ピークエディタ</b>を使用してください。
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  歪度タイプを{1}に単純に変更するとピークが有意でなくなりました。<br />
+  この変更には<b>ピークエディタ</b>を使用してください。
+  </message>
+  
+</messages>

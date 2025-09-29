@@ -283,8 +283,27 @@ public:
                                const float detectorDiameter,
                                const float energyUnits,
                                const EffGeometryType geometry_type );
-  
-  
+
+  struct EnergyEffPoint
+  {
+    float energy, efficiency;
+
+    /** Currently unused efficiency uncertainty. */
+    std::optional<float> efficiencyUncert;
+  };//struct EnergyEffPoint
+
+  /** Sets the detector efficiencies by pairs of energy (in keV) and efficiencies.
+
+   @param efficiencies The eneryg/efficiency information - must have at least two entries, and its range defines `m_lowerEnergy` and `m_upperEnergy`.
+   @param detectorDiameter The detector diameter - set to zero or negative if geometry type is not EffGeometryType::FarField; must be positive if far field
+   @param geometry_type The efficiency type these points are for.
+
+   Throws exception on error.
+   */
+  void setEfficiencyPoints( const std::vector<EnergyEffPoint> &efficiencies,
+                           const float detectorDiameter,
+                           const EffGeometryType geometry_type );
+
   //setIntrinsicEfficiencyFormula(): sets m_efficiencyForm, m_efficiencyFormula,
   //  and m_efficiencyFcn to correspond to the fucntional form passed in.
   //  Formula should be in the a general functional form, where energy is

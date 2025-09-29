@@ -3026,7 +3026,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   HelpSystem::attachToolTipOn( m_shieldingSelects, WString::tr("ssd-tt-shieldings"), showToolTips );
 
   WLabel *addShieldingLabel = new WLabel( WString::tr("ssd-add-shield-label") );
-  m_addMaterialShielding = new WPushButton( "Material" );
+  m_addMaterialShielding = new WPushButton( WString::tr("Material") );
   HelpSystem::attachToolTipOn( m_addMaterialShielding, WString::tr("ssd-tt-add-shield"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
   m_addMaterialShielding->setIcon( "InterSpec_resources/images/shield_white.png" );

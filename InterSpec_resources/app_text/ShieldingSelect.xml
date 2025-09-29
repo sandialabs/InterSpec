@@ -56,4 +56,10 @@
   <message id="ss-tt-with-uncert">{1}</message>
   <message id="ss-tt-without"></message>
   <message id="ss-warning-only-one-src-frac">To fit mass fractions, please select at least two components of {1} to fit.</message>
+  
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">Trace Source</message>
+  <message id="ss-select-option">Select</message>
+  <message id="ss-fit-activity-cb">Fit activity value</message>
+  <message id="ss-total-activity">Total</message>
 </messages>

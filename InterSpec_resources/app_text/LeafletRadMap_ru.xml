@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">Перед продолжением</message>
+  <message id="lrm-pre-warn-content">
+    Тайлы карты будут запрашиваться с <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>.
+    Данные радиации не покинут ваше устройство, но запросы
+    тайлов карт, охватывающих измерения, будут сделаны к этому сервису.
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>Ваш пользовательский ключ arcgis, начинающийся с '{1}', будет использован для запроса тайлов карт.</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>Был указан недействительный ключ arcgis в arcgis_key.txt, поэтому будет использован встроенный ключ.</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">Больше не спрашивать</message>
+  <message id="lrm-pre-warn-proceed-btn">Продолжить</message>
+  <message id="lrm-window-title">Инструмент карты</message>
+  <message id="lrm-will-use-user-key">Будет использован пользовательский ключ arcgis, начинающийся с '{1}', для запроса карт.</message>
+  <message id="lrm-user-key-invalid">Был файл arcgis_key.txt, но он не содержал действительного ключа</message>
+  <message id="lrm-err-loading-samples">Ошибка загрузки выбранных на карте образцов: {1}</message>
+  <message id="lrm-displayed-as">Отображается как</message>
+  <message id="lrm-measurements-as">измерения как</message>
+  <message id="lrm-load-meas-as-short">Загрузить как</message>
+</messages>
