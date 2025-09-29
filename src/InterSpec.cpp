@@ -4053,8 +4053,11 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #endif
     
 #if( USE_LLM_INTERFACE )
-    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant) )
+    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant)
+       && LlmToolGui::llmToolIsConfigured() )
+    {
       createLlmTool();
+    }
 #endif
     
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
@@ -10114,9 +10117,12 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
 
 #if( USE_LLM_INTERFACE )
-  m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
-  HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
-  m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
+  if( LlmToolGui::llmToolIsConfigured() )
+  {
+    m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
+    HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
+    m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
+  }//if( LlmToolGui::llmToolIsConfigured() )
 #endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
@@ -13592,10 +13598,13 @@ void InterSpec::displayBackgroundData()
 #if( USE_LLM_INTERFACE )
 void InterSpec::createLlmTool()
 {
+  assert( LlmToolGui::llmToolIsConfigured() );
+  
   if( m_llmTool )
     return;
     
-  try {
+  try
+  {
     m_llmTool = new LlmToolGui( this );
     m_llmTool->focusInput();
     
@@ -13612,15 +13621,16 @@ void InterSpec::createLlmTool()
     }
     
     m_llmToolMenuItem->disable();
-    
-  } catch (const std::exception& e) {
+  }catch( const std::exception &e )
+  {
     std::cout << "Error creating LLM tool: " << e.what() << std::endl;
-    if( m_llmTool ) {
+    if( m_llmTool )
+    {
       delete m_llmTool;
       m_llmTool = nullptr;
-    }
-  }
-}
+    }//if( m_llmTool )
+  }//try / catch
+}//void InterSpec::createLlmTool()
 
 void InterSpec::handleLlmToolClose()
 {

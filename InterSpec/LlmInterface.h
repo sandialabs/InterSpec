@@ -82,7 +82,7 @@ public:
   /** Construct LLM interface for the given InterSpec instance.
    @param interspec The InterSpec instance this interface belongs to
    */
-  explicit LlmInterface(InterSpec* interspec);
+  explicit LlmInterface( InterSpec *interspec, const std::shared_ptr<const LlmConfig> &config );
   
   /** Destructor - implementation in .cpp to handle incomplete types */
   ~LlmInterface();
@@ -112,13 +112,6 @@ public:
    This simulates various conversation scenarios including tool calls to verify
    that history is being properly recorded and can be reconstructed correctly.
    */
-
-  
-  /** Reload configuration from XML files */
-  void reloadConfig();
-  
-  /** Get current configuration */
-  const LlmConfig& getConfig() const;
   
   /** Get conversation history (may be null if no history yet) */
   std::shared_ptr<LlmConversationHistory> getHistory() const;
@@ -142,7 +135,7 @@ public:
 
 private:
   InterSpec* m_interspec;
-  std::unique_ptr<LlmConfig> m_config;
+  std::shared_ptr<const LlmConfig> m_config;
   std::shared_ptr<LlmConversationHistory> m_history;
   
   Wt::Signal<> m_responseReceived; // Signal emitted when new responses are received

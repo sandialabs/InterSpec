@@ -48,9 +48,6 @@ namespace Wt {
   }
 }
 
-// TODO: always enable auth, but make using a runtime options
-#define MCP_ENABLE_AUTH 1
-
 
 // A struct to hold all information about a single tool, including how to execute it.
 struct Tool {

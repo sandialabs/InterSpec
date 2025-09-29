@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <memory>
 
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 
@@ -35,35 +36,45 @@ static_assert( USE_LLM_INTERFACE, "You should not include this library unless US
  It follows the InterSpec pattern of looking first in writableDataDirectory()
  then falling back to staticDataDirectory().
  */
-class LlmConfig {
+class LlmConfig
+{
+  static const int sm_xmlSerializationVersion = 0;
+  
 public:
-  /** LLM API settings */
-  struct LlmApi {
-    std::string apiEndpoint = "https://api.openai.com/v1/chat/completions";
-    std::string bearerToken = "";
-    std::string model = "gpt-4";
-    int maxTokens = 4000;
-    int contextLengthLimit = 128000;
-    std::string systemPrompt = "You are an expert assistant for InterSpec, a gamma-ray spectrum analysis application. You can help users analyze spectra, identify peaks, fit nuclides, and understand results. Use the available tools to access spectrum data and perform analysis operations.";
-  };
+  
+  /** LLM API settings - this is for the "LLM Assistant" tool. */
+  struct LlmApi
+  {
+    bool enabled = false;
+    std::string apiEndpoint;    // Example: "https://api.openai.com/v1/chat/completions"
+    std::string bearerToken;    //
+    std::string model;          // Example: "gpt-4"
+    int maxTokens = 0;          // Example: 4000
+    int contextLengthLimit = 0; // Example: 128000;
+    std::string systemPrompt;   // Example: "You are an expert assistant for InterSpec...";
+  };//struct LlmApi
+  
   
   /** MCP server settings */
-  struct McpServer {
-    int port = 8081;
-    std::string bearerToken = "";
-    bool enabled = true;
-  };
-  
-  /** UI settings */
-  struct Interface {
-    bool defaultVisible = false;
-    int panelWidth = 400;
-  };
+  struct McpServer
+  {
+    static const std::string sm_invalid_bearer_token;
+    
+    bool enabled = false;
+    
+#if( MCP_ENABLE_AUTH )
+    /** The bearer token that requestors must supply.
+     
+     `sm_invalid_bearer_token` is a canary, in principle it should never be set to this value if `enabled` is true,
+     but just to be sure,  then you should refuse to create a server if set to this value.
+     */
+    std::string bearerToken = McpServer::sm_invalid_bearer_token;
+#endif
+  };//struct McpServer
   
 public:
   LlmApi llmApi;
   McpServer mcpServer;
-  Interface interface;
   
   /** Load configuration from XML files with fallback logic.
    
@@ -72,18 +83,11 @@ public:
    2. InterSpec::staticDataDirectory() + "/llm_config.xml"
    3. Uses hardcoded defaults if neither exists
    
-   @return LlmConfig instance with loaded settings
-   */
-  static LlmConfig load();
-  
-  /** Save configuration to writable data directory.
+   If either config file exists, but is invalid, throws exception.
    
-   Saves to InterSpec::writableDataDirectory() + "/llm_config.xml"
-   
-   @param config The configuration to save
-   @return true if save was successful, false otherwise
+   @return LlmConfig instance with loaded settings, or nullptr if no config file is present.
    */
-  static bool save(const LlmConfig& config);
+  static std::shared_ptr<LlmConfig> load();
   
   /** Load configuration from a specific XML file.
    
@@ -91,21 +95,23 @@ public:
    @return LlmConfig instance with loaded settings
    @throws std::runtime_error if file cannot be parsed
    */
-  static LlmConfig loadFromFile(const std::string& filename);
+  static std::shared_ptr<LlmConfig> loadFromFile( const std::string &filename );
   
   /** Save configuration to a specific XML file.
    
    @param config The configuration to save
    @param filename Path where to save the XML configuration file
    @return true if save was successful, false otherwise
+   
+   Suggest saving to InterSpec::writableDataDirectory() + "/llm_config.xml" - e.g., what `LlmConfig::getUserConfigPath()` will return.
    */
-  static bool saveToFile(const LlmConfig& config, const std::string& filename);
+  static bool saveToFile( const LlmConfig &config, const std::string &filename );
 
-private:
-  /** Get the user-writable config file path */
+
+  /** Get the user-writable config file path - e.g., `InterSpec::writableDataDirectory() + "/llm_config.xml"` */
   static std::string getUserConfigPath();
   
-  /** Get the default config file path */
+  /** Get the default config file path - e.g., `InterSpec::staticDataDirectory() + "/llm_config.xml"` */
   static std::string getDefaultConfigPath();
 };
 

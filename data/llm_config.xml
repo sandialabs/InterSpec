@@ -1,7 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<LlmConfig>
-  <!-- LLM API Settings -->
+
+<!-- Warning: LLM capabilities are totally untested, and currently so incomplete that they are useless
+for anything other than having a little fun with.  Also, there has been zero safety/security checks
+or considerations, and it has only been tested to kinda-sorta work with a few LLMs.
+-->
+
+<!-- 
+This is an example configuration file to enable using the "LLM Assistant" tool in InterSpec, and/or
+for enabling the MCP server to allow an external LLM program to control analysis, or query for information.
+
+To enable LLM capabilities, copy this file to the "data" directory of your InterSpec instalation, or (prefferably) 
+copy this file to your OS provided data directory for InterSpec (e.g., on Windows it is 
+usually "C:\Users\<user>\AppData\Roaming\InterSpec", 
+and macOS "/Users/<user>/Library/Containers/gov.sandia.macOS.InterSpec/Data/Library/Application Support/sandia.InterSpec",
+but see "Help" > "About InterSpec" > "Data" for the actual location), then edit it to enable the LLM API, putting in your 
+endpoint URL and bearer token, and/or enable the MCP server and add the required bearer token.
+
+For desktop versions of InterSpec, if this configuration file is not valid (invalid XML, missing any field, not expected field 
+data type, etc), the LLM capabilities will not be enabled, and only a message will be printed to stderr.
+
+Changes to this file will not take effect until you quit all currently open instances of InterSpec, and then start it again.
+-->
+<LlmConfig version="0">
+
+  <!-- LLM API Settings - this is for the interactive tool inside InterSpec that uses a LLM -->
   <LlmApi>
+    <Enabled>false</Enabled>
     <ApiEndpoint>http://127.0.0.1:1234/v1/chat/completions</ApiEndpoint>
     <BearerToken></BearerToken>
     <!-- <Model>microsoft/phi-4-reasoning-plus</Model> -->
@@ -32,16 +56,16 @@
     </SystemPrompt>
   </LlmApi>
   
-  <!-- MCP Server Settings -->
-  <McpServer>
-    <Port>8081</Port>
-    <BearerToken></BearerToken>
-    <Enabled>true</Enabled>
-  </McpServer>
+  <!-- MCP Server Settings - this is for InterSpec to create a MCP server you can use with other applications.
   
-  <!-- UI Settings -->
-  <Interface>
-    <DefaultVisible>false</DefaultVisible>
-    <PanelWidth>400</PanelWidth>
-  </Interface>
+  It will be avaiable at http://127.0.0.1:<port>/mcp-api, where port is the same on InterSpec instance is being 
+  served on - see `HttpPortToServeOn` in InterSpec_app_settings.json - by default it is a random high-numbered 
+  port.
+   -->
+  <McpServer>
+    <Enabled>false</Enabled>
+
+    <!-- The bearer token required to access the MCP instance. If empty, no authorization will be required. -->
+    <BearerToken></BearerToken>
+  </McpServer>
 </LlmConfig>

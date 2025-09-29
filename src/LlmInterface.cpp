@@ -23,11 +23,11 @@
 
 #include "InterSpec_config.h"
 
-#include <iostream>
-#include <memory>
-#include <stdexcept>
 #include <regex>
 #include <chrono>
+#include <memory>
+#include <iostream>
+#include <stdexcept>
 
 #include <Wt/WApplication>
 #include <Wt/WResource>
@@ -43,24 +43,24 @@
 #include <Wt/Http/Message>
 #endif
 
-#include "InterSpec/LlmInterface.h"
-#include "InterSpec/LlmConfig.h"
-#include "InterSpec/LlmConversationHistory.h"
-#include "InterSpec/LlmToolRegistry.h"
-#include "InterSpec/InterSpec.h"
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
+
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmInterface.h"
+#include "InterSpec/LlmToolRegistry.h"
+#include "InterSpec/LlmConversationHistory.h"
+
 
 static_assert( USE_LLM_INTERFACE, "This file shouldnt be compiled unless USE_LLM_INTERFACE is true" );
 
 using namespace std;
 using json = nlohmann::json;
 
-
-
-LlmInterface::LlmInterface(InterSpec* interspec) 
+LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const LlmConfig> &config )
   : m_interspec(interspec),
-    m_config(std::make_unique<LlmConfig>(LlmConfig::load())),
+    m_config( config ),
     m_history(std::make_shared<LlmConversationHistory>()),
 #ifdef USE_JS_BRIDGE_FOR_LLM
     m_responseSignal(std::make_unique<Wt::JSignal<std::string, int>>(interspec, "llmResponse")),
@@ -72,8 +72,11 @@ LlmInterface::LlmInterface(InterSpec* interspec)
     m_nextRequestId(1),
     m_currentConversationId("")
 {
-  if (!m_interspec)
+  if( !m_interspec )
     throw std::runtime_error("InterSpec instance cannot be null");
+  
+  if( !m_config || !m_config->llmApi.enabled )
+    throw std::logic_error( "LlmInterface: not configured" );
   
   // Get session ID through WApplication
   string sessionId = "unknown";
@@ -159,6 +162,9 @@ void LlmInterface::sendSystemMessage(const std::string& message) {
 }
 
 void LlmInterface::testConnection() {
+  if( !m_config || !m_config->llmApi.enabled )
+    throw std::logic_error( "LlmInterface: not configured" );
+  
   cout << "=== LLM Interface Test ===" << endl;
   cout << "Config API endpoint: " << m_config->llmApi.apiEndpoint << endl;
   cout << "Config model: " << m_config->llmApi.model << endl;
@@ -198,14 +204,6 @@ void LlmInterface::testConnection() {
   cout << "=========================" << endl;
 }
 
-void LlmInterface::reloadConfig() {
-  m_config = std::make_unique<LlmConfig>(LlmConfig::load());
-  cout << "LLM configuration reloaded" << endl;
-}
-
-const LlmConfig& LlmInterface::getConfig() const {
-  return *m_config;
-}
 
 std::shared_ptr<LlmConversationHistory> LlmInterface::getHistory() const {
   return m_history;
@@ -216,7 +214,7 @@ void LlmInterface::setHistory(std::shared_ptr<LlmConversationHistory> history) {
 }
 
 bool LlmInterface::isConfigured() const {
-  return !m_config->llmApi.apiEndpoint.empty();
+  return (m_config && m_config->llmApi.enabled && !m_config->llmApi.apiEndpoint.empty());
 }
 
 Wt::Signal<>& LlmInterface::responseReceived() {
@@ -228,6 +226,9 @@ bool LlmInterface::isRequestPending(int requestId) const {
 }
 
 void LlmInterface::makeApiCall(const nlohmann::json& requestJson) {
+  if( !m_config || !m_config->llmApi.enabled )
+    throw std::logic_error( "LlmInterface: not configured" );
+  
   cout << "=== Making LLM API Call ===" << endl;
   cout << "Endpoint: " << m_config->llmApi.apiEndpoint << endl;
   cout << "Request JSON:" << endl;
@@ -291,7 +292,11 @@ void LlmInterface::makeApiCall(const nlohmann::json& requestJson) {
 
 
 
-void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requestId) {
+void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requestId)
+{
+  if( !m_config || !m_config->llmApi.enabled )
+    throw std::logic_error( "LlmInterface: not configured" );
+  
   cout << "=== Making LLM API Call with ID " << requestId << " ===" << endl;
   cout << "Endpoint: " << m_config->llmApi.apiEndpoint << endl;
   cout << "Request JSON:" << endl;
@@ -656,7 +661,11 @@ std::pair<std::string, std::string> LlmInterface::extractThinkingAndContent(cons
   return {cleanContent, thinkingContent};
 }
 
-nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, bool isSystemGenerated) {
+nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, bool isSystemGenerated)
+{
+  if( !m_config || !m_config->llmApi.enabled )
+    throw std::logic_error( "LlmInterface: not configured" );
+  
   json request;
   request["model"] = m_config->llmApi.model;
   request["max_tokens"] = m_config->llmApi.maxTokens;

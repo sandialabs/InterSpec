@@ -47,14 +47,6 @@
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-#if( USE_LLM_INTERFACE )
-#include <Wt/WServer>
-#include "InterSpec/LlmMcpResource.h"
-#endif
-
-static_assert( USE_REL_ACT_TOOL, "This branch of InterSpec requires USE_REL_ACT_TOOL enabled" );
-#include "InterSpec/RelActAutoDev.h"
-
 
 int main( int argc, char **argv )
 {
@@ -81,10 +73,6 @@ int main( int argc, char **argv )
   
 #if( USE_LLM_INTERFACE )
   static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
-  bool enable_mcp_server = false;
-#if( MCP_ENABLE_AUTH )
-  std::string mcp_secret;
-#endif
 #endif
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
@@ -134,17 +122,6 @@ int main( int argc, char **argv )
      "\tUse '--batch-act-fit --help' to see available options."
   )
 #endif
-#if( USE_LLM_INTERFACE )
-  ("enable-mcp-server", po::value<bool>(&enable_mcp_server)->implicit_value(true)->default_value(true),
-   "Enables the Model Context Protocal server for use with LLMs.  The MCP path will be http://127.0.0.1:{port}/mcp-api."
-   )
-#if( MCP_ENABLE_AUTH )
-  (
-   "mcp-bearer-token", po::value<std::string>(&mcp_secret)->default_value("default-interspec-bearer-token-please-change"),
-   "The bearer token required to use the MCP server; if blank, no token is required."
-   )
-#endif
-#endif //USE_LLM_INTERFACE
   ;
   
   po::variables_map cl_vm;
@@ -329,8 +306,6 @@ int main( int argc, char **argv )
   }//if( cl_vm.count("static-data-dir") ) / else
 #endif
   
-  //return RelActAutoDev::dev_code();
-  
 #if( USE_BATCH_TOOLS )
   if( is_batch )
     return BatchCommandLine::run_batch_command( argc, argv );
@@ -354,50 +329,6 @@ int main( int argc, char **argv )
   
   std::cout << "\nYou can now point your browser to: " << InterSpecServer::urlBeingServedOn()
             << std::endl;
-  
-#if( USE_LLM_INTERFACE )
-  std::unique_ptr<LlmMcpResource> mcp_resource;
-  if( enable_mcp_server )
-  {
-    try {
-      // Get the existing server that's already running InterSpec
-      Wt::WServer* server = InterSpecServer::get_wt_server();
-      if( !server ) {
-        std::cerr << "Error: Could not get InterSpec server instance to add MCP resource" << std::endl;
-      } else {
-        // Create the MCP resource
-#if( MCP_ENABLE_AUTH )
-        std::string secret_token = mcp_secret;
-        if( secret_token.empty() )
-          std::cerr << "WARNING: MCP bearer token not specified - not requiring authentication!" << std::endl;
-        mcp_resource = std::make_unique<LlmMcpResource>(mcp_secret);
-#else
-        mcp_resource = std::make_unique<LlmMcpResource>();
-#endif
-        
-        // Add the resource to the existing server at /mcp-api
-        server->addResource(mcp_resource.get(), "/mcp-api");
-        
-        const int port = InterSpecServer::portBeingServedOn();
-        std::cout << "\n=== MCP Interface Enabled ===" << std::endl;
-        std::cout << "MCP Server URL: " << InterSpecServer::urlBeingServedOn() << "/mcp-api" << std::endl;
-        std::cout << "In Cursor, set MCP Host to: http://127.0.0.1:" << port << "/mcp-api" << std::endl;
-#if( MCP_ENABLE_AUTH )
-        if( !secret_token.empty() ) {
-          std::cout << "Bearer Token Required: " << secret_token << std::endl;
-        } else {
-          std::cout << "Authentication: None required" << std::endl;
-        }
-#else
-        std::cout << "Authentication: Disabled" << std::endl;
-#endif
-        std::cout << "=============================" << std::endl << std::endl;
-      }
-    } catch( std::exception& e ) {
-      std::cerr << "Exception setting up MCP interface: " << e.what() << std::endl;
-    }
-  }//if( enable_mcp_server )
-#endif //USE_LLM_INTERFACE
   
   return InterSpecServer::wait_for_shutdown();
 }//int main( int argc, const char * argv[] )

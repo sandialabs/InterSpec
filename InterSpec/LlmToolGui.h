@@ -64,6 +64,11 @@ public:
   LlmToolGui(InterSpec *viewer, Wt::WContainerWidget *parent = nullptr);
   ~LlmToolGui();
   
+  /** Returns if the user has added a `llm_config.xml` file, and enabled the `LlmApi`, and this was read in when the
+   InterSpec server was started.
+   */
+  static bool llmToolIsConfigured();
+  
   /** Focus the input text field */
   void focusInput();
   

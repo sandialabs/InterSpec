@@ -19,7 +19,9 @@
 #include <Wt/WSignal>
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/InterSpecServer.h"
 #include "InterSpec/LlmConversationHistory.h"
 
 using namespace std;
@@ -37,12 +39,16 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
     m_isRequestPending(false),
     m_currentRequestId(-1)
 {
-  if (!m_viewer) {
+  if( !m_viewer )
     throw std::runtime_error("InterSpec instance cannot be null");
-  }
+  
+  std::shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
+  
+  if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint.empty() )
+    throw std::runtime_error("LLM API not enabled");
   
   // Create our own LLM interface instance
-  m_llmInterface = std::make_unique<LlmInterface>(m_viewer);
+  m_llmInterface = std::make_unique<LlmInterface>(m_viewer, config);
   
   wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
   
@@ -61,6 +67,12 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
 LlmToolGui::~LlmToolGui()
 {
   
+}
+
+bool LlmToolGui::llmToolIsConfigured()
+{
+  shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
+  return (config && config->llmApi.enabled && !config->llmApi.apiEndpoint.empty());
 }
 
 void LlmToolGui::initializeUI()

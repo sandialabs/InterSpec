@@ -54,6 +54,9 @@
 #cmakedefine01 USE_REMOTE_RID
 #cmakedefine01 USE_BATCH_TOOLS
 #cmakedefine01 USE_LLM_INTERFACE
+// TODO: figure out stuff behind enabling/requiring MCP authorization a little better.
+#define MCP_ENABLE_AUTH 1
+
 #cmakedefine01 SpecUtils_ENABLE_D3_CHART
 #cmakedefine01 SpecUtils_NO_BOOST_LIB
 

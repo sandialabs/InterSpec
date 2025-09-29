@@ -1,201 +1,178 @@
 #include "InterSpec_config.h"
 #include "InterSpec/LlmConfig.h"
 
-#if( USE_LLM_INTERFACE )
-
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
 
-#include "InterSpec/InterSpec.h"
-#include "SpecUtils/Filesystem.h"
-#include "SpecUtils/StringAlgo.h"
-
 #include <rapidxml/rapidxml.hpp>
 #include <rapidxml/rapidxml_print.hpp>
 
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/RapidXmlUtils.hpp"
+
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/XmlUtils.hpp"
+
+
+
 using namespace std;
 
-LlmConfig LlmConfig::load() {
-  LlmConfig config;
-  
+static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
+
+const std::string LlmConfig::McpServer::sm_invalid_bearer_token = "INVALID-BEARER-TOKEN";
+
+
+std::shared_ptr<LlmConfig> LlmConfig::load()
+{
   // Try user config first
   string userPath = getUserConfigPath();
-  if (SpecUtils::is_file(userPath)) {
-    try {
-      cout << "Loading LLM config from: " << userPath << endl;
-      return loadFromFile(userPath);
-    } catch (const std::exception& e) {
-      cout << "Failed to load user config: " << e.what() << endl;
-    }
-  }
+  if( SpecUtils::is_file(userPath) )
+    return loadFromFile(userPath);
   
   // Try default config
   string defaultPath = getDefaultConfigPath();
-  if (SpecUtils::is_file(defaultPath)) {
-    try {
-      cout << "Loading LLM config from default: " << defaultPath << endl;
-      return loadFromFile(defaultPath);
-    } catch (const std::exception& e) {
-      cout << "Failed to load default config: " << e.what() << endl;
-    }
-  }
+  if( SpecUtils::is_file(defaultPath) )
+    return loadFromFile(defaultPath);
   
   cout << "Using hardcoded LLM config defaults" << endl;
-  return config; // Return defaults
-}
-
-bool LlmConfig::save(const LlmConfig& config) {
-  string userPath = getUserConfigPath();
-  return saveToFile(config, userPath);
-}
-
-LlmConfig LlmConfig::loadFromFile(const std::string& filename) {
   LlmConfig config;
+  assert( !config.llmApi.enabled );
+  assert( !config.mcpServer.enabled );
   
-  ifstream file(filename.c_str());
-  if (!file.is_open()) {
-    throw std::runtime_error("Cannot open config file: " + filename);
-  }
+  config.llmApi.enabled = false;   //just to make sure
+  config.mcpServer.enabled = false;
   
-  // Read entire file
-  string xmlContent((istreambuf_iterator<char>(file)), istreambuf_iterator<char>());
-  
-  try {
-    rapidxml::xml_document<char> doc;
-    doc.parse<0>(&xmlContent[0]);
-    
-    rapidxml::xml_node<char>* root = doc.first_node("LlmConfig");
-    if (!root) {
-      throw std::runtime_error("Missing LlmConfig root node");
-    }
-    
-    // Load LLM API settings
-    if (rapidxml::xml_node<char>* llmApi = root->first_node("LlmApi")) {
-      if (rapidxml::xml_node<char>* node = llmApi->first_node("ApiEndpoint")) {
-        config.llmApi.apiEndpoint = node->value();
-      }
-      if (rapidxml::xml_node<char>* node = llmApi->first_node("BearerToken")) {
-        config.llmApi.bearerToken = node->value();
-      }
-      if (rapidxml::xml_node<char>* node = llmApi->first_node("Model")) {
-        config.llmApi.model = node->value();
-      }
-      if (rapidxml::xml_node<char>* node = llmApi->first_node("MaxTokens")) {
-        string val = node->value();
-        if (!val.empty()) config.llmApi.maxTokens = std::stoi(val);
-      }
-      if (rapidxml::xml_node<char>* node = llmApi->first_node("ContextLengthLimit")) {
-        string val = node->value();
-        if (!val.empty()) config.llmApi.contextLengthLimit = std::stoi(val);
-      }
-      if (rapidxml::xml_node<char>* node = llmApi->first_node("SystemPrompt")) {
-        config.llmApi.systemPrompt = node->value();
-      }
-    }
-    
-    // Load MCP server settings
-    if (rapidxml::xml_node<char>* mcpServer = root->first_node("McpServer")) {
-      if (rapidxml::xml_node<char>* node = mcpServer->first_node("Port")) {
-        string val = node->value();
-        if (!val.empty()) config.mcpServer.port = std::stoi(val);
-      }
-      if (rapidxml::xml_node<char>* node = mcpServer->first_node("BearerToken")) {
-        config.mcpServer.bearerToken = node->value();
-      }
-      if (rapidxml::xml_node<char>* node = mcpServer->first_node("Enabled")) {
-        string val = node->value();
-        config.mcpServer.enabled = (val == "true");
-      }
-    }
-    
-    // Load interface settings
-    if (rapidxml::xml_node<char>* interface = root->first_node("Interface")) {
-      if (rapidxml::xml_node<char>* node = interface->first_node("DefaultVisible")) {
-        string val = node->value();
-        config.interface.defaultVisible = (val == "true");
-      }
-      if (rapidxml::xml_node<char>* node = interface->first_node("PanelWidth")) {
-        string val = node->value();
-        if (!val.empty()) config.interface.panelWidth = std::stoi(val);
-      }
-    }
-    
-  } catch (const std::exception& e) {
-    throw std::runtime_error("Failed to parse config XML: " + string(e.what()));
-  }
-  
-  return config;
-}
+  return nullptr;
+}//LlmConfig LlmConfig::load()
 
-bool LlmConfig::saveToFile(const LlmConfig& config, const std::string& filename) {
-  try {
+
+std::shared_ptr<LlmConfig> LlmConfig::loadFromFile( const std::string &filename )
+{
+  try
+  {
+    std::vector<char> xmlContent;
+    SpecUtils::load_file_data( filename.c_str(), xmlContent );
+    
+    rapidxml::xml_document<char> doc;
+    const int flags = (rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace);
+    
+    doc.parse<flags>( &xmlContent[0] );
+    
+    const rapidxml::xml_node<char> * const root = XML_FIRST_NODE(&doc, "LlmConfig");
+    if( !root )
+      throw std::runtime_error("Missing LlmConfig root node");
+    
+    
+    // A reminder double check these logics when changing RoiRange::sm_xmlSerializationVersion
+    static_assert( LlmConfig::sm_xmlSerializationVersion == 0,
+                  "needs to be updated for new serialization version." );
+    
+    XmlUtils::check_xml_version( root, LlmConfig::sm_xmlSerializationVersion );
+    
+    std::shared_ptr<LlmConfig> config = make_shared<LlmConfig>();
+    
+    {// Begin load LLM API settings
+      const rapidxml::xml_node<char> * const llmApi = XML_FIRST_NODE(root, "LlmApi");
+      if( !llmApi )
+        throw runtime_error( "Missing 'LlmApi' node." );
+      
+      config->llmApi.enabled = XmlUtils::get_bool_node_value(llmApi, "Enabled");
+      config->llmApi.apiEndpoint = XmlUtils::get_string_node_value(llmApi, "ApiEndpoint");
+      config->llmApi.bearerToken = XmlUtils::get_string_node_value(llmApi, "BearerToken");
+      config->llmApi.model = XmlUtils::get_string_node_value(llmApi, "Model");
+      config->llmApi.maxTokens = XmlUtils::get_int_node_value(llmApi, "MaxTokens");
+      config->llmApi.contextLengthLimit = XmlUtils::get_int_node_value(llmApi, "ContextLengthLimit");
+      config->llmApi.systemPrompt = XmlUtils::get_string_node_value(llmApi, "SystemPrompt");
+    }// End load LLM API settings
+    
+    {// Begin load MCP server settings
+      const rapidxml::xml_node<char> * const mcpServer = XML_FIRST_NODE(root, "McpServer");
+      if( !mcpServer )
+        throw runtime_error( "Missing 'McpServer' node." );
+      config->mcpServer.enabled = XmlUtils::get_bool_node_value(mcpServer, "Enabled");
+#if( MCP_ENABLE_AUTH )
+      config->mcpServer.bearerToken = XmlUtils::get_string_node_value( mcpServer, "BearerToken" );
+#endif
+    }// End load MCP server settings
+    
+    return config;
+  }catch( const std::exception &e )
+  {
+    throw std::runtime_error("Failed to parse config XML: " + string(e.what()));
+  }//try / catch
+  
+  assert( 0 );
+  return nullptr;
+}//LlmConfig LlmConfig::loadFromFile( const std::string &filename )
+
+
+bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename )
+{
+  try
+  {
     rapidxml::xml_document<char> doc;
     
     // Create root node
     rapidxml::xml_node<char>* root = doc.allocate_node(rapidxml::node_element, "LlmConfig");
     doc.append_node(root);
     
+    XmlUtils::append_version_attrib( root, LlmConfig::sm_xmlSerializationVersion );
+    
     // LLM API settings
     rapidxml::xml_node<char>* llmApi = doc.allocate_node(rapidxml::node_element, "LlmApi");
     root->append_node(llmApi);
+    XmlUtils::append_bool_node(   llmApi, "Enabled",            config.llmApi.enabled );
+    XmlUtils::append_string_node( llmApi, "ApiEndpoint",        config.llmApi.apiEndpoint );
+    XmlUtils::append_string_node( llmApi, "BearerToken",        config.llmApi.bearerToken );
+    XmlUtils::append_string_node( llmApi, "Model",              config.llmApi.model );
+    XmlUtils::append_int_node(    llmApi, "MaxTokens",          config.llmApi.maxTokens );
+    XmlUtils::append_int_node(    llmApi, "ContextLengthLimit", config.llmApi.contextLengthLimit );
+    XmlUtils::append_string_node( llmApi, "SystemPrompt",       config.llmApi.systemPrompt );
     
-    llmApi->append_node(doc.allocate_node(rapidxml::node_element, "ApiEndpoint", 
-                        doc.allocate_string(config.llmApi.apiEndpoint.c_str())));
-    llmApi->append_node(doc.allocate_node(rapidxml::node_element, "BearerToken", 
-                        doc.allocate_string(config.llmApi.bearerToken.c_str())));
-    llmApi->append_node(doc.allocate_node(rapidxml::node_element, "Model", 
-                        doc.allocate_string(config.llmApi.model.c_str())));
-    llmApi->append_node(doc.allocate_node(rapidxml::node_element, "MaxTokens", 
-                        doc.allocate_string(to_string(config.llmApi.maxTokens).c_str())));
-    llmApi->append_node(doc.allocate_node(rapidxml::node_element, "ContextLengthLimit", 
-                        doc.allocate_string(to_string(config.llmApi.contextLengthLimit).c_str())));
-    llmApi->append_node(doc.allocate_node(rapidxml::node_element, "SystemPrompt", 
-                        doc.allocate_string(config.llmApi.systemPrompt.c_str())));
     
     // MCP server settings
-    rapidxml::xml_node<char>* mcpServer = doc.allocate_node(rapidxml::node_element, "McpServer");
+    rapidxml::xml_node<char> *mcpServer = doc.allocate_node(rapidxml::node_element, "McpServer");
     root->append_node(mcpServer);
-    
-    mcpServer->append_node(doc.allocate_node(rapidxml::node_element, "Port", 
-                          doc.allocate_string(to_string(config.mcpServer.port).c_str())));
-    mcpServer->append_node(doc.allocate_node(rapidxml::node_element, "BearerToken", 
-                          doc.allocate_string(config.mcpServer.bearerToken.c_str())));
-    mcpServer->append_node(doc.allocate_node(rapidxml::node_element, "Enabled", 
-                          doc.allocate_string(config.mcpServer.enabled ? "true" : "false")));
-    
-    // Interface settings
-    rapidxml::xml_node<char>* interface = doc.allocate_node(rapidxml::node_element, "Interface");
-    root->append_node(interface);
-    
-    interface->append_node(doc.allocate_node(rapidxml::node_element, "DefaultVisible", 
-                          doc.allocate_string(config.interface.defaultVisible ? "true" : "false")));
-    interface->append_node(doc.allocate_node(rapidxml::node_element, "PanelWidth", 
-                          doc.allocate_string(to_string(config.interface.panelWidth).c_str())));
+    XmlUtils::append_bool_node(   mcpServer, "Enabled",     config.mcpServer.enabled );
+#if( MCP_ENABLE_AUTH )
+    XmlUtils::append_string_node( mcpServer, "BearerToken", config.mcpServer.bearerToken );
+#endif
     
     // Write to file
-    ofstream file(filename.c_str());
-    if (!file.is_open()) {
-      return false;
-    }
+#ifdef _WIN32
+    const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(filename);
+    std::ofstream output( woutcsv.c_str(), ios::binary | ios::out );
+#else
+    std::ofstream file( filename.c_str(), ios::binary | ios::out);
+#endif
     
-    file << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    if( !file.is_open() )
+      return false;
+    
+    //file << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     file << doc;
     
     return file.good();
-    
-  } catch (const std::exception& e) {
+  }catch( const std::exception &e )
+  {
     cout << "Failed to save config: " << e.what() << endl;
     return false;
-  }
-}
+  }//try / catch
+  
+  assert( 0 );
+  return false; //cant actually get here
+}//bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename )
 
-std::string LlmConfig::getUserConfigPath() {
+
+std::string LlmConfig::getUserConfigPath()
+{
   return SpecUtils::append_path(InterSpec::writableDataDirectory(), "llm_config.xml");
 }
 
-std::string LlmConfig::getDefaultConfigPath() {
+
+std::string LlmConfig::getDefaultConfigPath()
+{
   return SpecUtils::append_path(InterSpec::staticDataDirectory(), "llm_config.xml");
 }
-
-#endif // USE_LLM_INTERFACE
