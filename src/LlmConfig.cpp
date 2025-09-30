@@ -143,7 +143,7 @@ bool LlmConfig::saveToFile( const LlmConfig &config, const std::string &filename
     // Write to file
 #ifdef _WIN32
     const std::wstring woutcsv = SpecUtils::convert_from_utf8_to_utf16(filename);
-    std::ofstream output( woutcsv.c_str(), ios::binary | ios::out );
+    std::ofstream file( woutcsv.c_str(), ios::binary | ios::out );
 #else
     std::ofstream file( filename.c_str(), ios::binary | ios::out);
 #endif
