@@ -387,6 +387,30 @@ void LlmInterface::handleApiResponse(const std::string& response) {
   try {
     json responseJson = json::parse(response);
     
+    // Parse and accumulate token usage information if available
+    if (responseJson.contains("usage") && m_history && !m_currentConversationId.empty()) {
+      const auto& usage = responseJson["usage"];
+      
+      std::optional<int> promptTokens, completionTokens, totalTokens;
+      if (usage.contains("prompt_tokens") && usage["prompt_tokens"].is_number())
+        promptTokens = usage["prompt_tokens"].get<int>();
+      if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number())
+        completionTokens = usage["completion_tokens"].get<int>();
+      if (usage.contains("total_tokens") && usage["total_tokens"].is_number())
+        totalTokens = usage["total_tokens"].get<int>();
+      
+      // Accumulate token usage for this conversation
+      m_history->addTokenUsage(m_currentConversationId, promptTokens, completionTokens, totalTokens);
+      
+      if (completionTokens.has_value()) {
+        cout << "=== Token Usage This Call ===" << endl;
+        cout << "Prompt tokens: " << (promptTokens.has_value() ? std::to_string(promptTokens.value()) : "N/A") << endl;
+        cout << "Completion tokens: " << completionTokens.value() << endl;
+        cout << "Total tokens: " << (totalTokens.has_value() ? std::to_string(totalTokens.value()) : "N/A") << endl;
+        cout << "=============================" << endl;
+      }
+    }
+    
     if (responseJson.contains("choices") && !responseJson["choices"].empty()) {
       json choice = responseJson["choices"][0];
       if (choice.contains("message")) {
@@ -396,23 +420,15 @@ void LlmInterface::handleApiResponse(const std::string& response) {
         if( message.contains("content") && message["content"].is_string() )
           content = message["content"];
 
-
         if (role == "assistant") {
           // Extract thinking content and clean content
           auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
-                  
-                  cout
-                  << "=== Start Cleaned Response Content ===" << endl
-                  << cleanContent
-                  << "\n=== End Cleaned Response Content   ===" << endl
-                  << endl;
-
+          
           // Add assistant message to history with thinking content
           m_history->addAssistantMessageWithThinking(cleanContent, thinkingContent, m_currentConversationId);
           
           // Handle structured tool calls first (OpenAI format)
           if (message.contains("tool_calls")) {
-            cout << "Found structured tool_calls" << endl;
             executeToolCalls(message["tool_calls"]);
           } else {
             // Parse content for text-based tool requests (use cleaned content)
@@ -668,7 +684,15 @@ nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, 
   
   json request;
   request["model"] = m_config->llmApi.model;
-  request["max_tokens"] = m_config->llmApi.maxTokens;
+  
+  // Use max_completion_tokens for newer OpenAI models, max_tokens for others
+  string modelName = m_config->llmApi.model;
+  if (modelName.find("gpt-4") != string::npos || modelName.find("gpt-3.5") != string::npos || 
+      modelName.find("o1") != string::npos || modelName.find("gpt-5") != string::npos) {
+    request["max_completion_tokens"] = m_config->llmApi.maxTokens;
+  } else {
+    request["max_tokens"] = m_config->llmApi.maxTokens;
+  }
   
   json messages = json::array();
   
@@ -684,8 +708,10 @@ nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, 
         if (!m_history->isEmpty()) {
           json historyMessages = m_history->toApiFormat();
           cout << "=== Including " << historyMessages.size() << " history messages in request ===" << endl;
+          
           for (size_t i = 0; i < historyMessages.size(); ++i) {
             const auto& msg = historyMessages[i];
+            
             cout << "  " << i << ". " << msg["role"].get<string>() << ": " 
                  << (msg.contains("content") ? msg["content"].get<string>().substr(0, 50) + "..." : "tool_call") << endl;
             messages.push_back(msg);
@@ -754,7 +780,7 @@ void LlmInterface::setupJavaScriptBridge() {
   // Set up the JavaScript function to handle HTTP requests
   string jsCode = R"(
     window.llmHttpRequest = function(endpoint, requestJsonString, bearerToken, requestId) {
-      console.log('LLM HTTP Request to:', endpoint, 'For requestID', requestId);
+      //console.log('LLM HTTP Request to:', endpoint, 'For requestID', requestId);
       //console.log('Request data:', requestJsonString);
       
       var headers = {
@@ -779,12 +805,12 @@ void LlmInterface::setupJavaScriptBridge() {
         signal: controller.signal
       })
       .then(function(response) {
-        console.log('LLM Response status:', response.status);
+        //console.log('LLM Response status:', response.status);
         return response.text();
       })
       .then(function(responseText) {
         //console.log('LLM Response:', responseText);
-        console.log( 'Got LLM Response text' ); 
+        //console.log( 'Got LLM Response text', responseText ); 
         
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);
@@ -820,7 +846,7 @@ void LlmInterface::setupJavaScriptBridge() {
   // Set up the response callback using JSignal to emit signal to C++
   string callbackJs = 
     "window.llmResponseCallback = function(response, requestId) { "
-    "console.log('Emitting signal to C++ with response length:', response.length, 'requestId:', requestId); "
+    //"console.log('Emitting signal to C++ with response length:', response.length, 'requestId:', requestId); "
     "" + m_responseSignal->createCall("response", "requestId") + ";"
     "};";
   
@@ -830,6 +856,8 @@ void LlmInterface::setupJavaScriptBridge() {
 }
 
 void LlmInterface::handleJavaScriptResponse(std::string response, int requestId) {
+  
+  cout << ":handleJavaScriptResponse: " << response << endl << endl << endl;
   try {
     // Find and remove the pending request
     PendingRequest pendingRequest;
@@ -842,7 +870,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     
     // Check for errors first
     json responseJson = json::parse(response);
-    if (responseJson.contains("error")) {
+    if (responseJson.contains("error") && !responseJson["error"].is_null()) {
       string errorMsg = "LLM API Error: " + responseJson["error"].dump(2);
       cout << errorMsg << endl;
       

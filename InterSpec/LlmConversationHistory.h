@@ -28,6 +28,7 @@
 #include <vector>
 #include <string>
 #include <chrono>
+#include <optional>
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
@@ -81,6 +82,13 @@ struct LlmConversationStart {
   std::chrono::system_clock::time_point timestamp;
   std::string conversationId;  // ID for the entire conversation thread
   
+  // Token usage tracking from LLM API responses
+  // Using optional<size_t> because some models/APIs don't provide token usage information,
+  // making it clear when this data is unavailable rather than defaulting to 0
+  std::optional<size_t> promptTokens;      // Tokens used in the input/prompt
+  std::optional<size_t> completionTokens;  // Tokens generated in the response
+  std::optional<size_t> totalTokens;       // Total tokens used (prompt + completion)
+  
   // Nested follow-up responses (assistant responses, tool calls, tool results)
   std::vector<LlmConversationResponse> responses;
   
@@ -130,6 +138,12 @@ public:
   
   /** Add a follow-up response to a specific conversation by conversation ID */
   void addFollowUpResponse(const std::string& conversationId, const LlmConversationResponse& response);
+  
+  /** Add token usage to a specific conversation by conversation ID (accumulates across API calls) */
+  void addTokenUsage(const std::string& conversationId, 
+                     std::optional<int> promptTokens,
+                     std::optional<int> completionTokens,
+                     std::optional<int> totalTokens);
   
   /** Find a conversation start by conversation ID */
   LlmConversationStart* findConversationByConversationId(const std::string& conversationId);

@@ -147,6 +147,39 @@ void LlmConversationHistory::addFollowUpResponse(const std::string& conversation
   }
 }
 
+void LlmConversationHistory::addTokenUsage(const std::string& conversationId, 
+                                           std::optional<int> promptTokens,
+                                           std::optional<int> completionTokens,
+                                           std::optional<int> totalTokens) {
+  LlmConversationStart* conversation = findConversationByConversationId(conversationId);
+  if (conversation) {
+    // Accumulate token usage across API calls within this conversation
+    if (promptTokens.has_value() && (promptTokens.value() > 0) ) {
+      if (conversation->promptTokens.has_value()) {
+        conversation->promptTokens = conversation->promptTokens.value() + promptTokens.value();
+      } else {
+        conversation->promptTokens = static_cast<size_t>( promptTokens.value() );
+      }
+    }
+    
+    if (completionTokens.has_value() && (completionTokens.value() > 0)) {
+      if (conversation->completionTokens.has_value()) {
+        conversation->completionTokens = conversation->completionTokens.value() + completionTokens.value();
+      } else {
+        conversation->completionTokens = static_cast<size_t>( completionTokens.value() );
+      }
+    }
+    
+    if (totalTokens.has_value() && (totalTokens.value() > 0)) {
+      if (conversation->totalTokens.has_value()) {
+        conversation->totalTokens = conversation->totalTokens.value() + totalTokens.value();
+      } else {
+        conversation->totalTokens = static_cast<size_t>( totalTokens.value() );
+      }
+    }
+  }
+}
+
 LlmConversationStart* LlmConversationHistory::findConversationByConversationId(const std::string& conversationId) {
   for (auto& conv : *m_conversations) {
     if (conv.conversationId == conversationId) {
@@ -216,7 +249,8 @@ nlohmann::json LlmConversationHistory::toApiFormat() const {
             responseMsg["role"] = "assistant";
             responseMsg["tool_calls"] = json::array();
             json toolCall;
-            toolCall["id"] = conv.conversationId + ":" + response.invocationId;
+            // Use just the invocationId to keep within OpenAI's 40-character limit
+            toolCall["id"] = response.invocationId;
             toolCall["type"] = "function";
             toolCall["function"]["name"] = response.toolName;
             toolCall["function"]["arguments"] = response.toolParameters.dump();
@@ -226,7 +260,7 @@ nlohmann::json LlmConversationHistory::toApiFormat() const {
           
         case LlmConversationResponse::Type::ToolResult:
           responseMsg["role"] = "tool";
-          responseMsg["tool_call_id"] = conv.conversationId + ":" + response.invocationId;
+          responseMsg["tool_call_id"] = response.invocationId;
           responseMsg["content"] = response.content;
           break;
           

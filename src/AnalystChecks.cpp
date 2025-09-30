@@ -234,7 +234,7 @@ namespace AnalystChecks
     
     // get fit peak
     
-    if( options.source.has_value() )
+    if( options.source.has_value() && !options.source.value().empty() )
     {
       const string source = options.source.value();
       
