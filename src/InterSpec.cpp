@@ -4979,8 +4979,7 @@ void InterSpec::showFileQueryDialog()
   
   
   m_specFileQueryDialog = new AuxWindow( WString::tr("window-title-spec-file-query"), 
-                                        Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                        | AuxWindowProperties::SetCloseable );
+                                        AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::SetCloseable );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
   m_specFileQueryDialog->setMinimumSize( 640, 480 );
@@ -5083,7 +5082,7 @@ void InterSpec::showWarningsWindow()
   if( !m_warningsWindow )
   {
     m_warningsWindow = new AuxWindow( WString::tr("window-title-notification-log"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                  (AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize
                    | AuxWindowProperties::SetCloseable) );
@@ -5150,8 +5149,7 @@ void InterSpec::showPeakInfoWindow()
   
   if( !m_peakInfoWindow )
   {
-    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"),
-                              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable) );
+    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"), AuxWindowProperties::SetCloseable );
     m_peakInfoWindow->rejectWhenEscapePressed();
     WGridLayout *layout = m_peakInfoWindow->stretcher();
     layout->setContentsMargins( 0, 0, 0, 0 );
@@ -5645,8 +5643,7 @@ void InterSpec::startN42TestStates()
   }//if( files.empty() )
   
   AuxWindow *window = new AuxWindow( "Test State N42 Files", 
-                                    (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::DisableCollapse) );
+                                    AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse );
   window->resizeWindow( 450, 400 );
   
   WGridLayout *layout = window->stretcher();
@@ -5685,7 +5682,7 @@ void InterSpec::startN42TestStates()
 void InterSpec::startStoreTestState()
 {
   AuxWindow *window = new AuxWindow( "Store app test state to N42",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                    (AuxWindowProperties::IsModal
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
@@ -5787,7 +5784,7 @@ void InterSpec::stateSave()
 void InterSpec::stateSaveAs()
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-store-state-as"),
-    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+    (AuxWindowProperties::IsModal
       | AuxWindowProperties::TabletNotFullScreen
       | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
@@ -5853,8 +5850,7 @@ void InterSpec::stateSaveAs()
 void InterSpec::stateSaveTag()
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-tag-state"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                   | AuxWindowProperties::TabletNotFullScreen) );
+                                    (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -7492,8 +7488,7 @@ void InterSpec::showEnergyCalWindow()
   }
     
   m_energyCalWindow = new AuxWindow( WString("window-title-energy-cal"),
-                                WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                    | AuxWindowProperties::TabletNotFullScreen );
+                                    AuxWindowProperties::SetCloseable | AuxWindowProperties::TabletNotFullScreen );
   m_energyCalWindow->rejectWhenEscapePressed();
   m_energyCalWindow->stretcher()->addWidget( m_energyCalTool, 0, 0 );
   m_energyCalTool->setTallLayout();
@@ -9170,10 +9165,7 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   
   const set<int> &samples = displayedSamples( spectrum_type );
   
-  AuxWindow *window = new AuxWindow( "Map",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::EnableResize)
-                                      | AuxWindowProperties::DisableCollapse)
-                                    );
+  AuxWindow *window = new AuxWindow( "Map", AuxWindowProperties::EnableResize | AuxWindowProperties::DisableCollapse );
   
   int w = 0.66*renderedWidth();
   int h = 0.8*renderedHeight();
@@ -9383,7 +9375,7 @@ void InterSpec::create3DSearchModeChart()
     programmaticallyClose3DSearchModeChart();
   
   m_3dViewWindow = new AuxWindow( WString::tr("window-title-3d"),
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                 (AuxWindowProperties::SetCloseable
                                   | AuxWindowProperties::EnableResize
                                   | AuxWindowProperties::TabletNotFullScreen) );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
@@ -9567,8 +9559,9 @@ void InterSpec::createTerminalWidget()
   }else
   {
     m_terminalWindow = new AuxWindow( WString::tr(TerminalTabTitleKey),
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+                                     (AuxWindowProperties::SetCloseable
+                                      | AuxWindowProperties::EnableResize
+                                      | AuxWindowProperties::TabletNotFullScreen) );
     
     WPushButton *closeButton = m_terminalWindow->addCloseButtonToFooter();
     closeButton->clicked().connect(m_terminalWindow, &AuxWindow::hide);
@@ -9845,8 +9838,9 @@ RelActManualGui *InterSpec::createRelActManualWidget()
   }else
   {
     m_relActManualWindow = new AuxWindow( WString::tr("window-title-peak-rel-eff"),
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+                                         (AuxWindowProperties::SetCloseable
+                                          | AuxWindowProperties::EnableResize
+                                          | AuxWindowProperties::TabletNotFullScreen) );
     
     m_relActManualWindow->rejectWhenEscapePressed();
     m_relActManualWindow->finished().connect( this, &InterSpec::handleRelActManualClose );
@@ -10505,8 +10499,7 @@ void InterSpec::showCompactFileManagerWindow()
                                                  boost::placeholders::_3 ) );
   
   AuxWindow *window = new AuxWindow( WString::tr("window-title-compact-file"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                     |AuxWindowProperties::TabletNotFullScreen) );
+                                    (AuxWindowProperties::SetCloseable |AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
@@ -10569,7 +10562,7 @@ void InterSpec::showNuclideSearchWindow()
   
   
   m_nuclideSearchWindow = new AuxWindow( WString::tr(NuclideSearchTabTitleKey),
-                                        (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                        (AuxWindowProperties::TabletNotFullScreen
                                          | AuxWindowProperties::EnableResize
                                          | AuxWindowProperties::SetCloseable) );
   m_nuclideSearchWindow->contents()->setOverflow(Wt::WContainerWidget::OverflowHidden);
@@ -10747,7 +10740,7 @@ void InterSpec::showGammaLinesWindow()
   }//if( m_referencePhotopeakLines )
 
   m_referencePhotopeakLinesWindow = new AuxWindow( WString::tr(GammaLinesTabTitleKey),
-                                                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                                  (AuxWindowProperties::TabletNotFullScreen
                                                    | AuxWindowProperties::EnableResize
                                                    | AuxWindowProperties::SetCloseable)
                                                   );

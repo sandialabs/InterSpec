@@ -182,8 +182,7 @@ public:
 EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex actionType,
                              const std::vector<MeasToApplyCoefChangeTo> &measToChange,
                              EnergyCalTool *calibrator )
-  : AuxWindow( "&nbsp", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                      | AuxWindowProperties::DisableCollapse) ),
+  : AuxWindow( "&nbsp", (AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse) ),
     m_actionType( actionType ),
     m_measToChange( make_shared<vector<MeasToApplyCoefChangeTo>>(measToChange)),
     m_calibrator( calibrator )

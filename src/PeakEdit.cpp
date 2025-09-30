@@ -86,7 +86,7 @@ namespace
 PeakEditWindow::PeakEditWindow( const double energy,
                                 PeakModel *peakmodel,
                                 InterSpec *viewer )
-  : AuxWindow( WString::tr("window-title-peak-editor"), WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
+  : AuxWindow( WString::tr("window-title-peak-editor"), AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::DisableCollapse  )
 {
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   

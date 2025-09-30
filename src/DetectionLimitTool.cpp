@@ -966,7 +966,7 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
                                                      MaterialDB *materialDB,
                                                      WSuggestionPopup *materialSuggest )
 : AuxWindow( "Detection Confidence Tool",
-  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+  (AuxWindowProperties::TabletNotFullScreen
    | AuxWindowProperties::SetCloseable
    | AuxWindowProperties::DisableCollapse) ),
   m_tool( nullptr )

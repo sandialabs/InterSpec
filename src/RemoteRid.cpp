@@ -2313,7 +2313,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
 pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-external-rid"),
-                                    (Wt::WFlags<AuxWindowProperties> (AuxWindowProperties::DisableCollapse)
+                                    (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::TabletNotFullScreen)
                                     );

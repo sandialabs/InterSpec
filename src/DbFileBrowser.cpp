@@ -197,9 +197,9 @@ DbFileBrowser::DbFileBrowser( SpecMeasManager *manager,
                               InterSpec *viewer,
                               std::shared_ptr<SpectraFileHeader> header)
 : AuxWindow( WString::tr("smm-prev-states-window-title"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
-                                             | AuxWindowProperties::EnableResize
-                                             | AuxWindowProperties::SetCloseable) ),
+            (AuxWindowProperties::DisableCollapse
+            | AuxWindowProperties::EnableResize
+            | AuxWindowProperties::SetCloseable) ),
   m_factory( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/DbFileBrowser.css" );

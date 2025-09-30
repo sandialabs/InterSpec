@@ -68,7 +68,7 @@ using namespace std;
 
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
 : AuxWindow( WString::tr("window-title-license-credit"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+            (AuxWindowProperties::IsModal
              | AuxWindowProperties::DisableCollapse
              | AuxWindowProperties::EnableResize
              | AuxWindowProperties::SetCloseable) ),

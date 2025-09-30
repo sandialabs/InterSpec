@@ -842,7 +842,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
                               Wt::WSuggestionPopup *materialSuggestion ,
                               InterSpec* viewer)
   : AuxWindow( WString::tr("window-title-xs-calc"),
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
+              (AuxWindowProperties::PhoneNotFullScreen
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
   m_tool( nullptr )

@@ -150,7 +150,7 @@ namespace
 
 
 ColorThemeWindow::ColorThemeWindow( InterSpec *interspec )
-: AuxWindow( WString::tr("ctw-window-title"), Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::SetCloseable ),
+: AuxWindow( WString::tr("ctw-window-title"), AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::SetCloseable ),
 m_interspec(interspec),
 m_menu( nullptr ),
 m_edit( nullptr ),
@@ -407,8 +407,9 @@ void ColorThemeWindow::removeThemeCallback()
   const long long dbIndex = item->theme()->dbIndex;
   
   AuxWindow *conf = new AuxWindow( WString::tr("ctw-delete-confirm-title").arg(name),
-                                  WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
-                                  | AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen );
+                                  AuxWindowProperties::DisableCollapse
+                                  | AuxWindowProperties::IsModal
+                                  | AuxWindowProperties::TabletNotFullScreen );
   
   auto doDelete = [this,dbIndex,item,conf](){
     if( dbIndex >= 0 )
@@ -471,8 +472,9 @@ void ColorThemeWindow::uploadThemeCallback()
 
   //1) Make a dialog to allow user to select a file.
   AuxWindow *window = new AuxWindow( WString::tr("ctw-upload-title"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                                     | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse
+                                    (AuxWindowProperties::IsModal
+                                     | AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable) );
   
   WContainerWidget *contents = window->contents();

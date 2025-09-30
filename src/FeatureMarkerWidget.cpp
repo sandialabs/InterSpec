@@ -46,7 +46,7 @@ using namespace std;
 
 FeatureMarkerWindow::FeatureMarkerWindow( InterSpec *viewer )
   : AuxWindow( WString::tr("window-title-feature-markers"),
-    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
+    (AuxWindowProperties::PhoneNotFullScreen
      | AuxWindowProperties::SetCloseable
      | AuxWindowProperties::DisableCollapse) ),
     m_feature( nullptr )

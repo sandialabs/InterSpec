@@ -149,7 +149,7 @@ namespace
 
 UseInfoWindow::UseInfoWindow( std::function<void(bool)> showAgainCallback,
                               InterSpec* viewer )
-: AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+: AuxWindow( "", (AuxWindowProperties::IsModal
                          | AuxWindowProperties::EnableResize
                          | AuxWindowProperties::DisableCollapse
                          | AuxWindowProperties::SetCloseable) ),

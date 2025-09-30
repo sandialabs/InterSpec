@@ -95,8 +95,7 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
                              const SpecUtils::SpectrumType oldtype,
                              EnergyCalTool *calibrator )
 : AuxWindow( "Keep Previous Calibration?",
-             Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
-            | AuxWindowProperties::SetCloseable ),
+             AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::SetCloseable ),
   m_calibrator( calibrator ),
   m_newmeas( newmeas ),
   m_oldmeas( oldmeas ),

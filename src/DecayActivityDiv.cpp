@@ -1489,7 +1489,10 @@ class CsvDownloadGui : public AuxWindow
 public:
   
   CsvDownloadGui( DecayActivityDiv *parent )
-  : AuxWindow( "CSV Export", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse | AuxWindowProperties::SetCloseable) ),
+  : AuxWindow( "CSV Export", (AuxWindowProperties::IsModal
+                              | AuxWindowProperties::TabletNotFullScreen
+                              | AuxWindowProperties::DisableCollapse
+                              | AuxWindowProperties::SetCloseable) ),
   m_parent( parent ),
   m_csvResouce( nullptr ),
   m_ageEdit( nullptr )
@@ -1760,7 +1763,7 @@ void DecayActivityDiv::init()
   m_createNewNuclideButton         = new WPushButton( WString::tr("dad-add-nucs") );
   m_clearNuclidesButton            = new WPushButton( WString::tr(isPhone ? "Clear" : "dad-remove-all")  );
   m_nuclideSelectDialog            = new AuxWindow( WString::tr("dad-sel-nuc-window-title"),
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::DisableCollapse) );
+                                    (AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
   
   m_nuclideSelect                  = new DecaySelectNuclide( isPhone, nullptr, m_nuclideSelectDialog );
   m_decayLegend                    = new WContainerWidget();
