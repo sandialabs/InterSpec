@@ -1156,7 +1156,7 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
   vector<vector<PeakDef>> initial_peak_fits( input_srcs.size(), vector<PeakDef>{} );
 
   {// Begin get initial peak fit
-    cout << "Starting to fit initial peaks." << endl;
+    cout << "Starting to fit final peaks." << endl;
     const double start_wall = SpecUtils::get_wall_time();
     const double start_cpu = SpecUtils::get_cpu_time();
     SpecUtilsAsync::ThreadPool pool;

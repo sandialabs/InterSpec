@@ -227,9 +227,11 @@ struct InitialPeakFindSettings
    in order to keep the peak.  The higher this number, the more like a gaussian it must be. It is actually the ratio of
    the null hypothesis chi2 to the test hypothesis chi2.  A reasonable search range of values is maybe between -0.1 and 10.
    */
-  double initial_stat_threshold, initial_hypothesis_threshold;
+  double initial_stat_threshold = 1.951264;
+  double initial_hypothesis_threshold = 0.673169;
 
-  double initial_min_nsigma_roi, initial_max_nsigma_roi;
+  double initial_min_nsigma_roi = 2.246770;
+  double initial_max_nsigma_roi = 6.378162;
 
   enum class FwhmFcnForm : int {
     Gadras,
@@ -256,13 +258,17 @@ struct InitialPeakFindSettings
    `search_hypothesis_threshold`: Reasonable search range of 0 and 8. -0.1 and 10.
    `search_stat_significance`: Reasonable search range of 1 and 6.
    */
-  double search_roi_nsigma_deficit, search_stat_threshold, search_hypothesis_threshold, search_stat_significance;
+  double search_roi_nsigma_deficit = 4.241748;
+  double search_stat_threshold = 8.051485;
+  double search_hypothesis_threshold = 3.342207;
+  double search_stat_significance = 2.025582;
 
   /** Add peaks to ROIs.  WIP.
    `ROI_add_nsigma_required`: required previous and new peaks to be better than. Reasonable search range: 1 to 8
    `ROI_add_chi2dof_improve`: Reasonable search range: 0 to 8
    */
-  double ROI_add_nsigma_required, ROI_add_chi2dof_improve;
+  double ROI_add_nsigma_required = 3.526017;
+  double ROI_add_chi2dof_improve = 0.516229;
 
   std::string print( const std::string &var_name ) const;
 };//struct InitialPeakFindSettings

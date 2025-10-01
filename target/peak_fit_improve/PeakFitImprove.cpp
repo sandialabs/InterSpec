@@ -292,7 +292,7 @@ int main( int argc, char **argv )
   string static_data_dir;
   PeakFitImprove::sm_num_optimization_threads = std::max( 8u, std::thread::hardware_concurrency() > 2 ? std::thread::hardware_concurrency() - 2 : 1 );
   size_t number_threads_per_individual = 1;
-  string action_str = "InitialFit"; //"Candidate";
+  string action_str = "FinalFit"; //"InitialFit"; //"Candidate";
   bool debug_printout_arg = false;
   size_t ga_population = 1500;
   size_t ga_generation_max = 250;
@@ -780,31 +780,30 @@ int main( int argc, char **argv )
       FindCandidateSettings candidate_settings;
       candidate_settings.num_smooth_side_channels = 9;
       candidate_settings.smooth_polynomial_order = 2;
-      candidate_settings.threshold_FOM = 1.127040;
-      candidate_settings.more_scrutiny_FOM_threshold = best_settings.threshold_FOM + 0.498290;
-      candidate_settings.pos_sum_threshold_sf = 0.081751;
+      candidate_settings.threshold_FOM = 0.758621;
+      candidate_settings.more_scrutiny_FOM_threshold = 1.598265;
+      candidate_settings.pos_sum_threshold_sf = 0.119178;
       candidate_settings.num_chan_fluctuate = 1;
-      candidate_settings.more_scrutiny_coarser_FOM = best_settings.threshold_FOM + 1.451548;
-      candidate_settings.more_scrutiny_min_dev_from_line = 5.866464;
-      candidate_settings.amp_to_apply_line_test_below = 6;
+      candidate_settings.more_scrutiny_coarser_FOM = 3.001943;
+      candidate_settings.more_scrutiny_min_dev_from_line = 6.816465;
+      candidate_settings.amp_to_apply_line_test_below = 6.000000;
       best_settings = candidate_settings;
-      
-      
+
+
       InitialPeakFindSettings initial_fit_settings;
-      //20240806: Generation [84], Best=-62960.8, Average=-58257.3, , Best generation yet
-      initial_fit_settings.initial_stat_threshold = 2.890059;
-      initial_fit_settings.initial_hypothesis_threshold = 0.746688;
-      initial_fit_settings.initial_min_nsigma_roi = 3.801792;
-      initial_fit_settings.initial_max_nsigma_roi = 7.315852;
+      //Generation [138], Best=-36152.8, Average=-36151.4, - from optimization in Sep. 2025
+      initial_fit_settings.initial_stat_threshold = 1.951264;
+      initial_fit_settings.initial_hypothesis_threshold = 0.673169;
+      initial_fit_settings.initial_min_nsigma_roi = 2.246770;
+      initial_fit_settings.initial_max_nsigma_roi = 6.378162;
       initial_fit_settings.fwhm_fcn_form = InitialPeakFindSettings::FwhmFcnForm::SqrtPolynomialTwoCoefs;
-      initial_fit_settings.search_roi_nsigma_deficit = 5.642556;
-      initial_fit_settings.search_stat_threshold = 2.951359;
-      initial_fit_settings.search_hypothesis_threshold= 4.328742;
-      initial_fit_settings.search_stat_significance = 1.814627;
-      initial_fit_settings.ROI_add_nsigma_required = 3.654512;
-      initial_fit_settings.ROI_add_chi2dof_improve = 0.374546;
-      
-      
+      initial_fit_settings.search_roi_nsigma_deficit = 4.241748;
+      initial_fit_settings.search_stat_threshold = 8.051485;
+      initial_fit_settings.search_hypothesis_threshold= 3.342207;
+      initial_fit_settings.search_stat_significance = 2.025582;
+      initial_fit_settings.ROI_add_nsigma_required = 3.526017;
+      initial_fit_settings.ROI_add_chi2dof_improve = 0.516229;
+
       FinalFit_GA::do_final_peak_fit_ga_optimization( candidate_settings, initial_fit_settings, input_srcs );
       
       break;
