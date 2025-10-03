@@ -216,10 +216,17 @@ T eval_physical_model_eqn_imp( const double energy,
   {
     const T b_val = *b;
     const T c_val = *c;
-    const T b_part = pow(0.001*energy, b_val);
-    const T c_part = pow(c_val, 1000.0/energy);
-    answer = b_part * c_part;
-    
+
+    const double energy_mev = 0.001*energy;
+    // Calculating the Hoerl is niavely done as follows:
+    //const T b_part = pow(energy_mev, b_val);
+    //const T c_part = pow(c_val, 1.0/energy_mev);
+    //answer = b_part * c_part;
+    //
+    // However, in principle, and totally not verified, computing it the following way should be a little more
+    //  stable for the automatic differentiation. eh - on an example problem didnt seem to matter.
+    answer = exp( b_val*log(energy_mev) + log(c_val)/energy_mev );
+
     assert( !isnan(answer) && !isinf(answer) );
     if( isnan(answer) || isinf(answer) )
       throw std::logic_error( "hoerl_b or hoerl_c gives eqn NaN or Inf" );
