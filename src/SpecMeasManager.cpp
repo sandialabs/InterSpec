@@ -2039,8 +2039,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     if( !manager )
       return;
     
-    cerr << "deleting m_nonSpecFileDialog of" << manager->m_nonSpecFileDialog << endl;
-    
     assert( !manager->m_nonSpecFileDialog || (dialog == manager->m_nonSpecFileDialog) );
     
     manager->m_nonSpecFileDialog = nullptr;

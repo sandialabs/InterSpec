@@ -47,9 +47,9 @@
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-static_assert( USE_REL_ACT_TOOL, "This branch of InterSpec requires USE_REL_ACT_TOOL enabled" );
+#if( USE_REL_ACT_TOOL )
 #include "InterSpec/RelActAutoDev.h"
-
+#endif
 
 int main( int argc, char **argv )
 {
@@ -304,9 +304,11 @@ int main( int argc, char **argv )
     InterSpec::setStaticDataDirectory( datadir );
   }//if( cl_vm.count("static-data-dir") ) / else
 #endif
-  
+
+#if( USE_REL_ACT_TOOL )
   //return RelActAutoDev::dev_code();
-  
+#endif
+
 #if( USE_BATCH_TOOLS )
   if( is_batch )
     return BatchCommandLine::run_batch_command( argc, argv );

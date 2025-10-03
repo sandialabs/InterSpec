@@ -4361,81 +4361,208 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     cost_functor->m_solution_finished = false;
 
-    // If we are using the Physical model with Hoerl corerction function, we will first fit the solution
-    //  without the function, then we will re-fit...
-    vector<size_t> hoerl_par_indexes;
+#define TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE 1
+
+#if( TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE )
+    /* To help get to the correct solution, we will first fix a number of currently-not-fixed parameters, get
+     an initial solution, then release some of these fixed paramters, get a hopefully improved solution, then
+
+     TODO: put getting all these paramater indexes, and organizing them into seperate rounds, into its own function
+    */
+    const auto already_fixed = [&constant_parameters]( const size_t index ) -> bool {
+      return (std::find(begin(constant_parameters), end(constant_parameters), static_cast<int>(index))
+              != end(constant_parameters));
+    };
+
+    // Grap Physical paramaters to fix in the different rounds
+    vector<size_t> hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, non_phys_rel_eff_pars;
     for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
     {
       const RelActCalcAuto::RelEffCurveInput &rel_eff = options.rel_eff_curves[rel_eff_index];
-
-      if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) || !rel_eff.phys_model_use_hoerl )
-        continue;
-
       const size_t this_rel_eff_start = cost_functor->rel_eff_eqn_start_parameter( rel_eff_index );
-      const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 0;
-      const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 1;
 
-      if( options.same_hoerl_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
+      if( (rel_eff.rel_eff_eqn_type != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
       {
-        assert( parameters[b_index] == -1.0 ); //Just a consistency/sanity check
-        assert( parameters[c_index] == -1.0 );
-      }else
+        for( size_t sub_index = 0; sub_index <= rel_eff.rel_eff_eqn_order; ++sub_index )
+          non_phys_rel_eff_pars.push_back( this_rel_eff_start + sub_index );
+        continue;
+      }
+
+      if( rel_eff.phys_model_use_hoerl )
       {
-        // Right now we hard-wire not using Hoerl correction for manual Physical Rel Eff solution, so `b` and `c` should be at their starting values
-        assert( parameters[b_index] == ((0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset) );  //(energy/1000)^b
-        assert( parameters[c_index] == ((1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset) );  //c^(1000/energy)
-        hoerl_par_indexes.push_back( b_index );
-        hoerl_par_indexes.push_back( c_index );
-      }//
+        const size_t b_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 0;
+        const size_t c_index = this_rel_eff_start + 2 + 2*rel_eff.phys_model_external_atten.size() + 1;
+
+        if( options.same_hoerl_for_all_rel_eff_curves && !hoerl_par_indexes.empty() )
+        {
+          assert( parameters[b_index] == -1.0 ); //Just a consistency/sanity check
+          assert( parameters[c_index] == -1.0 );
+        }else
+        {
+          // Right now we hard-wire not using Hoerl correction for manual Physical Rel Eff solution, so `b` and `c` should be at their starting values
+          assert( parameters[b_index] == ((0.0/RelActCalc::ns_decay_hoerl_b_multiple) + RelActCalc::ns_decay_hoerl_b_offset) );  //(energy/1000)^b
+          assert( parameters[c_index] == ((1.0/RelActCalc::ns_decay_hoerl_c_multiple) + RelActCalc::ns_decay_hoerl_c_offset) );  //c^(1000/energy)
+          if( !already_fixed(b_index) )
+            hoerl_par_indexes.push_back( b_index );
+          if( !already_fixed(c_index) )
+            hoerl_par_indexes.push_back( c_index );
+        }//
+      }//if( rel_eff.phys_model_use_hoerl )
+
+      if( rel_eff.phys_model_self_atten
+         && rel_eff.phys_model_self_atten->fit_atomic_number
+         && !already_fixed(this_rel_eff_start + 0) )
+      {
+        self_atten_par_indexes.push_back( this_rel_eff_start + 0 );
+      }
+
+      if( rel_eff.phys_model_self_atten
+         && rel_eff.phys_model_self_atten->fit_areal_density
+         && !already_fixed(this_rel_eff_start + 1) )
+      {
+        self_atten_par_indexes.push_back( this_rel_eff_start + 1 );
+      }
+
+      for( size_t ext_atten_index = 0;  ext_atten_index < rel_eff.phys_model_external_atten.size(); ++ext_atten_index )
+      {
+        const size_t index = this_rel_eff_start + 2 + 2*ext_atten_index;
+        const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield = rel_eff.phys_model_external_atten[ext_atten_index];
+        if( shield && shield->fit_atomic_number && !already_fixed(index + 0) )
+          ext_atten_par_indexs.push_back( index + 0 );
+        if( shield && shield->fit_areal_density && !already_fixed(index + 1) )
+          ext_atten_par_indexs.push_back( index + 1 );
+      }
     }//for( const RelActCalcAuto::RelEffCurveInput &rel_eff : options.rel_eff_curves )
 
-    if( !hoerl_par_indexes.empty() )
+    // Get the applicable energy cal paramaters we will fix
+    vector<size_t> ene_cal_pars_indexes;
+    if( options.fit_energy_cal )
     {
-      vector<int> tmp_constant_parameters = constant_parameters;
-      for( const size_t index : hoerl_par_indexes )
+      for( size_t index = cost_functor->m_energy_cal_par_start_index;
+          index < cost_functor->m_fwhm_par_start_index;
+          ++index )
       {
-        const auto pos = std::find(begin(tmp_constant_parameters), end(tmp_constant_parameters), static_cast<int>(index));
-        assert( pos == end(tmp_constant_parameters) );
-        if( pos == end(tmp_constant_parameters) )
-          tmp_constant_parameters.push_back( static_cast<int>(index) );
+        if( !already_fixed(index) )
+          ene_cal_pars_indexes.push_back( index );
       }
+    }
+
+    vector<size_t> fwhm_par_indexes;
+    if( options.fit_energy_cal )
+    {
+      for( size_t index = cost_functor->m_fwhm_par_start_index;
+          index < cost_functor->m_rel_eff_par_start_index;
+          ++index )
+      {
+        if( !already_fixed(index) )
+          fwhm_par_indexes.push_back( index );
+      }
+    }
+
+    /** lambda to evaluate the problems, holding a number of paramaters constant.
+     Will update `parameters` if solution is better than previous best solution, otherwise leaves them alone.
+    */
+    double initial_cost = std::numeric_limits<double>::max(), best_cost_val = std::numeric_limits<double>::max();
+
+    const auto eval_with_constants = [&best_cost_val, &initial_cost, &problem, ceres_options, constant_parameters, num_pars, &parameters]( const vector<vector<size_t>> &indices_to_fix ){
+      const vector<double> orig_parameters = parameters;
+      vector<int> tmp_constant_parameters = constant_parameters;
+      for( const vector<size_t> &indices : indices_to_fix )
+      {
+        for( const size_t index : indices )
+        {
+          const auto pos = std::find(begin(tmp_constant_parameters), end(tmp_constant_parameters), static_cast<int>(index));
+          //assert( pos == end(tmp_constant_parameters) );
+          if( pos == end(tmp_constant_parameters) )
+            tmp_constant_parameters.push_back( static_cast<int>(index) );
+        }
+      }//for( const vector<size_t> &indices : indices_to_fix )
+
+      if( tmp_constant_parameters.empty() )
+        return;
+
       ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), tmp_constant_parameters );
+      double *pars = &parameters[0];
       problem.SetManifold( pars, subset_manifold );
       ceres::Solver::Summary summary;
       ceres::Solve(ceres_options, &problem, &summary);
+
+      if( (initial_cost == std::numeric_limits<double>::max()) && (summary.initial_cost > 0.0) )
+        initial_cost = summary.initial_cost;
+
+      bool solution_is_better = false;
       switch( summary.termination_type )
       {
         case ceres::CONVERGENCE:
         case ceres::USER_SUCCESS:
-          cout << "Initial fit without the Hoerl correction was successful with FinalCost="
-          << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")." << endl;
+          cout << "Pre-fit correction was successful with FinalCost="
+          << summary.final_cost << " (InitialCost=" << summary.initial_cost << ")."
+          << "  Previous best_cost_val=" << best_cost_val
+          << endl;
+          solution_is_better = (summary.final_cost < best_cost_val);
           break;
 
         case ceres::NO_CONVERGENCE:
-          cout << "Initial fit without the Hoerl correction did not converge" << endl;
+          cout << "Pre-fit correction did not converge" << endl;
           break;
 
         case ceres::FAILURE:
-          cout << "Initial fit without the Hoerl correction failed" << endl;
+          cout << "Pre-fit correction failed" << endl;
           break;
 
         case ceres::USER_FAILURE:
-          cout << "Initial fit without the Hoerl correction was user-cancelled" << endl;
-          //if( cancel_calc && cancel_calc->load() )
+          cout << "Pre-fit correction was user-cancelled" << endl;
           break;
       }//switch( summary.termination_type )
 
+
+      if( solution_is_better )
+      {
+        best_cost_val = summary.final_cost;
+      }else
+      {
+        for( size_t i = 0; i < orig_parameters.size(); ++i )
+          parameters[i] = orig_parameters[i];
+      }//if( solution_is_better ) / else
+    };//eval_with_constants lambda
+
+
+    // Evaluate the problem a few times, holding different sets of paramaters constant.
+    // The paramaters we currently have available to us to hold constant (could implement more), are:
+    //    hoerl_par_indexes, ene_cal_pars_indexes, fwhm_par_indexes, self_atten_par_indexes, ext_atten_par_indexs,ext_atten_par_indexs, non_phys_rel_eff_pars
+    //
+    // The
+    // - Fix {Ene. Cal., FWHM} - if Physical{Hoerl, shielding} else starting rel-eff-pars
+    // - if Physical{Hoerl}
+    // At each step, we will only take answer if better - otherwise reset parmaters to the before state.
+    //
+    // TODO: Check if for non-physical solution, holding starting rel-eff-pars constant helps
+    // TODO: Go through and refactor getting these parameters into a seperate function
+    //  Also, all the above getting of indexes is totally not tested.
+    //  Also, still need to give offset and scale for AD shielding - e.g., so zero doesnt mean no shielding
+    eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs, non_phys_rel_eff_pars} );
+
+    if( !initial_par_vals_to_restore_after_initial_fit.empty() )
+    {
       for( const pair<int,double> &intial_vals : initial_par_vals_to_restore_after_initial_fit )
         parameters[intial_vals.first] = intial_vals.second;
+      eval_with_constants( {ene_cal_pars_indexes, fwhm_par_indexes, hoerl_par_indexes, self_atten_par_indexes, ext_atten_par_indexs, ext_atten_par_indexs} );
+    }
 
-      // We could alter things a little here to try and get a better answer - at the cost of more time
-      //ceres_options.function_tolerance = 1e-9;
-      //ceres_options.initial_trust_region_radius = std::min( std::max( par_area, 10.0 ), 1.0*num_fit_par );
+    if( !hoerl_par_indexes.empty() )
+      eval_with_constants( {hoerl_par_indexes} );
 
+
+    if( !constant_parameters.empty() )
+    {
       // Restore the original manifold we want
-      subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
+      ceres::SubsetManifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_parameters );
       problem.SetManifold( pars, subset_manifold );
-    }//if( !hoerl_par_indexes.empty() )
+    }else
+    {
+      problem.SetManifold( pars, nullptr );
+    }//if( !constant_parameters.empty() ) / else
+#endif //TRY_FIXING_PARAMETERS_FOR_INITIAL_ESTIMATE
 
 
     ceres::Solver::Summary summary;
