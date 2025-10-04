@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+  
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">Thèmes de Couleur</message>
+  
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">Supprime le thème actuellement sélectionné.</message>
+  <message id="ctw-clone-tooltip">Crée un nouveau thème de couleur basé sur le thème actuellement sélectionné.</message>
+  <message id="ctw-upload-tooltip">Importe un fichier JSON de thème de couleur à utiliser.</message>
+  <message id="ctw-download-tooltip">Exporte le thème actuellement sélectionné vers un fichier JSON.</message>
+  
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">Appliquer "Sombre" automatiquement de l'OS</message>
+  <message id="ctw-auto-dark-tooltip">Appliquer le thème de couleur "Sombre" automatiquement selon la valeur actuelle du système d'exploitation, ou lors des transitions.</message>
+  
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (cloné)</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">Supprimer {1}?</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">Êtes-vous sûr de vouloir supprimer <em>{1}</em>?</span>]]></message>
+  
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">Télécharger JSON Thème Couleur</message>
+  <message id="ctw-upload-error-open">Erreur ouverture fichier téléchargé.</message>
+  <message id="ctw-upload-error-empty">Fichier téléchargé vide.</message>
+  <message id="ctw-upload-error-large">Fichier téléchargé trop volumineux; taille max 64kb.</message>
+  <message id="ctw-upload-error-read">Impossible de lire le fichier téléchargé.</message>
+  <message id="ctw-upload-error-json">JSON invalide, ou infos requises manquantes.</message>
+  <message id="ctw-upload-too-large">Fichier trop volumineux.</message>
+  <message id="ctw-import-confirm"><![CDATA[Souhaitez-vous importer <em>{1}</em>?]]></message>
+  
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">Sauvegarder Changements?</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;">Sauvegarder changements à <em>{1}</em>?</span>]]></message>
+  <message id="ctw-discard-btn">Ignorer</message>
+</messages>

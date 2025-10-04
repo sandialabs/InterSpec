@@ -327,7 +327,7 @@ namespace
   public:
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
-    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+    : AuxWindow( "", (AuxWindowProperties::IsModal
                       | AuxWindowProperties::PhoneNotFullScreen
                       | AuxWindowProperties::DisableCollapse
                       | AuxWindowProperties::SetCloseable) ),
@@ -1363,7 +1363,7 @@ class UploadBrowser : public AuxWindow
 public:
   UploadBrowser( SpecMeasManager *manager )
   : AuxWindow( "Import Spectrum Files",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+               (AuxWindowProperties::IsModal
                 | AuxWindowProperties::DisableCollapse
                 | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
@@ -1523,7 +1523,7 @@ void SpecMeasManager::startSpectrumManager()
   }//if( m_spectrumManagerWindow )
   
     m_spectrumManagerWindow = new AuxWindow( WString::tr("smm-window-title"),
-                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                    (AuxWindowProperties::IsModal
                      | AuxWindowProperties::TabletNotFullScreen
                      | AuxWindowProperties::DisableCollapse
                      | AuxWindowProperties::SetCloseable
@@ -1820,7 +1820,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }
     
     AuxWindow *window = new AuxWindow( WString::tr("smm-zip-window-title"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                  (AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::EnableResize) );
     window->stretcher()->addWidget( t, 0, 0 );
@@ -6004,7 +6004,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     handleCancelPreviousStatesDialog( m_previousStatesDialog );
   
   AuxWindow *window = new AuxWindow( WString::tr("smm-prev-states-window-title"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
+                                    (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::EnableResize
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::SetCloseable) );

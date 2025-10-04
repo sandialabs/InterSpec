@@ -47,9 +47,9 @@
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-#if( USE_REL_ACT_TOOL )
-#include "InterSpec/RelActAutoDev.h"
-#endif
+//#if( USE_REL_ACT_TOOL )
+//#include "InterSpec/RelActAutoDev.h"
+//#endif
 
 int main( int argc, char **argv )
 {
@@ -72,6 +72,10 @@ int main( int argc, char **argv )
   
 #if( USE_BATCH_TOOLS )
   bool batch_peak_fit = false, batch_act_fit = false;
+#endif
+  
+#if( USE_LLM_INTERFACE )
+  static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
 #endif
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
@@ -313,7 +317,7 @@ int main( int argc, char **argv )
   if( is_batch )
     return BatchCommandLine::run_batch_command( argc, argv );
 #endif
-  
+    
   
   // Start the InterSpec server
   const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),

@@ -62,6 +62,10 @@ class DoseCalcWindow;
 class FluxToolWindow;
 class PeakEditWindow;
 class RefLineDynamic;
+
+#if( USE_LLM_INTERFACE )
+class LlmToolGui;
+#endif
 class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
@@ -375,6 +379,16 @@ public:
   Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn,
                           const std::string &ref_line_name = "" );
   
+  /** Sets the peaks for the given spectrum.  If foreground, you should consider instead to use the PeakModel.
+   
+   @param spectrum Which spectrum to set the peaks for.
+   @param peaks The peaks to set.  Must not be nullptr, or the currently set deque of peaks.
+   
+   Will trigger update of displayed spectrum.
+   
+   Throws exception if spectrum type specified is not displayed, or peaks is nullptr.
+   */
+  void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks );
   
   Wt::WContainerWidget *menuDiv();
 
@@ -875,6 +889,14 @@ public:
   /** If a `MakeFwhmForDrfWindow` is showing, deletes it, and sets `m_addFwhmTool` to nullptr.
    */
   void deleteFwhmFromForegroundWindow();
+
+#if( USE_LLM_INTERFACE )
+  /** Create and show the LLM tool widget in the tools tab. */
+  void createLlmTool();
+  
+  /** Handle cleanup when LLM tool is closed. */
+  void handleLlmToolClose();
+#endif
   
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
@@ -1653,6 +1675,13 @@ protected:
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
   EnergyCalPreserveWindow *m_preserveCalibWindow;
+
+#if( USE_LLM_INTERFACE )
+  /** Menu item for opening the LLM tool. */
+  PopupDivMenuItem *m_llmToolMenuItem;
+  /** LLM tool widget for user interaction. */
+  LlmToolGui          *m_llmTool;
+#endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   /** Pointer to window showing the Search Mode 3D data view. */

@@ -2000,7 +2000,17 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
   
   vector< pair<double,double> > energy_widths, energy_obs_counts, energy_obs_counts_uncert;
   for( const auto &p : peaks )
+  {
+    // The logic to assign nuclides below will fail if two input peaks have identical energies.
+    const auto prev_pos = std::find_if(begin(energy_widths),end(energy_widths), [&p]( const pair<double,double> &pe ){
+      return p.m_energy == pe.first;
+    });
+    assert( prev_pos == end(energy_widths) );
+    if( prev_pos != end(energy_widths) )
+      throw runtime_error( "add_nuclides_to_peaks: two peaks have exactly the same energies - not allowed." );
+    
     energy_widths.push_back( {p.m_energy, p.m_fwhm / 2.35482} );
+  }
   
   set<const void *> nuclides_seen;
   for( const auto &n : nuclides )
@@ -4126,7 +4136,7 @@ string RelEffSolution::rel_eff_eqn_js_uncert_fcn() const
       is_first_point = false;
     }catch( std::exception &e )
     {
-      // This can happen when we are out of bounds of the physical model
+      // This can happennty when we are out of bounds of the physical model
     }
   }//for( double x : energies )
 
@@ -4525,7 +4535,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     vector<shared_ptr<const PeakDef>> peaks;
     for( const auto &p : display_peaks )
       peaks.push_back( make_shared<PeakDef>(*p) );
-    spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum );
+    spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum, Wt::WColor(0,51,255), 255 );
     
     
     vector<pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > meas_to_plot;

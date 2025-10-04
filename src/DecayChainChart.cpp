@@ -338,9 +338,7 @@ pair<AuxWindow *, DecayChainChart *>
   
   DecayChainChart *chart = new DecayChainChart();
 
-  AuxWindow *window = new AuxWindow( title,
-      (Wt::WFlags<AuxWindowProperties>( AuxWindowProperties::DisableCollapse ) 
-         | AuxWindowProperties::EnableResize) );
+  AuxWindow *window = new AuxWindow( title, (AuxWindowProperties::DisableCollapse | AuxWindowProperties::EnableResize) );
   
   WPushButton *close = window->addCloseButtonToFooter();
   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
@@ -798,7 +796,7 @@ void DecayChainChart::showPossibleParents( const SandiaDecay::Nuclide *nuclide )
   const double wh = 0.65*interspec->renderedHeight();
   
   Wt::WFlags<AuxWindowProperties> windowProp
-  = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+  = AuxWindowProperties::IsModal
   | AuxWindowProperties::DisableCollapse
   | AuxWindowProperties::SetCloseable
   | AuxWindowProperties::EnableResize;

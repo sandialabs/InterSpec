@@ -208,6 +208,11 @@
 #include "InterSpec/RelActManualGui.h"
 #endif
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
+#endif
+
 #include "js/InterSpec.js"
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
@@ -243,6 +248,9 @@ namespace
 #endif
 #if( USE_REL_ACT_TOOL )
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
+#endif
+#if( USE_LLM_INTERFACE )
+static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif
 
   // The Reference Photopeak and/or the Search tab need thier widgets loaded,
@@ -485,6 +493,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_decayInfoWindow( nullptr ),
   m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
+#if( USE_LLM_INTERFACE )
+  m_llmToolMenuItem( nullptr ),
+  m_llmTool( nullptr ),
+#endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
 #endif
@@ -3149,6 +3161,57 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
 }//WModelIndex addPeak( PeakDef peak )
 
 
+void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks )
+{
+  if( !peaks )
+    throw runtime_error( "InterSpec::setPeaks: peaks deque may not be null" );
+  
+  std::shared_ptr<SpecMeas> meas = measurment( spectrum );
+  if( !meas )
+    throw runtime_error( "InterSpec::setPeaks: spectrum type requested not loaded" );
+  
+  shared_ptr<const SpecUtils::Measurement> histogram = displayedHistogram( spectrum );
+  if( !histogram )
+    throw runtime_error( "InterSpec::setPeaks: spectrum type requested not displayed" );
+  
+  const set<int> &sample_nums = displayedSamples( spectrum );
+  
+  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas->peaks(sample_nums);
+  
+  if( orig_peaks.get() == peaks.get() )
+    throw runtime_error( "InterSpec::setPeaks: peaks deque can not be same as current" );
+  
+  
+  auto set_peaks = [this,spectrum]( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    if( spectrum == SpecUtils::SpectrumType::Foreground )
+    {
+      vector<shared_ptr<const PeakDef>> peaks( begin(*new_peaks), end(*new_peaks) );
+      m_peakModel->setPeaks( std::move(peaks) );
+    }else
+    {
+      shared_ptr<SpecMeas> meas = measurment( spectrum );
+      if( meas )
+      {
+        const set<int> &sample_nums = displayedSamples( spectrum );
+        meas->setPeaks( *new_peaks, sample_nums );
+      }
+      m_spectrum->schedulePeakRedraw( spectrum );
+    }
+  };
+  
+  set_peaks(peaks);
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [set_peaks,peaks,orig_peaks](){ set_peaks(orig_peaks); };
+    auto redo = [set_peaks,peaks,orig_peaks](){ set_peaks(peaks); };
+    m_undo->addUndoRedoStep( undo, redo, "Set peaks." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks );
+
+
+
 #if( USE_DB_TO_STORE_SPECTRA )
 void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 {
@@ -3200,6 +3263,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         SpectraFileModel *fileModel = m_fileManager->model();
         assert( measurment(type) == file );
         
+        //InterSpec::loadStateFromDb(Dbo::ptr<UserState>) has already called `m_fileManager->removeAllFiles()`
         const WModelIndex index = fileModel->index( file );
         assert( index.isValid() );
         
@@ -3457,6 +3521,11 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     }//if( m_simpleMdaWindow )
 #endif
     
+#if( USE_LLM_INTERFACE )
+    if( m_llmTool )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingLlmAssistant;
+#endif
+    
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3482,6 +3551,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
       else if( txtKey == RelActManualTitleKey )
         entry.modify()->currentTab = UserState::kRelActManualTab;
+#endif
+#if( USE_LLM_INTERFACE )
+      else if( txtKey == LlmAssistantTabTitleKey )
+        entry.modify()->currentTab = UserState::kLlmAssistantTab;
 #endif
     }//if( m_toolsTabs )
     
@@ -3623,7 +3696,14 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   
   try
   {
-    //Essentially reset the state of the app
+    // Store current state to the database (if applicable)
+    saveStateAtForegroundChange( false );
+    
+    // Disconnect ourselves from the state
+    if( m_dataMeasurement )
+      m_dataMeasurement->clearAllDbStateId();
+    
+    // Reset the state of the app (mostly/essentually)
     closeShieldingSourceFit();
 #if( USE_REL_ACT_TOOL )
     if( m_relActAutoGui )
@@ -3642,9 +3722,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     deleteGammaCountDialog();
     closeNuclideSearchWindow();
     
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Foreground, 0 );
     setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
     setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
-
     
     switch( entry->stateType )
     {
@@ -3984,6 +4064,14 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       showRelActAutoWindow();
 #endif
     
+#if( USE_LLM_INTERFACE )
+    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant)
+       && LlmToolGui::llmToolIsConfigured() )
+    {
+      createLlmTool();
+    }
+#endif
+    
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
@@ -4143,6 +4231,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
         case UserState::kRelActManualTab: titleKey = RelActManualTitleKey;     break;
 #endif
+#if( USE_LLM_INTERFACE )
+        case UserState::kLlmAssistantTab: titleKey = LlmAssistantTabTitleKey;  break;
+#endif
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
@@ -4176,6 +4267,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           case UserState::kRelActManualTab: 
             if( m_relActManualGui )
               m_toolsTabs->setCurrentWidget( m_relActManualGui );
+            break;
+  #endif
+  #if( USE_LLM_INTERFACE )
+          case UserState::kLlmAssistantTab:
+            if( m_llmTool )
+              m_toolsTabs->setCurrentWidget( m_llmTool );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -4882,8 +4979,7 @@ void InterSpec::showFileQueryDialog()
   
   
   m_specFileQueryDialog = new AuxWindow( WString::tr("window-title-spec-file-query"), 
-                                        Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                        | AuxWindowProperties::SetCloseable );
+                                        AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::SetCloseable );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
   m_specFileQueryDialog->setMinimumSize( 640, 480 );
@@ -4986,7 +5082,7 @@ void InterSpec::showWarningsWindow()
   if( !m_warningsWindow )
   {
     m_warningsWindow = new AuxWindow( WString::tr("window-title-notification-log"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                  (AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize
                    | AuxWindowProperties::SetCloseable) );
@@ -5053,8 +5149,7 @@ void InterSpec::showPeakInfoWindow()
   
   if( !m_peakInfoWindow )
   {
-    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"),
-                              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable) );
+    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"), AuxWindowProperties::SetCloseable );
     m_peakInfoWindow->rejectWhenEscapePressed();
     WGridLayout *layout = m_peakInfoWindow->stretcher();
     layout->setContentsMargins( 0, 0, 0, 0 );
@@ -5548,8 +5643,7 @@ void InterSpec::startN42TestStates()
   }//if( files.empty() )
   
   AuxWindow *window = new AuxWindow( "Test State N42 Files", 
-                                    (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::DisableCollapse) );
+                                    AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse );
   window->resizeWindow( 450, 400 );
   
   WGridLayout *layout = window->stretcher();
@@ -5566,11 +5660,11 @@ void InterSpec::startN42TestStates()
   for( const string &name : dispfiles )
     filesbox->addItem( name );
   
-  WPushButton *button = new WPushButton( "Cancel" );
+  WPushButton *button = new WPushButton( WString::tr("Cancel") );
   layout->addWidget( button, 1, 0, AlignCenter );
   button->clicked().connect( boost::bind(&AuxWindow::deleteAuxWindow, window) );
   
-  button = new WPushButton( "Load" );
+  button = new WPushButton( WString::tr("Load") );
   button->disable();
   button->clicked().connect( boost::bind( &doTestStateLoad, filesbox, window, this ) );
   
@@ -5588,7 +5682,7 @@ void InterSpec::startN42TestStates()
 void InterSpec::startStoreTestState()
 {
   AuxWindow *window = new AuxWindow( "Store app test state to N42",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                    (AuxWindowProperties::IsModal
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
@@ -5690,7 +5784,7 @@ void InterSpec::stateSave()
 void InterSpec::stateSaveAs()
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-store-state-as"),
-    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+    (AuxWindowProperties::IsModal
       | AuxWindowProperties::TabletNotFullScreen
       | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
@@ -5756,8 +5850,7 @@ void InterSpec::stateSaveAs()
 void InterSpec::stateSaveTag()
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-tag-state"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                   | AuxWindowProperties::TabletNotFullScreen) );
+                                    (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -7395,8 +7488,7 @@ void InterSpec::showEnergyCalWindow()
   }
     
   m_energyCalWindow = new AuxWindow( WString("window-title-energy-cal"),
-                                WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                    | AuxWindowProperties::TabletNotFullScreen );
+                                    AuxWindowProperties::SetCloseable | AuxWindowProperties::TabletNotFullScreen );
   m_energyCalWindow->rejectWhenEscapePressed();
   m_energyCalWindow->stretcher()->addWidget( m_energyCalTool, 0, 0 );
   m_energyCalTool->setTallLayout();
@@ -9073,10 +9165,7 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   
   const set<int> &samples = displayedSamples( spectrum_type );
   
-  AuxWindow *window = new AuxWindow( "Map",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::EnableResize)
-                                      | AuxWindowProperties::DisableCollapse)
-                                    );
+  AuxWindow *window = new AuxWindow( "Map", AuxWindowProperties::EnableResize | AuxWindowProperties::DisableCollapse );
   
   int w = 0.66*renderedWidth();
   int h = 0.8*renderedHeight();
@@ -9286,7 +9375,7 @@ void InterSpec::create3DSearchModeChart()
     programmaticallyClose3DSearchModeChart();
   
   m_3dViewWindow = new AuxWindow( WString::tr("window-title-3d"),
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                 (AuxWindowProperties::SetCloseable
                                   | AuxWindowProperties::EnableResize
                                   | AuxWindowProperties::TabletNotFullScreen) );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
@@ -9470,8 +9559,9 @@ void InterSpec::createTerminalWidget()
   }else
   {
     m_terminalWindow = new AuxWindow( WString::tr(TerminalTabTitleKey),
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+                                     (AuxWindowProperties::SetCloseable
+                                      | AuxWindowProperties::EnableResize
+                                      | AuxWindowProperties::TabletNotFullScreen) );
     
     WPushButton *closeButton = m_terminalWindow->addCloseButtonToFooter();
     closeButton->clicked().connect(m_terminalWindow, &AuxWindow::hide);
@@ -9748,8 +9838,9 @@ RelActManualGui *InterSpec::createRelActManualWidget()
   }else
   {
     m_relActManualWindow = new AuxWindow( WString::tr("window-title-peak-rel-eff"),
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+                                         (AuxWindowProperties::SetCloseable
+                                          | AuxWindowProperties::EnableResize
+                                          | AuxWindowProperties::TabletNotFullScreen) );
     
     m_relActManualWindow->rejectWhenEscapePressed();
     m_relActManualWindow->finished().connect( this, &InterSpec::handleRelActManualClose );
@@ -9867,7 +9958,7 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 #endif //#if( USE_REL_ACT_TOOL )
 
 
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
 void InterSpec::handleToolTabClosed( const int tabnum )
 {
   assert( m_toolsTabs );
@@ -9876,6 +9967,16 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   
   WWidget *w = m_toolsTabs->widget( tabnum );
   
+#if( USE_LLM_INTERFACE )
+  if( w == m_llmTool )
+  {
+    handleLlmToolClose();
+  }
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+  else
+#endif
+#endif
+
 #if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
   if( w == m_relActManualGui )
   {
@@ -9888,9 +9989,21 @@ void InterSpec::handleToolTabClosed( const int tabnum )
     assert( 0 );
   }
 #elif( USE_TERMINAL_WIDGET )
-  handleTerminalWindowClose();
+  if( w == m_terminal )
+  {
+    handleTerminalWindowClose();
+  }else
+  {
+    assert( 0 );
+  }
 #elif( USE_REL_ACT_TOOL )
-  handleRelActManualClose();
+  if( w == m_relActManualGui )
+  {
+    handleRelActManualClose();
+  }else
+  {
+    assert( 0 );
+  }
   //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
   
@@ -10008,6 +10121,15 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
+
+#if( USE_LLM_INTERFACE )
+  if( LlmToolGui::llmToolIsConfigured() )
+  {
+    m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
+    HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
+    m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
+  }//if( LlmToolGui::llmToolIsConfigured() )
+#endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -10377,8 +10499,7 @@ void InterSpec::showCompactFileManagerWindow()
                                                  boost::placeholders::_3 ) );
   
   AuxWindow *window = new AuxWindow( WString::tr("window-title-compact-file"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                     |AuxWindowProperties::TabletNotFullScreen) );
+                                    (AuxWindowProperties::SetCloseable |AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
@@ -10441,7 +10562,7 @@ void InterSpec::showNuclideSearchWindow()
   
   
   m_nuclideSearchWindow = new AuxWindow( WString::tr(NuclideSearchTabTitleKey),
-                                        (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                        (AuxWindowProperties::TabletNotFullScreen
                                          | AuxWindowProperties::EnableResize
                                          | AuxWindowProperties::SetCloseable) );
   m_nuclideSearchWindow->contents()->setOverflow(Wt::WContainerWidget::OverflowHidden);
@@ -10619,7 +10740,7 @@ void InterSpec::showGammaLinesWindow()
   }//if( m_referencePhotopeakLines )
 
   m_referencePhotopeakLinesWindow = new AuxWindow( WString::tr(GammaLinesTabTitleKey),
-                                                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                                  (AuxWindowProperties::TabletNotFullScreen
                                                    | AuxWindowProperties::EnableResize
                                                    | AuxWindowProperties::SetCloseable)
                                                   );
@@ -11327,6 +11448,29 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
+    
+#if( USE_LLM_INTERFACE )
+    // Save LLM conversation history to previous SpecMeas before switching foreground
+    if( m_llmTool && previous )
+    {
+      try
+      {
+        auto history = m_llmTool->getConversationHistory();
+        if( history && !history->empty() )
+        {
+          // Get the previous foreground's sample numbers
+          const std::set<int> &prevSamples = prevsamples;
+          
+          // Save the history to the previous SpecMeas using sample numbers
+          previous->setLlmConversationHistory( prevSamples, history );
+        }
+      }
+      catch( const std::exception& e )
+      {
+        std::cerr << "Failed to save LLM conversation history to SpecMeas: " << e.what() << std::endl;
+      }
+    }
+#endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -11960,6 +12104,28 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( showToolTips )
   }//if( passthrough foreground )
    */
+   
+#if( USE_LLM_INTERFACE )
+  // Load LLM conversation history from the new foreground SpecMeas
+  if( (spec_type == SpecUtils::SpectrumType::Foreground) && meas && m_llmTool )
+  {
+    try
+    {
+      // Get the current sample numbers for the new foreground
+      const std::set<int> &currentSamples = sample_numbers.empty() ? displayedSamples(spec_type) : sample_numbers;
+      
+      // Get the LLM history for these sample numbers
+      auto nativeHistoryPtr = meas->llmConversationHistory( currentSamples );
+      
+      // Set the conversation history in the LLM tool
+      m_llmTool->setConversationHistory( nativeHistoryPtr );
+    }
+    catch( const std::exception& e )
+    {
+      std::cerr << "Failed to load LLM conversation history from SpecMeas: " << e.what() << std::endl;
+    }
+  }
+#endif
 }//void setSpectrum(...)
 
 
@@ -13430,4 +13596,59 @@ void InterSpec::displayBackgroundData()
   if( m_hardBackgroundSub->isEnabled() != canSub )
     m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
+
+
+
+
+#if( USE_LLM_INTERFACE )
+void InterSpec::createLlmTool()
+{
+  assert( LlmToolGui::llmToolIsConfigured() );
+  
+  if( m_llmTool )
+    return;
+    
+  try
+  {
+    m_llmTool = new LlmToolGui( this );
+    m_llmTool->focusInput();
+    
+    if( m_toolsTabs )
+    {
+      WMenuItem *item = m_toolsTabs->addTab( m_llmTool, WString::fromUTF8("LLM Assistant") );
+      item->setCloseable( true );
+      m_toolsTabs->setCurrentWidget( m_llmTool );
+      const int index = m_toolsTabs->currentIndex();
+      m_toolsTabs->setTabToolTip( index, WString::fromUTF8("Chat with the Large Language Model assistant for spectrum analysis help") );
+      
+      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+    }
+    
+    m_llmToolMenuItem->disable();
+  }catch( const std::exception &e )
+  {
+    std::cout << "Error creating LLM tool: " << e.what() << std::endl;
+    if( m_llmTool )
+    {
+      delete m_llmTool;
+      m_llmTool = nullptr;
+    }//if( m_llmTool )
+  }//try / catch
+}//void InterSpec::createLlmTool()
+
+void InterSpec::handleLlmToolClose()
+{
+  if( !m_llmTool )
+    return;
+ 
+  m_llmToolMenuItem->enable();
+  
+  delete m_llmTool;
+  if( m_toolsTabs )
+    m_toolsTabs->setCurrentIndex( 2 );
+  
+  m_llmTool = nullptr;
+}
+#endif // USE_LLM_INTERFACE
 

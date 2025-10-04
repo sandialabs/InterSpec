@@ -6,6 +6,7 @@
   <message id="ladw-mi-credits">Credits</message>
   <message id="ladw-mi-contact">Contact</message>
   <message id="ladw-mi-license">License</message>
+  <message id="ladw-mi-data">Data</message>
   <message id="ladw-data-location-user">
     User data is stored in
     <div class="DataLocation">{1}</div>

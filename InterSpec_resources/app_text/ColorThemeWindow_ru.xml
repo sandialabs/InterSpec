@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+  
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">Цветовые Темы</message>
+  
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">Удаляет выбранную в данный момент тему.</message>
+  <message id="ctw-clone-tooltip">Создает новую цветовую тему на основе выбранной в данный момент темы.</message>
+  <message id="ctw-upload-tooltip">Импортирует файл JSON цветовой темы для использования.</message>
+  <message id="ctw-download-tooltip">Экспортирует выбранную в данный момент тему в файл JSON.</message>
+  
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">Авто применить "Темную" из ОС</message>
+  <message id="ctw-auto-dark-tooltip">Применить цветовую тему "Темную" автоматически согласно текущему значению операционной системы, или при переходах.</message>
+  
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (клонированная)</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">Удалить {1}?</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">Вы уверены, что хотите удалить <em>{1}</em>?</span>]]></message>
+  
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">Загрузить JSON Цветовой Темы</message>
+  <message id="ctw-upload-error-open">Ошибка открытия загруженного файла.</message>
+  <message id="ctw-upload-error-empty">Загруженный файл пуст.</message>
+  <message id="ctw-upload-error-large">Загруженный файл слишком большой; макс размер 64кб.</message>
+  <message id="ctw-upload-error-read">Невозможно прочитать загруженный файл.</message>
+  <message id="ctw-upload-error-json">Неверный JSON, или отсутствует необходимая информация.</message>
+  <message id="ctw-upload-too-large">Слишком большой файл.</message>
+  <message id="ctw-import-confirm"><![CDATA[Хотели бы импортировать <em>{1}</em>?]]></message>
+  
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">Сохранить Изменения?</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;">Сохранить изменения в <em>{1}</em>?</span>]]></message>
+  <message id="ctw-discard-btn">Отменить</message>
+</messages>

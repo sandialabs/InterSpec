@@ -6,6 +6,7 @@
   <message id="ladw-mi-credits">Créditos</message>
   <message id="ladw-mi-contact">Contacto</message>
   <message id="ladw-mi-license">Licencia</message>
+  <message id="ladw-mi-data">Datos</message>
   <message id="ladw-data-location-user">
     Los datos de usuario se almacenan en
     <div class="DataLocation">{1}</div>
@@ -46,4 +47,5 @@
   <message id="ladw-boost-version">Versión Boost: {1}</message>
   <message id="ladw-wt-version">Versión Wt: {1}</message>
 </messages>
+
 

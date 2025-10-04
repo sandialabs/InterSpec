@@ -105,7 +105,7 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-simple-mda"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+            (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
 {
@@ -541,9 +541,9 @@ void DetectionLimitSimple::init()
 
 void DetectionLimitSimple::roiDraggedCallback( double new_roi_lower_energy,
                  double new_roi_upper_energy,
-                 double new_roi_lower_px,
-                 double new_roi_upper_px,
+                 double new_roi_px,
                  double original_roi_lower_energy,
+                 const std::string &spec_type,
                  bool is_final_range )
 {
   if( !is_final_range )

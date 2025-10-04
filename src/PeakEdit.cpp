@@ -86,7 +86,7 @@ namespace
 PeakEditWindow::PeakEditWindow( const double energy,
                                 PeakModel *peakmodel,
                                 InterSpec *viewer )
-  : AuxWindow( WString::tr("window-title-peak-editor"), WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen) | AuxWindowProperties::DisableCollapse  )
+  : AuxWindow( WString::tr("window-title-peak-editor"), AuxWindowProperties::PhoneNotFullScreen | AuxWindowProperties::DisableCollapse  )
 {
   wApp->useStyleSheet( "InterSpec_resources/PeakEdit.css" );
   
@@ -551,7 +551,7 @@ void PeakEdit::init()
   
   
   
-  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );//new WPushButton( "Cancel", m_footer );
+  m_cancel = m_aux->addCloseButtonToFooter( WString::tr("Cancel"), false, m_footer );
   m_refit  = new WSplitButton( WString::tr("pe-btn-refit"), m_footer );
   m_apply  = new WPushButton( WString::tr("Apply"),  m_footer );
   m_accept = new WPushButton( WString::tr("Accept"), m_footer );

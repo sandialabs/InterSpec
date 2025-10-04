@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">Материал/Формула</message>
   <message id="gxsg-tt-material">
     Вы можете либо ввести название предопределённого материала или элемента (очистить текст формы
     и щёлкнуть стрелку справа от формы, чтобы увидеть все предопределённые опции), либо вы можете

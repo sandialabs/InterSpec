@@ -139,7 +139,7 @@ class TraceSrcDisplay : public WGroupBox
   
 public:
   TraceSrcDisplay( ShieldingSelect *parent )
-  : WGroupBox( "Trace Source", parent->m_traceSources ),
+  : WGroupBox( WString::tr("ss-trace-source-title"), parent->m_traceSources ),
     m_currentNuclide( nullptr ),
     m_currentDisplayActivity( 0.0 ),
     m_currentTotalActivity( 0.0 ),
@@ -170,17 +170,17 @@ public:
     closeIcon->setToolTip( "Remove this trace source." );
     
     
-    WLabel *label = new WLabel( "Nuclide", this );
+    WLabel *label = new WLabel( WString::tr("Nuclide"), this );
     label->addStyleClass( "GridFirstCol GridSecondRow" );
     
     m_isoSelect = new WComboBox( this );
-    m_isoSelect->addItem( "Select" );
+    m_isoSelect->addItem( WString::tr("ss-select-option") );
     m_isoSelect->activated().connect( this, &TraceSrcDisplay::handleUserNuclideChange );
     m_isoSelect->addStyleClass( "GridSecondCol GridSecondRow GridSpanTwoCol" );
     label->setBuddy( m_isoSelect );
     
     
-    label = new WLabel( "Activity", this );
+    label = new WLabel( WString::tr("Activity"), this );
     label->addStyleClass( "GridFirstCol GridThirdRow" );
     
     
@@ -209,7 +209,7 @@ public:
     m_activityType->activated().connect( this, &TraceSrcDisplay::handleUserChangeActivityType );
     m_activityType->addStyleClass( "GridThirdCol GridThirdRow" );
     
-    m_allowFitting = new WCheckBox( "Fit activity value", this );
+    m_allowFitting = new WCheckBox( WString::tr("ss-fit-activity-cb"), this );
     m_allowFitting->addStyleClass( "GridSecondCol GridStretchCol GridFourthRow GridSpanTwoCol CbNoLineBreak" );
     
     
@@ -665,7 +665,7 @@ public:
       switch( type )
       {
         case TraceActivityType::TotalActivity:
-          m_activityType->addItem( "Total" );
+          m_activityType->addItem( WString::tr("ss-total-activity") );
           break;
           
         case TraceActivityType::ActivityPerCm3:
@@ -1191,7 +1191,7 @@ public:
     const int numNucs = model->numNuclides();
 
     m_isoSelect->clear();
-    m_isoSelect->addItem( "Select" );
+    m_isoSelect->addItem( WString::tr("ss-select-option") );
     
     int indexToSelect = -1, numNucAdded = 0;
     for( int index = 0; index < numNucs; ++index )
@@ -2356,7 +2356,7 @@ void ShieldingSelect::init()
   
   if( m_forFitting )
   {
-    m_fitAtomicNumberCB = new WCheckBox( "Fit" );
+    m_fitAtomicNumberCB = new WCheckBox( WString::tr("Fit") );
     m_fitAtomicNumberCB->setChecked( false );
     m_fitAtomicNumberCB->addStyleClass( "CbNoLineBreak" );
     genericMatLayout->addWidget( m_fitAtomicNumberCB, 0, 2, AlignMiddle );

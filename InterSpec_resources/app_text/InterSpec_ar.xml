@@ -5,6 +5,7 @@
   <message id="Yes">نعم</message>
   <message id="No">لا</message>
   <message id="Close">إغلاق</message>
+  <message id="Continue">متابعة</message>
   <message id="Save">حفظ</message>
   <message id="Name">الاسم</message>
   <message id="Desc.">الوصف</message>
@@ -23,6 +24,7 @@
   <message id="background" comment="For use in middle of sentence">الخلفية</message>
   <message id="secondary" comment="For use in middle of sentence">الثانوي</message>
   <message id="Exit">خروج</message>
+  <message id="Enter">دخول</message>
   <message id="show-lines">إظهار الخطوط</message>
   <message id="Default">افتراضي</message>
   <message id="Error">خطأ</message>
@@ -72,6 +74,7 @@
   <message id="Geometry">الهندسة</message>
   <message id="Load">تحميل</message>
   <message id="Mass">الكتلة</message>
+  <message id="Material">مادة</message>
   <message id="NA">غير متوفر</message>
   <message id="n/a">غير متوفر</message>
   <message id="N/A">غير متوفر</message>

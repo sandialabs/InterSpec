@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">نشاط نسبي نظائري</message>
   
   <!-- Presets section -->
   <message id="raag-presets">الإعدادات المسبقة</message>
@@ -29,10 +30,42 @@
   <message id="raag-fwhm-start-det-eff">البدء من كفاءة الكاشف</message>
   <message id="raag-fwhm-fixed-det-eff">ثابت لكفاءة الكاشف</message>
   
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">نفس Z نفس العمر</message>
+  <message id="raag-refit-peaks">إعادة ملائمة القمم</message>
+  <message id="raag-use-det-eff">استخدام كفاءة الكاشف</message>
+  <message id="raag-none">لا شيء</message>
+  <message id="raag-nuclides">النويدات</message>
+  <message id="raag-energy-ranges">نطاقات الطاقة</message>
+  <message id="raag-free-peaks">قمم حرة</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">طيف</message>
+  <message id="raag-rel-eff">كفاءة نسبية</message>
+  <message id="raag-result">نتيجة</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">تطبيق معايرة الطاقة</message>
+  <message id="raag-show-ref-lines">إظهار خطوط جاما المرجعية</message>
+  <message id="raag-hide-ref-lines">إخفاء خطوط جاما المرجعية</message>
+  <message id="raag-set-peaks-foreground">تعيين القمم في المقدمة</message>
+  <message id="raag-show-background">إظهار الخلفية</message>
+  <message id="raag-hide-background">إخفاء الخلفية</message>
+  <message id="raag-roi-options">خيارات ROI:</message>
+  <message id="raag-remove-roi">إزالة ROI</message>
+  <message id="raag-combine-roi-left">دمج مع ROI الأيسر</message>
+  <message id="raag-combine-roi-right">دمج مع ROI الأيمن</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">نوع المعادلة لنمذجة FWHM للقمة كدالة للطاقة.</message>
+  <message id="raag-tt-skew-type">نوع الانحراف المطبق على القمم؛ ستتم ملائمة معاملات الانحراف.</message>
+  <message id="raag-tt-u-pu-data-source">مصدر البيانات النووية لنسب التفرع الغامائي لليورانيوم والبلوتونيوم.</message>
+  <message id="raag-tt-add-source">إضافة مصدر.</message>
+  <message id="raag-tt-add-energy-range">إضافة نطاق طاقة.</message>
+
   <!-- Buttons -->
   <message id="raag-add-free-peaks">إضافة قمم حرة</message>
   <message id="raag-clear-all-ranges">مسح جميع النطاقات</message>
-  <message id="raag-continue">متابعة</message>
   <message id="raag-html-report">تقرير HTML</message>
   <message id="raag-xml-config">تكوين XML</message>
   

@@ -83,6 +83,8 @@ enum AuxWindowProperties
   EnableResize = 0x40
 };//enum AuxWindowProperties
 
+W_DECLARE_OPERATORS_FOR_FLAGS(AuxWindowProperties);
+
 /** AuxWindow is a resizeable, moveable, collapsable window, which is a
     specialization of a WDialog window to suit our purposes.
     AuxWindow was created due to the observation that using jQuery to make

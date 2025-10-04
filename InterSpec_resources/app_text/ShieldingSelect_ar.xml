@@ -56,4 +56,10 @@
   <message id="ss-tt-with-uncert">{1}</message>
   <message id="ss-tt-without"></message>
   <message id="ss-warning-only-one-src-frac">لملائمة الكسور الكتلية، يرجى اختيار مكونين على الأقل من {1} للملائمة.</message>
+  
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">مصدر التتبع</message>
+  <message id="ss-select-option">اختر</message>
+  <message id="ss-fit-activity-cb">ملاءمة قيمة النشاط</message>
+  <message id="ss-total-activity">المجموع</message>
 </messages>

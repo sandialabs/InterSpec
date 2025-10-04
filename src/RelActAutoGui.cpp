@@ -319,9 +319,8 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
   {
     disp = new RelActAutoGui( viewer );
     
-    window = new AuxWindow( "Relative Act. Isotopics", 
-                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                           | AuxWindowProperties::EnableResize );
+    window = new AuxWindow( WString::tr("raag-window-title"), 
+                            (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     window->setMinimumSize( 800, 480 );
@@ -566,7 +565,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_rel_eff_chart = new RelEffChart();
   m_txt_results = new RelActTxtResults();
   
-  WMenuItem *item = new WMenuItem( "Spec.", m_spectrum );
+  WMenuItem *item = new WMenuItem( WString::tr("raag-spec"), m_spectrum );
   m_upper_menu->addItem( item );
   
   // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
@@ -575,7 +574,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     item->triggered().emit( item );
   }) );
   
-  item = new WMenuItem( "Rel. Eff.", m_rel_eff_chart );
+  item = new WMenuItem( WString::tr("raag-rel-eff"), m_rel_eff_chart );
   m_upper_menu->addItem( item );
   
   item->clicked().connect( std::bind([this,item](){
@@ -584,7 +583,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }) );
   
   
-  item = new WMenuItem( "Result", m_txt_results );
+  item = new WMenuItem( WString::tr("raag-result"), m_txt_results );
   m_upper_menu->addItem( item );
   
   item->clicked().connect( std::bind([this,item](){
@@ -734,27 +733,27 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   int SqrtEnergyPlusInverse_index = -1;
   for( int i = 0; i < static_cast<int>(RelActCalcAuto::FwhmForm::NotApplicable); ++i )
   {
-    const char *name = "";
+    WString name;
     const RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm(i);
     switch( fwhm_form )
     {
-      case RelActCalcAuto::FwhmForm::Gadras:        name = "Gadras"; break;
+      case RelActCalcAuto::FwhmForm::Gadras:        name = WString::fromUTF8("Gadras"); break;
       case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
-        name = "sqrt(A0 + A1*E + A2/E)";
+        name = WString::fromUTF8("sqrt(A0 + A1*E + A2/E)");
         SqrtEnergyPlusInverse_index = i;
         break;
-      case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = "A0 + A1*sqrt(E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_2:  name = "sqrt(A0 + A1*E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_3:  name = "sqrt(A0 + A1*E + A2*E*E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_4:  name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_5:  name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_6:  name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
-      case RelActCalcAuto::FwhmForm::Berstein_2:    name = "sqrt(A0 + A1*E) - stable"; break;
-      case RelActCalcAuto::FwhmForm::Berstein_3:    name = "sqrt(A0 + A1*E + A2*E*E) - stable"; break;
-      case RelActCalcAuto::FwhmForm::Berstein_4:    name = "sqrt(A0 + A1*E^1...A3*E^3) - stable"; break;
-      case RelActCalcAuto::FwhmForm::Berstein_5:    name = "sqrt(A0 + A1*E^1...A4*E^4) - stable"; break;
-      case RelActCalcAuto::FwhmForm::Berstein_6:    name = "sqrt(A0 + A1*E^1...A5*E^5) - stable"; break;
-      case RelActCalcAuto::FwhmForm::NotApplicable: name = "Use Det. Eff."; break;
+      case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = WString::fromUTF8("A0 + A1*sqrt(E)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_2:  name = WString::fromUTF8("sqrt(A0 + A1*E)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_3:  name = WString::fromUTF8("sqrt(A0 + A1*E + A2*E*E)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_4:  name = WString::fromUTF8("sqrt(A0 + A1*E^1...A3*E^3)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_5:  name = WString::fromUTF8("sqrt(A0 + A1*E^1...A4*E^4)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_6:  name = WString::fromUTF8("sqrt(A0 + A1*E^1...A5*E^5)"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_2:    name = WString::fromUTF8("sqrt(A0 + A1*E) - stable"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_3:    name = WString::fromUTF8("sqrt(A0 + A1*E + A2*E*E) - stable"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_4:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A3*E^3) - stable"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_5:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A4*E^4) - stable"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_6:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A5*E^5) - stable"); break;
+      case RelActCalcAuto::FwhmForm::NotApplicable: name = WString::tr("raag-use-det-eff"); break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     
     const int num_rows = fwhm_eqn_form_model->rowCount();
@@ -762,7 +761,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     fwhm_eqn_form_model->setData( fwhm_eqn_form_model->index(num_rows, 0), fwhm_form, Wt::UserRole );
   }//for( loop over RelActCalcAuto::FwhmForm )
   
-  const char *tooltip = "The equation type used to model peak FWHM as a function of energy.";
+  WString tooltip = WString::tr("raag-tt-fwhm-form");
   HelpSystem::attachToolTipOn( fwhmFormDiv, tooltip, showToolTips );
     
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
@@ -777,7 +776,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_skew_type = new WComboBox( skewDiv );
   label->setBuddy( m_skew_type );
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
-  tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
+  tooltip = WString::tr("raag-tt-skew-type");
   HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
   for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
       st = PeakDef::SkewType(st + 1) )
@@ -802,7 +801,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     WString uncert_txt;
     switch( i )
     {
-      case AddUncert::StatOnly:           uncert_txt = WString::fromUTF8("None");  break;
+      case AddUncert::StatOnly:           uncert_txt = WString::tr("raag-none");  break;
       case AddUncert::OneHundrethPercent: uncert_txt = WString::fromUTF8("0.01%"); break;
       case AddUncert::OneTenthPercent:    uncert_txt = WString::fromUTF8("0.1%");  break;
       case AddUncert::OnePercent:         uncert_txt = WString::fromUTF8("1%");    break;
@@ -843,7 +842,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_u_pu_data_source->activated().connect( this, &RelActAutoGui::handleNucDataSrcChanged );
   m_u_pu_data_source->addStyleClass( "GridEighthCol GridFirstRow" );
   
-  tooltip = "The nuclear data source for gamma branching ratios of uranium and plutonium.";
+  tooltip = WString::tr("raag-tt-u-pu-data-source");
   HelpSystem::attachToolTipOn( {label, m_u_pu_data_source}, tooltip, showToolTips );
   
   using RelActCalcManual::PeakCsvInput::NucDataSrc;
@@ -876,26 +875,26 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   if( is_phone )
     m_more_options_menu->addPhoneBackItem( nullptr );
   
-  m_apply_energy_cal_item = m_more_options_menu->addMenuItem( "Apply Energy Cal" );
+  m_apply_energy_cal_item = m_more_options_menu->addMenuItem( WString::tr("raag-apply-energy-cal") );
   m_apply_energy_cal_item->triggered().connect( this, &RelActAutoGui::startApplyFitEnergyCalToSpecFile );
   
-  m_show_ref_lines_item = m_more_options_menu->addMenuItem( "Show Ref. Gamma Lines" );
+  m_show_ref_lines_item = m_more_options_menu->addMenuItem( WString::tr("raag-show-ref-lines") );
   m_show_ref_lines_item->triggered().connect( boost::bind( &RelActAutoGui::handleShowRefLines, this, true ) );
   
-  m_hide_ref_lines_item = m_more_options_menu->addMenuItem( "Hide Ref. Gamma Lines" );
+  m_hide_ref_lines_item = m_more_options_menu->addMenuItem( WString::tr("raag-hide-ref-lines") );
   m_hide_ref_lines_item->triggered().connect( boost::bind( &RelActAutoGui::handleShowRefLines, this, false ) );
   m_hide_ref_lines_item->setHidden( true );
   m_hide_ref_lines_item->setDisabled( true );
   
-  m_set_peaks_foreground = m_more_options_menu->addMenuItem( "Set Peaks to foreground" );
+  m_set_peaks_foreground = m_more_options_menu->addMenuItem( WString::tr("raag-set-peaks-foreground") );
   m_set_peaks_foreground->triggered().connect( boost::bind( &RelActAutoGui::setPeaksToForeground, this ) );
   m_set_peaks_foreground->setDisabled( true );
 
-  m_show_background = m_more_options_menu->addMenuItem( "Show Background" );
+  m_show_background = m_more_options_menu->addMenuItem( WString::tr("raag-show-background") );
   m_show_background->triggered().connect( boost::bind( &RelActAutoGui::handleShowBackground, this, true ) );
   m_show_background->setDisabled( true );
 
-  m_hide_background = m_more_options_menu->addMenuItem( "Hide Background" );
+  m_hide_background = m_more_options_menu->addMenuItem( WString::tr("raag-hide-background") );
   m_hide_background->triggered().connect( boost::bind( &RelActAutoGui::handleShowBackground, this, false ) );
   m_hide_background->setDisabled( true );
 
@@ -908,15 +907,15 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   bottomArea->addStyleClass( "EnergiesAndNuclidesHolder" );
   
   //WContainerWidget *nuclidesHolder = new WContainerWidget( bottomArea );
-  WGroupBox *nuclidesHolder = new WGroupBox( "Nuclides", bottomArea );
+  WGroupBox *nuclidesHolder = new WGroupBox( WString::tr("raag-nuclides"), bottomArea );
   nuclidesHolder->addStyleClass( "NuclidesHolder" );
   
   //WContainerWidget *energiesHolder = new WContainerWidget( bottomArea );
-  WGroupBox *energiesHolder = new WGroupBox( "Energy Ranges", bottomArea );
+  WGroupBox *energiesHolder = new WGroupBox( WString::tr("raag-energy-ranges"), bottomArea );
   energiesHolder->addStyleClass( "EnergiesHolder" );
   
   //m_free_peaks_container = new WContainerWidget( bottomArea );
-  m_free_peaks_container = new WGroupBox( "Free Peaks", bottomArea );
+  m_free_peaks_container = new WGroupBox( WString::tr("raag-free-peaks"), bottomArea );
   m_free_peaks_container->addStyleClass( "FreePeaksHolder" );
   m_free_peaks_container->hide();
   
@@ -942,7 +941,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   add_nuc_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_nuc_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclideForCurrentRelEffCurve );
-  tooltip = "Add a source.";
+  tooltip = WString::tr("raag-tt-add-source");
   HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
 
   WContainerWidget *spacer = new WContainerWidget( nuc_footer );
@@ -951,7 +950,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   // same_z_age is something that _could_ be a per-relative-efficiency option, 
   //  but it's a little cleaner and maybe clearer to have it here, near the nuclides
   //  (and we are currently forcing nuclides to be same age between RelEff curves...)
-  m_same_z_age = new WCheckBox( "Same Z same age", nuc_footer );
+  m_same_z_age = new WCheckBox( WString::tr("raag-same-z-same-age"), nuc_footer );
   m_same_z_age->addStyleClass( "SameZAgeCb CbNoLineBreak" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
@@ -971,7 +970,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   add_energy_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_energy_icon->clicked().connect( this, &RelActAutoGui::handleAddEnergy );
   
-  tooltip = "Add an energy range.";
+  tooltip = WString::tr("raag-tt-add-energy-range");
   HelpSystem::attachToolTipOn( add_energy_icon, tooltip, showToolTips );
 
 
@@ -1438,9 +1437,9 @@ void RelActAutoGui::updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *chan
 
 void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
                    double new_roi_upper_energy,
-                   double new_roi_lower_px,
-                   double new_roi_upper_px,
+                   double new_roi_px,
                    const double original_roi_lower_energy,
+                   string spectrum_type,
                    const bool is_final_range )
 {
   //cout << "RelActAutoGui::handleRoiDrag: original_roi_lower_energy=" << original_roi_lower_energy
@@ -1489,7 +1488,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     return;
   }//if( failed to find continuum )
   
-  if( is_final_range && (new_roi_upper_px < new_roi_lower_px) )
+  if( is_final_range && (new_roi_px < 0.0) )
   {
     handleRemoveEnergy( range );
     return;
@@ -1845,7 +1844,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   if( is_phone )
     item = menu->addPhoneBackItem( nullptr );
   
-  item = menu->addMenuItem( "ROI options:" );
+  item = menu->addMenuItem( WString::tr("raag-roi-options") );
   item->disable();
   item->setSelectable( false );
   menu->addSeparator();
@@ -1862,7 +1861,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
       item->setDisabled( true );
   }//for( loop over PeakContinuum::OffsetTypes )
   
-  item = menu->addMenuItem( "Remove ROI" );
+  item = menu->addMenuItem( WString::tr("raag-remove-roi") );
   item->triggered().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(range) ) );
   
   const WString split_text = WString::tr("raag-split-roi-at").arg(formatNumber(energy, 1));
@@ -1880,7 +1879,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   // TODO: we could be a little more intelligent about when offering to combine ROIs
   if( range_to_left )
   {
-    item = menu->addMenuItem( "Combine with ROI to left" );
+    item = menu->addMenuItem( WString::tr("raag-combine-roi-left") );
     item->triggered().connect( boost::bind( &RelActAutoGui::handleCombineRoi, this,
                                            static_cast<WWidget *>(range_to_left),
                                            static_cast<WWidget *>(range) ) );
@@ -1888,7 +1887,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   
   if( range_to_right )
   {
-    item = menu->addMenuItem( "Combine with ROI to right" );
+    item = menu->addMenuItem( WString::tr("raag-combine-roi-right") );
     item->triggered().connect( boost::bind( &RelActAutoGui::handleCombineRoi, this,
                                            static_cast<WWidget *>(range),
                                            static_cast<WWidget *>(range_to_right) ) );
@@ -3311,7 +3310,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     // TODO: just hide/disable the button untill we have a valid solution
     SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"),
                                             "Sorry, a valid solution is needed before an energy range can be split." );
-    dialog->addButton( WString::tr("raag-continue") );
+    dialog->addButton( WString::tr("Continue") );
     
     return;
   }//if( !solution || (solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
@@ -3320,7 +3319,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   {
     SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"),
                                             "Sorry, energy range is currently not valid." );
-    dialog->addButton( WString::tr("raag-continue") );
+    dialog->addButton( WString::tr("Continue") );
     return;
   }
   
@@ -3359,7 +3358,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
                       .arg(formatNumber(lower_energy, 1))
                       .arg(formatNumber(upper_energy, 1));
     SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"), msg );
-    dialog->addButton( WString::tr("raag-continue") );
+    dialog->addButton( WString::tr("Continue") );
     return;
   }//if( to_ranges.empty() )
   
@@ -3383,7 +3382,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     {
       SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-error"), WString::tr("raag-unexpected-error-finding-original")
                                               + " energy range - sorry, cant complete operation." );
-      dialog->addButton( WString::tr("raag-continue") );
+      dialog->addButton( WString::tr("Continue") );
       return;
     }//
     
@@ -3813,7 +3812,7 @@ void RelActAutoGui::setPeaksToForeground()
   
   WContainerWidget *refit_holder = new WContainerWidget( dialog->contents() );
   refit_holder->addStyleClass( "AddOrReplaceRefitRow" );
-  WCheckBox *refit_peaks = new WCheckBox( "Refit Peaks", refit_holder );
+  WCheckBox *refit_peaks = new WCheckBox( WString::tr("raag-refit-peaks"), refit_holder );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = 
@@ -4450,7 +4449,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
   /*
    //In case we want to use AuxWindow instead of SimpleDialog
    AuxWindow *window = new AuxWindow( "Import CALp file",
-   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+   (AuxWindowProperties::IsModal
    | AuxWindowProperties::PhoneNotFullScreen
    | AuxWindowProperties::DisableCollapse
    | AuxWindowProperties::SetCloseable) );

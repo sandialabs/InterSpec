@@ -93,9 +93,9 @@ public:
    */
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
-             double /*new roi lower px*/,
-             double /*new roi upper px*/,
+             double /*new roi px (upper edge minus lower edge)*/,
              double /*original roi lower energy*/,
+             std::string /*Spectrum type ROI belongs to {"FOREGROUND","BACKGROUND","SECONDARY"}*/,
              bool /*isFinalRange*/> &existingRoiEdgeDragUpdate();
   
   /** When a ROI is being created by holding the ctrl-key and dragging, this signal is emitted as
@@ -130,8 +130,9 @@ public:
    need to hook this function up to the #existingRoiEdgeDragUpdate() signal.
    */
   void performExistingRoiEdgeDragWork( double new_lower_energy, double new_upper_energy,
-                                      double new_lower_px, double new_upper_px,
+                                      double new_roi_px,
                                       double original_lower_energy,
+                                      std::string spectrum_type,
                                       bool isfinal );
   
   /** Does the the work for the primary spectrum display in InterSpec that lets you ctrl-drag
@@ -160,9 +161,15 @@ public:
   
   
   /** Schedules the foreground peaks to be re-loaded to the client during the
-   next call to #render (which Wt takes care of calling).
+   next call to #render (which Wt takes care of calling); this function is called by the PeakModel.
    */
   void scheduleForegroundPeakRedraw();
+  
+  /** Schedules peak redraw for the given spectrum.
+   
+   TODO: As of 20250802, only foreground spectrum has any effect.
+   */
+  void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type );
   
   /** Applies the current color theme.
    if nullptr, then sets to default colors.
@@ -462,7 +469,15 @@ protected:
   
   void setForegroundPeaksToClient();
   
+  void setSecondaryPeaksToClient();
+  
+  void setBackgroundPeaksToClient();
+  
   void setReferenceLinesToClient();
+
+protected:
+  /** Helper function to set peaks for secondary or background spectra to client. */
+  void setPeaksToClient( const SpecUtils::SpectrumType spectrum_type );
   
   void setDynamicRefLinesToClient();
   
@@ -471,19 +486,23 @@ protected:
   /** Flags */
   enum D3RenderActions
   {
-    UpdateForegroundPeaks = 0x01,
+    UpdateForegroundPeaks = 0x0001,
     
-    UpdateForegroundSpectrum = 0x02,
-    UpdateBackgroundSpectrum = 0x04,
-    UpdateSecondarySpectrum = 0x08,
+    UpdateForegroundSpectrum = 0x0002,
+    UpdateBackgroundSpectrum = 0x0004,
+    UpdateSecondarySpectrum = 0x0008,
     
-    ResetXDomain = 0x10,
+    ResetXDomain = 0x0010,
     
-    UpdateHighlightRegions = 0x20,
+    UpdateHighlightRegions = 0x0020,
     
-    UpdateRefLines = 0x40,
+    UpdateRefLines = 0x0040,
     
-    UpdateDynamicRefLines = 0x80
+    UpdateDynamicRefLines = 0x80,
+
+    // TODO: Currently background and secondary peaks not loaded to client, so these flags have no effect.
+    UpdateBackgroundPeaks = 0x0100,
+    UpdateSecondaryPeaks  = 0x0200,
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   
@@ -560,7 +579,7 @@ protected:
    ToDo: Should create dedicated signals for chart size in pixel, and also Y-range.
    */
   std::unique_ptr<Wt::JSignal<double,double,double,double,bool> > m_xRangeChangedJS;
-  std::unique_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_existingRoiEdgeDragJS;
+  std::unique_ptr<Wt::JSignal<double,double,double,double,std::string,bool> > m_existingRoiEdgeDragJS;
   std::unique_ptr<Wt::JSignal<double,double,int,bool,double,double> > m_dragCreateRoiJS;
   std::unique_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
   
@@ -585,9 +604,9 @@ protected:
   
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
-             double /*new roi lower px*/,
-             double /*new roi upper px*/,
+             double /*new roi width in px (upper px minus lower px) */,
              double /*original roi lower energy*/,
+             std::string /* spectrum type - maye change to ID in the future */,
              bool /*isFinalRange*/> m_existingRoiEdgeDrag;
   
   Wt::Signal<double /*lower energy*/,
@@ -613,9 +632,10 @@ protected:
   void chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
   
   void existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
-                                           double new_lower_px, double new_upper_px,
-                                           double original_lower_energy,
-                                           bool isfinal );
+                                   double new_roi_px,
+                                   double original_lower_energy,
+                                   const std::string &spectrum_type,
+                                   bool isfinal );
   
   void dragCreateRoiCallback( double lower_energy, double upper_energy,
                                 int npeaks, bool isfinal,

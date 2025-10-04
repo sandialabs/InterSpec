@@ -45,6 +45,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecUser.h"
@@ -149,7 +150,7 @@ namespace
 
 
 ColorThemeWindow::ColorThemeWindow( InterSpec *interspec )
-: AuxWindow( "Color Themes", Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::SetCloseable ),
+: AuxWindow( WString::tr("ctw-window-title"), AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::SetCloseable ),
 m_interspec(interspec),
 m_menu( nullptr ),
 m_edit( nullptr ),
@@ -159,6 +160,7 @@ m_close( nullptr ),
 m_save( nullptr ),
 m_apply( nullptr )
 {
+  m_interspec->useMessageResourceBundle( "ColorThemeWindow" );
   wApp->useStyleSheet( "InterSpec_resources/ColorThemeWindow.css" );
   
   int w = m_interspec->renderedWidth();
@@ -207,18 +209,18 @@ m_apply( nullptr )
   m_removeIcn->setStyleClass( "DeleteColorTheme Wt-icon" );
   m_removeIcn->setInline( true );
   m_removeIcn->clicked().connect( this, &ColorThemeWindow::removeThemeCallback );
-  m_removeIcn->setToolTip( "Removes the currently selected theme.", Wt::PlainText );
+  HelpSystem::attachToolTipOn( {m_removeIcn}, WString::tr("ctw-remove-tooltip"), true );
   
   m_addIcn = new WContainerWidget(adSubDiv); //needed or else button wont show up
   m_addIcn->setStyleClass( "AddColorTheme Wt-icon" );
   m_addIcn->clicked().connect( this, &ColorThemeWindow::cloneThemeCallback );
   m_addIcn->setInline( true );
-  m_addIcn->setToolTip( "Creates a new color theme based upon the currently selected theme.", Wt::PlainText );
+  HelpSystem::attachToolTipOn( {m_addIcn}, WString::tr("ctw-clone-tooltip"), true );
   
   WPushButton *upload = new WPushButton( "", adSubDiv );
   upload->setIcon( WLink("InterSpec_resources/images/upload_small.svg") );
   upload->addStyleClass( "LinkBtn UploadBtn UploadColorTheme" );
-  upload->setToolTip( "Imports a color theme JSON file to use.", Wt::PlainText );
+  HelpSystem::attachToolTipOn( {upload}, WString::tr("ctw-upload-tooltip"), true );
   upload->clicked().connect( this, &ColorThemeWindow::uploadThemeCallback );
   
   JsonDownloadResource *downloadResource = new JsonDownloadResource( this );
@@ -245,7 +247,7 @@ m_apply( nullptr )
 
 #endif
   
-  download->setToolTip( "Exports the currently selected theme to a JSON file.", Wt::PlainText );
+  HelpSystem::attachToolTipOn( {download}, WString::tr("ctw-download-tooltip"), true );
   
   leftMenuDivLayout->setRowStretch( 0, 1 );
   
@@ -259,25 +261,24 @@ m_apply( nullptr )
   AuxWindow::addHelpInFooter( foot, "color-theme-dialog" );
   
   const bool phone = isPhone();
-  WCheckBox *autoDarkCb = new WCheckBox( "Auto apply \"Dark\" from OS" );
+  WCheckBox *autoDarkCb = new WCheckBox( WString::tr("ctw-auto-dark-cb") );
   autoDarkCb->setFloatSide( Wt::Side::Left );
-  autoDarkCb->setToolTip( "Apply the \"Dark\" color theme automatically according to"
-                          " the operating systems current value, or when it transisitions." );
+  HelpSystem::attachToolTipOn( {autoDarkCb}, WString::tr("ctw-auto-dark-tooltip"), true );
   
   if( !phone )
     foot->addWidget( autoDarkCb );
   
   UserPreferences::associateWidget( "AutoDarkFromOs", autoDarkCb, m_interspec );
   
-  m_save = new WPushButton( "Save", foot );
-  m_apply = new WPushButton( "Apply", foot );
+  m_save = new WPushButton( WString::tr("Save"), foot );
+  m_apply = new WPushButton( WString::tr("Apply"), foot );
   m_save->setHiddenKeepsGeometry( true );
   m_apply->setHiddenKeepsGeometry( true );
   
   m_save->clicked().connect( boost::bind( &ColorThemeWindow::saveCallback, this ) );
   m_apply->clicked().connect( boost::bind( &ColorThemeWindow::applyCallback, this ) );
   
-  m_close = AuxWindow::addCloseButtonToFooter( "Close", true, foot );
+  m_close = AuxWindow::addCloseButtonToFooter( WString::tr("Close"), true, foot );
   m_close->clicked().connect( boost::bind( &AuxWindow::hide, this ) );
   
   if( phone ) //Keep "Close" the left most item
@@ -374,7 +375,7 @@ void ColorThemeWindow::cloneThemeCallback()
   unique_ptr<ColorTheme> newtheme( new ColorTheme( *item->theme() ) );
   newtheme->dbIndex = -1;
   
-  newtheme->theme_name += " (cloned)";
+  newtheme->theme_name = WString::tr("ctw-cloned-name").arg(newtheme->theme_name);
   newtheme->creation_time = WDateTime::currentDateTime();
   newtheme->modified_time = newtheme->creation_time;
   auto themename = newtheme->theme_name;
@@ -405,9 +406,10 @@ void ColorThemeWindow::removeThemeCallback()
   const WString name = item->text();
   const long long dbIndex = item->theme()->dbIndex;
   
-  AuxWindow *conf = new AuxWindow( "Delete " + name + "?",
-                                  WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
-                                  | AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen );
+  AuxWindow *conf = new AuxWindow( WString::tr("ctw-delete-confirm-title").arg(name),
+                                  AuxWindowProperties::DisableCollapse
+                                  | AuxWindowProperties::IsModal
+                                  | AuxWindowProperties::TabletNotFullScreen );
   
   auto doDelete = [this,dbIndex,item,conf](){
     if( dbIndex >= 0 )
@@ -435,18 +437,18 @@ void ColorThemeWindow::removeThemeCallback()
     showOrHideApplyButton();
   };//doDelete
   
-  WText *text = new WText( "<span style=\"white-space: nowrap;\">Are you sure you would like to delete <em>" + name + "</em>?</span>" );
+  WText *text = new WText( WString::tr("ctw-delete-confirm-text").arg(name) );
   conf->contents()->addWidget( text );
   conf->contents()->setMargin( 15 );
 
   WContainerWidget *bottom = conf->footer();
   
-  WPushButton *cancel = new WPushButton( "No", bottom );
+  WPushButton *cancel = new WPushButton( WString::tr("No"), bottom );
   cancel->clicked().connect( conf, &AuxWindow::hide );
   cancel->setWidth( WLength(47.5,WLength::Percentage) );
   cancel->setFloatSide( Wt::Left );
   
-  WPushButton *erase = new WPushButton( "Yes", bottom );
+  WPushButton *erase = new WPushButton( WString::tr("Yes"), bottom );
   erase->clicked().connect( std::bind( doDelete ) );
   erase->setWidth( WLength(47.5,WLength::Percentage) );
   erase->setFloatSide( Wt::Right );
@@ -469,14 +471,15 @@ void ColorThemeWindow::uploadThemeCallback()
   //  spaghetti (e.g., get rid of nested lambdas, etc)
 
   //1) Make a dialog to allow user to select a file.
-  AuxWindow *window = new AuxWindow( "Upload Color Theme JSON",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                                     | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse
+  AuxWindow *window = new AuxWindow( WString::tr("ctw-upload-title"),
+                                    (AuxWindowProperties::IsModal
+                                     | AuxWindowProperties::TabletNotFullScreen
+                                     | AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable) );
   
   WContainerWidget *contents = window->contents();
   
-  WPushButton *close = window->addCloseButtonToFooter( "Cancel" );
+  WPushButton *close = window->addCloseButtonToFooter( WString::tr("Cancel") );
   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
   
   WFileUpload *upload = new WFileUpload( contents );
@@ -490,7 +493,7 @@ void ColorThemeWindow::uploadThemeCallback()
     {
       ifstream input( filename.c_str() );
       if( !input )
-        throw runtime_error( "Error opening uploaded file." );
+        throw runtime_error( WString::tr("ctw-upload-error-open").toUTF8() );
       input.unsetf(ios::skipws);
       
       // Determine file size
@@ -498,16 +501,16 @@ void ColorThemeWindow::uploadThemeCallback()
       const size_t filesize = input.tellg();
       input.seekg(0);
       if( !filesize )
-        throw runtime_error( "Uploaded file empty." );
+        throw runtime_error( WString::tr("ctw-upload-error-empty").toUTF8() );
       
       if( filesize > 64*1024 )
-        throw runtime_error( "Uploaded file too large; max size 64kb." );
+        throw runtime_error( WString::tr("ctw-upload-error-large").toUTF8() );
       
       //Read file data
       string data;
       data.resize( filesize );
       if( !input.read( &data.front(), static_cast<streamsize>(filesize) ) )
-        throw runtime_error( "Unable to read in uploaded file." );
+        throw runtime_error( WString::tr("ctw-upload-error-read").toUTF8() );
       
       //3) parse file.  If not valid display error message.
       auto theme = make_shared<ColorTheme>();
@@ -516,7 +519,7 @@ void ColorThemeWindow::uploadThemeCallback()
         ColorTheme::fromJson(data, *theme);
         
         //4) Ask user if they want to save to database (show disabled version of edit widget)
-        new WText( "Would you like to import <em>" + theme->theme_name.toUTF8() + "</em>?", window->contents() );
+        new WText( WString::tr("ctw-import-confirm").arg(theme->theme_name), window->contents() );
         WContainerWidget *editParent = new WContainerWidget( window->contents() );
         
         const int w = m_interspec->renderedWidth();
@@ -525,7 +528,7 @@ void ColorThemeWindow::uploadThemeCallback()
         editParent->setMaximumSize( 0.75*w, 0.75*h );
         ColorThemeWidget *edit = new ColorThemeWidget( editParent );
         edit->setTheme( theme.get(), false );
-        WPushButton *yes = window->addCloseButtonToFooter( "Yes" );
+        WPushButton *yes = window->addCloseButtonToFooter( WString::tr("Yes") );
         yes->clicked().connect( std::bind( [=](){
           
           //5) Add to database, and set as current theme to display
@@ -551,7 +554,7 @@ void ColorThemeWindow::uploadThemeCallback()
         throw;
       }catch(...)
       {
-        throw runtime_error( "Invalid JSON, or missing required info." );
+        throw runtime_error( WString::tr("ctw-upload-error-json").toUTF8() );
       }
     }catch( std::exception &e )
     {
@@ -561,7 +564,7 @@ void ColorThemeWindow::uploadThemeCallback()
   
   upload->fileTooLarge().connect( std::bind( [window,upload](){
     upload->hide();
-    new WText( "Too Large of file.", window->contents() );
+    new WText( WString::tr("ctw-upload-too-large"), window->contents() );
   }) );
   upload->changed().connect( upload, &WFileUpload::upload );
   
@@ -589,15 +592,14 @@ void ColorThemeWindow::checkForSavesAndCleanUp()
     return;
   }
   
-  string content = "<span style=\"white-space: nowrap;\">Save changes to <em>"
-                + m_edit->m_currentTheme->theme_name.toUTF8() + "</em>?</span>";
-  SimpleDialog *dialog = new SimpleDialog( "Save Changes?", content );
+  WString content = WString::tr("ctw-save-changes-text").arg(m_edit->m_currentTheme->theme_name);
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("ctw-save-changes-title"), content );
   
   
-  WPushButton *discard = dialog->addButton( "Discard" );
+  WPushButton *discard = dialog->addButton( WString::tr("ctw-discard-btn") );
   discard->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, this ) );
   
-  WPushButton *save = dialog->addButton( "Save" );
+  WPushButton *save = dialog->addButton( WString::tr("Save") );
   save->clicked().connect( boost::bind( &ColorThemeWindow::saveAndDelete, this ) );
 }//void checkForSavesAndCleanUp()
 

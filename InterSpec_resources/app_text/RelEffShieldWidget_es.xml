@@ -4,7 +4,6 @@
   -->
   <message id="resw-self-atten-title">Auto atenuación</message>
   <message id="resw-ext-atten-title">Atenuación externa</message>
-  <message id="resw-material-label">Material</message>
   <message id="resw-thickness-label">Espesor</message>
   <message id="resw-atomic-number-label">NA</message>
   <message id="resw-areal-density-label">DA</message>
@@ -12,4 +11,5 @@
   <message id="resw-generic-frame-label">Genérico</message>
   <message id="resw-areal-density-placeholder">g/cm^2</message>
 </messages>
+
 

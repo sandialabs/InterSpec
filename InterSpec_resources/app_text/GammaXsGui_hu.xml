@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">Anyag/Képlet</message>
   <message id="gxsg-tt-material">
     Megadhat egy előre definiált anyag vagy elem nevét (törölje az űrlap szövegét
     és kattintson az űrlap jobb oldalán található nyílra az összes előre definiált 

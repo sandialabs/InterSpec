@@ -966,7 +966,7 @@ DetectionLimitWindow::DetectionLimitWindow( InterSpec *viewer,
                                                      MaterialDB *materialDB,
                                                      WSuggestionPopup *materialSuggest )
 : AuxWindow( "Detection Confidence Tool",
-  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+  (AuxWindowProperties::TabletNotFullScreen
    | AuxWindowProperties::SetCloseable
    | AuxWindowProperties::DisableCollapse) ),
   m_tool( nullptr )
@@ -2405,11 +2405,11 @@ void DetectionLimitTool::initChi2Chart()
 
 
 void DetectionLimitTool::roiDraggedCallback( double new_roi_lower_energy,
-                                                  double new_roi_upper_energy,
-                                                  double new_roi_lower_px,
-                                                  double new_roi_upper_px,
-                                                  double original_lower_energy,
-                                                  bool is_final_range )
+                                            double new_roi_upper_energy,
+                                            double new_roi_px,
+                                            double original_lower_energy,
+                                            const std::string &spectrum_type,
+                                            bool is_final_range )
 {
   if( !is_final_range )
     return;

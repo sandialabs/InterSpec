@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">実行ファイルパス</message>
+  <message id="rr-url-empty-text">FullSpectrumサービスのURL</message>
+  <message id="rr-exe-path-empty-text">FullSpectrum実行ファイルへのパス</message>
+  <message id="rr-get-detectors">DRFを取得</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">WebサービスのURLを入力後、（オプションで）DRFを取得し、「<em>送信</em>」を押してください</message>
+  <message id="rr-only-disp-samples-cb">表示サンプルのみ</message>
+  <message id="rr-tt-only-disp-samples">通常、検索モードとポータルデータは全体が解析されますが、このオプションを選択すると表示されたフォアグラウンド/バックグラウンドのみが解析されます。</message>
+  <message id="rr-submit-ana-btn">解析を送信</message>
+  <message id="rr-show-dialog-cb">ダイアログを表示</message>
+  <message id="rr-always-call-cb">スペクトル読み込み時に常に呼び出し</message>
+  <message id="rr-tt-show-dialog">チェックされた場合、ユーザーが閉じる必要があるダイアログがRID結果と共に表示されます。チェックされていない場合、短時間で消える通知のみがRID結果と共に表示されます。</message>
+  <message id="rr-gadras-rid-error">GADRAS RIDエラー: {1}</message>
+  <message id="rr-gadras-rid-error-code">GADRAS RIDエラーコード {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: 何も識別されませんでした</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">GADRAS RID結果の解析に失敗しました。</message>
+  <message id="rr-rid-results-window-title">外部RID結果</message>
+  <message id="rr-rid-tool-btn">RIDツール</message>
+  <message id="rr-err-incorrect-url">解析呼び出しエラー: URLが間違っているかインターネットがありません。</message>
+  <message id="rr-err-locating-exe">実行ファイルの位置特定エラー: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">一時ファイル名の作成エラー。</message>
+  <message id="rr-err-opening-tmp-file">一時ファイルのオープンエラー。</message>
+  <message id="rr-requesting-ana">解析を要求中</message>
+  <message id="rr-err-no-spec">表示されたスペクトルがありません</message>
+  <message id="rr-requesting-service-info">サービス情報を要求中。</message>
+  <message id="rr-error-parsing-service-info">サービス情報結果の解析エラー: <code></code></message>
+  <message id="rr-incorrect-url">URLが間違っているかインターネットがありません。</message>
+  <message id="rr-err-requesting-service-info">サービス情報取得エラー: <code>{1}</code></message>
+</messages>

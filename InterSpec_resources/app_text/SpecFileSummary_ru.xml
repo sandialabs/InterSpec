@@ -46,4 +46,5 @@
   <message id="sfs-err-show-map">Ошибка попытки отображения координат: {1}</message>
   <message id="sfs-err-time-format">Ошибка преобразования '{1}' в строку даты/времени</message>
   <message id="sfs-err-lat-lon">Ошибка преобразования долготы/широты в действительное число с плавающей точкой</message>
+  <message id="sfs-no-spectrum-to-update">Нет спектра для обновления</message>
 </messages>

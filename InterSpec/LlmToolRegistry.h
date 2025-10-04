@@ -1,0 +1,129 @@
+#ifndef LLM_TOOL_REGISTRY_H
+#define LLM_TOOL_REGISTRY_H
+/* InterSpec: an application to analyze spectral gamma radiation data.
+ 
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+ 
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+ 
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+#include "InterSpec_config.h"
+
+#include <map>
+#include <string>
+#include <memory>
+
+// Forward declarations
+class InterSpec;
+
+#include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
+
+static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
+
+namespace LlmTools {
+
+/** Shared tool definition for the LLM tool registry.
+ 
+ This is separate from the MCP Tool struct to allow for InterSpec* parameter.
+ */
+struct SharedTool {
+    std::string name;
+    std::string description;
+    nlohmann::json parameters_schema;
+    // The executor takes parameters and InterSpec instance, returns result as JSON
+    std::function<nlohmann::json(const nlohmann::json&, InterSpec*)> executor;
+};
+
+/** Central registry for LLM tools that can be shared between LlmInterface and LlmMcpResource.
+ 
+ This class provides a singleton pattern to manage tool registration and lookup.
+ Tools are registered once and can be used by both the direct LLM interface and
+ the MCP server interface.
+ */
+class ToolRegistry {
+public:
+  /** Get the singleton instance of the tool registry. */
+  static ToolRegistry& instance();
+  
+  /** Register a new tool with the registry.
+   @param tool The tool to register. If a tool with the same name exists, it will be replaced.
+   */
+  void registerTool(const SharedTool& tool);
+  
+  /** Register all default tools provided by InterSpec. */
+  void registerDefaultTools();
+  
+  /** Get all registered tools.
+   @return A map of tool name to SharedTool struct.
+   */
+  const std::map<std::string, SharedTool>& getTools() const;
+  
+  /** Get a specific tool by name.
+   @param name The name of the tool to look up.
+   @return Pointer to the tool if found, nullptr otherwise.
+   */
+  const SharedTool* getTool(const std::string& name) const;
+  
+  /** Execute a tool by name with the given parameters and InterSpec context.
+   @param toolName The name of the tool to execute.
+   @param parameters JSON parameters for the tool.
+   @param interspec The InterSpec instance to execute the tool against.
+   @return JSON result from the tool execution.
+   @throws std::runtime_error if tool not found or execution fails.
+   */
+  nlohmann::json executeTool(const std::string& toolName, 
+                           const nlohmann::json& parameters, 
+                           InterSpec* interspec);
+  
+  /** Clear all registered tools (mainly for testing). */
+  void clearTools();
+  
+private:
+  ToolRegistry() = default;
+  ~ToolRegistry() = default;
+  
+  // Prevent copying
+  ToolRegistry(const ToolRegistry&) = delete;
+  ToolRegistry& operator=(const ToolRegistry&) = delete;
+  
+  std::map<std::string, SharedTool> m_tools;
+  bool m_defaultToolsRegistered = false;
+  
+  // Helper functions for default tools
+  static nlohmann::json executePeakDetection(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetSpectrumInfo(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executePeakFit(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetCharacteristicGammasForNuclide( const nlohmann::json& params );
+  static nlohmann::json executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec );
+  static nlohmann::json executeGetLoadedSpectra(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetAssociatedNuclides(const nlohmann::json& params );
+  static nlohmann::json executeGetNuclideAnalystNotes(const nlohmann::json& params );
+  static nlohmann::json executeGetNuclideInfo(const nlohmann::json& params );
+  static nlohmann::json executeGetNuclideDecayChain(const nlohmann::json& params );
+  static nlohmann::json executeGetAutomatedRiidId(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeFitPeaksForNuclide(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetCountsInEnergyRange(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec);
+};
+
+} // namespace LlmTools
+
+#endif // LLM_TOOL_REGISTRY_H

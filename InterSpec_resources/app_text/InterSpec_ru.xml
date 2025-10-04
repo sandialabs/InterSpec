@@ -5,6 +5,7 @@
   <message id="Yes">Да</message>
   <message id="No">Нет</message>
   <message id="Close">Закрыть</message>
+  <message id="Continue">Продолжить</message>
   <message id="Save">Сохранить</message>
   <message id="Name">Имя</message>
   <message id="Desc.">Опис.</message>
@@ -23,6 +24,7 @@
   <message id="background" comment="For use in middle of sentence">фон</message>
   <message id="secondary" comment="For use in middle of sentence">вторичный</message>
   <message id="Exit">Выход</message>
+  <message id="Enter">Ввести</message>
   <message id="show-lines">Показать линии</message>
   <message id="Default">По умолчанию</message>
   <message id="Error">Ошибка</message>
@@ -73,6 +75,7 @@
   <message id="Geometry">Геометрия</message>
   <message id="Load">Загрузить</message>
   <message id="Mass">Масса</message>
+  <message id="Material">Материал</message>
   <message id="NA">НД</message>
   <message id="n/a">нд</message>
   <message id="N/A">Н/Д</message>

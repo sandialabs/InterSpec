@@ -35,6 +35,9 @@ namespace Wt
   class WServer;
 }
 
+class LlmConfig;
+
+
 namespace InterSpecServer
 {
   /** Used by iOS target to start the web-server.
@@ -352,6 +355,9 @@ namespace InterSpecServer
   };//struct DesktopAppConfig
 #endif
 
+#if( USE_LLM_INTERFACE )
+  std::shared_ptr<const LlmConfig> llm_config();
+#endif
 }//namespace InterSpecServer
 
 

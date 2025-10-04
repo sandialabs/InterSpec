@@ -5,6 +5,7 @@
   <message id="Yes">Igen</message>
   <message id="No">Nem</message>
   <message id="Close">Bezár</message>
+  <message id="Continue">Folytat</message>
   <message id="Save">Mentés</message>
   <message id="Name">Név</message>
   <message id="Desc.">Leírás</message>
@@ -23,6 +24,7 @@
   <message id="background" comment="For use in middle of sentence">háttér</message>
   <message id="secondary" comment="For use in middle of sentence">másodlagos</message>
   <message id="Exit">Kilépés</message>
+  <message id="Enter">Belépés</message>
   <message id="show-lines">Vonalak megjelenítése</message>
   <message id="Default">Alapértelmezett</message>
   <message id="Error">Hiba</message>
@@ -72,6 +74,7 @@
   <message id="Geometry">Geometria</message>
   <message id="Load">Betöltés</message>
   <message id="Mass">Tömeg</message>
+  <message id="Material">Anyag</message>
   <message id="NA">NA</message>
   <message id="n/a">n/a</message>
   <message id="N/A">N/A</message>

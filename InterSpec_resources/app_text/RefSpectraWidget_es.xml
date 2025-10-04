@@ -35,8 +35,5 @@
   <message id="rs-show-in-linux-file-manager">Mostrar en gestor de archivos</message>
   <message id="rs-error-invalid-file">Archivo de espectro inválido: '{1}'.</message>
   <message id="rs-error-invalid-type-selected">Tipo de espectro inválido seleccionado.</message>
-  </messages>
-
-
 </messages>
 

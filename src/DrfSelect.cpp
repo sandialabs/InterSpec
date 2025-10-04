@@ -5327,7 +5327,7 @@ Wt::Signal<> &DrfSelect::done()
 
 DrfSelectWindow::DrfSelectWindow( InterSpec *viewer )
   : AuxWindow( WString::tr("window-title-select-det-eff-fcn"),
-              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+              AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize

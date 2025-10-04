@@ -152,6 +152,7 @@ namespace XmlUtils
     return false;
   }//bool get_bool_node_value(...)
 
+  
   template<size_t n>
   inline int get_int_attribute( const rapidxml::xml_node<char> * const node, const char (&name)[n] )
   {
@@ -165,10 +166,47 @@ namespace XmlUtils
     int answer;
     if( !SpecUtils::parse_int(att->value(), att->value_size(), answer) )
       throw std::runtime_error( "Invalid integer value in attribute '" + std::string(name) + "' with value '"
-                          + SpecUtils::xml_value_str(att) + "'" );
+                               + SpecUtils::xml_value_str(att) + "'" );
     
     return answer;
   }//int get_int_attribute(...)
+  
+  
+  template<size_t n>
+  inline int get_int_node_value( const rapidxml::xml_node<char> * const parent_node, const char (&name)[n] )
+  {
+    assert( parent_node );
+    assert( name );
+    
+    const rapidxml::xml_node<char> * const node = XML_FIRST_NODE(parent_node, name);
+    if( !node )
+      throw std::runtime_error( "Missing node '" + std::string(name) + "'" );
+    
+    int answer;
+    if( !SpecUtils::parse_int(node->value(), node->value_size(), answer) )
+      throw std::runtime_error( "Invalid integer value in attribute '" + std::string(name) + "' with value '"
+                               + SpecUtils::xml_value_str(node) + "'" );
+    
+    return answer;
+  }//int get_int_node_value(...)
+  
+  
+  template<size_t n>
+  inline std::string get_string_node_value( const rapidxml::xml_node<char> * const parent_node, const char (&name)[n] )
+  {
+    assert( parent_node );
+    assert( name );
+    
+    const rapidxml::xml_node<char> * const node = XML_FIRST_NODE(parent_node, name);
+    if( !node )
+      throw std::runtime_error( "Missing node '" + std::string(name) + "'" );
+    
+    // TODO: check if doing a check like the following is practicle, to make sure we are getting the text of the element we actually want, and not the text of the first child element.
+    //if( node->type() != rapidxml::node_type::node_element ){ ... }
+    
+    return SpecUtils::xml_value_str(node);
+  }//int get_int_attribute(...)
+  
 
   inline void check_xml_version( const rapidxml::xml_node<char> * const node, const int required_version )
   {

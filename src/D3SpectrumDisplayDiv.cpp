@@ -282,7 +282,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_axisColor( 0x00, 0x00, 0x00 ),
   m_chartMarginColor(),
   m_chartBackgroundColor(),
-  m_defaultPeakColor( 0, 51, 255, 155 ),
+  m_defaultPeakColor( 0, 51, 255 ),
   m_peakLabelFontSize{},
   m_peakLabelRotationDegrees(0.0),
   m_logYAxisMin(0.1),
@@ -459,7 +459,7 @@ void D3SpectrumDisplayDiv::defineJavaScript()
                                            boost::placeholders::_1, boost::placeholders::_2 ) );
     
      
-    m_existingRoiEdgeDragJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
+    m_existingRoiEdgeDragJS.reset( new JSignal<double,double,double,double,std::string,bool>( this, "roiDrag", true ) );
     m_existingRoiEdgeDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::existingRoiEdgeDragCallback, this,
                                          boost::placeholders::_1, boost::placeholders::_2,
                                          boost::placeholders::_3, boost::placeholders::_4,
@@ -644,7 +644,7 @@ Wt::Signal<double,double,int,int,string> &D3SpectrumDisplayDiv::rightClicked()
   return m_rightClick;
 }
 
-Wt::Signal<double,double,double,double,double,bool> &D3SpectrumDisplayDiv::existingRoiEdgeDragUpdate()
+Wt::Signal<double,double,double,double,std::string,bool> &D3SpectrumDisplayDiv::existingRoiEdgeDragUpdate()
 {
   return m_existingRoiEdgeDrag;
 }
@@ -959,6 +959,12 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   
   if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
     setForegroundPeaksToClient();
+  
+  if( m_renderFlags.testFlag(UpdateSecondaryPeaks) )
+    setSecondaryPeaksToClient();
+  
+  if( m_renderFlags.testFlag(UpdateBackgroundPeaks) )
+    setBackgroundPeaksToClient();
   
   if( m_renderFlags.testFlag(UpdateHighlightRegions) )
     setHighlightRegionsToClient();
@@ -1366,7 +1372,7 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
     {
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
       const std::shared_ptr<const Measurement> &foreground = m_foreground;
-      js = PeakDef::peak_json( inpeaks, foreground );
+      js = PeakDef::peak_json( inpeaks, foreground, m_defaultPeakColor, 255 );
     }
   }
   
@@ -1381,12 +1387,98 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
     m_pendingJs.push_back( js );
 }//void setForegroundPeaksToClient();
 
+
+void D3SpectrumDisplayDiv::setPeaksToClient( const SpecUtils::SpectrumType spectrum_type )
+{
+  string js;
+  string spectrum_name;
+  std::shared_ptr<const Measurement> spectrum_measurement;
+  int alpha = 255;
+  
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::SecondForeground:
+      spectrum_name = "SECONDARY";
+      spectrum_measurement = m_secondary;
+      alpha = 55;
+      break;
+    case SpecUtils::SpectrumType::Background:
+      spectrum_name = "BACKGROUND";
+      spectrum_measurement = m_background;
+      alpha = 55;
+      break;
+    default:
+      return; // Only handle secondary and background
+  }
+  
+  InterSpec *viewer = InterSpec::instance();
+  if( viewer )
+  {
+    std::shared_ptr<SpecMeas> meas = viewer->measurment( spectrum_type );
+    const std::set<int> &samples = viewer->displayedSamples( spectrum_type );
+    
+    if( meas && !samples.empty() )
+    {
+      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks = meas->peaks( samples );
+      if( peaks )
+      {
+        vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+        js = PeakDef::peak_json( inpeaks, spectrum_measurement, m_defaultPeakColor, alpha );
+      }
+    }
+  }
+  
+  if( js.empty() )
+    js = "[]";
+  
+  js = m_jsgraph + ".setRoiData(" + js + ", '" + spectrum_name + "');";
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}
+
+
+void D3SpectrumDisplayDiv::setSecondaryPeaksToClient()
+{
+  setPeaksToClient( SpecUtils::SpectrumType::SecondForeground );
+}
+
+
+void D3SpectrumDisplayDiv::setBackgroundPeaksToClient()
+{
+  setPeaksToClient( SpecUtils::SpectrumType::Background );
+}
+
+
 void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
 {
   m_renderFlags |= UpdateForegroundPeaks;
   
   scheduleRender();
 }//void scheduleForegroundPeakRedraw()
+
+
+void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
+{
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      m_renderFlags |= UpdateForegroundPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::SecondForeground:
+      m_renderFlags |= UpdateSecondaryPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::Background:
+      m_renderFlags |= UpdateBackgroundPeaks;
+      break;
+  }//switch( spectrum_type )
+  
+  scheduleRender();
+}//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
 
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )
@@ -1535,6 +1627,7 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> bac
     setBackgroundSubtract( false );
 
   scheduleUpdateBackground();
+  schedulePeakRedraw( SpecUtils::SpectrumType::Background );
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
@@ -1543,6 +1636,7 @@ void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> his
   m_secondary = hist;
   doSecondaryLiveTimeNormalization();
   scheduleUpdateSecondData();
+  schedulePeakRedraw( SpecUtils::SpectrumType::SecondForeground );
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> background );
 
 
@@ -1793,7 +1887,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     D3SpectrumExport::D3SpectrumOptions foregroundOptions;
     
     // Set options for the spectrum
-    foregroundOptions.peak_color = m_defaultPeakColor.isDefault() ? string("blue") : m_defaultPeakColor.cssText();
+    foregroundOptions.peak_color = m_defaultPeakColor.isDefault() ? string("rgb(0,51,255)") : m_defaultPeakColor.cssText();
     foregroundOptions.spectrum_type = SpecUtils::SpectrumType::Foreground;
     foregroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );  //will always be 1.0f
     // Leave line color blank, as we set a CSS rule for `--d3spec-fore-line-color`
@@ -1807,7 +1901,7 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
       if( peaks )
         inpeaks.insert( end(inpeaks), peaks->begin(), peaks->end() );
       
-      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks, data_hist );
+      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks, data_hist, m_defaultPeakColor, 255 );
     }
     
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(data_hist.get(),foregroundOptions) );
@@ -2080,7 +2174,7 @@ void D3SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
 
 void D3SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
 {
-  m_defaultPeakColor = color.isDefault() ? WColor(0,51,255,155) : color;
+  m_defaultPeakColor = color.isDefault() ? WColor(0,51,255) : color;
   
   //The default peak color is specified as part of the foreground JSON, so we
   //  need to reload the foreground to client to update the color.
@@ -2302,43 +2396,75 @@ void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double p
 
 
 void D3SpectrumDisplayDiv::existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
-                                                  double new_lower_px, double new_upper_px,
-                                                  double original_lower_energy, bool isfinal )
+                                                  double new_roi_px,
+                                                  double original_lower_energy,
+                                                  const std::string &spectrum_type,
+                                                  bool isfinal )
 {
-  m_existingRoiEdgeDrag.emit( new_lower_energy, new_upper_energy, new_lower_px, new_upper_px,
-                                             original_lower_energy, isfinal );
+  m_existingRoiEdgeDrag.emit( new_lower_energy, new_upper_energy, new_roi_px,
+                             original_lower_energy, spectrum_type, isfinal );
 }//void D3SpectrumDisplayDiv::chartRoiDragedCallback(...)
 
 
-void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
-                                                  double new_lower_energy, double new_upper_energy,
-                                                  double new_lower_px, double new_upper_px,
-                                                  double original_lower_energy, bool isfinal )
+void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_energy,
+                                                          double new_upper_energy,
+                                                          double new_roi_px,
+                                                          double original_lower_energy,
+                                                          std::string spectrum_type,
+                                                          bool isfinal )
 {
   std::unique_ptr<UndoRedoManager::PeakModelChange> peak_undo_creator;
-  if( isfinal )
-    peak_undo_creator.reset( new UndoRedoManager::PeakModelChange() );
   
-//  cout << "chartRoiDragedCallback: energy={" << new_lower_energy << "," << new_upper_energy << "}, "
-//       << "newPx={" << new_lower_px << "," << new_upper_px << "}, original_lower_energy=" << original_lower_energy
-//       << ", isfinal=" << isfinal << endl;
-  D3SpectrumDisplayDiv *spectrum = this;
+  PeakModel *peakModel = nullptr;
+  shared_ptr<const Measurement> spectrum;
+  shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks;
+  shared_ptr<deque<PeakModel::PeakShrdPtr>> final_mondified_peaks;
   
-  //if( !spectrum )
-  //  return;
+  const bool for_background = (spectrum_type == "BACKGROUND");
+  const bool for_secondary = (!for_background && (spectrum_type == "SECONDARY"));
+  SpecUtils::SpectrumType spec_type = SpecUtils::SpectrumType::Foreground;
   
-  PeakModel *peakModel = spectrum->m_peakModel;
-  shared_ptr<const Measurement> foreground = spectrum->data();
+  if( for_background || for_secondary )
+  {
+    spectrum = for_background ? m_background : m_secondary;
+    spec_type = for_background ? SpecUtils::SpectrumType::Background : SpecUtils::SpectrumType::SecondForeground;
+    
+    InterSpec *viewer = InterSpec::instance();
+    assert( viewer );
+    if( !viewer )
+      return;
+    
+    shared_ptr<SpecMeas> meas = viewer->measurment( spec_type );
+    const set<int> &samples = viewer->displayedSamples( spec_type );
+    origpeaks = (meas && !samples.empty()) ? meas->peaks( samples ) : nullptr;
+    
+    if( isfinal && origpeaks )
+      final_mondified_peaks = make_shared<deque<PeakModel::PeakShrdPtr>>( begin(*origpeaks), end(*origpeaks) );
+  }else
+  {
+    assert( spectrum_type == "FOREGROUND" );
+    
+    spec_type = SpecUtils::SpectrumType::Foreground;
+    spectrum = m_foreground;
+    peakModel = m_peakModel;
+    origpeaks = peakModel ? peakModel->peaks() : nullptr;
+    
+    if( isfinal )
+      peak_undo_creator.reset( new UndoRedoManager::PeakModelChange() );
+    
+    
+    assert( peakModel );
+    if( !peakModel )
+      return;
+  }//if( background or secondary ) / else ( assume foreground )
+    
+  assert( origpeaks && spectrum );
+  if( !origpeaks || !spectrum )  //Shouldnt ever happen
+    return;
+  
   
   try
   {
-    if( !peakModel || !foreground )  //Shouldnt ever happen
-      return;
-    
-    shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks = peakModel->peaks();
-    if( !origpeaks )
-      return;  //shouldnt ever happen
-    
     double minDe = 999999.9;
     std::shared_ptr<const PeakContinuum> continuum;
     for( auto p : *origpeaks )
@@ -2353,7 +2479,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
     
     if( !continuum || minDe > 1.0 )  //0.001 would probably be fine instead of 1.0
     {
-      spectrum->updateRoiBeingDragged( {} );
+      this->updateRoiBeingDragged( {} );
       
       throw runtime_error( "Couldnt find a continuum with lower energy " + std::to_string(original_lower_energy)
                           + " (de=" + std::to_string(minDe) + ")" );
@@ -2411,25 +2537,43 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       }
     }//if( new_roi_initial_peaks.size() > 1 )
     
+    if( isfinal && (for_background || for_secondary) )
+    {
+      assert( final_mondified_peaks );
+      final_mondified_peaks->erase( std::remove_if( begin(*final_mondified_peaks), end(*final_mondified_peaks),
+                                                   [&continuum]( const PeakModel::PeakShrdPtr &ptr ){
+        return (continuum == ptr->continuum());
+      }), end(*final_mondified_peaks) );
+    }//if( isfinal && (for_background || for_secondary) )
+    
     //If region to narrow, or fit fails, pass back null if !isFinal, or original ROI if isFinal
     //cout << "new_upper_px=" << new_upper_px << ", new_lower_px=" << new_lower_px << endl;
     if( !allPeaksInRoiAreGaus )
     {
       if( isfinal )
       {
-        // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
-        peakModel->removePeaks( orig_roi_peaks );
-        
-        std::vector<PeakDef> peaks_to_add;
-        for( auto p : new_roi_initial_peaks )
-          peaks_to_add.push_back( *p );
-        
-        peakModel->addPeaks( peaks_to_add );
+        if( for_background || for_secondary )
+        {
+          final_mondified_peaks->insert( end(*final_mondified_peaks), begin(new_roi_initial_peaks), end(new_roi_initial_peaks) );
+          std::sort( begin(*final_mondified_peaks), end(*final_mondified_peaks), &PeakDef::lessThanByMeanShrdPtr );
+          InterSpec::instance()->setPeaks( spec_type, final_mondified_peaks );
+        }else
+        {
+          assert( peakModel );
+          // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
+          peakModel->removePeaks( orig_roi_peaks );
+          
+          std::vector<PeakDef> peaks_to_add;
+          for( auto p : new_roi_initial_peaks )
+            peaks_to_add.push_back( *p );
+          
+          peakModel->addPeaks( peaks_to_add );
+        }
       }else
       {
-        spectrum->updateRoiBeingDragged( new_roi_initial_peaks );
+        this->updateRoiBeingDragged( new_roi_initial_peaks );
       }
-    }else if( new_upper_px >= (new_lower_px+10) )  //perhaps this should be by percentage of ROI?
+    }else if( new_roi_px > 10.0 )  //perhaps this should be by percentage of ROI?
     {
       //Need to check that all peaks are Gaussian.
       //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
@@ -2461,7 +2605,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       }//if( we should start from the peaks we last fit while dragging )
       
       vector<shared_ptr<const PeakDef>> refitpeaks
-                  = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+                  = refitPeaksThatShareROI( spectrum, detector, new_roi_initial_peaks, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
       
       m_continuum_being_drug = continuum;
       m_last_being_drug_peaks = refitpeaks;
@@ -2481,24 +2625,42 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
         for( auto p : newpeaks )
           peaks_to_add.push_back( *p );
         
-        peakModel->removePeaks( orig_roi_peaks );
-        peakModel->addPeaks( peaks_to_add );
+        if( for_background || for_secondary )
+        {
+          final_mondified_peaks->insert( end(*final_mondified_peaks), begin(new_roi_initial_peaks), end(new_roi_initial_peaks) );
+          std::sort( begin(*final_mondified_peaks), end(*final_mondified_peaks), &PeakDef::lessThanByMeanShrdPtr );
+          
+          InterSpec::instance()->setPeaks( spec_type, final_mondified_peaks ); // will take care of undo/redo
+        }else
+        {
+          assert( peakModel );
+          peakModel->removePeaks( orig_roi_peaks );
+          peakModel->addPeaks( peaks_to_add );
+        }
         
         m_continuum_being_drug.reset();
         m_last_being_drug_peaks.clear();
         m_last_drag_time = chrono::steady_clock::time_point{};
       }else
       {
-        spectrum->updateRoiBeingDragged( newpeaks );
+        this->updateRoiBeingDragged( newpeaks );
       }
-      
     }else
     {
       cout << "User wants to erase peaks" << endl;
-      spectrum->updateRoiBeingDragged( {} );
+      this->updateRoiBeingDragged( {} );
       
       if( isfinal )
-        peakModel->removePeaks( orig_roi_peaks );
+      {
+        if( for_background || for_secondary )
+        {
+          InterSpec::instance()->setPeaks( spec_type, final_mondified_peaks ); //will take care of undo/redo
+        }else
+        {
+          assert( peakModel );
+          peakModel->removePeaks( orig_roi_peaks );
+        }
+      }
     }//if( not narrow region ) / else
   }catch( std::exception &e )
   {
@@ -2925,7 +3087,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
 void D3SpectrumDisplayDiv::updateRoiBeingDragged( const vector<shared_ptr<const PeakDef> > &peaks )
 {
   const shared_ptr<const Measurement> &fore = m_foreground;
-  const string json = peaks.empty() ? string("null") : PeakDef::gaus_peaks_to_json( peaks, fore );
+  const string json = peaks.empty() ? string("null") : PeakDef::gaus_peaks_to_json( peaks, fore, m_defaultPeakColor, 255 );
   
   doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(" + json + ");}catch(error){}" );
 }//void updateRoiBeingDragged( vector<shared_ptr<const PeakDef> > &roiBeingDragged )
@@ -3011,8 +3173,9 @@ void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
 {
-  //doJavaScript( "try{" + m_jsgraph + "=null;}catch(){}" );
-
+  // The below false lets the JS run before load
+  wApp->doJavaScript( "try{" + m_jsgraph + ".destroy();}catch(e){console.log('Failed to cleanup:',e);}", false );
+  
   // Cleanup the style rules we created.
   WCssStyleSheet &style = wApp->styleSheet();
   for( const auto name_rule : m_cssRules )
@@ -3022,5 +3185,3 @@ D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
     //  style.removeRule( name_rule.second );
   }
 }//~D3SpectrumDisplayDiv()
-
-

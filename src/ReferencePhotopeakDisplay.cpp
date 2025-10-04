@@ -1856,6 +1856,7 @@ void ReferencePhotopeakDisplay::setShowBetaLines( const bool show )
   updateDisplayChange();
 }
 
+
 FeatureMarkerWidget *ReferencePhotopeakDisplay::featureMarkerTool()
 {
   return m_featureMarkers;
@@ -3049,6 +3050,12 @@ void ReferencePhotopeakDisplay::setExternalRidResults( std::shared_ptr<const Ext
   if( is_diff )
     updateOtherNucsDisplay();
 }//void setExternalRidResults( std::shared_ptr<const ExternalRidResults> results );
+
+
+std::shared_ptr<const ExternalRidResults> ReferencePhotopeakDisplay::currentExternalRidResults() const
+{
+  return m_external_results;
+}//std::shared_ptr<const ExternalRidResults> currentExternalRidResults() const
 
 
 Wt::Signal<> &ReferencePhotopeakDisplay::displayingNuclide()

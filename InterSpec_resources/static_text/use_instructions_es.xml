@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder 
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this 
+      video to a video playing widget in the WTemplate widget.  However since we 
+      dont want to have to hard code the bind placeholder name, and which video 
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [ 
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"Introducción al Ratón"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"Líneas Gamma"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"Calibración"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"Identificación de Picos"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"Blindaje de Actividad"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Ampliar</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Para ampliar una porción específica del espectro,
+         <u>separe</u> dos dedos alejándolos entre sí.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Reducir</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Para reducir,
+         <u>pellizque</u> dos dedos acercándolos entre sí.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Cambiar Rango de Energía</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         Para moverse a lo largo del eje x (energía) del gráfico,
+         coloque un dedo en el gráfico y muévalo izquierda o derecha para cambiar la energía mostrada.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Ajustar Pico(s)</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>Método 1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      <u>Toque dos veces</u> el espectro donde desee ajustar un pico.
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        <u>Tocar dos veces</u> nuevamente cerca de un pico existente ajustará más picos.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Método 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      Si desea forzar un número específico de picos en una región de interés:
+      <u>arrastre</u> dos dedos alineados horizontalmente sobre la región de interés.
+      <u>Retire</u> sus dedos y <u>seleccione</u> la cantidad de picos que desea identificar.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Otros Métodos</b></h3>
+      En <em>Menú</em>&rarr;<em>Herramientas</em>&rarr;<em>Gestor de Picos</em> puede ajustar automáticamente
+      todos los picos en un espectro usando el botón
+      <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" />.
+      Se recomienda tener líneas de referencia de nucleidos mostrándose antes de usar esta
+      búsqueda automatizada de picos para que los picos se asocien automáticamente con los nucleidos
+      responsables de crear el pico.
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Lanzar Editor de Picos</div>
+         Si desea reajustar o ajustar manualmente un pico, use el <em>Editor de Picos</em>
+         manteniendo presionado su dedo en un pico por aproximadamente un segundo, y aparecerá un menú
+         para que elija lo que desea hacer.
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Eliminar Pico(s)</div>
+      <p>
+        La forma más fácil de eliminar un pico es mantener presionado su dedo en él por aproximadamente un segundo,
+        y aparecerá un menú donde puede elegir eliminar el pico.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        También puede colocar dos dedos que abarquen el rango de energía de los picos que desea eliminar en la pantalla, y moverlos hacia arriba.
+        Cualquier pico con centroides entre sus dedos será completamente removido; también puede reducir el rango de energía de los picos
+        usando este mismo gesto, siempre que el centroide del pico no caiga entre sus dedos.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        El <em>Gestor de Picos</em> (<b>Menú</b>&rarr;<b>Herramientas</b>&rarr;<b>Gestor de Picos</b>) y
+        <em>Editor de Picos</em> (mantener dedo en pico por un segundo, seleccionar <b>Editor de Picos</b>) también pueden eliminar picos.
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "Ampliar/Reducir",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "Desplazar Energía",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "Deslizador Energía",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "Ajuste de Pico",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "Ajuste ROI",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "Eliminar Pico",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "Calibración Energía",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "Editor de Picos",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "Ajustar ROI",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "Escala Y",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "Contar Gammas",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "Atajos de Teclado",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>Clic-Izquierdo Arrastrar <b>derecha</b> para ampliar.</center></div>
+<div><center>Clic-Izquierdo Arrastrar <b>izquierda</b> para reducir.</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>Clic-Derecho Arrastrar</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center>Del menú <b>Ver</b> seleccione "<b>Mostrar Deslizador de Energía</b>".</center>
+<div>Esta es una forma fácil de ajustar el rango de energía del espectro.</div>
+<div><b>InterSpec</b> recordará si desea que se muestre el gráfico del deslizador de energía.</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">Hay varias formas de ajustar picos, incluyendo: </p>
+</center>
+<ol>
+  <li>Doble-Clic-Izquierdo. Puede hacer doble clic cerca del mismo pico nuevamente para añadir otro.</li>
+  <li><b><kbd>CTRL</kbd></b> + Clic-Izquierdo Arrastrar &rarr; Clic-Izquierdo (ver "Ajuste ROI") </li>
+  <li>Desde la pestaña "<b>Gestor de Picos</b>" haga clic en "<b>Añadir</b>" &rarr;. Luego puede ajustar los parámetros en la tabla a los valores que desee.</li>
+  <li>Desde la pestaña "<b>Gestor de Picos</b>" haga clic en "<b>Buscar Picos</b>" para encontrar todos los picos en el espectro.</li>
+<li>Clic-derecho en un pico existente y seleccione "<b>Añadir Pico</b>" para añadir un pico a la misma ROI.</li>
+</ol>
+
+<p>Sugerencia: antes de ajustar un pico es útil mostrar las líneas de referencia del
+nucleído responsable de él, así cuando se ajuste el pico, se asociará
+con ese nucleído. Esta información se usa para ajustar calibración de energía, respuesta del detector, actividad y cantidades de blindaje.
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>Para ajustar un número definido de picos en una Región de Interés (ROI):</div>
+<center>
+<b><kbd>CTRL</kbd></b> + Clic-Izquierdo Arrastrar &rarr; y luego seleccione cuántos picos.
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>Clic-Derecho &rarr; "<b>Eliminar Pico</b>"</li>
+<li>Clic-Derecho &rarr; "<b>Editor de Picos</b>" &rarr; "<b>Eliminar</b>"</li>
+<li><b><kbd>SHIFT</kbd></b> + Clic-Izquierdo Arrastrar</li>
+<li>Clic-Izquierdo "<b>Limpiar todos los Picos</b>" &rarr; Clic-Izquierdo "<b>Sí</b>"</li>
+<li>Arrastrar un lado de la ROI más allá del otro lado.</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>Para ajustar gráficamente la calibración de energía:</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Clic-Izquierdo Arrastrar &rarr; <u>Opcional</u>: Ajustar Cantidades &rarr; "<b>Aceptar</b>"</center>
+<div>Nota: si realiza esta acción nuevamente, como primero en un pico de alta energía, luego en un pico de baja energía (o viceversa), el diálogo que aparece le
+dará la opción de preservar ambas acciones ajustando tanto el desplazamiento como la ganancia para que ambos picos permanezcan en las energías a las que los arrastró.
+</div>
+<p>La pestaña "Calibración de Energía" también permite ajustar manualmente
+los coeficientes de calibración de energía, o ajustarlos usando los nucleídos asociados con los picos.
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>Clic-Derecho &rarr; "Editor de Picos"</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>Coloque el ratón cerca del borde de la Región de Interés (ROI) y arrastre.</div></center>
+<div>El ratón debe estar dentro del rango y de la ROI y dentro de 10 píxeles del borde de la ROI.</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center>Escale la amplitud de espectros de fondo y/o secundarios relativo al primer plano
+seleccionando <b>Ver</b> &rarr; "<b>Mostrar Escaladores del Eje Y</b>".
+</center>
+<p>Para restaurar el espectro de fondo o secundario a normalización de tiempo vivo, haga clic en el botón "Normalizar" en la pestaña "Archivos de Espectro".</p>
+<p><b>InterSpec</b> recordará si desea que se muestren estos deslizadores cuando hay un espectro de fondo o secundario,
+pero los elementos del menú estarán deshabilitados si no se carga ningún espectro de fondo o secundario.</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Clic-Izquierdo Arrastrar &rarr; <u>Opcional</u>: Ajustar Cantidades</li>
+      <li><b>Herramientas</b> &rarr; <b>Suma de Rango de Energía</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <ul>
+    <li>
+      <b><code>Ctrl-s</code></b>: Cambia a la pestaña "<em>Archivos de E<u>s</u>pectro</em>", o
+      si las <em>Pestañas de Herramientas</em> están ocultas, muestra la herramienta <em>Archivos de Espectro</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-p</code></b>: Cambia a la pestaña "<em>Gestor de <u>P</u>icos</em>", o
+      muestra la herramienta.
+    </li>
+    <li>
+      <b><code>Ctrl-r</code></b>: Cambia a la pestaña "<em>Fotopeaks de <u>R</u>eferencia</em>",
+      o muestra la herramienta.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: Cambia a la pestaña "<em>Calibración de <u>E</u>nergía</em>",
+      o muestra la herramienta.
+    </li>
+    <li>
+      <b><code>Ctrl-n</code></b>: Cambia a la pestaña "<em>Búsqueda de <u>N</u>ucleídos</em>",
+      o muestra la herramienta.
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>: Muestra la <em>Ayuda</em> dentro de la aplicación.
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>: Muestra la pantalla de <em><u>I</u>nformación de Bienvenida</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>: Cambia el eje y del espectro entre <u>l</u>ogarítmico y <u>l</u>ineal.
+    </li>
+    <li>
+      <b><code>Ctrl-c</code></b>: <u>L</u>impia todas las líneas de referencia mostradas.
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    Problemas conocidos actuales:
+    <ul>
+<li><b>Todos:</b> (Gestor de Picos) "ID Nucleído" en casos raros no funciona </li>
+        <li><b>Todos:</b> "Guardar Estado al Salir" en casos raros no funciona</li>
+    </ul>
+  </message>
+</messages>

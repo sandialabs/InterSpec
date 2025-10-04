@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+  
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">Színtémák</message>
+  
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">Eltávolítja a jelenleg kiválasztott témát.</message>
+  <message id="ctw-clone-tooltip">Új színtémát hoz létre a jelenleg kiválasztott téma alapján.</message>
+  <message id="ctw-upload-tooltip">Színtéma JSON fájl importálása használatra.</message>
+  <message id="ctw-download-tooltip">A jelenleg kiválasztott téma exportálása JSON fájlba.</message>
+  
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">„Sötét" automatikus alkalmazása OS-ből</message>
+  <message id="ctw-auto-dark-tooltip">A „Sötét" színtéma automatikus alkalmazása az operációs rendszer jelenlegi értéke szerint, vagy átváltáskor.</message>
+  
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (klónozott)</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">Törölje {1}?</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">Biztos, hogy törölni szeretné <em>{1}</em>-t?</span>]]></message>
+  
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">Színtéma JSON Feltöltése</message>
+  <message id="ctw-upload-error-open">Hiba a feltöltött fájl megnyitásakor.</message>
+  <message id="ctw-upload-error-empty">Feltöltött fájl üres.</message>
+  <message id="ctw-upload-error-large">Feltöltött fájl túl nagy; max méret 64kb.</message>
+  <message id="ctw-upload-error-read">Nem sikerült beolvasni a feltöltött fájlt.</message>
+  <message id="ctw-upload-error-json">Érvénytelen JSON, vagy hiányzó szükséges info.</message>
+  <message id="ctw-upload-too-large">Túl nagy fájl.</message>
+  <message id="ctw-import-confirm"><![CDATA[Szeretné importálni <em>{1}</em>-t?]]></message>
+  
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">Mentse a Módosításokat?</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;">Mentse a módosításokat <em>{1}</em>-ba?</span>]]></message>
+  <message id="ctw-discard-btn">Elvet</message>
+</messages>

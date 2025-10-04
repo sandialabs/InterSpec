@@ -506,7 +506,7 @@ public:
   {
     GaussianDefined,
     DataDefined
-  };//enum PeakType
+  };//enum DefintionType
   
   /** Returns "GaussianDefined" or "DataDefined". */
   static const char *to_str( const DefintionType type );
@@ -959,9 +959,21 @@ public:
 
 #if( SpecUtils_ENABLE_D3_CHART )
   static std::string gaus_peaks_to_json( const std::vector<std::shared_ptr<const PeakDef> > &peaks,
-                                  const std::shared_ptr<const SpecUtils::Measurement> &foreground );
+                                        const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                                        const Wt::WColor &defaultPeakColor,
+                                        int override_alpha );
+  /** Converts the given peaks to JSON suitable for sending to D3SpectrumDisplayDiv/SpectrumChartD3.js
+   @param inpeaks Peaks to convert to JSON
+   @param spectrum The spectrum the peaks are for - used for calculating stepped continua
+   @param defaultPeakColor The default color to use if the peak doesnt already have a color assigned.
+   @param override_alpha If a value in range [0,254] (inclusive range), the the alpha-value of the peak colors will be overridden by this value. A value
+          of `0` is completely clear, and a value of 254 is almost entirely solid.  A value of 255 (or -1, or 256, etc) will default to what the color has defined,
+          which is almost certainly 255.
+   */
   static std::string peak_json( const std::vector<std::shared_ptr<const PeakDef> > &inpeaks,
-                                const std::shared_ptr<const SpecUtils::Measurement> &foreground );
+                                const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+                               const Wt::WColor &defaultPeakColor,
+                               int override_alpha );
 #endif
   
 

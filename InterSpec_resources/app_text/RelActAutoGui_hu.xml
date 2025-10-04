@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">Relatív akt. izotópok</message>
   
   <!-- Presets section -->
   <message id="raag-presets">Előbeállítások</message>
@@ -29,10 +30,42 @@
   <message id="raag-fwhm-start-det-eff">Kezdés Det. Hat.-ból</message>
   <message id="raag-fwhm-fixed-det-eff">Rögzítve Det. Hat.-hoz</message>
   
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">Azonos Z azonos kor</message>
+  <message id="raag-refit-peaks">Csúcsok újraillesztése</message>
+  <message id="raag-use-det-eff">Det. hat. használata</message>
+  <message id="raag-none">Nincs</message>
+  <message id="raag-nuclides">Nuklidok</message>
+  <message id="raag-energy-ranges">Energia tartományok</message>
+  <message id="raag-free-peaks">Szabad csúcsok</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">Spektrum</message>
+  <message id="raag-rel-eff">Rel. hat.</message>
+  <message id="raag-result">Eredmény</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">Energia kalibráció alkalmazása</message>
+  <message id="raag-show-ref-lines">Referencia gamma vonalak megjelenítése</message>
+  <message id="raag-hide-ref-lines">Referencia gamma vonalak elrejtése</message>
+  <message id="raag-set-peaks-foreground">Csúcsok előtérbe állítása</message>
+  <message id="raag-show-background">Háttér megjelenítése</message>
+  <message id="raag-hide-background">Háttér elrejtése</message>
+  <message id="raag-roi-options">ROI opciók:</message>
+  <message id="raag-remove-roi">ROI eltávolítása</message>
+  <message id="raag-combine-roi-left">Egyesítés bal oldali ROI-val</message>
+  <message id="raag-combine-roi-right">Egyesítés jobb oldali ROI-val</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">Az egyenlettípus, amely a csúcs FWHM-et az energia függvényében modellezi.</message>
+  <message id="raag-tt-skew-type">A csúcsokra alkalmazott ferdeség típusa; ferdeség paraméterek illesztésre kerülnek.</message>
+  <message id="raag-tt-u-pu-data-source">Nukleáris adatforrás az urán és plutónium gamma elágazási arányokhoz.</message>
+  <message id="raag-tt-add-source">Forrás hozzáadása.</message>
+  <message id="raag-tt-add-energy-range">Energia tartomány hozzáadása.</message>
+
   <!-- Buttons -->
   <message id="raag-add-free-peaks">szabad csúcsok hozzáadása</message>
   <message id="raag-clear-all-ranges">összes tartomány törlése</message>
-  <message id="raag-continue">Folytatás</message>
   <message id="raag-html-report">HTML Jelentés</message>
   <message id="raag-xml-config">XML Konfig</message>
   
