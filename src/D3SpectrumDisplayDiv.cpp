@@ -444,9 +444,10 @@ void D3SpectrumDisplayDiv::defineJavaScript()
                                         boost::placeholders::_3, boost::placeholders::_4,
                                         boost::placeholders::_5) );
     
-    m_doubleLeftClickJS.reset( new JSignal<double,double,string>( this, "doubleclicked", true ) );
+    m_doubleLeftClickJS.reset( new JSignal<double,double,string,unsigned int>( this, "doubleclicked", true ) );
     m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback,
-                                              this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3 ) );
+                                              this, boost::placeholders::_1, boost::placeholders::_2,
+                                              boost::placeholders::_3, boost::placeholders::_4 ) );
     
     m_rightClickJS.reset( new JSignal<double,double,double,double,string>( this, "rightclicked", true ) );
     m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this,
@@ -660,7 +661,7 @@ Wt::Signal<double,double,SpecUtils::SpectrumType> &D3SpectrumDisplayDiv::yAxisSc
   return m_yAxisScaled;
 }
 
-Wt::Signal<double,double,std::string> &D3SpectrumDisplayDiv::doubleLeftClick()
+Wt::Signal<double,double,std::string,Wt::WFlags<Wt::KeyboardModifier>> &D3SpectrumDisplayDiv::doubleLeftClick()
 {
   return m_doubleLeftClick;
 }
@@ -2384,9 +2385,24 @@ void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pa
   m_leftClick.emit( x, y, pageX, pageY, ref_line_name );
 }//void chartLeftClickCallback(...)
 
-void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name )
+void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name, unsigned int modifiers )
 {
-  m_doubleLeftClick.emit( x, y, ref_line_name );
+  const bool shiftKey = (modifiers & 0x01);
+  const bool ctrlKey = (modifiers & 0x02);
+  const bool altKey = (modifiers & 0x04);
+  const bool metaKey = (modifiers & 0x08);
+  
+  WFlags<Wt::KeyboardModifier> keymods = Wt::KeyboardModifier::NoModifier;
+  if( shiftKey )
+    keymods |= Wt::KeyboardModifier::ShiftModifier;
+  if( ctrlKey )
+    keymods |= Wt::KeyboardModifier::ControlModifier;
+  if( altKey )
+    keymods |= Wt::KeyboardModifier::AltModifier;
+  if( metaKey )
+    keymods |= Wt::KeyboardModifier::MetaModifier;
+  
+  m_doubleLeftClick.emit( x, y, ref_line_name, keymods );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
 void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name )

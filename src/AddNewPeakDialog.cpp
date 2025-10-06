@@ -290,7 +290,7 @@ m_chart( nullptr )
   
   doAdd->clicked().connect( std::bind( [this](){
     UndoRedoManager::PeakModelChange peak_undo_creator;
-    m_viewer->addPeak( *m_candidatePeak, false );
+    m_viewer->addPeak( *m_candidatePeak, false, SpecUtils::SpectrumType::Foreground );
     this->hide();
   }) );
   

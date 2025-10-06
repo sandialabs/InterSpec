@@ -80,7 +80,7 @@ public:
   
   Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &chartClicked();
   Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &rightClicked();
-  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line name*/> &doubleLeftClick();
+  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line name*/,Wt::WFlags<Wt::KeyboardModifier>> &doubleLeftClick();
   Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
   
   /** When a previously existing ROI gets dragged by its edge, this signal will be emitted as it
@@ -569,8 +569,10 @@ protected:
    
    The name of the reference lines (e.g., "U238", "H(n,g)") _may_ be followed by a semicolon, then information about the specific line.
    E.x. "Th232;S.E. of 2614.5 keV"
+   
+   The `unsigned int` is modifier keys pressed
    */
-  std::unique_ptr<Wt::JSignal<double, double, std::string> > m_doubleLeftClickJS;
+  std::unique_ptr<Wt::JSignal<double, double, std::string, unsigned int> > m_doubleLeftClickJS;
   std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/,std::string /*ref-line name*/> > m_leftClickJS;
   std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/,std::string /*ref-line name*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
@@ -599,7 +601,7 @@ protected:
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_leftClick;
-  Wt::Signal<double,double,std::string /*ref-line name*/> m_doubleLeftClick;
+  Wt::Signal<double,double,std::string /*ref-line name*/,Wt::WFlags<Wt::KeyboardModifier>> m_doubleLeftClick;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_rightClick;
   
   Wt::Signal<double /*new roi lower energy*/,
@@ -628,7 +630,7 @@ protected:
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
   void chartLeftClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
-  void chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name );
+  void chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name, unsigned int modifiers );
   void chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
   
   void existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,

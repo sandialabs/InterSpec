@@ -365,6 +365,8 @@ public:
 
   /** Adds a new peak to the peak model, and returns the models index of the new peak.
    
+     Does NOT add a undo/redo action.
+   
    @param peak the peak to add
    @param associateShownNucXrayRctn is specified true _and_ the user is showing some
           reference gamma lines, OR `ref_line_name` is not empty, and the peak doesnt already have
@@ -373,10 +375,12 @@ public:
    @param ref_line_name optional string to specify the source name to assign to the peak.  if
           specified, this string will be tried as a source, before the reference lines.
    
-   @returns the WModelIndex of the added peak; if the peak was not added (because it is outside the spectrums
-            energy range, or the peak was not initialized), then the returned index will be invalid.
+   @returns the WModelIndex of the added peak if the SpectrumType was a foreground and the peak was added
+            (may have failed to be added because it is outside the spectrums energy range, or the peak was not initialized)
+            If not for the foreground, or the peak was not added, then the returned index will be invalid.
    */
   Wt::WModelIndex addPeak( PeakDef peak, const bool associateShownNucXrayRctn,
+                          const SpecUtils::SpectrumType spec_type,
                           const std::string &ref_line_name = "" );
   
   /** Sets the peaks for the given spectrum.  If foreground, you should consider instead to use the PeakModel.
@@ -1166,7 +1170,7 @@ public:
                                        const bool user_interaction);
   
   //Peak finding functions
-  void searchForSinglePeak( const double x, const std::string &ref_line_name );
+  void searchForSinglePeak( const double x, const std::string &ref_line_name, Wt::WFlags<Wt::KeyboardModifier> mods );
   
   
   /** Function to call when the automated search for peaks (throughout the

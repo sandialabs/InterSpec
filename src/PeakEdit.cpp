@@ -2914,7 +2914,7 @@ void PeakEdit::apply()
     }else
     {
       m_peakModel->removePeak( m_peakIndex );
-      m_peakIndex = m_viewer->addPeak( m_currentPeak, false );
+      m_peakIndex = m_viewer->addPeak( m_currentPeak, false, SpecUtils::SpectrumType::Foreground );
       m_currentPeak = *m_peakModel->peak( m_peakIndex );
     }//if( orig_continuum != *m_currentPeak.continuum() )
     
@@ -2960,7 +2960,7 @@ void PeakEdit::apply()
     
     if( orig_peak_ptr )
     {
-      m_peakIndex = m_viewer->addPeak( revertPeak, false );
+      m_peakIndex = m_viewer->addPeak( revertPeak, false , SpecUtils::SpectrumType::Foreground);
       m_currentPeak = *m_peakModel->peak( m_peakIndex );
       m_energy = m_currentPeak.mean();
     }//if( orig_peak_ptr )
