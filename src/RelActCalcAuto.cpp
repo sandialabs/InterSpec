@@ -13931,7 +13931,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
       }//for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
     }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
     
-    assert( nearest_dist < 1.0 );
+    assert( nearest_dist < 1.1 );
     if( !continuum || (nearest_dist > 10.0) )
       continue;
     

@@ -47,10 +47,7 @@ class DetectorPeakResponse;
 
 /**
 TODO items:
- - Extend the energy lines to the full-height of the window - maybe either use a dotted line, or one with some alpha, or make the solid line, but a dot at the original height
  - For the random sum peaks, also show likely nuclides
- - When multiple nuclides are candidates, need to allow switching between them, or indicate things in some way to either cycle through them, and/or let the user
- - Each "catagory" of nuclides should get a different color, controllable by the color theme
 
  Current shortcommings:
  - Cascade sums not accounted for
