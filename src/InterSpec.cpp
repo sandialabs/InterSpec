@@ -1086,7 +1086,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                                      boost::placeholders::_1,
                                                      boost::placeholders::_2 ) );
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this,
-                                                     boost::placeholders::_1, boost::placeholders::_3 ) );
+                                                     boost::placeholders::_1, boost::placeholders::_3,
+                                                     boost::placeholders::_4 ) );
   m_spectrum->xRangeChanged().connect( boost::bind( &InterSpec::handleSpectrumChartXRangeChange, this,
                                                      boost::placeholders::_1,
                                                    boost::placeholders::_2,
@@ -1949,7 +1950,7 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
   cont->setRange( minx, maxx );
   
   m_peakModel->removePeak( peak );
-  addPeak( newpeak, true );
+  addPeak( newpeak, true, SpecUtils::SpectrumType::Foreground );
   
   refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::Standard );
   
@@ -2092,7 +2093,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
     PeakDef newpeak( *p );
     newpeak.setContinuum( continuum );
     m_peakModel->removePeak( p );
-    addPeak( newpeak, false );
+    addPeak( newpeak, false, SpecUtils::SpectrumType::Foreground );
   }//for( PeakModel::PeakShrdPtr &p : leftpeaks )
   
   for( PeakModel::PeakShrdPtr &p : rightpeaks )
@@ -2100,7 +2101,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
     PeakDef newpeak( *p );
     newpeak.setContinuum( continuum );
     m_peakModel->removePeak( p );
-    addPeak( newpeak, false );
+    addPeak( newpeak, false, SpecUtils::SpectrumType::Foreground );
   }//for( PeakModel::PeakShrdPtr &p : leftpeaks )
 
   
@@ -3039,27 +3040,106 @@ Wt::Signal<std::shared_ptr<const ExternalRidResults>> &InterSpec::externalRidRes
 
 WModelIndex InterSpec::addPeak( PeakDef peak,
                                 const bool associateShowingNuclideXrayRctn,
+                               const SpecUtils::SpectrumType spec_type,
                                const std::string &ref_line_name )
 {
-  if( fabs(peak.mean())<0.1 && fabs(peak.amplitude())<0.1 )
+  if( (fabs(peak.mean()) < 0.1) && (fabs(peak.amplitude()) < 0.1) )
     return WModelIndex();
   
-  if( !associateShowingNuclideXrayRctn || (!m_referencePhotopeakLines && ref_line_name.empty()) )
-    return m_peakModel->addNewPeak( peak );
-  
-  if( peak.hasSourceGammaAssigned() )
-    return m_peakModel->addNewPeak( peak );
-  
+  shared_ptr<SpecMeas> meas = measurment(spec_type);
+  if( !meas )
+    return WModelIndex();
+  const set<int> &sample_nums = displayedSamples(spec_type);
+  shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = meas->peaks(sample_nums);
+  assert( peaks );
+  if( !peaks && (spec_type != SpecUtils::SpectrumType::Foreground) )
+    return WModelIndex();
+
+  if( !associateShowingNuclideXrayRctn || (!m_referencePhotopeakLines && ref_line_name.empty()) || peak.hasSourceGammaAssigned() )
+  {
+    if( spec_type == SpecUtils::SpectrumType::Foreground )
+      return m_peakModel->addNewPeak( peak );
+
+    auto new_peak = make_shared<PeakDef>( peak );
+    // Insert the new peak into peaks, sorted by energy
+    auto insert_pos = lower_bound(begin(*peaks), end(*peaks), new_peak, &PeakDef::lessThanByMeanShrdPtr );
+    peaks->insert(insert_pos, new_peak);
+    m_spectrum->schedulePeakRedraw( spec_type );
+    return WModelIndex();
+  }
+    
   const bool showingEscape = showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
-  auto foreground = displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  auto spectrum = displayedHistogram(spec_type);
+
+  const bool wasDefaultColor = peak.lineColor().isDefault();
   
+
+  auto assign_from_ref_lines = [&]( const vector<ReferenceLineInfo> &ref_lines, const bool is_dynamic_line ){
+    if( ref_lines.empty() )
+      return;
+
+    const string source_name = ref_lines.front().m_input.m_input_txt;
+    
+    const bool useColor = ((!is_dynamic_line) && m_colorPeaksBasedOnReferenceLines);
+    
+    unique_ptr<pair<shared_ptr<const PeakDef>,string>> addswap
+       = PeakSearchGuiUtils::assign_nuc_from_ref_lines( peak, peaks, spectrum, ref_lines, useColor, showingEscape );
+
+    if( spec_type == SpecUtils::SpectrumType::Foreground )
+    {
+      WModelIndex prevpeakind = addswap ? m_peakModel->indexOfPeak( addswap->first ) : WModelIndex();
+      if( prevpeakind.isValid() )
+      {
+        prevpeakind = m_peakModel->index(prevpeakind.row(), PeakModel::kIsotope);
+        m_peakModel->setData( prevpeakind, WString(addswap->second) );
+      }
+    }else
+    {
+      if( addswap && addswap->first )
+      {
+        shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( *addswap->first );
+        PeakModel::SetGammaSource status = PeakModel::setNuclideXrayReaction( *new_peak, addswap->second, 4.0 );
+        if( status != PeakModel::SetGammaSource::NoSourceChange )
+        {
+          // Replace the previous peak with the new peak
+          auto pos = std::find(begin(*peaks), end(*peaks), addswap->first);
+          if( pos != end(*peaks) )
+            *pos = new_peak;
+        }
+      }//if( addswap && addswap->first )
+    }//if( spec_type == SpecUtils::SpectrumType::Foreground ) / else
+    
+    if( wasDefaultColor && peak.hasSourceGammaAssigned() && m_referencePhotopeakLines )
+    {
+      Wt::WColor color;
+      
+      // Check in with ReferencePhotopeakLines widget (it will check for other peaks with this source)
+      if( color.isDefault() )
+        color = m_referencePhotopeakLines->suggestColorForSource( source_name );
+      
+      // Check the color theme
+      if( color.isDefault() && m_colorTheme )
+      {
+        const auto pos = m_colorTheme->referenceLineColorForSources.find(source_name);
+        if( pos != end(m_colorTheme->referenceLineColorForSources) )
+          color = pos->second;
+      }//if( color.isDefault() )
+      
+      // Finally, generate a new color
+      if( color.isDefault() )
+      {
+        color = m_referencePhotopeakLines->nextGenericSourceColor();
+        m_referencePhotopeakLines->updateColorCacheForSource( source_name, color );
+      }//if( color.isDefault() )
+      
+      if( !color.isDefault() )
+        peak.setLineColor( color );
+    }//if( we should assign a color )
+  };//assign_from_ref_lines lambda
+
+
   if( !ref_line_name.empty() )
   {
-    const bool wasDefaultColor = peak.lineColor().isDefault();
-    shared_ptr<const deque<shared_ptr<const PeakDef>>> previouspeaks = m_peakModel->peaks();
-    if( previouspeaks )
-      previouspeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
-    
     // First, get just the parent name of the ref lines (for now we will assume ref_line_name could be of
     //  the form "Th232;S.E. of 2614.5 keV".
     string parent = ref_line_name;
@@ -3069,95 +3149,85 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
     SpecUtils::trim(parent);
     
     bool is_dynamic_line = false;
-    vector<ReferenceLineInfo> ref_lines;
-    
+    vector<ReferenceLineInfo> matching_ref_lines;
+  
     // First try to get this reference line from the ReferenceLines
     if( m_referencePhotopeakLines )
     {
       const ReferenceLineInfo &current_ref_lines = m_referencePhotopeakLines->currentlyShowingNuclide();
-      if( SpecUtils::iequals_ascii( parent, current_ref_lines.m_input.m_input_txt ) )
-        ref_lines.push_back( current_ref_lines );
-      
-      const vector<ReferenceLineInfo> &persisted = m_referencePhotopeakLines->persistedNuclides();
-      for( size_t i = 0; ref_lines.empty() && (i < persisted.size()); ++i )
+      if( current_ref_lines.m_validity == ReferenceLineInfo::InputValidity::Valid )
       {
-        if( SpecUtils::iequals_ascii( parent, persisted[i].m_input.m_input_txt ) )
-          ref_lines.push_back( persisted[i] );
+        if( SpecUtils::iequals_ascii( parent, current_ref_lines.m_input.m_input_txt ) )
+          matching_ref_lines.push_back( current_ref_lines );
+      }
+
+      const vector<ReferenceLineInfo> &persisted = m_referencePhotopeakLines->persistedNuclides();
+      for( size_t i = 0; matching_ref_lines.empty() && (i < persisted.size()); ++i )
+      {
+        if( persisted[i].m_validity == ReferenceLineInfo::InputValidity::Valid )
+        {
+          if( SpecUtils::iequals_ascii( parent, persisted[i].m_input.m_input_txt ) )
+            matching_ref_lines.push_back( persisted[i] );
+        }
       }//
     }//if( m_referencePhotopeakLines )
     
-    if( ref_lines.empty() && m_refLineDynamic && m_refLineDynamic->current_lines() )
+    if( matching_ref_lines.empty() && m_refLineDynamic && m_refLineDynamic->current_lines() )
     {
       const shared_ptr<vector<pair<double,ReferenceLineInfo>>> dynamic_ref_lines = m_refLineDynamic->current_lines();
-      for( size_t i = 0; ref_lines.empty() && (i < dynamic_ref_lines->size()); ++i )
+      for( size_t i = 0; matching_ref_lines.empty() && (i < dynamic_ref_lines->size()); ++i )
       {
         const ReferenceLineInfo &info = (*dynamic_ref_lines)[i].second;
+        
         if( SpecUtils::iequals_ascii( parent, info.m_input.m_input_txt ) )
         {
           is_dynamic_line = true;
-          ref_lines.push_back( info );
+          matching_ref_lines.push_back( info );
         }
       }//for( loop over dynamic_ref_lines )
     }//if( ref_lines.empty() && m_refLineDynamic )
     
-    if( !ref_lines.empty() )
-    {
-      const string source_name = ref_lines.front().m_input.m_input_txt;
-      
-      const bool useColor = ((!is_dynamic_line) && m_colorPeaksBasedOnReferenceLines);
-      
-      unique_ptr<pair<shared_ptr<const PeakDef>,string>> addswap
-         = PeakSearchGuiUtils::assign_nuc_from_ref_lines( peak, previouspeaks, foreground, ref_lines, useColor, showingEscape );
-
-      WModelIndex prevpeakind = addswap ? m_peakModel->indexOfPeak( addswap->first ) : WModelIndex();
-      if( prevpeakind.isValid() )
-      {
-        prevpeakind = m_peakModel->index(prevpeakind.row(), PeakModel::kIsotope);
-        m_peakModel->setData( prevpeakind, WString(addswap->second) );
-      }
-      
-      if( wasDefaultColor && peak.hasSourceGammaAssigned() && m_referencePhotopeakLines )
-      {
-        Wt::WColor color;
-        
-        // Check in with ReferencePhotopeakLines widget (it will check for other peaks with this source)
-        if( color.isDefault() )
-          color = m_referencePhotopeakLines->suggestColorForSource( source_name );
-        
-        // Check the color theme
-        if( color.isDefault() && m_colorTheme )
-        {
-          const auto pos = m_colorTheme->referenceLineColorForSources.find(source_name);
-          if( pos != end(m_colorTheme->referenceLineColorForSources) )
-            color = pos->second;
-        }//if( color.isDefault() )
-        
-        // Finally, generate a new color
-        if( color.isDefault() )
-        {
-          color = m_referencePhotopeakLines->nextGenericSourceColor();
-          m_referencePhotopeakLines->updateColorCacheForSource( source_name, color );
-        }//if( color.isDefault() )
-        
-        if( !color.isDefault() )
-          peak.setLineColor( color );
-      }//if( we should assign a color )
-    }//if( !ref_lines.empty() )
+    assign_from_ref_lines( matching_ref_lines, is_dynamic_line );
   }//if( !ref_line_name.empty() )
   
-  if( !peak.hasSourceGammaAssigned() )
+  if( spec_type == SpecUtils::SpectrumType::Foreground )
   {
-    PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
-                                                            foreground, m_referencePhotopeakLines,
-                                                            m_colorPeaksBasedOnReferenceLines, showingEscape );
-  }//if( !peak.hasSourceGammaAssigned() )
+    if( !peak.hasSourceGammaAssigned() )
+    {
+      PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
+                                                               spectrum, m_referencePhotopeakLines,
+                                                              m_colorPeaksBasedOnReferenceLines, showingEscape );
+    }//if( !peak.hasSourceGammaAssigned() )
   
-  WModelIndex newpeakindex = m_peakModel->addNewPeak( peak );
+    WModelIndex newpeakindex = m_peakModel->addNewPeak( peak );
   
-  PeakModel::PeakShrdPtr newpeak = m_peakModel->peak(newpeakindex);
-  try_update_hint_peak( newpeak, m_dataMeasurement, m_displayedSamples );
+    PeakModel::PeakShrdPtr newpeak = m_peakModel->peak(newpeakindex);
+    try_update_hint_peak( newpeak, m_dataMeasurement, m_displayedSamples );
+
+    return newpeakindex;
+  }else
+  {
+    vector<ReferenceLineInfo> all_ref_lines;
   
-  return newpeakindex;
+    if( m_referencePhotopeakLines )
+    {
+      const ReferenceLineInfo &current_ref_lines = m_referencePhotopeakLines->currentlyShowingNuclide();
+      if( current_ref_lines.m_validity == ReferenceLineInfo::InputValidity::Valid )
+        all_ref_lines.push_back( current_ref_lines );      
+      for( const ReferenceLineInfo &info : m_referencePhotopeakLines->persistedNuclides() )
+        all_ref_lines.push_back( info );
+    }//if( m_referencePhotopeakLines )
+
+    assign_from_ref_lines( all_ref_lines, false );
+
+    shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( peak );
+    auto insert_pos = lower_bound(begin(*peaks), end(*peaks), new_peak, &PeakDef::lessThanByMeanShrdPtr );
+    peaks->insert(insert_pos, new_peak);
+    m_spectrum->schedulePeakRedraw( spec_type );
+    return WModelIndex();
+  }
+
+  return WModelIndex();
 }//WModelIndex addPeak( PeakDef peak )
 
 
@@ -8840,7 +8910,7 @@ void InterSpec::handleSimpleMdaWindowClose()
 
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
 {
-  searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint );
+  searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint, 0 );
 }//void fitNewPeakNotInRoiFromRightClick()
 
 
@@ -12740,7 +12810,7 @@ void InterSpec::handleSpectrumChartXRangeChange( const double xmin, const double
 }//void handleSpectrumChartXRangeChange(...);
 
 
-void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line_name )
+void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line_name, Wt::WFlags<Wt::KeyboardModifier> mods )
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
   
@@ -12748,9 +12818,15 @@ void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line
     throw runtime_error( "InterSpec::searchForSinglePeak(...): "
                         "shoudnt be called if peak model isnt set.");
   
-  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
+  SpecUtils::SpectrumType spec_type = SpecUtils::SpectrumType::Foreground;
+  if( mods.testFlag(KeyboardModifier::AltModifier) && m_spectrum->background() )
+    spec_type = SpecUtils::SpectrumType::Background;
+  else if( mods.testFlag(KeyboardModifier::ShiftModifier) && m_spectrum->secondData() )
+    spec_type = SpecUtils::SpectrumType::SecondForeground;
+  //mods.testFlag(KeyboardModifier::ControlModifier)
+  //mods.testFlag(KeyboardModifier::MetaModifier)
   
-  if( !m_dataMeasurement || !data )
+  if( !m_dataMeasurement )
     return;
   
   const double xmin = m_spectrum->xAxisMinimum();
@@ -12759,10 +12835,9 @@ void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line
   const double specWidthPx = m_spectrum->chartWidthInPixels();
   const double pixPerKeV = (xmax > xmin && xmax > 0.0 && specWidthPx > 10.0) ? std::max(0.001,(specWidthPx/(xmax - xmin))): 0.001;
   
-  std::shared_ptr<const DetectorPeakResponse> det = m_dataMeasurement->detector();
-  
-  
-  PeakSearchGuiUtils::fit_peak_from_double_click( this, x, pixPerKeV, det, ref_line_name );
+  shared_ptr<const DetectorPeakResponse> det = m_dataMeasurement->detector();
+
+  PeakSearchGuiUtils::fit_peak_from_double_click( this, x, pixPerKeV, det, ref_line_name, spec_type );
 }//void searchForSinglePeak( const double x )
 
 
