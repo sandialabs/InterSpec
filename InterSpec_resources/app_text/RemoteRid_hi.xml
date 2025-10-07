@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">Exe पथ</message>
+  <message id="rr-url-empty-text">FullSpectrum सेवा का URL</message>
+  <message id="rr-exe-path-empty-text">FullSpectrum निष्पादन योग्य का पथ</message>
+  <message id="rr-get-detectors">DRF पुनर्प्राप्त करें</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">वेब सेवा का URL दर्ज करने के बाद, कृपया (वैकल्पिक रूप से) DRF पुनर्प्राप्त करें, और फिर "<em>सबमिट करें</em>" दबाएं</message>
+  <message id="rr-only-disp-samples-cb">केवल प्रदर्शित नमूने</message>
+  <message id="rr-tt-only-disp-samples">सामान्य रूप से खोज-मोड और पोर्टल डेटा को पूर्णता में विश्लेषित किया जाता है, लेकिन इस विकल्प का चयन करने से केवल प्रदर्शित अग्रभूमि/पृष्ठभूमि का विश्लेषण किया जाएगा।</message>
+  <message id="rr-submit-ana-btn">विश्लेषण सबमिट करें</message>
+  <message id="rr-show-dialog-cb">संवाद दिखाएं</message>
+  <message id="rr-always-call-cb">स्पेक्ट्रम लोड पर हमेशा कॉल करें</message>
+  <message id="rr-tt-show-dialog">यदि चेक किया गया है, तो एक संवाद दिखाया जाएगा जिसे उपयोगकर्ता द्वारा RID परिणामों के साथ खारिज किया जाना चाहिए। यदि चेक नहीं किया गया है, तो केवल एक सूचना दिखाई जाएगी जो थोड़े समय के बाद RID परिणामों के साथ गायब हो जाएगी।</message>
+  <message id="rr-gadras-rid-error">GADRAS RID त्रुटि: {1}</message>
+  <message id="rr-gadras-rid-error-code">GADRAS RID त्रुटि कोड {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: कुछ भी पहचाना नहीं गया</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">GADRAS RID परिणामों को पार्स करने में विफल।</message>
+  <message id="rr-rid-results-window-title">बाहरी RID परिणाम</message>
+  <message id="rr-rid-tool-btn">RID उपकरण</message>
+  <message id="rr-err-incorrect-url">विश्लेषण कॉल करने में त्रुटि: गलत URL या इंटरनेट नहीं।</message>
+  <message id="rr-err-locating-exe">निष्पादन योग्य का पता लगाने में त्रुटि: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">अस्थायी फ़ाइल नाम बनाने में त्रुटि।</message>
+  <message id="rr-err-opening-tmp-file">अस्थायी फ़ाइल खोलने में त्रुटि।</message>
+  <message id="rr-requesting-ana">विश्लेषण का अनुरोध कर रहा है</message>
+  <message id="rr-err-no-spec">कोई प्रदर्शित स्पेक्ट्रम नहीं</message>
+  <message id="rr-requesting-service-info">सेवा जानकारी का अनुरोध कर रहा है।</message>
+  <message id="rr-error-parsing-service-info">सेवा जानकारी परिणामों को पार्स करने में त्रुटि: <code></code></message>
+  <message id="rr-incorrect-url">गलत URL या इंटरनेट नहीं।</message>
+  <message id="rr-err-requesting-service-info">सेवा जानकारी पुनर्प्राप्त करने में त्रुटि: <code>{1}</code></message>
+</messages>

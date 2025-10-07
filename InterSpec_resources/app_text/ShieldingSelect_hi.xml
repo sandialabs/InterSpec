@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ss- is short for ShieldingSelect
+  -->
+  <message id="ss-tt-shield-type-toggle">सामग्री और सामान्य परिरक्षण के बीच टॉगल करें</message>
+  <message id="ss-tt-material-name">
+    आप यहां पूर्व-परिभाषित सामग्री या तत्व का नाम दर्ज कर सकते हैं
+    (फॉर्म टेक्स्ट साफ़ करें और सभी पूर्वनिर्धारित
+    विकल्प देखने के लिए फॉर्म के दाईं ओर तीर पर क्लिक करें), या आप सामग्री की परमाणु संरचना निर्दिष्ट कर सकते हैं,
+    C0.5H0.2Ni0.6 के समान, जहां संख्याएं सामग्री में पूर्ववर्ती तत्व की g/cm3 में घनत्व हैं,
+    इसलिए उदाहरण में कुल घनत्व 0.5+0.2+0.6=1.3 g/cm3 होगा।
+    समस्थानिक घटकों वाली सामग्री दर्ज करने के लिए, आपको न्यूक्लाइड को एकल या दोहरे
+    उद्धरण चिह्नों में रखना चाहिए, उदा: 'U238'0.2'U235'0.8
+  </message>
+  <message id="ss-tt-material-name-fit">
+  नोट: यदि स्व-क्षीण स्रोत के रूप में उपयोग किया जाता है, तो सामग्री, जैसा परिभाषित है, का उपयोग
+  क्षीणन उद्देश्यों के लिए किया जाएगा, लेकिन स्रोत न्यूक्लाइड का निर्दिष्ट द्रव्यमान अंश इस
+  क्षीणन से मेल नहीं खा सकता है...
+  </message>
+  <message id="ss-tt-areal-density">g/cm2 में परिरक्षण का क्षेत्रीय घनत्व</message>
+  <message id="ss-areal-density-empty-txt">क्षेत्रीय घनत्व</message>
+  <message id="ss-tt-atomic-number">परिरक्षण की परमाणु संख्या</message>
+  <message id="ss-atomic-number-empty-txt">परमाणु संख्या</message>
+  <message id="ss-source-for-cb">
+    जब इन न्यूक्लाइड का उपयोग स्रोत के रूप में किया जाता है तो वे
+    सामग्री में समान रूप से वितरित के रूप में माने जाते हैं
+    (जो गोलाकार मानी जाती है), इसलिए स्व-क्षीणन
+    और अन्य कारकों का हिसाब लगाया जाता है।
+  </message>
+  <message id="ss-fit-mass-fractions-cb">द्रव्यमान अंश फिट करें</message>
+  <message id="ss-thickness">मोटाई</message>
+  <message id="ss-radius">त्रिज्या</message>
+  <message id="ss-radial-thickness">रेडियल मोटाई</message>
+  <message id="ss-half-length">आधी-लंबाई</message>
+  <message id="ss-length-thickness">लंबाई मोटाई</message>
+  <message id="ss-half-width">आधी-चौड़ाई</message>
+  <message id="ss-width-thickness">चौड़ाई मोटाई</message>
+  <message id="ss-half-height">आधी-ऊंचाई</message>
+  <message id="ss-height-thickness">ऊंचाई मोटाई</message>
+  <message id="ss-half-depth">आधी-गहराई</message>
+  <message id="ss-depth-thickness">गहराई मोटाई</message>
+  <message id="ss-tt-fit-mass-frac">यदि द्रव्यमान अंश फिट किए जाते हैं, तो उनका भिन्नात्मक योग फिट में स्थिर रहेगा।</message>
+  <message id="ss-fixed-non-src-frac">{1}{2}% अन्य {3} समस्थानिक मान रहा है</message>
+  <message id="ss-fixed">निश्चित </message> <!-- Note: trailing space is Nbsp character -->
+  <message id="ss-generic">सामान्य</message>
+  <message id="ss-consists-of-mass-frac">शामिल है (द्रव्यमान अंश, तत्व)</message>
+  <message id="ss-err-invalid-material">{1} एक मान्य सामग्री नहीं है</message>
+  <message id="ss-invalid-mat">अमान्य सामग्री</message>
+  <message id="ss-src-mass-frac-label">{1} का द्रव्यमान अंश:</message>
+  <message id="ss-non-src-frac">गैर-स्रोत अंश</message>
+  <message id="ss-add-shield-before">पहले परिरक्षण जोड़ें</message>
+  <message id="ss-add-shield-after">बाद में परिरक्षण जोड़ें</message>
+  <message id="ss-add-trace-src">ट्रेस स्रोत जोड़ें</message>
+  <message id="ss-non-src-frac-el">अन्य {1}:</message>
+  <message id="ss-tt-with-uncert">{1}</message>
+  <message id="ss-tt-without"></message>
+  <message id="ss-warning-only-one-src-frac">द्रव्यमान अंश फिट करने के लिए, कृपया फिट करने के लिए {1} के कम से कम दो घटक चुनें।</message>
+
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">ट्रेस स्रोत</message>
+  <message id="ss-select-option">चुनें</message>
+  <message id="ss-fit-activity-cb">सक्रियता मान फिट करें</message>
+  <message id="ss-total-activity">कुल</message>
+</messages>

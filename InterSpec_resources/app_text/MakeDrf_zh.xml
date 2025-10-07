@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">将为本底减除{1} cps</message>
+  <message id="dp-no-peak-preview">无法生成预览</message>
+
+  <message id="dsfs-sample">样本</message>
+  <message id="dsfs-samples">样本</message>
+  <message id="dsfs-using-num-peaks">（使用{2}个峰中的{1}个）</message>
+  <message id="dsfs-back-peak-txt">这些峰将从其他样本中减除</message>
+  <message id="dsfs-is-background-cb">是本底？</message>
+  <message id="dsfs-all-peaks-cb">所有峰</message>
+  
+  <message id="md-det-diam">探测器直径</message>
+  <message id="md-eff-type">效率类型</message>
+  <message id="md-eqn-in-kev">方程单位keV</message>
+  <message id="md-eqn-in-mev">方程单位MeV</message>
+  <message id="md-geom-intrinsic-eff">本征效率</message>
+  <message id="md-geom-fixed-geom">固定几何</message>
+  <message id="md-geom-fixed-cm2">固定：每cm²</message>
+  <message id="md-geom-fixed-m2">固定：每m²</message>
+  <message id="md-geom-fixed-gram">固定：每克</message>
+  <message id="md-tt-eff-interpret">
+    应如何解释此效率。<br />
+    <br />
+    远场：点源或与到探测器的距离相比小的源；将允许
+    更改检测距离以按1/r²缩放。<br />
+    <br />
+    固定几何：当表征数据几何和距离与测量匹配时，
+    并且您将想要计算源的总活度（例如Marinelli烧杯）。\n
+    <br />
+    固定每cm²：类似于总活度，但当刻度数据和测量
+    用于表面污染时，每平方厘米给出值。<br />
+    <br />
+    固定每m²：类似于总每cm²，但对于每平方米。<br />
+    <br />
+    固定每克：类似于每cm²，但对于每克源。
+  </message>
+  <message id="md-fwhm-eqn-form-label">FWHM方程</message>
+  <message id="md-fwhm-gadras">Gadras方程</message>
+  <message id="md-sqrt-series">平方根幂级数</message>
+  <message id="md-atten-for-air-cb">空气衰减</message>
+  <message id="md-tt-atten-for-air">
+    将考虑源和探测器之间的空气的衰减，
+    以便更准确地允许距离缩放（在不同距离使用效率函数）。
+    <br />
+    这在较低能量或较大刻度距离下影响更大。
+  </message>
+  <message id="md-show-fwhm-markers">显示FWHM点</message>
+  <message id="md-display-energy-lower-label">显示能量，下限：</message>
+  <message id="md-display-energy-upper-label">上限：</message>
+  <message id="md-mi-chart-phone">图表/选项</message>
+  <message id="md-mi-peaks-phone">要使用的峰</message>
+  <message id="md-export-btn">存储/导出...</message>
+  <message id="md-export-window-title">存储/导出DRF</message>
+  <message id="md-tt-name">
+    要保存到<em>InterSpec</em>
+    内部数据库的探测器响应函数的名称，以便您以后可以使用响应函数。
+    名称必须是有效的文件名（例如，不能有\、/、:等字符）。
+  </message>
+  <message id="md-tt-desc">DRF的可选描述，以帮助您在将来使用DRF时提醒自己细节。</message>
+  <message id="md-make-default-for-serial-cb">将序列号'{1}'的默认DRF设置为此</message>
+  <message id="md-tt-make-default-serial">
+    使得当将具有匹配序列号的探测器的谱
+    加载到InterSpec时，此探测器响应函数
+    将自动加载和使用。
+  </message>
+  <message id="md-make-default-for-model-cb">将型号'{1}'的默认DRF设置为此</message>
+  <message id="md-tt-make-default-model">
+    使得当此型号探测器的谱加载
+    到InterSpec时，此探测器响应函数将
+    自动加载和使用。
+  </message>
+  <message id="md-tt-export-n42">
+    导出包含用于创建此DRF的所有谱和峰的N42文件。
+    源和屏蔽信息通常也存储到文件中，
+    原则上，除了探测器直径和方程阶数外，
+    提供用于创建DRF的所有输入信息。
+  </message>
+  <message id="md-export-as-csv">将DRF导出为CSV。</message>
+  <message id="md-tt-export-as-csv">
+    将DRF导出到包含DRF所有信息的CSV文件中。
+    特别适合与其他工具一起使用。
+  </message>
+  <message id="md-export-quick-ref">导出快速参考卡</message>
+  <message id="md-tt-export-quick-ref">导出具有探测器性能简要汇总的3x5样式卡。</message>
+  <message id="md-det-name-not-valid">探测器名称无效。</message>
+  <message id="md-eqn-not-valid">本征效率方程无效。</message>
+  <message id="md-err-creating-drf">创建DRF时出错：{1}</message>
+  <message id="md-err-saving-to-db">将DetectorPeakResponse保存到数据库时出错：{1}</message>
+  <message id="md-saved-to-db">已将'{1}'保存到内部数据库。</message>
+  <message id="md-peak-counts">{1} {2} keV，峰{3}计数</message>
+  <message id="md-peak-no-nuc">无关联核素，{1} keV，峰{2}计数</message>
+  <message id="md-err-det-diam-invalid">探测器直径无效 - 假设为2.54厘米。</message>
+  <message id="md-err-some-src">某些源有错误。</message>
+  <message id="md-n-fit-pars">{1}拟合参数</message>
+  <message id="md-html-eff-table-caption">全能检测效率（总伽马的%）</message>
+  <message id="md-html-Intrinsic">本征</message>
+  <message id="md-chart-data-intrinsic-eff-label">数据本征效率</message>
+  <message id="md-chart-data-fwhm-label">数据FWHM</message>
+  <message id="md-chart-fit-intrinsic-eff-label">拟合本征效率</message>
+  <message id="md-chart-intrinsic-eff-plus-label">本征效率+2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">拟合本征效率-2σ</message>
+  <message id="md-chart-fit-fwhm-label">拟合FWHM</message>
+</messages>
+

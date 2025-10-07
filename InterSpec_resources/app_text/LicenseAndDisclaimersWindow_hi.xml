@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">अस्वीकरण</message>
+  <message id="ladw-mi-credits">क्रेडिट</message>
+  <message id="ladw-mi-contact">संपर्क</message>
+  <message id="ladw-mi-license">लाइसेंस</message>
+  <message id="ladw-mi-data">डेटा</message>
+  <message id="ladw-data-location-user">
+    उपयोगकर्ता डेटा यहां संग्रहीत है
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    InterSpec के साथ आने वाला डेटा, जैसे नाभिकीय क्षय जानकारी, क्रॉस-सेक्शन, और समान, यहां संग्रहीत है
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">Explorer में खोलें</message>
+  <message id="ladw-show-data-location-macOS">Finder में खोलें</message>
+  <message id="ladw-show-data-location-win">दिखाएं</message>
+  <message id="ladw-data-location-network">
+    आप InterSpec को अपने ब्राउज़र से भी उपयोग कर सकते हैं (जब आप InterSpec को पुनरारंभ करेंगे तो पोर्ट नंबर बदल जाएगा):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      आपने {4} से लेकर {3} सत्रों में, {2} फ़ाइलें खोलने के लिए, लगभग {1} के लिए InterSpec का सक्रिय रूप से उपयोग किया है।
+  </message>
+  <message id="ladw-external-none">InterSpec आपके डिवाइस के बाहर डेटा नहीं भेजता या प्राप्त नहीं करता है।</message>
+  <message id="ladw-external-only-remote-rid">InterSpec आपके डिवाइस के बाहर डेटा नहीं भेजता या प्राप्त नहीं करता है, सिवाय जब बाहरी RID सुविधा का उपयोग किया जाता है।</message>
+  <message id="ladw-external-only-map">InterSpec आपके डिवाइस के बाहर डेटा नहीं भेजता या प्राप्त नहीं करता है, सिवाय जब मानचित्र सुविधा का उपयोग किया जाता है।</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec आपके डिवाइस के बाहर डेटा नहीं भेजता या प्राप्त नहीं करता है, सिवाय जब मानचित्र या बाहरी RID सुविधाओं का उपयोग किया जाता है।</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpec स्थानीय रूप से प्राथमिकताएं, आपके द्वारा लोड किए गए स्पेक्ट्रा, सहेजी गई ऐप स्थितियां और उपयोग सांख्यिकी संग्रहीत करता है।
+    यह जानकारी आपके डिवाइस को नहीं छोड़ती है, और ऊपर दिखाई गई उपयोगकर्ता डेटा निर्देशिका को हटाकर हटाई जा सकती है।
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    जब Google Maps सुविधा का उपयोग किया जाता है, तो प्रासंगिक स्थान के मानचित्र प्राप्त करने के लिए स्पेक्ट्रम फ़ाइल स्थान जानकारी Google को भेजी जाती है।
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    जब मानचित्र उपकरण का उपयोग किया जाता है, तो विकिरण मापों के GPS निर्देशांक को शामिल करने वाले क्षेत्र के लिए <a href="https://arcgis.com">https://arcgis.com</a> से मानचित्र टाइल्स का अनुरोध किया जाता है,
+    लेकिन मानचित्र पर विकिरण डेटा को चिह्नित करना/प्रदर्शित करना आपके डिवाइस पर किया जाता है।
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    बाहरी RID उपकरण के लिए, कृपया गोपनीयता नीति से परामर्श करें
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    बाहरी RID उपकरण के लिए, कृपया आपके द्वारा दर्ज की गई URL की गोपनीयता नीति से परामर्श करें।
+  </message>
+</messages>

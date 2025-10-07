@@ -91,6 +91,15 @@
   <message id="ect-quad-label">Cuad.</message>
   <message id="ect-cubic-label">Cúbico</message>
   <message id="ect-nth-label">Orden {1}</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">Energía de canal inferior</message>
+  <message id="ect-cal-type-not-defined">No definido</message>
+  <message id="ect-cal-type-polynomial">Polinomial</message>
+  <message id="ect-cal-type-default-poly">Polinomial predeterminado</message>
+  <message id="ect-cal-type-frf">Fracción de rango completo</message>
+  <message id="ect-convert-to-poly-msg">Por favor convierta a calibración polinomial para editar</message>
+  <message id="ect-deviation-pairs">Pares de desviación</message>
 </messages>
 
 

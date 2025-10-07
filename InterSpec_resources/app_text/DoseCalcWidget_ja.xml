@@ -55,4 +55,5 @@
   <message id="dcw-save-property">貴重な財産の保存</message>
   <message id="dcw-life-saving">生命救助</message>
   <message id="dcw-radiation-sickness">放射線病</message>
+  <message id="dcw-units-label">単位：</message>
 </messages>

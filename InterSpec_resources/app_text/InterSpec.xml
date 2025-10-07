@@ -582,6 +582,8 @@
   <message id="lang-de">Deutsch</message>
   <message id="lang-ja">日本語</message>
   <message id="lang-zh">中文</message>
+  <message id="lang-hi">हिन्दी</message>
+  <message id="lang-bn">বাংলা</message>
   <message id="lang-pt">Português</message>
   <message id="lang-ru">Русский</message>
   <message id="lang-it">Italiano</message>
@@ -606,6 +608,8 @@
   <message id="country-JP">日本</message>
   <message id="country-CN">中国</message>
   <message id="country-TW">台灣</message>
+  <message id="country-IN">भारत</message>
+  <message id="country-BD">বাংলাদেশ</message>
   <message id="country-BR">Brasil</message>
   <message id="country-PT">Portugal</message>
   <message id="country-RU">Россия</message>

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">नमूना</message>
+  <message id="bgw-exemplar-use-current-fore">वर्तमान Foreground उपयोग करें</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">Background</message>
+  <message id="bgw-back-use-current">वर्तमान Background उपयोग करें</message>
+  <message id="bgw-back-none">कोई Background नहीं</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">सभी पीक फिट करें</message>
+  <message id="bgw-refit-energy-cal">ऊर्जा अंशांकन पुनः फिट करें</message>
+  <message id="bgw-use-exemplar-energy-cal">नमूना ऊर्जा अंशांकन उपयोग करें</message>
+  <message id="bgw-write-n42-with-results">परिणामों के साथ N42 लिखें</message>
+  <message id="bgw-show-nonfit-peaks">गैर-फिट पीक दिखाएं</message>
+  <message id="bgw-overwrite-output-files">आउटपुट फ़ाइलें अधिलेखित करें</message>
+  <message id="bgw-create-csv-output">पीक CSV</message>
+  <message id="bgw-create-json-output">JSON लिखें</message>
+  <message id="bgw-use-existing-background-peaks">मौजूदा background पीक उपयोग करें</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">Background के लिए नमूना ऊर्जा अंशांकन उपयोग करें</message>
+
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">पीक सांख्यिकी सीमा:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">पीक परिकल्पना सीमा:</message>
+
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">आउटपुट अधिलेखित करें</message>
+  <message id="bgw-sum-multirecord-to-single">एकाधिक रिकॉर्ड वाली फ़ाइलों को एकल रिकॉर्ड में योग करें</message>
+  <message id="bgw-info-will-convert-file-type">फ़ाइलें चयनित प्रकार में परिवर्तित की जाएंगी।</message>
+
+
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">लिखने के लिए रिपोर्ट</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">विश्लेषण परिणामों की HTML रिपोर्ट लिखें।</message>
+  <message id="bgw-reports-write-csv">सारांश CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">सभी इनपुट फ़ाइलों से विश्लेषण परिणामों के साथ सारांश CSV फ़ाइल लिखें।</message>
+  <message id="bgw-reports-write-custom-per-file">कस्टम प्रति-फ़ाइल</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">प्रत्येक फ़ाइल के लिए उपयोग करने हेतु कस्टम रिपोर्ट टेम्पलेट अपलोड करें।</message>
+  <message id="bgw-reports-write-custom-summary">कस्टम सारांश</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">सभी इनपुट फ़ाइलों का सारांश प्रदान करने के लिए एक या अधिक टेम्पलेट फ़ाइलें।</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">नमूने में कोई पीक मौजूद नहीं।</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">पीक के साथ नमूना स्पेक्ट्रम या पीक CSV फ़ाइल चाहिए।</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">मान्य background चाहिए</message>
+  <message id="bgw-no-ana-act-shield-no-drf">कोई डिटेक्टर दक्षता उपलब्ध नहीं।</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">कोई नमूना स्पेक्ट्रम चयनित नहीं।</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">चयनित नमूना स्पेक्ट्रम में कोई पीक नहीं।</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">नमूने में कोई सक्रियता/परिरक्षण फिट मॉडल मौजूद नहीं।</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">अमान्य background</message>
+  <message id="bgw-no-ana-no-input-files">कोई इनपुट फ़ाइल नहीं।</message>
+  <message id="bgw-no-ana-invalid-output-path">कृपया मान्य आउटपुट निर्देशिका चुनें।</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">कार्य निष्पादन</message>
+  <message id="bgw-performing-work-msg">कृपया प्रतीक्षा करें जब तक बैच विश्लेषण किया जा रहा है...</message>
+  <message id="bgw-error-analysis-title">बैच विश्लेषण में त्रुटि</message>
+  <message id="bgw-error-analysis-msg">त्रुटि: {1}</message>
+  <message id="bgw-analysis-summary-title">बैच विश्लेषण सारांश</message>
+  <message id="bgw-json-parse-error">
+    <p>JSON परिणाम पार्स करने में त्रुटि:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>अपवाद के कारण HTML बनाने में त्रुटि:</p>
+    <code>{1}</code>
+    <br />
+    पंक्ति {2}, स्तंभ {3} से
+  </message>
+  <message id="bgw-misc-error">
+    <p>अपवाद के कारण परिणाम सारांश उत्पन्न करने में असमर्थ:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">चेतावनी</message>
+
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">नमूना फ़ाइल में पीक के लिए फिटिंग करने के बजाय - स्पेक्ट्रम में सभी पीक के लिए फिट किया जाएगा।</message>
+
+  <message id="bgw-refit-energy-cal-tt">प्रारंभिक पीक फिट के बाद, उन पीकों (और उनके निर्दिष्ट न्यूक्लाइड) का उपयोग ऊर्जा लाभ समायोजित करने के लिए करता है, फिर अद्यतन ऊर्जा अंशांकन के साथ पीकों को पुनः फिट करता है।
+  यह background फ़ाइल पर भी लागू होता है यदि आप सक्रियता/परिरक्षण के लिए फिट कर रहे हैं।
+  </message>
+
+  <message id="bgw-use-exemplar-energy-cal-tt">इनपुट foreground फ़ाइलों के साथ नमूना N42 ऊर्जा अंशांकन का उपयोग करें।
+यदि refit-energy-cal सत्य निर्दिष्ट है, तो प्रारंभिक फिट के लिए नमूना ऊर्जा अंशांकन का उपयोग किया जाएगा, और फिर परिष्कृत और पीकों को पुनः फिट किया जाएगा।
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">फिट पीकों को इनपुट स्पेक्ट्रम फ़ाइल में जोड़ता है, और फिर N42 के रूप में सहेजता है। यदि आप इस विकल्प को निर्दिष्ट करते हैं तो आपको 'output_path' निर्दिष्ट करना होगा; साथ ही, मौजूदा फ़ाइलों को अधिलेखित करने से इनकार करेगा।</message>
+
+  <message id="bgw-show-nonfit-peaks-tt">आउटपुट CSV पीक परिणामों में गैर-फिट पीक शामिल करें; इन पीकों में शून्य आयाम सेट होगा।</message>
+
+  <message id="bgw-overwrite-output-files-tt">आउटपुट N42, CSV, या रिपोर्ट फ़ाइलों को अधिलेखित करने की अनुमति देता है। डिफ़ॉल्ट रूप से फ़ाइलों को अधिलेखित नहीं करेगा।</message>
+
+  <message id="bgw-create-csv-output-tt">आउटपुट पीक फिट CSV।</message>
+
+  <message id="bgw-create-json-output-tt">रिपोर्ट टेम्पलेट बनाने के लिए उपयोग किए गए JSON को फ़ाइल में लिखता है।</message>
+
+  <message id="bgw-use-existing-background-peaks-tt">पीकों को पुनः फिट करने के बजाय निर्दिष्ट background के फिट पीकों का उपयोग करता है।
+InterSpec से पीक स्पेक्ट्रम फ़ाइल में मौजूद होने चाहिए, और इस विकल्प का उपयोग हार्ड background घटाव के साथ नहीं किया जा सकता।</message>
+
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">Background फ़ाइल के लिए नमूना N42 ऊर्जा अंशांकन का उपयोग करें।
+केवल तभी लागू होता है जब नमूना के लिए N42 फ़ाइल का उपयोग किया जाता है।</message>
+
+  <message id="bgw-peak-stat-threshold-tt">ROI के लिए केवल सतत फिट करने की तुलना में, पीक फिट के Chi2 में सुधार की आवश्यकता होती है।
+एक नकारात्मक या शून्य मान कोई आवश्यकता नहीं दर्शाता है (और डिफ़ॉल्ट, क्योंकि हम यह दावा कर रहे हैं कि बैच विश्लेषण के लिए स्पेक्ट्रम में पीक की संभावना है), और सामान्य पीक खोज के लिए, उचित मान ~1 (एक कमजोर पीक) और ~5 (एक महत्वपूर्ण पीक) के बीच होते हैं।</message>
+
+  <message id="bgw-peak-hypothesis-threshold-tt">ROI को गॉसियन पीक + सतत के साथ कितना संगत होना चाहिए इसकी आवश्यकता।
+यह शून्य परिकल्पना chi2 (केवल सतत, कोई गॉसियन नहीं) का, परीक्षण परिकल्पना (सतत + गॉसियन) chi2 से अनुपात है।
+इसके लिए एक उचित मान 1 से 5 की सीमा में प्रतीत होता है।
+एक शून्य या नकारात्मक मान का अर्थ होगा कोई आवश्यकता नहीं, और साथ ही कोई 'peak-stat-threshold' आवश्यकता नहीं।</message>
+
+  <message id="bgw-reports-write-custom-per-file-tooltip">एक या अधिक स्पेक्ट्रम रिपोर्ट टेम्पलेट फ़ाइलें - प्रत्येक इनपुट फ़ाइल के लिए, निर्दिष्ट प्रत्येक टेम्पलेट के साथ एक रिपोर्ट तैयार की जाएगी।</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">सभी इनपुट फ़ाइलों का सारांश प्रदान करने के लिए उपयोग की जाने वाली एक या अधिक टेम्पलेट फ़ाइलें।</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Bq इकाइयां उपयोग करें</message>
+  <message id="bgw-hard-background-sub">हार्ड background घटाव</message>
+
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">डिटेक्टर प्रतिक्रिया फलन</message>
+  <message id="bgw-use-detector-override">कस्टम डिटेक्टर उपयोग करें</message>
+
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">दूरी अधिभावी करें</message>
+  <message id="bgw-distance-label">दूरी:</message>
+
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">कोई नमूना स्पेक्ट्रम उपलब्ध नहीं है। कृपया एक foreground स्पेक्ट्रम चुनें या नमूना फ़ाइल अपलोड करें।</message>
+</messages>

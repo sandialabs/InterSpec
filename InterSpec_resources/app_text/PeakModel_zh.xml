@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">此峰是否应用于帮助刻度能量。
+    您必须为峰指定核素、反应或X射线，并且不能使用峰编辑器固定均值能量值。</message>
+  <message id="pm-gaussian">高斯</message>
+  <message id="pm-region">区域</message>
+  <message id="pm-err-use-fit-no-nuc">在将峰用于屏蔽/源拟合之前，您必须将核素与峰关联。</message>
+  <message id="pm-err-use-cal-no-nuc">在将峰用于刻度之前，您必须将核素、X射线或反应与峰关联。</message>
+  <message id="pm-err-use-rel-act-no-nuc">只有与核素伽马相关联的峰才能用于相对活度分析。</message>
+  <message id="pm-warn-use-xray-fit">警告：使用X射线拟合源核素通常不是一个好主意，因此请谨慎使用。</message>
+  
+  <message id="pm-hdr-diff">差异</message>
+  <message id="pm-hdr-cal-peak">刻度峰</message>
+  <message id="pm-hdr-rel-act">相对活度</message>
+  <message id="pm-hdr-label">标签</message>
+  <message id="pm-hdr-color">颜色</message>
+  <message id="pm-hdr-skew-amp">偏斜幅度</message>
+  <message id="pm-hdr-peak-type">峰类型</message>
+  <message id="pm-hdr-low-energy">下限能量</message>
+  <message id="pm-hdr-up-energy">上限能量</message>
+  <message id="pm-hdr-roi-counts">ROI计数</message>
+  
+  
+  <message id="pm-hdr-tt-mean">均值能量</message>
+  <message id="pm-hdr-tt-fwhm">半高全宽</message>
+  <message id="pm-hdr-tt-amp">峰面积</message>
+  <message id="pm-hdr-tt-cps">每秒峰计数</message>
+  <message id="pm-hdr-tt-photopeak-energy">光峰能量</message>
+  <message id="pm-hdr-tt-diff">光峰和均值能量之间的差异</message>
+  <message id="pm-hdr-tt-man-rel-eff">用于"来自峰的同位素分析"分析。</message>
+  <message id="pm-hdr-tt-color">峰颜色</message>
+  <message id="pm-hdr-tt-label">用户指定的标签</message>
+  <message id="pm-hdr-tt-roi-counts">感兴趣区域上的伽马计数积分</message>
+  <message id="pm-hdr-tt-"></message>
+
+</messages>
+

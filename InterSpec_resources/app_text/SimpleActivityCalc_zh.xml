@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">简单活度计算器</message>
+  <message id="simple-activity-calc-menu">简单活度计算</message>
+  
+  <message id="sac-peak-label">峰：</message>
+  <message id="sac-background-subtract-label">本底减除</message>
+  
+  <message id="sac-distance-label">距离：</message>
+  <message id="sac-age-label">年龄：</message>
+  <message id="sac-shielding-label">屏蔽：</message>
+  <message id="sac-geometry-label">几何：</message>
+  <message id="sac-result-label">活度：</message>
+  <message id="sac-advanced-btn">高级活度/屏蔽拟合</message>
+  
+  <message id="sac-geometry-point">点源</message>
+  <message id="sac-geometry-plane">无限平面</message>
+  <message id="sac-geometry-self-atten">自衰减球体</message>
+  <message id="sac-geometry-trace-src">微量源</message>
+  
+  <message id="sac-error-no-peak">未选择峰</message>
+  <message id="sac-error-no-detector">未加载探测器响应</message>
+  <message id="sac-error-invalid-distance">输入的距离无效</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>本底中似乎没有与此峰相同位置的峰。</p>
+    <p>如果您认为有，请交换前景和本底谱，在本底谱中拟合峰，然后将它们交换回来。</p>
+  </message>
+  
+  
+  <message id="sac-use-fit-background-peak">您想使用自动拟合的本底峰吗？</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>尝试将峰拟合到本底谱时出错：</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+  
+  <message id="sac-qr-tool-state-title">简单活度计算工具状态</message>
+  <message id="sac-qr-tool-state-txt">简单活度计算工具的当前状态。</message>
+</messages>
+

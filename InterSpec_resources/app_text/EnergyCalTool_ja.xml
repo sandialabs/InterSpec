@@ -90,4 +90,13 @@
   <message id="ect-quad-label">二次</message>
   <message id="ect-cubic-label">三次</message>
   <message id="ect-nth-label">{1}次</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">下限チャンネルエネルギー</message>
+  <message id="ect-cal-type-not-defined">未定義</message>
+  <message id="ect-cal-type-polynomial">多項式</message>
+  <message id="ect-cal-type-default-poly">デフォルト多項式</message>
+  <message id="ect-cal-type-frf">全範囲分数</message>
+  <message id="ect-convert-to-poly-msg">編集するには多項式校正に変換してください</message>
+  <message id="ect-deviation-pairs">偏差ペア</message>
 </messages>

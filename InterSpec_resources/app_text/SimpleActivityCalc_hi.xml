@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">सरल सक्रियता कैलकुलेटर</message>
+  <message id="simple-activity-calc-menu">सरल सक्रियता कैलकुलेटर</message>
+
+  <message id="sac-peak-label">शिखर:</message>
+  <message id="sac-background-subtract-label">पृष्ठभूमि घटाएं</message>
+
+  <message id="sac-distance-label">दूरी:</message>
+  <message id="sac-age-label">आयु:</message>
+  <message id="sac-shielding-label">परिरक्षण:</message>
+  <message id="sac-geometry-label">ज्यामिति:</message>
+  <message id="sac-result-label">सक्रियता:</message>
+  <message id="sac-advanced-btn">उन्नत सक्रियता/परिरक्षण फिट</message>
+
+  <message id="sac-geometry-point">बिंदु स्रोत</message>
+  <message id="sac-geometry-plane">अनंत समतल</message>
+  <message id="sac-geometry-self-atten">स्व-क्षीण गोलाकार</message>
+  <message id="sac-geometry-trace-src">ट्रेस स्रोत</message>
+
+  <message id="sac-error-no-peak">कोई शिखर चयनित नहीं</message>
+  <message id="sac-error-no-detector">कोई डिटेक्टर प्रतिक्रिया लोड नहीं</message>
+  <message id="sac-error-invalid-distance">अमान्य दूरी दर्ज की गई</message>
+
+  <message id="sac-error-no-background-peak">
+    <p>इस शिखर के समान स्थान पर पृष्ठभूमि में कोई शिखर नहीं दिखता है।</p>
+    <p>यदि आपको लगता है कि है, तो कृपया अग्रभूमि और पृष्ठभूमि स्पेक्ट्रा को स्वैप करें, पृष्ठभूमि स्पेक्ट्रम में शिखर फिट करें, और फिर उन्हें वापस स्वैप करें।</p>
+  </message>
+
+
+  <message id="sac-use-fit-background-peak">क्या आप स्वचालित रूप से फिट पृष्ठभूमि शिखर का उपयोग करना चाहेंगे?</message>
+
+  <message id="sac-error-fitting-background-peak">
+    <p>पृष्ठभूमि स्पेक्ट्रम में एक शिखर फिट करने का प्रयास करने में एक त्रुटि थी:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+
+
+  <message id="sac-qr-tool-state-title">सरल सक्रियता कैलकुलेटर उपकरण स्थिति</message>
+  <message id="sac-qr-tool-state-txt">सरल सक्रियता कैलकुलेटर उपकरण की वर्तमान स्थिति।</message>
+</messages>

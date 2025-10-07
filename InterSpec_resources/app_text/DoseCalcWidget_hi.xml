@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">परिरक्षण की मात्रा पर अभिसरण करने में विफल।</message>
+  <message id="dcw-qr-tool-state-title">खुराक उपकरण स्थिति</message>
+  <message id="dcw-qr-tool-state-txt">खुराक उपकरण की वर्तमान स्थिति।</message>
+  <message id="dcw-inputs">इनपुट</message>
+  <message id="dcw-answer">उत्तर</message>
+  <message id="dcw-intro-instructions">बाईं ओर आप जिस मात्रा की गणना करना चाहते हैं उसे चुनें</message>
+  <message id="dcw-intro-instructions-vert-phone">ऊपर आप जिस मात्रा की गणना करना चाहते हैं उसे चुनें</message>
+  <message id="dcw-intro-calc-desc">ANSI/ANS-6.1.1-1991 का उपयोग करके खुराक मान की गणना सबसे
+    रूढ़िवादी मामला: Anterior-Posterior अभिविन्यास।
+    खुराक गणनाएं, सबसे अच्छे रूप में, एक मोटी मार्गदर्शिका हैं, और
+    कई अनिश्चितताओं या त्रुटियों के अधीन हैं।
+  </message>
+  <message id="dcw-source-label">स्रोत:</message>
+  <message id="dcw-neutron">न्यूट्रॉन</message>
+  <message id="dcw-tt-neut-not-imp">न्यूट्रॉन खुराक गणना अभी तक लागू नहीं की गई है।</message>
+  <message id="dcw-tt-distance">स्रोत के केंद्र से डिटेक्टर के फलक तक की दूरी। संख्या के बाद इकाइयां होनी चाहिए; मान्य इकाइयां हैं: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, या \"। आप कई दूरियां भी जोड़ सकते हैं,
+    जैसे '3ft 4in', या '3.6E-2 m 12 cm' जो क्रमशः
+    40inches और 15.6cm के बराबर हैं।</message>
+  <message id="dcw-shield-empty-text">परिरक्षण सामग्री</message>
+  <message id="dcw-runtime-checks-failed">रनटाइम सत्यता जांच विफल हो गई है!</message>
+  <message id="dcw-runtime-check-msg">
+    <div>इस कैलकुलेटर उपयोगिता के परिणामों पर भरोसा न करें</div>
+    कृपया <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a> पर ईमेल करें
+    यह त्रुटि संदेश और अपना डिवाइस प्रकार और मॉडल शामिल करें (जैसे, iPad pro,
+    Windows 10 Dell laptop, आदि)
+  </message>
+  <message id="dcw-runtime-check-err-div">परिणाम संदिग्ध - भरोसा न करें</message>
+  <message id="dcw-err-no-nuc">खाली या अमान्य स्रोत न्यूक्लाइड</message>
+  <message id="dcw-act-invalid">गतिविधि अमान्य है</message>
+  <message id="dcw-shield-invalid">अमान्य परिरक्षण</message>
+  <message id="dcw-generic-shield-invalid">खुराक की गणना में त्रुटि, अमान्य परिरक्षण, क्षमा करें :{</message>
+  <message id="dcw-dist-invalid">दूरी अमान्य है।</message>
+  <message id="dcw-err-other">स्रोत से खुराक की गणना में त्रुटि, क्षमा करें :{</message>
+  <message id="dcw-invalid-src-dose">अमान्य स्रोत खुराक।</message>
+  <message id="dcw-invalid-src-act">अमान्य स्रोत गतिविधि।</message>
+  <message id="dcw-invalid-src-dose">अमान्य स्रोत खुराक।</message>
+  <message id="dcw-failed-find-lower-dist">निचली सीमा दूरी खोजने में विफल, {1} cm पर।</message>
+  <message id="dcw-failed-find-upper-dist">ऊपरी सीमा दूरी खोजने में विफल, {1} cm पर।</message>
+  <message id="dcw-failed-find-dist">दूरी नहीं मिली; अधिकतम पुनरावृत्तियां पार हो गईं।</message>
+  <message id="dcw-got-neg-dist">ऋणात्मक दूरी मिली: {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">दूरी खोजते समय खुराक की गणना में त्रुटि, क्षमा करें :{</message>
+  <message id="dcw-material-not-valid">सामग्री मान्य नहीं है</message>
+  <message id="dcw-no-an-entered">आपको परिरक्षण सामग्री का परमाणु क्रमांक दर्ज करना होगा।</message>
+  <message id="dcw-no-shield-name">आपको परिरक्षण सामग्री प्रकार दर्ज करना होगा।</message>
+  <message id="dcw-brehm-warning">चेतावनी: बीटा क्षय की Bremsstrahlung को ध्यान में नहीं रखा गया, परिणाम भरोसेमंद नहीं हो सकते।</message>
+  <message id="dcw-no-dose-entered">खुराक के लिए कोई संख्यात्मक मान दर्ज नहीं किया गया</message>
+  <message id="dcw-stay-time">ठहराव समय</message>
+  <message id="dcw-dental-xray">डेंटल X-Ray</message>
+  <message id="dcw-annual-background">सामान्य वार्षिक पृष्ठभूमि</message>
+  <message id="dcw-annual-occ-limit">वार्षिक व्यावसायिक सीमा</message>
+  <message id="dcw-save-property">मूल्यवान संपत्ति बचाएं</message>
+  <message id="dcw-life-saving">जीवन रक्षा</message>
+  <message id="dcw-radiation-sickness">विकिरण बीमारी</message>
+  <message id="dcw-units-label">इकाइयाँ:</message>
+</messages>

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">相对活度同位素分析</message>
+  
+  <!-- Presets section -->
+  <message id="raag-presets">预设</message>
+  <message id="raag-preset-blank">空白</message>
+  <message id="raag-user-preset">用户：{1}</message>
+  
+  <!-- Status messages -->
+  <message id="raag-not-calculated">未计算。</message>
+  <message id="raag-calculating">计算中...</message>
+  
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">谱和峰选项</message>
+  <message id="raag-rel-eff-curve-options">相对效率曲线选项</message>
+  <message id="raag-fit-energy-cal">拟合能量刻度</message>
+  <message id="raag-back-sub">本底减除</message>
+  <message id="raag-fwhm-est">FWHM估计</message>
+  <message id="raag-fwhm-form">FWHM形式</message>
+  <message id="raag-peak-skew">峰偏斜</message>
+  <message id="raag-add-uncert">附加不确定度</message>
+  <message id="raag-yield-info">产额信息</message>
+  
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">从探测器/峰开始</message>
+  <message id="raag-fwhm-start-peaks">从峰开始</message>
+  <message id="raag-fwhm-fixed-peaks">固定到峰</message>
+  <message id="raag-fwhm-start-det-eff">从探测器效率开始</message>
+  <message id="raag-fwhm-fixed-det-eff">固定到探测器效率</message>
+  
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">相同Z相同年龄</message>
+  <message id="raag-refit-peaks">重新拟合峰</message>
+  <message id="raag-use-det-eff">使用探测器效率</message>
+  <message id="raag-none">无</message>
+  <message id="raag-nuclides">核素</message>
+  <message id="raag-energy-ranges">能量范围</message>
+  <message id="raag-free-peaks">自由峰</message>
+  
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">谱</message>
+  <message id="raag-rel-eff">相对效率</message>
+  <message id="raag-result">结果</message>
+  
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">应用能量刻度</message>
+  <message id="raag-show-ref-lines">显示参考伽马线</message>
+  <message id="raag-hide-ref-lines">隐藏参考伽马线</message>
+  <message id="raag-set-peaks-foreground">将峰设置为前景</message>
+  <message id="raag-show-background">显示本底</message>
+  <message id="raag-hide-background">隐藏本底</message>
+  <message id="raag-roi-options">ROI选项：</message>
+  <message id="raag-remove-roi">删除ROI</message>
+  <message id="raag-combine-roi-left">与左侧ROI合并</message>
+  <message id="raag-combine-roi-right">与右侧ROI合并</message>
+  
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">用于将峰FWHM建模为能量函数的方程类型。</message>
+  <message id="raag-tt-skew-type">应用于峰的偏斜类型；将拟合偏斜参数。</message>
+  <message id="raag-tt-u-pu-data-source">铀和钚的伽马分支比的核数据源。</message>
+  <message id="raag-tt-add-source">添加源。</message>
+  <message id="raag-tt-add-energy-range">添加能量范围。</message>
+
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">添加自由峰</message>
+  <message id="raag-clear-all-ranges">清除所有范围</message>
+  <message id="raag-html-report">HTML报告</message>
+  <message id="raag-xml-config">XML配置</message>
+  
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">清除能量范围？</message>
+  <message id="raag-cant-perform-action">无法执行此操作。</message>
+  <message id="raag-divide-energy-range-title">分割能量范围？</message>
+  <message id="raag-apply-fit-energy-cal-title">应用拟合能量刻度？</message>
+  <message id="raag-cant-continue">无法继续</message>
+  <message id="raag-no-peaks-in-solution">当前解决方案中无峰</message>
+  <message id="raag-error">错误</message>
+  <message id="raag-unexpected-error-finding-original">查找原始内容时出现意外错误</message>
+  
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">导入XML配置文件</message>
+  <message id="raag-select-isotopics-xml-file">选择要使用的<em>按核素分析同位素</em>XML文件</message>
+  <message id="raag-file-too-large-title">文件太大无法上传</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">注意：您还可以将XML配置文件拖放到InterSpec上</p>
+  </message>
+  
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">排序能量范围。</message>
+  <message id="raag-remove-all-ranges-tt">删除所有能量范围。</message>
+  <message id="raag-remove-free-peaks-tt">删除所有自由峰，并隐藏自由峰输入。</message>
+  <message id="raag-free-peaks-tt">"自由峰"是具有特定能量的峰，不与任何核素关联，其幅度拟合为数据的最佳值。峰也可以选择从功能FWHM约束中释放。<br />自由峰对于处理来自反应或未识别核素的峰很有用。</message>
+  
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">峰的不确定度将基于总相对效率拟合（例如，峰相互帮助以减少不确定度），除非您选择重新拟合它们，在这种情况下，它们将不受相对效率曲线的FWHM功能形式的约束。</message>
+  
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} keV已在能量范围[{2}，{3}] keV中 - 不会采取任何操作。</message>
+  <message id="raag-extended-energy-range">将现有能量范围扩展到[{1}，{2}] keV。</message>
+  <message id="raag-added-new-energy-range">添加了从{1}到{2} keV的新能量范围。</message>
+  <message id="raag-split-roi-at">在{1} keV处分割ROI</message>
+  <message id="raag-add-free-peak-at">在{1} keV处添加自由峰</message>
+  <message id="raag-energy-range-no-contributions">{1} keV到{2} keV的能量范围不包含任何重要的伽马贡献。</message>
+  <message id="raag-divide-energy-range-msg">
+    此操作将把从{1} keV到{2} keV的能量范围分为{3}个单独的能量范围。
+    <br />
+    <p>您想继续吗？</p>
+  </message>
+  <message id="raag-add-energy-offset">添加{1} keV的偏移</message>
+  <message id="raag-increase-gain-first">增加增益{1}</message>
+  <message id="raag-increase-gain-additional">并增加增益{1}</message>
+  <message id="raag-increase-quad-first">增加二次{1}</message>
+  <message id="raag-increase-quad-additional">并增加二次{1}</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">这将{1}主要前景{2}{3}。<br />您想这样做吗？</message>
+  <message id="raag-and-background">和本底</message>
+  <message id="raag-files">文件</message>
+  <message id="raag-file">文件</message>
+  <message id="raag-energy-cal-updated">已更新显示的前景{1}的能量刻度。</message>
+  <message id="raag-and-background-period">和本底</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">创建相对活度同位素分析工具时出错：{1}</message>
+  <message id="raag-handle-double-click-error">handleDoubleLeftClick错误：{1}</message>
+  <message id="raag-expected-state-info">'{1}'的预期状态信息不可用 - 这不是预期的 - 抱歉！</message>
+  <message id="raag-state-info-not-saved">'{1}'的状态信息之前无法保存 - 这不是预期的 - 抱歉！</message>
+  <message id="raag-error-deserializing">反序列化工具状态时出错：{1}</message>
+  <message id="raag-error-loading-preset">加载预设时出错：{1}</message>
+  <message id="raag-error-applying-energy-cal">应用能量刻度时出错：{1}</message>
+  <message id="raag-error-loading-xml-config">加载<em>按核素分析同位素</em>XML配置文件时出错：{1}</message>
+  
+</messages>
+

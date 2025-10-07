@@ -23,7 +23,7 @@ For each English XML file in `InterSpec_resources/app_text` please create a tran
 
 Also, importantly, if the phrase being translated is under about 5 English words, please choose as short and succinct translation as you can (the string is probably labeling a GUI element, where space is often limited), making sure it still makes sense in context.
 
-Also, please make sure to translate all English XML files to the target language, and translate each "<message>" entry in the original XML to the target XML.
+After finishing the translation - go back through and check that each "<message>" in each English XML file was trasnlated to the target language.  This is critical to make sure the translation is complete.
 
 # Language and Country specific instructions
 

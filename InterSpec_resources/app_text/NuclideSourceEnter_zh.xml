@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+    <message id="dcw-tt-nuc-edit">例如<b>U235</b>、<b>235 Uranium</b>、<b>U-235m</b>（亚稳态）、<b>Cs137</b>等。</message>
+    <message id="dcw-tt-age-edit">
+      <div>
+        年龄可以使用时间单位的组合来指定，
+        类似于'<b>5.3y 8d 22m</b>'或半衰期，如
+        '<b>2.5 HL</b>'。
+      </div>
+      <br />
+      <div>
+        年龄不影响输入核素的活度，它只影响
+        子代内生长量（即，仅改变子代活度，而不是母体核素活度）
+        - 您输入的活度将始终用于您输入的母体核素，
+        无论年龄如何。
+      </div>
+      <br />
+      <div>
+        可接受的时间单位：<b>year</b>、<b>yr</b>、<b>y</b>、<b>day</b>、<b>d</b>、<b>hrs</b>、<b>hour</b>、<b>h</b>、<b>minute</b>、
+        <b>min</b>、<b>m</b>、<b>second</b>、<b>s</b>、<b>ms</b>、<b>microseconds</b>、<b>us</b>、<b>nanoseconds</b>、<b>ns</b>，或
+        您可以通过<b>hh:mm:ss</b>指定时间段。
+      </div>
+      <div>半衰期单位或时间段不能与其他单位混合。</div>
+      <div>
+        指定多个时间段时，它们会求和，例如'1y6months 3m'被解释为
+        18个月加3分钟。
+      </div>
+    </message>
+    <message id="dcw-age-to-big">{1}太多半衰期无法衰变{2}</message>
+    <message id="dcw-nuc-is-stable">{1}是稳定的</message>
+    <message id="dcw-made-age-reasonable">将{1}的年龄从'{2}'更改为'{3}'以使其更合理</message>
+</messages>
+
