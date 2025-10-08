@@ -551,7 +551,7 @@ void DoseCalcWidget::init()
           txt->setAttributeValue( "style", "display: inline-block; width: 45px;" );
         
         WContainerWidget *unitdiv = new WContainerWidget( m_answerWidgets[i] );
-        WLabel *label = new WLabel( "units: ", unitdiv );
+        WLabel *label = new WLabel( WString::tr("dcw-units-label"), unitdiv );
         m_doseAnswerUnits = new WComboBox( unitdiv );
         label->setBuddy( m_doseAnswerUnits );
         
@@ -613,7 +613,7 @@ void DoseCalcWidget::init()
         m_enterWidgets[i]->addWidget( txt );
         
         WContainerWidget *unitdiv = new WContainerWidget( m_answerWidgets[i] );
-        WLabel *label = new WLabel( "units: ", unitdiv );
+        WLabel *label = new WLabel( WString::tr("dcw-units-label"), unitdiv );
         m_activityAnswerUnits = new WComboBox( unitdiv );
         label->setBuddy( m_activityAnswerUnits );
         

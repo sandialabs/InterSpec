@@ -670,7 +670,7 @@ DeviationPairDisplay::DeviationPairDisplay( Wt::WContainerWidget *parent )
     //, m_msg( nullptr )
 {
   addStyleClass( "DevPairDisplay" );
-  WLabel *title = new WLabel( "Deviation Pairs", this );
+  WLabel *title = new WLabel( WString::tr("ect-deviation-pairs"), this );
   title->setStyleClass( "Wt-itemview Wt-header Wt-label DevPairTitle" );
   title->setInline( false );
 
@@ -1012,7 +1012,7 @@ public:
     spacer->addStyleClass( "Spacer" );
     
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-    m_fitCoeffs = new WPushButton( "Fit Coeffs", btndiv );
+    m_fitCoeffs = new WPushButton( WString::tr("ect-fit-coeff-btn"), btndiv );
     m_fitCoeffs->addStyleClass( "CalCoefFitBtn" );
 #endif
     
@@ -1209,15 +1209,15 @@ public:
       return;
     }//if( !m_cal )
     
-    const char *typetxt = "";
+    WString typetxt;
     switch( m_cal->type() )
     {
-      case SpecUtils::EnergyCalType::LowerChannelEdge:    typetxt = "Lower Channel Energy"; break;
-      case SpecUtils::EnergyCalType::InvalidEquationType: typetxt = "Not Defined";          break;
-      case SpecUtils::EnergyCalType::Polynomial:          typetxt = "Polynomial";           break;
+      case SpecUtils::EnergyCalType::LowerChannelEdge:    typetxt = WString::tr("ect-cal-type-lower-channel"); break;
+      case SpecUtils::EnergyCalType::InvalidEquationType: typetxt = WString::tr("ect-cal-type-not-defined");    break;
+      case SpecUtils::EnergyCalType::Polynomial:          typetxt = WString::tr("ect-cal-type-polynomial");     break;
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-                                                          typetxt = "Default Polynomial";   break;
-      case SpecUtils::EnergyCalType::FullRangeFraction:   typetxt = "Full Range Fraction";  break;
+                                                          typetxt = WString::tr("ect-cal-type-default-poly");  break;
+      case SpecUtils::EnergyCalType::FullRangeFraction:   typetxt = WString::tr("ect-cal-type-frf");            break;
     }//switch( m_cal->type() )
     
     m_type->setText( typetxt );
@@ -1235,7 +1235,7 @@ public:
         {
           if( auto p = dynamic_cast<WContainerWidget *>( m_type->parent() ) )
           {
-            m_convertMsg = new WText( "Please convert to Polynomial calibration to edit", p );
+            m_convertMsg = new WText( WString::tr("ect-convert-to-poly-msg"), p );
             m_convertMsg->addStyleClass( "ConvertToPolyMsg" );
             m_convertMsg->setInline( false );
           }

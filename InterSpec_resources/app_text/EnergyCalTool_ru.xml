@@ -91,4 +91,13 @@
   <message id="ect-quad-label">Квадр.</message>
   <message id="ect-cubic-label">Кубич.</message>
   <message id="ect-nth-label">{1}-й порядок</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">Энергия нижнего канала</message>
+  <message id="ect-cal-type-not-defined">Не определено</message>
+  <message id="ect-cal-type-polynomial">Полиномиальная</message>
+  <message id="ect-cal-type-default-poly">Полиномиальная по умолчанию</message>
+  <message id="ect-cal-type-frf">Дробь полного диапазона</message>
+  <message id="ect-convert-to-poly-msg">Пожалуйста, преобразуйте в полиномиальную калибровку для редактирования</message>
+  <message id="ect-deviation-pairs">Пары отклонений</message>
 </messages>

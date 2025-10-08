@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pe- is short for PeakEdit -->
+  <message id="pe-value">Nilai</message>
+  <message id="pe-uncertainty">Ketidakpastian</message>
+  <message id="pe-parameter">Parameter</message>
+  <message id="pe-label">Label</message>
+  <message id="pe-peak-type">Tipe Puncak</message>
+  <message id="pe-peak-model-gaussian">Gaussian</message>
+  <message id="pe-peak-model-data">Wilayah Data</message>
+  <message id="pe-skew-type">Tipe Miring</message>
+  <message id="pe-btn-refit">Cocokkan Ulang</message>
+  <message id="pe-btn-refit-roi-standard">Cocokkan Ulang ROI: FWHM terkait</message>
+  <message id="pe-btn-refit-roi-independent">Cocokkan Ulang ROI: FWHM independen</message>
+  <message id="pe-btn-refit-roi-fine">Cocokkan Ulang ROI: penyempurnaan kecil</message>
+  <message id="pe-btn-refit-roi-independent-fine">Cocokkan Ulang ROI: sempurnakan dengan FWHM indep.</message>
+  
+  <message id="pe-label-centroid">Sentroid</message>
+  <message id="pe-label-drf-fwhm">FWHM Pred. DRF</message>
+  <message id="pe-label-amp">Amplitudo</message>
+  <message id="pe-label-skew0">Miring 0</message>
+  <message id="pe-label-skew1">Miring 1</message>
+  <message id="pe-label-skew2">Miring 2</message>
+  <message id="pe-label-skew3">Miring 3</message>
+  <message id="pe-label-cont-p0">Kont. P0</message>
+  <message id="pe-label-cont-p1">Kont. P1</message>
+  <message id="pe-label-cont-p2">Kont. P2</message>
+  <message id="pe-label-cont-p3">Kont. P3</message>
+  <message id="pe-label-cont-p4">Kont. P4</message>
+  <message id="pe-label-roi-start">Awal ROI (keV)</message>
+  <message id="pe-label-roi-end">Akhir ROI (keV)</message>
+  <message id="pe-label-chi2-dof">𝜒²/DOF</message>
+  <message id="pe-label-peak-color">Warna Puncak</message>
+
+  <message id="pe-multipeak-in-roi">Puncak {1} dari {2} dalam ROI</message>
+  <message id="pe-apply-all-of-type">Semua {1} puncak</message>
+  <message id="pe-drf-predict-fwhm-txt">DRF memprediksi FWHM sebesar {1} keV</message>
+  <message id="pe-btn-cont-to-linear">Estimasi kontinum linear</message>
+  <message id="pe-tt-btn-cont-to-linear">Menggunakan kanal di kanan dan kiri ROI untuk memperkirakan kontinum garis lurus.</message>
+  <message id="pe-failed-refit-insig">Gagal mencocokkan ulang puncak (menjadi tidak signifikan), jadi tidak melakukan apa pun</message>
+
+  <message id="pe-est-lin-cont-no-data">Harap muat spektrum latar depan sebelum memperkirakan kontinum.</message>
+  <message id="pe-failed-est-lin-cont">Gagal memperkirakan kontinum dari tepi ROI: {1}</message>
+  
+  
+  
+</messages>
+

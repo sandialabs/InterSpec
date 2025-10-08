@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+
+  <!-- Window title -->
+  <message id="esf-window-title">स्पेक्ट्रम फ़ाइल निर्यात</message>
+
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">निर्यात करने के लिए फ़ाइल</message>
+  <message id="esf-file-format">फ़ाइल प्रारूप</message>
+  <message id="esf-samples-to-include">शामिल करने के लिए नमूने</message>
+
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">फ़ाइल</message>
+  <message id="esf-format-tab">प्रारूप</message>
+  <message id="esf-options-tab">विकल्प</message>
+
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + पृष्ठ.</message>
+  <message id="esf-plus-secondary"> + द्वि.</message>
+  <message id="esf-fore-plus-back-tt">अग्रभूमि और पृष्ठभूमि और/या द्वितीयक स्पेक्ट्रम को एक साथ एक ही फ़ाइल में निर्यात करें।</message>
+
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">प्रद. अग्रभूमि</message>
+  <message id="esf-disp-background">प्रद. पृष्ठभूमि</message>
+  <message id="esf-disp-secondary">प्रद. द्वितीयक</message>
+  <message id="esf-all-samples">सभी नमूने</message>
+  <message id="esf-custom-samples">कस्टम नमूने</message>
+  <message id="esf-custom-samples-tt">यहां प्रदर्शित करने के लिए नमूना संख्या दर्ज करें। आप '33-39' या '33 to 39' के समान नमूना संख्याओं की सीमा दर्ज कर सकते हैं, या '34,39,84' जैसे CSV नमूना संख्या</message>
+  <message id="esf-filter-detectors">डिटेक्टर फ़िल्टर करें</message>
+
+  <!-- Options section -->
+  <message id="esf-options">विकल्प</message>
+  <message id="esf-sum-to-single-record">एकल रिकॉर्ड में योग करें</message>
+  <message id="esf-sum-to-single-record-tt">सभी चयनित नमूने और/या डिटेक्टर एकल स्पेक्ट्रम में एक साथ जोड़े जाएंगे।<br />सावधानी: यदि आपके पास अग्रभूमि और पृष्ठभूमि दोनों चयनित हैं, तो वे एक साथ जोड़े जाएंगे।</message>
+
+  <message id="esf-sum-fore-to-single-record">अग्रभूमि को एकल रिकॉर्ड में योग करें</message>
+  <message id="esf-sum-fore-to-single-record-tt">या तो कई नमूना संख्याएं हैं, या कई डिटेक्टर जो प्रदर्शित अग्रभूमि बनाते हैं; इस विकल्प को चेक करने से आउटपुट फ़ाइल में इन सभी को एकल स्पेक्ट्रम में जोड़ा जाएगा।</message>
+
+  <message id="esf-sum-back-to-single-record">पृष्ठभूमि को एकल रिकॉर्ड में योग करें</message>
+  <message id="esf-sum-back-to-single-record-tt">या तो कई नमूना संख्याएं हैं, या कई डिटेक्टर जो प्रदर्शित पृष्ठभूमि बनाते हैं; इस विकल्प को चेक करने से आउटपुट फ़ाइल में इन सभी को एकल स्पेक्ट्रम में जोड़ा जाएगा।</message>
+
+  <message id="esf-sum-sec-to-single-record">द्वितीयक को एकल रिकॉर्ड में योग करें</message>
+
+  <message id="esf-background-subtract">पृष्ठभूमि घटाएं</message>
+  <message id="esf-background-subtract-tt">आउटपुट स्पेक्ट्रम अग्रभूमि होगा, पृष्ठभूमि घटाकर।</message>
+
+  <message id="esf-sum-det-per-sample">प्रति नमूना डिटेक्टर योग करें</message>
+  <message id="esf-sum-det-per-sample-tt">प्रत्येक नमूना संख्या के लिए, उस नमूना संख्या के सभी डिटेक्टर एक साथ जोड़ें।<br />जैसे, यदि आपकी स्पेक्ट्रम फ़ाइल में 8 डिटेक्टर हैं, प्रत्येक में 120 नमूने हैं, तो परिणामों में 120 स्पेक्ट्रम होंगे, जिनमें से प्रत्येक संबंधित नमूनों के 8 डिटेक्टरों का योग है।</message>
+
+  <message id="esf-sum-samples-per-det">प्रति डिटेक्टर नमूने योग करें</message>
+  <message id="esf-sum-samples-per-det-tt">प्रत्येक डिटेक्टर के लिए, सभी नमूना संख्याएं एक साथ जोड़ता है।<br />जैसे, यदि आपकी स्पेक्ट्रम फ़ाइल में 8 डिटेक्टर हैं, प्रत्येक में 120 नमूने हैं, तो परिणामों में 8 स्पेक्ट्रम होंगे, जिनमें से प्रत्येक उनके संबंधित डिटेक्टरों के 120 नमूनों का योग है।</message>
+
+  <message id="esf-remove-interspec-info">InterSpec जानकारी हटाएं</message>
+  <message id="esf-remove-interspec-info-tt">डिटेक्टर प्रतिक्रिया, पीक, और अन्य विश्लेषण परिणाम जो आपने InterSpec में जोड़े हो सकते हैं, उन्हें हटाता है।</message>
+
+  <message id="esf-remove-gps">GPS हटाएं</message>
+
+  <!-- Status text -->
+  <message id="esf-not-applicable">लागू नहीं</message>
+  <message id="esf-none-available">कोई उपलब्ध नहीं</message>
+
+  <!-- Buttons -->
+  <message id="esf-export">निर्यात</message>
+  <message id="esf-show-qr-code">QR-कोड दिखाएं</message>
+
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">इस रूप में प्रदर्शित</message>
+  <message id="esf-fore-abbrev">अग्र.</message>
+  <message id="esf-back-abbrev">पृष्ठ</message>
+  <message id="esf-sec-abbrev">द्वि</message>
+
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">अगला QR कोड</message>
+  <message id="esf-url-link">URL लिंक</message>
+  <message id="esf-email-link">ईमेल लिंक</message>
+
+  <!-- Error dialogs -->
+  <message id="esf-error-title">त्रुटि</message>
+  <message id="esf-qr-encode-failed">स्पेक्ट्रम को QR कोड के रूप में प्रदर्शित करने में विफल: {1}</message>
+
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">प्रद.&nbsp;नमूना</plural>
+    <plural case="1">प्रद.&nbsp;नमूने</plural>
+  </message>
+
+  <!-- Table headers -->
+  <message id="esf-start-time">प्रारंभ समय</message>
+  <message id="esf-end-time">समाप्ति समय</message>
+  <message id="esf-first-sample">पहला नमूना</message>
+  <message id="esf-last-sample">अंतिम नमूना</message>
+  <message id="esf-num-samples">नमूना संख्या</message>
+  <message id="esf-neut-dets">न्यूट्रॉन डिटेक्टर</message>
+  <message id="esf-gamma-dets">गामा डिटेक्टर</message>
+  <message id="esf-num-dets">डिटेक्टर संख्या</message>
+  <message id="esf-latitude">अक्षांश</message>
+  <message id="esf-longitude">देशांतर</message>
+  <message id="esf-total-time">कुल समय</message>
+  <message id="esf-sum-gamma">योग गामा</message>
+  <message id="esf-sum-neut">योग न्यूट्रॉन</message>
+  <message id="esf-manufacturer">निर्माता</message>
+  <message id="esf-model">मॉडल</message>
+  <message id="esf-serial">सीरियल</message>
+</messages>

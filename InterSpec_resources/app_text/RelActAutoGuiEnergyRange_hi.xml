@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+
+  <!-- Labels -->
+  <message id="raager-lower-energy">निचली ऊर्जा</message>
+  <message id="raager-upper-energy">ऊपरी ऊर्जा</message>
+  <message id="raager-continuum-type">सतत प्रकार:</message>
+
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">पूर्ण-सीमा बाध्य करें</message>
+
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">इस ऊर्जा सीमा को व्यक्तिगत ROI में परिवर्तित करता है, इस आधार पर कि किन gamma को एक साथ बनाम अलग समूहीकृत किया जाना चाहिए (उदा., ओवरलैपिंग पीकों वाली gamma को एकल ROI में छोड़ देता है, जबकि यदि दो gamma बहुत अलग हैं, तो उन्हें अलग ROI में विभाजित किया जाएगा।</message>
+
+</messages>

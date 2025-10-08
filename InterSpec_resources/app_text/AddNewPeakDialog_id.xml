@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">Tambah Puncak</message>
+  <message id="anpd-err-no-foreground">Spektrum latar depan harus dimuat untuk menambah puncak.</message>
+  <message id="anpd-err-no-foreground-1">Tidak ada spektrum latar depan</message>
+  <message id="anpd-peak-mean">Rerata Puncak</message>
+  <message id="anpd-peak-fwhm">FWHM Puncak</message>
+  <message id="anpd-peak-amp">Amp. Puncak</message>
+  <message id="anpd-roi-lower">ROI Bawah</message>
+  <message id="anpd-roi-upper">ROI Atas</message>
+  <message id="anpd-tt-more-adv">Untuk opsi lanjutan, lihat <em>Editor Puncak</em> setelah menambahkan.</message>
+  <message id="anpd-screen-to-small">Layar terlalu kecil untuk pratinjau.</message>
+  <message id="anpd-err-preview">Kesalahan rendering pratinjau</message>
+  <message id="anpd-err-fit-failed">Fitting Gagal.</message>
+  <message id="anpd-associate-with">Asosiasikan dengan {1}</message>
+</messages>
+

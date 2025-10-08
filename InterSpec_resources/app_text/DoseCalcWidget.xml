@@ -56,4 +56,5 @@
   <message id="dcw-save-property">Save Valuable Property</message>
   <message id="dcw-life-saving">Life Saving</message>
   <message id="dcw-radiation-sickness">Radiation Sickness</message>
+  <message id="dcw-units-label">units:</message>
 </messages>

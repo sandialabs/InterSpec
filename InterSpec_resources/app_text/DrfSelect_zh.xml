@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">用户定义的探测器</message>
+
+  <message id="ref-tt-remove-drf-file">从InterSpec将查找探测器响应函数的文件列表中删除文件。</message>
+  <message id="ref-remove-drf-window-title">删除探测器响应？</message>
+  <message id="ref-remove-drf-window-txt">您是否也想从将来的使用中删除这些DRF？</message>
+  <message id="ref-file-removed-toast">文件'{1}'已从将来的使用中删除。</message>
+  <message id="ref-file-saved-for-later">已保存'{1}'供以后使用，并将在"<em>探测器响应函数选择</em>"工具的"<em>相对效率</em>"部分中可用。</message>
+  <message id="ref-err-saving-drf-file">保存DRF文件供以后使用时出错；抱歉。</message>
+  <message id="ref-err-invalid-csv-drf">不是有效的TSV或CSV相对效率DRF文件。</message>
+  <message id="ref-save-drf-window-title">保存探测器响应？</message>
+  <message id="ref-save-drf-window-txt">您想保存这些探测器响应供以后使用吗？</message>
+  <message id="ref-upload-csv-file">上传TSV/CSV文件。</message>
+  <message id="ref-dont-use-drf-in-file">文件中无响应</message>
+  <message id="ref-select-det-from-file">选择探测器</message>
+  <message id="ref-no-drfs-in-file">文件中无有效DRF。</message>
+  <message id="ref-couldnt-open-drf-file">无法打开DRF文件。</message>
+  <message id="ref-no-rel-eff-drfs-in-file">无可用的相对效率DRF。</message>
+  <message id="ref-no-drfs-available">无可用响应</message>
+  <message id="ref-file-has-no-drfs">文件不包含任何DRF</message>
+  <message id="reds-tt-add-drf-btn">点击加号按钮添加额外的相对效率探测器响应函数文件。</message>
+  <message id="reds-tt-add-dir">点击加号按钮添加额外的目录以递归查找探测器响应函数。</message>
+  <message id="reds-gadras-drf-info-ios">您可以将从GADRAS-DRF导入的探测器响应函数放入<b>文件</b>应用中的<code>InterSpec</code>目录。</message>
+  <message id="reds-gadras-drf-info">这些是从GADRAS-DRF导入的探测器响应函数。目前仅使用探测器尺寸、绝对效率和FWHM分辨率。</message>
+  <message id="reds-failed-parse-gadras-det">解析GADRAS探测器失败：{1}</message>
+  <message id="reds-err-saving-gad-path">将GADRAS路径保存到用户首选项时出错：{1}</message>
+  <message id="reds-tt-remove-gad-dir">从InterSpec将查找探测器响应函数的目录列表中删除目录。</message>
+  <message id="reds-tt-gad-set-dir">设置输入的目录以递归查找探测器响应函数。</message>
+  <message id="reds-err-not-valid-dir">不是有效目录。</message>
+  <message id="reds-invalid-dir">目录无效</message>
+  <message id="reds-no-drf-in-dir">目录中无响应</message>
+  <message id="reds-recursive-no-drfs-in-dir">目录或其子目录中无有效DRF。</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      本征效率CSV文件：
+    </div>
+    <div>
+      第一列是keV为单位的能量。
+      第二列是在该能量下入射到探测器上的伽马在全能峰中记录的效率（0到100）。
+    </div>
+    <div>
+      您还需要上传GADRAS Detector.dat文件，或在上传效率文件后输入探测器直径。
+    </div>
+    <div>
+      您还可以上传从<em>制作探测器响应</em>工具导出的CSV。
+    </div>
+  </message>
+  <message id="ds-enter-gad-det-diam">输入探测器直径或上传Detector.dat文件：</message>
+  <message id="ds-det-diam">探测器直径：</message>
+  <message id="ds-fixed-geom">固定几何</message>
+  <message id="ds-gad-det-file-label">GADRAS Detector.Dat文件：</message>
+  <message id="ds-manual-det-empty-fcn">示例：exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
+    或等效地：-9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">由数学公式定义的探测器效率，给定能量x；
+     或者您可以输入标准方程形式的系数。点击问号图标了解更多信息。
+  </message>
+  <message id="ds-manual-det-name-label">探测器名称</message>
+  <message id="ds-manual-det-name-empty-txt">唯一探测器名称</message>
+  <message id="ds-manual-function-label">效率f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">效率公式的能量单位</message>
+  <message id="ds-tt-manual-desc">此探测器响应的描述</message>
+  <message id="ds-manual-det-diam-label">探测器直径</message>
+  <message id="ds-energy-range">能量范围</message>
+  <message id="ds-(optional)">（可选）</message>
+  <message id="ds-min.">最小</message>
+  <message id="ds-max.">最大</message>
+  <message id="ds-intrinsic-eff">本征效率</message>
+  <message id="ds-abs-eff">绝对效率</message>
+  <message id="ds-fixed-geom-total">固定几何 - 总活度</message>
+  <message id="ds-fixed-geom-cm2">固定几何 - 每cm²活度</message>
+  <message id="ds-fixed-geom-m2">固定几何 - 每m²活度</message>
+  <message id="ds-fixed-geom-gram">固定几何 - 每克活度</message>
+
+  <message id="ds-tt-manual-drf-type">应如何解释此效率。<br />
+    <br />
+    本征效率：射向探测器表面的X射线或伽马记录全能检测事件的概率。<br />
+    <br />
+    绝对效率：来自源的X射线或伽马记录全能检测事件的概率，适合通过1/r2将此效率缩放到其他距离（即，针对点源）。<br />
+    <br />
+    固定几何 - 总活度：来自源的X射线或伽马记录全能检测事件的概率，不适合将此效率缩放到其他距离（例如，对于近距离或大扩展源）。<br />
+    <br />
+    固定几何 - 每cm²活度：类似于总活度，但效率曲线表示每次衰变、每平方厘米的效率（即表面污染）。<br />
+    <br />
+    固定几何 - 每m²活度：类似于每cm²，但对于每平方米。<br />
+    <br />
+    固定几何 - 每克活度：类似于每cm²，但对于每克源。
+  </message>
+  <message id="ds-dist-label">距离：</message>
+  <message id="ds-set-btn">设置</message>
+  <message id="ds-last-used">最后使用</message>
+  <message id="ds-det-type-filter-all">全部</message>
+  <message id="ds-det-type-filter-uploaded">已上传</message>
+  <message id="ds-det-type-filter-formula">输入公式</message>
+  <message id="ds-det-type-filter-data">从数据制作</message>
+  <message id="ds-det-type-filter-N42">包含在N42文件中</message>
+  <message id="ds-show-label">显示：</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">相对效率</message>
+  <message id="ds-mi-import">导入</message>
+  <message id="ds-mi-formula">公式</message>
+  <message id="ds-mi-previous">先前</message>
+  <message id="ds-use-for-serialnum-cb">用作SN '{1}'的默认DRF</message>
+  <message id="ds-use-for-model-cb">用作型号'{1}'的默认DRF</message>
+  <message id="ds-no-drf-loaded">未加载DRF</message>
+  <message id="ds-no-det-btn">无探测器</message>
+  <message id="ds-fit-fwhm-btn">拟合FWHM...</message>
+  <message id="ds-tt-cancel">删除此对话框所做的所有更改或选择，并关闭对话框。</message>
+  <message id="ds-tt-accept">接受所做的所有更改/选择并关闭对话框。</message>
+  <message id="ds-use-det-btn">使用探测器</message>
+  <message id="ds-use-drf">使用DRF？</message>
+  <message id="ds-select-drf">选择要使用的DRF</message>
+  <message id="ds-drf-desc">DRF描述</message>
+  <message id="ds-save-for-later-cb">保存供以后使用？</message>
+  <message id="ds-err-drf-uri-invalid">探测器响应函数URL无效。</message>
+  <message id="ds-err-det-diam-pos">探测器直径必须为正</message>
+  <message id="ds-err-det-dist-pos">绝对效率的距离必须为正</message>
+  <message id="ds-warn-min-max-energy-swapped">探测器最小能量大于最大能量；忽略能量范围。</message>
+  <message id="ds-need-det-diam">需要探测器的直径</message>
+</messages>
+

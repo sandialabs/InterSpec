@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- srria- is short for ShowRiidIntrumentAna -->
+  <message id="srria-algo-info-label">Informasi Algoritma:</message>
+  <message id="srria-creator">Pembuat</message>
+  <message id="srria-version">Versi</message>
+  <message id="srria-remarks">Catatan</message>
+  <message id="srria-category">Kategori</message>
+  <message id="srria-confidence">Kepercayaan</message>
+  <message id="srria-no-id-provided">Tidak ada identifikasi nuklida yang diberikan.</message>
+  <message id="srria-algo-results">Hasil Algoritma</message>
+  <message id="srria-no-algo-results">Tidak ada hasil algoritma yang tersedia.</message>
+  <message id="srria-no-nucs">tidak ada nuklida yang diidentifikasi.</message>
+  <message id="srria-inst-ana-window-title">Hasil ID Detektor</message>
+</messages>
+

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">拟合FWHM...</message>
+  <message id="dls-select-drf-btn">选择探测器...</message>
+  <message id="dls-further-details-link">详细信息...</message>
+  <message id="dls-conf-level-label">置信水平：</message>
+  <message id="dls-roi-lower-label">ROI下限：</message>
+  <message id="dls-roi-upper-label">ROI上限：</message>
+  <message id="dls-num-side-channel-label">侧道数：</message>
+  <message id="dls-fwhm-label">FWHM：</message>
+  <message id="dls-decon-cont-norm-label">连续归一化：</message>
+  <message id="dls-is-background-spectrum-cb">本底谱</message>
+  <message id="dls-is-background-spectrum-tt">
+    选中此选项表示此谱中不存在信号。
+    <p>
+      峰区域本身将用于估计预期的本底。
+      选择峰区域相邻的侧道的选项将不再相关，因此将被隐藏。
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">浮动</message>
+  <message id="dls-cont-norm-not-present">作为无信号</message>
+  <message id="dls-cont-norm-fixed-by-sides">从侧面</message>
+  <message id="dls-roi-changed-no-gamma">更改ROI排除了主伽马 - 不更改</message>
+  <message id="dls-suggest-fwhm">探测器FWHM：{1} keV</message>
+  <message id="dls-rough-est-fwhm">粗略估计FWHM：{1} keV</message>
+  <message id="dls-calc-method">计算方法：</message>
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">反卷积</message>
+  <message id="dls-err-no-input">未输入 - 请输入核素、选择伽马能量和输入距离。</message>
+  <message id="dls-err-calculating">计算答案时出错：{1}</message>
+  <message id="dls-currie-desc">Currie方法将总计数与周围道的预测进行比较</message>
+  <message id="dls-decon-desc">反卷积考虑峰形状和数据分布</message>
+  <message id="dls-qr-tool-state-title">简单MDA工具状态</message>
+  <message id="dls-qr-tool-state-txt">简单MDA工具的当前状态。</message>
+
+  <message id="dls-det-act-with-range">检测到：{1}，范围[{2}，{3}]，@{4} CL</message>
+  <message id="dls-det-no-result">抱歉，无结果</message>
+  <message id="dls-det-counts-with-range">超额计数：{1}，范围[{2}，{3}]，@{4} CL</message>
+  <message id="dls-det-act-less-zero">活度&lt; 0 {1}（观察到的计数明显少于预期）。</message>
+  <message id="dls-det-counts-less-zero">超额计数&lt; 0 {2}（观察到的计数明显少于预期）。</message>
+  <message id="dls-det-upper-bound">在{2} CL处存在少于{1}。</message>
+  <message id="dls-min-detectable-act">最小可靠检测活度：{1}。</message>
+  <message id="dls-min-detectable-counts">最小可靠检测超额计数：{1}</message>
+  <message id="dls-error-computing-results">计算结果时出错</message>
+  <message id="dls-chart-title-estimated-counts">{1}的估计计数。</message>
+  <message id="dls-results-txt-estimated-counts">
+    检测到{1}的计数。
+    <br/>
+    范围：[{2}，{3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">{1}的估计活度。</message>
+  <message id="dls-results-txt-estimated-act">
+    检测到{1}的活度。
+    <br/>
+    范围：[{2}，{3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">在{2} CL处{1}上限的峰</message>
+  <message id="dls-results-txt-upper-bound-act">在{2} CL处少于{1}</message>
+  <message id="dls-chart-title-upper-bound-counts">在{2} CL处{1}计数上限的峰</message>
+  <message id="dls-results-txt-upper-bound-counts">在{2} CL处存在少于{1}信号计数</message>
+  <message id="dls-err-no-meas">无可用测量</message>
+  
+  <message id="dls-Info">信息</message>
+  <message id="dls-assumed-br=1">（活度假设BR=1.0）</message>
+  <message id="dls-Limit">限值</message>
+  <message id="dls-continuum-area">连续区面积</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
+  <message id="dls-Upper">上限</message>
+  <message id="dls-Lower">下限</message>
+  <message id="dls-Best">最佳</message>
+  <message id="dls-ROI-range-label">ROI范围（keV）</message>
+  <message id="dls-ROI-Channels-label">ROI道</message>
+  <message id="dls-ROI-Width">ROI宽度</message>
+  <message id="dls-det-intrinsic-eff">探测器本征效率</message>
+  <message id="dls-solid-angle-frac">立体角分数</message>
+  <message id="dls-air-trans">空气透射</message>
+  <message id="dls-gamma-intensity">伽马强度</message>
+  <message id="dls-err-more-info-title">计算限值时出错...</message>
+  <message id="dls-err-more-info-content">计算限值信息时出错：{1}</message>
+  <message id="dls-err-select-det">请选择探测器效率函数。</message>
+  <message id="dls-err-neg-distance">距离不能为负。</message>
+  <message id="dls-err-no-fwhm-info">探测器效率函数没有FWHM信息 - 请拟合FWHM或更改探测器。</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>
+

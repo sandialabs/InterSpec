@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+
+  <!-- Labels -->
+  <message id="raagn-nuclide">न्यूक्लाइड:</message>
+  <message id="raagn-age">आयु:</message>
+  <message id="raagn-min-age">न्यूनतम आयु:</message>
+  <message id="raagn-max-age">अधिकतम आयु:</message>
+
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">बाधा प्रकार चुनें।</message>
+  <message id="raagn-min">न्यूनतम:</message>
+  <message id="raagn-max">अधिकतम:</message>
+  <message id="raagn-src">स्रोत:</message>
+  <message id="raagn-val">मान:</message>
+
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">कोई नहीं</message>
+  <message id="raagn-constraint-rel-act">सापेक्ष सक्रियता</message>
+  <message id="raagn-constraint-act-ratio">सक्रियता अनुपात</message>
+  <message id="raagn-constraint-mass-frac">द्रव्यमान अंश</message>
+
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">आयु फिट करें</message>
+
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">बाधा जोड़ें</message>
+
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">उदा. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (मेटा स्थिर अवस्था), <b>Cs137</b>, Pb, Fe(n,n), आदि।</message>
+  <message id="raagn-remove-constraint-tt">यह बाधा हटाएं</message>
+  <message id="raagn-add-constraint-tt">इस न्यूक्लाइड में बाधा जोड़ें</message>
+
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1} एक मान्य न्यूक्लाइड, x-ray, या प्रतिक्रिया नहीं है।</message>
+  <message id="raagn-stable-nuclide">{1} एक स्थिर न्यूक्लाइड है।</message>
+
+</messages>

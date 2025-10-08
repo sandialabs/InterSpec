@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">FWHM फिट करें...</message>
+  <message id="dls-select-drf-btn">डिटेक्टर चुनें...</message>
+  <message id="dls-further-details-link">अधिक विवरण...</message>
+  <message id="dls-conf-level-label">विश्वास स्तर:</message>
+  <message id="dls-roi-lower-label">ROI निचली:</message>
+  <message id="dls-roi-upper-label">ROI ऊपरी:</message>
+  <message id="dls-num-side-channel-label">साइड चैनल संख्या:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-decon-cont-norm-label">सतत सामान्यीकरण:</message>
+  <message id="dls-is-background-spectrum-cb">पृष्ठभूमि स्पेक्ट्रम</message>
+  <message id="dls-is-background-spectrum-tt">
+    इस विकल्प को चेक करने से पुष्टि होती है कि इस स्पेक्ट्रम में कोई संकेत मौजूद नहीं है।
+    <p>
+      पीक-क्षेत्र का उपयोग अपेक्षित पृष्ठभूमि का अनुमान लगाने के लिए किया जाएगा।
+      पीक-क्षेत्र के आसन्न साइड-चैनल चुनने का विकल्प अब प्रासंगिक नहीं रहेगा, इसलिए छिपाया जाएगा।
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">फ्लोटिंग</message>
+  <message id="dls-cont-norm-not-present">कोई संकेत नहीं के रूप में</message>
+  <message id="dls-cont-norm-fixed-by-sides">पक्षों से</message>
+  <message id="dls-roi-changed-no-gamma">ROI बदलने से प्राथमिक गामा बाहर हो गया - नहीं बदल रहा</message>
+  <message id="dls-suggest-fwhm">डिटेक्टर FWHM: {1} keV</message>
+  <message id="dls-rough-est-fwhm">मोटा अनुमान FWHM: {1} keV</message>
+  <message id="dls-calc-method">गणना विधि:</message>
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">Deconvolution</message>
+  <message id="dls-err-no-input">कोई इनपुट दर्ज नहीं किया गया - कृपया न्यूक्लाइड दर्ज करें, गामा ऊर्जा चुनें, और दूरी इनपुट करें।</message>
+  <message id="dls-err-calculating">उत्तर की गणना में त्रुटि: {1}</message>
+  <message id="dls-currie-desc">Currie विधि सकल गणनाओं की तुलना आसपास के चैनलों की भविष्यवाणी से करती है</message>
+  <message id="dls-decon-desc">Deconvolution पीक आकार और डेटा वितरण को ध्यान में रखता है</message>
+  <message id="dls-qr-tool-state-title">सरल MDA उपकरण स्थिति</message>
+  <message id="dls-qr-tool-state-txt">सरल MDA उपकरण की वर्तमान स्थिति।</message>
+
+  <message id="dls-det-act-with-range">पता लगाया गया: {1}, सीमा [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-no-result">क्षमा करें, कोई परिणाम नहीं</message>
+  <message id="dls-det-counts-with-range">अतिरिक्त गणनाएं: {1}, सीमा [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-less-zero">गतिविधि &lt; 0 {1} (अपेक्षित से काफी कम गणनाएं देखी गईं)।</message>
+  <message id="dls-det-counts-less-zero">अतिरिक्त गणनाएं &lt; 0 {2} (अपेक्षित से काफी कम गणनाएं देखी गईं)।</message>
+  <message id="dls-det-upper-bound">{1} से कम उपस्थित @{2} CL।</message>
+  <message id="dls-min-detectable-act">न्यूनतम विश्वसनीय रूप से पता लगाने योग्य गतिविधि: {1}।</message>
+  <message id="dls-min-detectable-counts">न्यूनतम विश्वसनीय रूप से पता लगाने योग्य अतिरिक्त गणनाएं: {1}</message>
+  <message id="dls-error-computing-results">परिणाम की गणना में त्रुटि</message>
+  <message id="dls-chart-title-estimated-counts">{1} की अनुमानित गणनाएं।</message>
+  <message id="dls-results-txt-estimated-counts">
+    {1} की पता लगाई गई गणनाएं।
+    <br/>
+    सीमा: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">{1} की अनुमानित गतिविधि।</message>
+  <message id="dls-results-txt-estimated-act">
+    {1} की पता लगाई गई गतिविधि।
+    <br/>
+    सीमा: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">{1} की ऊपरी सीमा के लिए पीक @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-act">{1} से कम @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">{1} गणनाओं की ऊपरी सीमा के लिए पीक @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-counts">{1} संकेत गणनाओं से कम उपस्थित @{2} CL</message>
+  <message id="dls-err-no-meas">कोई माप उपलब्ध नहीं</message>
+
+  <message id="dls-Info">जानकारी</message>
+  <message id="dls-assumed-br=1">(गतिविधि BR=1.0 मान रही है)</message>
+  <message id="dls-Limit">सीमा</message>
+  <message id="dls-continuum-area">सतत क्षेत्र</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
+  <message id="dls-Upper">ऊपरी</message>
+  <message id="dls-Lower">निचली</message>
+  <message id="dls-Best">सर्वोत्तम</message>
+  <message id="dls-ROI-range-label">ROI सीमा (keV)</message>
+  <message id="dls-ROI-Channels-label">ROI चैनल</message>
+  <message id="dls-ROI-Width">ROI चौड़ाई</message>
+  <message id="dls-det-intrinsic-eff">डिटेक्टर आंतरिक दक्षता</message>
+  <message id="dls-solid-angle-frac">ठोस कोण अंश</message>
+  <message id="dls-air-trans">वायु संचरण</message>
+  <message id="dls-gamma-intensity">गामा तीव्रता</message>
+  <message id="dls-err-more-info-title">सीमा की गणना में त्रुटि...</message>
+  <message id="dls-err-more-info-content">सीमा जानकारी की गणना में त्रुटि: {1}</message>
+  <message id="dls-err-select-det">कृपया डिटेक्टर दक्षता फ़ंक्शन चुनें।</message>
+  <message id="dls-err-neg-distance">दूरी ऋणात्मक नहीं हो सकती।</message>
+  <message id="dls-err-no-fwhm-info">डिटेक्टर दक्षता फ़ंक्शन में FWHM जानकारी नहीं है - कृपया FWHM के लिए फिट करें, या डिटेक्टर बदलें।</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>

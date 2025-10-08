@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uct- is short for UnitsConverterTool
+  -->
+  <message id="uct-mult-nucs">多个核素（{1} + {2}）</message>
+  <message id="uct-instructions">在辐射相关单位之间转换。<br />
+    例如：5 MBq，2 nCi，1.2rad，15E-3gy，0.2mrem，8feet，9milli-sievert，10 gram U235，1.2 uCi Pu238
+  </message>
+  <message id="uct-input-label">输入：</message>
+  <message id="uct-output-label">输出：</message>
+  <message id="uct-qr-window-title">单位转换器状态</message>
+  <message id="uct-qr-window-txt">单位转换器工具的当前状态。</message>
+  <message id="uct-err-empty-input">输入为空</message>
+  <message id="uct-couldnt-find-units">无法确定单位</message>
+  <message id="uct-nuc-unknown">无法处理{1} '{2}'</message>
+  <message id="uct-invalid-input">无效输入</message>
+  <message id="uct-err-gen">错误：{1}。<br />
+    允许的活度单位：bq，becquerel，ci，curie，gray，Gy，rad，sievert，Sv，rem，
+    roentgen，m，meter，ft，inch，in，gram，g，ounce，oz，pound，lb和grain。<br />
+    允许的（可选）前缀：n，nano，u，µ，micro，m，milli，
+     k，killo，M，mega，G，Giga，T和Tera
+  </message>
+</messages>
+

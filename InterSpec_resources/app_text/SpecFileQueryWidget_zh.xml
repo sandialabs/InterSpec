@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sfqw- is short for SpecFileQueryWidget -->
+  <message id="sfqw-options">选项</message>
+  <message id="sfqw-update">更新</message>
+  <message id="sfqw-load-selected">加载已选择</message>
+</messages>
+

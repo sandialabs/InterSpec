@@ -91,4 +91,13 @@
   <message id="ect-quad-label">Négyzetes</message>
   <message id="ect-cubic-label">Köbös</message>
   <message id="ect-nth-label">{1}. rendű</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">Alsó csatorna energia</message>
+  <message id="ect-cal-type-not-defined">Nincs meghatározva</message>
+  <message id="ect-cal-type-polynomial">Polinomiális</message>
+  <message id="ect-cal-type-default-poly">Alapértelmezett polinomiális</message>
+  <message id="ect-cal-type-frf">Teljes tartomány törtje</message>
+  <message id="ect-convert-to-poly-msg">Kérjük, konvertáljon polinomiális kalibrációra a szerkesztéshez</message>
+  <message id="ect-deviation-pairs">Eltérési párok</message>
 </messages>

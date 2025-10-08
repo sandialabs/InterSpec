@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">可执行路径</message>
+  <message id="rr-url-empty-text">FullSpectrum服务的URL</message>
+  <message id="rr-exe-path-empty-text">FullSpectrum可执行文件的路径</message>
+  <message id="rr-get-detectors">检索DRF</message>
+  <message id="rr-detectors-label">DRF：</message>
+  <message id="rr-url-instructions">输入Web服务URL后，请（可选地）检索DRF，然后按"<em>提交</em>"</message>
+  <message id="rr-only-disp-samples-cb">仅显示的样本</message>
+  <message id="rr-tt-only-disp-samples">通常搜索模式和门户数据会被完整分析，但选择此选项将导致仅分析显示的前景/本底。</message>
+  <message id="rr-submit-ana-btn">提交分析</message>
+  <message id="rr-show-dialog-cb">显示对话框</message>
+  <message id="rr-always-call-cb">在谱加载时始终调用</message>
+  <message id="rr-tt-show-dialog">如果选中，将显示一个必须由用户关闭的对话框，其中包含RID结果。如果未选中，将仅显示一个在短时间后消失的通知，其中包含RID结果。</message>
+  <message id="rr-gadras-rid-error">GADRAS RID错误：{1}</message>
+  <message id="rr-gadras-rid-error-code">GADRAS RID错误代码{1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID：未识别任何内容</message>
+  <message id="rr-gadras-result">GADRAS RID：{1}</message>
+  <message id="rr-gadras-fail-parse">解析GADRAS RID结果失败。</message>
+  <message id="rr-rid-results-window-title">外部RID结果</message>
+  <message id="rr-rid-tool-btn">RID工具</message>
+  <message id="rr-err-incorrect-url">调用分析时出错：URL不正确或没有互联网。</message>
+  <message id="rr-err-locating-exe">定位可执行文件时出错：'{1}'</message>
+  <message id="rr-err-creating-tmp-file">创建临时文件名时出错。</message>
+  <message id="rr-err-opening-tmp-file">打开临时文件时出错。</message>
+  <message id="rr-requesting-ana">请求分析</message>
+  <message id="rr-err-no-spec">无显示的谱</message>
+  <message id="rr-requesting-service-info">请求服务信息。</message>
+  <message id="rr-error-parsing-service-info">解析服务信息结果时出错：<code></code></message>
+  <message id="rr-incorrect-url">URL不正确或没有互联网。</message>
+  <message id="rr-err-requesting-service-info">检索服务信息时出错：<code>{1}</code></message>
+</messages>
+

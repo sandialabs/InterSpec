@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">参考谱</message>
+  <message id="rs-show-foreground">比较前景</message>
+  <message id="rs-show-foreground-portrait">比较</message>
+  <message id="rs-show-background">显示本底</message>
+  <message id="rs-show-background-portrait">本底</message>
+  <message id="rs-tt-add-dir-btn">添加目录以打开参考谱。</message>
+  <message id="rs-tt-delete-dir-btn">从显示参考谱的位置列表中删除当前选定的目录。</message>
+  <message id="rs-no-dir-selected-desktop">
+    选择要加载的参考谱。<br />
+    <br />
+    使用<img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/>图标添加参考谱目录。
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    选择要加载的参考谱。<br /> 
+    <div style="font-size: smaller;">
+      （您还可以通过在<em>InterSpec</em>的数据目录中（使用文件应用）创建"reference_spectra"目录
+      来添加自己的参考谱目录，然后添加包含您的谱的进一步子目录）
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1}个目录不再可用，已被删除。</message>
+  <message id="rs-dir-added-successfully">已添加路径'{1}'。</message>
+  <message id="rs-show-as">加载为</message>
+  <message id="rs-add-dir-dialog-title">添加参考谱目录</message>
+  <message id="rs-duplicate-dir-path">目录已在选中：'{1}'</message>
+  <message id="rs-dir-not-found">未找到目录，因此未从首选项中删除：'{1}'</message>
+  <message id="rs-dir-info-only-spectra">目录包含{1}个谱文件<br /></message>
+  <message id="rs-dir-info-only-subdir">目录包含{1}个子目录<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">目录包含{1}个谱文件和{2}个子目录<br /></message>
+  <message id="rs-error-loading-file">加载文件时出错：'{1}'</message>
+  <message id="rs-show-in-explorer">在资源管理器中显示</message>
+  <message id="rs-show-in-finder">在Finder中显示</message>
+  <message id="rs-show-in-linux-file-manager">在文件管理器中显示</message>
+  <message id="rs-error-invalid-file">无效的谱文件：'{1}'。</message>
+  <message id="rs-error-invalid-type-selected">选择的谱类型无效。</message>
+  </messages>
+
+
+

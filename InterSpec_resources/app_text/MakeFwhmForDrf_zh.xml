@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">FWHM不确定度</message>
+  <message id="fpm-peak-source">峰源</message>
+  <message id="fpm-user">用户</message>
+  <message id="fpm-auto-fit">自动拟合</message>
+  
+  
+  <message id="mffdw-use-fwhm-btn">使用FWHM</message>
+  
+  <message id="mffd-eqn-type-label">方程类型：</message>
+  <message id="mffd-num-terms-label">项数：</message>
+  <message id="mffd-par-vals-label">参数值：</message>
+  <message id="mffd-err-no-foreground">没有数据可搜索峰。</message>
+  <message id="mffd-tt-par">含不确定度：{1}</message>
+  <message id="mffd-err-fail-fit">拟合FWHM方程失败：{1}</message>
+  <message id="mffd-err-waiting-for-search">当前正在搜索峰 - 请耐心等待</message>
+</messages>
+

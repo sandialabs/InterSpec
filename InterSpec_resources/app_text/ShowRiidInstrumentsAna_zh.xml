@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- srria- is short for ShowRiidIntrumentAna -->
+  <message id="srria-algo-info-label">算法信息：</message>
+  <message id="srria-creator">创建者</message>
+  <message id="srria-version">版本</message>
+  <message id="srria-remarks">备注</message>
+  <message id="srria-category">类别</message>
+  <message id="srria-confidence">置信度</message>
+  <message id="srria-no-id-provided">未提供核素识别。</message>
+  <message id="srria-algo-results">算法结果</message>
+  <message id="srria-no-algo-results">无可用的算法结果。</message>
+  <message id="srria-no-nucs">未识别核素。</message>
+  <message id="srria-inst-ana-window-title">探测器ID结果</message>
+</messages>
+

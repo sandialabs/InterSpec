@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">संदर्भ स्पेक्ट्रा</message>
+  <message id="rs-show-foreground">अग्रभूमि तुलना करें</message>
+  <message id="rs-show-foreground-portrait">तुलना करें</message>
+  <message id="rs-show-background">पृष्ठभूमि दिखाएं</message>
+  <message id="rs-show-background-portrait">पृष्ठभूमि</message>
+  <message id="rs-tt-add-dir-btn">संदर्भ स्पेक्ट्रा खोलने के लिए निर्देशिका जोड़ें।</message>
+  <message id="rs-tt-delete-dir-btn">वर्तमान में चयनित निर्देशिका को संदर्भ स्पेक्ट्रा दिखाने के स्थानों की सूची से हटाता है।</message>
+  <message id="rs-no-dir-selected-desktop">
+    लोड करने के लिए संदर्भ स्पेक्ट्रम चुनें। <br />
+    <br />
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/> आइकन का उपयोग करके संदर्भ स्पेक्ट्रा निर्देशिकाएं जोड़ें।
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    लोड करने के लिए संदर्भ स्पेक्ट्रम चुनें। <br />
+    <div style="font-size: smaller;">
+      (आप <em>InterSpec</em> की डेटा निर्देशिका में "reference_spectra" निर्देशिका बनाकर (Files ऐप का उपयोग करके) अपनी स्वयं की संदर्भ स्पेक्ट्रा निर्देशिका भी जोड़ सकते हैं, और फिर उनमें अपने स्पेक्ट्रा के साथ आगे की उप-निर्देशिकाएं जोड़ें)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} निर्देशिकाएं अब उपलब्ध नहीं हैं, और हटा दी गई हैं।</message>
+  <message id="rs-dir-added-successfully">पथ '{1}' जोड़ा गया।</message>
+  <message id="rs-show-as">इस रूप में लोड करें</message>
+  <message id="rs-add-dir-dialog-title">संदर्भ स्पेक्ट्रा निर्देशिका जोड़ें</message>
+  <message id="rs-duplicate-dir-path">निर्देशिका पहले से चयनित है: '{1}'</message>
+  <message id="rs-dir-not-found">निर्देशिका नहीं मिली, इसलिए प्राथमिकताओं से नहीं हटाई गई: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">निर्देशिका में {1} स्पेक्ट्रा फ़ाइलें हैं<br /></message>
+  <message id="rs-dir-info-only-subdir">निर्देशिका में {1} उप-निर्देशिकाएं हैं<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">निर्देशिका में {1} स्पेक्ट्रा फ़ाइलें और {2} उप-निर्देशिकाएं हैं<br /></message>
+  <message id="rs-error-loading-file">फ़ाइल लोड करने में त्रुटि: '{1}'</message>
+  <message id="rs-show-in-explorer">Explorer में दिखाएं</message>
+  <message id="rs-show-in-finder">Finder में दिखाएं</message>
+  <message id="rs-show-in-linux-file-manager">फ़ाइल प्रबंधक में दिखाएं</message>
+  <message id="rs-error-invalid-file">अमान्य स्पेक्ट्रम फ़ाइल: '{1}'।</message>
+  <message id="rs-error-invalid-type-selected">अमान्य स्पेक्ट्रम प्रकार चयनित।</message>
+  </messages>
+
+

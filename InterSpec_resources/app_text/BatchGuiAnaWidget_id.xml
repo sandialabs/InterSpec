@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">Eksemplar</message>
+  <message id="bgw-exemplar-use-current-fore">Gunakan Latar Depan Saat Ini</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">Latar Belakang</message>
+  <message id="bgw-back-use-current">Gunakan Latar Belakang Saat Ini</message>
+  <message id="bgw-back-none">Tanpa Latar Belakang</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">Fit semua puncak</message>
+  <message id="bgw-refit-energy-cal">Fit ulang kalibrasi energi</message>
+  <message id="bgw-use-exemplar-energy-cal">Gunakan kalibrasi energi eksemplar</message>
+  <message id="bgw-write-n42-with-results">Tulis N42 dengan hasil</message>
+  <message id="bgw-show-nonfit-peaks">Tampilkan puncak non-fit</message>
+  <message id="bgw-overwrite-output-files">Timpa file output</message>
+  <message id="bgw-create-csv-output">CSV Puncak</message>
+  <message id="bgw-create-json-output">Tulis JSON</message>
+  <message id="bgw-use-existing-background-peaks">Gunakan puncak latar belakang yang ada</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">Gunakan kal. energi eksemplar untuk latar belakang</message>
+  
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">Ambang statistik puncak:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">Ambang hipotesis puncak:</message>
+  
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">Timpa output</message>
+  <message id="bgw-sum-multirecord-to-single">Jumlahkan file multi-rekaman ke rekaman tunggal</message>
+  <message id="bgw-info-will-convert-file-type">File akan dikonversi ke tipe yang dipilih.</message>
+  
+  
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">Laporan yang Akan Ditulis</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">Tulis laporan HTML dari hasil analisis.</message>
+  <message id="bgw-reports-write-csv">Ringkasan CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">Tulis file CSV ringkasan dengan hasil analisis dari semua file input.</message>
+  <message id="bgw-reports-write-custom-per-file">Kustom Per-File</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">Unggah templat laporan kustom untuk digunakan pada setiap file.</message>
+  <message id="bgw-reports-write-custom-summary">Ringkasan Kustom</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">Satu atau lebih file templat yang digunakan untuk memberikan ringkasan dari semua file input.</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">Tidak ada puncak dalam eksemplar.</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">Memerlukan spektrum eksemplar dengan puncak, atau file CSV puncak.</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">Memerlukan latar belakang yang valid</message>
+  <message id="bgw-no-ana-act-shield-no-drf">Efisiensi detektor tidak tersedia.</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">Tidak ada spektrum eksemplar yang dipilih.</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">Tidak ada puncak dalam spektrum eksemplar yang dipilih.</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">Tidak ada model fit Aktivitas/Perisai dalam eksemplar.</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">Latar belakang tidak valid</message>
+  <message id="bgw-no-ana-no-input-files">Tidak ada file input.</message>
+  <message id="bgw-no-ana-invalid-output-path">Silakan pilih direktori output yang valid.</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">Melakukan Pekerjaan</message>
+  <message id="bgw-performing-work-msg">Harap tunggu sementara analisis batch dilakukan...</message>
+  <message id="bgw-error-analysis-title">Kesalahan Melakukan Analisis Batch</message>
+  <message id="bgw-error-analysis-msg">Kesalahan: {1}</message>
+  <message id="bgw-analysis-summary-title">Ringkasan Analisis Batch</message>
+  <message id="bgw-json-parse-error">
+    <p>Kesalahan parsing JSON hasil:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>Kesalahan membuat HTML karena exception:</p>
+    <code>{1}</code>
+    <br />
+    dari baris {2}, kolom {3}
+  </message>
+  <message id="bgw-misc-error">
+    <p>Tidak dapat menghasilkan ringkasan hasil karena exception:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">Peringatan</message>
+ 
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">Alih-alih melakukan fitting untuk puncak dalam file eksemplar - semua puncak dalam spektrum akan di-fit.</message>
+  
+  <message id="bgw-refit-energy-cal-tt">Setelah fit puncak awal, menggunakan puncak tersebut (dan nuklida yang ditetapkan) untuk menyesuaikan gain energi, lalu melakukan fitting ulang puncak dengan kalibrasi energi yang diperbarui.
+  Ini juga berlaku untuk file latar belakang jika Anda melakukan fitting untuk aktivitas/perisai.
+  </message>
+  
+  <message id="bgw-use-exemplar-energy-cal-tt">Gunakan kalibrasi energi N42 eksemplar dengan file latar depan input.
+Jika refit-energy-cal ditentukan true, maka kalibrasi energi eksemplar akan digunakan untuk fit awal, lalu diperhalus dan puncak di-fit ulang.
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">Menambahkan puncak yang di-fit ke file spektrum input, lalu menyimpan sebagai N42. Anda harus menentukan 'output_path' jika Anda menentukan opsi ini; juga, akan menolak untuk menimpa file yang ada.</message>
+  
+  <message id="bgw-show-nonfit-peaks-tt">Sertakan puncak yang tidak di-fit ke dalam hasil CSV puncak output; puncak ini akan memiliki amplitudo nol.</message>
+  
+  <message id="bgw-overwrite-output-files-tt">Mengizinkan penimpaan file N42, CSV, atau laporan output. Secara default tidak akan menimpa file.</message>
+  
+  <message id="bgw-create-csv-output-tt">Output fit puncak CSV.</message>
+  
+  <message id="bgw-create-json-output-tt">Menulis JSON yang digunakan untuk membuat templat laporan, ke file.</message>
+  
+  <message id="bgw-use-existing-background-peaks-tt">Menggunakan puncak yang di-fit dari latar belakang yang ditentukan, daripada melakukan fitting ulang puncak.
+Puncak dari InterSpec harus ada dalam file spektrum, dan opsi ini tidak dapat digunakan dengan pengurangan latar belakang keras.</message>
+  
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">Gunakan kalibrasi energi N42 eksemplar untuk file latar belakang.
+Hanya berlaku jika file N42 digunakan untuk eksemplar.</message>
+  
+  <message id="bgw-peak-stat-threshold-tt">Peningkatan Chi2 dari fit puncak yang diperlukan, dibandingkan hanya fitting kontinum, terhadap ROI.
+Nilai negatif atau nol menunjukkan tidak ada persyaratan (dan default, karena kami menegaskan puncak kemungkinan ada dalam spektrum untuk analisis batch), dan untuk pencarian puncak umum, nilai wajar adalah antara ~1 (puncak lemah) dan ~5 (puncak signifikan).</message>
+  
+  <message id="bgw-peak-hypothesis-threshold-tt">Persyaratan untuk seberapa kompatibel ROI harus dengan puncak Gaussian + kontinum.
+Ini adalah rasio chi2 hipotesis nol (hanya kontinum, tidak ada Gaussian), terhadap chi2 hipotesis uji (kontinum + Gaussian).
+Nilai wajar untuk ini tampaknya dalam rentang 1 hingga 5.
+Nilai nol atau negatif berarti tidak ada persyaratan, dan juga tidak ada persyaratan 'peak-stat-threshold'.</message>
+  
+  <message id="bgw-reports-write-custom-per-file-tooltip">Satu atau lebih file templat laporan spektrum - untuk setiap file input, laporan akan diproduksi dengan setiap templat yang ditentukan.</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">Satu atau lebih file templat yang digunakan untuk memberikan ringkasan dari semua file input.</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Gunakan satuan Bq</message>
+  <message id="bgw-hard-background-sub">Pengurangan latar belakang keras</message>
+  
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">Fungsi Respons Detektor</message>
+  <message id="bgw-use-detector-override">Gunakan detektor kustom</message>
+  
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">Ganti Jarak</message>
+  <message id="bgw-distance-label">Jarak:</message>
+  
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">Tidak ada spektrum eksemplar yang tersedia. Silakan pilih spektrum latar depan atau unggah file eksemplar.</message>
+</messages> 
+

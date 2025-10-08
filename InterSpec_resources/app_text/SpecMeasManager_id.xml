@@ -1,0 +1,382 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">Manajer Spektrum</message>
+  <message id="smm-load-spec-from">Muat spektrum dari: </message>
+  <message id="smm-tt-upload-file">Impor spektrum dari file</message>
+
+  <message id="smm-err-zip">Kesalahan mengekstrak file dari zip</message>
+  <message id="smm-zip-sel-file-no-name">
+    File yang diunggah adalah file ZIP.
+    <br />
+    {2}
+    Pilih file mana di dalamnya yang ingin Anda buka.
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b> adalah file ZIP.
+    <br />
+    {2}
+    Pilih file mana di dalamnya yang ingin Anda buka.
+  </message>
+  <message id="smm-zip-window-title">Konten File ZIP yang Diunggah</message>
+  <message id="smm-zip-filename-hdr">Nama File</message>
+  <message id="smm-zip-kilobyte-hdr">kb</message>
+  <message id="smm-zip-display-btn">Tampilkan</message>
+  <message id="smm-empty-file">File kemungkinan adalah file kosong - bukan file spektrum.</message>
+  <message id="smm-failed-reading-nonspec-file">Gagal membaca file non-spektrum.</message>
+  <message id="smm-not-spec-file">Bukan file spektrum</message>
+  <message id="smm-image-file">File Gambar Dipilih</message>
+  <message id="smm-icd2">Ini sepertinya file N42 ICD2 yang berisi hasil analisis
+    daripada spektrum mentah.
+    <br />
+    Jika Anda yakin ini adalah file spektrum yang sah, silakan kirim email ke 
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    untuk mendukung jenis file ini.
+  </message>
+  <message id="smm-invalid-zip">File ini sepertinya file ZIP yang tidak valid (atau xlsx, pptx, 
+    <br />
+    docx, odp, jar, apk, dll), maaf saya tidak bisa membukanya :(
+  </message>
+  <message id="smm-unsupported-archive">File ini sepertinya file arsip, belum didukung oleh InterSpec.
+    Silakan hubungi 
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    jika Anda ingin dukungan untuk jenis arsip ini ditambahkan.
+  </message>
+  <message id="smm-unsupported-document">File ini sepertinya file dokumen, dan tidak didukung oleh InterSpec.</message>
+  <message id="smm-invalid-peak-csv">File yang diunggah sepertinya file Peak CSV, tetapi tidak valid.</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      File ini sepertinya Fungsi Respons Detektor.
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      Nama: {1}
+    </p>
+   <p>Apakah Anda ingin menggunakan DRF ini?</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    Disimpan '{1}' untuk penggunaan nanti, dan akan tersedia di
+    bagian "<em>Eff. Rel.</em>" dari alat "<em>Pemilih Fungsi Respons Detektor</em>".
+  </message>
+  <message id="smm-err-saving-drf">Kesalahan menyimpan file DRF untuk penggunaan nanti.</message>
+  <message id="smm-file-is-drf">File ini sepertinya Fungsi Respons Detektor.</message>
+  <message id="smm-file-is-multi-drf">File ini berisi beberapa Fungsi Respons Detektor.</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>Tidak ada latar depan yang saat ini ditampilkan - melewati file CALp.</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      Konten file CALp ini
+      <br />
+      tidak dapat dibaca atau tidak kompatibel dengan data
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">File ini sepertinya berisi kalibrasi energi.</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>Ada kalibrasi untuk {1} detektor</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    Peringatan: File CALp ini berisi kalibrasi tunggal; ini akan<br />
+    diterapkan ke kalibrasi energi yang ditampilkan primer, dan<br />
+    perubahan relatif akan diterapkan ke kalibrasi energi detektor lainnya,<br />
+    yang mungkin yang Anda inginkan.
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    Peringatan: Kalibrasi energi ini mungkin tidak konsisten<br />
+    dengan struktur data saat ini.
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">Terapkan hanya ke sampel yang ditampilkan</message>
+  <message id="smm-CALp-cb-apply-to-fore">Terapkan ke latar depan</message>
+  <message id="smm-CALp-cb-apply-to-back">Terapkan ke latar belakang</message>
+  <message id="smm-CALp-cb-apply-to-second">Terapkan ke sekunder</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">Apakah Anda ingin menggunakannya?</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      Catatan: kalibrasi energi saat ini adalah energi kanal-bawah;<br />
+      Anda mungkin ingin melinearkan spektrum sebelum menerapkan<br />
+      kalibrasi energi ini.
+    </p>
+  </message>
+
+  <message id="smm-CALp-err-applying-single">Terjadi kesalahan saat menerapkan kalibrasi:
+    <br />
+    {1}
+    <br />
+    <br />
+    Kalibrasi diterapkan ke latar depan.
+  </message>
+  <message id="smm-CALp-err-applying-mult">Terjadi kesalahan saat menerapkan kalibrasi:
+    <br />
+    {1}
+    <br />
+    <br />
+    Kalibrasi diterapkan ke latar depan dan latar belakang.
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc">Kesalahan memuat file konfigurasi XML <em>Isotopik menurut nuklida</em>: {1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">Kesalahan mem-parse XML konfigurasi: {1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">File konfigurasi XML <em>Isotopik menurut nuklida</em> tidak valid.</message>
+  <message id="smm-ecc-curve">DRF Kurva Kalibrasi Efisiensi ISOCS</message>
+  <message id="smm-ecc-how-to-interpret">Cara menginterpretasikan</message>
+  <message id="smm-ecc-far-field">DRF Medan Jauh</message>
+  <message id="smm-ecc-fix-geom-total-act">Geometri Tetap - aktivitas total</message>
+  <message id="smm-ecc-fix-geom-act-cm2">Geometri Tetap - aktivitas per cm2</message>
+  <message id="smm-ecc-fix-geom-act-m2">Geometri Tetap - aktivitas per m2</message>
+  <message id="smm-ecc-fix-geom-act-gram">Geometri Tetap - aktivitas per gram</message>
+  <message id="smm-ecc-det-diam">Diameter det.</message>
+  <message id="smm-ecc-dist">Jarak</message>
+  <message id="smm-ecc-use-drf">Gunakan DRF</message>
+  <message id="smm-ecc-error">Kesalahan membuat DRF dari ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">XML Aktivitas/Perisai</message>
+  <message id="smm-act-shield-use">Gunakan penyiapan pencocokan Aktivitas/Perisai ini?</message>
+  <message id="smm-err-act-shield">Maaf, terjadi kesalahan memuat model Pencocokan Aktivitas/Perisai: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">File perpustakaan sumber karakterisasi</message>
+  <message id="smm-source-source-use">
+    Ini akan menggunakan file Source.lib ini dalam alat Buat Respons Detektor.
+    <br />
+    Apakah Anda ingin mengisi otomatis sumber dengan nuklida yang cocok pertama dalam perpustakaan?
+  </message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">Unggah file mungkin telah kedaluwarsa - 120 detik tanpa menerima data file.</message>
+  <message id="smm-finishing-upload">Menyelesaikan unggah</message>
+  <message id="smm-finishing-copying">Menyelesaikan penyalinan file</message>
+  <message id="smm-finish-up-txt">dari {1} {2} file - mungkin memakan waktu satu menit.</message>
+  <message id="smm-window-title-parsing">Mem-parse File</message>
+  <message id="smm-window-msg-parsing">Ini mungkin memakan waktu sejenak.</message>
+  <message id="smm-no-file-disp">Kesalahan, tidak ada pengukuran {1} yang ditampilkan.</message>
+  <message id="smm-no-spec-disp">Maaf, {1} sepertinya tidak menampilkan spektrum.</message>
+  <message id="smm-err-parse-spec-title">Tidak Dapat Mem-parse File</message>
+  <message id="smm-err-parse-spec">
+    <p>Maaf, saya tidak bisa mem-parse file {1}:</p>
+  <p>Kesalahan: <em>{2}</em></p>
+  <p>Jika Anda pikir ini adalah file spektrum yang valid, silakan kirim ke 
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>, dan
+   kami akan mencoba memperbaiki masalah ini.</p>
+  </message>
+  <message id="smm-failed-combine">Gagal menggabungkan file: {1}</message>
+  <message id="smm-failed-sum">Gagal menjumlahkan spektrum: {1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">Tidak ada pengukuran gamma dalam URL/kode QR</message>
+  <message id="smm-qr-no-gamma">Tidak ada pengukuran gamma dalam URL/kode QR</message>
+  <message id="smm-qr-name-placeholder">Dari kode QR/URL</message>
+  <message id="smm-qr-err-decode">Kesalahan mendekode URL/kode QR spektrum: {1}</message>
+  <message id="smm-qr-couldnt-encode">
+    Spektrum tidak dapat dikodekan ke kode QR.
+    <br />
+    Kemungkinan karena memerlukan lebih dari 9 kode QR.
+  </message>
+  <message id="smm-qr-encode-fail">Gagal mengkodekan spektrum ke kode QR: {1} </message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">Detektor Virtual untuk dimuat?</message>
+  <message id="smm-vd-load-msg">
+    <div>File ini berisi beberapa "Detektor Virtual" yang</div>
+    <div>mungkin merupakan jumlah dari beberapa detektor fisik, atau tidak.</div>
+    <div>Jika Anda memuat semua, lihat menu <b>View</b>→<b>Detectors</b> untuk</div>
+    <div>menampilkan subset.</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      Data detektor apa yang ingin Anda muat?
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>Ada {1} VD, hanya "Semua" atau 5 pertama yang dapat dipilih.</div>
+  </message>
+  <message id="smm-vd-all-btn">Semua</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">Gunakan Data Turunan?</message>
+  <message id="smm-derived-window-txt">
+    <div>File ini berisi spektrum "Data Turunan", yang biasanya</div>
+    <div>digunakan oleh sistem deteksi untuk analisis.</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      Data apa yang ingin Anda muat?
+    </div>
+  </message>
+  <message id="smm-derived-all">Semua Data</message>
+  <message id="smm-derived-raw">Data Mentah</message>
+  <message id="smm-derived-derived">Data Turunan</message>
+  <message id="smm-multiple-binnings-window-title">Pilih Binning Energi</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">Beberapa binning energi ditemukan dalam file spektrum.</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">Silakan pilih yang Anda inginkan</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">Simpan Semua</message>
+  <message id="smm-warn-has-intrinsic">File yang diunggah berisi spektrum aktivitas intrinsik, tetapi saat ini menampilkan spektrum lain dalam file.</message>
+  <message id="smm-warn-upload-mult-spec">File yang diunggah berisi {1} sampel<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">Sampel latar depan pertama sedang ditampilkan.<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">Sampel pertama sedang ditampilkan.<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">Sampel {1} sedang ditampilkan.<br /></message>
+  <message id="smm-warn-upload-use-spec-manager">Gunakan tab <b>File Spektrum</b>, atau <b>Manajer File</b> untuk memilih rekaman lain.</message>
+  <message id="smm-warn-upload-use-file-manager">Gunakan <b>Manajer File</b> untuk memilih yang lain.</message>
+
+  <message id="smm-multi-cal-present">File yang diunggah berisi {1} sampel kalibrasi atau data turunan
+    <br />
+    {2}
+    tidak akan ditampilkan.
+    <br />
+    Gunakan tab <b>File Spektrum</b> atau <b>Manajer File</b> untuk mengubah ini.
+  </message>
+  <message id="smm-multi-cal-it">Itu</message>
+  <message id="smm-multi-cal-they">Mereka</message>
+  <message id="smm-multi-spectra-using-back">File memiliki beberapa spektrum, jadi hanya spektrum latar belakang yang ditampilkan.</message>
+  <message id="smm-multi-spectra-using-first">File yang diunggah berisi {1} sampel jadi
+    <br />
+    menampilkan yang pertama.
+    <br />
+    Gunakan <b>Manajer File</b> untuk mengubah ini.
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">Spektrum yang Dipilih: </message>
+  <message id="smm-disp-as-btn">Tampilkan Sebagai</message>
+  <message id="smm-to-new-file">Ke File Baru</message>
+  <message id="smm-tt-to-new-file">Membuat file spektrum dalam memori baru dari pilihan saat ini.</message>
+  <message id="smm-as-new-file">Sebagai File Baru</message>
+  <message id="smm-tt-as-new-file">Membuat file spektrum dalam memori baru dari pilihan saat ini.</message>
+  <message id="smm-sum-spectra">Jumlahkan Spektrum</message>
+  <message id="smm-tt-sum-spectra">Membuat file spektrum dalam memori baru dari pilihan saat ini.</message>
+  <message id="smm-export-btn">Ekspor...</message>
+  <message id="smm-unload-btn">Bongkar</message>
+  <message id="smm-unassign-label">Batalkan Penugasan: </message>
+
+
+  <message id="smm-prev-states-window-title">Status yang Disimpan Sebelumnya</message>
+  <message id="smm-err-prev-state-unexpected">Masalah tak terduga menampilkan status simpan yang tersedia: {1}</message>
+  <message id="smm-tab-saved-states">Status Tersimpan</message>
+  <message id="smm-tab-auto-saved">Spektrum Tersimpan Otomatis</message>
+  <message id="smm-auto-check-prev-cb">Otomatis periksa pekerjaan sebelumnya</message>
+  <message id="smm-cant-save">
+    File spektrum ini terlalu besar untuk disimpan ke database internal.<br />
+    Akibatnya, pekerjaan Anda tidak akan otomatis disimpan ke database internal, dan Anda tidak akan dapat melanjutkan dari tempat Anda berhenti saat berikutnya memuat file.
+    <p>Ukuran file ini adalah {1}, sedangkan maksimum yang dapat disimpan adalah {2}.</p>
+  </message>
+  <message id="smm-max-file-to-large">File yang dicoba terlalu besar; ukuran maks adalah {1} kb, Anda mencoba mengunggah {2} kb.</message>
+  <message id="smm-must-specify-name">Anda harus menentukan nama</message>
+  <message id="smm-save-spectype-as-window-title">Simpan Spektrum {1} Sebagai</message>
+  <message id="smm-save-spectype-name-empty-txt">(Nama untuk disimpan)</message>
+  <message id="smm-save-spectype-desc-empty-txt">(Deskripsi opsional)</message>
+  <message id="smm-save-state-toast">Status {1} tersimpan</message>
+  <message id="smm-save-spec-version-window-title">Simpan Versi Spektrum</message>
+  <message id="smm-save-state">Simpan Status</message>
+  <message id="smm-create-new-tag-toast">Membuat tag baru: '{1}'.</message>
+
+  <message id="smm-next-qr">Kode QR berikutnya</message>
+  <message id="smm-qr-desc">{1} untuk spektrum {2}.</message>
+  <message id="smm-qr-title">File Spektrum {1}</message>
+  <message id="smm-qr-sequence-single">Kode QR</message>
+  <message id="smm-qr-sequence-multi">Kode QR {1} dari {2}</message>
+  
+  
+  <message id="smm-changed-background">
+    Spektrum latar belakang juga diperbarui menjadi yang disertakan dengan file yang baru dimuat.
+  </message>
+  <message id="smm-didnt-changed-background">
+    File latar depan yang baru dimuat berisi spektrum latar belakang
+    - tetapi latar belakang yang ditampilkan <b>TIDAK</b> diperbarui.
+  </message>
+  
+  <message id="fud-dialog-title">Pilih File untuk Dibuka</message>
+  <message id="fud-open-foreground-only-msg">{1} di bawah untuk memilih file spektrum latar depan untuk dibuka.</message>
+  <message id="fud-open-any-type-msg">Pilih bagaimana Anda ingin membuka file spektrum, lalu {1} di bawah untuk menelusuri file.</message>
+  <message id="fud-btn-grp-title">Buka file sebagai:</message>
+  <message id="fud-drg-n-drop-msg">
+    Anda juga dapat menyeret dan melepas file langsung ke jendela<br />
+    aplikasi sebagai alternatif yang lebih cepat.<br />
+    <br />Untuk pembukaan dan<br />
+    manipulasi file yang lebih canggih gunakan <b>Manajer File</b>
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      Anda juga dapat membuka file spektrum dari aplikasi email atau file.
+    </span>
+  </message>
+  
+  <message id="musd-dialog-title">Spektrum QR/URL Multi-bagian</message>
+  <message id="musd-err-diff-spec">URL/kode QR yang diterima berasal dari spektrum yang berbeda dari URL/kode QR sebelumnya</message>
+  <message id="musd-err-duplicate-url">Sudah menerima URL/kode QR ini</message>
+  <message id="musd-from-qr-file-name">Dari kode QR/URL</message>
+  <message id="musd-err-decoding-url">Kesalahan mendekode URL: {1}</message>
+  <message id="musd-received-urls-list">Telah menerima URL {1} dari {2}.<p>Menunggu URL/kode QR lebih lanjut</p></message>
+
+
+  <message id="uid-qr-code-pic">Gambar Kode QR</message>
+  <message id="uid-no-qr-found">Tidak ada kode QR yang ditemukan ⓘ</message>
+  <message id="uid-no-qr-found-title">Tidak ada kode QR yang ditemukan</message>
+  <message id="uid-no-qr-content">
+    <p>
+      Jika ada kode QR dalam gambar, Anda dapat mencoba memotong foto atau menyesuaikan level warna.
+      <br/>
+      Menggunakan aplikasi/situs web pihak ketiga, atau kemampuan yang terintegrasi di iOS atau Android, juga sering kali akan bekerja lebih baik.
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">Kesalahan mencari kode QR</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      Nilai kesalahan: {1}
+    </div>
+    <p>
+      Pesan kesalahan: {2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">{1} dari kode QR memiliki URI yang tidak valid.</message>
+  <message id="uid-qr-didnt-have-uri">Kode QR tidak berisi URI <code>interspec://</code> atau <code>raddata://</code>.</message>
+  <message id="uid-invalid-qr">Kode QR tidak valid</message>
+  <message id="uid-invalid-uri">Kode QR berisi URI yang tidak valid</message>
+  <message id="uid-multi-qr-found-title">{1} kode QR ditemukan</message>
+  <message id="uid-multi-qr-found-content">Apakah Anda ingin menggunakan semua ini?</message>
+  <message id="uid-multi-qr-status">Ditemukan {1} kode QR</message>
+  <message id="uid-qr-found-title">Ditemukan kode QR</message>
+  <message id="uid-qr-found-content">Apakah Anda ingin menggunakan kode QR yang dimulai dengan <br /> <code>{1}...</code></message>
+  <message id="uid-found-qr">Ditemukan kode QR</message>
+  <message id="uid-err-getting-data">Kesalahan mengambil data untuk disematkan - tidak menyematkan gambar.</message>
+  <message id="uid-err-no-foreground-embedd">Tidak ada latar depan yang dimuat - tidak menyematkan gambar.</message>
+  <message id="uid-image-embed-conf">Gambar telah disematkan dalam file spektrum latar depan; hanya mengekspor dalam format file N42-2012 yang akan mempertahankan ini.</message>
+  <message id="uid-image-not-spectrum">File ini sepertinya gambar, dan bukan file spektrum.</message>
+  <message id="uid-err-to-large">File yang diunggah terlalu besar untuk dicoba ditampilkan.</message>
+  <message id="uid-err-reading-upload">Tidak dapat membaca file yang diunggah.</message>
+  <message id="uid-embed-image-btn">Sematkan gambar dalam file spektrum</message>
+  <message id="uid-no-qr-found">Kode QR tidak ditemukan ⓘ</message>
+  <message id="uid-looking-for-qr">Mencari kode QR.</message>
+  <message id="uid-check-for-qr-btn">Periksa untuk kode QR</message>
+  <message id="uid-tt-auto-qr">
+    Gambar secara otomatis dicari untuk kode QR yang mungkin dapat digunakan oleh InterSpec.
+    <br/>
+    Jika ada kode QR dalam gambar yang tidak ditemukan, Anda mungkin memiliki
+    keberuntungan yang lebih baik menggunakan aplikasi/situs web pihak ketiga, atau kemampuan yang terintegrasi di iOS
+    atau Android.
+    <br />
+    Jika Anda menggunakan alat pihak ketiga untuk mengekstrak URI dari kode QR, Anda
+    dapat memasukkannya ke InterSpec menggunakan item "<b>Masukkan URL</b>"
+    di menu "<b>Edit</b>".
+  </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">File</message>
+  <message id="sfm-col-n-samples">N-Sampel</message>
+  <message id="sfm-col-live-time">Waktu Hidup (s)</message>
+  <message id="sfm-col-real-time">Waktu Nyata (s)</message>
+  <message id="sfm-col-gam-count">Hitungan Gam.</message>
+  <message id="sfm-col-neut-count">Hitungan Neut.</message>
+  <message id="sfm-col-time-taken">Waktu Diambil</message>
+  <message id="sfm-col-n-dets">N-Det.</message>
+  <message id="sfm-col-loaded">Dimuat</message>
+  <message id="sfm-col-file-rid">RID File</message>
+</messages>
+

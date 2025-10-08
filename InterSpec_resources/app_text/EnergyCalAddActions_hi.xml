@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">स्पेक्ट्रम को रैखिक करें</message>
+  <message id="ecaa-truncate-title">गामा चैनल काटें</message>
+  <message id="ecaa-combine-title">गामा चैनल संयोजित करें</message>
+  <message id="ecaa-convert-frf-title">पूर्ण सीमा अंश अंशांकन में परिवर्तित करें</message>
+  <message id="ecaa-convert-poly-title">बहुपद अंशांकन में परिवर्तित करें</message>
+  <message id="ecaa-multi-file-title">बहु-फ़ाइल अंशांकन</message>
+
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">परिवर्तन से किसी भी स्पेक्ट्रम पर प्रभाव नहीं पड़ेगा; अधिक "परिवर्तन लागू करें" मानदंड चुनने का प्रयास करें।</message>
+  <message id="ecaa-already-polynomial">इस पर लागू होने वाले सभी स्पेक्ट्रम पहले से ही बहुपद हैं।</message>
+  <message id="ecaa-already-frf">इस पर लागू होने वाले सभी स्पेक्ट्रम पहले से ही पूर्ण सीमा अंश हैं।</message>
+  <message id="ecaa-multiple-cal-types">चयनित स्रोत स्पेक्ट्रम के एक से अधिक अंशांकन प्रकार हैं; "परिवर्तन लागू करें" मानदंड को प्रतिबंधित करने का प्रयास करें।</message>
+  <message id="ecaa-changes-applied-to">परिवर्तन इस पर लागू किए जाएंगे: {1}</message>
+  <message id="ecaa-terms-lost">चौथे पद के बाद के पद खो जाएंगे क्योंकि कोई समरूप पद नहीं है।</message>
+  <message id="ecaa-no-info-lost">यदि आप जारी रखते हैं तो कोई जानकारी नहीं खोएगी।</message>
+  <message id="ecaa-conversion-question">आप परिवर्तन कैसे करना चाहेंगे?</message>
+
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">{1} चैनल स्पेक्ट्रम के लिए:</message>
+  <message id="ecaa-lower-energy">निचली ऊर्जा</message>
+  <message id="ecaa-upper-energy">ऊपरी ऊर्जा</message>
+  <message id="ecaa-num-channels">चैनल संख्या</message>
+  <message id="ecaa-no-undo-note">इस क्रिया को पूर्ववत नहीं किया जा सकता।</message>
+  <message id="ecaa-combine-channels-desc">यह क्रमिक अनुवर्ती चैनलों को एक साथ जोड़ देगा</message>
+  <message id="ecaa-num-channels-to-combine">संयोजित करने के लिए चैनलों की संख्या:</message>
+  <message id="ecaa-first-channel-to-keep">रखने के लिए पहला चैनल</message>
+  <message id="ecaa-last-channel-to-keep">रखने के लिए अंतिम चैनल</message>
+  <message id="ecaa-keep-overflow">ओवरफ्लो गणनाएं रखें</message>
+  <message id="ecaa-tt-keep-overflow">यदि चयनित हो, तो त्यागे गए चैनलों से सभी गणनाएं या तो नए पहले या अंतिम चैनल में जोड़ दी जाएंगी।</message>
+  <message id="ecaa-first-channel-note">ध्यान दें कि पहला चैनल चैनल 0 है।</message>
+
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">रैखिक करें, नई चौड़ाई से मेल खाने के लिए गणनाओं को पुनः बिन करना</message>
+  <message id="ecaa-linearize-same-counts">रैखिक करें, चैनलों में गणनाओं को समान रखते हुए</message>
+  <message id="ecaa-fit-quadratic">चैनल ऊर्जा को द्विघात समीकरण में फिट करें।</message>
+  <message id="ecaa-fit-cubic">चैनल ऊर्जा को घन समीकरण में फिट करें।</message>
+
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">परिणामी स्पेक्ट्रम में चैनलों की समान चौड़ाई होगी, लेकिन प्रत्येक चैनल में गणनाएं पूर्णांक नहीं होंगी; यह विकल्प वर्णक्रमीय आकार (प्रति keV गणनाएं) को संरक्षित करता है।</message>
+  <message id="ecaa-tt-linearize-same">चैनल ऊर्जा को पुनः असाइन किया जाएगा ताकि प्रत्येक चैनल की समान चौड़ाई हो, चैनलों की मूल चौड़ाई को ध्यान में नहीं रखते हुए; अर्थात, प्रत्येक चैनल में गणनाएं समान रहेंगी, लेकिन वर्णक्रमीय आकार (प्रति keV गणनाएं) बदल जाएगा।</message>
+</messages>

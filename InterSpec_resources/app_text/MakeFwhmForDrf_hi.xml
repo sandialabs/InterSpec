@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">FWHM अनिश्चितता</message>
+  <message id="fpm-peak-source">पीक स्रोत</message>
+  <message id="fpm-user">उपयोगकर्ता</message>
+  <message id="fpm-auto-fit">स्वतः-फिट</message>
+
+
+  <message id="mffdw-use-fwhm-btn">FWHM उपयोग करें</message>
+
+  <message id="mffd-eqn-type-label">समीकरण प्रकार:</message>
+  <message id="mffd-num-terms-label">पदों की संख्या:</message>
+  <message id="mffd-par-vals-label">पैरामीटर मान:</message>
+  <message id="mffd-err-no-foreground">पीकों को खोजने के लिए कोई डेटा नहीं है।</message>
+  <message id="mffd-tt-par">अनिश्चितता के साथ: {1}</message>
+  <message id="mffd-err-fail-fit">FWHM समीकरण फिट करने में विफल: {1}</message>
+  <message id="mffd-err-waiting-for-search">वर्तमान में पीकों की खोज कर रहे हैं - कृपया धैर्य रखें</message>
+</messages>
