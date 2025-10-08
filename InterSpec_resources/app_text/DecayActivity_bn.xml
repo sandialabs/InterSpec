@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp,
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">ক্ষয় টুল স্টেট</message>
+  <message id="dw-qr-window-text">ক্ষয় টুল স্টেটের বর্তমান স্টেট।</message>
+  <message id="dad-units-label">প্রদর্শন ইউনিট:</message>
+  <message id="dad-units-label-phone">ইউনিট:</message>
+  <message id="dad-logy-cb">Log-Y স্কেল</message>
+  <message id="dad-grid-cb">গ্রিড লাইন</message>
+  <message id="dad-add-nucs">নিউক্লাইড যোগ করুন...</message>
+  <message id="dad-remove-all">সব সরান</message>
+  <message id="dad-sel-nuc-window-title">যোগ করতে নিউক্লাইড নির্বাচন করুন</message>
+  <message id="dad-mi-act-chart">কার্যকলাপ চার্ট</message>
+  <message id="dad-mi-decay-chain">ক্ষয় চেইন</message>
+  <message id="dad-mi-calc">ক্যালকুলেটর</message>
+  <message id="dad-arbitrary">নির্বিচার</message>
+  <message id="dad-time-span-label">সময় পরিসর:</message>
+  <message id="dad-tt-age">
+    <div>
+      বয়স সময় ইউনিটের সংমিশ্রণ ব্যবহার করে নির্দিষ্ট করা যেতে পারে, '<b>5.3y 8d 22m</b>'-এর মতো বা হাফ লাইফে '<b>2.5 HL</b>'-এর মতো।
+    </div>
+    <div>
+      গ্রহণযোগ্য সময় ইউনিট: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, বা
+      আপনি <b>hh:mm:ss</b> দ্বারা সময়কাল নির্দিষ্ট করতে পারেন। হাফ লাইফ ইউনিট
+      <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, বা <b>half life</b> ব্যবহার করে নির্দিষ্ট করা যেতে পারে।
+    </div>
+    <div>
+      হাফ লাইফ ইউনিট বা সময়কাল অন্যান্য ইউনিটের সাথে মিশ্রিত করা যায় না,
+      এবং যদি একাধিক নিউক্লাইড নির্দিষ্ট করা হয় তবে প্রথমটি ধরে নেওয়া হয়। যখন একাধিক সময়কাল
+      নির্দিষ্ট করা হয়, তখন তারা সমষ্টি হয়, যেমন '1y6months 3m' ব্যাখ্যা করা হয়
+      18 মাস এবং 3 মিনিট হিসাবে
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Y-অক্ষ:</message>
+  <message id="dad-yaxis-label">Y-অক্ষ টাইপ:</message>
+  <message id="dad-gamma-rate">গামা রেট</message>
+  <message id="dad-beta-rate">বিটা রেট</message>
+  <message id="dad-alpha-rate">আলফা রেট</message>
+  <message id="dad-click-for-more-info">আরও তথ্যের জন্য ক্লিক করুন</message>
+  <message id="dad-tt-double-click">এই উৎস নিউক্লাইড সম্পাদনা করতে ডাবল ক্লিক করুন। এই নিউক্লাইড প্রদর্শন করতে ক্ষয় চেইন তৈরি করতে একবার ক্লিক করুন</message>
+  <message id="dad-summary-at-time">t={1} এ সারাংশ</message>
+  <message id="dad-hdr-date">তারিখ ({1})</message>
+  <message id="dad-hdr-total-act">মোট কার্যকলাপ</message>
+  <message id="dad-hdr-total-gammas">মোট গামা</message>
+  <message id="dad-yaxis-title-total-gammas">গামা/সেকেন্ড</message>
+  <message id="dad-hdr-total-betas">মোট বিটা</message>
+  <message id="dad-yaxis-title-total-betas">বিটা/সেকেন্ড</message>
+  <message id="dad-hdr-total-alphas">মোট আলফা</message>
+  <message id="dad-yaxis-title-total-alphas">আলফা/সেকেন্ড</message>
+  <message id="dad-chart-click-more-info">আরও তথ্যের জন্য ক্লিক করুন - {1} {2} T0 পরে আমাদের আছে:</message>
+
+  <message id="dcc-window-title-decay-chain">{1} ক্ষয় চেইন</message>
+  <message id="dcc-window-title-decay-through">{1}-এর মাধ্যমে ক্ষয়</message>
+  <message id="dcc-nuc-info-protons">প্রোটন: {1}</message>
+  <message id="dcc-nuc-info-mass">ভর: {1} Da</message>
+  <message id="dcc-nuc-info-hl-stable">হাফ লাইফ: স্থিতিশীল</message>
+  <message id="dcc-nuc-info-hl">হাফ লাইফ: {1}</message>
+  <message id="dcc-nuc-info-br-from">{1} থেকে BR: {2}</message>
+  <message id="dcc-nuc-info-br-through">{1}-এর মাধ্যমে BR: {2}</message>
+  <message id="dcc-nuc-info-specific-act">নির্দিষ্ট অ্যাক্ট: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1} {2}-এ ক্ষয়, BR {3}</message>
+  <message id="dcc-particle-window-title">ক্ষয় কণা শক্তি</message>
+  <message id="dcc-particles-from">{1} থেকে কণা</message>
+  <message id="dcc-nuc-has-no-particles">এই নিউক্লাইডের ক্ষয় থেকে কোনো কণা নেই</message>
+  <message id="dcc-particle">কণা</message>
+  <message id="dcc-intensity">তীব্রতা</message>
+  <message id="dcc-decay-through-window-title">{1}-এর মাধ্যমে ক্ষয়</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">হ্রাসকারী পরমাণু ভর</message>
+  <message id="dcc-yAxisTitle">বর্ধমান পরমাণু সংখ্যা</message>
+  <message id="dcc-clickNucTxt">আরও তথ্যের জন্য নিউক্লাইড ক্লিক করুন।</message>
+  <message id="dcc-clickNucMoreInfoTxt1">যে কণা ছেড়ে দেয় তার জন্য নিউক্লাইড ডাবল-ক্লিক করুন।</message>
+  <message id="dcc-clickNucMoreInfoTxt2">প্রদর্শিত ক্ষয় চেইন পরিবর্তন করতে</message>
+  <message id="dcc-clickNucMoreInfoTxt3">উপরে একটি ভিন্ন উৎস নিউক্লাইড ক্লিক করুন।</message>
+  <message id="dcc-clickNucMblTxt">আরও তথ্যের জন্য নিউক্লাইড ট্যাপ করুন।</message>
+  <message id="dcc-clickNucMblMoreInfoTxt1">যে কণা ছেড়ে দেয় তার জন্য নিউক্লাইড 1 সেকেন্ডের জন্য স্পর্শ করুন।</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">প্রদর্শিত ক্ষয় চেইন পরিবর্তন করতে</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">উপরে একটি ভিন্ন উৎস নিউক্লাইড ক্লিক করুন।</message>
+
+
+  <message id="dcn-initial-age">প্রাথমিক বয়স: </message>
+
+</messages>

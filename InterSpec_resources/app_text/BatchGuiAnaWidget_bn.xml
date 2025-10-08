@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">নমুনা</message>
+  <message id="bgw-exemplar-use-current-fore">বর্তমান ফোরগ্রাউন্ড ব্যবহার করুন</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">ব্যাকগ্রাউন্ড</message>
+  <message id="bgw-back-use-current">বর্তমান ব্যাকগ্রাউন্ড ব্যবহার করুন</message>
+  <message id="bgw-back-none">কোনো ব্যাকগ্রাউন্ড নেই</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">সব পিক ফিট করুন</message>
+  <message id="bgw-refit-energy-cal">শক্তি ক্যালিব্রেশন পুনরায় ফিট করুন</message>
+  <message id="bgw-use-exemplar-energy-cal">নমুনা শক্তি ক্যালিব্রেশন ব্যবহার করুন</message>
+  <message id="bgw-write-n42-with-results">ফলাফল সহ N42 লিখুন</message>
+  <message id="bgw-show-nonfit-peaks">নন-ফিট পিক দেখান</message>
+  <message id="bgw-overwrite-output-files">আউটপুট ফাইল ওভাররাইট করুন</message>
+  <message id="bgw-create-csv-output">পিক CSV</message>
+  <message id="bgw-create-json-output">JSON লিখুন</message>
+  <message id="bgw-use-existing-background-peaks">বিদ্যমান ব্যাকগ্রাউন্ড পিক ব্যবহার করুন</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">ব্যাকগ্রাউন্ডের জন্য নমুনা শক্তি ক্যালিব্রেশন ব্যবহার করুন</message>
+
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">পিক স্ট্যাট থ্রেশহোল্ড:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">পিক হাইপোথিসিস থ্রেশহোল্ড:</message>
+
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">আউটপুট ওভাররাইট করুন</message>
+  <message id="bgw-sum-multirecord-to-single">একাধিক রেকর্ড সহ ফাইল একক রেকর্ডে সমষ্টি করুন</message>
+  <message id="bgw-info-will-convert-file-type">ফাইলগুলি নির্বাচিত টাইপে রূপান্তরিত হবে।</message>
+
+
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">লিখতে হবে রিপোর্ট</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">বিশ্লেষণ ফলাফলের একটি HTML রিপোর্ট লিখুন।</message>
+  <message id="bgw-reports-write-csv">সারাংশ CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">সমস্ত ইনপুট ফাইল থেকে বিশ্লেষণ ফলাফল সহ একটি সারাংশ CSV ফাইল লিখুন।</message>
+  <message id="bgw-reports-write-custom-per-file">কাস্টম প্রতি-ফাইল</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">প্রতিটি ফাইলের জন্য ব্যবহার করতে একটি কাস্টম রিপোর্ট টেমপ্লেট আপলোড করুন।</message>
+  <message id="bgw-reports-write-custom-summary">কাস্টম সারাংশ</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">সমস্ত ইনপুট ফাইলের সারাংশ প্রদান করতে ব্যবহৃত এক বা একাধিক টেমপ্লেট ফাইল।</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">নমুনায় কোনো পিক নেই।</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">পিক সহ নমুনা স্পেকট্রাম, বা একটি পিকস CSV ফাইল প্রয়োজন।</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">বৈধ ব্যাকগ্রাউন্ড প্রয়োজন</message>
+  <message id="bgw-no-ana-act-shield-no-drf">কোনো ডিটেক্টর দক্ষতা উপলব্ধ নেই।</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">কোনো নমুনা স্পেকট্রাম নির্বাচিত নেই।</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">নির্বাচিত নমুনা স্পেকট্রামে কোনো পিক নেই।</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">নমুনায় কোনো অ্যাক্ট/শিল্ড ফিট মডেল নেই।</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">অবৈধ ব্যাকগ্রাউন্ড</message>
+  <message id="bgw-no-ana-no-input-files">কোনো ইনপুট ফাইল নেই।</message>
+  <message id="bgw-no-ana-invalid-output-path">একটি বৈধ আউটপুট ডিরেক্টরি নির্বাচন করুন।</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">কাজ সম্পাদন করা হচ্ছে</message>
+  <message id="bgw-performing-work-msg">ব্যাচ বিশ্লেষণ সম্পাদিত হওয়ার সময় অপেক্ষা করুন...</message>
+  <message id="bgw-error-analysis-title">ব্যাচ বিশ্লেষণ সম্পাদনে ত্রুটি</message>
+  <message id="bgw-error-analysis-msg">ত্রুটি: {1}</message>
+  <message id="bgw-analysis-summary-title">ব্যাচ বিশ্লেষণ সারাংশ</message>
+  <message id="bgw-json-parse-error">
+    <p>JSON ফলাফল পার্স করতে ত্রুটি:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>ব্যতিক্রমের কারণে HTML তৈরি করতে ত্রুটি:</p>
+    <code>{1}</code>
+    <br />
+    লাইন {2}, কলাম {3} থেকে
+  </message>
+  <message id="bgw-misc-error">
+    <p>ব্যতিক্রমের কারণে ফলাফল সারাংশ তৈরি করতে অক্ষম:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">সতর্কতা</message>
+
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">একটি নমুনা ফাইলে পিক ফিট করার পরিবর্তে - স্পেকট্রামে সমস্ত পিক ফিট করা হবে।</message>
+
+  <message id="bgw-refit-energy-cal-tt">প্রাথমিক পিক ফিটের পরে, সেই পিকগুলি (এবং তাদের বরাদ্দকৃত নিউক্লাইড) ব্যবহার করে শক্তি লাভ সামঞ্জস্য করে, তারপর আপডেট করা শক্তি ক্যালিব্রেশন সহ পিকগুলি পুনরায় ফিট করে।
+  এটি ব্যাকগ্রাউন্ড ফাইলেও প্রযোজ্য যদি আপনি কার্যকলাপ/শিল্ডিংয়ের জন্য ফিট করছেন।
+  </message>
+
+  <message id="bgw-use-exemplar-energy-cal-tt">ইনপুট ফোরগ্রাউন্ড ফাইলগুলির সাথে নমুনা N42 শক্তি ক্যালিব্রেশন ব্যবহার করুন।
+যদি refit-energy-cal সত্য নির্দিষ্ট করা হয়, তবে প্রাথমিক ফিটের জন্য নমুনা শক্তি ক্যালিব্রেশন ব্যবহার করা হবে, এবং তারপর পরিমার্জিত এবং পিক পুনরায় ফিট করা হবে।
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">ইনপুট স্পেকট্রাম ফাইলে ফিট পিক যোগ করে, এবং তারপর একটি N42 হিসাবে সংরক্ষণ করে। আপনি এই বিকল্পটি নির্দিষ্ট করলে 'output_path' নির্দিষ্ট করতে হবে; এছাড়াও, বিদ্যমান ফাইলগুলি ওভাররাইট করতে অস্বীকার করবে।</message>
+
+  <message id="bgw-show-nonfit-peaks-tt">আউটপুট CSV পিক ফলাফলে ফিট নয় এমন পিকগুলি অন্তর্ভুক্ত করুন; এই পিকগুলিতে শূন্য প্রশস্ততা সেট থাকবে।</message>
+
+  <message id="bgw-overwrite-output-files-tt">আউটপুট N42, CSV, বা রিপোর্ট ফাইলগুলি ওভাররাইট করার অনুমতি দেয়। ডিফল্টরূপে ফাইলগুলি ওভাররাইট করবে না।</message>
+
+  <message id="bgw-create-csv-output-tt">আউটপুট পিক ফিট CSV।</message>
+
+  <message id="bgw-create-json-output-tt">রিপোর্ট টেমপ্লেট তৈরি করতে ব্যবহৃত JSON ফাইলে লিখে দেয়।</message>
+
+  <message id="bgw-use-existing-background-peaks-tt">নির্দিষ্ট ব্যাকগ্রাউন্ডের ফিট পিকগুলি ব্যবহার করে, পিক পুনরায় ফিট করার পরিবর্তে।
+InterSpec থেকে পিকগুলি স্পেকট্রাম ফাইলে থাকতে হবে, এবং এই বিকল্পটি হার্ড ব্যাকগ্রাউন্ড বিয়োগের সাথে ব্যবহার করা যাবে না।</message>
+
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">ব্যাকগ্রাউন্ড ফাইলের জন্য নমুনা N42 শক্তি ক্যালিব্রেশন ব্যবহার করুন।
+শুধুমাত্র প্রযোজ্য যদি নমুনার জন্য N42 ফাইল ব্যবহার করা হয়।</message>
+
+  <message id="bgw-peak-stat-threshold-tt">একটি পিক ফিটের Chi2-এর উন্নতি প্রয়োজন, শুধুমাত্র কন্টিনিউয়াম ফিট করার উপর, ROI-তে।
+একটি নেতিবাচক বা শূন্য মান কোনো প্রয়োজনীয়তা নির্দেশ করে না (এবং ডিফল্ট, যেহেতু আমরা নিশ্চিত করছি যে পিক সম্ভবত ব্যাচ বিশ্লেষণের জন্য স্পেকট্রামে আছে), এবং সাধারণ পিক অনুসন্ধানের জন্য, যুক্তিসঙ্গত মানগুলি ~1 (একটি দুর্বল পিক) এবং ~5 (একটি উল্লেখযোগ্য পিক) এর মধ্যে।</message>
+
+  <message id="bgw-peak-hypothesis-threshold-tt">ROI কতটা Gaussian পিক + কন্টিনিউয়ামের সাথে সামঞ্জস্যপূর্ণ হতে হবে তার প্রয়োজনীয়তা।
+এটি নাল হাইপোথিসিস chi2 (শুধুমাত্র কন্টিনিউয়াম, কোনো Gaussian নয়) এর অনুপাত, টেস্ট হাইপোথিসিস (কন্টিনিউয়াম + Gaussian) chi2-এর।
+এর জন্য একটি যুক্তিসঙ্গত মান 1 থেকে 5 পরিসরে বলে মনে হয়।
+একটি শূন্য বা নেতিবাচক মান মানে কোনো প্রয়োজনীয়তা নেই, এবং কোনো 'peak-stat-threshold' প্রয়োজনীয়তাও নেই।</message>
+
+  <message id="bgw-reports-write-custom-per-file-tooltip">এক বা একাধিক স্পেকট্রাম রিপোর্ট টেমপ্লেট ফাইল - প্রতিটি ইনপুট ফাইলের জন্য, নির্দিষ্ট প্রতিটি টেমপ্লেট দিয়ে একটি রিপোর্ট তৈরি করা হবে।</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">সমস্ত ইনপুট ফাইলের সারাংশ প্রদান করতে ব্যবহৃত এক বা একাধিক টেমপ্লেট ফাইল।</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Bq ইউনিট ব্যবহার করুন</message>
+  <message id="bgw-hard-background-sub">হার্ড ব্যাকগ্রাউন্ড বিয়োগ</message>
+
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">ডিটেক্টর রেসপন্স ফাংশন</message>
+  <message id="bgw-use-detector-override">কাস্টম ডিটেক্টর ব্যবহার করুন</message>
+
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">দূরত্ব ওভাররাইড করুন</message>
+  <message id="bgw-distance-label">দূরত্ব:</message>
+
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">কোনো নমুনা স্পেকট্রাম উপলব্ধ নেই। একটি ফোরগ্রাউন্ড স্পেকট্রাম নির্বাচন করুন বা একটি নমুনা ফাইল আপলোড করুন।</message>
+</messages>

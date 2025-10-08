@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+
+  <!-- Labels -->
+  <message id="raager-lower-energy">নিম্ন শক্তি</message>
+  <message id="raager-upper-energy">উচ্চ শক্তি</message>
+  <message id="raager-continuum-type">কন্টিনিউয়াম টাইপ:</message>
+
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">সম্পূর্ণ-পরিসর বাধ্য করুন</message>
+
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">কোন গামাগুলি একসাথে বনাম আলাদাভাবে গ্রুপ করা উচিত তার ভিত্তিতে এই শক্তি পরিসরকে পৃথক ROI-তে রূপান্তরিত করে (যেমন, ওভারল্যাপিং পিক সহ গামাগুলি একটি একক ROI-তে রাখে, যখন দুটি গামা দূরে থাকলে, তারা পৃথক ROI-তে বিভক্ত হবে।</message>
+
+</messages>

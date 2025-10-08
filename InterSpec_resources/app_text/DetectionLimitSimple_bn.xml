@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">FWHM ফিট করুন...</message>
+  <message id="dls-select-drf-btn">ডিটেক্টর নির্বাচন করুন...</message>
+  <message id="dls-further-details-link">আরও বিস্তারিত...</message>
+  <message id="dls-conf-level-label">আত্মবিশ্বাস স্তর:</message>
+  <message id="dls-roi-lower-label">ROI নিম্ন:</message>
+  <message id="dls-roi-upper-label">ROI উচ্চ:</message>
+  <message id="dls-num-side-channel-label">পার্শ্ব চ্যান সংখ্যা:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-decon-cont-norm-label">কন্টিনিউয়াম নরম:</message>
+  <message id="dls-is-background-spectrum-cb">ব্যাকগ্রাউন্ড স্পেকট্রাম</message>
+  <message id="dls-is-background-spectrum-tt">
+    এই বিকল্পটি চেক করলে নিশ্চিত করে যে এই স্পেকট্রামে কোনো সিগন্যাল নেই।
+    <p>
+      প্রত্যাশিত ব্যাকগ্রাউন্ড অনুমান করতে পিক-রিজিয়ন নিজেই ব্যবহার করা হবে।
+      পিক-রিজিয়নের সংলগ্ন সাইড-চ্যানেল নির্বাচন করার বিকল্পটি আর প্রাসঙ্গিক থাকে না, তাই লুকানো হবে।
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">ভাসমান</message>
+  <message id="dls-cont-norm-not-present">কোনো সিগন্যাল হিসাবে</message>
+  <message id="dls-cont-norm-fixed-by-sides">পার্শ্ব থেকে</message>
+  <message id="dls-roi-changed-no-gamma">ROI পরিবর্তন করলে প্রাথমিক গামা বাদ যায় - পরিবর্তন করা হচ্ছে না</message>
+  <message id="dls-suggest-fwhm">ডিটেক্টর FWHM: {1} keV</message>
+  <message id="dls-rough-est-fwhm">মোটামুটি অনুমান FWHM: {1} keV</message>
+  <message id="dls-calc-method">গণনা পদ্ধতি:</message>
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">ডিকনভলিউশন</message>
+  <message id="dls-err-no-input">কোনো ইনপুট প্রবেশ করানো হয়নি - অনুগ্রহ করে নিউক্লাইড লিখুন, গামা শক্তি নির্বাচন করুন এবং দূরত্ব ইনপুট করুন।</message>
+  <message id="dls-err-calculating">উত্তর গণনা করতে ত্রুটি: {1}</message>
+  <message id="dls-currie-desc">Currie পদ্ধতি মোট কাউন্টকে পার্শ্ববর্তী চ্যানেলের পূর্বাভাসের সাথে তুলনা করে</message>
+  <message id="dls-decon-desc">ডিকনভলিউশন পিক আকৃতি এবং ডেটা বিতরণ বিবেচনা করে</message>
+  <message id="dls-qr-tool-state-title">সাধারণ MDA টুল স্টেট</message>
+  <message id="dls-qr-tool-state-txt">সাধারণ MDA টুলের বর্তমান স্টেট।</message>
+
+  <message id="dls-det-act-with-range">সনাক্ত: {1}, পরিসর [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-no-result">দুঃখিত, কোনো ফলাফল নেই</message>
+  <message id="dls-det-counts-with-range">অতিরিক্ত কাউন্ট: {1}, পরিসর [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-less-zero">কার্যকলাপ &lt; 0 {1} (প্রত্যাশিতের চেয়ে উল্লেখযোগ্যভাবে কম কাউন্ট পরিলক্ষিত)।</message>
+  <message id="dls-det-counts-less-zero">অতিরিক্ত কাউন্ট &lt; 0 {2} (প্রত্যাশিতের চেয়ে উল্লেখযোগ্যভাবে কম কাউন্ট পরিলক্ষিত)।</message>
+  <message id="dls-det-upper-bound">{1}-এর কম উপস্থিত @{2} CL।</message>
+  <message id="dls-min-detectable-act">সর্বনিম্ন নির্ভরযোগ্যভাবে সনাক্তযোগ্য কার্যকলাপ: {1}।</message>
+  <message id="dls-min-detectable-counts">সর্বনিম্ন নির্ভরযোগ্যভাবে সনাক্তযোগ্য অতিরিক্ত কাউন্ট: {1}</message>
+  <message id="dls-error-computing-results">ফলাফল গণনা করতে ত্রুটি</message>
+  <message id="dls-chart-title-estimated-counts">{1}-এর আনুমানিক কাউন্ট।</message>
+  <message id="dls-results-txt-estimated-counts">
+    {1}-এর সনাক্ত কাউন্ট।
+    <br/>
+    পরিসর: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">{1}-এর আনুমানিক কার্যকলাপ।</message>
+  <message id="dls-results-txt-estimated-act">
+    {1}-এর সনাক্ত কার্যকলাপ।
+    <br/>
+    পরিসর: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">{1}-এর উপরের সীমার জন্য পিক @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-act">{1}-এর কম @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">{1} কাউন্টের উপরের সীমার জন্য পিক @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-counts">{1} সিগন্যাল কাউন্টের কম উপস্থিত @{2} CL</message>
+  <message id="dls-err-no-meas">কোনো পরিমাপ উপলব্ধ নেই</message>
+
+  <message id="dls-Info">তথ্য</message>
+  <message id="dls-assumed-br=1">(কার্যকলাপ BR=1.0 ধরে নিচ্ছে)</message>
+  <message id="dls-Limit">সীমা</message>
+  <message id="dls-continuum-area">কন্টিনিউয়াম এলাকা</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">DOF</message>
+  <message id="dls-Upper">উচ্চ</message>
+  <message id="dls-Lower">নিম্ন</message>
+  <message id="dls-Best">সেরা</message>
+  <message id="dls-ROI-range-label">ROI পরিসর (keV)</message>
+  <message id="dls-ROI-Channels-label">ROI চ্যানেল</message>
+  <message id="dls-ROI-Width">ROI প্রস্থ</message>
+  <message id="dls-det-intrinsic-eff">ডিটেক্টর অভ্যন্তরীণ দক্ষতা</message>
+  <message id="dls-solid-angle-frac">কঠিন কোণ ভগ্নাংশ</message>
+  <message id="dls-air-trans">বায়ু সংক্রমণ</message>
+  <message id="dls-gamma-intensity">গামা তীব্রতা</message>
+  <message id="dls-err-more-info-title">সীমা গণনা করতে ত্রুটি...</message>
+  <message id="dls-err-more-info-content">সীমা তথ্য গণনা করতে ত্রুটি: {1}</message>
+  <message id="dls-err-select-det">একটি ডিটেক্টর দক্ষতা ফাংশন নির্বাচন করুন।</message>
+  <message id="dls-err-neg-distance">দূরত্ব ঋণাত্মক হতে পারে না।</message>
+  <message id="dls-err-no-fwhm-info">ডিটেক্টর দক্ষতা ফাংশনে FWHM তথ্য নেই - অনুগ্রহ করে FWHM-এর জন্য ফিট করুন, বা ডিটেক্টর পরিবর্তন করুন।</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>

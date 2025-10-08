@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DirectorySelector -->
+  <message id="ds-path-label">পথ:</message>
+  <message id="ds-txt-input-placeholder">ডিরেক্টরির পথ টাইপ করুন...</message>
+  <message id="ds-native-select-path-button">পথ নির্বাচন করুন</message>
+  <message id="ds-native-no-path-placeholder">(কোনো পথ নির্বাচিত নেই)</message>
+</messages>

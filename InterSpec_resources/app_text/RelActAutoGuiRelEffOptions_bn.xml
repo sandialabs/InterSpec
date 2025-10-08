@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
+
+  <!-- Labels -->
+  <message id="raageo-eqn-type">সমীকরণ টাইপ</message>
+  <message id="raageo-eqn-order">সমীকরণ ক্রম</message>
+  <message id="raageo-pu242-corr">Pu242 সংশোধন</message>
+
+  <!-- Checkboxes -->
+  <message id="raageo-use-corr-fcn">সংশোধন ফাংশন ব্যবহার করুন</message>
+  <message id="raageo-share-corr-fcn">সংশোধন ফাংশন শেয়ার করুন</message>
+  <message id="raageo-share-ext-atten">বাহ্যিক ক্ষয় শেয়ার করুন</message>
+  <message id="raageo-shielded-by-other-curves">অন্যান্য বক্ররেখা দ্বারা শিল্ড করা</message>
+
+  <!-- Equation types -->
+  <message id="raageo-eqn-log-x">Log(x)</message>
+  <message id="raageo-eqn-log-y">Log(y)</message>
+  <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
+  <message id="raageo-eqn-empirical">অভিজ্ঞতামূলক</message>
+  <message id="raageo-eqn-physical">ভৌত</message>
+
+  <!-- Placeholders -->
+  <message id="raageo-curve-name">বক্ররেখা নাম</message>
+
+  <!-- Tooltips -->
+  <message id="raageo-eqn-type-tt">আপেক্ষিক দক্ষতা বক্ররেখার জন্য ব্যবহার করার কার্যকরী ফর্ম।<br />বিকল্পগুলি হল:<table style="margin-left: 10px;"><tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Physical:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Det. Eff.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">ব্যবহার করার জন্য আপেক্ষিক দক্ষতা সমীকরণের ক্রম (কতগুলি শক্তি-নির্ভর পদ)।</message>
+  <message id="raageo-pu242-corr-tt">Pu-242 প্রায়শই গামা স্পেকট্রায় সরাসরি পর্যবেক্ষণযোগ্য নয়। তবে, সমৃদ্ধকরণ গণনা করার সময় এই আইসোটোপের জন্য সংশোধন করতে, এই আইসোটোপের প্রত্যাশিত অবদান অন্যান্য Pu আইসোটোপ থেকে অনুমান করা যেতে পারে। এই ফর্মটি আপনাকে সংশোধন পদ্ধতি নির্বাচন করতে দেয়।</message>
+  <message id="raageo-share-corr-fcn-tt">চেক করা থাকলে, সমস্ত ভৌত মডেল বক্ররেখা জুড়ে কোরিলেশন ফাংশন সেটিং সিঙ্ক্রোনাইজ করা হবে।</message>
+  <message id="raageo-share-ext-atten-tt">চেক করা থাকলে, সমস্ত ভৌত মডেল বক্ররেখা জুড়ে বাহ্যিক শিল্ডিং কনফিগারেশন সিঙ্ক্রোনাইজ করা হবে।</message>
+  <message id="raageo-shielded-by-other-curves-tt">চেক করা থাকলে, এই বক্ররেখার উৎসগুলি সমস্ত অন্যান্য ভৌত মডেল বক্ররেখা দ্বারা শিল্ড করা হবে।</message>
+  <message id="raageo-del-rel-eff-curve-tt">এই আপেক্ষিক দক্ষতা বক্ররেখা সরিয়ে দেয়।</message>
+  <message id="raageo-add-rel-eff-curve-tt">আরেকটি আপেক্ষিক দক্ষতা বক্ররেখা যোগ করুন।</message>
+
+</messages>

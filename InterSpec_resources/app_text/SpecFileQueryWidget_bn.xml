@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sfqw- is short for SpecFileQueryWidget -->
+  <message id="sfqw-options">বিকল্প</message>
+  <message id="sfqw-update">আপডেট</message>
+  <message id="sfqw-load-selected">নির্বাচিত লোড করুন</message>
+</messages>
