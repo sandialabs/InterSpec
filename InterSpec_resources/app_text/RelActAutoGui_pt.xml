@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raag- is short for RelActAutoGui -->
+  <message id="raag-window-title">Isotópicos de Ativ. Relativa</message>
+
+  <!-- Presets section -->
+  <message id="raag-presets">Predefinições</message>
+  <message id="raag-preset-blank">Em Branco</message>
+  <message id="raag-user-preset">Usuário: {1}</message>
+
+  <!-- Status messages -->
+  <message id="raag-not-calculated">Não Calculado.</message>
+  <message id="raag-calculating">Calculando...</message>
+
+  <!-- General options -->
+  <message id="raag-spectrum-peak-options">Opções de Espectro e Pico</message>
+  <message id="raag-rel-eff-curve-options">Opções de Curva de Eficiência Relativa</message>
+  <message id="raag-fit-energy-cal">Ajustar Cal. Energia</message>
+  <message id="raag-back-sub">Sub. Fundo</message>
+  <message id="raag-fwhm-est">Est. FWHM</message>
+  <message id="raag-fwhm-form">Forma FWHM</message>
+  <message id="raag-peak-skew">Assimetria Pico</message>
+  <message id="raag-add-uncert">Incert Adic.</message>
+  <message id="raag-yield-info">Info Rendimento</message>
+
+  <!-- FWHM estimation methods -->
+  <message id="raag-fwhm-start-det-peaks">Começar de Det/Picos</message>
+  <message id="raag-fwhm-start-peaks">Começar de Picos</message>
+  <message id="raag-fwhm-fixed-peaks">Fixo em Picos</message>
+  <message id="raag-fwhm-start-det-eff">Começar de Efic. Det.</message>
+  <message id="raag-fwhm-fixed-det-eff">Fixo em Efic. Det.</message>
+
+  <!-- UI Elements -->
+  <message id="raag-same-z-same-age">Mesmo Z mesma idade</message>
+  <message id="raag-refit-peaks">Reajustar Picos</message>
+  <message id="raag-use-det-eff">Usar Efic. Det.</message>
+  <message id="raag-none">Nenhum</message>
+  <message id="raag-nuclides">Nuclídeos</message>
+  <message id="raag-energy-ranges">Faixas de Energia</message>
+  <message id="raag-free-peaks">Picos Livres</message>
+
+  <!-- Main Tab Menu Items -->
+  <message id="raag-spec">Espec.</message>
+  <message id="raag-rel-eff">Efic. Rel.</message>
+  <message id="raag-result">Resultado</message>
+
+  <!-- Menu Items -->
+  <message id="raag-apply-energy-cal">Aplicar Cal. Energia</message>
+  <message id="raag-show-ref-lines">Mostrar Linhas Gama Ref.</message>
+  <message id="raag-hide-ref-lines">Ocultar Linhas Gama Ref.</message>
+  <message id="raag-set-peaks-foreground">Definir Picos para primeiro plano</message>
+  <message id="raag-show-background">Mostrar Fundo</message>
+  <message id="raag-hide-background">Ocultar Fundo</message>
+  <message id="raag-roi-options">Opções ROI:</message>
+  <message id="raag-remove-roi">Remover ROI</message>
+  <message id="raag-combine-roi-left">Combinar com ROI à esquerda</message>
+  <message id="raag-combine-roi-right">Combinar com ROI à direita</message>
+
+  <!-- Tooltips -->
+  <message id="raag-tt-fwhm-form">O tipo de equação usada para modelar FWHM do pico como função da energia.</message>
+  <message id="raag-tt-skew-type">O tipo de assimetria a aplicar aos picos; parâmetros de assimetria serão ajustados.</message>
+  <message id="raag-tt-u-pu-data-source">A fonte de dados nucleares para razões de ramificação gama de urânio e plutônio.</message>
+  <message id="raag-tt-add-source">Adicionar uma fonte.</message>
+  <message id="raag-tt-add-energy-range">Adicionar uma faixa de energia.</message>
+
+  <!-- Buttons -->
+  <message id="raag-add-free-peaks">adicionar picos livres</message>
+  <message id="raag-clear-all-ranges">limpar todas as faixas</message>
+  <message id="raag-html-report">Relatório HTML</message>
+  <message id="raag-xml-config">Configuração XML</message>
+
+  <!-- Dialog titles and messages -->
+  <message id="raag-clear-energy-ranges-title">Limpar faixas de energia?</message>
+  <message id="raag-cant-perform-action">Não é possível executar esta ação.</message>
+  <message id="raag-divide-energy-range-title">Dividir Faixa de Energia?</message>
+  <message id="raag-apply-fit-energy-cal-title">Aplicar calibração de energia ajustada?</message>
+  <message id="raag-cant-continue">Não Pode Continuar</message>
+  <message id="raag-no-peaks-in-solution">Nenhum pico na solução atual</message>
+  <message id="raag-error">Erro</message>
+  <message id="raag-unexpected-error-finding-original">Houve um erro inesperado ao encontrar o original</message>
+
+  <!-- Upload dialog -->
+  <message id="raag-import-xml-config-title">Importar arquivo de configuração XML</message>
+  <message id="raag-select-isotopics-xml-file">Selecione o arquivo XML de <em>Isotópicos por nuclídeo</em> para usar</message>
+  <message id="raag-file-too-large-title">Arquivo muito grande para carregar</message>
+  <message id="raag-drag-drop-note">
+    <p style="font-size: small;">Nota: você também pode arrastar e soltar os arquivos de configuração XML no InterSpec</p>
+  </message>
+
+  <!-- Tooltips -->
+  <message id="raag-sort-energy-ranges-tt">Ordenar faixas de energia.</message>
+  <message id="raag-remove-all-ranges-tt">Remove todas as faixas de energia.</message>
+  <message id="raag-remove-free-peaks-tt">Remover todos os picos livres, e ocultar a entrada de picos livres.</message>
+  <message id="raag-free-peaks-tt">&quot;Picos livres&quot; são picos com uma energia específica, que não estão associados a nenhum nuclídeo, e sua amplitude é ajustada ao melhor valor para os dados. Os picos podem opcionalmente ser liberados da restrição funcional FWHM também.<br />Picos livres são úteis para lidar com picos de reações, ou de nuclídeos não identificados.</message>
+
+  <!-- Peak uncertainty dialog -->
+  <message id="raag-peaks-uncert-based-on-fit">Incertezas dos picos serão baseadas no ajuste de eficiência relativa total (por exemplo, picos ajudando uns aos outros para reduzir incertezas), a menos que você opte por reajustá-los, caso em que eles não serão restringidos pela curva de Efic. Rel. da forma funcional FWHM.</message>
+
+  <!-- User messages with energy formatting -->
+  <message id="raag-energy-already-in-range">{1} keV já está na faixa de energia [{2}, {3}] keV - nenhuma ação será tomada.</message>
+  <message id="raag-extended-energy-range">Faixa de energia existente estendida para [{1}, {2}] keV.</message>
+  <message id="raag-added-new-energy-range">Adicionada uma nova faixa de energia de {1} a {2} keV.</message>
+  <message id="raag-split-roi-at">Dividir ROI em {1} keV</message>
+  <message id="raag-add-free-peak-at">Adicionar pico livre em {1} keV</message>
+  <message id="raag-energy-range-no-contributions">A faixa de energia {1} keV a {2} keV não continha contribuições gama significativas.</message>
+  <message id="raag-divide-energy-range-msg">
+    Esta ação dividirá a faixa de energia de {1} keV a {2} keV em {3} faixas de energia separadas.
+    <br />
+    <p>Gostaria de continuar?</p>
+  </message>
+  <message id="raag-add-energy-offset"> adicionar um deslocamento de {1} keV</message>
+  <message id="raag-increase-gain-first"> aumentar ganho em {1}</message>
+  <message id="raag-increase-gain-additional"> e aumentar ganho em {1}</message>
+  <message id="raag-increase-quad-first"> aumentar quadrático em {1}</message>
+  <message id="raag-increase-quad-additional"> e aumentar quadrático em {1}</message>
+
+  <!-- Energy calibration application messages -->
+  <message id="raag-apply-energy-cal-msg">Isso irá{1} para o primeiro plano primário{2}{3}.<br />Gostaria de fazer isso?</message>
+  <message id="raag-and-background"> e fundo</message>
+  <message id="raag-files"> arquivos</message>
+  <message id="raag-file"> arquivo</message>
+  <message id="raag-energy-cal-updated">Calibração de energia atualizada para primeiro plano exibido{1}.</message>
+  <message id="raag-and-background-period"> e fundo</message>
+
+  <!-- Error messages -->
+  <message id="raag-error-creating-tool">Erro ao criar ferramenta de Isotópicos de Ativ. Relativa: {1}</message>
+  <message id="raag-handle-double-click-error">erro handleDoubleLeftClick: {1}</message>
+  <message id="raag-expected-state-info">Informações de estado esperadas para '{1}' não estão disponíveis - isso não é esperado - desculpe!</message>
+  <message id="raag-state-info-not-saved">Informações de estado não puderam ser salvas anteriormente para '{1}' - isso não é esperado - desculpe!</message>
+  <message id="raag-error-deserializing">Erro ao desserializar estado da ferramenta: {1}</message>
+  <message id="raag-error-loading-preset">Erro ao carregar predefinição: {1}</message>
+  <message id="raag-error-applying-energy-cal">Erro ao aplicar calibração de energia: {1}</message>
+  <message id="raag-error-loading-xml-config">Erro ao carregar arquivo de configuração XML de <em>Isotópicos por nuclídeo</em>: {1}</message>
+
+</messages>

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">Exemplar</message>
+  <message id="bgw-exemplar-use-current-fore">Usar Primeiro Plano Atual</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">Fundo</message>
+  <message id="bgw-back-use-current">Usar Fundo Atual</message>
+  <message id="bgw-back-none">Sem Fundo</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">Ajustar todos os picos</message>
+  <message id="bgw-refit-energy-cal">Reajustar calibração de energia</message>
+  <message id="bgw-use-exemplar-energy-cal">Usar calibração de energia do exemplar</message>
+  <message id="bgw-write-n42-with-results">Escrever N42 com resultados</message>
+  <message id="bgw-show-nonfit-peaks">Mostrar picos não ajustados</message>
+  <message id="bgw-overwrite-output-files">Sobrescrever arquivos de saída</message>
+  <message id="bgw-create-csv-output">CSV de Picos</message>
+  <message id="bgw-create-json-output">Escrever JSON</message>
+  <message id="bgw-use-existing-background-peaks">Usar picos de fundo existentes</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">Usar cal. energia exemplar para fundo</message>
+
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">Limiar estatístico do pico:</message>
+  <message id="bgw-peak-hypothesis-threshold-label">Limiar de hipótese do pico:</message>
+
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">Sobrescrever saída</message>
+  <message id="bgw-sum-multirecord-to-single">Somar arquivos com múltiplos registros em um único registro</message>
+  <message id="bgw-info-will-convert-file-type">Os arquivos serão convertidos para o tipo selecionado.</message>
+
+
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">Relatórios a Escrever</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">Escrever um relatório HTML dos resultados da análise.</message>
+  <message id="bgw-reports-write-csv">CSV Resumido</message>
+  <message id="bgw-reports-write-csv-tooltip">Escrever um arquivo CSV resumido com resultados da análise de todos os arquivos de entrada.</message>
+  <message id="bgw-reports-write-custom-per-file">Personalizado por Arquivo</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">Carregar um modelo de relatório personalizado para usar em cada arquivo.</message>
+  <message id="bgw-reports-write-custom-summary">Resumo Personalizado</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">Um ou mais arquivos de modelo usados para fornecer um resumo de todos os arquivos de entrada.</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">Nenhum pico presente no exemplar.</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">Necessário espectro exemplar com picos, ou arquivo CSV de picos.</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">Necessário fundo válido</message>
+  <message id="bgw-no-ana-act-shield-no-drf">Nenhuma eficiência de detector disponível.</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">Nenhum espectro exemplar selecionado.</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">Nenhum pico no espectro exemplar selecionado.</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">Nenhum modelo de ajuste Ativ./Blindagem presente no exemplar.</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">Fundo inválido</message>
+  <message id="bgw-no-ana-no-input-files">Nenhum arquivo de entrada.</message>
+  <message id="bgw-no-ana-invalid-output-path">Por favor, selecione um diretório de saída válido.</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">Executando Trabalho</message>
+  <message id="bgw-performing-work-msg">Por favor, aguarde enquanto a análise em lote é executada...</message>
+  <message id="bgw-error-analysis-title">Erro ao Executar Análise em Lote</message>
+  <message id="bgw-error-analysis-msg">Erro: {1}</message>
+  <message id="bgw-analysis-summary-title">Resumo da Análise em Lote</message>
+  <message id="bgw-json-parse-error">
+    <p>Erro ao analisar resultados JSON:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>Erro ao criar HTML devido à exceção:</p>
+    <code>{1}</code>
+    <br />
+    da linha {2}, coluna {3}
+  </message>
+  <message id="bgw-misc-error">
+    <p>Incapaz de gerar resumo de resultado devido à exceção:</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">Aviso</message>
+
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">Em vez de ajustar para picos em um arquivo exemplar - todos os picos no espectro serão ajustados.</message>
+
+  <message id="bgw-refit-energy-cal-tt">Após o ajuste inicial do pico, usa esses picos (e seus nuclídeos atribuídos) para ajustar o ganho de energia, então reajusta os picos com a calibração de energia atualizada.
+  Isso também se aplica ao arquivo de fundo se você estiver ajustando para atividade/blindagem.
+  </message>
+
+  <message id="bgw-use-exemplar-energy-cal-tt">Usar a calibração de energia N42 do exemplar com os arquivos de primeiro plano de entrada.
+Se refit-energy-cal for especificado como verdadeiro, então a cal. de energia do exemplar será usada para o ajuste inicial, e então refinada e picos reajustados.
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">Adiciona os picos ajustados ao arquivo de espectro de entrada e então salva como N42. Você deve especificar 'output_path' se especificar esta opção; também, recusará sobrescrever arquivos existentes.</message>
+
+  <message id="bgw-show-nonfit-peaks-tt">Incluir picos que não foram ajustados nos resultados CSV de saída; esses picos terão amplitude zero definida.</message>
+
+  <message id="bgw-overwrite-output-files-tt">Permite sobrescrever arquivos de saída N42, CSV ou relatório. Por padrão, não sobrescreverá arquivos.</message>
+
+  <message id="bgw-create-csv-output-tt">Saída CSV de ajuste de pico.</message>
+
+  <message id="bgw-create-json-output-tt">Escreve o JSON usado para criar os modelos de relatório, em arquivo.</message>
+
+  <message id="bgw-use-existing-background-peaks-tt">Usa os picos ajustados do fundo especificado, em vez de reajustar picos.
+Os picos do InterSpec devem existir no arquivo de espectro, e esta opção não pode ser usada com subtração de fundo rígida.</message>
+
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">Usar a calibração de energia N42 do exemplar para o arquivo de fundo.
+Aplicável apenas se arquivo N42 for usado como exemplar.</message>
+
+  <message id="bgw-peak-stat-threshold-tt">A melhoria no Chi2 de um ajuste de pico requerida, sobre apenas ajustar o contínuo, para a ROI.
+Um valor negativo ou zero indica nenhum requisito (e padrão, já que estamos afirmando que o pico provavelmente está no espectro para análise em lote), e para busca geral de picos, valores razoáveis estão entre ~1 (um pico fraco) e ~5 (um pico significativo).</message>
+
+  <message id="bgw-peak-hypothesis-threshold-tt">Requisito para o quão compatível a ROI deve ser com picos Gaussianos + contínuo.
+É a razão do chi2 da hipótese nula (apenas contínuo, sem Gaussiana), para o chi2 da hipótese de teste (contínuo + Gaussiana).
+Um valor razoável para isso parece estar na faixa de 1 a 5.
+Um valor zero ou negativo significará nenhum requisito, e também nenhum requisito de 'peak-stat-threshold'.</message>
+
+  <message id="bgw-reports-write-custom-per-file-tooltip">Um ou mais arquivos de modelo de relatório de espectro - para cada arquivo de entrada, um relatório será produzido com cada modelo especificado.</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">Um ou mais arquivos de modelo usados para fornecer um resumo de todos os arquivos de entrada.</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">Usar unidades Bq</message>
+  <message id="bgw-hard-background-sub">Subtração rígida de fundo</message>
+
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">Função de Resposta do Detector</message>
+  <message id="bgw-use-detector-override">Usar detector personalizado</message>
+
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">Sobrescrever Distância</message>
+  <message id="bgw-distance-label">Distância:</message>
+
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">Nenhum espectro exemplar está disponível. Por favor, selecione um espectro de primeiro plano ou carregue um arquivo exemplar.</message>
+</messages>

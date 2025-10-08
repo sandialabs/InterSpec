@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">Gerenciador de Espectros</message>
+  <message id="smm-load-spec-from">Carregar espectro de: </message>
+  <message id="smm-tt-upload-file">Importar espectro de arquivo</message>
+
+  <message id="smm-err-zip">Erro ao extrair arquivo do zip</message>
+  <message id="smm-zip-sel-file-no-name">
+    Arquivo carregado é um arquivo ZIP.
+    <br />
+    {2}
+    Selecione qual arquivo nele você gostaria de abrir.
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b> é um arquivo ZIP.
+    <br />
+    {2}
+    Selecione qual arquivo nele você gostaria de abrir.
+  </message>
+  <message id="smm-zip-window-title">Conteúdo do Arquivo ZIP Carregado</message>
+  <message id="smm-zip-filename-hdr">Nome do Arquivo</message>
+  <message id="smm-zip-kilobyte-hdr">kb</message>
+  <message id="smm-zip-display-btn">Exibir</message>
+  <message id="smm-empty-file">Arquivo provavelmente era um arquivo vazio - não é um arquivo de espectro.</message>
+  <message id="smm-failed-reading-nonspec-file">Falha ao ler arquivo não-espectro.</message>
+  <message id="smm-not-spec-file">Não é um arquivo de espectro</message>
+  <message id="smm-image-file">Arquivo de Imagem Selecionado</message>
+  <message id="smm-icd2">Este parece ser um arquivo N42 ICD2 que contém resultados de análise
+    em vez de espectros brutos.
+    <br />
+    Se você acredita que este é um arquivo de espectro legítimo, por favor envie-o para
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    para suportar este tipo de arquivo.
+  </message>
+  <message id="smm-invalid-zip">Este arquivo parece ser um arquivo ZIP inválido (ou xlsx, pptx,
+    <br />
+    docx, odp, jar, apk, etc), desculpe, não consigo abri-lo :(
+  </message>
+  <message id="smm-unsupported-archive">Este arquivo parece ser um arquivo compactado, não suportado pelo InterSpec ainda.
+    Por favor, entre em contato com
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    se você gostaria de suporte para este tipo de arquivo adicionado.
+  </message>
+  <message id="smm-unsupported-document">Este arquivo parece ser um arquivo de documento, e não é suportado pelo InterSpec.</message>
+  <message id="smm-invalid-peak-csv">Arquivo carregado parecia um arquivo CSV de Pico, mas era inválido.</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      Este arquivo parece ser uma Função de Resposta do Detector.
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      Nome: {1}
+    </p>
+   <p>Gostaria de usar esta DRF?</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    Salvo '{1}' para uso posterior, e estará disponível na
+    porção "<em>Efic. Rel.</em>" da ferramenta "<em>Seleção de Função de Resposta do Detector</em>".
+  </message>
+  <message id="smm-err-saving-drf">Erro ao salvar arquivo DRF para uso posterior.</message>
+  <message id="smm-file-is-drf">Este arquivo parece ser uma Função de Resposta do Detector.</message>
+  <message id="smm-file-is-multi-drf">Este arquivo contém múltiplas Funções de Resposta do Detector.</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>Nenhum primeiro plano atualmente exibido - pulando arquivo CALp.</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      O conteúdo deste arquivo CALp era
+      <br />
+      ilegível ou incompatível com os dados
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">Este arquivo parece conter uma calibração de energia.</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>Há calibrações para {1} detectores</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    Aviso: Este arquivo CALp contém uma única calibração; será<br />
+    aplicada à calibração de energia exibida primária, e<br />
+    a alteração relativa será aplicada às outras calibrações<br />
+    de energia dos detectores, o que provavelmente é o que você quer.
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    Aviso: Esta calibração de energia pode não ser consistente<br />
+    com a estrutura dos dados atuais.
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">Aplicar apenas às amostras exibidas</message>
+  <message id="smm-CALp-cb-apply-to-fore">Aplicar ao primeiro plano</message>
+  <message id="smm-CALp-cb-apply-to-back">Aplicar ao fundo</message>
+  <message id="smm-CALp-cb-apply-to-second">Aplicar ao secundário</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">Gostaria de usá-la?</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      Nota: calibração de energia atual é energias de canal inferior;<br />
+      você pode querer linearizar o espectro antes de aplicar esta<br />
+      calibração de energia.
+    </p>
+  </message>
+
+  <message id="smm-CALp-err-applying-single">Houve um erro ao aplicar calibração:
+    <br />
+    {1}
+    <br />
+    <br />
+    Calibração foi aplicada ao primeiro plano.
+  </message>
+  <message id="smm-CALp-err-applying-mult">Houve um erro ao aplicar calibração:
+    <br />
+    {1}
+    <br />
+    <br />
+    Calibração foi aplicada ao primeiro plano e fundo.
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc">Erro ao carregar arquivo de configuração XML de <em>Isotópicos por nuclídeo</em>: {1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">Erro ao analisar XML de configuração: {1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">Arquivo de configuração XML de <em>Isotópicos por nuclídeo</em> inválido.</message>
+  <message id="smm-ecc-curve">DRF de Curva de Calibração de Eficiência ISOCS</message>
+  <message id="smm-ecc-how-to-interpret">Como interpretar</message>
+  <message id="smm-ecc-far-field">DRF Campo Distante</message>
+  <message id="smm-ecc-fix-geom-total-act">Geometria Fixa - atividade total</message>
+  <message id="smm-ecc-fix-geom-act-cm2">Geometria Fixa - atividade por cm2</message>
+  <message id="smm-ecc-fix-geom-act-m2">Geometria Fixa - atividade por m2</message>
+  <message id="smm-ecc-fix-geom-act-gram">Geometria Fixa - atividade por grama</message>
+  <message id="smm-ecc-det-diam">Diâm. detector</message>
+  <message id="smm-ecc-dist">Distância</message>
+  <message id="smm-ecc-use-drf">Usar DRF</message>
+  <message id="smm-ecc-error">Erro ao criar DRF de ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">XML Atividade/Blindagem</message>
+  <message id="smm-act-shield-use">Usar esta configuração de ajuste Atividade/Blindagem?</message>
+  <message id="smm-err-act-shield">Desculpe, houve um erro ao carregar modelo de Ajuste Atividade/Blindagem: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">Arquivo de biblioteca de fonte de caracterização</message>
+  <message id="smm-source-source-use">
+    Isso usará este arquivo Source.lib na ferramenta Fazer Resposta do Detector.
+    <br />
+    Gostaria de preencher automaticamente fontes com primeiro nuclídeo correspondente na biblioteca?
+  </message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">Carregamento de arquivo talvez tenha expirado - 120 segundos sem receber dados do arquivo.</message>
+  <message id="smm-finishing-upload">Finalizando carregamento</message>
+  <message id="smm-finishing-copying">Finalizando cópia de arquivo</message>
+  <message id="smm-finish-up-txt">de {1} {2} arquivo - pode levar um minuto.</message> <!-- ex. "of 112.2 kb foreground file - may take a minute."-->
+  <message id="smm-window-title-parsing">Analisando Arquivo</message>
+  <message id="smm-window-msg-parsing">Isso pode levar um segundo.</message>
+  <message id="smm-no-file-disp">Erro, nenhuma medição {1} exibida.</message>
+  <message id="smm-no-spec-disp">Desculpe, o {1} não parece estar exibindo um espectro.</message>
+  <message id="smm-err-parse-spec-title">Não Foi Possível Analisar Arquivo</message>
+  <message id="smm-err-parse-spec">
+    <p>Desculpe, não consegui analisar o arquivo {1}:</p>
+  <p>Erro: <em>{2}</em></p>
+  <p>Se você acha que este é um arquivo de espectro válido, por favor envie-o para
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>, e
+   tentaremos corrigir este problema.</p>
+  </message>
+  <message id="smm-failed-combine">Falha ao combinar arquivos: {1}</message>
+  <message id="smm-failed-sum">Falha ao somar espectros: {1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">Nenhuma medição gama na URL/código QR</message>
+  <message id="smm-qr-no-gamma">Nenhuma medição gama na URL/código QR</message>
+  <message id="smm-qr-name-placeholder">De código QR/URL</message>
+  <message id="smm-qr-err-decode">Erro ao decodificar URL/código QR de espectro: {1}</message>
+  <message id="smm-qr-couldnt-encode">
+    Espectro não pôde ser codificado em um código QR.
+    <br />
+    Provavelmente devido a exigir mais de 9 códigos QR.
+  </message>
+  <message id="smm-qr-encode-fail">Falha ao codificar espectro em um código QR: {1} </message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">Detectores Virtuais a carregar?</message>
+  <message id="smm-vd-load-msg">
+    <div>Este arquivo continha múltiplos "Detectores Virtuais" que</div>
+    <div>podem ser somas de múltiplos detectores físicos, ou não.</div>
+    <div>Se você carregar todos, veja o menu <b>Visualizar</b>→<b>Detectores</b> para</div>
+    <div>exibir um subconjunto.</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      Quais dados de detectores você gostaria de carregar?
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>Há {1} VDs, apenas "Todos" ou primeiros 5 selecionáveis.</div>
+  </message>
+  <message id="smm-vd-all-btn">Todos</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">Usar Dados Derivados?</message>
+  <message id="smm-derived-window-txt">
+    <div>Este arquivo continha espectros de "Dados Derivados", que são</div>
+    <div>geralmente o que é usado pelo sistema de detecção para análise.</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      Quais dados você gostaria de carregar?
+    </div>
+  </message>
+  <message id="smm-derived-all">Todos os Dados</message>
+  <message id="smm-derived-raw">Dados Brutos</message>
+  <message id="smm-derived-derived">Dados Derivados</message>
+  <message id="smm-multiple-binnings-window-title">Selecionar Agrupamento de Energia</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">Múltiplos agrupamentos de energia foram encontrados no arquivo de espectro.</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">Por favor, selecione qual você gostaria</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">Manter Todos</message>
+  <message id="smm-warn-has-intrinsic">O arquivo carregado continha um espectro de atividade intrínseca, mas atualmente mostrando o outro espectro no arquivo.</message>
+  <message id="smm-warn-upload-mult-spec">O arquivo carregado continha {1} amostras<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">A primeira amostra de primeiro plano está sendo mostrada.<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">A primeira amostra está sendo mostrada.<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">Amostra {1} está sendo mostrada.<br /></message>
+  <message id="smm-warn-upload-use-spec-manager">Use a aba <b>Arquivos de Espectro</b>, ou o <b>Gerenciador de Arquivos</b> para selecionar outros registros.</message>
+  <message id="smm-warn-upload-use-file-manager">Use o <b>Gerenciador de Arquivos</b> para selecionar outros.</message>
+
+  <message id="smm-multi-cal-present">O arquivo carregado continha {1} amostras de calibração ou dados derivados
+    <br />
+    {2}
+    não será exibido.
+    <br />
+    Use a aba <b>Arquivos de Espectro</b> ou <b>Gerenciador de Arquivos</b> para mudar isso.
+  </message>
+  <message id="smm-multi-cal-it">Ele</message>
+  <message id="smm-multi-cal-they">Eles</message>
+  <message id="smm-multi-spectra-using-back">Arquivo tem múltiplos espectros, então apenas o espectro de fundo foi exibido.</message>
+  <message id="smm-multi-spectra-using-first">O arquivo carregado continha {1} amostras então
+    <br />
+    estou exibindo a primeira.
+    <br />
+    Use o <b>Gerenciador de Arquivos</b> para mudar isso.
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">Espectro Selecionado: </message>
+  <message id="smm-disp-as-btn">Exibir Como</message>
+  <message id="smm-to-new-file">Para Novo Arquivo</message>
+  <message id="smm-tt-to-new-file">Cria um novo arquivo de espectro em memória da seleção atual.</message>
+  <message id="smm-as-new-file">Como Novo Arquivo</message>
+  <message id="smm-tt-as-new-file">Cria um novo arquivo de espectro em memória da seleção atual.</message>
+  <message id="smm-sum-spectra">Somar Espectros</message>
+  <message id="smm-tt-sum-spectra">Cria um novo arquivo de espectro em memória da seleção atual.</message>
+  <message id="smm-export-btn">Exportar...</message>
+  <message id="smm-unload-btn">Descarregar</message>
+  <message id="smm-unassign-label">Desatribuir: </message>
+
+
+  <message id="smm-prev-states-window-title">Estados Armazenados Anteriormente</message>
+  <message id="smm-err-prev-state-unexpected">Problema inesperado ao exibir estados salvos disponíveis: {1}</message>
+  <message id="smm-tab-saved-states">Estados Salvos</message>
+  <message id="smm-tab-auto-saved">Espectros Auto-salvos</message>
+  <message id="smm-auto-check-prev-cb">Verificar automaticamente trabalho anterior.</message>
+  <message id="smm-cant-save">
+    Este arquivo de espectro é muito grande para salvar no banco de dados interno.<br />
+    Como resultado, seu trabalho não será auto-salvo no banco de dados interno, e você não poderá retomar de onde parou na próxima vez que carregar o arquivo.
+    <p>O tamanho deste arquivo é {1}, enquanto o máximo que pode ser salvo é {2}.</p>
+  </message>
+  <message id="smm-max-file-to-large">Arquivo tentado é muito grande; tamanho máx é {1} kb, você tentou carregar {2} kb.</message>
+  <message id="smm-must-specify-name">Você deve especificar um nome</message>
+  <message id="smm-save-spectype-as-window-title">Salvar Espectro {1} Como</message>
+  <message id="smm-save-spectype-name-empty-txt">(Nome para armazenar)</message>
+  <message id="smm-save-spectype-desc-empty-txt">(Descrição opcional)</message>
+  <message id="smm-save-state-toast">Estado salvo de {1}</message>
+  <message id="smm-save-spec-version-window-title">Salvar Versão do Espectro</message>
+  <message id="smm-save-state">Salvar Estado</message>
+  <message id="smm-create-new-tag-toast">Criou uma nova tag: '{1}'.</message>
+
+  <message id="smm-next-qr">Próximo código QR</message>
+  <message id="smm-qr-desc">{1} para o espectro {2}.</message>
+  <message id="smm-qr-title">Arquivo de Espectro {1}</message>
+  <message id="smm-qr-sequence-single">Código QR</message>
+  <message id="smm-qr-sequence-multi">Código QR {1} de {2}</message>
+
+
+  <message id="smm-changed-background">
+    O espectro de fundo também foi atualizado para ser o incluído com o arquivo recém-carregado.
+  </message>
+  <message id="smm-didnt-changed-background">
+    O arquivo de primeiro plano recém-carregado continha um espectro de fundo
+    - mas o fundo exibido <b>NÃO FOI</b> atualizado.
+  </message>
+
+  <message id="fud-dialog-title">Selecionar Arquivo para Abrir</message>
+  <message id="fud-open-foreground-only-msg">{1} abaixo para escolher um arquivo de espectro de primeiro plano para abrir.</message>
+  <message id="fud-open-any-type-msg">Selecione como você gostaria de abrir o arquivo de espectro, e então {1} abaixo para procurar o arquivo.</message>
+  <message id="fud-btn-grp-title">Abrir arquivo como:</message>
+  <message id="fud-drg-n-drop-msg">
+    Você também pode arrastar e soltar o arquivo diretamente na <br />
+    janela do aplicativo como uma alternativa mais rápida.<br />
+    <br />Para abertura e<br />
+    manipulação de arquivos mais avançadas use o <b>Gerenciador de Arquivos</b>
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      Você também pode abrir arquivos de espectro de email ou aplicativos de arquivos.
+    </span>
+  </message>
+
+  <message id="musd-dialog-title">Espectro QR/URL Multi-parte</message>
+  <message id="musd-err-diff-spec">URL/código QR recebido era de um espectro diferente do URL/código QR anterior</message>
+  <message id="musd-err-duplicate-url">Já recebeu este URL/código QR</message>
+  <message id="musd-from-qr-file-name">De código QR/URL</message>
+  <message id="musd-err-decoding-url">Erro ao decodificar URL: {1}</message>
+  <message id="musd-received-urls-list">Recebeu urls {1} de {2}.<p>Aguardando mais URLs/códigos QR</p></message>
+
+
+  <message id="uid-qr-code-pic">Foto de Código QR</message>
+  <message id="uid-no-qr-found">Nenhum código QR encontrado ⓘ</message>
+  <message id="uid-no-qr-found-title">Nenhum código QR encontrado</message>
+  <message id="uid-no-qr-content">
+    <p>
+      Se houver um código QR na imagem, você pode tentar recortar a foto ou ajustar o nível de cor.
+      <br/>
+      Usar um aplicativo/site de terceiros, ou os recursos incorporados no iOS ou Android, também funcionará melhor muitas vezes.
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">Erro ao procurar código QR</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      Valor de erro: {1}
+    </div>
+    <p>
+      Mensagem de erro: {2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">{1} dos códigos QR tinham URIs inválidas.</message>
+  <message id="uid-qr-didnt-have-uri">O código QR não continha uma URI <code>interspec://</code> ou <code>raddata://</code>.</message>
+  <message id="uid-invalid-qr">Código QR inválido</message>
+  <message id="uid-invalid-uri">Código QR continha URI inválida</message>
+  <message id="uid-multi-qr-found-title">{1} códigos QR encontrados</message>
+  <message id="uid-multi-qr-found-content">Gostaria de usar todos esses?</message>
+  <message id="uid-multi-qr-status">Encontrados {1} códigos QR</message>
+  <message id="uid-qr-found-title">Código QR encontrado</message>
+  <message id="uid-qr-found-content">Gostaria de usar o código QR começando com <br /> <code>{1}...</code></message>
+  <message id="uid-found-qr">Código QR encontrado</message>
+  <message id="uid-err-getting-data">Erro ao recuperar dados para incorporar - não incorporando imagem.</message>
+  <message id="uid-err-no-foreground-embedd">Nenhum primeiro plano carregado - não incorporando imagem.</message>
+  <message id="uid-image-embed-conf">Imagem foi incorporada no arquivo de espectro de primeiro plano; apenas exportar em formato de arquivo N42-2012 preservará isso.</message>
+  <message id="uid-image-not-spectrum">Este arquivo parece ser uma imagem, e não um arquivo de espectro.</message>
+  <message id="uid-err-to-large">Arquivo carregado era muito grande para tentar exibir.</message>
+  <message id="uid-err-reading-upload">Não foi possível ler arquivo carregado.</message>
+  <message id="uid-embed-image-btn">Incorporar imagem no arquivo de espectro</message>
+  <message id="uid-no-qr-found">Código QR não encontrado ⓘ</message>
+  <message id="uid-looking-for-qr">Procurando códigos QR.</message>
+  <message id="uid-check-for-qr-btn">Verificar código QR</message>
+  <message id="uid-tt-auto-qr">
+    Imagens são automaticamente pesquisadas por códigos QR que podem ser usáveis pelo InterSpec.
+    <br/>
+    Se houver um código QR na imagem que não for encontrado, você pode ter
+    melhor sorte usando um aplicativo/site de terceiros, ou os recursos incorporados no iOS
+    ou Android.
+    <br />
+    Se você usar uma ferramenta de terceiros para extrair a URI do código QR, você
+    pode inseri-la no InterSpec usando o item "<b>Inserir URL</b>"
+    no menu "<b>Editar</b>".
+  </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">Arquivo</message>
+  <message id="sfm-col-n-samples">N-Amostras</message>
+  <message id="sfm-col-live-time">Tempo Vivo (s)</message>
+  <message id="sfm-col-real-time">Tempo Real (s)</message>
+  <message id="sfm-col-gam-count">Cont. Gama</message>
+  <message id="sfm-col-neut-count">Cont. Nêut.</message>
+  <message id="sfm-col-time-taken">Tempo Decorrido</message>
+  <message id="sfm-col-n-dets">N-Dets.</message>
+  <message id="sfm-col-loaded">Carregado</message>
+  <message id="sfm-col-file-rid">RID do Arquivo</message>
+</messages>

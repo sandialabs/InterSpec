@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">Antes de Prosseguir</message>
+  <message id="lrm-pre-warn-content">
+    Blocos de mapa serão solicitados de <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>.
+    Nenhum dado de radiação deixará seu dispositivo, mas solicitações de
+    blocos de mapa abrangendo as medições serão feitas a este serviço.
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>Sua chave arcgis personalizada começando com '{1}' será usada para solicitar blocos de mapa.</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>Uma chave arcgis inválida foi especificada em arcgis_key.txt, então a chave integrada será usada.</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">Não pergunte novamente</message>
+  <message id="lrm-pre-warn-proceed-btn">Prosseguir</message>
+  <message id="lrm-window-title">Ferramenta de Mapa</message>
+  <message id="lrm-will-use-user-key">Usará chave arcgis especificada pelo usuário, começando com '{1}' para solicitar mapas.</message>
+  <message id="lrm-user-key-invalid">Havia um arquivo arcgis_key.txt, mas não continha uma chave válida</message>
+  <message id="lrm-err-loading-samples">Erro ao carregar amostras selecionadas no mapa: {1}</message>
+  <message id="lrm-displayed-as">Exibido como</message>
+  <message id="lrm-measurements-as">medições como</message>
+  <message id="lrm-load-meas-as-short">Carregar como</message>
+</messages>
