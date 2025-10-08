@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">Status Alat Peluruhan</message>
+  <message id="dw-qr-window-text">Status saat ini dari alat peluruhan.</message>
+  <message id="dad-units-label">Satuan Tampilan:</message>
+  <message id="dad-units-label-phone">Satuan:</message>
+  <message id="dad-logy-cb">Skala Y-Log</message>
+  <message id="dad-grid-cb">Garis Grid</message>
+  <message id="dad-add-nucs">Tambah Nuklida...</message>
+  <message id="dad-remove-all">Hapus Semua</message>
+  <message id="dad-sel-nuc-window-title">Pilih Nuklida Untuk Ditambahkan</message>
+  <message id="dad-mi-act-chart">Grafik Aktivitas</message>
+  <message id="dad-mi-decay-chain">Rantai Peluruhan</message>
+  <message id="dad-mi-calc">Kalkulator</message>
+  <message id="dad-arbitrary">Sembarang</message>
+  <message id="dad-time-span-label">Rentang Waktu:</message>
+  <message id="dad-tt-age">
+    <div>
+      Usia dapat ditentukan menggunakan kombinasi satuan waktu, serupa dengan '<b>5.3y 8d 22m</b>' atau dalam waktu paruh seperti '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Satuan waktu yang dapat diterima: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, atau
+      Anda dapat menentukan periode waktu dengan <b>hh:mm:ss</b>. Satuan waktu paruh dapat
+      ditentukan menggunakan <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, atau <b>half life</b>.
+    </div>
+    <div>
+      Satuan waktu paruh atau periode waktu tidak dapat dicampur dengan
+      satuan lain, dan jika beberapa nuklida ditentukan, yang pertama diasumsikan. Ketika beberapa periode waktu
+      ditentukan, mereka dijumlahkan, mis. '1y6months 3m' diinterpretasikan sebagai
+      18 bulan dan 3 menit
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Sumbu Y:</message>
+  <message id="dad-yaxis-label">Tipe Sumbu Y:</message>
+  <message id="dad-gamma-rate">Laju Gamma</message>
+  <message id="dad-beta-rate">Laju Beta</message>
+  <message id="dad-alpha-rate">Laju Alfa</message>
+  <message id="dad-click-for-more-info">Klik untuk info lebih lanjut</message>
+  <message id="dad-tt-double-click">Klik ganda untuk mengedit nuklida sumber ini. Klik tunggal untuk membuat rantai peluruhan menampilkan nuklida ini</message>
+  <message id="dad-summary-at-time">Ringkasan pada t={1}</message>
+  <message id="dad-hdr-date">Tanggal ({1})</message>
+  <message id="dad-hdr-total-act">Total Aktivitas</message>
+  <message id="dad-hdr-total-gammas">Total Gamma</message>
+  <message id="dad-yaxis-title-total-gammas">Gamma/Detik</message>
+  <message id="dad-hdr-total-betas">Total Beta</message>
+  <message id="dad-yaxis-title-total-betas">Beta/Detik</message>
+  <message id="dad-hdr-total-alphas">Total Alfa</message>
+  <message id="dad-yaxis-title-total-alphas">Alfa/Detik</message>
+  <message id="dad-chart-click-more-info">Klik untuk info lebih lanjut - {1} {2} setelah T0 kita memiliki:</message>
+
+  <message id="dcc-window-title-decay-chain">Rantai Peluruhan {1}</message>
+  <message id="dcc-window-title-decay-through">Peluruhan melalui {1}</message>
+  <message id="dcc-nuc-info-protons">Proton: {1}</message>
+  <message id="dcc-nuc-info-mass">Massa: {1} Da</message>
+  <message id="dcc-nuc-info-hl-stable">Waktu Paruh: stabil</message>
+  <message id="dcc-nuc-info-hl">Waktu Paruh: {1}</message>
+  <message id="dcc-nuc-info-br-from">BR dari {1}: {2}</message>
+  <message id="dcc-nuc-info-br-through">BR melalui {1}: {2}</message>
+  <message id="dcc-nuc-info-specific-act">Aktivitas Spesifik: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1} meluruh ke {2}, BR {3}</message>
+  <message id="dcc-particle-window-title">Energi Partikel Peluruhan</message>
+  <message id="dcc-particles-from">Partikel dari {1}</message>
+  <message id="dcc-nuc-has-no-particles">Nuklida ini tidak memiliki partikel dari peluruhan</message>
+  <message id="dcc-particle">Partikel</message>
+  <message id="dcc-intensity">Intensitas</message>
+  <message id="dcc-decay-through-window-title">Peluruhan Melalui {1}</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">Massa Atom Menurun</message>
+  <message id="dcc-yAxisTitle">Nomor Atom Meningkat</message>
+  <message id="dcc-clickNucTxt">Klik nuklida untuk info lebih lanjut.</message>
+  <message id="dcc-clickNucMoreInfoTxt1">Klik ganda nuklida untuk partikel yang dihasilkan.</message>
+  <message id="dcc-clickNucMoreInfoTxt2">Klik nuklida sumber yang berbeda di atas untuk</message>
+  <message id="dcc-clickNucMoreInfoTxt3">mengubah rantai peluruhan yang ditampilkan.</message>
+  <message id="dcc-clickNucMblTxt">Ketuk nuklida untuk info lebih lanjut.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt1">Sentuh nuklida selama 1 detik untuk partikel yang dihasilkan.</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">Klik nuklida sumber yang berbeda di atas untuk</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">mengubah rantai peluruhan yang ditampilkan.</message>
+
+
+  <message id="dcn-initial-age">Usia Awal: </message>
+
+</messages>
+

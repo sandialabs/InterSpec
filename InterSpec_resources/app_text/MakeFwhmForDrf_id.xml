@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">Ketidakpastian FWHM</message>
+  <message id="fpm-peak-source">Sumber Puncak</message>
+  <message id="fpm-user">Pengguna</message>
+  <message id="fpm-auto-fit">Cocok Otomatis</message>
+  
+  
+  <message id="mffdw-use-fwhm-btn">Gunakan FWHM</message>
+  
+  <message id="mffd-eqn-type-label">Tipe Persamaan:</message>
+  <message id="mffd-num-terms-label">Jumlah Istilah:</message>
+  <message id="mffd-par-vals-label">Nilai Parameter:</message>
+  <message id="mffd-err-no-foreground">Tidak ada data untuk mencari puncak.</message>
+  <message id="mffd-tt-par">Dengan ketidakpastian: {1}</message>
+  <message id="mffd-err-fail-fit">Gagal menyesuaikan persamaan FWHM: {1}</message>
+  <message id="mffd-err-waiting-for-search">Saat ini mencari puncak - harap bersabar</message>
+</messages>
+

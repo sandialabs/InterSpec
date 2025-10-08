@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">akan mengurangi {1} cps untuk latar belakang</message>
+  <message id="dp-no-peak-preview">Tidak dapat menghasilkan pratinjau</message>
+
+  <message id="dsfs-sample">Sampel</message>
+  <message id="dsfs-samples">Sampel</message>
+  <message id="dsfs-using-num-peaks"> (menggunakan {1} dari {2} puncak)</message>
+  <message id="dsfs-back-peak-txt">Puncak-puncak ini akan dikurangkan dari sampel lain</message>
+  <message id="dsfs-is-background-cb">Adalah Latar Belakang?</message>
+  <message id="dsfs-all-peaks-cb">Semua Puncak</message>
+  
+  <message id="md-det-diam">Diameter Det.</message>
+  <message id="md-eff-type">Tipe Efisiensi</message>
+  <message id="md-eqn-in-kev">Persamaan dalam keV</message>
+  <message id="md-eqn-in-mev">Persamaan dalam MeV</message>
+  <message id="md-geom-intrinsic-eff">Eff. Intrinsik</message>
+  <message id="md-geom-fixed-geom">Geometri Tetap</message>
+  <message id="md-geom-fixed-cm2">Tetap: per cm2</message>
+  <message id="md-geom-fixed-m2">Tetap: per m2</message>
+  <message id="md-geom-fixed-gram">Tetap: per gram</message>
+  <message id="md-tt-eff-interpret">
+    Bagaimana efisiensi ini harus diinterpretasikan.<br />
+    <br />
+    Medan Jauh: Sumber titik, atau sumber kecil dibandingkan dengan jarak ke detektor; akan memungkinkan
+    mengubah jarak deteksi untuk menskalakan 1/r2.<br />
+    <br />
+    Geometri Tetap: Untuk ketika geometri data karakterisasi dan jarak sesuai dengan pengukuran,
+    dan Anda ingin menghitung aktivitas total sumber (mis. Marinelli beaker).\n
+    <br />
+    Tetap per cm2: mirip dengan aktivitas total, tetapi ketika data kalibrasi dan pengukuran adalah
+    untuk kontaminasi permukaan, dengan nilai yang diberikan per sentimeter persegi.<br />
+    <br />
+    Tetap per m2: mirip dengan total per cm2, tetapi untuk per meter persegi.<br />
+    <br />
+    Tetap per gram: mirip dengan per cm2, tetapi untuk per gram sumber.
+  </message>
+  <message id="md-fwhm-eqn-form-label">Persamaan FWHM</message>
+  <message id="md-fwhm-gadras">Persamaan Gadras</message>
+  <message id="md-sqrt-series">Deret Pangkat Akar</message>
+  <message id="md-atten-for-air-cb">Atenuasi untuk udara</message>
+  <message id="md-tt-atten-for-air">
+    Atenuasi oleh udara, antara sumber dan detektor akan diperhitungkan, 
+    untuk memungkinkan penskalaan jarak (menggunakan fungsi efisiensi pada jarak yang berbeda) lebih akurat.
+    <br />
+    Ini adalah efek yang lebih besar pada energi yang lebih rendah, atau jarak kalibrasi yang lebih besar.
+  </message>
+  <message id="md-show-fwhm-markers">Tampilkan titik FWHM</message>
+  <message id="md-display-energy-lower-label">Tampilkan Energi, Bawah:</message>
+  <message id="md-display-energy-upper-label">Atas:</message>
+  <message id="md-mi-chart-phone">Grafik/Opsi</message>
+  <message id="md-mi-peaks-phone">Puncak untuk Digunakan</message>
+  <message id="md-export-btn">Simpan/Ekspor...</message>
+  <message id="md-export-window-title">Simpan/Ekspor DRF</message>
+  <message id="md-tt-name">
+    Nama fungsi respons detektor untuk disimpan ke database internal <em>InterSpec</em>
+    sehingga Anda dapat menggunakan fungsi respons nanti.
+    Nama harus berupa nama file yang valid (mis., tidak ada karakter \, /, :, dll.).
+  </message>
+  <message id="md-tt-desc">Deskripsi opsional dari DRF untuk membantu mengingatkan Anda tentang detail ketika Anda menggunakan DRF di masa mendatang.</message>
+  <message id="md-make-default-for-serial-cb">Jadikan DRF default untuk nomor seri '{1}'</message>
+  <message id="md-tt-make-default-serial">
+    Buat agar ketika spektrum dari detektor dengan nomor seri yang cocok
+    dimuat ke InterSpec, fungsi respons detektor ini
+    akan secara otomatis dimuat dan digunakan.
+  </message>
+  <message id="md-make-default-for-model-cb">Jadikan DRF default untuk model '{1}'</message>
+  <message id="md-tt-make-default-model">
+    Buat agar ketika spektrum dari detektor model ini dimuat
+    ke InterSpec, fungsi respons detektor ini akan
+    secara otomatis dimuat dan digunakan.
+  </message>
+  <message id="md-tt-export-n42">
+    Ekspor file N42 yang berisi semua spektrum dan puncak yang digunakan untuk membuat DRF ini.
+    Informasi sumber dan perisai biasanya juga disimpan ke dalam file untuk,
+    pada prinsipnya, kecuali diameter detektor dan urutan persamaan,
+    menyediakan semua informasi masukan yang digunakan untuk membuat DRF.
+  </message>
+  <message id="md-export-as-csv">Ekspor DRF sebagai CSV.</message>
+  <message id="md-tt-export-as-csv">
+    Mengekspor DRF ke dalam file CSV yang berisi semua informasi dari DRF.
+    Sangat berguna untuk digunakan dengan alat lain.
+  </message>
+  <message id="md-export-quick-ref">Ekspor kartu referensi cepat</message>
+  <message id="md-tt-export-quick-ref">Mengekspor kartu gaya 3x5 yang memiliki ringkasan singkat kinerja detektor.</message>
+  <message id="md-det-name-not-valid">Nama detektor tidak valid.</message>
+  <message id="md-eqn-not-valid">Persamaan Efisiensi Intrinsik tidak valid.</message>
+  <message id="md-err-creating-drf">Kesalahan membuat DRF: {1}</message>
+  <message id="md-err-saving-to-db">Kesalahan menyimpan DetectorPeakResponse ke database: {1}</message>
+  <message id="md-saved-to-db">Disimpan '{1}' ke database internal.</message>
+  <message id="md-peak-counts">{1} {2} keV, Puncak {3} hitungan</message>
+  <message id="md-peak-no-nuc">Tidak ada nuklida terkait, {1} keV, Puncak {2} hitungan</message>
+  <message id="md-err-det-diam-invalid">Diameter detektor tidak valid - mengasumsikan 2,54 cm.</message>
+  <message id="md-err-some-src">Beberapa sumber memiliki kesalahan.</message>
+  <message id="md-n-fit-pars">{1} Parameter Pencocokan</message>
+  <message id="md-html-eff-table-caption">Efisiensi Deteksi Energi Penuh (% total gamma)</message>
+  <message id="md-html-Intrinsic">Intrinsik</message>
+  <message id="md-chart-data-intrinsic-eff-label">Eff. Intrinsik Data</message>
+  <message id="md-chart-data-fwhm-label">FWHM Data</message>
+  <message id="md-chart-fit-intrinsic-eff-label">Eff. Intrinsik Cocok</message>
+  <message id="md-chart-intrinsic-eff-plus-label">Eff. Intrinsik +2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">Eff. Intrinsik Cocok -2σ</message>
+  <message id="md-chart-fit-fwhm-label">FWHM Cocok</message>
+</messages>
+

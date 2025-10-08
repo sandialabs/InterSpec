@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiWidget -->
+  <message id="bgw-analyze-button">Analisis</message>
+  <message id="bgw-output-dir-label">Direktori Output:</message>
+  <message id="bgw-type-select-label">Opsi Tipe Analisis</message>
+  <message id="bgw-input-files-label">File Input</message>
+  <message id="bgw-act-shield-ana-opts-label">Aktivitas/Perisai</message>
+  <message id="bgw-peak-fit-opts-label">Fit Puncak</message>
+  <message id="bgw-file-convert-opts-label">Konversi</message>
+</messages>
+

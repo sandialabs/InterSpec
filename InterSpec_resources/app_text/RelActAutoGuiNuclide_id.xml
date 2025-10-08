@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+  
+  <!-- Labels -->
+  <message id="raagn-nuclide">Nuklida:</message>
+  <message id="raagn-age">Usia:</message>
+  <message id="raagn-min-age">Usia Min:</message>
+  <message id="raagn-max-age">Usia Maks:</message>
+  
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">Pilih tipe kendala.</message>
+  <message id="raagn-min">min:</message>
+  <message id="raagn-max">maks:</message>
+  <message id="raagn-src">src:</message>
+  <message id="raagn-val">nilai:</message>
+  
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">Tidak Ada</message>
+  <message id="raagn-constraint-rel-act">Akt. Rel</message>
+  <message id="raagn-constraint-act-ratio">Rasio Akt</message>
+  <message id="raagn-constraint-mass-frac">Fraksi Massa</message>
+  
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">Sesuaikan Usia</message>
+  
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">Tambah Kendala</message>
+  
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">contoh: <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (keadaan meta stabil), <b>Cs137</b>, Pb, Fe(n,n), dll.</message>
+  <message id="raagn-remove-constraint-tt">Hapus kendala ini</message>
+  <message id="raagn-add-constraint-tt">Tambahkan kendala ke nuklida ini</message>
+  
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1} bukan nuklida, sinar-x, atau reaksi yang valid.</message>
+  <message id="raagn-stable-nuclide">{1} adalah nuklida stabil.</message>
+  
+</messages>
+

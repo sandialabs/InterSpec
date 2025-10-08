@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
+  
+  <!-- Labels -->
+  <message id="raageo-eqn-type">Tipe Persamaan</message>
+  <message id="raageo-eqn-order">Urutan Persamaan</message>
+  <message id="raageo-pu242-corr">Koreksi Pu242</message>
+  
+  <!-- Checkboxes -->
+  <message id="raageo-use-corr-fcn">Gunakan fungsi korelasi</message>
+  <message id="raageo-share-corr-fcn">Bagikan fungsi korelasi</message>
+  <message id="raageo-share-ext-atten">Bagikan atenuasi eksternal</message>
+  <message id="raageo-shielded-by-other-curves">Terlindungi oleh kurva lain</message>
+  
+  <!-- Equation types -->
+  <message id="raageo-eqn-log-x">Log(x)</message>
+  <message id="raageo-eqn-log-y">Log(y)</message>
+  <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
+  <message id="raageo-eqn-empirical">Empiris</message>
+  <message id="raageo-eqn-physical">Fisik</message>
+  
+  <!-- Placeholders -->
+  <message id="raageo-curve-name">Nama Kurva</message>
+  
+  <!-- Tooltips -->
+  <message id="raageo-eqn-type-tt">Bentuk fungsional untuk digunakan untuk kurva efisiensi relatif.<br />Opsi adalah:<table style="margin-left: 10px;"><tr><th>Log(energi):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(eff. rel.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(energi)Log(eff. rel.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Empiris:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Fisik:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Eff. Det.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">Urutan (berapa banyak istilah yang bergantung pada energi) persamaan efisiensi relatif untuk digunakan.</message>
+  <message id="raageo-pu242-corr-tt">Pu-242 sering tidak dapat diamati langsung dalam spektrum gamma. Namun, untuk memperbaiki isotop ini saat menghitung pengayaan, kontribusi yang diharapkan dari isotop ini dapat disimpulkan dari isotop Pu lainnya. Formulir ini memungkinkan Anda memilih metode koreksi.</message>
+  <message id="raageo-share-corr-fcn-tt">Ketika dicentang, pengaturan Fungsi Korelasi akan disinkronkan di semua kurva model Fisik.</message>
+  <message id="raageo-share-ext-atten-tt">Ketika dicentang, konfigurasi perisai eksternal akan disinkronkan di semua kurva model Fisik.</message>
+  <message id="raageo-shielded-by-other-curves-tt">Ketika dicentang, sumber kurva ini akan dilindungi oleh semua kurva model Fisik lainnya.</message>
+  <message id="raageo-del-rel-eff-curve-tt">Menghapus kurva efisiensi relatif ini.</message>
+  <message id="raageo-add-rel-eff-curve-tt">Tambahkan kurva efisiensi relatif lain.</message>
+  
+</messages>
+

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">Gunakan dua pengukuran di lokasi berbeda untuk menemukan jarak ke sumber yang tidak terlihat. Mis. ketika sumber berada di balik dinding.</message>
+  <message id="oor2c-near-meas-label">Intensitas Pengukuran Dekat:</message>
+  <message id="oor2c-far-meas-label">Intensitas Pengukuran Jauh:</message>
+  <message id="oor2c-background-intensity">Intensitas Latar Belakang (opsional):</message>
+  <message id="oor2c-dist-label">Jarak antara pengukuran:</message>
+  <message id="oor2c-power-law-label">Hukum Pangkat</message>
+  <message id="oor2c-low-scatter">Hamburan Rendah atau menggunakan Area Puncak, 1/r^2</message>
+  <message id="oor2c-mid-scatter">Laju Dosis Hamburan Sedang, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">Laju Dosis Hamburan Tinggi, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">Jarak pengukuran dekat ke sumber:</message>
+  <message id="oor2c-bottom-message">Gunakan satuan yang sama untuk pengukuran dekat, latar belakang, dan jauh.
+    Hasil dalam satuan yang sama yang digunakan untuk
+    jarak antara pengukuran.
+  </message>
+  <message id="oor2c-qr-state-title">Status Kalkulator 1/r2</message>
+  <message id="oor2c-qr-state-txt">Status saat ini alat kalkulator 1/r<sup>2</sup>.</message>
+  <message id="oor2c-invalid-near">Pengukuran dekat tidak valid</message>
+  <message id="oor2c-invalid-far">Pengukuran jauh tidak valid</message>
+  <message id="oor2c-invalid-dist">Jarak tidak valid</message>
+  <message id="oor2c-far-larger-than-near">Pengukuran jauh harus kurang dari yang dekat</message>
+  <message id="oor2c-back-larger-than-far">Latar belakang harus kurang dari yang jauh</message>
+  <message id="oor2c-near-is-zero">Pengukuran dekat harus bukan nol</message>
+  <message id="oor2c-far-is-zero">Pengukuran jauh harus bukan nol</message>
+  <message id="oor2c-dist-is-zero">Jarak antara pengukuran harus bukan nol</message>
+</messages>
+
