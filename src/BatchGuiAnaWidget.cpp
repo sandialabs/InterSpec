@@ -911,7 +911,15 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
       if( !input_file )
         continue;
 
-      answer.report_templates.push_back( input_file->path_to_file() );
+      string tmplt_name = input_file->path_to_file();
+      if( !input_file->display_name().empty()
+         && (SpecUtils::filename(input_file->display_name()) != SpecUtils::filename(input_file->path_to_file())) )
+      {
+        tmplt_name += BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker;
+        tmplt_name += SpecUtils::filename(input_file->display_name());
+      }
+
+      answer.report_templates.push_back( tmplt_name );
     }
   }
 
@@ -924,7 +932,16 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
       if( !input_file )
         continue;
 
-      answer.summary_report_templates.push_back( input_file->path_to_file() );
+
+      string tmplt_name = input_file->path_to_file();
+      if( !input_file->display_name().empty()
+         && (SpecUtils::filename(input_file->display_name()) != SpecUtils::filename(input_file->path_to_file())) )
+      {
+        tmplt_name += BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker;
+        tmplt_name += SpecUtils::filename(input_file->display_name());
+      }
+
+      answer.summary_report_templates.push_back( tmplt_name );
     }
   }// if( m_summary_custom_report->isChecked() )
 
