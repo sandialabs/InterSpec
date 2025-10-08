@@ -1932,46 +1932,60 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           
           // There is enough excess counts that we would reliably detect this activity, so we will
           //  give the activity range.
-          WString obs_label, range_label;
-          string lowerstr, upperstr, nomstr;
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
-            obs_label = "Observed activity";
-            range_label = "Activity range";
-            
-            const float lower_act = result.lower_limit / gammas_per_bq;
-            const float upper_act = result.upper_limit / gammas_per_bq;
-            const float nominal_act = result.source_counts / gammas_per_bq;
-            
-            lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
+            WString obs_label = "Observed activity";
+            const double nominal_act = result.source_counts / gammas_per_bq;
+            const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                                  + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( obs_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( nomstr, cell );
+            addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
+                            " counts were observed in the peak region." );
+          }
+
           {
-            obs_label = "Observed counts";
-            range_label = "Counts range";
-            
-            lowerstr = SpecUtils::printCompact(result.lower_limit, 4);
-            upperstr = SpecUtils::printCompact(result.upper_limit, 4);
-            nomstr = SpecUtils::printCompact(result.source_counts, 4);
+            WString obs_label = "Observed counts";
+            const string nomstr = SpecUtils::printCompact(result.source_counts, 4);
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( obs_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( nomstr, cell );
+            addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
+                            " counts were observed in the peak region." );
+          }
+
+
+          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+          {
+            WString range_label = "Activity range";
+            const double lower_act = result.lower_limit / gammas_per_bq;
+            const double upper_act = result.upper_limit / gammas_per_bq;
+            const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( range_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            addTooltipToRow( "The signal activity range estimate, to the " + confidence_level + " confidence level." );
+          }
+
+          {
+            WString range_label = "Counts range";
+            const string lowerstr = SpecUtils::printCompact(result.lower_limit, 4);
+            const string upperstr = SpecUtils::printCompact(result.upper_limit, 4);
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( range_label, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
+            addTooltipToRow( "The signal counts range estimate, to the " + confidence_level + " confidence level." );
           }//if( drf ) / else
-          
-          
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( obs_label, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( nomstr, cell );
-          addTooltipToRow( "Greater than the &quot;critical level&quot;, L<sub>c</sub>,"
-                          " counts were observed in the peak region." );
-          
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( range_label, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( "[" + lowerstr + ", " + upperstr + "]", cell );
-          addTooltipToRow( "The activity range estimate, to the " + confidence_level + " confidence level." );
         }else if( result.upper_limit < 0 )
         {
           assert( !assertedNoSignal );
@@ -1994,28 +2008,38 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
         }else
         {
           // We will provide the upper bound on activity.
-          string mdastr;
-          WString label_txt;
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
-            label_txt = "Activity upper bound";
-            
+            WString label_txt = "Activity upper bound";
+
             const double simple_mda = result.upper_limit / gammas_per_bq;
-            mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
+            const string mdastr = PhysicalUnits::printToBestActivityUnits( simple_mda, 2, useCuries )
                       + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( label_txt, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( mdastr , cell);
+
+            addTooltipToRow( "The upper limit on how much activity could be present, to the "
+                            + confidence_level + " confidence level." );
+          }
+
+
           {
-            label_txt = "Counts upper bound";
-            mdastr = SpecUtils::printCompact( result.upper_limit, 4 ) + " counts";
+            WString label_txt = "Counts upper bound";
+            const string mdastr = SpecUtils::printCompact( result.upper_limit, 4 ) + " counts";
+
+            cell = table->elementAt( table->rowCount(), 0 );
+            new WText( label_txt, cell );
+            cell = table->elementAt( table->rowCount() - 1, 1 );
+            new WText( mdastr , cell);
+
+            addTooltipToRow( "The upper limit on how much activity could be present, to the "
+                            + confidence_level + " confidence level." );
           }
           
-          cell = table->elementAt( table->rowCount(), 0 );
-          new WText( label_txt, cell );
-          cell = table->elementAt( table->rowCount() - 1, 1 );
-          new WText( mdastr , cell);
-          
-          addTooltipToRow( "The upper limit on how much activity could be present, to the "
-                          + confidence_level + " confidence level." );
+
         }
         
         break;
@@ -2172,37 +2196,40 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
         {
           // There is NOT enough excess counts that we would reliably detect this activity, so we
           //  didnt give nominal activity above, so we'll do that here
-          WString obs_label;
-          string lowerstr, upperstr, nomstr;
-          if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
-          {
-            obs_label = "Activity";
-            const float nominal_act = result.source_counts / gammas_per_bq;
-            
-            nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-            if( nominal_act < 0 )
-              nomstr = "&lt; " + PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
-                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-          }else
-          {
-            obs_label = "Observed counts";
-            nomstr = SpecUtils::printCompact(result.source_counts, 4);
-            
-            if( result.source_counts < 0 )
-              nomstr = "&lt; 0 counts";
-          }//if( drf ) / else
-          
           if( !assertedNoSignal )
           {
-            nomstr += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
-            
+            WString obs_counts_label = "Observed counts";
+            string nom_counts_str = SpecUtils::printCompact(result.source_counts, 4);
+            if( result.source_counts < 0 )
+              nom_counts_str = "&lt; 0 counts";
+
+            nom_counts_str += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
             cell = table->elementAt( table->rowCount(), 0 );
-            new WText( obs_label, cell );
+            new WText( obs_counts_label, cell );
             cell = table->elementAt( table->rowCount() - 1, 1 );
-            new WText( nomstr, cell );
+            new WText( WString::fromUTF8(nom_counts_str), cell );
             addTooltipToRow( "The observed signal counts is less than the &quot;critical level&quot;, L<sub>c</sub>,"
-                            " so a detection can not be declared, but this is the excess over expected counts/activity." );
+                            " so a detection can not be declared, but this is the excess over expected counts." );
+
+            if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
+            {
+              WString obs_act_label = "Activity";
+              const float nominal_act = result.source_counts / gammas_per_bq;
+
+              string nom_act_str = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
+                        + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+              if( nominal_act < 0 )
+                nom_act_str = "&lt; " + PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
+                          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
+
+              nom_act_str += " <span style=\"font-size: smaller;\">(below L<sub>c</sub>)</span>";
+              cell = table->elementAt( table->rowCount(), 0 );
+              new WText( obs_act_label, cell );
+              cell = table->elementAt( table->rowCount() - 1, 1 );
+              new WText( WString::fromUTF8(nom_act_str), cell );
+              addTooltipToRow( "The observed signal activity is less than the &quot;critical level&quot;, L<sub>c</sub>,"
+                              " so a detection can not be declared, but this is the excess over expected counts." );
+            }//if( !nom_act_str.empty() )
           }//if( !assertedNoSignal )
         }//if( result.source_counts <= result.decision_threshold )
       }//case DetectionLimitTool::LimitType::Activity:
