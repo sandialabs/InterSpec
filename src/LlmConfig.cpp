@@ -36,7 +36,7 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   if( SpecUtils::is_file(defaultPath) )
     return loadFromFile(defaultPath);
   
-  cout << "Using hardcoded LLM config defaults" << endl;
+  cout << "Not enabling LLM capabilities - llm_config.xml not found." << endl;
   LlmConfig config;
   assert( !config.llmApi.enabled );
   assert( !config.mcpServer.enabled );

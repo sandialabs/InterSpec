@@ -805,7 +805,92 @@ void ToolRegistry::registerDefaultTools() {
       return ToolRegistry::executeCurrieMdaCalc(params, interspec);
     }
   });
+
+
+  registerTool({
+    "source_photons",
+    "Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-ray, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel.  Results will be sorted by energy.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "Source": {
+          "type": "string",
+          "description": "The nuclide, element, or reaction for which to retrieve decay product data. Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction)."
+        },
+        "Age": {
+          "type": "string",
+          "description":  "The age of the nuclide at which to return decay products. Applicable only for nuclides; specifying this for elements or reactions will result in an error. If not specified for nuclides, a default age will be used. Examples: '23.25 y', '23 years 60 days', '0s', '5 half-lives'. An age of '0 seconds' will return products from the specified nuclide only, while a positive value will include products from the nuclide's full decay chain, aged to the specified amount."
+        },
+        "MaxResults": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The maximum number of energy/intensity pairs to return; if the source has more than this number of photons, then information for this number of the largest intensity photons will be returned.  If not specified, a value of 125 will be assumed."
+        }
+      },
+      "required": ["Source"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetSourcePhotons(params);
+    }
+  });
+
   
+  registerTool({
+    "attenuation_of_shielding",
+    "Given an array of photon energies, returns the fraction of photons that pass through the shielding without being attenuated. For each energy, the returned value will be between 0 and 1, where 1 indicates no attenuation (all photons pass through) and 0 indicates complete attenuation (all photons are interact).",
+    json::parse(R"({
+  "type": "object",
+  "properties": {
+    "Shielding": {
+      "type": "object",
+      "description": "Defines the shielding properties used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names returned by the `get_materials` tool.",
+      "properties": {
+        "AD": {
+          "type": "number",
+          "description": "Areal density of the shielding material in g/cm²."
+        },
+        "AN": {
+          "type": "number",
+          "description": "Effective atomic number of the shielding material."
+        },
+        "Material": {
+          "type": "string",
+          "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
+        },
+        "Thickness": {
+          "type": "string",
+          "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+        }
+      },
+      "additionalProperties": false
+    },
+    "Energies": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "An array of photon energy values in keV to apply the attenuation calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
+    }
+  },
+  "required": ["Shielding", "Energies"]
+})"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetAttenuationOfShielding(params, interspec);
+    }
+  });
+
+
+
+  registerTool({
+    "get_materials",
+    "Returns a list of avaiable materials for shielding. The materials name is what you will specify to other functions.",
+    json{},
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetMaterials(interspec);
+    }
+  });
+
+
   // Register test tool
   registerTool({
     "test_tool",
@@ -1406,6 +1491,199 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
 
   return result_json;
 }//nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec)
+
+
+/** Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-ray, or reaction.
+ The energies are expressed in keV, and intensities are given as photons per source Becquerel.
+ */
+nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& params){
+
+  if( !params.contains("Source") )
+    throw runtime_error( "'Source' parameter must be specified." );
+
+  // The nuclide, element, or reaction for which to retrieve decay product data.
+  //   Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction).
+  const string &src = params["Source"];
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "Could not initialize nuclide DecayDataBase - can not continue." );
+
+  const SandiaDecay::Nuclide *nuc = nullptr;
+  const SandiaDecay::Element *el = nullptr;
+  const ReactionGamma::Reaction *rctn = nullptr;
+
+  nuc = db->nuclide(src);
+
+  if( !nuc )
+    el = db->element(src);
+
+  if( !nuc && !el )
+  {
+    const ReactionGamma * const rctn_db = ReactionGammaServer::database();
+
+    std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+    if( rctn_db )
+      rctn_db->gammas( src, possible_rctns );
+
+    if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
+      rctn = possible_rctns[0].reaction;
+  }//if( !nuc && !el )
+
+  if( !nuc && !el && !rctn )
+    throw runtime_error( "Could not interpret '" + src + "' as a nuclide, x-ray, or reaction." );
+
+  double age_in_seconds = 0.0;
+  const bool has_age = params.contains("Age");
+  if( !nuc && has_age )
+    throw runtime_error( "You can only specify 'Age' for a nuclide source" );
+
+  if( params.contains("Age") )
+  {
+    const string &age_str = params["Age"];
+
+    try
+    {
+      age_in_seconds = PhysicalUnits::stringToTimeDuration(age_str) / PhysicalUnits::second;
+      if( age_in_seconds < 0.0 )
+        throw runtime_error( "Nuclide age ('" + age_str + "')must be larger than zero." );
+    }catch( std::exception &e )
+    {
+      throw runtime_error( "Could not interpret '" + age_str + "' as a time duration for nuclide age." );
+    }
+  }else if( nuc )
+  {
+    age_in_seconds = PeakDef::defaultDecayTime( nuc, nullptr ) / PhysicalUnits::second;
+  }
+
+  const int max_results = params.value("MaxResults", 125);
+  if( max_results < 1 )
+    throw runtime_error( "'MaxResults' must be 1 or larger." );
+
+  vector<pair<double,double>> result;
+  if( nuc )
+  {
+    SandiaDecay::NuclideMixture mix;
+
+    // We will add the nuclide as aged, so this way the gammas will be for 1 bq parent activity
+    mix.addAgedNuclideByActivity( nuc, 1.0*SandiaDecay::Bq, age_in_seconds * SandiaDecay::second );
+    const vector<SandiaDecay::EnergyRatePair> energy_rate = mix.photons(0.0);
+    result.reserve( energy_rate.size() );
+    for( const SandiaDecay::EnergyRatePair &erp : energy_rate )
+      result.emplace_back( erp.energy, erp.numPerSecond );
+  }else if( el )
+  {
+    result.reserve( el->xrays.size() );
+    for( const SandiaDecay::EnergyIntensityPair &eip : el->xrays )
+      result.emplace_back( eip.energy, eip.intensity );
+  }else
+  {
+    assert( rctn );
+    result.reserve( rctn->gammas.size() );
+    double max_abundance = 0.0;
+    for( const ReactionGamma::Reaction::EnergyYield &g : rctn->gammas )
+    {
+      const double abundance = static_cast<double>(g.abundance);
+      max_abundance = std::max( max_abundance, abundance );
+      result.emplace_back( static_cast<double>(g.energy), abundance );
+    }
+    if( (max_abundance != 1.0) && (max_abundance > 0.0) )
+    {
+      for( pair<double, double> &energy_rate : result )
+        energy_rate.second /= max_abundance;
+    }
+  }
+
+  if( static_cast<int>(result.size()) > max_results )
+  {
+    std::sort( begin(result), end(result), []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
+      return lhs.second > rhs.second;
+    } );
+    result.resize( static_cast<size_t>(max_results) );
+  }
+
+  std::sort( begin(result), end(result), []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
+    return lhs.first < rhs.first;
+  } );
+
+
+  nlohmann::json json_array;
+
+  for( const pair<double,double> &val : result )
+    json_array.push_back({val.first, val.second});
+
+  return json_array;
+}//nlohmann::json executeGetSourcePhotons(const nlohmann::json& params, InterSpec* interspec)
+
+
+/*
+ registerTool({
+   "attenuation_of_shielding",
+   "Given an array of photon energies, returns the fraction of photons that pass through the shielding without being attenuated. For each energy, the returned value will be between 0 and 1, where 1 indicates no attenuation (all photons pass through) and 0 indicates complete attenuation (all photons are interact).",
+   json::parse(R"({
+ "type": "object",
+ "properties": {
+   "Shielding": {
+     "type": "object",
+     "description": "Defines the shielding properties used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names returned by the `get_materials` tool.",
+     "properties": {
+       "AD": {
+         "type": "number",
+         "description": "Areal density of the shielding material in g/cm²."
+       },
+       "AN": {
+         "type": "number",
+         "description": "Effective atomic number of the shielding material."
+       },
+       "Material": {
+         "type": "string",
+         "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
+       },
+       "Thickness": {
+         "type": "string",
+         "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+       }
+     },
+     "additionalProperties": false
+   },
+   "Energies": {
+     "type": "array",
+     "items": {
+       "type": "number"
+     },
+     "description": "An array of photon energy values in keV to apply the attenuation calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
+   }
+ },
+ "required": ["Shielding", "Energies"]
+})"),
+   [](const json& params, InterSpec* interspec) -> json {
+     return executeGetAttenuationOfShielding(params);
+   }
+ });
+*/
+
+nlohmann::json ToolRegistry::executeGetAttenuationOfShielding(const nlohmann::json& params, InterSpec* interspec){
+  return {};
+}
+
+/*
+ registerTool({
+   "get_materials",
+   "Returns a list of avaiable materials for shielding. The materials name is what you will specify to other functions.",
+   json{},
+   [](const json& params, InterSpec* interspec) -> json {
+     return executeGetMaterials();
+   }
+ });
+ */
+nlohmann::json ToolRegistry::executeGetMaterials(InterSpec* interspec){
+  return {};
+}
+
+
+
+
+
 
 } // namespace LlmTools
 

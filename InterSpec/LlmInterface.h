@@ -157,6 +157,10 @@ private:
     std::string originalUserMessage;
     bool isToolResultFollowup;
     std::vector<std::string> toolCallIds; // For tracking which tool calls this request contains
+
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+    nlohmann::json requestJson;
+#endif
   };
   std::map<int, PendingRequest> m_pendingRequests;
   

@@ -122,6 +122,9 @@ private:
   static nlohmann::json executeGetCountsInEnergyRange(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetMaterials(InterSpec* interspec);
+  static nlohmann::json executeGetAttenuationOfShielding(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetSourcePhotons(const nlohmann::json& params);
 };
 
 } // namespace LlmTools

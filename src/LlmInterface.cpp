@@ -53,6 +53,10 @@
 #include "InterSpec/LlmConversationHistory.h"
 
 
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+#include "SpecUtils/DateTime.h"
+#endif
+
 static_assert( USE_LLM_INTERFACE, "This file shouldnt be compiled unless USE_LLM_INTERFACE is true" );
 
 using namespace std;
@@ -857,13 +861,13 @@ void LlmInterface::setupJavaScriptBridge() {
 
 void LlmInterface::handleJavaScriptResponse(std::string response, int requestId) {
   
-  cout << ":handleJavaScriptResponse: " << response << endl << endl << endl;
+  //cout << ":handleJavaScriptResponse: " << response << endl << endl << endl;
   try {
     // Find and remove the pending request
     PendingRequest pendingRequest;
     bool foundPending = false;
     if (m_pendingRequests.find(requestId) != m_pendingRequests.end()) {
-      pendingRequest = m_pendingRequests[requestId];
+      pendingRequest = std::move(m_pendingRequests[requestId]);
       foundPending = true;
       m_pendingRequests.erase(requestId);
     }
@@ -871,6 +875,37 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     // Check for errors first
     json responseJson = json::parse(response);
     if (responseJson.contains("error") && !responseJson["error"].is_null()) {
+
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+    if( foundPending )
+    {
+      const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+      string now_str = SpecUtils::to_iso_string( now );
+      const string::size_type period_pos = now_str.find('.');
+      if( period_pos != string::npos )
+        now_str = now_str.substr(0,period_pos);
+
+      string debug_name = "llm_request_with_error_id" + std::to_string(requestId) + "_" + now_str + ".json";
+      string debug_result = "llm_result_with_error_id" + std::to_string(requestId) + "_" + now_str + ".json";
+#ifdef _WIN32
+      const std::wstring wdebug_name = SpecUtils::convert_from_utf8_to_utf16(debug_name);
+      std::ofstream output_request_json( wdebug_name.c_str(), ios::binary | ios::out );
+      const std::wstring wdebug_result = SpecUtils::convert_from_utf8_to_utf16(debug_result);
+      std::ofstream output_result_json( wdebug_result.c_str(), ios::binary | ios::out );
+#else
+      std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
+      std::ofstream output_result_json( debug_result.c_str(), ios::binary | ios::out );
+#endif
+      if( output_request_json )
+        output_request_json << pendingRequest.requestJson.dump(2);
+      if( output_result_json )
+        output_result_json << response;
+      cout << "\nLLM request error: wrote request input and output to '"
+      << debug_name << "', and '" << debug_result << "', respectively."
+      << endl << endl;
+    }//if( foundPending )
+#endif //#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+
       string errorMsg = "LLM API Error: " + responseJson["error"].dump(2);
       cout << errorMsg << endl;
       
@@ -908,6 +943,9 @@ int LlmInterface::makeTrackedApiCall(const nlohmann::json& requestJson, const st
   // Store the pending request
   PendingRequest pending;
   pending.requestId = requestId;
+#if( PERFORM_DEVELOPER_CHECKS )
+  pending.requestJson = requestJson;
+#endif
   pending.originalUserMessage = originalMessage;
   pending.isToolResultFollowup = isToolFollowup;
   m_pendingRequests[requestId] = pending;
