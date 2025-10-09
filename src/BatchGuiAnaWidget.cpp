@@ -489,9 +489,10 @@ void BatchGuiPeakFitWidget::handleFileUpload( WContainerWidget *dropArea, FileDr
   const string &display_name = std::get<0>( first_file );
   const string &path_to_file = std::get<1>( first_file );
   const bool should_delete = std::get<2>( first_file );
+  const BatchGuiInputSpectrumFile::ShowPreviewOption show_preview = BatchGuiInputSpectrumFile::ShowPreviewOption::Show;
 
   BatchGuiInputSpectrumFile *input =
-    new BatchGuiInputSpectrumFile( display_name, path_to_file, should_delete, dropArea );
+    new BatchGuiInputSpectrumFile( display_name, path_to_file, should_delete, show_preview, dropArea );
   dropArea->removeStyleClass( "EmptyExemplarUpload" );
   input->remove_self_request().connect(
     boost::bind( &BatchGuiPeakFitWidget::handle_remove_exemplar_upload, this, boost::placeholders::_1 ) );
