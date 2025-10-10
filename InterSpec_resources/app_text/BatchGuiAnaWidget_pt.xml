@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">Sobrescrever arquivos de saída</message>
   <message id="bgw-create-csv-output">CSV de Picos</message>
   <message id="bgw-create-json-output">Escrever JSON</message>
+  <message id="bgw-concatenate-to-n42">Criar N42 concatenado</message>
   <message id="bgw-use-existing-background-peaks">Usar picos de fundo existentes</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Usar cal. energia exemplar para fundo</message>
 
@@ -97,9 +98,11 @@ Se refit-energy-cal for especificado como verdadeiro, então a cal. de energia d
   <message id="bgw-overwrite-output-files-tt">Permite sobrescrever arquivos de saída N42, CSV ou relatório. Por padrão, não sobrescreverá arquivos.</message>
 
   <message id="bgw-create-csv-output-tt">Saída CSV de ajuste de pico.</message>
-
+  
   <message id="bgw-create-json-output-tt">Escreve o JSON usado para criar os modelos de relatório, em arquivo.</message>
-
+  
+  <message id="bgw-concatenate-to-n42-tt">Criar um arquivo N42 de saída que contém todos os ajustes de picos de todos os arquivos de entrada.</message>
+  
   <message id="bgw-use-existing-background-peaks-tt">Usa os picos ajustados do fundo especificado, em vez de reajustar picos.
 Os picos do InterSpec devem existir no arquivo de espectro, e esta opção não pode ser usada com subtração de fundo rígida.</message>
 

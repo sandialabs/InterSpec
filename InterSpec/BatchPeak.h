@@ -72,6 +72,7 @@ namespace BatchPeak
     bool overwrite_output_files;
     bool create_csv_output;
     bool create_json_output;
+    bool concatenate_to_n42;
     std::string output_dir;
     std::string background_subtract_file;
     std::set<int> background_subtract_samples;
@@ -179,6 +180,7 @@ namespace BatchPeak
     std::string summary_json;
     std::vector<std::string> summary_reports;
     std::vector<std::string> warnings;
+    std::shared_ptr<SpecMeas> concatenated_results;
   };//struct BatchPeakFitSummary
 
 

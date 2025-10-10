@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">Перезаписать выходные файлы</message>
   <message id="bgw-create-csv-output">CSV пиков</message>
   <message id="bgw-create-json-output">Записать JSON</message>
+  <message id="bgw-concatenate-to-n42">Создать объединенный N42</message>
   <message id="bgw-use-existing-background-peaks">Использовать существующие пики фона</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Использовать калибровку образца для фона</message>
   
@@ -99,6 +100,8 @@
   <message id="bgw-create-csv-output-tt">Вывод CSV фита пиков.</message>
   
   <message id="bgw-create-json-output-tt">Записывает JSON, используемый для создания шаблонов отчетов, в файл.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Создать выходной N42 файл, содержащий все пики всех входных файлов.</message>
   
   <message id="bgw-use-existing-background-peaks-tt">Использует фитированные пики указанного фона, а не перефитирование пиков.
 Пики из InterSpec должны существовать в файле спектра, и эта опция не может использоваться с жестким вычитанием фона.</message>

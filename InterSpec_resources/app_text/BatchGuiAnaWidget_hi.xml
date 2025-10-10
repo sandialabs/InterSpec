@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">आउटपुट फ़ाइलें अधिलेखित करें</message>
   <message id="bgw-create-csv-output">पीक CSV</message>
   <message id="bgw-create-json-output">JSON लिखें</message>
+  <message id="bgw-concatenate-to-n42">संयुक्त N42 बनाएं</message>
   <message id="bgw-use-existing-background-peaks">मौजूदा background पीक उपयोग करें</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Background के लिए नमूना ऊर्जा अंशांकन उपयोग करें</message>
 
@@ -97,9 +98,11 @@
   <message id="bgw-overwrite-output-files-tt">आउटपुट N42, CSV, या रिपोर्ट फ़ाइलों को अधिलेखित करने की अनुमति देता है। डिफ़ॉल्ट रूप से फ़ाइलों को अधिलेखित नहीं करेगा।</message>
 
   <message id="bgw-create-csv-output-tt">आउटपुट पीक फिट CSV।</message>
-
+  
   <message id="bgw-create-json-output-tt">रिपोर्ट टेम्पलेट बनाने के लिए उपयोग किए गए JSON को फ़ाइल में लिखता है।</message>
-
+  
+  <message id="bgw-concatenate-to-n42-tt">एक आउटपुट N42 फ़ाइल बनाएं जिसमें सभी इनपुट फ़ाइलों के सभी पीक फिट शामिल हैं।</message>
+  
   <message id="bgw-use-existing-background-peaks-tt">पीकों को पुनः फिट करने के बजाय निर्दिष्ट background के फिट पीकों का उपयोग करता है।
 InterSpec से पीक स्पेक्ट्रम फ़ाइल में मौजूद होने चाहिए, और इस विकल्प का उपयोग हार्ड background घटाव के साथ नहीं किया जा सकता।</message>
 

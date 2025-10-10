@@ -312,6 +312,10 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_create_json_output->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_create_json_output, WString::tr( "bgw-create-json-output-tt" ), showToolTips );
 
+  m_concatenate_to_n42 = new Wt::WCheckBox( WString::tr( "bgw-concatenate-to-n42" ), boolOptions );
+  m_concatenate_to_n42->addStyleClass( "CbNoLineBreak" );
+  HelpSystem::attachToolTipOn( m_concatenate_to_n42, WString::tr( "bgw-concatenate-to-n42-tt" ), showToolTips );
+
   m_use_existing_background_peaks =
     new Wt::WCheckBox( WString::tr( "bgw-use-existing-background-peaks" ), boolOptions );
   m_use_existing_background_peaks->addStyleClass( "CbNoLineBreak" );
@@ -865,6 +869,7 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
   answer.overwrite_output_files = m_overwrite_output_files->isChecked();
   answer.create_csv_output = m_create_csv_output->isChecked();
   answer.create_json_output = m_create_json_output->isChecked();
+  answer.concatenate_to_n42 = m_concatenate_to_n42->isChecked();
 
   if( m_no_background->isChecked() )
   {

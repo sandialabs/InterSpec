@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">覆盖输出文件</message>
   <message id="bgw-create-csv-output">峰CSV</message>
   <message id="bgw-create-json-output">写入JSON</message>
+  <message id="bgw-concatenate-to-n42">创建连接N42</message>
   <message id="bgw-use-existing-background-peaks">使用现有本底峰</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">本底使用样本能量刻度</message>
   
@@ -99,6 +100,8 @@
   <message id="bgw-create-csv-output-tt">输出峰拟合CSV。</message>
   
   <message id="bgw-create-json-output-tt">将用于创建报告模板的JSON写入文件。</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">创建一个包含所有输入文件峰拟合的输出N42文件。</message>
   
   <message id="bgw-use-existing-background-peaks-tt">使用指定本底的拟合峰，而不是重新拟合峰。
 峰必须存在于InterSpec的谱文件中，此选项不能与硬本底减除一起使用。</message>
