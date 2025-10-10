@@ -28,7 +28,10 @@
 #include <algorithm>
 
 #include <Wt/WText>
+#include <Wt/WLabel>
+#include <Wt/WComboBox>
 #include <Wt/WCheckBox>
+#include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
 #include <Wt/WContainerWidget>
@@ -51,6 +54,7 @@
 #include "InterSpec/LeafletRadMap.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UserPreferences.h"
+#include "InterSpec/NativeFloatSpinBox.h"
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
 #include <Wt/Utils>
@@ -204,12 +208,19 @@ LeafletRadMap *LeafletRadMapWindow::map()
 LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
  : Wt::WContainerWidget( parent ),
   m_meas(),
-  m_jsmap( jsRef() + ".map" ),
+  m_map_holder( nullptr ),
+  m_energy_range_row( nullptr ),
+  m_filter_type( nullptr ),
+  m_filter_lower_energy_grp( nullptr ),
+  m_filter_lower_energy( nullptr ),
+  m_filter_upper_energy_grp( nullptr ),
+  m_filter_upper_energy( nullptr ),
   m_displaySamples( this, "loadSamples", false),
   m_loadSelected( this )
 {
-  addStyleClass( "LeafletRadMap" );
-      
+  //addStyleClass( "LeafletRadMap" );
+  addStyleClass( "LeafletRadMapWidget" );
+
   // Load Leaflet 1.9.3 (20221118), see https://leafletjs.com/index.html
   wApp->useStyleSheet( "InterSpec_resources/assets/js/leaflet/leaflet_1.9.3/leaflet.css" );
   wApp->require( "InterSpec_resources/assets/js/leaflet/leaflet_1.9.3/leaflet.js" );
@@ -254,8 +265,61 @@ LeafletRadMap::LeafletRadMap( Wt::WContainerWidget *parent )
   if( viewer )
   {
     viewer->useMessageResourceBundle( "LeafletRadMap" );
-    viewer->displayedSpectrumChanged().connect( this, &LeafletRadMap::handleDisplayedSpectrumChanged );
+    viewer->displayedSpectrumChanged().connect( boost::bind(&LeafletRadMap::handleDisplayedSpectrumChanged, this,
+                                                            boost::placeholders::_1, boost::placeholders::_2) );
   }
+
+  m_map_holder = new WContainerWidget();
+  m_map_holder->addStyleClass( "LeafletRadMap" );
+  m_energy_range_row = new WContainerWidget();
+  m_energy_range_row->addStyleClass( "EnergyRangeRow" );
+
+  WContainerWidget *ene_grp = new WContainerWidget( m_energy_range_row );
+  ene_grp->addStyleClass( "EnergyRangeGrp" );
+  WLabel *label = new WLabel( "Coloring Filter", ene_grp );
+  m_filter_type = new WComboBox( ene_grp );
+  label->setBuddy( m_filter_type );
+  m_filter_type->addItem( "None" );
+  m_filter_type->addItem( "Energy Range" );
+  m_filter_type->addItem( "Peaks in Range" );
+  m_filter_type->activated().connect( this, &LeafletRadMap::handleEnergyFilterChange );
+
+
+  m_filter_lower_energy_grp = new WContainerWidget( m_energy_range_row );
+  m_filter_lower_energy_grp->addStyleClass( "EnergyRangeGrp" );
+  label = new WLabel( "Lower Energy", m_filter_lower_energy_grp );
+  m_filter_lower_energy = new NativeFloatSpinBox( m_filter_lower_energy_grp );
+  m_filter_lower_energy->setSpinnerHidden();
+  m_filter_lower_energy->setWidth( 45 );
+  m_filter_lower_energy->valueChanged().connect( this, &LeafletRadMap::handleEnergyFilterChange );
+  m_filter_lower_energy->setValue( 0.0f );
+
+  m_filter_upper_energy_grp = new WContainerWidget( m_energy_range_row );
+  m_filter_upper_energy_grp->addStyleClass( "EnergyRangeGrp" );
+  label = new WLabel( "Upper Energy", m_filter_upper_energy_grp );
+  m_filter_upper_energy = new NativeFloatSpinBox( m_filter_upper_energy_grp );
+  m_filter_upper_energy->setSpinnerHidden();
+  m_filter_upper_energy->setWidth( 45 );
+  m_filter_upper_energy->valueChanged().connect( this, &LeafletRadMap::handleEnergyFilterChange );
+  m_filter_upper_energy->setValue( 0.0f );
+
+  m_filter_type->setCurrentIndex( 0 );
+  m_filter_lower_energy_grp->hide();
+  m_filter_upper_energy_grp->hide();
+
+  WGridLayout *grid = new WGridLayout();
+  setLayout( grid );
+  grid->setContentsMargins(0, 0, 0, 0);
+  grid->setVerticalSpacing( 0 );
+  grid->setHorizontalSpacing( 0 );
+
+  grid->addWidget( m_map_holder, 0, 0  );
+  grid->addWidget( m_energy_range_row, 1, 0  );
+
+  grid->setRowStretch( 0, 1 );
+  grid->setColumnStretch( 0, 1 );
+
+  m_energy_range_row->hide();
 }//LeafletRadMap
 
 
@@ -371,8 +435,8 @@ void LeafletRadMap::defineJavaScript()
     ", liveTimeTxt: '" + WString::tr("Live Time").toUTF8() + "'"
   "}";
   
-  setJavaScriptMember( "map", "new LeafletRadMap(" + jsRef() + "," + options + ");");
-  
+  setJavaScriptMember( "map", "new LeafletRadMap(" + m_map_holder->jsRef() + "," + options + ");");
+
   for( const string &js : m_pendingJs )
     doJavaScript( js );
   m_pendingJs.clear();
@@ -562,14 +626,30 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
 }//void createGeoLocationJson(...)
 
 
-void LeafletRadMap::handleDisplayedSpectrumChanged()
+void LeafletRadMap::handleDisplayedSpectrumChanged( const SpecUtils::SpectrumType type,
+                                                   const std::shared_ptr<const SpecMeas> meas )
 {
+  if( type != SpecUtils::SpectrumType::Foreground )
+    return;
+
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-  
-  if( !m_meas || !viewer )
+  if( !viewer )
     return;
-  
+
+  if( m_meas != meas )
+    removeEnergyFiltering();
+
+  m_meas = meas;
+
+  showOrHideEnergyRangeFilter();
+
+  if( !m_meas )
+  {
+    doJavaScript( jsRef() +  ".map.setData( null, true );" );
+    return;
+  }
+
   const shared_ptr<const SpecMeas> fore_meas = viewer->measurment( SpecUtils::SpectrumType::Foreground );
   set<int> foreground_samples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
   if( fore_meas != m_meas )
@@ -588,12 +668,18 @@ void LeafletRadMap::handleDisplayedSpectrumChanged()
   vector<string> det_to_include = viewer->detectorsToDisplay(SpecUtils::SpectrumType::Foreground);
   if( fore_meas != m_meas )
     det_to_include = m_meas->detector_names();
-  
+
+  std::optional<double> lower_energy, upper_energy;
+  if( m_energy_range_row->isVisible() && (m_filter_type->currentIndex() != 0) )
+  {
+    //Blah blah blah
+  }
+
   const string json = createGeoLocationJson( m_meas, m_meas->sample_numbers(),
                                              det_to_include, foreground_samples,
                                              background_samples, secondary_samples );
   
-  doJavaScript( m_jsmap +  ".setData( " + json + ", true );" );
+  doJavaScript( jsRef() +  ".map.setData( " + json + ", true );" );
 }//void handleDisplayedSpectrumChanged();
 
 
@@ -662,6 +748,63 @@ void LeafletRadMap::handleLoadSamples( const std::string &samples, const std::st
 }//void handleLoadSamples( const std::vector<int> &samples, std::string meas_type );
 
 
+void LeafletRadMap::handleEnergyFilterChange()
+{
+  const int selectIndex = m_filter_type->currentIndex();
+  if( selectIndex == 0 )
+  {
+    //No filter
+    m_filter_lower_energy_grp->hide();
+    m_filter_upper_energy_grp->hide();
+  }else if( (selectIndex == 1) || (selectIndex == 2) )
+  {
+    //Energy Range, or Peaks in Range
+    m_filter_lower_energy_grp->show();
+    m_filter_upper_energy_grp->show();
+  }else
+  {
+    assert( 0 );
+  }
+
+  handleDisplayedSpectrumChanged( SpecUtils::SpectrumType::Foreground, m_meas );
+}//void handleEnergyFilterChange()
+
+
+void LeafletRadMap::removeEnergyFiltering()
+{
+  if( m_filter_type->currentIndex() == 0 )
+    return;
+
+  m_filter_type->setCurrentIndex( 0 );
+  m_filter_lower_energy_grp->hide();
+  m_filter_upper_energy_grp->hide();
+
+  handleEnergyFilterChange();
+}//void removeEnergyFiltering()
+
+
+void LeafletRadMap::showOrHideEnergyRangeFilter()
+{
+  set<double> unique_lats, unique_longs;
+  vector<shared_ptr<const SpecUtils::Measurement>> meass;
+  if( m_meas )
+    meass = m_meas->SpecFile::measurements();
+
+  for( const auto &m : meass )
+  {
+    if( m->has_gps_info() )
+    {
+      unique_lats.insert( m->latitude() );
+      unique_longs.insert( m->longitude() );
+    }
+  }//for( const auto &m : meass )
+
+  const bool show_energy_countrate = ((unique_lats.size() > 1) || (unique_longs.size() > 1));
+  if( show_energy_countrate == m_energy_range_row->isHidden() )
+    m_energy_range_row->setHidden( !show_energy_countrate );
+}//void showOrHideEnergyRangeFilter()
+
+
 void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMeas> &meas,
                                             std::set<int> sample_numbers,
                                             std::vector<std::string> detector_names )
@@ -675,9 +818,14 @@ void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMea
   assert( viewer );
   if( !viewer )
     return;
-  
+
+  if( m_meas != meas )
+    removeEnergyFiltering();
+
   m_meas = meas;
-  
+
+  showOrHideEnergyRangeFilter();
+
   const auto foremeas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   const auto backmeas = viewer->measurment(SpecUtils::SpectrumType::Background);
   const auto secondmeas = viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
@@ -694,8 +842,8 @@ void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMea
                                             fore_samples, back_samples, secon_samples );
   
   //cout << "displayMeasurementOnMap --> " << json << endl;
-  
-  doJavaScript( m_jsmap +  ".setData( " + json + ", false );" );
+
+  doJavaScript( jsRef() +  ".map.setData( " + json + ", false );" );
 }//void displayMeasurementOnMap(...)
 
 

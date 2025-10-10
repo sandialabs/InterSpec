@@ -38,8 +38,10 @@
 class SpecMeas;
 class InterSpec;
 class SimpleDialog;
+class NativeFloatSpinBox;
 class LeafletRadMapWindow;
 namespace SpecUtils{ enum class SpectrumType : int; }
+namespace Wt { class WComboBox; }
 
 /** Div containing the LeafletMap.
  
@@ -118,18 +120,26 @@ protected:
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
-  void handleDisplayedSpectrumChanged();
-  
+  void handleDisplayedSpectrumChanged( const SpecUtils::SpectrumType type,
+                                      const std::shared_ptr<const SpecMeas> meas );
+
   void handleLoadSamples( const std::string &samples, const std::string &meas_type );
-  
+
+  void handleEnergyFilterChange();
+  void removeEnergyFiltering();
+  void showOrHideEnergyRangeFilter();
+
   std::shared_ptr<const SpecMeas> m_meas;
-  
-  
-  /** The javascript variable name used to refer to the LeafletRadMap JS object.
-      Currently is `jsRef() + ".map"`.
-   */
-  const std::string m_jsmap;
-  
+
+  Wt::WContainerWidget *m_map_holder;
+
+  Wt::WContainerWidget *m_energy_range_row;
+  Wt::WComboBox *m_filter_type;
+  Wt::WContainerWidget *m_filter_lower_energy_grp;
+  NativeFloatSpinBox *m_filter_lower_energy;
+  Wt::WContainerWidget *m_filter_upper_energy_grp;
+  NativeFloatSpinBox *m_filter_upper_energy;
+
   Wt::JSignal<std::string,std::string> m_displaySamples;
   Wt::Signal<SpecUtils::SpectrumType, std::shared_ptr<const SpecMeas>, std::set<int>> m_loadSelected;
   
