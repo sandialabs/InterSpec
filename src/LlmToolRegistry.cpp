@@ -16,11 +16,13 @@
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ExternalRidResult.h"
-#include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/DetectionLimitCalc.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/GammaInteractionCalc.h"
 
 #include <Wt/WApplication>
 
@@ -809,7 +811,7 @@ void ToolRegistry::registerDefaultTools() {
 
   registerTool({
     "source_photons",
-    "Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-ray, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel.  Results will be sorted by energy.",
+    "Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-rays, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel for nuclides, or normalized to 1 for flourescence or reactions.  Results will be sorted by energy.",
     json::parse(R"({
       "type": "object",
       "properties": {
@@ -834,16 +836,16 @@ void ToolRegistry::registerDefaultTools() {
     }
   });
 
-  
+  /*
   registerTool({
-    "attenuation_of_shielding",
-    "Given an array of photon energies, returns the fraction of photons that pass through the shielding without being attenuated. For each energy, the returned value will be between 0 and 1, where 1 indicates no attenuation (all photons pass through) and 0 indicates complete attenuation (all photons are interact).",
+    "attenuation_factor_of_shielding",
+    "Given an array of photon energies, returns the fraction of photons that pass through the shielding without being attenuated. For each energy, the returned value will be between 0 and 1, where 1 indicates no attenuation (all photons pass through) and 0 indicates complete attenuation (all photons interact).",
     json::parse(R"({
   "type": "object",
   "properties": {
     "Shielding": {
       "type": "object",
-      "description": "Defines the shielding properties used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names returned by the `get_materials` tool.",
+      "description": "Defines the shielding properties used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names and materials returned by the `get_materials` tool.",
       "properties": {
         "AD": {
           "type": "number",
@@ -878,19 +880,140 @@ void ToolRegistry::registerDefaultTools() {
       return executeGetAttenuationOfShielding(params, interspec);
     }
   });
-
-
+*/
+  
+  const string shielding_desc = R"("Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names and materials returned by the `get_materials` tool.")";
+  const string shielding_obj_properties = R"({
+        "AD": {
+          "type": "number",
+          "description": "Areal density of the shielding material in g/cm²."
+        },
+        "AN": {
+          "type": "number",
+          "description": "Effective atomic number of the shielding material."
+        },
+        "Material": {
+          "type": "string",
+          "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
+        },
+        "Thickness": {
+          "type": "string",
+          "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+        }
+      })";
+  
+  registerTool({
+    "photopeak_detection_efficiency",
+    "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'avaiable_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
+    json::parse(R"({
+  "type": "object",
+  "properties": {
+    "Shielding": {
+      "type": "object",
+      "description": )" + shielding_desc
+      + R"(,
+      "properties": )" + shielding_obj_properties
+      + R"(",
+      "additionalProperties": false
+    },
+    "Distance": {
+      "type": "string",
+      "description": "Optional: The distance the detector is from the center of the radioactive source.  If not specified, the gemoetric detection factor will not be accounted for. If a detector efficiency is not currently loaded for the foreground, or the detector efficiency is for a 'fixed geometry', then distance may not be specified. Example distances: '1.25 cm', '3 ft, 2 inches', etc." 
+    }
+    "Energies": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "An array of photon energy values in keV to apply the calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
+    }
+  },
+  "required": ["Energies"]
+})"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executePhotopeakDetectionCalc(params, interspec);
+    }
+  });
 
   registerTool({
     "get_materials",
-    "Returns a list of avaiable materials for shielding. The materials name is what you will specify to other functions.",
+    "Returns a list of avaiable materials for shielding. The materials name is what you will specify to other functions to use it as a shielding.",
     json{},
     [](const json& params, InterSpec* interspec) -> json {
       return executeGetMaterials(interspec);
     }
   });
 
+  registerTool({
+    "get_material_info",
+    "Returns shielding material information (density, effective atomic number, elemental mass fractions, etc).",
+  json::parse(R"({
+      "type": "object",
+      "properties": {
+        "material": { 
+          "type": "string", 
+          "description": "The shielding material name to get information about." 
+          }
+      },
+      "required": ["material"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetMaterialInfo( params, interspec);
+    }
+  });
 
+
+  registerTool({
+    "avaiable_detector_efficiency_functions",
+    "Returns a list of detector efficiency function names that can be loaded to the foreground spectrum.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {},
+      "required": []
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeAvailableDetectors( params, interspec);
+    }
+  });
+  
+  registerTool({
+    "load_detector_efficiency_function",
+    "Loads a detector efficiency function to use for calculations.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "name": { 
+          "type": "string", 
+          "description": "The detector efficiency function name to load to use for future calculations." 
+          }
+      },
+      "required": ["name"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeLoadDetectorEfficiency( params, interspec);
+    }
+  });
+  
+  registerTool({
+    "detector_efficiency_function_info",
+    "Returns information (name, description, if has FWHM info, or if is fixed geometry, etc) about either the currently loaded detector efficiency function, or if a name is specified, that detectors efficiency function.",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "name": { 
+          "type": "string", 
+          "description": "Optional: The name of the detector efficiency function to return information about. If not specified, will return information about the currently loaded detector efficiency function." 
+          }
+      },
+      "required": []
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeGetDetectorInfo( params, interspec);
+    }
+  });
+  
+
+  /*
   // Register test tool
   registerTool({
     "test_tool",
@@ -909,6 +1032,7 @@ void ToolRegistry::registerDefaultTools() {
       return result;
     }
   });
+  */
   
   m_defaultToolsRegistered = true;
   cout << "Registered " << m_tools.size() << " default tools" << endl;
@@ -1616,73 +1740,344 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
 }//nlohmann::json executeGetSourcePhotons(const nlohmann::json& params, InterSpec* interspec)
 
 
-/*
- registerTool({
-   "attenuation_of_shielding",
-   "Given an array of photon energies, returns the fraction of photons that pass through the shielding without being attenuated. For each energy, the returned value will be between 0 and 1, where 1 indicates no attenuation (all photons pass through) and 0 indicates complete attenuation (all photons are interact).",
-   json::parse(R"({
- "type": "object",
- "properties": {
-   "Shielding": {
+
+nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( const nlohmann::json& params, InterSpec* interspec )
+{
+  using namespace PhysicalUnits;
+
+  // Parse the energies array
+  if( !params.contains("Energies") || !params["Energies"].is_array() )
+    throw runtime_error( "Energies parameter must be specified as an array." );
+
+  const json& energies_json = params["Energies"];
+  vector<double> energies;
+  for( const auto& energy_val : energies_json )
+  {
+    if( energy_val.is_number() )
+      energies.push_back( energy_val.get<double>() * keV );
+    else
+      throw runtime_error( "Each energy must be a number in keV." );
+  }
+
+  if( energies.empty() )
+    throw runtime_error( "At least one energy must be specified." );
+
+  // Parse the shielding specification
+  if( !params.contains("Shielding") || !params["Shielding"].is_object() )
+    throw runtime_error( "Shielding parameter must be specified as an object." );
+
+  const json& shielding = params["Shielding"];
+
+  // Determine which shielding format is being used
+  const bool has_ad = shielding.contains("AD");
+  const bool has_an = shielding.contains("AN");
+  const bool has_material = shielding.contains("Material");
+  const bool has_thickness = shielding.contains("Thickness");
+
+  // Validate that only one format is specified
+  const bool is_generic = has_ad && has_an;
+  const bool is_material = has_material && has_thickness;
+
+  if( is_generic && is_material )
+    throw runtime_error( "Cannot specify both {AD, AN} and {Material, Thickness}. Use only one format." );
+
+  if( !is_generic && !is_material )
+    throw runtime_error( "Shielding must be specified either as {AD, AN} or {Material, Thickness}." );
+
+  // Check for extra fields
+  if( is_generic && (has_material || has_thickness) )
+    throw runtime_error( "When using {AD, AN} format, do not specify Material or Thickness." );
+
+  if( is_material && (has_ad || has_an) )
+    throw runtime_error( "When using {Material, Thickness} format, do not specify AD or AN." );
+
+  json result = json::array();
+
+  // Format 1: Areal density and effective atomic number
+  if( is_generic )
+  {
+    const double areal_density = get_number( shielding, "AD" ) * (g / cm2);
+    const double atomic_number = get_number( shielding, "AN" );
+
+    if( atomic_number < 1.0 || atomic_number > 100.0 )
+      throw runtime_error( "Atomic number must be between 1 and 100." );
+
+    if( areal_density < 0.0 )
+      throw runtime_error( "Areal density must be positive." );
+
+    for( const double energy : energies )
+    {
+      const double mu = GammaInteractionCalc::transmition_coefficient_generic(
+        static_cast<float>(atomic_number),
+        static_cast<float>(areal_density),
+        static_cast<float>(energy)
+      );
+      const double transmission_fraction = std::exp( -mu );
+      result.push_back( transmission_fraction );
+    }
+  }
+  // Format 2: Material and thickness
+  else if( is_material )
+  {
+    if( !interspec )
+      throw runtime_error( "InterSpec instance is required for material-based shielding." );
+
+    MaterialDB *db = interspec->materialDataBase();
+    if( !db )
+      throw runtime_error( "Material database not available." );
+
+    const string material_name = shielding["Material"].get<string>();
+    const Material *material = db->material( material_name );
+
+    if( !material )
+      throw runtime_error( "Material '" + material_name + "' not found." );
+
+    const string thickness_str = shielding["Thickness"].get<string>();
+    const double thickness = PhysicalUnits::stringToDistance( thickness_str );
+
+    if( thickness < 0.0 )
+      throw runtime_error( "Thickness must be positive." );
+
+    for( const double energy : energies )
+    {
+      const double mu = GammaInteractionCalc::transmition_coefficient_material(
+        material,
+        static_cast<float>(energy),
+        static_cast<float>(thickness)
+      );
+      const double transmission_fraction = std::exp( -mu );
+      result.push_back( transmission_fraction );
+    }
+  }
+
+  return result;
+}
+
+
+nlohmann::json ToolRegistry::executeGetMaterials( InterSpec* interspec )
+{
+  using namespace PhysicalUnits;
+
+  if( !interspec )
+    throw std::runtime_error( "InterSpec instance is required for retrieving materials." );
+
+  // To keep from overwhelming the context, we will just return a subset of possbile shieldings
+  return nlohmann::json{ "acetone", "adipose tissue", "air", "aluminum oxide",
+    "amber", "ammonia", "bakelite", "baratol high explosive",
+    "benzene", "beryllium oxide", "bgo", "blood",
+    "bone", "boracitol high explosive", "borax",  "brass",
+    "bronze", "butane", "calcium_carbonate", "carbon_dioxide",
+    "cellulose_cellophane", "cellulose_nitrate", "celotex", "cesium_iodide",
+    "COMPB high explosive", "concrete", "dacron", "dry soil",
+    "electronic soup", "ethane", "ethyl_alcohol", "explosive/simulant",
+    "fiberglass", "glass_lead", "glass_plate", "glucose",
+    "glycerol", "granite", "graphite", "gypsum",
+    "Jet fuel", "kapton", "kevlar",  "lipoly",
+    "mock he", "Monocalcium phosphate", "muscle", "mylar",
+    "nylon 6,6", "nylon-8062", "nylon-6-10", "paraffin", "PBX-9404 high explosive", "PBX-9501 high explosive",
+    "pine wood", "plastic_sc_vinyltoluene", "plexiglass", "Plutonium dioxide",
+    "plywood", "polyacrylonitrile", "polycarbonate",
+    "polychlorostyrene", "polyethylene", "polypropylene", "polystyrene", 
+    "Polyurethane foam", "propane", "pvc - polyvinyl chloride", "pvt - polyvinyl toluene",
+    "pyrex_glass", "rubber_butyl", "rubber_natural", "rubber_neoprene",
+    "Salt water", "silver_iodide", "skin", "sodium_iodide", 
+    "soft tissue", "soil", "stainless steel ss-304", "stainless-steel nist",
+    "Steel - AISI 1040 Med. Carbon", "teflon",
+    "Thorium oxide", "titanium_dioxide", "Uranium hexafluoride",
+    "Uranium metal", "void", "water","wet soil"
+  };
+
+  /*  
+  MaterialDB * const db = interspec->materialDataBase();
+  if( !db )
+    throw std::runtime_error( "Material database not available." );
+
+  const std::vector<const Material *> materials = db->materials();
+
+  json result = json::array();
+  for( const Material * const material : materials )
+  {
+    json material_json;
+    material_json["name"] = material->name;
+    material_json["density"] = material->density / (g / cm3);
+    material_json["effAN"] = material->massWeightedAtomicNumber();
+
+    //if( !material->description.empty() )
+    //  material_json["description"] = material->description;
+
+    result.push_back( material_json );
+  }
+
+  return result;
+  */
+}
+
+
+nlohmann::json ToolRegistry::executeGetMaterialInfo( const nlohmann::json& params, InterSpec* interspec )
+{
+  using namespace PhysicalUnits;
+
+  if( !interspec )
+    throw std::runtime_error( "InterSpec instance is required for retrieving material information." );
+
+  MaterialDB * const db = interspec->materialDataBase();
+  if( !db )
+    throw std::runtime_error( "Material database not available." );
+
+  const std::string material_name = params.at("material").get<std::string>();
+  const Material * const material = db->material( material_name );
+
+  if( !material )
+    throw std::runtime_error( "Material '" + material_name + "' not found." );
+
+  json result;
+  result["name"] = material->name;
+  result["density"] = material->density / (g / cm3);
+  result["effectiveAtomicNumber"] = material->massWeightedAtomicNumber();
+
+  if( !material->description.empty() )
+    result["description"] = material->description;
+
+  // Add chemical formula
+  result["massFractionChemicalFormula"] = material->chemicalFormula();
+
+  // Add element composition
+  if( !material->elements.empty() )
+  {
+    json elements_json = json::array();
+    for( const Material::ElementFractionPair &element_pair : material->elements )
+    {
+      json element_json;
+      element_json["symbol"] = element_pair.first->symbol;
+      element_json["name"] = element_pair.first->name;
+      element_json["atomicNumber"] = static_cast<int>(element_pair.first->atomicNumber);
+      element_json["massFraction"] = element_pair.second;
+      elements_json.push_back( element_json );
+    }
+    result["elements"] = elements_json;
+  }
+
+  // Add nuclide composition if present
+  if( !material->nuclides.empty() )
+  {
+    json nuclides_json = json::array();
+    for( const Material::NuclideFractionPair &nuclide_pair : material->nuclides )
+    {
+      json nuclide_json;
+      nuclide_json["symbol"] = nuclide_pair.first->symbol;
+      nuclide_json["massFraction"] = nuclide_pair.second;
+      nuclides_json.push_back( nuclide_json );
+    }
+    result["nuclides"] = nuclides_json;
+  }
+
+  return result;
+}//nlohmann::json executeGetMaterialInfo( const nlohmann::json& params, InterSpec* interspec )
+  
+  
+  /* Cooresponds to the "photopeak_detection_efficiency" callback, whose description is:
+    "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'avaiable_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
+   
+   And paramaters accepted is:
+   ```
+   {
+      "type": "object",
+      "properties": {
+      "Shielding": {
+      "type": "object",
+      "description": "Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names and materials returned by the `get_materials` tool.",
+   "properties": {
+   "AD": {
+   "type": "number",
+   "description": "Areal density of the shielding material in g/cm²."
+   },
+   "AN": {
+   "type": "number",
+   "description": "Effective atomic number of the shielding material."
+   },
+   "Material": {
+   "type": "string",
+   "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
+   },
+   "Thickness": {
+   "type": "string",
+   "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+   }
+   },
+      "additionalProperties": false
+    },
+    "Distance": {
+      "type": "string",
+      "description": "Optional: The distance the detector is from the center of the radioactive source.  If not specified, the gemoetric detection factor will not be accounted for. If a detector efficiency is not currently loaded for the foreground, or the detector efficiency is for a 'fixed geometry', then distance may not be specified. Example distances: '1.25 cm', '3 ft, 2 inches', etc." 
+    }
+    "Energies": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "description": "An array of photon energy values in keV to apply the calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
+    }
+  },
+  "required": ["Energies"]
+  ```
+*/
+nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec)
+{
+      
+}//nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec)
+  
+
+  /** cooresponds to the `avaiable_detector_efficiency_functions` tool call, which has the description:
+   "Returns a list of detector efficiency function names that can be loaded to the foreground spectrum."
+ */
+nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec)
+{
+  
+}//nlohmann::json executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec)
+  
+  /** Corresponds to the `load_detector_efficiency_function` callback.
+   Description "Loads a detector efficiency function to use for calculations."
+   Parameter description:
+   ```
+   {
      "type": "object",
-     "description": "Defines the shielding properties used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names returned by the `get_materials` tool.",
      "properties": {
-       "AD": {
-         "type": "number",
-         "description": "Areal density of the shielding material in g/cm²."
-       },
-       "AN": {
-         "type": "number",
-         "description": "Effective atomic number of the shielding material."
-       },
-       "Material": {
+       "name": {
          "type": "string",
-         "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
-       },
-       "Thickness": {
-         "type": "string",
-         "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+         "description": "The detector efficiency function name to load to use for future calculations."
        }
      },
-     "additionalProperties": false
-   },
-   "Energies": {
-     "type": "array",
-     "items": {
-       "type": "number"
-     },
-     "description": "An array of photon energy values in keV to apply the attenuation calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
+     }
+     "required": ["name"]
    }
- },
- "required": ["Shielding", "Energies"]
-})"),
-   [](const json& params, InterSpec* interspec) -> json {
-     return executeGetAttenuationOfShielding(params);
-   }
- });
-*/
-
-nlohmann::json ToolRegistry::executeGetAttenuationOfShielding(const nlohmann::json& params, InterSpec* interspec){
-  return {};
-}
-
-/*
- registerTool({
-   "get_materials",
-   "Returns a list of avaiable materials for shielding. The materials name is what you will specify to other functions.",
-   json{},
-   [](const json& params, InterSpec* interspec) -> json {
-     return executeGetMaterials();
-   }
- });
+   ```
  */
-nlohmann::json ToolRegistry::executeGetMaterials(InterSpec* interspec){
-  return {};
-}
+nlohmann::json ToolRegistry::executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec)
+{
+  
+}//nlohmann::json executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec)
+  
 
-
-
-
+/** Cooresponds to the `detector_efficiency_function_info` tool call.
+ Description: "Returns information (name, description, if has FWHM info, or if is fixed geometry, etc) about either the currently loaded detector efficiency function, or if a name is specified, that detectors efficiency function.",
+ Parameter description:
+ ```
+ {
+   "type": "object",
+   "properties": {
+     "name": {
+       "type": "string",
+       "description": "Optional: The name of the detector efficiency function to return information about. If not specified, will return information about the currently loaded detector efficiency function."
+     }
+   },
+   "required": []
+ }
+ ```
+*/
+nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec)
+{
+    
+}//nlohmann::json executeGetDetectorInfo(InterSpec* interspec)
 
 
 } // namespace LlmTools

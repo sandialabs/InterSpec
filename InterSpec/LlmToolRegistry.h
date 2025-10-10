@@ -123,8 +123,15 @@ private:
   static nlohmann::json executeGetExpectedFwhm(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetMaterials(InterSpec* interspec);
+  static nlohmann::json executeGetMaterialInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetAttenuationOfShielding(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetSourcePhotons(const nlohmann::json& params);
+  
+  static nlohmann::json executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec);
+  
 };
 
 } // namespace LlmTools
