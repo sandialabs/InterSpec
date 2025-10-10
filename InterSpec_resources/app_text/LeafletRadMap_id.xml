@@ -24,5 +24,18 @@
   <message id="lrm-displayed-as">Ditampilkan sebagai</message>
   <message id="lrm-measurements-as">pengukuran sebagai</message>
   <message id="lrm-load-meas-as-short">Muat sebagai</message>
+
+  <message id="lrm-filter-label">Filter</message>
+  <message id="lrm-filter-none">Tidak ada</message>
+  <message id="lrm-filter-energy-range">Rentang energi</message>
+  <message id="lrm-filter-peaks-in-range">Puncak dalam rentang</message>
+  <message id="lrm-lower-energy">Energi bawah</message>
+  <message id="lrm-upper-energy">Energi atas</message>
+  <message id="lrm-energy-filter-help">Menerapkan filter rentang energi akan mengubah bagaimana dan berpotensi data apa yang ditampilkan di peta.
+<ul>
+<li><b>Tidak ada</b>: Tidak ada penyaringan yang diterapkan - warna dan teks CPS didasarkan pada laju hitung spektrum penuh.</li>
+<li><b>Rentang energi</b>: Saring hitungan gamma dalam rentang energi yang ditentukan.</li>
+<li><b>Puncak dalam rentang</b>: Tampilkan hanya nomor sampel yang memiliki puncak dalam rentang energi dengan warna penanda dan CPS berdasarkan laju hitung puncak.</li>
+</ul></message>
 </messages>
 

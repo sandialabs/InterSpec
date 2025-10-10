@@ -24,4 +24,17 @@
   <message id="lrm-displayed-as">के रूप में प्रदर्शित</message>
   <message id="lrm-measurements-as">मापों को इस रूप में</message>
   <message id="lrm-load-meas-as-short">इस रूप में लोड करें</message>
+
+  <message id="lrm-filter-label">फिल्टर</message>
+  <message id="lrm-filter-none">कुछ नहीं</message>
+  <message id="lrm-filter-energy-range">ऊर्जा सीमा</message>
+  <message id="lrm-filter-peaks-in-range">सीमा में चोटियां</message>
+  <message id="lrm-lower-energy">निम्न ऊर्जा</message>
+  <message id="lrm-upper-energy">उच्च ऊर्जा</message>
+  <message id="lrm-energy-filter-help">एक ऊर्जा सीमा फिल्टर लागू करना बदल देगा कि मानचित्र पर डेटा कैसे और संभावित रूप से क्या प्रदर्शित होता है।
+<ul>
+<li><b>कुछ नहीं</b>: कोई फिल्टरिंग लागू नहीं - रंग और CPS टेक्स्ट पूर्ण स्पेक्ट्रम गिनती दर पर आधारित।</li>
+<li><b>ऊर्जा सीमा</b>: निर्दिष्ट ऊर्जा सीमा के भीतर गामा गिनती को फिल्टर करें।</li>
+<li><b>सीमा में चोटियां</b>: केवल उन नमूना संख्याओं को दिखाएं जिनमें ऊर्जा सीमा में चोटियां हैं, मार्कर रंग और CPS चोटियों की गिनती दर पर आधारित।</li>
+</ul></message>
 </messages>

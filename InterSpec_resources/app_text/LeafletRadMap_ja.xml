@@ -24,4 +24,18 @@
   <message id="lrm-displayed-as">表示形式</message>
   <message id="lrm-measurements-as">測定として</message>
   <message id="lrm-load-meas-as-short">読み込み形式</message>
+  <message id="lrm-filter-label">フィルター</message>
+  <message id="lrm-filter-none">なし</message>
+  <message id="lrm-filter-energy-range">エネルギー範囲</message>
+  <message id="lrm-filter-peaks-in-range">範囲内のピーク</message>
+  <message id="lrm-lower-energy">下限エネルギー</message>
+  <message id="lrm-upper-energy">上限エネルギー</message>
+  <message id="lrm-energy-filter-help">
+    エネルギー範囲フィルターを適用すると、マップに表示されるデータの方法と内容が変更されます。
+    <ul>
+    <li><b>なし</b>: フィルタリングは適用されません - 色とCPSテキストは全スペクトルカウント率に基づきます。</li>
+    <li><b>エネルギー範囲</b>: 指定されたエネルギー範囲内のガンマカウントをフィルタリングします。</li>
+    <li><b>範囲内のピーク</b>: エネルギー範囲内にピークを持つサンプル番号のみを表示し、マーカーの色とCPSはピークのカウント率に基づきます。</li>
+    </ul>
+  </message>
 </messages>

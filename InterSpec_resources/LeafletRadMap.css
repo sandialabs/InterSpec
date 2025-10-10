@@ -197,3 +197,12 @@ div.LeafletRadMapWidget .EnergyRangeRow .EnergyRangeGrp {
   align-items: center;
   column-gap: 5px;
 }
+
+
+.LeafletRadMapWidget .EnergyRangeRow .EnergyFilterSpacer {
+  flex: 1;
+}
+
+.LeafletRadMapWidget .EnergyRangeRow .EnergyFilterHelp {
+  
+}

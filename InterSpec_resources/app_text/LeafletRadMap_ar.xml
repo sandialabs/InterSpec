@@ -24,4 +24,17 @@
   <message id="lrm-displayed-as">معروض كـ</message>
   <message id="lrm-measurements-as">القياسات كـ</message>
   <message id="lrm-load-meas-as-short">تحميل كـ</message>
+
+  <message id="lrm-filter-label">مرشح</message>
+  <message id="lrm-filter-none">لا شيء</message>
+  <message id="lrm-filter-energy-range">نطاق الطاقة</message>
+  <message id="lrm-filter-peaks-in-range">الذروات في النطاق</message>
+  <message id="lrm-lower-energy">الطاقة السفلى</message>
+  <message id="lrm-upper-energy">الطاقة العليا</message>
+  <message id="lrm-energy-filter-help">تطبيق مرشح نطاق الطاقة سيغير كيفية وربما ما يتم عرضه من البيانات على الخريطة.
+<ul>
+<li><b>لا شيء</b>: لا يتم تطبيق أي ترشيح - الألوان ونص CPS مبنية على معدل العد للطيف الكامل.</li>
+<li><b>نطاق الطاقة</b>: ترشيح عدادات جاما ضمن نطاق الطاقة المحدد.</li>
+<li><b>الذروات في النطاق</b>: عرض أرقام العينات التي تحتوي على ذروات ضمن نطاق الطاقة فقط مع ألوان العلامات وCPS مبنية على معدل عد الذروات.</li>
+</ul></message>
 </messages>

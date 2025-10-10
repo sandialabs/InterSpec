@@ -43,6 +43,15 @@ class LeafletRadMapWindow;
 namespace SpecUtils{ enum class SpectrumType : int; }
 namespace Wt { class WComboBox; }
 
+enum class EnergyFilterType { None, EnergyRange, PeaksInEnergyRange };
+
+struct EnergyRangeInfo
+{
+  EnergyFilterType filter_type = EnergyFilterType::None;
+  std::optional<double> lower_energy = std::nullopt;
+  std::optional<double> upper_energy = std::nullopt;
+};
+
 /** Div containing the LeafletMap.
  
  Almost all functionality is implemented in LeafletRadMap.js, except creating JSON to send the the JS.
@@ -95,7 +104,10 @@ public:
                                            const std::vector<std::string> &detector_names,
                                            const std::set<int> &foreground_samples,
                                            const std::set<int> &background_samples,
-                                           const std::set<int> &secondary_samples );
+                                           const std::set<int> &secondary_samples,
+                                           const EnergyFilterType filter_type = EnergyFilterType::None,
+                                           const std::optional<double> lower_energy = std::nullopt,
+                                           const std::optional<double> upper_energy = std::nullopt );
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   /** Look in the users data directory for a file named "arcgis\_key.txt", whose contents is the arcgis access key.
@@ -128,6 +140,9 @@ protected:
   void handleEnergyFilterChange();
   void removeEnergyFiltering();
   void showOrHideEnergyRangeFilter();
+  
+  /** Get the current energy range filter information from the GUI elements. */
+  EnergyRangeInfo getEnergyRangeInfo() const;
 
   std::shared_ptr<const SpecMeas> m_meas;
 
