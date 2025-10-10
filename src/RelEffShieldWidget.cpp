@@ -75,7 +75,7 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type, Wt::WContainerWidget *p
   m_materialFrame = new Wt::WContainerWidget();
   m_stackedWidget->addWidget( m_materialFrame );
   m_materialFrame->addStyleClass("MaterialFrame");
-  auto materialLabel = new Wt::WLabel( Wt::WString::tr("resw-material-label"), m_materialFrame);
+  auto materialLabel = new Wt::WLabel( Wt::WString::tr("resw-material-frame-label"), m_materialFrame); //TODO: maybe make `resw-material-frame-label` its own string
   materialLabel->addStyleClass("GridFirstCol GridFirstRow");
     
   m_materialEdit = new Wt::WLineEdit( m_materialFrame );
