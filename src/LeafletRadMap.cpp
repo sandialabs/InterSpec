@@ -554,7 +554,7 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
   if( filter_type == EnergyFilterType::PeaksInEnergyRange )
   {
     // Get all sample number sets that have peaks
-    const std::set<std::set<int>> sample_nums_with_peaks = meas->sampleNumsWithPeaks();
+    const set<set<int>> sample_nums_with_peaks = meas->sampleNumsWithPeaks();
     
     // Filter by energy range if specified
     for( const std::set<int> &sample_set : sample_nums_with_peaks )
@@ -570,7 +570,7 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
           for( const auto &peak : *peaks )
           {
             const double peak_energy = peak->mean();
-            if( peak_energy >= *effective_lower_energy && peak_energy <= *effective_upper_energy )
+            if( (peak_energy >= effective_lower_energy.value()) && (peak_energy <= effective_upper_energy.value()) )
             {
               has_peak_in_range = true;
               break;
@@ -655,7 +655,60 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
     double weighted_lat_sum = 0.0, weighted_lon_sum = 0.0, total_live_time = 0.0;
     
     SpecUtils::time_point_t meas_start_time{};
-    
+
+    if( (filter_type == EnergyFilterType::PeaksInEnergyRange) && effective_lower_energy && effective_upper_energy )
+    {
+      if( const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = meas->peaks(sample_set) )
+      {
+        for( const auto &peak : *peaks )
+        {
+          const double peak_energy = peak->mean();
+          if( (peak_energy < effective_lower_energy.value()) || (peak_energy > effective_upper_energy.value()) )
+            break;
+
+          if( peak->gausPeak() )
+          {
+            gammaCounts += peak->amplitude();
+          }else
+          {
+            if( meass.size() == 1 )
+            {
+              gammaCounts += peak->areaFromData(meass[0]);
+            }else
+            {
+              const float lower_x = static_cast<float>(peak->lowerX());
+              const float upper_x = static_cast<float>(peak->upperX());
+              for( const auto &m : meass )
+                gammaCounts += m->gamma_integral( lower_x, upper_x );
+
+              switch( peak->continuum()->type() )
+              {
+                case PeakContinuum::NoOffset:
+                case PeakContinuum::Constant:
+                case PeakContinuum::Linear:
+                case PeakContinuum::Quadratic:
+                case PeakContinuum::Cubic:
+                case PeakContinuum::External:
+                  gammaCounts -= peak->continuum()->offset_integral(lower_x, upper_x, nullptr);
+                  break;
+
+                case PeakContinuum::FlatStep:
+                case PeakContinuum::LinearStep:
+                case PeakContinuum::BiLinearStep:
+                  // TODO: we need to sum all `meass` and then pass that into offset_integral(...). For now we'll just ignore the continuum, since I cant imagine anyone using data-defined peaks with step continua (I think you could... but its not really a reasonable thing to do)
+                  cerr << "Not accounting for stepped continua on data-defined peaks" << endl;
+                  break;
+              }//switch( peak->continuum()->type() )
+            }//if( meass.size() == 1 ) / else
+          }//if( peak->gausPeak() ) / else
+        }//for( const auto &peak : *peaks )
+      }else
+      {
+        assert( 0 );
+      }//if( const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = meas->peaks(sample_set) ) / else
+    }//if( (filter_type == EnergyFilterType::PeaksInEnergyRange) && effective_lower_energy && effective_upper_energy )
+
+
     for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
     {
       const string &det_name = m->detector_name();
@@ -701,8 +754,7 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
         if( filter_type == EnergyFilterType::EnergyRange && effective_lower_energy && effective_upper_energy )
         {
           gammaCounts += m->gamma_integral( *effective_lower_energy, *effective_upper_energy );
-        }
-        else
+        }else if( (filter_type == EnergyFilterType::None) || !effective_lower_energy.has_value() || !effective_upper_energy.has_value() )
         {
           gammaCounts += m->gamma_count_sum();
         }
@@ -806,14 +858,7 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
     else
     {
       sample_json["sample"] = *sample_set.begin(); // Use first sample as representative
-      
-      // Add array of all sample numbers
-      Wt::Json::Array samples_array;
-      for( const int sample : sample_set )
-      {
-        samples_array.push_back( sample );
-      }
-      sample_json["samples"] = samples_array;
+      sample_json["samples"] = WString::fromUTF8( SpecUtils::sequencesToBriefString(sample_set) );
     }
     
     samplesData.push_back( sample_json );
@@ -829,9 +874,9 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
   json["samples"] = samplesData;
   
   // Add filter metadata if filter is active
+  Wt::Json::Object filterInfo;
   if( filter_type != EnergyFilterType::None )
   {
-    Wt::Json::Object filterInfo;
     if( filter_type == EnergyFilterType::EnergyRange )
     {
       filterInfo["type"] = "EnergyRange";
@@ -847,10 +892,13 @@ std::string LeafletRadMap::createGeoLocationJson( const std::shared_ptr<const Sp
       filterInfo["lowerEnergy"] = *effective_lower_energy;
     if( effective_upper_energy )
       filterInfo["upperEnergy"] = *effective_upper_energy;
-      
-    json["filterInfo"] = filterInfo;
+  }else
+  {
+    filterInfo["type"] = "None";
   }
-  
+
+  json["filterInfo"] = filterInfo;
+
   return Wt::Json::serialize(json);
 }//void createGeoLocationJson(...)
 
@@ -866,10 +914,11 @@ void LeafletRadMap::handleDisplayedSpectrumChanged( const SpecUtils::SpectrumTyp
   if( !viewer )
     return;
 
-  if( m_meas != meas )
-    removeEnergyFiltering();
-
+  const bool reset_energy_fiter = (m_meas != meas);
   m_meas = meas;
+
+  if( reset_energy_fiter )
+    removeEnergyFiltering();
 
   showOrHideEnergyRangeFilter();
 
@@ -998,6 +1047,27 @@ void LeafletRadMap::handleEnergyFilterChange()
 
 void LeafletRadMap::removeEnergyFiltering()
 {
+  if( m_meas )
+  {
+    float min_energy = 999999.9f, max_energy = -999999.9f;
+    const vector<shared_ptr<const SpecUtils::Measurement>> meass = m_meas->measurements();
+    for( const shared_ptr<const SpecUtils::Measurement> &m : meass )
+    {
+      if( m->energy_calibration() && m->energy_calibration()->valid() )
+      {
+        min_energy = std::min( min_energy, m->energy_calibration()->lower_energy() );
+        max_energy = std::max( max_energy, m->energy_calibration()->upper_energy() );
+      }
+    }
+
+    m_filter_lower_energy->setValue( std::min(min_energy, 0.0f) );
+    m_filter_upper_energy->setValue( std::max(max_energy, 0.0f) );
+  }else
+  {
+    m_filter_lower_energy->setValue( 0 );
+    m_filter_upper_energy->setValue( 3000 );
+  }
+
   if( m_filter_type->currentIndex() == 0 )
     return;
 
@@ -1028,6 +1098,17 @@ void LeafletRadMap::showOrHideEnergyRangeFilter()
   const bool show_energy_countrate = ((unique_lats.size() > 1) || (unique_longs.size() > 1));
   if( show_energy_countrate == m_energy_range_row->isHidden() )
     m_energy_range_row->setHidden( !show_energy_countrate );
+
+  if( show_energy_countrate )
+  {
+    const float lower_value = m_filter_lower_energy->value();
+    const float upper_value = m_filter_upper_energy->value();
+    if( lower_value > upper_value )
+    {
+      m_filter_lower_energy->setValue( upper_value );
+      m_filter_upper_energy->setValue( lower_value );
+    }
+  }
 }//void showOrHideEnergyRangeFilter()
 
 
@@ -1084,10 +1165,10 @@ void LeafletRadMap::displayMeasurementOnMap( const std::shared_ptr<const SpecMea
   if( !viewer )
     return;
 
-  if( m_meas != meas )
-    removeEnergyFiltering();
-
+  const bool reset_energy_fiter = (m_meas != meas);
   m_meas = meas;
+  if( reset_energy_fiter )
+    removeEnergyFiltering();
 
   showOrHideEnergyRangeFilter();
 
