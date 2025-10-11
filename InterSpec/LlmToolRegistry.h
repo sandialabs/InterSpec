@@ -31,6 +31,7 @@
 
 // Forward declarations
 class InterSpec;
+class DetectorPeakResponse;
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
@@ -131,7 +132,23 @@ private:
   static nlohmann::json executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec);
-  
+
+  /** Helper function to find and load a detector by identifier.
+   @param identifier The detector identifier (name, path, or URI)
+   @param detectorName Optional specific detector name for multi-detector files
+   @param sourceHint Source hint for where to search
+   @param interspec InterSpec instance (may be null for some sources)
+   @param loadedFrom Output parameter indicating where detector was loaded from
+   @returns Shared pointer to loaded detector, or nullptr if not found
+   */
+  static std::shared_ptr<DetectorPeakResponse> findDetectorByIdentifier(
+    const std::string& identifier,
+    const std::string& detectorName,
+    const std::string& sourceHint,
+    InterSpec* interspec,
+    std::string& loadedFrom
+  );
+
 };
 
 } // namespace LlmTools

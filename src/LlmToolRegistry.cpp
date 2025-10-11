@@ -7,27 +7,33 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "rapidxml/rapidxml.hpp"
+
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/DrfSelect.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/AnalystChecks.h"
-#include "InterSpec/MoreNuclideInfo.h"
-#include "InterSpec/DecayDataBaseServer.h"
-#include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DataBaseUtils.h"
+#include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/DetectionLimitCalc.h"
-#include "InterSpec/ReferencePhotopeakDisplay.h"
-#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 
 #include <Wt/WApplication>
+#include <Wt/Dbo/Dbo>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -883,53 +889,81 @@ void ToolRegistry::registerDefaultTools() {
 */
   
   const string shielding_desc = R"("Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names and materials returned by the `get_materials` tool.")";
+  
+  // Note: If using OpenAI's `strict: true` mode for structured outputs, `oneOf` is not supported - instead use `anyOf`.
+  
   const string shielding_obj_properties = R"({
-        "AD": {
-          "type": "number",
-          "description": "Areal density of the shielding material in g/cm²."
+      "type": "object",
+      "description": "Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified in one of two formats.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "AD": {
+              "type": "number",
+              "description": "Areal density of the shielding material in g/cm²."
+            },
+            "AN": {
+              "type": "number",
+              "description": "Effective atomic number of the shielding material."
+            }
+          },
+          "required": ["AD", "AN"],
+          "additionalProperties": false
         },
-        "AN": {
-          "type": "number",
-          "description": "Effective atomic number of the shielding material."
-        },
-        "Material": {
-          "type": "string",
-          "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
-        },
-        "Thickness": {
-          "type": "string",
-          "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+        {
+          "type": "object",
+          "properties": {
+            "Material": {
+              "type": "string",
+              "description": "The shielding material, specified as an element symbol or material name. Available material names are returned by the `get_materials` tool. Example: 'Fe', which is equivalent to 'Iron', or 'glass_plate', which is returned from `get_materials`."
+            },
+            "Thickness": {
+              "type": "string",
+              "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+            }
+          },
+          "required": ["Material", "Thickness"],
+          "additionalProperties": false
         }
-      })";
+      ]
+    })";
+  
+  const string distance_obj_properties = R"({
+    "type": "string",
+    "description": "Optional: The distance the detector is from the center of the radioactive source.  If not specified, the gemoetric detection factor will not be accounted for. If a detector efficiency is not currently loaded for the foreground, or the detector efficiency is for a 'fixed geometry', then distance may not be specified. Example distances: '1.25 cm', '3 ft, 2 inches', etc." 
+  })";
+  
+  const string par_schema = R"({
+"type": "object",
+"properties": {
+  "Shielding": {
+    "type": "array",
+    "items": )" + shielding_obj_properties +
+R"(,
+    "description": "An array of shielding objects, applied in order from source to detector. Each shielding layer attenuates the photons that pass through it."
+  },
+  "Distance": )" + distance_obj_properties +
+R"(,
+  "IncludeAirAttenuation": {
+    "type": "boolean",
+    "description": "Optional: If true, includes attenuation from air between the source and detector. Only applies when Distance is specified. Defaults to false."
+  },
+  "Energies": {
+    "type": "array",
+    "items": {
+      "type": "number"
+    },
+    "description": "An array of photon energy values in keV to apply the calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
+  }
+},
+"required": ["Energies"]
+})";
   
   registerTool({
     "photopeak_detection_efficiency",
     "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'avaiable_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
-    json::parse(R"({
-  "type": "object",
-  "properties": {
-    "Shielding": {
-      "type": "object",
-      "description": )" + shielding_desc
-      + R"(,
-      "properties": )" + shielding_obj_properties
-      + R"(",
-      "additionalProperties": false
-    },
-    "Distance": {
-      "type": "string",
-      "description": "Optional: The distance the detector is from the center of the radioactive source.  If not specified, the gemoetric detection factor will not be accounted for. If a detector efficiency is not currently loaded for the foreground, or the detector efficiency is for a 'fixed geometry', then distance may not be specified. Example distances: '1.25 cm', '3 ft, 2 inches', etc." 
-    }
-    "Energies": {
-      "type": "array",
-      "items": {
-        "type": "number"
-      },
-      "description": "An array of photon energy values in keV to apply the calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
-    }
-  },
-  "required": ["Energies"]
-})"),
+    json::parse(par_schema),
     [](const json& params, InterSpec* interspec) -> json {
       return executePhotopeakDetectionCalc(params, interspec);
     }
@@ -978,16 +1012,25 @@ void ToolRegistry::registerDefaultTools() {
   
   registerTool({
     "load_detector_efficiency_function",
-    "Loads a detector efficiency function to use for calculations.",
+    "Loads a detector efficiency function to use for calculations. Can load from default available detectors, user previously used, filesystem path, GADRAS directory, or URI.",
     json::parse(R"({
       "type": "object",
       "properties": {
-        "name": { 
-          "type": "string", 
-          "description": "The detector efficiency function name to load to use for future calculations." 
-          }
+        "identifier": {
+          "type": "string",
+          "description": "The detector efficiency function identifier. Can be a name from avaiable_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
+        },
+        "detectorName": {
+          "type": "string",
+          "description": "Optional: The specific detector name to use when the identifier points to a file containing multiple detector efficiencies (e.g., RelEff CSV files). If not specified and the file contains only one detector, that detector will be used. If not specified and the file contains multiple detectors, an error will be returned."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["DefaultAvailable", "UserPreviouslyUsed", "FilePath", "GadrasDirectory", "URI", "AnySource"],
+          "description": "Optional: Source type hint for loading. DefaultAvailable: built-in detectors. UserPreviouslyUsed: user's database. FilePath: filesystem path to detector file. GadrasDirectory: GADRAS detector directory. URI: web URI. AnySource: try all options in order. Defaults to AnySource if not specified."
+        }
       },
-      "required": ["name"]
+      "required": ["identifier"]
     })"),
     [](const json& params, InterSpec* interspec) -> json {
       return executeLoadDetectorEfficiency( params, interspec);
@@ -1977,39 +2020,46 @@ nlohmann::json ToolRegistry::executeGetMaterialInfo( const nlohmann::json& param
   
   /* Cooresponds to the "photopeak_detection_efficiency" callback, whose description is:
     "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'avaiable_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
-   
+
    And paramaters accepted is:
    ```
    {
       "type": "object",
       "properties": {
       "Shielding": {
-      "type": "object",
-      "description": "Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names and materials returned by the `get_materials` tool.",
-   "properties": {
-   "AD": {
-   "type": "number",
-   "description": "Areal density of the shielding material in g/cm²."
-   },
-   "AN": {
-   "type": "number",
-   "description": "Effective atomic number of the shielding material."
-   },
-   "Material": {
-   "type": "string",
-   "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
-   },
-   "Thickness": {
-   "type": "string",
-   "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+      "type": "array",
+      "description": "Optional: An array of shielding objects, applied in order from source to detector. Each shielding layer attenuates the photons that pass through it. Each shielding object must be specified with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names and materials returned by the `get_materials` tool.",
+   "items": {
+     "type": "object",
+     "properties": {
+       "AD": {
+         "type": "number",
+         "description": "Areal density of the shielding material in g/cm²."
+       },
+       "AN": {
+         "type": "number",
+         "description": "Effective atomic number of the shielding material."
+       },
+       "Material": {
+         "type": "string",
+         "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
+       },
+       "Thickness": {
+         "type": "string",
+         "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+       }
+     },
+     "additionalProperties": false
    }
-   },
-      "additionalProperties": false
     },
     "Distance": {
       "type": "string",
-      "description": "Optional: The distance the detector is from the center of the radioactive source.  If not specified, the gemoetric detection factor will not be accounted for. If a detector efficiency is not currently loaded for the foreground, or the detector efficiency is for a 'fixed geometry', then distance may not be specified. Example distances: '1.25 cm', '3 ft, 2 inches', etc." 
-    }
+      "description": "Optional: The distance the detector is from the center of the radioactive source.  If not specified, the gemoetric detection factor will not be accounted for. If a detector efficiency is not currently loaded for the foreground, or the detector efficiency is for a 'fixed geometry', then distance may not be specified. Example distances: '1.25 cm', '3 ft, 2 inches', etc."
+    },
+    "IncludeAirAttenuation": {
+      "type": "boolean",
+      "description": "Optional: If true, includes attenuation from air between the source and detector. Only applies when Distance is specified. Defaults to false."
+    },
     "Energies": {
       "type": "array",
       "items": {
@@ -2023,38 +2073,808 @@ nlohmann::json ToolRegistry::executeGetMaterialInfo( const nlohmann::json& param
 */
 nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec)
 {
-      
+  using namespace std;
+  using namespace nlohmann;
+
+  // Step 1: Parse and normalize inputs
+
+  // Parse Energies - allow single number or array
+  vector<double> energies;
+  if( params.contains("Energies") )
+  {
+    if( params["Energies"].is_number() )
+    {
+      energies.push_back( params["Energies"].get<double>() );
+    }
+    else if( params["Energies"].is_array() )
+    {
+      energies = params["Energies"].get<vector<double>>();
+    }
+    else
+    {
+      throw runtime_error( "Energies must be a number or array of numbers" );
+    }
+  }
+  else
+  {
+    throw runtime_error( "Energies parameter is required" );
+  }
+
+  if( energies.empty() )
+    throw runtime_error( "At least one energy must be specified" );
+
+  for( const double energy : energies )
+  {
+    if( energy <= 0.0 )
+      throw runtime_error( "All energies must be positive, got " + to_string(energy) + " keV" );
+  }
+
+  // Parse Shielding - allow single object or array
+  vector<json> shieldings;
+  if( params.contains("Shielding") )
+  {
+    if( params["Shielding"].is_object() )
+    {
+      shieldings.push_back( params["Shielding"] );
+    }
+    else if( params["Shielding"].is_array() )
+    {
+      shieldings = params["Shielding"].get<vector<json>>();
+    }
+    else
+    {
+      throw runtime_error( "Shielding must be an object or array of objects" );
+    }
+  }
+
+  // Parse Distance (optional)
+  double distance = 0.0;
+  bool has_distance = false;
+  if( params.contains("Distance") && params["Distance"].is_string() )
+  {
+    const string distance_str = params["Distance"].get<string>();
+    distance = PhysicalUnits::stringToDistance( distance_str );
+    has_distance = true;
+  }
+
+  // Parse IncludeAirAttenuation (optional, default false)
+  const bool include_air = params.value("IncludeAirAttenuation", false);
+
+  // Step 2: Validate parameters
+
+  if( include_air && !has_distance )
+    throw runtime_error( "IncludeAirAttenuation requires Distance to be specified" );
+
+  // Get detector and material database
+  shared_ptr<SpecMeas> meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  shared_ptr<DetectorPeakResponse> detector;
+  if( meas )
+    detector = meas->detector();
+
+  if( has_distance )
+  {
+    if( !detector || !detector->isValid() )
+      throw runtime_error( "Distance specified but no detector efficiency function is currently loaded" );
+
+    if( detector->isFixedGeometry() )
+      throw runtime_error( "Distance cannot be specified when detector efficiency function is for fixed geometry" );
+  }
+
+  MaterialDB *materialDB = interspec->materialDataBase();
+  if( !materialDB )
+    throw runtime_error( "Material database not available" );
+
+  // Step 3: Parse shielding objects and calculate thicknesses
+
+  struct ShieldingInfo
+  {
+    bool is_generic;  // true for AD/AN, false for Material/Thickness
+    double atomic_number;
+    double areal_density;
+    const Material *material;
+    double thickness;
+  };
+
+  vector<ShieldingInfo> parsed_shieldings;
+  double total_shielding_thickness = 0.0;
+
+  for( const json &shield_json : shieldings )
+  {
+    ShieldingInfo info;
+    info.is_generic = false;
+    info.atomic_number = 0.0;
+    info.areal_density = 0.0;
+    info.material = nullptr;
+    info.thickness = 0.0;
+
+    const bool has_ad = shield_json.contains("AD");
+    const bool has_an = shield_json.contains("AN");
+    const bool has_material = shield_json.contains("Material");
+    const bool has_thickness = shield_json.contains("Thickness");
+
+    if( has_ad && has_an && !has_material && !has_thickness )
+    {
+      // Generic shielding (AD/AN format)
+      info.is_generic = true;
+      info.areal_density = shield_json["AD"].get<double>();
+      info.atomic_number = shield_json["AN"].get<double>();
+      info.thickness = 0.0;  // Generic shielding has no physical thickness
+
+      if( info.areal_density < 0.0 )
+        throw runtime_error( "Areal density (AD) must be non-negative, got " + to_string(info.areal_density) );
+
+      if( info.atomic_number <= 0.0 )
+        throw runtime_error( "Atomic number (AN) must be positive, got " + to_string(info.atomic_number) );
+
+      // Convert AD from g/cm2 to PhysicalUnits
+      info.areal_density *= (PhysicalUnits::g / PhysicalUnits::cm2);
+    }
+    else if( has_material && has_thickness && !has_ad && !has_an )
+    {
+      // Material shielding
+      info.is_generic = false;
+      const string material_name = shield_json["Material"].get<string>();
+      const string thickness_str = shield_json["Thickness"].get<string>();
+
+      info.material = materialDB->material( material_name );
+      if( !info.material )
+        throw runtime_error( "Material '" + material_name + "' not found in material database" );
+
+      info.thickness = PhysicalUnits::stringToDistance( thickness_str );
+
+      if( info.thickness < 0.0 )
+        throw runtime_error( "Thickness must be non-negative for material '" + material_name + "', got " + thickness_str );
+
+      total_shielding_thickness += info.thickness;
+    }
+    else
+    {
+      throw runtime_error( "Each shielding must have either (AD and AN) or (Material and Thickness), not a mix" );
+    }
+
+    parsed_shieldings.push_back( info );
+  }
+
+  // Step 4: Calculate air distance
+  double air_distance = 0.0;
+  if( include_air )
+  {
+    air_distance = distance - total_shielding_thickness;
+    if( air_distance < 0.0 )
+      throw runtime_error( "Total shielding thickness (" + to_string(total_shielding_thickness/PhysicalUnits::cm)
+                          + " cm) exceeds specified distance (" + to_string(distance/PhysicalUnits::cm) + " cm)" );
+  }
+
+  // Step 5: Calculate results for each energy
+  json results = json::array();
+
+  for( const double energy_kev : energies )
+  {
+    const float energy = static_cast<float>( energy_kev * PhysicalUnits::keV );
+
+    json result;
+    result["energy"] = energy_kev;
+
+    double final_efficiency = 1.0;
+
+    // Calculate shielding attenuations
+    json shielding_attenuations = json::array();
+    for( const ShieldingInfo &shield : parsed_shieldings )
+    {
+      double attenuation;
+
+      if( shield.is_generic )
+      {
+        const double mu = GammaInteractionCalc::transmition_coefficient_generic(
+          static_cast<float>(shield.atomic_number),
+          static_cast<float>(shield.areal_density),
+          energy
+        );
+        attenuation = exp( -mu );
+      }
+      else
+      {
+        const double mu = GammaInteractionCalc::transmition_coefficient_material(
+          shield.material,
+          energy,
+          static_cast<float>(shield.thickness)
+        );
+        attenuation = exp( -mu );
+      }
+
+      shielding_attenuations.push_back( attenuation );
+      final_efficiency *= attenuation;
+    }
+
+    if( !shielding_attenuations.empty() )
+      result["shieldingAttenuations"] = shielding_attenuations;
+
+    // Calculate air attenuation
+    if( include_air )
+    {
+      const double mu = GammaInteractionCalc::transmission_coefficient_air( energy, static_cast<float>(air_distance) );
+      const double air_attenuation = exp( -mu );
+      result["airAttenuation"] = air_attenuation;
+      final_efficiency *= air_attenuation;
+    }
+
+    // Calculate distance geometry factor
+    if( has_distance && detector )
+    {
+      const double detector_diameter = detector->detectorDiameter();
+      const double solid_angle = DetectorPeakResponse::fractionalSolidAngle( detector_diameter, distance );
+      result["distanceGeometryFactor"] = solid_angle;
+      final_efficiency *= solid_angle;
+    }
+
+    // Calculate detector intrinsic efficiency
+    if( detector && detector->isValid() )
+    {
+      const float intrinsic_eff = detector->intrinsicEfficiency( energy );
+      result["detectorIntrinsicEfficiency"] = intrinsic_eff;
+      final_efficiency *= intrinsic_eff;
+    }
+
+    result["finalEfficiency"] = final_efficiency;
+    results.push_back( result );
+  }
+
+  // Step 6: Build and return result
+  json response;
+  response["energies"] = energies;
+  response["results"] = results;
+
+  return response;
 }//nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec)
   
 
   /** cooresponds to the `avaiable_detector_efficiency_functions` tool call, which has the description:
-   "Returns a list of detector efficiency function names that can be loaded to the foreground spectrum."
+   "Returns a list of detector efficiency function names, and the detector efficiency source, that can be loaded to the foreground spectrum."
  */
 nlohmann::json ToolRegistry::executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec)
 {
-  
+  json result = json::array();
+
+  // Track detector names we've already added to avoid duplicates
+  std::set<std::string> addedDetectors;
+
+  // Get currently loaded detector to add at the end if not already in list
+  std::shared_ptr<DetectorPeakResponse> currentDet;
+  if( interspec )
+  {
+    std::shared_ptr<SpecMeas> meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    if( meas )
+      currentDet = meas->detector();
+  }
+
+  // Get available RelEff detector files
+  try
+  {
+    const std::vector<std::string> relEffFiles = DrfSelect::potential_rel_eff_det_files();
+
+    for( const std::string &filepath : relEffFiles )
+    {
+      try
+      {
+        std::vector<std::string> credits;
+        std::vector<std::shared_ptr<DetectorPeakResponse>> drfs;
+
+#ifdef _WIN32
+        const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
+        std::ifstream input( wfilepath.c_str(), std::ios_base::binary | std::ios_base::in );
+#else
+        std::ifstream input( filepath.c_str(), std::ios_base::binary | std::ios_base::in );
+#endif
+
+        if( !input.is_open() )
+          continue;
+
+        DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, drfs );
+
+        for( const std::shared_ptr<DetectorPeakResponse> &drf : drfs )
+        {
+          if( !drf || !drf->isValid() || drf->name().empty() )
+            continue;
+
+          // Skip if we've already added this detector
+          if( addedDetectors.count(drf->name()) )
+            continue;
+
+          json detectorInfo;
+          detectorInfo["name"] = drf->name();
+          detectorInfo["source"] = "DefaultAvailable";
+          if( !drf->description().empty() )
+            detectorInfo["description"] = drf->description();
+
+          result.push_back( detectorInfo );
+          addedDetectors.insert( drf->name() );
+        }
+      }catch( std::exception &e )
+      {
+        // Skip files that can't be parsed
+        std::cerr << "Error parsing RelEff file " << filepath << ": " << e.what() << std::endl;
+      }
+    }
+  }catch( std::exception &e )
+  {
+    std::cerr << "Error getting RelEff detector files: " << e.what() << std::endl;
+  }
+
+  // Get available GADRAS detector directories
+  try
+  {
+    const std::vector<std::string> gadrasDirs = DrfSelect::potential_gadras_det_dirs( interspec );
+
+    for( const std::string &dir : gadrasDirs )
+    {
+      try
+      {
+        const std::vector<std::string> drfDirs = DrfSelect::recursive_list_gadras_drfs( dir );
+
+        for( const std::string &drfDir : drfDirs )
+        {
+          try
+          {
+            std::shared_ptr<DetectorPeakResponse> drf = DrfSelect::initAGadrasDetectorFromDirectory( drfDir );
+
+            if( !drf || !drf->isValid() || drf->name().empty() )
+              continue;
+
+            // Skip if we've already added this detector
+            if( addedDetectors.count(drf->name()) )
+              continue;
+
+            json detectorInfo;
+            detectorInfo["name"] = drf->name();
+            detectorInfo["source"] = "DefaultAvailable";
+            if( !drf->description().empty() )
+              detectorInfo["description"] = drf->description();
+
+            result.push_back( detectorInfo );
+            addedDetectors.insert( drf->name() );
+          }catch( std::exception &e )
+          {
+            // Skip directories that can't be parsed
+            std::cerr << "Error parsing GADRAS DRF from " << drfDir << ": " << e.what() << std::endl;
+          }
+        }
+      }catch( std::exception &e )
+      {
+        std::cerr << "Error listing GADRAS DRFs in " << dir << ": " << e.what() << std::endl;
+      }
+    }
+  }catch( std::exception &e )
+  {
+    std::cerr << "Error getting GADRAS detector directories: " << e.what() << std::endl;
+  }
+
+  // Add currently loaded detector at the end if it exists and hasn't been added yet
+  if( currentDet && currentDet->isValid() && !currentDet->name().empty()
+      && !addedDetectors.count(currentDet->name()) )
+  {
+    json detectorInfo;
+    detectorInfo["name"] = currentDet->name();
+    detectorInfo["source"] = "CurrentlyLoaded";
+    if( !currentDet->description().empty() )
+      detectorInfo["description"] = currentDet->description();
+
+    result.push_back( detectorInfo );
+    addedDetectors.insert( currentDet->name() );
+  }
+
+  // Add previously used detectors from database
+  if( interspec )
+  {
+    try
+    {
+      std::shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
+      if( sql )
+      {
+        DataBaseUtils::DbTransaction transaction( *sql );
+
+        Wt::Dbo::collection<Wt::Dbo::ptr<DetectorPeakResponse>> det_effs
+          = sql->session()->find<DetectorPeakResponse>()
+                           .where( "InterSpecUser_id = ?" ).bind( interspec->user().id() )
+                           .orderBy( "-1*m_lastUsedUtc" );
+
+        for( auto iter = det_effs.begin(); iter != det_effs.end(); ++iter )
+        {
+          Wt::Dbo::ptr<DetectorPeakResponse> det_ptr = *iter;
+          if( !det_ptr )
+            continue;
+
+          const std::string detName = det_ptr->name();
+          if( detName.empty() || addedDetectors.count(detName) )
+            continue;
+
+          json detectorInfo;
+          detectorInfo["name"] = detName;
+          detectorInfo["source"] = "UserPreviouslyUsed";
+
+          const std::string detDesc = det_ptr->description();
+          if( !detDesc.empty() )
+            detectorInfo["description"] = detDesc;
+
+          result.push_back( detectorInfo );
+          addedDetectors.insert( detName );
+        }
+
+        transaction.commit();
+      }
+    }catch( std::exception &e )
+    {
+      std::cerr << "Error getting previously used detectors from database: " << e.what() << std::endl;
+    }
+  }
+
+  return result;
 }//nlohmann::json executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec)
-  
+
+
+std::shared_ptr<DetectorPeakResponse> ToolRegistry::findDetectorByIdentifier(
+  const std::string& identifier,
+  const std::string& detectorName,
+  const std::string& sourceHint,
+  InterSpec* interspec,
+  std::string& loadedFrom
+)
+{
+  std::shared_ptr<DetectorPeakResponse> drf;
+  loadedFrom.clear();
+
+  // Helper lambda to try loading from a file path
+  auto tryLoadFromFilePath = [&](const std::string& path) -> std::shared_ptr<DetectorPeakResponse> {
+    if( !SpecUtils::is_file(path) && !SpecUtils::is_directory(path) )
+      return nullptr;
+
+    // Try as GADRAS directory
+    if( SpecUtils::is_directory(path) )
+    {
+      try
+      {
+        std::shared_ptr<DetectorPeakResponse> det = DrfSelect::initAGadrasDetectorFromDirectory( path );
+        if( det && det->isValid() )
+        {
+          loadedFrom = "GadrasDirectory";
+          return det;
+        }
+      }catch( std::exception & )
+      {
+      }
+    }
+
+    // Read file contents to check format
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wpath = SpecUtils::convert_from_utf8_to_utf16(path);
+      std::ifstream input( wpath.c_str(), std::ios_base::binary | std::ios_base::in );
+#else
+      std::ifstream input( path.c_str(), std::ios_base::binary | std::ios_base::in );
+#endif
+
+      if( input.is_open() )
+      {
+        std::string contents;
+        input.seekg( 0, std::ios::end );
+        contents.resize( input.tellg() );
+        input.seekg( 0, std::ios::beg );
+        input.read( &contents[0], contents.size() );
+        input.close();
+
+        // Check if contents look like a URI (starts with VER= or contains DRF parameters)
+        if( contents.find("VER=") != std::string::npos
+            || (contents.find("DIAM=") != std::string::npos && contents.find("EFFT=") != std::string::npos) )
+        {
+          try
+          {
+            std::shared_ptr<DetectorPeakResponse> det = std::make_shared<DetectorPeakResponse>();
+            det->fromAppUrl( contents );
+            if( det->isValid() )
+            {
+              loadedFrom = "FilePath";
+              return det;
+            }
+          }catch( std::exception & )
+          {
+            // Not a valid URI format, continue to other formats
+          }
+        }
+
+        // Check if it looks like XML
+        if( contents.find("<?xml") != std::string::npos || contents.find("<DetectorPeakResponse") != std::string::npos )
+        {
+          std::shared_ptr<DetectorPeakResponse> det = std::make_shared<DetectorPeakResponse>();
+          rapidxml::xml_document<char> doc;
+          doc.parse<rapidxml::parse_trim_whitespace | rapidxml::parse_normalize_whitespace>( &contents[0] );
+          rapidxml::xml_node<char> *node = doc.first_node();
+          if( node )
+          {
+            det->fromXml( node );
+            if( det->isValid() )
+            {
+              loadedFrom = "FilePath";
+              return det;
+            }
+          }
+        }
+      }
+    }catch( std::exception & )
+    {
+    }
+
+    // Try as RelEff CSV file
+    try
+    {
+      std::vector<std::string> credits;
+      std::vector<std::shared_ptr<DetectorPeakResponse>> drfs;
+
+#ifdef _WIN32
+      const std::wstring wpath = SpecUtils::convert_from_utf8_to_utf16(path);
+      std::ifstream input( wpath.c_str(), std::ios_base::binary | std::ios_base::in );
+#else
+      std::ifstream input( path.c_str(), std::ios_base::binary | std::ios_base::in );
+#endif
+
+      if( input.is_open() )
+      {
+        DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, drfs );
+
+        if( !detectorName.empty() )
+        {
+          // Find specific detector by name
+          for( const auto& det : drfs )
+          {
+            if( det && det->isValid() && det->name() == detectorName )
+            {
+              loadedFrom = "FilePath";
+              return det;
+            }
+          }
+        }
+        else if( drfs.size() == 1 && drfs[0] && drfs[0]->isValid() )
+        {
+          // Only one detector in file
+          loadedFrom = "FilePath";
+          return drfs[0];
+        }
+        else if( drfs.size() > 1 )
+        {
+          throw std::runtime_error( "File contains multiple detectors. Please specify detectorName parameter." );
+        }
+      }
+    }catch( std::exception & )
+    {
+    }
+
+    // Try as ECC file
+    try
+    {
+#ifdef _WIN32
+      const std::wstring wpath = SpecUtils::convert_from_utf8_to_utf16(path);
+      std::ifstream input( wpath.c_str(), std::ios_base::binary | std::ios_base::in );
+#else
+      std::ifstream input( path.c_str(), std::ios_base::binary | std::ios_base::in );
+#endif
+
+      if( input.is_open() )
+      {
+        auto result = DetectorPeakResponse::parseEccFile( input );
+        std::shared_ptr<DetectorPeakResponse> det = std::get<0>( result );
+        if( det && det->isValid() )
+        {
+          loadedFrom = "FilePath";
+          return det;
+        }
+      }
+    }catch( std::exception & )
+    {
+    }
+
+    return nullptr;
+  };
+
+  // Try loading based on source hint
+  if( sourceHint == "DefaultAvailable" || sourceHint == "AnySource" )
+  {
+    // Try from RelEff files
+    try
+    {
+      const std::vector<std::string> relEffFiles = DrfSelect::potential_rel_eff_det_files();
+      for( const std::string& filepath : relEffFiles )
+      {
+        try
+        {
+          std::vector<std::string> credits;
+          std::vector<std::shared_ptr<DetectorPeakResponse>> drfs;
+
+#ifdef _WIN32
+          const std::wstring wfilepath = SpecUtils::convert_from_utf8_to_utf16(filepath);
+          std::ifstream input( wfilepath.c_str(), std::ios_base::binary | std::ios_base::in );
+#else
+          std::ifstream input( filepath.c_str(), std::ios_base::binary | std::ios_base::in );
+#endif
+
+          if( input.is_open() )
+          {
+            DetectorPeakResponse::parseMultipleRelEffDrfCsv( input, credits, drfs );
+            for( const auto& det : drfs )
+            {
+              if( det && det->isValid() && det->name() == identifier )
+              {
+                drf = det;
+                loadedFrom = "DefaultAvailable";
+                break;
+              }
+            }
+          }
+          if( drf )
+            break;
+        }catch( std::exception & )
+        {
+        }
+      }
+    }catch( std::exception & )
+    {
+    }
+
+    // Try from GADRAS directories
+    if( !drf && interspec )
+    {
+      try
+      {
+        const std::vector<std::string> gadrasDirs = DrfSelect::potential_gadras_det_dirs( interspec );
+        for( const std::string& dir : gadrasDirs )
+        {
+          try
+          {
+            const std::vector<std::string> drfDirs = DrfSelect::recursive_list_gadras_drfs( dir );
+            for( const std::string& drfDir : drfDirs )
+            {
+              try
+              {
+                std::shared_ptr<DetectorPeakResponse> det = DrfSelect::initAGadrasDetectorFromDirectory( drfDir );
+                if( det && det->isValid() && det->name() == identifier )
+                {
+                  drf = det;
+                  loadedFrom = "DefaultAvailable";
+                  break;
+                }
+              }catch( std::exception & )
+              {
+              }
+            }
+            if( drf )
+              break;
+          }catch( std::exception & )
+          {
+          }
+        }
+      }catch( std::exception & )
+      {
+      }
+    }
+  }
+
+  // Try from user previously used
+  if( !drf && interspec && (sourceHint == "UserPreviouslyUsed" || sourceHint == "AnySource") )
+  {
+    try
+    {
+      std::shared_ptr<DataBaseUtils::DbSession> sql = interspec->sql();
+      if( sql )
+      {
+        DataBaseUtils::DbTransaction transaction( *sql );
+        Wt::Dbo::collection<Wt::Dbo::ptr<DetectorPeakResponse>> det_effs
+          = sql->session()->find<DetectorPeakResponse>()
+                           .where( "InterSpecUser_id = ?" ).bind( interspec->user().id() )
+                           .where( "m_name = ?" ).bind( identifier );
+
+        if( det_effs.size() > 0 )
+        {
+          Wt::Dbo::ptr<DetectorPeakResponse> det_ptr = *det_effs.begin();
+          if( det_ptr )
+          {
+            drf = std::make_shared<DetectorPeakResponse>( *det_ptr );
+            loadedFrom = "UserPreviouslyUsed";
+          }
+        }
+        transaction.commit();
+      }
+    }catch( std::exception & )
+    {
+    }
+  }
+
+  // Try as file path
+  if( !drf && (sourceHint == "FilePath" || sourceHint == "GadrasDirectory" || sourceHint == "AnySource") )
+  {
+    drf = tryLoadFromFilePath( identifier );
+  }
+
+  // Try as URI
+  if( !drf && (sourceHint == "URI" || sourceHint == "AnySource") )
+  {
+    try
+    {
+      std::shared_ptr<DetectorPeakResponse> det = std::make_shared<DetectorPeakResponse>();
+      det->fromAppUrl( identifier );
+      if( det->isValid() )
+      {
+        drf = det;
+        loadedFrom = "URI";
+      }
+    }catch( std::exception & )
+    {
+      // Not a valid URI or failed to parse
+    }
+  }
+
+  return drf;
+}//findDetectorByIdentifier()
+
+
   /** Corresponds to the `load_detector_efficiency_function` callback.
-   Description "Loads a detector efficiency function to use for calculations."
+   Description "Loads a detector efficiency function to use for calculations. Can load from default available detectors, user previously used, filesystem path, GADRAS directory, or URI."
    Parameter description:
-   ```
+```
    {
-     "type": "object",
-     "properties": {
-       "name": {
-         "type": "string",
-         "description": "The detector efficiency function name to load to use for future calculations."
-       }
-     },
-     }
-     "required": ["name"]
-   }
+      "type": "object",
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "The detector efficiency function identifier. Can be a name from avaiable_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
+        },
+        "detectorName": {
+          "type": "string",
+          "description": "Optional: The specific detector name to use when the identifier points to a file containing multiple detector efficiencies (e.g., RelEff CSV files). If not specified and the file contains only one detector, that detector will be used. If not specified and the file contains multiple detectors, an error will be returned."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["DefaultAvailable", "UserPreviouslyUsed", "FilePath", "GadrasDirectory", "URI", "AnySource"],
+          "description": "Optional: Source type hint for loading. DefaultAvailable: built-in detectors. UserPreviouslyUsed: user's database. FilePath: filesystem path to detector file. GadrasDirectory: GADRAS detector directory. URI: web URI. AnySource: try all options in order. Defaults to AnySource if not specified."
+        }
+      },
+      "required": ["identifier"]
+    }
    ```
  */
 nlohmann::json ToolRegistry::executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec)
 {
-  
+  if( !interspec )
+    throw std::runtime_error( "No InterSpec session available." );
+
+  if( !params.contains("identifier") || !params["identifier"].is_string() )
+    throw std::runtime_error( "Missing required 'identifier' parameter." );
+
+  const std::string identifier = params["identifier"].get<std::string>();
+  const std::string detectorName = params.value("detectorName", std::string());
+  const std::string sourceHint = params.value("source", std::string("AnySource"));
+
+  std::string loadedFrom;
+  std::shared_ptr<DetectorPeakResponse> drf = ToolRegistry::findDetectorByIdentifier( identifier, detectorName, sourceHint, interspec, loadedFrom );
+
+  if( !drf || !drf->isValid() )
+  {
+    std::string errorMsg = "Failed to load detector efficiency function '" + identifier + "'";
+    if( !detectorName.empty() )
+      errorMsg += " with detector name '" + detectorName + "'";
+    errorMsg += " from source hint: " + sourceHint;
+    throw std::runtime_error( errorMsg );
+  }
+
+  // Load the detector
+  interspec->detectorChanged().emit( drf );
+
+  // Return success response
+  json result;
+  result["success"] = true;
+  result["detectorName"] = drf->name();
+  result["source"] = loadedFrom;
+  if( !drf->description().empty() )
+    result["description"] = drf->description();
+
+  return result;
 }//nlohmann::json executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec)
   
 
@@ -2076,7 +2896,165 @@ nlohmann::json ToolRegistry::executeLoadDetectorEfficiency(const nlohmann::json&
 */
 nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec)
 {
-    
+  if( !interspec )
+    throw std::runtime_error( "No InterSpec session available." );
+
+  std::shared_ptr<DetectorPeakResponse> drf;
+
+  // Check if a specific detector name was requested
+  if( params.contains("name") && params["name"].is_string() )
+  {
+    const std::string name = params["name"].get<std::string>();
+    std::string loadedFrom;
+
+    // Use helper function to find the detector
+    drf = ToolRegistry::findDetectorByIdentifier( name, "", "AnySource", interspec, loadedFrom );
+
+    if( !drf )
+    {
+      throw std::runtime_error( "Detector efficiency function '" + name + "' not found." );
+    }
+  }
+  else
+  {
+    // Get currently loaded detector
+    std::shared_ptr<SpecMeas> meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    if( meas )
+      drf = meas->detector();
+
+    if( !drf )
+    {
+      throw std::runtime_error( "No detector efficiency function currently loaded." );
+    }
+  }
+
+  // Build the response JSON
+  json result;
+  result["name"] = drf->name();
+  result["description"] = drf->description();
+  result["isValid"] = drf->isValid();
+  result["hasResolutionInfo"] = drf->hasResolutionInfo();
+
+  // Geometry type
+  const DetectorPeakResponse::EffGeometryType geomType = drf->geometryType();
+  std::string geomTypeStr;
+  std::string geomTypeDesc;
+
+  switch( geomType )
+  {
+    case DetectorPeakResponse::EffGeometryType::FarField:
+      geomTypeStr = "FarField";
+      geomTypeDesc = "Detection efficiency varies with ~1/r²";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct:
+      geomTypeStr = "FixedGeomTotalAct";
+      geomTypeDesc = "Fixed geometry, full-energy efficiency per source decay (total activity)";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerCm2:
+      geomTypeStr = "FixedGeomActPerCm2";
+      geomTypeDesc = "Fixed geometry, efficiency per cm² surface area";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerM2:
+      geomTypeStr = "FixedGeomActPerM2";
+      geomTypeDesc = "Fixed geometry, efficiency per m² surface area";
+      break;
+    case DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram:
+      geomTypeStr = "FixedGeomActPerGram";
+      geomTypeDesc = "Fixed geometry, efficiency per gram of source";
+      break;
+  }
+
+  result["geometryType"] = geomTypeStr;
+  result["geometryTypeDescription"] = geomTypeDesc;
+  result["isFixedGeometry"] = (geomType != DetectorPeakResponse::EffGeometryType::FarField);
+
+  // Energy range
+  result["lowerEnergy"] = drf->lowerEnergy();
+  result["upperEnergy"] = drf->upperEnergy();
+
+  // Detector diameter (only for far field)
+  if( geomType == DetectorPeakResponse::EffGeometryType::FarField )
+  {
+    result["detectorDiameter"] = drf->detectorDiameter();
+  }
+
+  // Hash and source
+  result["hash"] = drf->hashValue();
+
+  const DetectorPeakResponse::DrfSource drfSource = drf->drfSource();
+  std::string drfSourceStr;
+  switch( drfSource )
+  {
+    case DetectorPeakResponse::DrfSource::DefaultGadrasDrf:
+      drfSourceStr = "DefaultGadrasDrf";
+      break;
+    case DetectorPeakResponse::DrfSource::UserAddedGadrasDrf:
+      drfSourceStr = "UserAddedGadrasDrf";
+      break;
+    case DetectorPeakResponse::DrfSource::UserAddedRelativeEfficiencyDrf:
+      drfSourceStr = "UserAddedRelativeEfficiencyDrf";
+      break;
+    case DetectorPeakResponse::DrfSource::UserSpecifiedFormulaDrf:
+      drfSourceStr = "UserSpecifiedFormulaDrf";
+      break;
+    case DetectorPeakResponse::DrfSource::FromSpectrumFileDrf:
+      drfSourceStr = "FromSpectrumFileDrf";
+      break;
+    case DetectorPeakResponse::DrfSource::UserCreatedDrf:
+      drfSourceStr = "UserCreatedDrf";
+      break;
+    case DetectorPeakResponse::DrfSource::IsocsEcc:
+      drfSourceStr = "IsocsEcc";
+      break;
+    case DetectorPeakResponse::DrfSource::UnknownDrfSource:
+    default:
+      drfSourceStr = "UnknownDrfSource";
+      break;
+  }
+  result["drfSource"] = drfSourceStr;
+
+  // Calculate efficiencies and FWHM at standard energies if valid
+  if( drf->isValid() )
+  {
+    const std::vector<float> energies = { 59.54f, 122.04f, 185.71f, 344.28f, 511.0f,
+                                          661.66f, 1000.99f, 1173.23f, 1332.49f, 1836.06f, 2614.53f };
+
+    json efficiencies = json::array();
+    for( float energy : energies )
+    {
+      json effData;
+      effData["energy"] = energy;
+
+      try
+      {
+        const float eff = drf->intrinsicEfficiency( energy );
+        effData["intrinsicEfficiency"] = eff;
+      }catch( std::exception &e )
+      {
+        effData["intrinsicEfficiency"] = nullptr;
+        effData["efficiencyError"] = e.what();
+      }
+
+      if( drf->hasResolutionInfo() )
+      {
+        try
+        {
+          const float fwhm = drf->peakResolutionFWHM( energy );
+          effData["fwhm"] = fwhm;
+        }catch( std::exception &e )
+        {
+          effData["fwhm"] = nullptr;
+          effData["fwhmError"] = e.what();
+        }
+      }
+
+      efficiencies.push_back( effData );
+    }
+
+    result["efficienciesAtStandardEnergies"] = efficiencies;
+  }
+
+  return result;
 }//nlohmann::json executeGetDetectorInfo(InterSpec* interspec)
 
 
