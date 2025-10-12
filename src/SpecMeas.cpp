@@ -2586,7 +2586,18 @@ const map<set<int>,long long int> &SpecMeas::dbUserStateIndexes() const
 
 void SpecMeas::cleanup_after_load( const unsigned int flags )
 {
-  if( m_fileWasFromInterSpec )
+  bool has_any_peaks = false;
+  if( m_peaks )
+  {
+    for( const auto &samples_peaks : *m_peaks )
+    {
+      has_any_peaks = (samples_peaks.second && !samples_peaks.second->empty());
+      if( has_any_peaks )
+        break;
+    }
+  }//if( m_peaks )
+
+  if( m_fileWasFromInterSpec || has_any_peaks )
   {
     SpecFile::cleanup_after_load( (flags | SpecFile::DontChangeOrReorderSamples) );
   }else

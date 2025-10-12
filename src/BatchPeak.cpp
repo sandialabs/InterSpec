@@ -710,10 +710,13 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
           concatenated_spec->setPeaks( peaks_copy, sample_nums );
         }
       }
-      
+
+      // TODO: Sort sample numbers according to start time, and call:
+      //concatenated_spec->change_sample_numbers(<#const std::vector<std::pair<int, int>> &from_to_sample_nums#>);
+
       // Clean up the SpecMeas after adding all measurements
-      concatenated_spec->cleanup_after_load();
-      
+      concatenated_spec->cleanup_after_load( SpecUtils::SpecFile::DontChangeOrReorderSamples );
+
       // Save the concatenated file
       const string concatenated_file = SpecUtils::append_path( options.output_dir, "concatenated.n42" );
       
