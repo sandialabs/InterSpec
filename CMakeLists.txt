@@ -808,20 +808,27 @@ target_include_directories( InterSpecLib PUBLIC SYSTEM ${Wt_INCLUDE_DIR} )
 
 if(WIN32)
     if( NOT InterSpec_FETCH_DEPENDENCIES )
-        target_link_libraries(InterSpecLib PUBLIC 
-            debug "${Wt_DEBUG_LIBRARIES}"
-            optimized "${Wt_LIBRARIES}"
-        )
+      if( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_TEST_DEBUG_LIBRARY}" optimized "${Wt_TEST_LIBRARY}" )
+      else( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_HTTP_DEBUG_LIBRARY}" optimized "${Wt_HTTP_LIBRARY}" )
+      endif( BUILD_AS_UNIT_TEST_SUITE )
+      
+      target_link_libraries(InterSpecLib PUBLIC
+        debug ${Wt_DEBUG_LIBRARY} ${Wt_DBO_DEBUG_LIBRARY} ${Wt_DBOSQLITE3_DEBUG_LIBRARY}
+        optimized ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY}
+      )
     endif( NOT InterSpec_FETCH_DEPENDENCIES )
     
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
 else(WIN32)
-    target_link_libraries(InterSpecLib PUBLIC
-        ${Wt_LIBRARIES}
-        ${Wt_HTTP_LIBRARY}
-        ${Wt_DBO_LIBRARY}
-        ${Wt_DBOSQLITE3_LIBRARY}
-    )
+  if( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
+  else( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_HTTP_LIBRARY})
+  endif( BUILD_AS_UNIT_TEST_SUITE )
+  
+  target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
 endif(WIN32)
 
 

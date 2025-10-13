@@ -101,12 +101,6 @@ public:
    */
   void sendSystemMessage(const std::string& message);
   
-  /** Test the LLM connection with a simple request.
-   
-   This will print request/response to stdout for debugging.
-   */
-  void testConnection();
-  
   /** Test chat history recording and reconstruction without calling an actual LLM.
    
    This simulates various conversation scenarios including tool calls to verify

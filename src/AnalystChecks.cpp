@@ -480,6 +480,8 @@ namespace AnalystChecks
       return {std::get<0>(importances[0])};
     }//if( !nuc )
     
+    // TODO: should we use `photopeak_lis()`?
+    
     const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &nuc_characteristics = IsotopeId::characteristicGammas();
     
     vector<float> answer;

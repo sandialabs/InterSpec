@@ -516,20 +516,23 @@ namespace
     
     const string drfsdir = SpecUtils::append_path( base_dir, "drfs" );
     
-    const vector<string> drf_files = SpecUtils::recursive_ls( drfsdir );
-    for( const auto &p : drf_files )
+    if( SpecUtils::is_directory(drfsdir) )
     {
-      const string fname = SpecUtils::filename(p);
-      if( SpecUtils::iequals_ascii( fname, "Efficiency.csv") )
-        continue;
-      
-      const string type = SpecUtils::file_extension(fname);
-      if( !SpecUtils::iequals_ascii( type, ".csv") && !SpecUtils::iequals_ascii( type, ".tsv") )
-        continue;
-      
-      // Note that this next line will cause duplicate TSV entries - we'll remove them later
-      potential_paths.push_back( p );
-    }//for( const auto &p : drf_files )
+      const vector<string> drf_files = SpecUtils::recursive_ls( drfsdir );
+      for( const auto &p : drf_files )
+      {
+        const string fname = SpecUtils::filename(p);
+        if( SpecUtils::iequals_ascii( fname, "Efficiency.csv") )
+          continue;
+        
+        const string type = SpecUtils::file_extension(fname);
+        if( !SpecUtils::iequals_ascii( type, ".csv") && !SpecUtils::iequals_ascii( type, ".tsv") )
+          continue;
+        
+        // Note that this next line will cause duplicate TSV entries - we'll remove them later
+        potential_paths.push_back( p );
+      }//for( const auto &p : drf_files )
+    }//if( SpecUtils::is_directory(drfsdir) )
   }//potential_rel_eff_files(..)
 
 /*

@@ -1453,8 +1453,6 @@ bool SpecMeas::load_from_iaea( std::istream &istr )
 
 void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
 {
-  cout << "SpecMeas::load_cnf_using_reader" << endl;
-
   SpecUtils::SpecFile::load_cnf_using_reader( reader );
 
   if( measurements_.empty() )

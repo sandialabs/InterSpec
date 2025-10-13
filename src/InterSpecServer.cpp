@@ -129,8 +129,10 @@ namespace InterSpecServer
   std::string sm_urlServedOn = "";
   std::mutex sm_servedOnMutex;
   
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::WServer *ns_server = nullptr;
   std::mutex ns_servermutex;
+#endif
   
 #if( USE_LLM_INTERFACE )
   std::mutex ns_llm_config_mutex;
@@ -153,12 +155,13 @@ namespace InterSpecServer
     return sm_urlServedOn;
   }
 
-  
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::WServer *get_wt_server()
   {
     std::lock_guard<std::mutex> serverlock( ns_servermutex );
     return ns_server;
   }
+#endif
   
   
   std::string getWtConfigXml( int argc, char *argv[] )
@@ -235,7 +238,7 @@ namespace InterSpecServer
     return app;
   }//WApplication *createAppForServer(...)
   
-  
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication )
   {
@@ -329,9 +332,9 @@ namespace InterSpecServer
       throw std::runtime_error( "Failed to start Wt server" );
     }//if( server.start() )
   }//void startServer()
-  
+#endif //if( BUILD_AS_UNIT_TEST_SUITE )
 
-  
+#if( !BUILD_AS_UNIT_TEST_SUITE )
 void startWebServer( string name,
                      std::string basedir,
                      const std::string xml_config_path,
@@ -488,7 +491,7 @@ void startWebServer( string name,
   }//try / catch
 #endif //USE_LLM_INTERFACE
 }//startWebServer(...)
-  
+
 
 int start_server( const char *process_name,
                   const char *userdatadir,
@@ -700,7 +703,7 @@ void killServer()
     
     return Wt::WServer::waitForShutdown();
   }//int wait_for_shutdown()
-
+#endif //if( !BUILD_AS_UNIT_TEST_SUITE )
   
   int add_allowed_session_token( const char *session_id, const SessionType session_type )
   {

@@ -1253,8 +1253,10 @@ InterSpec::~InterSpec() noexcept(true)
   //  some manual cleanup here (as of 20220917 when AuxWindow and SimpleDialog where explicitly
   //  parented by the current InterSpec instance, we are doing much more cleanup than necessary).
 
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
-
+#endif
+  
   // Get rid of undo/redo, so we dont insert anything into them
   del_ptr_set_null( m_undo );
   del_ptr_set_null( m_licenseWindow );
@@ -11132,7 +11134,10 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
       if( meas && !meas->automatedSearchPeaks(samples) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+        // We wont search for hint peaks if we are running unit tests - so it wont take forever
         searchForHintPeaks( meas, samples, isHPGe );
+#endif
       }else if( meas )
       {
         m_hintPeaksSet.emit(type);
@@ -11921,7 +11926,11 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
       if( meas && !meas->automatedSearchPeaks(sample_numbers) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
+        
+        // We wont search for hint peaks if we are running unit tests - so it wont take forever
+#if( !BUILD_AS_UNIT_TEST_SUITE )
         searchForHintPeaks( meas, sample_numbers, isHPGe );
+#endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
       }else if( meas )
       {
         m_hintPeaksSet.emit(spec_type);

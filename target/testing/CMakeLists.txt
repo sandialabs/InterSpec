@@ -197,6 +197,15 @@ add_test( NAME TEnergyCal
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+if( USE_LLM_INTERFACE )
+  add_executable( test_LlmToolRegistry test_LlmToolRegistry.cpp )
+  target_link_libraries( test_LlmToolRegistry PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmToolRegistry
+    COMMAND $<TARGET_FILE:test_LlmToolRegistry> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+endif( USE_LLM_INTERFACE )
+
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 

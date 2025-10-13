@@ -165,49 +165,6 @@ void LlmInterface::sendSystemMessage(const std::string& message) {
   cout << "Sent system message with request ID: " << requestId << endl;
 }
 
-void LlmInterface::testConnection() {
-  if( !m_config || !m_config->llmApi.enabled )
-    throw std::logic_error( "LlmInterface: not configured" );
-  
-  cout << "=== LLM Interface Test ===" << endl;
-  cout << "Config API endpoint: " << m_config->llmApi.apiEndpoint << endl;
-  cout << "Config model: " << m_config->llmApi.model << endl;
-  cout << "Bearer token configured: " << (!m_config->llmApi.bearerToken.empty() ? "Yes" : "No") << endl;
-  cout << "Is configured: " << (isConfigured() ? "Yes" : "No") << endl;
-  
-  // Test tool registry
-  cout << "Available tools: " << LlmTools::ToolRegistry::instance().getTools().size() << endl;
-  for (const auto& [name, tool] : LlmTools::ToolRegistry::instance().getTools()) {
-    cout << "  - " << name << ": " << tool.description << endl;
-  }
-  
-  // Test a simple tool call
-  try {
-    json testParams;
-    json result = LlmTools::ToolRegistry::instance().executeTool("test_tool", testParams, m_interspec);
-    cout << "Test tool result: " << result.dump(2) << endl;
-  } catch (const std::exception& e) {
-    cout << "Test tool error: " << e.what() << endl;
-  }
-  
-  // Test with a real API call if configured
-  if (isConfigured()) {
-    cout << "Making test API call to LLM..." << endl;
-    // Use sendUserMessage to properly add to history
-    sendUserMessage("What peaks do you see in my foreground spectrum? Please analyze the detected peaks.");
-  } else {
-    cout << "LLM not configured - skipping API call test" << endl;
-    // Create a test API request
-    json testRequest = buildMessagesArray("Hello, this is a test message", false);
-    cout << "Test API request would be:" << endl;
-    cout << testRequest.dump(2) << endl;
-  }
-  
-
-  
-  cout << "=========================" << endl;
-}
-
 
 std::shared_ptr<LlmConversationHistory> LlmInterface::getHistory() const {
   return m_history;
@@ -943,7 +900,7 @@ int LlmInterface::makeTrackedApiCall(const nlohmann::json& requestJson, const st
   // Store the pending request
   PendingRequest pending;
   pending.requestId = requestId;
-#if( PERFORM_DEVELOPER_CHECKS )
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
   pending.requestJson = requestJson;
 #endif
   pending.originalUserMessage = originalMessage;

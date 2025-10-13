@@ -107,16 +107,24 @@ private:
   bool m_defaultToolsRegistered = false;
   
   // Helper functions for default tools
+  //  The conventions that seem useful are:
+  //  - If there is an error, throw an exception and the LLM executor will take care of catching and sending a response
+  //  - Use "source", and not "nuclide" everywhere - to be consistent and inclusive of flourescent x-rays and reactions,
+  //    unless it really is a nuclide-only thing, like decay chain.
   static nlohmann::json executePeakDetection(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetSpectrumInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePeakFit(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeGetCharacteristicGammasForNuclide( const nlohmann::json& params );
+  static nlohmann::json executeGetCharacteristicGammasForSource( const nlohmann::json& params );
   static nlohmann::json executeGetNuclidesWithCharacteristicsInEnergyRange( const nlohmann::json& params, InterSpec* interspec );
   static nlohmann::json executeGetLoadedSpectra(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeGetAssociatedNuclides(const nlohmann::json& params );
-  static nlohmann::json executeGetNuclideAnalystNotes(const nlohmann::json& params );
-  static nlohmann::json executeGetNuclideInfo(const nlohmann::json& params );
+// I read that you should minimize the number of tool calls - so this next define makes it so the
+// "analyst_notes_for_source" and "sources_associated_with_source" tool calls will not be defined, but rather this info
+// is included with the "source_info" tool call
+#define INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO 1
+  static nlohmann::json executeGetAssociatedSources(const nlohmann::json& params );
+  static nlohmann::json executeGetSourceAnalystNotes(const nlohmann::json& params );
+  static nlohmann::json executeGetSourceInfo(const nlohmann::json& params );
   static nlohmann::json executeGetNuclideDecayChain(const nlohmann::json& params );
   static nlohmann::json executeGetAutomatedRiidId(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeFitPeaksForNuclide(const nlohmann::json& params, InterSpec* interspec);
