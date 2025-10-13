@@ -4663,10 +4663,11 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 
   m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
 
-  
-  m_spectrum->applyColorTheme( theme );
+  // Apply global D3 spectrum colors (static call, affects all instances in this app)
+  D3SpectrumDisplayDiv::applyColorTheme( theme );
+
   m_timeSeries->applyColorTheme( theme );
-  
+
   setReferenceLineColors( theme );
   
   string cssfile;
