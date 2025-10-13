@@ -2586,28 +2586,50 @@ const map<set<int>,long long int> &SpecMeas::dbUserStateIndexes() const
 
 void SpecMeas::cleanup_after_load( const unsigned int flags )
 {
-  bool has_any_peaks = false;
-  if( m_peaks )
+  // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
+  //  SpecMeas specific things that use the sample numbers
+  bool has_specific_info = !m_dbUserStateIndexes.empty();
+  if( !has_specific_info && m_peaks )
   {
-    for( const auto &samples_peaks : *m_peaks )
-    {
-      has_any_peaks = (samples_peaks.second && !samples_peaks.second->empty());
-      if( has_any_peaks )
-        break;
-    }
+    for( auto iter = begin(*m_peaks); !has_specific_info && (iter != end(*m_peaks)); ++iter )
+      has_specific_info = (iter->second && !iter->second->empty());
   }//if( m_peaks )
 
-  if( m_fileWasFromInterSpec || has_any_peaks )
+  if( !has_specific_info && !m_autoSearchPeaks.empty() )
+  {
+    for( auto iter = begin(m_autoSearchPeaks); !has_specific_info && (iter != end(m_autoSearchPeaks)); ++iter )
+      has_specific_info = (iter->second && !iter->second->empty());
+  }//if( !has_specific_info && m_autoSearchPeaks )
+
+
+  if( m_fileWasFromInterSpec && !(flags & SpecFile::ReorderSamplesByTime) )
   {
     SpecFile::cleanup_after_load( (flags | SpecFile::DontChangeOrReorderSamples) );
+  }if( has_specific_info )
+  {
+    // Grab a mapping from Measurement* to sample numbers.
+    vector<pair<int,shared_ptr<const SpecUtils::Measurement>>> orig_sample_nums;
+    orig_sample_nums.reserve( measurements_.size() );
+    for( const std::shared_ptr<SpecUtils::Measurement> &m : measurements_ )
+      orig_sample_nums.emplace_back( m->sample_number_, m );
+
+    // Do cleanup - which _could_ change some of the Measurements sample numbers
+    SpecFile::cleanup_after_load( flags );
+
+    // Now fixup m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes to use the newly assigned sample numbers
+    vector<pair<int,int>> from_to_sample_nums;
+    for( const pair<int,shared_ptr<const SpecUtils::Measurement>> &samplenum_meas : orig_sample_nums )
+    {
+      if( samplenum_meas.first != samplenum_meas.second->sample_number() )
+        from_to_sample_nums.emplace_back( samplenum_meas.first, samplenum_meas.second->sample_number() );
+    }
+
+    if( !from_to_sample_nums.empty() )
+      change_sample_numbers_spec_meas_stuff( from_to_sample_nums );
   }else
   {
     SpecFile::cleanup_after_load( flags );
   }
-
-  //should detect if the detector was loaded, and if not, if we know the type,
-  //  we could then load it.
-  //   -instead for right now lets do this in InterSpec...
 }//void SpecMeas::cleanup_after_load()
 
 
@@ -2670,7 +2692,12 @@ void SpecMeas::cleanup_orphaned_info()
 void SpecMeas::change_sample_numbers( const vector<pair<int,int>> &from_to_sample_nums )
 {
   SpecFile::change_sample_numbers( from_to_sample_nums );
-  
+  change_sample_numbers_spec_meas_stuff( from_to_sample_nums );
+}
+
+
+void SpecMeas::change_sample_numbers_spec_meas_stuff( const std::vector<std::pair<int,int>> &from_to_sample_nums )
+{
   // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
   //  SpecMeas specific things that use the sample numbers
   
