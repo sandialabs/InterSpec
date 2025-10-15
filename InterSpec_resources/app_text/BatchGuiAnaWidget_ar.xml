@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">استبدال ملفات الإخراج</message>
   <message id="bgw-create-csv-output">CSV القمة</message>
   <message id="bgw-create-json-output">كتابة JSON</message>
+  <message id="bgw-concatenate-to-n42">إنشاء N42 مدمج</message>
   <message id="bgw-use-existing-background-peaks">استخدام قمم الخلفية الموجودة</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">استخدام معايرة طاقة النموذج للخلفية</message>
   
@@ -99,6 +100,8 @@
   <message id="bgw-create-csv-output-tt">إخراج CSV ملائمة القمة.</message>
   
   <message id="bgw-create-json-output-tt">يكتب JSON المستخدم لإنشاء قوالب التقرير، إلى ملف.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">إنشاء ملف N42 إخراج يحتوي على جميع ملاءمات القمم لجميع ملفات الإدخال.</message>
   
   <message id="bgw-use-existing-background-peaks-tt">يستخدم القمم الملائمة للخلفية المحددة، بدلاً من إعادة ملائمة القمم.
 يجب أن تكون القمم من InterSpec موجودة في ملف الطيف، ولا يمكن استخدام هذا الخيار مع طرح الخلفية الثابت.</message>

@@ -24,5 +24,19 @@
   <message id="lrm-displayed-as">显示为</message>
   <message id="lrm-measurements-as">测量为</message>
   <message id="lrm-load-meas-as-short">加载为</message>
+  <message id="lrm-filter-label">过滤器</message>
+  <message id="lrm-filter-none">无</message>
+  <message id="lrm-filter-energy-range">能量范围</message>
+  <message id="lrm-filter-peaks-in-range">范围内的峰值</message>
+  <message id="lrm-lower-energy">下限能量</message>
+  <message id="lrm-upper-energy">上限能量</message>
+  <message id="lrm-energy-filter-help">
+    应用能量范围过滤器将改变地图上显示数据的方式和内容。
+    <ul>
+    <li><b>无</b>：不应用过滤 - 颜色和CPS文本基于全谱计数率。</li>
+    <li><b>能量范围</b>：过滤指定能量范围内的伽马计数。</li>
+    <li><b>范围内的峰值</b>：仅显示在能量范围内具有峰值的样本编号，标记颜色和CPS基于峰值计数率。</li>
+    </ul>
+  </message>
 </messages>
 

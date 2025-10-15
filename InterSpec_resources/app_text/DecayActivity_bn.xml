@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">হ্রাসকারী পরমাণু ভর</message>
   <message id="dcc-yAxisTitle">বর্ধমান পরমাণু সংখ্যা</message>
   <message id="dcc-clickNucTxt">আরও তথ্যের জন্য নিউক্লাইড ক্লিক করুন।</message>
-  <message id="dcc-clickNucMoreInfoTxt1">যে কণা ছেড়ে দেয় তার জন্য নিউক্লাইড ডাবল-ক্লিক করুন।</message>
   <message id="dcc-clickNucMoreInfoTxt2">প্রদর্শিত ক্ষয় চেইন পরিবর্তন করতে</message>
   <message id="dcc-clickNucMoreInfoTxt3">উপরে একটি ভিন্ন উৎস নিউক্লাইড ক্লিক করুন।</message>
   <message id="dcc-clickNucMblTxt">আরও তথ্যের জন্য নিউক্লাইড ট্যাপ করুন।</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">যে কণা ছেড়ে দেয় তার জন্য নিউক্লাইড 1 সেকেন্ডের জন্য স্পর্শ করুন।</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">প্রদর্শিত ক্ষয় চেইন পরিবর্তন করতে</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">উপরে একটি ভিন্ন উৎস নিউক্লাইড ক্লিক করুন।</message>
+  <message id="dcc-show-decay-products">{nuclide} ক্ষয় পণ্য দেখান</message>
+  <message id="dcc-show-decays-through">{nuclide} এর মাধ্যমে ক্ষয় দেখান</message>
 
 
   <message id="dcn-initial-age">প্রাথমিক বয়স: </message>

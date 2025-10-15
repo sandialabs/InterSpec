@@ -24,4 +24,17 @@
   <message id="lrm-displayed-as">Exibido como</message>
   <message id="lrm-measurements-as">medições como</message>
   <message id="lrm-load-meas-as-short">Carregar como</message>
+
+  <message id="lrm-filter-label">Filtro</message>
+  <message id="lrm-filter-none">Nenhum</message>
+  <message id="lrm-filter-energy-range">Faixa de energia</message>
+  <message id="lrm-filter-peaks-in-range">Picos na faixa</message>
+  <message id="lrm-lower-energy">Energia inferior</message>
+  <message id="lrm-upper-energy">Energia superior</message>
+  <message id="lrm-energy-filter-help">Aplicar um filtro de faixa de energia mudará como e potencialmente quais dados são exibidos no mapa.
+<ul>
+<li><b>Nenhum</b>: Nenhuma filtragem aplicada - cores e texto CPS baseados na taxa de contagem do espectro completo.</li>
+<li><b>Faixa de energia</b>: Filtrar contagens gama dentro da faixa de energia especificada.</li>
+<li><b>Picos na faixa</b>: Mostrar apenas números de amostra que têm picos dentro da faixa de energia com cores de marcador e CPS baseadas na taxa de contagem dos picos.</li>
+</ul></message>
 </messages>

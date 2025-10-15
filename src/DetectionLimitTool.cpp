@@ -1096,10 +1096,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_chart->setCompactAxis( true );
   m_chart->disableLegend();
   m_chart->showHistogramIntegralsInLegend( true );
-  
-  m_chart->applyColorTheme( m_interspec->getColorTheme() );
-  m_interspec->colorThemeChanged().connect( m_chart, &D3SpectrumDisplayDiv::applyColorTheme );
-  
+
   //m_chart->xAxisSliderShown().connect(...)
   
   m_peakModel = new PeakModel( this );
@@ -1321,7 +1318,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_our_meas = make_shared<SpecMeas>();
     m_our_meas->setDetector( primaryMeas->detector() );
     m_our_meas->add_measurement( ourspec, true );
-    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()} );
+    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()}, SpecUtils::SpectrumType::Foreground );
     m_chart->setData( ourspec, false );
   }//if( spec )
 
@@ -1883,8 +1880,6 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     shared_ptr<const SpecUtils::Measurement> hist = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     chart->setData( hist, true );
     chart->setYAxisLog( false );
-    chart->applyColorTheme( viewer->getColorTheme() );
-    viewer->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, chart, boost::placeholders::_1 ) );
     chart->disableLegend();
     const double dx = upper_upper_energy - lower_lower_energy;
     chart->setXAxisRange( lower_lower_energy - 0.5*dx, upper_upper_energy + 0.5*dx );

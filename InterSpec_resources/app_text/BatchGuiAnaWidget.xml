@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">Overwrite output files</message>
   <message id="bgw-create-csv-output">Peak CSV</message>
   <message id="bgw-create-json-output">Write JSON</message>
+  <message id="bgw-concatenate-to-n42">Create concatenated N42</message>
   <message id="bgw-use-existing-background-peaks">Use existing background peaks</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Use exemplar energy cal for background</message>
   
@@ -99,6 +100,8 @@ If refit-energy-cal is specified true, then the exemplar energy cal will be used
   <message id="bgw-create-csv-output-tt">Output peak fit CSV.</message>
   
   <message id="bgw-create-json-output-tt">Writes the JSON used to create the report templates, out to file.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Create an output N42 file that has all peak fits of all input files.</message>
   
   <message id="bgw-use-existing-background-peaks-tt">Uses the fit peaks of the specified background, rather than re-fitting peaks.
 Peaks from InterSpec must exist in the spectrum file, and this option can not be used with hard background subtract.</message>

@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">Masa atómica decreciente</message>
   <message id="dcc-yAxisTitle">Número atómico creciente</message>
   <message id="dcc-clickNucTxt">Hacer clic en nucleído para más información.</message>
-  <message id="dcc-clickNucMoreInfoTxt1">Doble clic en nucleído para partículas que emite.</message>
   <message id="dcc-clickNucMoreInfoTxt2">Hacer clic en un nucleído fuente diferente arriba para</message>
   <message id="dcc-clickNucMoreInfoTxt3">cambiar cadena de desintegración mostrada.</message>
   <message id="dcc-clickNucMblTxt">Tocar nucleído para más información.</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">Tocar nucleído por 1 segundo para partículas que emite.</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">Hacer clic en un nucleído fuente diferente arriba para</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">cambiar cadena de desintegración mostrada.</message>
+  <message id="dcc-show-decay-products">Mostrar productos de desintegración de {nuclide}</message>
+  <message id="dcc-show-decays-through">Mostrar desintegraciones a través de {nuclide}</message>
 
 
   <message id="dcn-initial-age">Edad inicial: </message>

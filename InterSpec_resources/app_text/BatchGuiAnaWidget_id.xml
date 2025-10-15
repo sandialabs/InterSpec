@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">Timpa file output</message>
   <message id="bgw-create-csv-output">CSV Puncak</message>
   <message id="bgw-create-json-output">Tulis JSON</message>
+  <message id="bgw-concatenate-to-n42">Buat N42 gabungan</message>
   <message id="bgw-use-existing-background-peaks">Gunakan puncak latar belakang yang ada</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Gunakan kal. energi eksemplar untuk latar belakang</message>
   
@@ -99,6 +100,8 @@ Jika refit-energy-cal ditentukan true, maka kalibrasi energi eksemplar akan digu
   <message id="bgw-create-csv-output-tt">Output fit puncak CSV.</message>
   
   <message id="bgw-create-json-output-tt">Menulis JSON yang digunakan untuk membuat templat laporan, ke file.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Buat file N42 keluaran yang berisi semua fit puncak dari semua file masukan.</message>
   
   <message id="bgw-use-existing-background-peaks-tt">Menggunakan puncak yang di-fit dari latar belakang yang ditentukan, daripada melakukan fitting ulang puncak.
 Puncak dari InterSpec harus ada dalam file spektrum, dan opsi ini tidak dapat digunakan dengan pengurangan latar belakang keras.</message>

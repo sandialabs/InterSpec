@@ -38,8 +38,19 @@
 class SpecMeas;
 class InterSpec;
 class SimpleDialog;
+class NativeFloatSpinBox;
 class LeafletRadMapWindow;
 namespace SpecUtils{ enum class SpectrumType : int; }
+namespace Wt { class WComboBox; }
+
+enum class EnergyFilterType { None, EnergyRange, PeaksInEnergyRange };
+
+struct EnergyRangeInfo
+{
+  EnergyFilterType filter_type = EnergyFilterType::None;
+  std::optional<double> lower_energy = std::nullopt;
+  std::optional<double> upper_energy = std::nullopt;
+};
 
 /** Div containing the LeafletMap.
  
@@ -93,7 +104,10 @@ public:
                                            const std::vector<std::string> &detector_names,
                                            const std::set<int> &foreground_samples,
                                            const std::set<int> &background_samples,
-                                           const std::set<int> &secondary_samples );
+                                           const std::set<int> &secondary_samples,
+                                           const EnergyFilterType filter_type = EnergyFilterType::None,
+                                           const std::optional<double> lower_energy = std::nullopt,
+                                           const std::optional<double> upper_energy = std::nullopt );
   
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP )
   /** Look in the users data directory for a file named "arcgis\_key.txt", whose contents is the arcgis access key.
@@ -118,18 +132,29 @@ protected:
   
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
-  void handleDisplayedSpectrumChanged();
-  
+  void handleDisplayedSpectrumChanged( const SpecUtils::SpectrumType type,
+                                      const std::shared_ptr<const SpecMeas> meas );
+
   void handleLoadSamples( const std::string &samples, const std::string &meas_type );
+
+  void handleEnergyFilterChange();
+  void removeEnergyFiltering();
+  void showOrHideEnergyRangeFilter();
   
+  /** Get the current energy range filter information from the GUI elements. */
+  EnergyRangeInfo getEnergyRangeInfo() const;
+
   std::shared_ptr<const SpecMeas> m_meas;
-  
-  
-  /** The javascript variable name used to refer to the LeafletRadMap JS object.
-      Currently is `jsRef() + ".map"`.
-   */
-  const std::string m_jsmap;
-  
+
+  Wt::WContainerWidget *m_map_holder;
+
+  Wt::WContainerWidget *m_energy_range_row;
+  Wt::WComboBox *m_filter_type;
+  Wt::WContainerWidget *m_filter_lower_energy_grp;
+  NativeFloatSpinBox *m_filter_lower_energy;
+  Wt::WContainerWidget *m_filter_upper_energy_grp;
+  NativeFloatSpinBox *m_filter_upper_energy;
+
   Wt::JSignal<std::string,std::string> m_displaySamples;
   Wt::Signal<SpecUtils::SpectrumType, std::shared_ptr<const SpecMeas>, std::set<int>> m_loadSelected;
   

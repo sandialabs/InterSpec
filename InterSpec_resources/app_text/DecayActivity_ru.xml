@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">Убывающая атомная масса</message>
   <message id="dcc-yAxisTitle">Возрастающий атомный номер</message>
   <message id="dcc-clickNucTxt">Щёлкните нуклид для подробной информации.</message>
-  <message id="dcc-clickNucMoreInfoTxt1">Дважды щёлкните нуклид для частиц, которые он излучает.</message>
   <message id="dcc-clickNucMoreInfoTxt2">Щёлкните другой исходный нуклид выше, чтобы</message>
   <message id="dcc-clickNucMoreInfoTxt3">изменить отображаемую цепь распада.</message>
   <message id="dcc-clickNucMblTxt">Нажмите нуклид для подробной информации.</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">Нажмите нуклид на 1 секунду для частиц, которые он излучает.</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">Щёлкните другой исходный нуклид выше, чтобы</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">изменить отображаемую цепь распада.</message>
+  <message id="dcc-show-decay-products">Показать продукты распада {nuclide}</message>
+  <message id="dcc-show-decays-through">Показать распады через {nuclide}</message>
 
 
   <message id="dcn-initial-age">Начальный возраст: </message>

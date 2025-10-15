@@ -274,17 +274,26 @@ void BatchGuiWidget::handleFileDrop( const std::string &, const std::string & )
 
 void BatchGuiWidget::addInputFiles( const std::vector<std::tuple<std::string, std::string, bool>> &files )
 {
+  int num_initial_files = m_input_files_container->count();
+
   for( const tuple<string, string, bool> &file : files )
   {
     const string &display_name = std::get<0>( file );
     const string &path_to_file = std::get<1>( file );
     const bool should_delete = std::get<2>( file );
 
+    const auto show_preview = (num_initial_files < sm_max_spec_file_previews)
+                                ? BatchGuiInputSpectrumFile::ShowPreviewOption::Show
+                                : BatchGuiInputSpectrumFile::ShowPreviewOption::DontShow;
+
     BatchGuiInputSpectrumFile *input_file =
-      new BatchGuiInputSpectrumFile( display_name, path_to_file, should_delete, m_input_files_container );
+      new BatchGuiInputSpectrumFile( display_name, path_to_file, should_delete, show_preview, m_input_files_container );
     input_file->preview_created_signal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
     input_file->remove_self_request().connect(
       boost::bind( &BatchGuiWidget::handle_remove_input_file, this, boost::placeholders::_1 ) );
+
+
+    num_initial_files += 1;
   }
 
   wApp->triggerUpdate();

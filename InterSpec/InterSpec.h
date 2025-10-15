@@ -383,7 +383,10 @@ public:
                           const SpecUtils::SpectrumType spec_type,
                           const std::string &ref_line_name = "" );
   
-  /** Sets the peaks for the given spectrum.  If foreground, you should consider instead to use the PeakModel.
+  /** Sets the peaks for the given spectrum - taking care of adding a undo/redo step.
+   
+   If you do not wish to add a undo/redo step, you can call `PeakModel::setPeaks(peaks,SpectrumType).`
+   (the undo/redo is the only differnce between calling this function and the PeakModel function directly).
    
    @param spectrum Which spectrum to set the peaks for.
    @param peaks The peaks to set.  Must not be nullptr, or the currently set deque of peaks.

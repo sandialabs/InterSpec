@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">Sobrescribir archivos salida</message>
   <message id="bgw-create-csv-output">CSV picos</message>
   <message id="bgw-create-json-output">Escribir JSON</message>
+  <message id="bgw-concatenate-to-n42">Crear N42 concatenado</message>
   <message id="bgw-use-existing-background-peaks">Usar picos fondo existentes</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Usar cal. energía ejemplar para fondo</message>
   
@@ -99,6 +100,8 @@ Si refit-energy-cal se especifica verdadero, entonces la cal. energía ejemplar 
   <message id="bgw-create-csv-output-tt">Salida CSV de ajuste de picos.</message>
   
   <message id="bgw-create-json-output-tt">Escribir el JSON usado para crear las plantillas de reporte, a archivo.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Crear un archivo N42 de salida que contiene todos los ajustes de picos de todos los archivos de entrada.</message>
   
   <message id="bgw-use-existing-background-peaks-tt">Usa los picos ajustados del fondo especificado, en lugar de reajustar picos.
 Los picos de InterSpec deben existir en el archivo de espectro, y esta opción no puede usarse con sustracción dura de fondo.</message>

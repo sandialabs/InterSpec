@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">Kimeneti fájlok felülírása</message>
   <message id="bgw-create-csv-output">Csúcs CSV</message>
   <message id="bgw-create-json-output">JSON írás</message>
+  <message id="bgw-concatenate-to-n42">Összefűzött N42 létrehozása</message>
   <message id="bgw-use-existing-background-peaks">Meglévő háttér csúcsok használata</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Példaspektrum energia kal. használata háttérhez</message>
   
@@ -99,6 +100,8 @@ Ha az energia kalibrálás újraillesztése igaz, akkor a példaspektrum energia
   <message id="bgw-create-csv-output-tt">Csúcs illesztés CSV kimenet.</message>
   
   <message id="bgw-create-json-output-tt">Kiírja a jelentés sablonok létrehozásához használt JSON-t fájlba.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Olyan N42 kimeneti fájl létrehozása, amely tartalmazza az összes bemeneti fájl összes csúcsillesztését.</message>
   
   <message id="bgw-use-existing-background-peaks-tt">A megadott háttér illesztett csúcsait használja, ahelyett, hogy újraíllesztené a csúcsokat.
 A csúcsoknak InterSpec-ből kell származniuk a spektrum fájlban, és ez a beállítás nem használható kemény háttér kivonással.</message>

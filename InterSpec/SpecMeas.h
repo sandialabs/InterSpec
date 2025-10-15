@@ -197,9 +197,12 @@ public:
    This function is primarily useful if you remove some sample numbers.
    */
   void cleanup_orphaned_info();
-  
+
+  /** overrides the `SpecFile::change_sample_numbers` by first calling that function, and then fixing the SpecMeas
+   specific stuff up for any chnages, by calling `SpecMeas::change_sample_numbers_spec_meas_stuff(...)`.
+   */
   virtual void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
-  
+
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums );
   /** CAUTION: the returned deque may be modified elsewhere in the app, if for
@@ -379,6 +382,12 @@ public:
 #endif //#if( USE_LLM_INTERFACE )
 
 protected:
+  /** Changes all instances of the first sample number, to the second sample number in `m_peaks`, `m_autoSearchPeaks`, and
+   `m_dbUserStateIndexes`.  DOES NOT change the sample numbers of `SpecUtils::Measurement` - see `change_sample_numbers`
+   for that.
+   */
+  void change_sample_numbers_spec_meas_stuff( const std::vector<std::pair<int,int>> &from_to_sample_nums );
+
   //m_peaks: is only accessed by the PeakModel class for the foreground spectrum - it shouldnt be set or
   //         modified anywhere else. When a new primary spectrum is loaded in
   //         InterSpec::setSpectrum(...), the m_peaks variable is passed

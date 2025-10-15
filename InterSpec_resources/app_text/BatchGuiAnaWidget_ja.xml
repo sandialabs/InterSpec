@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">出力ファイルを上書き</message>
   <message id="bgw-create-csv-output">ピークCSV</message>
   <message id="bgw-create-json-output">JSONを書き出し</message>
+  <message id="bgw-concatenate-to-n42">連結N42を作成</message>
   <message id="bgw-use-existing-background-peaks">既存のバックグラウンドピークを使用</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">バックグラウンドに例示エネルギー校正を使用</message>
   
@@ -99,6 +100,8 @@ refit-energy-calがtrueに指定された場合、例示エネルギー校正が
   <message id="bgw-create-csv-output-tt">ピークフィットCSVを出力します。</message>
   
   <message id="bgw-create-json-output-tt">レポートテンプレートの作成に使用されるJSONをファイルに書き出します。</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">すべての入力ファイルのピークフィットを含む出力N42ファイルを作成します。</message>
   
   <message id="bgw-use-existing-background-peaks-tt">ピークを再フィットするのではなく、指定されたバックグラウンドのフィットピークを使用します。
 InterSpecからのピークがスペクトルファイルに存在する必要があり、このオプションはハードバックグラウンド減算では使用できません。</message>

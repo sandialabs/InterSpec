@@ -3253,23 +3253,9 @@ void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_pt
   if( orig_peaks.get() == peaks.get() )
     throw runtime_error( "InterSpec::setPeaks: peaks deque can not be same as current" );
   
-  
-  auto set_peaks = [this,spectrum]( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
+  auto set_peaks = [this,&peaks,spectrum]( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
     UndoRedoManager::BlockUndoRedoInserts undo_blocker;
-    if( spectrum == SpecUtils::SpectrumType::Foreground )
-    {
-      vector<shared_ptr<const PeakDef>> peaks( begin(*new_peaks), end(*new_peaks) );
-      m_peakModel->setPeaks( std::move(peaks) );
-    }else
-    {
-      shared_ptr<SpecMeas> meas = measurment( spectrum );
-      if( meas )
-      {
-        const set<int> &sample_nums = displayedSamples( spectrum );
-        meas->setPeaks( *new_peaks, sample_nums );
-      }
-      m_spectrum->schedulePeakRedraw( spectrum );
-    }
+    m_peakModel->setPeaks( (peaks ? *peaks : deque<std::shared_ptr<const PeakDef>>{}), spectrum );
   };
   
   set_peaks(peaks);
@@ -4665,10 +4651,11 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 
   m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
 
-  
-  m_spectrum->applyColorTheme( theme );
+  // Apply global D3 spectrum colors (static call, affects all instances in this app)
+  D3SpectrumDisplayDiv::applyColorTheme( theme );
+
   m_timeSeries->applyColorTheme( theme );
-  
+
   setReferenceLineColors( theme );
   
   string cssfile;
@@ -13490,11 +13477,11 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   const vector<string> detectors = detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
   
   if( meas && !detectors.empty() && sample_nums.empty() )
-   {
-     sample_nums = validForegroundSamples();
-     if( !meas->passthrough() && (sample_nums.size() > 1) )
-       sample_nums = { *begin(sample_nums) };
-   }
+  {
+    sample_nums = validForegroundSamples();
+    if( !meas->passthrough() && (sample_nums.size() > 1) )
+      sample_nums = { *begin(sample_nums) };
+  }
   
   if( !meas || detectors.empty() || sample_nums.empty() )
   {
@@ -13506,14 +13493,14 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     if( m_spectrum->data() )
     {
       m_spectrum->setData( nullptr, false );
-      m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums );
+      m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums, SpecUtils::SpectrumType::Foreground );
     }
     
     return;
   }//if( !meas )
 
 
-  m_peakModel->setPeakFromSpecMeas( meas, sample_nums );
+  m_peakModel->setPeakFromSpecMeas( meas, sample_nums, SpecUtils::SpectrumType::Foreground );
 
   const auto energy_cal = meas->suggested_sum_energy_calibration(sample_nums, detectors);
   if( !energy_cal )
@@ -13593,6 +13580,8 @@ void InterSpec::displaySecondForegroundData()
   std::set<int> &sample_nums = m_sectondForgroundSampleNumbers;
   const auto disp_dets = detectorsToDisplay( SpecUtils::SpectrumType::SecondForeground );
   
+  m_peakModel->setPeakFromSpecMeas( meas, sample_nums, SpecUtils::SpectrumType::SecondForeground );
+  
   //Note: below will throw exception if 'disp_samples' has any invalid entries
   shared_ptr<const SpecUtils::EnergyCalibration> energy_cal;
   if( meas )
@@ -13630,6 +13619,8 @@ void InterSpec::displayBackgroundData()
   set<int> &disp_samples = m_backgroundSampleNumbers;
   
   const vector<string> disp_dets = detectorsToDisplay( SpecUtils::SpectrumType::Background );
+  
+  m_peakModel->setPeakFromSpecMeas( meas, disp_samples, SpecUtils::SpectrumType::Background );
   
   //Note: below will throw exception if 'disp_samples' has any invalid entries
   shared_ptr<const SpecUtils::EnergyCalibration> energy_cal;

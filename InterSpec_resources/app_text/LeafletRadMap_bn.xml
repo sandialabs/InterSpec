@@ -24,4 +24,17 @@
   <message id="lrm-displayed-as">প্রদর্শিত হিসাবে</message>
   <message id="lrm-measurements-as">পরিমাপ হিসাবে</message>
   <message id="lrm-load-meas-as-short">হিসাবে লোড করুন</message>
+
+  <message id="lrm-filter-label">ফিল্টার</message>
+  <message id="lrm-filter-none">কিছুই না</message>
+  <message id="lrm-filter-energy-range">শক্তি পরিসর</message>
+  <message id="lrm-filter-peaks-in-range">পরিসরে শিখর</message>
+  <message id="lrm-lower-energy">নিম্ন শক্তি</message>
+  <message id="lrm-upper-energy">উচ্চ শক্তি</message>
+  <message id="lrm-energy-filter-help">একটি শক্তি পরিসর ফিল্টার প্রয়োগ করলে মানচিত্রে কীভাবে এবং সম্ভাব্য কী ডেটা প্রদর্শিত হবে তা পরিবর্তন করবে।
+<ul>
+<li><b>কিছুই না</b>: কোন ফিল্টারিং প্রয়োগ করা হয় না - রং এবং CPS টেক্সট সম্পূর্ণ স্পেকট্রাম গণনার হার ভিত্তিক।</li>
+<li><b>শক্তি পরিসর</b>: নির্দিষ্ট শক্তি পরিসরের মধ্যে গামা গণনা ফিল্টার করুন।</li>
+<li><b>পরিসরে শিখর</b>: শুধুমাত্র সেই নমুনা নম্বরগুলি দেখান যেগুলির শক্তি পরিসরে শিখর রয়েছে, মার্কার রং এবং CPS শিখরের গণনার হার ভিত্তিক।</li>
+</ul></message>
 </messages>

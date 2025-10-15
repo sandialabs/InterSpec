@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">আউটপুট ফাইল ওভাররাইট করুন</message>
   <message id="bgw-create-csv-output">পিক CSV</message>
   <message id="bgw-create-json-output">JSON লিখুন</message>
+  <message id="bgw-concatenate-to-n42">সংযুক্ত N42 তৈরি করুন</message>
   <message id="bgw-use-existing-background-peaks">বিদ্যমান ব্যাকগ্রাউন্ড পিক ব্যবহার করুন</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">ব্যাকগ্রাউন্ডের জন্য নমুনা শক্তি ক্যালিব্রেশন ব্যবহার করুন</message>
 
@@ -97,9 +98,11 @@
   <message id="bgw-overwrite-output-files-tt">আউটপুট N42, CSV, বা রিপোর্ট ফাইলগুলি ওভাররাইট করার অনুমতি দেয়। ডিফল্টরূপে ফাইলগুলি ওভাররাইট করবে না।</message>
 
   <message id="bgw-create-csv-output-tt">আউটপুট পিক ফিট CSV।</message>
-
+  
   <message id="bgw-create-json-output-tt">রিপোর্ট টেমপ্লেট তৈরি করতে ব্যবহৃত JSON ফাইলে লিখে দেয়।</message>
-
+  
+  <message id="bgw-concatenate-to-n42-tt">একটি আউটপুট N42 ফাইল তৈরি করুন যা সমস্ত ইনপুট ফাইলের সমস্ত পিক ফিট ধারণ করে।</message>
+  
   <message id="bgw-use-existing-background-peaks-tt">নির্দিষ্ট ব্যাকগ্রাউন্ডের ফিট পিকগুলি ব্যবহার করে, পিক পুনরায় ফিট করার পরিবর্তে।
 InterSpec থেকে পিকগুলি স্পেকট্রাম ফাইলে থাকতে হবে, এবং এই বিকল্পটি হার্ড ব্যাকগ্রাউন্ড বিয়োগের সাথে ব্যবহার করা যাবে না।</message>
 

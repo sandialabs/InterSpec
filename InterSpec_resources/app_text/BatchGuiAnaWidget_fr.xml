@@ -20,6 +20,7 @@
   <message id="bgw-overwrite-output-files">Écraser fichiers sortie</message>
   <message id="bgw-create-csv-output">CSV pics</message>
   <message id="bgw-create-json-output">Écrire JSON</message>
+  <message id="bgw-concatenate-to-n42">Créer N42 concaténé</message>
   <message id="bgw-use-existing-background-peaks">Utiliser pics bruit de fond existants</message>
   <message id="bgw-use-exemplar-energy-cal-for-background">Utiliser étal. exemplaire pour bruit de fond</message>
   
@@ -99,6 +100,8 @@ Si refit-energy-cal est spécifié vrai, alors l'étalonnage énergétique de l'
   <message id="bgw-create-csv-output-tt">Sortie CSV d'ajustement de pics.</message>
   
   <message id="bgw-create-json-output-tt">Écrit le JSON utilisé pour créer les modèles de rapport, vers un fichier.</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">Créer un fichier N42 de sortie qui contient tous les ajustements de pics de tous les fichiers d'entrée.</message>
   
   <message id="bgw-use-existing-background-peaks-tt">Utilise les pics ajustés du bruit de fond spécifié, plutôt que de réajuster les pics.
 Les pics d'InterSpec doivent exister dans le fichier de spectre, et cette option ne peut pas être utilisée avec soustraction dure du bruit de fond.</message>

@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">घटता परमाणु द्रव्यमान</message>
   <message id="dcc-yAxisTitle">बढ़ता परमाणु क्रमांक</message>
   <message id="dcc-clickNucTxt">अधिक जानकारी के लिए न्यूक्लाइड पर क्लिक करें।</message>
-  <message id="dcc-clickNucMoreInfoTxt1">इसके द्वारा छोड़े गए कणों के लिए न्यूक्लाइड पर डबल-क्लिक करें।</message>
   <message id="dcc-clickNucMoreInfoTxt2">प्रदर्शित क्षय श्रृंखला को बदलने के लिए</message>
   <message id="dcc-clickNucMoreInfoTxt3">ऊपर एक अलग स्रोत न्यूक्लाइड पर क्लिक करें।</message>
   <message id="dcc-clickNucMblTxt">अधिक जानकारी के लिए न्यूक्लाइड पर टैप करें।</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">इसके द्वारा छोड़े गए कणों के लिए न्यूक्लाइड को 1 सेकंड के लिए स्पर्श करें।</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">प्रदर्शित क्षय श्रृंखला को बदलने के लिए</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">ऊपर एक अलग स्रोत न्यूक्लाइड पर क्लिक करें।</message>
+  <message id="dcc-show-decay-products">{nuclide} क्षय उत्पाद दिखाएं</message>
+  <message id="dcc-show-decays-through">{nuclide} के माध्यम से क्षय दिखाएं</message>
 
 
   <message id="dcn-initial-age">प्रारंभिक आयु: </message>

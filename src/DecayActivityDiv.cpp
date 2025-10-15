@@ -2208,6 +2208,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   {
     displOptLower = new WContainerWidget( displayOptionsDiv );
     displOptLower->setMargin( 5, Wt::Top );
+    displOptLower->addStyleClass( "LowerOptions" );
   }
   
   
@@ -2228,6 +2229,9 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   
   if( !m_viewer->isPhone() )
   {
+    WContainerWidget *spacer = new WContainerWidget( displOptLower );
+    spacer->addStyleClass( "LowerOptionsSpacer" );
+    
     WPushButton *csvButton = new WPushButton( displOptLower );
     csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
     csvButton->setText( WString("{1}...").arg( WString::tr("CSV") ) );
