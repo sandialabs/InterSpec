@@ -434,6 +434,19 @@ struct PeakFitDiffCostFunction
 #endif
 
     size_t fit_sigma_num = 0;
+
+    // TODO: if move to fitting the distance between peaks, can remove this next little loop.
+    T min_mean = T(std::numeric_limits<double>::infinity());
+    T max_mean = T(-std::numeric_limits<double>::infinity());
+    for( size_t i = 0; i < m_num_peaks; ++i )
+    {
+      const size_t mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + i;
+      const T frac_roi_range = params[mean_par_index] - 0.5;
+      const T mean = m_roi_lower_energy + frac_roi_range*range;
+      min_mean = min( min_mean, mean );
+      max_mean = max( max_mean, mean );
+    }
+
     for( size_t i = 0; i < m_num_peaks; ++i )
     {
       const size_t mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + i;
@@ -441,6 +454,7 @@ struct PeakFitDiffCostFunction
 
       const bool fit_amp = m_starting_peaks[i]->fitFor(PeakDef::GaussAmplitude);
 
+      // TODO: should move from fitting `frac_roi_range` to instead fitting for the difference between each peak.  Use npeaks unconstrained paramaters, and have thier distances be `exp(par[i])`, then normalize the spacing and add that fraction to each on.  Actually could use npeaks-1 paramaters, and fix the first one to be 0 (so `exp(0) = 1`) to set scale for the other parameters
       const T frac_roi_range = params[mean_par_index] - 0.5;
       const T mean = m_roi_lower_energy + frac_roi_range*range;
       const T amp = fit_amp ? T(1.0) : T(m_starting_peaks[i]->amplitude());
@@ -500,11 +514,20 @@ struct PeakFitDiffCostFunction
           const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
           const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
           const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
+
+          // I dont know what/why in the world I was doign the below
           T frac_dist;
-          if( (last_mean - first_mean) > 1.0E-2 )
-            frac_dist = (mean - first_mean) / (last_mean - first_mean);
+          //if( (last_mean - first_mean) > 1.0E-2 )
+          //  frac_dist = (mean - first_mean) / (last_mean - first_mean);
+          //else
+          //  frac_dist = T(1.0*i) / (num_sigmas_fit - 1.0);
+          assert( mean >= min_mean );
+          assert( mean <= max_mean );
+          T mean_dists = max_mean - min_mean;
+          if( mean_dists > 1.0E-6 )
+            frac_dist = (mean - min_mean) / (max_mean - min_mean);
           else
-            frac_dist = T(1.0*i) / (num_sigmas_fit - 1.0);
+            frac_dist = T(0.5);
 
           const T fist_sigma = sigma;
           const T last_sigma = sigma * params[sigma_index + 1];
@@ -631,12 +654,47 @@ struct PeakFitDiffCostFunction
         const float left_val = m_data->gamma_channel_lower( m_lower_channel );
         const float upper_val = m_data->gamma_channel_upper( m_upper_channel );
         const double avrg_chnl_width = (upper_val - left_val) / (1.0 + (m_upper_channel - m_lower_channel));
+        const double min_reasonable_sigma = (0.42*0.99)*avrg_chnl_width;
 
-        if( (sigma <= ((0.42*0.99)*avrg_chnl_width)) || (sigma < 0.00025) ) //The 0.00025 is totally arbitrary
-          throw runtime_error( "peak width smaller than reasonable"
-                               " (sigma=" + std::to_string(sigma) + ", avrg_chnl_width="
-                              + std::to_string(avrg_chnl_width) + ")" );
-      }
+        if( (sigma <= min_reasonable_sigma) || (sigma < 0.00025) ) //The 0.00025 is totally arbitrary
+        {
+          double peak_sigma;
+          if constexpr ( std::is_same_v<T, double> )
+            peak_sigma = sigma;
+          else
+            peak_sigma = sigma.a;
+
+          {
+            cout << "num_sigmas_fit=" << num_sigmas_fit << ", i=" << i << endl;
+            cout << "m_options.testFlag(PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent)=" << m_options.testFlag(PeakFitLM::PeakFitLMOptions::AllPeakFwhmIndependent) << endl;
+
+            if( (i > 0) && (num_sigmas_fit > 1) )
+            {
+              const size_t first_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + 0;
+              const size_t last_mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + m_num_peaks - 1;
+              const T frac_first_roi_range = params[first_mean_par_index] - 0.5;
+              const T frac_last_roi_range = params[last_mean_par_index] - 0.5;
+              const T first_mean = m_roi_lower_energy + frac_first_roi_range*range;
+              const T last_mean = m_roi_lower_energy + frac_last_roi_range*range;
+              T frac_dist;
+              if( (last_mean - first_mean) > 1.0E-2 )
+                frac_dist = (mean - first_mean) / (last_mean - first_mean);
+              else
+                frac_dist = T(1.0*i) / (num_sigmas_fit - 1.0);
+
+              const T fist_sigma = sigma;
+              const size_t sigma_index = num_fit_continuum_pars + num_skew;
+              const T last_sigma = sigma * params[sigma_index + 1];
+              const T this_sigma = fist_sigma + frac_dist*(last_sigma - fist_sigma);
+              cout << endl;
+            }
+          }
+
+          throw runtime_error( "peak sigma (" + std::to_string(peak_sigma) + ") smaller than reasonable ("
+                              + std::to_string( min_reasonable_sigma )
+                              + ", avrg_chnl_width=" + std::to_string(avrg_chnl_width) + ")" );
+        }//if( (sigma <= ((0.42*0.99)*avrg_chnl_width)) || (sigma < 0.00025) )
+      }//if( sigma is potentually quite small )
 #if( DEBUG_PAR_TO_PEAKS )
     if constexpr ( !std::is_same_v<T, double> )
     {
@@ -1210,6 +1268,8 @@ struct PeakFitDiffCostFunction
 
       const size_t mean_par_index = num_fit_continuum_pars + num_skew + num_sigmas_fit + i;
 
+      // TODO:
+      // TODO: for more than one peak, move to using parameters to, move to using npeaks unconstrained paramaters, and have thier distances be `exp(par[i])` from the previous peak, then normalize the spacing and add that fraction to each on.  Actually could use npeaks-1 paramaters, and fix the first one to be 0 (so `exp(0) = 1`) to set scale for the other parameters
       const double rel_mean = 0.5 + (mean - m_roi_lower_energy) / range;
       parameters[mean_par_index] = rel_mean;
 
@@ -1388,7 +1448,7 @@ struct PeakFitDiffCostFunction
 
       assert( parameters[fit_sigma_index] >= *lower_bounds[fit_sigma_index] );
       assert( parameters[fit_sigma_index] <= *upper_bounds[fit_sigma_index] );
-
+      assert( all_widths_fixed || (lower_bounds[fit_sigma_index].has_value() && (lower_bounds[fit_sigma_index].value() >= 0.525*(avrg_bin_width / m_max_initial_sigma)) ) );
 
       if( num_sigmas_fit > 1 )
       {
