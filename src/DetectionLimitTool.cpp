@@ -1318,7 +1318,7 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_our_meas = make_shared<SpecMeas>();
     m_our_meas->setDetector( primaryMeas->detector() );
     m_our_meas->add_measurement( ourspec, true );
-    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()} );
+    m_peakModel->setPeakFromSpecMeas( m_our_meas, {ourspec->sample_number()}, SpecUtils::SpectrumType::Foreground );
     m_chart->setData( ourspec, false );
   }//if( spec )
 

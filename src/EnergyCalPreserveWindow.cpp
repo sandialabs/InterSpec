@@ -542,11 +542,10 @@ void EnergyCalPreserveWindow::propogateCalibrations()
       m_newmeas->setPeaks( peakiter.second, peakiter.first );
       
       //Check if we need to let the PeakModel know that dispalyed peaks have been updated.
-      if( (m_newtype == SpectrumType::Foreground)
-          && (dispMeas == m_newmeas)
+      if( (dispMeas == m_newmeas)
           && (peakiter.first == dispSamples) )
       {
-        viewer->peakModel()->setPeakFromSpecMeas( m_newmeas, dispSamples );
+        viewer->peakModel()->setPeakFromSpecMeas( m_newmeas, dispSamples, m_newtype );
       }
     }//for( loop over new peaks mape )
   }catch( std::exception &e )

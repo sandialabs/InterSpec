@@ -567,6 +567,12 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
   
   const auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   const auto &foreSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+
+  const auto background = viewer->measurment(SpecUtils::SpectrumType::Background);
+  const auto &backSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+
+  const auto secondary = viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
+  const auto &secoSamples = viewer->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
   
   for( const auto &mp : updated_peaks )
   {
@@ -576,7 +582,11 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
     spec->setPeaks( newpeaks, samples );
     
     if( (spec == foreground) && (samples == foreSamples) )
-      peakmodel->setPeakFromSpecMeas( spec, samples);
+      peakmodel->setPeakFromSpecMeas( spec, samples, SpecUtils::SpectrumType::Foreground );
+    else if( (spec == background) && (samples == backSamples) )
+      peakmodel->setPeakFromSpecMeas( spec, samples, SpecUtils::SpectrumType::Background );
+    else if( (spec == secondary) && (samples == secoSamples) )
+      peakmodel->setPeakFromSpecMeas( spec, samples, SpecUtils::SpectrumType::SecondForeground );
   }//for( const auto &mp : updated_peaks )
   
   

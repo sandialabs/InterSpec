@@ -551,6 +551,8 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   m_peakModel->rowsInserted().connect(  boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
   m_peakModel->layoutChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
   m_peakModel->modelReset().connect(    boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
+  m_peakModel->backgroundPeaksChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Background) );
+  m_peakModel->secondaryPeaksChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::SecondForeground) );
 }//void setPeakModel( PeakModel *model );
 
 
@@ -1374,7 +1376,7 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
   
   if( m_peakModel )
   {
-    std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
+    std::shared_ptr<const std::deque<shared_ptr<const PeakDef>> > peaks = m_peakModel->peaks();
     if( peaks )
     {
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
@@ -1435,33 +1437,13 @@ void D3SpectrumDisplayDiv::setPeaksToClient( const SpecUtils::SpectrumType spect
   }//if( m_defaultPeakColor.isDefault() )
   
   
-  if( spectrum_type == SpecUtils::SpectrumType::Foreground )
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel ? m_peakModel->peaks(spectrum_type) : nullptr;
+  if( peaks )
   {
-    shared_ptr<const deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel ? m_peakModel->peaks() : nullptr;
-    if( peaks )
-    {
-      vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-      const std::shared_ptr<const Measurement> &foreground = m_foreground;
-      const WColor peak_color = m_defaultPeakColor.isDefault() ? WColor(0, 51, 255) : m_defaultPeakColor;
-      js = PeakDef::peak_json( inpeaks, foreground, peak_color, 255 );
-    }
-  }else if( InterSpec *viewer = InterSpec::instance() )
-  {
-    // This is totally not correct - the spectrum may not be the main InterSpec spectrum
-    std::shared_ptr<SpecMeas> meas = viewer->measurment( spectrum_type );
-    const std::set<int> &samples = viewer->displayedSamples( spectrum_type );
-    
-    if( meas && !samples.empty() )
-    {
-      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > peaks = meas->peaks( samples );
-      if( peaks )
-      {
-        vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
-        const WColor peak_color = m_defaultPeakColor.isDefault() ? WColor(0, 51, 255) : m_defaultPeakColor;
-        js = PeakDef::peak_json( inpeaks, spectrum_measurement, peak_color, alpha );
-      }
-    }
-  }//if( spectrum_type == SpecUtils::SpectrumType::Foreground ) / else
+    vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+    const WColor peak_color = m_defaultPeakColor.isDefault() ? WColor(0, 51, 255) : m_defaultPeakColor;
+    js = PeakDef::peak_json( inpeaks, spectrum_measurement, peak_color, alpha );
+  }
   
   if( js.empty() )
     js = "[]";
@@ -1913,8 +1895,8 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     // Set the peak data for the spectrum
     if ( m_peakModel )
     {
-      std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-      vector< std::shared_ptr<const PeakDef> > inpeaks;
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
+      vector<shared_ptr<const PeakDef>> inpeaks;
       if( peaks )
         inpeaks.insert( end(inpeaks), peaks->begin(), peaks->end() );
       
@@ -2556,51 +2538,26 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
                                                           std::string spectrum_type,
                                                           bool isfinal )
 {
-  std::unique_ptr<UndoRedoManager::PeakModelChange> peak_undo_creator;
+  assert( m_peakModel );
+  if( !m_peakModel )
+    return;
   
-  PeakModel *peakModel = nullptr;
-  shared_ptr<const Measurement> spectrum;
-  shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks;
-  shared_ptr<deque<PeakModel::PeakShrdPtr>> final_mondified_peaks;
+  std::unique_ptr<UndoRedoManager::PeakModelChange> peak_undo_creator;
+  if( isfinal )
+    peak_undo_creator.reset( new UndoRedoManager::PeakModelChange() );
   
   const bool for_background = (spectrum_type == "BACKGROUND");
   const bool for_secondary = (!for_background && (spectrum_type == "SECONDARY"));
-  SpecUtils::SpectrumType spec_type = SpecUtils::SpectrumType::Foreground;
+  assert( for_background || for_secondary || (spectrum_type == "FOREGROUND") );
+  const SpecUtils::SpectrumType spec_type = for_background ? SpecUtils::SpectrumType::Background
+          : (for_secondary ? SpecUtils::SpectrumType::SecondForeground : SpecUtils::SpectrumType::Foreground);
+  shared_ptr<const Measurement> spectrum = for_background ? m_background : (for_secondary ? m_secondary : m_foreground);
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> origpeaks = m_peakModel->peaks(spec_type);
   
-  if( for_background || for_secondary )
-  {
-    spectrum = for_background ? m_background : m_secondary;
-    spec_type = for_background ? SpecUtils::SpectrumType::Background : SpecUtils::SpectrumType::SecondForeground;
-    
-    InterSpec *viewer = InterSpec::instance();
-    assert( viewer );
-    if( !viewer )
-      return;
-    
-    shared_ptr<SpecMeas> meas = viewer->measurment( spec_type );
-    const set<int> &samples = viewer->displayedSamples( spec_type );
-    origpeaks = (meas && !samples.empty()) ? meas->peaks( samples ) : nullptr;
-    
-    if( isfinal && origpeaks )
-      final_mondified_peaks = make_shared<deque<PeakModel::PeakShrdPtr>>( begin(*origpeaks), end(*origpeaks) );
-  }else
-  {
-    assert( spectrum_type == "FOREGROUND" );
-    
-    spec_type = SpecUtils::SpectrumType::Foreground;
-    spectrum = m_foreground;
-    peakModel = m_peakModel;
-    origpeaks = peakModel ? peakModel->peaks() : nullptr;
-    
-    if( isfinal )
-      peak_undo_creator.reset( new UndoRedoManager::PeakModelChange() );
-    
-    
-    assert( peakModel );
-    if( !peakModel )
-      return;
-  }//if( background or secondary ) / else ( assume foreground )
-    
+  shared_ptr<deque<shared_ptr<const PeakDef>>> final_mondified_peaks;
+  if( (for_background || for_secondary) && isfinal && origpeaks )
+    final_mondified_peaks = make_shared<deque<shared_ptr<const PeakDef>>>( begin(*origpeaks), end(*origpeaks) );
+  
   assert( origpeaks && spectrum );
   if( !origpeaks || !spectrum )  //Shouldnt ever happen
     return;
@@ -2684,7 +2641,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
     {
       assert( final_mondified_peaks );
       final_mondified_peaks->erase( std::remove_if( begin(*final_mondified_peaks), end(*final_mondified_peaks),
-                                                   [&continuum]( const PeakModel::PeakShrdPtr &ptr ){
+                                                   [&continuum]( const shared_ptr<const PeakDef> &ptr ){
         return (continuum == ptr->continuum());
       }), end(*final_mondified_peaks) );
     }//if( isfinal && (for_background || for_secondary) )
@@ -2699,18 +2656,18 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
         {
           final_mondified_peaks->insert( end(*final_mondified_peaks), begin(new_roi_initial_peaks), end(new_roi_initial_peaks) );
           std::sort( begin(*final_mondified_peaks), end(*final_mondified_peaks), &PeakDef::lessThanByMeanShrdPtr );
-          InterSpec::instance()->setPeaks( spec_type, final_mondified_peaks );
+          m_peakModel->setPeaks( *final_mondified_peaks, spec_type );
         }else
         {
-          assert( peakModel );
+          assert( m_peakModel );
           // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
-          peakModel->removePeaks( orig_roi_peaks );
+          m_peakModel->removePeaks( orig_roi_peaks );
           
           std::vector<PeakDef> peaks_to_add;
           for( auto p : new_roi_initial_peaks )
             peaks_to_add.push_back( *p );
           
-          peakModel->addPeaks( peaks_to_add );
+          m_peakModel->addPeaks( peaks_to_add );
         }
       }else
       {
@@ -2770,15 +2727,18 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
         
         if( for_background || for_secondary )
         {
-          final_mondified_peaks->insert( end(*final_mondified_peaks), begin(new_roi_initial_peaks), end(new_roi_initial_peaks) );
-          std::sort( begin(*final_mondified_peaks), end(*final_mondified_peaks), &PeakDef::lessThanByMeanShrdPtr );
-          
-          InterSpec::instance()->setPeaks( spec_type, final_mondified_peaks ); // will take care of undo/redo
+          if( origpeaks )
+          {
+            final_mondified_peaks->insert( end(*final_mondified_peaks), begin(new_roi_initial_peaks), end(new_roi_initial_peaks) );
+            std::sort( begin(*final_mondified_peaks), end(*final_mondified_peaks), &PeakDef::lessThanByMeanShrdPtr );
+            
+            m_peakModel->setPeaks( *final_mondified_peaks, spec_type ); // will take care of undo/redo
+          }
         }else
         {
-          assert( peakModel );
-          peakModel->removePeaks( orig_roi_peaks );
-          peakModel->addPeaks( peaks_to_add );
+          assert( m_peakModel );
+          m_peakModel->removePeaks( orig_roi_peaks );
+          m_peakModel->addPeaks( peaks_to_add );
         }
         
         m_continuum_being_drug.reset();
@@ -2797,11 +2757,11 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
       {
         if( for_background || for_secondary )
         {
-          InterSpec::instance()->setPeaks( spec_type, final_mondified_peaks ); //will take care of undo/redo
+          m_peakModel->setPeaks( *final_mondified_peaks, spec_type );
         }else
         {
-          assert( peakModel );
-          peakModel->removePeaks( orig_roi_peaks );
+          assert( m_peakModel );
+          m_peakModel->removePeaks( orig_roi_peaks );
         }
       }
     }//if( not narrow region ) / else
@@ -3070,7 +3030,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         
         UndoRedoManager::PeakModelChange peak_undo_creator;
         
-        deque< PeakModel::PeakShrdPtr > preaddpeaks, postaddpeaks;
+        deque<shared_ptr<const PeakDef>> preaddpeaks, postaddpeaks;
         if( peakModel->peaks() ) //should always be true, but JIC
           preaddpeaks = *peakModel->peaks();
         
@@ -3085,7 +3045,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         if( peakModel->peaks() ) //should always be true, but JIC
           postaddpeaks = *peakModel->peaks();
         
-        vector< PeakModel::PeakShrdPtr > added_peaks;
+        vector<shared_ptr<const PeakDef>> added_peaks;
         for( const auto &p : postaddpeaks )
         {
           if( !std::count(begin(preaddpeaks), end(preaddpeaks), p) )
@@ -3323,8 +3283,6 @@ D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
   // Cleanup the instance-specific style rules we created.
   WCssStyleSheet &style = wApp->styleSheet();
   for( const auto &name_rule : m_cssRules )
-  {
     style.removeRule( name_rule.second );
-  }
   m_cssRules.clear();
 }//~D3SpectrumDisplayDiv()
