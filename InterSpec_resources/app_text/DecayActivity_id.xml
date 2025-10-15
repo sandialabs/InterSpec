@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">Massa Atom Menurun</message>
   <message id="dcc-yAxisTitle">Nomor Atom Meningkat</message>
   <message id="dcc-clickNucTxt">Klik nuklida untuk info lebih lanjut.</message>
-  <message id="dcc-clickNucMoreInfoTxt1">Klik ganda nuklida untuk partikel yang dihasilkan.</message>
   <message id="dcc-clickNucMoreInfoTxt2">Klik nuklida sumber yang berbeda di atas untuk</message>
   <message id="dcc-clickNucMoreInfoTxt3">mengubah rantai peluruhan yang ditampilkan.</message>
   <message id="dcc-clickNucMblTxt">Ketuk nuklida untuk info lebih lanjut.</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">Sentuh nuklida selama 1 detik untuk partikel yang dihasilkan.</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">Klik nuklida sumber yang berbeda di atas untuk</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">mengubah rantai peluruhan yang ditampilkan.</message>
+  <message id="dcc-show-decay-products">Tampilkan produk peluruhan {nuclide}</message>
+  <message id="dcc-show-decays-through">Tampilkan peluruhan melalui {nuclide}</message>
 
 
   <message id="dcn-initial-age">Usia Awal: </message>

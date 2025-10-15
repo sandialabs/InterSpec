@@ -666,16 +666,16 @@ void DecayChainChart::defineJavaScript()
     options += ", linkColor: " + csstxt(theme->defaultPeakLine,"blue");
   }//if( theme )
   
-  options += ", xAxisTitle: '" + WString::tr("dcc-xAxisTitle").toUTF8() + "'";
-  options += ", yAxisTitle: '" + WString::tr("dcc-yAxisTitle").toUTF8() + "'";
-  options += ", clickNucTxt: '" + WString::tr("dcc-clickNucTxt").toUTF8() + "'";
-  options += ", clickNucMoreInfoTxt1: '" + WString::tr("dcc-clickNucMoreInfoTxt1").toUTF8() + "'";
-  options += ", clickNucMoreInfoTxt2: '" + WString::tr("dcc-clickNucMoreInfoTxt2").toUTF8() + "'";
-  options += ", clickNucMoreInfoTxt3: '" + WString::tr("dcc-clickNucMoreInfoTxt3").toUTF8() + "'";
-  options += ", clickNucMblTxt: '" + WString::tr("dcc-clickNucMblTxt").toUTF8() + "'";
-  options += ", clickNucMblMoreInfoTxt1: '" + WString::tr("dcc-clickNucMblMoreInfoTxt1").toUTF8() + "'";
-  options += ", clickNucMblMoreInfoTxt2: '" + WString::tr("dcc-clickNucMblMoreInfoTxt2").toUTF8() + "'";
-  options += ", clickNucMblMoreInfoTxt3: '" + WString::tr("dcc-clickNucMblMoreInfoTxt3").toUTF8() + "'";
+  options += ", xAxisTitle: " + WString::tr("dcc-xAxisTitle").jsStringLiteral('\'');
+  options += ", yAxisTitle: " + WString::tr("dcc-yAxisTitle").jsStringLiteral('\'');
+  options += ", clickNucTxt: " + WString::tr("dcc-clickNucTxt").jsStringLiteral('\'');
+  options += ", clickNucMoreInfoTxt2: " + WString::tr("dcc-clickNucMoreInfoTxt2").jsStringLiteral('\'');
+  options += ", clickNucMoreInfoTxt3: " + WString::tr("dcc-clickNucMoreInfoTxt3").jsStringLiteral('\'');
+  options += ", clickNucMblTxt: " + WString::tr("dcc-clickNucMblTxt").jsStringLiteral('\'');
+  options += ", clickNucMblMoreInfoTxt2: " + WString::tr("dcc-clickNucMblMoreInfoTxt2").jsStringLiteral('\'');
+  options += ", clickNucMblMoreInfoTxt3: " + WString::tr("dcc-clickNucMblMoreInfoTxt3").jsStringLiteral('\'');
+  options += ", showDecayProductsTxt: " + WString::tr("dcc-show-decay-products").jsStringLiteral('\'');
+  options += ", showDecaysThroughTxt: " + WString::tr("dcc-show-decays-through").jsStringLiteral('\'');
 
   options += "}";
   

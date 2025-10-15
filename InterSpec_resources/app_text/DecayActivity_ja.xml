@@ -75,13 +75,13 @@
   <message id="dcc-xAxisTitle">原子質量の減少</message>
   <message id="dcc-yAxisTitle">原子番号の増加</message>
   <message id="dcc-clickNucTxt">詳細情報は核種をクリック。</message>
-  <message id="dcc-clickNucMoreInfoTxt1">放出粒子を見るには核種をダブルクリック。</message>
   <message id="dcc-clickNucMoreInfoTxt2">上の異なる線源核種をクリックして</message>
   <message id="dcc-clickNucMoreInfoTxt3">表示される崩壊連鎖を変更。</message>
   <message id="dcc-clickNucMblTxt">詳細情報は核種をタップ。</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">放出粒子を見るには核種を1秒間タッチ。</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">上の異なる線源核種をクリックして</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">表示される崩壊連鎖を変更。</message>
+  <message id="dcc-show-decay-products">{nuclide}の崩壊生成物を表示</message>
+  <message id="dcc-show-decays-through">{nuclide}を経由する崩壊を表示</message>
 
 
   <message id="dcn-initial-age">初期年齢: </message>
