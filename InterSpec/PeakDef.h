@@ -662,12 +662,18 @@ public:
 
   inline bool useForEnergyCalibration() const;
   inline void useForEnergyCalibration( const bool use );
+  /** Returns the raw user preference for energy calibration, without checking source assignment */
+  inline bool useForEnergyCalibrationUserPreference() const { return m_useForEnergyCal; }
 
   inline bool useForShieldingSourceFit() const;
   inline void useForShieldingSourceFit( const bool use );
-  
+  /** Returns the raw user preference for shielding/source fit, without checking source assignment */
+  inline bool useForShieldingSourceFitUserPreference() const { return m_useForShieldingSourceFit; }
+
   inline bool useForManualRelEff() const;
   inline void useForManualRelEff( const bool use );
+  /** Returns the raw user preference for manual relative efficiency, without checking source assignment */
+  inline bool useForManualRelEffUserPreference() const { return m_useForManualRelEff; }
   
   /** Returns if should use for DRF intrinsic efficiency fit.  Note that this does not check that the nuclide and transition has actually
    been defined.

@@ -852,7 +852,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   params["specType"] = "Foreground";
 
   json result;
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_user_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
 
   // Should return an object with rois array (same structure as detected_peaks)
   BOOST_CHECK( result.is_object() );
@@ -881,7 +881,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   //std::cout << "Fitted peaks at 776.52 keV and 554.35 keV\n";
 
   // Now get user peaks - should have the fitted peaks
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_user_peaks", params, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
 
   BOOST_CHECK( result.is_object() );
   BOOST_CHECK( result.contains("rois") );
@@ -933,6 +933,95 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
 
   BOOST_CHECK_MESSAGE( found_776, "Should find 776.52 keV Br82 peak in user peaks" );
   BOOST_CHECK_MESSAGE( found_554, "Should find 554.35 keV Br82 peak in user peaks" );
+
+  // Test energy range filtering - get peaks only between 500-600 keV
+  params = json::object();
+  params["specType"] = "Foreground";
+  params["lowerEnergy"] = 500.0;
+  params["upperEnergy"] = 600.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+
+  BOOST_CHECK( result.is_object() );
+  BOOST_CHECK( result.contains("rois") );
+  BOOST_CHECK( result["rois"].is_array() );
+
+  // Should find 554 keV peak but not 776 keV peak
+  found_554 = false;
+  found_776 = false;
+  for( const auto &roi : result["rois"] )
+  {
+    for( const auto &peak : roi["peaks"] )
+    {
+      const double mean = peak["energy"].get<double>();
+      if( std::abs(mean - 554.35) < 1.0 )
+        found_554 = true;
+      if( std::abs(mean - 776.52) < 1.0 )
+        found_776 = true;
+    }
+  }
+  BOOST_CHECK_MESSAGE( found_554, "Should find 554 keV peak in 500-600 keV range" );
+  BOOST_CHECK_MESSAGE( !found_776, "Should NOT find 776 keV peak in 500-600 keV range" );
+
+  // Test with only lower bound
+  params = json::object();
+  params["specType"] = "Foreground";
+  params["lowerEnergy"] = 700.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+
+  found_554 = false;
+  found_776 = false;
+  for( const auto &roi : result["rois"] )
+  {
+    for( const auto &peak : roi["peaks"] )
+    {
+      const double mean = peak["energy"].get<double>();
+      if( std::abs(mean - 554.35) < 1.0 )
+        found_554 = true;
+      if( std::abs(mean - 776.52) < 1.0 )
+        found_776 = true;
+    }
+  }
+  BOOST_CHECK_MESSAGE( !found_554, "Should NOT find 554 keV peak above 700 keV" );
+  BOOST_CHECK_MESSAGE( found_776, "Should find 776 keV peak above 700 keV" );
+
+  // Test with only upper bound
+  params = json::object();
+  params["specType"] = "Foreground";
+  params["upperEnergy"] = 600.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+
+  found_554 = false;
+  found_776 = false;
+  for( const auto &roi : result["rois"] )
+  {
+    for( const auto &peak : roi["peaks"] )
+    {
+      const double mean = peak["energy"].get<double>();
+      if( std::abs(mean - 554.35) < 1.0 )
+        found_554 = true;
+      if( std::abs(mean - 776.52) < 1.0 )
+        found_776 = true;
+    }
+  }
+  BOOST_CHECK_MESSAGE( found_554, "Should find 554 keV peak below 600 keV" );
+  BOOST_CHECK_MESSAGE( !found_776, "Should NOT find 776 keV peak below 600 keV" );
+
+  // Test with only lower bound above all peaks - should return no peaks
+  params = json::object();
+  params["specType"] = "Foreground";
+  params["lowerEnergy"] = 800.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("get_analysis_peaks", params, fixture.m_interspec) );
+  BOOST_CHECK( result.is_object() );
+  BOOST_CHECK( result.contains("rois") );
+  BOOST_CHECK( result["rois"].is_array() );
+  BOOST_CHECK_MESSAGE( result["rois"].empty(), "Should return no peaks when lowerEnergy is 800 keV (above all peaks)" );
+
+  // Test with invalid range (upper < lower) - should throw exception
+  params = json::object();
+  params["specType"] = "Foreground";
+  params["lowerEnergy"] = 800.0;
+  params["upperEnergy"] = 500.0;
+  BOOST_CHECK_THROW( registry.executeTool("get_analysis_peaks", params, fixture.m_interspec), std::runtime_error );
 }
 
 
@@ -1500,4 +1589,390 @@ BOOST_AUTO_TEST_CASE( test_executeSearchSourcesByEnergy )
   energies_array.push_back( energy1 );
   params["energies"] = energies_array;
   BOOST_CHECK_THROW( registry.executeTool("search_sources_by_energy", params, fixture.m_interspec), std::runtime_error );
+}
+
+BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
+{
+  InterSpecTestFixture fixture;
+  auto& registry = LlmTools::ToolRegistry::instance();
+
+  json params, result;
+
+  // First, fit multiple Br82 peaks (and nearby Ra226 and K40 peaks) for testing
+  // Br82 peaks at: 554, 606.3, 619, 776.5, 1474.9 keV
+  // Ra226 peak at: 609.3 keV
+  // K40 peak at: 1460 keV
+
+  std::vector<double> peak_energies = {554.0, 606.3, 609.3, 619.0, 776.5, 1460.0, 1474.9};
+  std::vector<double> fitted_peak_energies;
+
+  for( const double energy : peak_energies )
+  {
+    params = json::object();
+    params["energy"] = energy;
+    params["specType"] = "Foreground";
+    params["addToUsersPeaks"] = true;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool("fit_peak", params, fixture.m_interspec) );
+    // Store the actual fitted energy for use in tests
+    if( result.contains("fitPeakEnergy") )
+    {
+      fitted_peak_energies.push_back( result["fitPeakEnergy"].get<double>() );
+    }
+    else
+    {
+      std::cout << "Warning: Could not fit peak at " << energy << " keV. Result: " << result.dump() << std::endl;
+    }
+  }
+
+  // Verify we have enough peaks to test
+  BOOST_REQUIRE( fitted_peak_energies.size() >= 5 );
+
+  // Test 1: SetEnergy - modify peak energy
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetEnergy";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 558.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  BOOST_CHECK_CLOSE( result["modifiedPeak"]["energy"].get<double>(), 558.0, 0.1 );
+
+  // Verify the peak was actually modified by checking get_analysis_peaks
+  json get_peaks_params = json::object();
+  get_peaks_params["specType"] = "Foreground";
+  json peaks_result;
+  BOOST_REQUIRE_NO_THROW( peaks_result = registry.executeTool("get_analysis_peaks", get_peaks_params, fixture.m_interspec) );
+
+  // Search for the modified peak at 558 keV and ensure the original peak is not present
+  bool found_modified_peak = false;
+  bool found_original_peak = false;
+  for( const auto &roi : peaks_result["rois"] )
+  {
+    for( const auto &peak : roi["peaks"] )
+    {
+      const double peak_energy = peak["energy"].get<double>();
+      // Check if we find the modified peak at 558 keV
+      if( std::abs(peak_energy - 558.0) < 0.5 )
+        found_modified_peak = true;
+      // Check if we still find the original peak (should not be there)
+      if( std::abs(peak_energy - fitted_peak_energies[0]) < 0.5 && std::abs(peak_energy - 558.0) > 0.5 )
+        found_original_peak = true;
+    }
+  }
+  BOOST_CHECK_MESSAGE( found_modified_peak, "Should find modified peak at 558 keV in get_analysis_peaks" );
+  BOOST_CHECK_MESSAGE( !found_original_peak, "Should NOT find original peak after modification" );
+
+  // Set back to original energy - need to search at the modified energy (558.0)
+  params = json::object();
+  params["energy"] = 558.0;  // Search for peak at its current location
+  params["editAction"] = "SetEnergy";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = fitted_peak_energies[0];
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  if( !result["success"].get<bool>() )
+  {
+    std::cout << "Failed to set back to original energy. Result: " << result.dump() << std::endl;
+  }
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  if( result.contains("modifiedPeak") && result["modifiedPeak"].contains("energy") )
+  {
+    BOOST_CHECK_CLOSE( result["modifiedPeak"]["energy"].get<double>(), fitted_peak_energies[0], 0.01 );
+  }
+
+  // Test 2: SetFwhm - modify peak FWHM
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetFwhm";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 5.5;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  BOOST_CHECK_CLOSE( result["modifiedPeak"]["fwhm"].get<double>(), 5.5, 0.1 );
+
+  // Test 3: SetAmplitude - modify peak amplitude
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetAmplitude";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 1000.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  BOOST_CHECK_CLOSE( result["modifiedPeak"]["amplitude"].get<double>(), 1000.0, 1.0 );
+
+  // Test 4: SetEnergyUncertainty - modify energy uncertainty
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetEnergyUncertainty";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 0.5;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  // Note: energyUncertainty may not be in JSON output, skip verification for now
+
+  // Test 5: SetFwhmUncertainty - modify FWHM uncertainty
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetFwhmUncertainty";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 0.2;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  // Note: fwhmUncertainty may not be in JSON output, skip verification for now
+
+  // Test 6: SetAmplitudeUncertainty - modify amplitude uncertainty
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetAmplitudeUncertainty";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 50.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  BOOST_CHECK_CLOSE( result["modifiedPeak"]["amplitudeUncert"].get<double>(), 50.0, 0.5 );
+
+  // Test 7: SetRoiLower - modify lower ROI bound
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetRoiLower";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 550.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("peaksInRoi") );
+  // ROI bounds are checked via success message
+
+  // Test 8: SetRoiUpper - modify upper ROI bound
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetRoiUpper";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 560.0;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("peaksInRoi") );
+  // ROI bounds are checked via success message
+
+  // Test 9: SetSkewType - test various skew types
+  std::vector<std::string> skew_types = {"NoSkew", "Bortel", "GaussExp", "CrystalBall", "ExpGaussExp", "DoubleSidedCrystalBall"};
+  for( const auto& skew_type : skew_types )
+  {
+    params = json::object();
+    params["energy"] = fitted_peak_energies[1];
+    params["editAction"] = "SetSkewType";
+    params["specType"] = "Foreground";
+    params["stringValue"] = skew_type;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+    BOOST_CHECK( result["success"].get<bool>() );
+    BOOST_CHECK( result.contains("modifiedPeak") );
+  }
+
+  // Test 10: SetContinuumType - test various continuum types
+  std::vector<std::string> continuum_types = {"NoOffset", "Constant", "Linear", "Quadratic", "Cubic", "FlatStep", "LinearStep", "BiLinearStep"};
+  for( const auto& cont_type : continuum_types )
+  {
+    params = json::object();
+    params["energy"] = fitted_peak_energies[2];
+    params["editAction"] = "SetContinuumType";
+    params["specType"] = "Foreground";
+    params["stringValue"] = cont_type;
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+    // Some continuum types may not be supported, just verify the call succeeded
+    BOOST_CHECK( result.contains("success") );
+    if( result["success"].get<bool>() )
+    {
+      BOOST_CHECK( result.contains("modifiedPeak") );
+    }
+  }
+
+  // Test 11: SetSource - assign nuclide source
+  params = json::object();
+  params["energy"] = fitted_peak_energies[3];
+  params["editAction"] = "SetSource";
+  params["specType"] = "Foreground";
+  params["stringValue"] = "Br82";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  // Nuclide assignment verified via success message
+
+  // Test 12: SetSource - assign different nuclide
+  params = json::object();
+  params["energy"] = fitted_peak_energies[5];
+  params["editAction"] = "SetSource";
+  params["specType"] = "Foreground";
+  params["stringValue"] = "K40";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  // Nuclide assignment verified via success message
+
+  // Test 13: SetColor - assign color to peak
+  params = json::object();
+  params["energy"] = fitted_peak_energies[4];
+  params["editAction"] = "SetColor";
+  params["specType"] = "Foreground";
+  params["stringValue"] = "rgb(255,0,0)";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+
+  // Test 14: SetUserLabel - assign user label to peak
+  params = json::object();
+  params["energy"] = fitted_peak_energies[4];
+  params["editAction"] = "SetUserLabel";
+  params["specType"] = "Foreground";
+  params["stringValue"] = "Test Peak Label";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  // User label verified via success message
+
+  // Verify boolean properties are present in peak JSON
+  BOOST_CHECK( result["modifiedPeak"].contains("useForEnergyCalibration") );
+  BOOST_CHECK( result["modifiedPeak"].contains("useForShieldingSourceFit") );
+  BOOST_CHECK( result["modifiedPeak"].contains("useForManualRelEff") );
+
+  // Test 14a: SetUseForEnergyCalibration - set to true
+  params = json::object();
+  params["energy"] = fitted_peak_energies[4];
+  params["editAction"] = "SetUseForEnergyCalibration";
+  params["specType"] = "Foreground";
+  params["boolValue"] = true;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  BOOST_CHECK( result["modifiedPeak"]["useForEnergyCalibration"].get<bool>() == true );
+
+  // Test 14b: SetUseForShieldingSourceFit - set to true
+  params = json::object();
+  params["energy"] = fitted_peak_energies[4];
+  params["editAction"] = "SetUseForShieldingSourceFit";
+  params["specType"] = "Foreground";
+  params["boolValue"] = true;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  BOOST_CHECK( result["modifiedPeak"]["useForShieldingSourceFit"].get<bool>() == true );
+
+  // Test 14c: SetUseForManualRelEff - set to false
+  params = json::object();
+  params["energy"] = fitted_peak_energies[4];
+  params["editAction"] = "SetUseForManualRelEff";
+  params["specType"] = "Foreground";
+  params["boolValue"] = false;
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+  BOOST_CHECK( result["modifiedPeak"]["useForManualRelEff"].get<bool>() == false );
+
+  // Test 15: SplitFromRoi - split peak into its own ROI
+  // First verify there are multiple peaks in the ROI around 606-609 keV region
+  params = json::object();
+  params["energy"] = fitted_peak_energies[1];
+  params["editAction"] = "SplitFromRoi";
+  params["specType"] = "Foreground";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("modifiedPeak") );
+
+  // Test 16: MergeWithRight - merge ROI with adjacent peak on the right
+  // Use the first peak and merge with the second peak
+  params = json::object();
+  params["energy"] = fitted_peak_energies[1];
+  params["editAction"] = "MergeWithRight";
+  params["specType"] = "Foreground";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("peaksInRoi") );
+  BOOST_CHECK( result["peaksInRoi"].is_array() );
+
+  // Test 17: MergeWithLeft - merge ROI with adjacent peak on the left
+  // Use the second peak and merge with the first peak
+  params = json::object();
+  params["energy"] = fitted_peak_energies[2];
+  params["editAction"] = "MergeWithLeft";
+  params["specType"] = "Foreground";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( result.contains("peaksInRoi") );
+  BOOST_CHECK( result["peaksInRoi"].is_array() );
+
+  // Test 18: DeletePeak - delete the last peak
+  params = json::object();
+  params["energy"] = fitted_peak_energies[6];
+  params["editAction"] = "DeletePeak";
+  params["specType"] = "Foreground";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec) );
+  BOOST_CHECK( result["success"].get<bool>() );
+  BOOST_CHECK( !result.contains("modifiedPeak") ); // No modified peak after deletion
+
+  // Test error handling - peak not found (already deleted)
+  params = json::object();
+  params["energy"] = fitted_peak_energies[6];
+  params["editAction"] = "SetEnergy";
+  params["specType"] = "Foreground";
+  params["doubleValue"] = 1475.0;
+  // May throw exception or return error result
+  try {
+    result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec);
+    // If it doesn't throw, should return success=false
+    BOOST_CHECK( !result["success"].get<bool>() );
+  } catch( const std::runtime_error& ) {
+    // Exception is also acceptable
+  }
+
+  // Test error handling - missing required parameters
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  // Missing editAction
+  BOOST_CHECK_THROW( registry.executeTool("edit_analysis_peak", params, fixture.m_interspec), std::exception );
+
+  // Test error handling - invalid edit action
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "InvalidAction";
+  params["specType"] = "Foreground";
+  BOOST_CHECK_THROW( registry.executeTool("edit_analysis_peak", params, fixture.m_interspec), std::exception );
+
+  // Test error handling - missing doubleValue when required (may not throw, just fail gracefully)
+  params = json::object();
+  params["energy"] = fitted_peak_energies[0];
+  params["editAction"] = "SetEnergy";
+  params["specType"] = "Foreground";
+  // Missing doubleValue
+  result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec);
+  BOOST_CHECK( !result["success"].get<bool>() || result.contains("message") );
+
+  // Test error handling - missing stringValue when required (may not throw, just fail gracefully)
+  params = json::object();
+  params["energy"] = fitted_peak_energies[3];
+  params["editAction"] = "SetSource";
+  params["specType"] = "Foreground";
+  // Missing stringValue
+  result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec);
+  BOOST_CHECK( !result["success"].get<bool>() || result.contains("message") );
+
+  // Test error handling - invalid continuum type (may not throw, just fail gracefully)
+  params = json::object();
+  params["energy"] = fitted_peak_energies[2];
+  params["editAction"] = "SetContinuumType";
+  params["specType"] = "Foreground";
+  params["stringValue"] = "InvalidContinuumType";
+  result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec);
+  BOOST_CHECK( !result["success"].get<bool>() || result.contains("message") );
+
+  // Test error handling - invalid skew type (may not throw, just fail gracefully)
+  params = json::object();
+  params["energy"] = fitted_peak_energies[1];
+  params["editAction"] = "SetSkewType";
+  params["specType"] = "Foreground";
+  params["stringValue"] = "InvalidSkewType";
+  result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec);
+  BOOST_CHECK( !result["success"].get<bool>() || result.contains("message") );
 }

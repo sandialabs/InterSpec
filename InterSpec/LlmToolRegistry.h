@@ -141,6 +141,7 @@ private:
   static nlohmann::json executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeSearchSourcesByEnergy(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeEditAnalysisPeak(const nlohmann::json& params, InterSpec* interspec);
 
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)

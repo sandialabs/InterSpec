@@ -21,6 +21,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/MoreNuclideInfo.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -44,13 +45,37 @@ using namespace std;
 using json = nlohmann::json;
 
 namespace {
-  // JSON conversion for SpecUtils::SpectrumType enum  
+  // JSON conversion for SpecUtils::SpectrumType enum
   NLOHMANN_JSON_SERIALIZE_ENUM(SpecUtils::SpectrumType, {
       {SpecUtils::SpectrumType::Foreground, "Foreground"},
       {SpecUtils::SpectrumType::Background, "Background"},
       {SpecUtils::SpectrumType::SecondForeground, "Secondary"},
   })
-  
+
+  // JSON conversion for AnalystChecks::EditPeakAction enum
+  NLOHMANN_JSON_SERIALIZE_ENUM(AnalystChecks::EditPeakAction, {
+      {AnalystChecks::EditPeakAction::SetEnergy, "SetEnergy"},
+      {AnalystChecks::EditPeakAction::SetFwhm, "SetFwhm"},
+      {AnalystChecks::EditPeakAction::SetAmplitude, "SetAmplitude"},
+      {AnalystChecks::EditPeakAction::SetEnergyUncertainty, "SetEnergyUncertainty"},
+      {AnalystChecks::EditPeakAction::SetFwhmUncertainty, "SetFwhmUncertainty"},
+      {AnalystChecks::EditPeakAction::SetAmplitudeUncertainty, "SetAmplitudeUncertainty"},
+      {AnalystChecks::EditPeakAction::SetRoiLower, "SetRoiLower"},
+      {AnalystChecks::EditPeakAction::SetRoiUpper, "SetRoiUpper"},
+      {AnalystChecks::EditPeakAction::SetSkewType, "SetSkewType"},
+      {AnalystChecks::EditPeakAction::SetContinuumType, "SetContinuumType"},
+      {AnalystChecks::EditPeakAction::SetSource, "SetSource"},
+      {AnalystChecks::EditPeakAction::SetColor, "SetColor"},
+      {AnalystChecks::EditPeakAction::SetUserLabel, "SetUserLabel"},
+      {AnalystChecks::EditPeakAction::SetUseForEnergyCalibration, "SetUseForEnergyCalibration"},
+      {AnalystChecks::EditPeakAction::SetUseForShieldingSourceFit, "SetUseForShieldingSourceFit"},
+      {AnalystChecks::EditPeakAction::SetUseForManualRelEff, "SetUseForManualRelEff"},
+      {AnalystChecks::EditPeakAction::DeletePeak, "DeletePeak"},
+      {AnalystChecks::EditPeakAction::SplitFromRoi, "SplitFromRoi"},
+      {AnalystChecks::EditPeakAction::MergeWithLeft, "MergeWithLeft"},
+      {AnalystChecks::EditPeakAction::MergeWithRight, "MergeWithRight"},
+  })
+
   double rount_to_hundredth(double val){ return 0.01*std::round(100.0*val); }
 
   /** Some LLMs will give number values as strings, so this function will check types and return the correct answer.
@@ -217,6 +242,11 @@ namespace {
       peak_json["source"]["reaction"] = rctn->name();
       peak_json["source"]["energy"] = peak->reactionEnergy();
     }
+
+    // Add boolean flags for peak usage - use raw user preferences, not computed values
+    peak_json["useForEnergyCalibration"] = peak->useForEnergyCalibrationUserPreference();
+    peak_json["useForShieldingSourceFit"] = peak->useForShieldingSourceFitUserPreference();
+    peak_json["useForManualRelEff"] = peak->useForManualRelEffUserPreference();
   }
   
   void to_json( json &roi_json,
@@ -308,7 +338,7 @@ namespace {
   
   void from_json(const json& j, AnalystChecks::GetUserPeakOptions& p) {
     p.userSession = j.value("userSession", std::optional<std::string>{});
-    
+
     std::string specTypeStr = j.value("specType", std::string());
     if (specTypeStr.empty() || specTypeStr == "Foreground") {
       p.specType = SpecUtils::SpectrumType::Foreground;
@@ -319,6 +349,13 @@ namespace {
     } else {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
+
+    // Parse optional energy range
+    if( j.contains("lowerEnergy") )
+      p.lowerEnergy = get_number( j, "lowerEnergy" );
+
+    if( j.contains("upperEnergy") )
+      p.upperEnergy = get_number( j, "upperEnergy" );
   }
 
   void from_json(const json& j, AnalystChecks::FitPeaksForNuclideOptions& p) {
@@ -330,9 +367,88 @@ namespace {
     } else {
       throw std::runtime_error("Invalid nuclide parameter: must be string or array of strings");
     }
-    
+
     p.doNotAddPeaksToUserSession = j.value("doNotAddPeaksToUserSession", false);
   }
+
+  void from_json( const json &j, AnalystChecks::EditAnalysisPeakOptions &p )
+  {
+    p.energy = get_number( j, "energy" );
+
+    // Parse editAction manually from string
+    const std::string action_str = j.at("editAction").get<std::string>();
+    p.editAction = AnalystChecks::edit_peak_action_from_string( action_str );
+
+    // Parse spectrum type (default to Foreground)
+    std::string specTypeStr = j.value("specType", std::string());
+    if( specTypeStr.empty() || specTypeStr == "Foreground" )
+    {
+      p.specType = SpecUtils::SpectrumType::Foreground;
+    }else if( specTypeStr == "Background" )
+    {
+      p.specType = SpecUtils::SpectrumType::Background;
+    }else if( specTypeStr == "Secondary" )
+    {
+      p.specType = SpecUtils::SpectrumType::SecondForeground;
+    }else
+    {
+      throw std::runtime_error( "Invalid spectrum type: " + specTypeStr );
+    }
+
+    // Get optional values
+    if( j.contains("doubleValue") )
+    {
+      if( j["doubleValue"].is_number() )
+        p.doubleValue = j["doubleValue"].get<double>();
+      else if( j["doubleValue"].is_string() )
+      {
+        const string str_val = j["doubleValue"].get<string>();
+        double val;
+        if( !(stringstream(str_val) >> val) )
+          throw runtime_error( "doubleValue parameter must be a number" );
+        p.doubleValue = val;
+      }
+    }
+
+    if( j.contains("stringValue") )
+      p.stringValue = j["stringValue"].get<std::string>();
+
+    if( j.contains("boolValue") )
+      p.boolValue = j["boolValue"].get<bool>();
+
+    if( j.contains("uncertainty") )
+      p.uncertainty = get_number( j, "uncertainty" );
+
+    p.userSession = j.value("userSession", std::optional<std::string>{});
+  }//void from_json( const json &j, AnalystChecks::EditAnalysisPeakOptions &p )
+
+  void to_json( json &j, const AnalystChecks::EditAnalysisPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas )
+  {
+    j = json{
+      {"userSession", p.userSession},
+      {"success", p.success},
+      {"message", p.message}
+    };
+
+    if( p.modifiedPeak )
+    {
+      json peak_info;
+      to_json( peak_info, *p.modifiedPeak, meas );
+      j["modifiedPeak"] = peak_info;
+    }
+
+    if( !p.peaksInRoi.empty() )
+    {
+      json roi_peaks = json::array();
+      for( const auto &peak : p.peaksInRoi )
+      {
+        json peak_json;
+        to_json( peak_json, peak, meas );
+        roi_peaks.push_back( peak_json );
+      }
+      j["peaksInRoi"] = roi_peaks;
+    }
+  }//void to_json( json &j, const AnalystChecks::EditAnalysisPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas )
 
   void to_json(json& j, const AnalystChecks::SpectrumCountsInEnergyRange::CountsWithComparisonToForeground& c) {
     j = json{
@@ -520,23 +636,75 @@ void ToolRegistry::registerDefaultTools() {
       return executePeakFit(params, interspec);
     }
   });
-  
-  
-  // Register detected_peaks tool
+
+  // Register edit_analysis_peak tool
+  registerTool({
+    "edit_analysis_peak",
+    "Edit or delete a peak at approximately the specified energy. Can modify peak properties (energy, FWHM, amplitude and their uncertainties), ROI bounds (lower/upper), continuum type (None, Constant, Linear, Quadratic, Cubic, FlatStep, LinearStep, BiLinearStep, External), skew type (NoSkew, Bortel, GaussExp, CrystalBall, ExpGaussExp, DoubleSidedCrystalBall), assign source (nuclide like Ba133, Co60 1332.49 keV, xray like Pb, or reaction like H(n,g)), set peak color (CSS color string), set user label, set flags for energy calibration/shielding/efficiency usage, delete peak, split peak into its own ROI, or merge ROI with adjacent peak.",
+    json::parse(R"json({
+      "type": "object",
+      "properties": {
+          "energy": {
+            "type": "number",
+            "description": "Energy (in keV) of the peak to edit; will find nearest peak within 1 FWHM."
+          },
+          "editAction": {
+            "type": "string",
+            "description": "Action to perform on the peak",
+            "enum": ["SetEnergy", "SetFwhm", "SetAmplitude", "SetEnergyUncertainty", "SetFwhmUncertainty", "SetAmplitudeUncertainty", "SetRoiLower", "SetRoiUpper", "SetSkewType", "SetContinuumType", "SetSource", "SetColor", "SetUserLabel", "SetUseForEnergyCalibration", "SetUseForShieldingSourceFit", "SetUseForManualRelEff", "DeletePeak", "SplitFromRoi", "MergeWithLeft", "MergeWithRight"]
+          },
+          "doubleValue": {
+            "type": "number",
+            "description": "Numeric value for actions that require a number (SetEnergy, SetFwhm, SetAmplitude, SetRoiLower, SetRoiUpper, and uncertainty variants)"
+          },
+          "stringValue": {
+            "type": "string",
+            "description": "String value for SetSource (e.g., Ba133, Co60 1332.49 keV), SetColor (CSS color), SetUserLabel (text note), SetSkewType (NoSkew/Bortel/GaussExp/CrystalBall/ExpGaussExp/DoubleSidedCrystalBall), or SetContinuumType (None/Constant/Linear/Quadratic/Cubic/FlatStep/LinearStep/BiLinearStep/External)"
+          },
+          "boolValue": {
+            "type": "boolean",
+            "description": "Boolean value for SetUseForEnergyCalibration, SetUseForShieldingSourceFit, or SetUseForManualRelEff actions"
+          },
+          "specType": {
+            "type": "string",
+            "enum": ["Foreground", "Background", "Secondary"],
+            "description": "Optional: Which spectrum the peak is in (default: Foreground)"
+          },
+          "userSession": {
+            "type": "string",
+            "description": "Optional: user session identifier"
+          }
+      },
+      "required": ["energy", "editAction"]
+    })json"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeEditAnalysisPeak(params, interspec);
+    }
+  });
+
+  // Register get_analysis_peaks tool
   registerTool({
     "get_analysis_peaks",
     "Gets the peaks to use for further analysis that have either been manually fit by the user, or by the 'fit_peak' tool call, or similar.  These peaks tracked by an internal state.",
     json::parse(R"({
       "type": "object",
       "properties": {
-          "specType": { 
-            "type": "string", 
-            "description": "Optional: Which displayed spectrum to search for peaks in; if not specified will use foreground (which is what user usually wants).", 
-            "enum": ["Foreground", "Background", "Secondary"] 
+          "specType": {
+            "type": "string",
+            "description": "Optional: Which displayed spectrum to search for peaks in; if not specified will use foreground (which is what user usually wants).",
+            "enum": ["Foreground", "Background", "Secondary"]
           },
-          "userSession": { 
-            "type": "string", 
-            "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+          "userSession": {
+            "type": "string",
+            "description": "Optional: the user session identifier.  If not specified, will use most recent session."
+          },
+          "lowerEnergy": {
+            "type": "number",
+            "description": "Optional: minimum energy (in keV) for peaks to return. If not specified, no lower bound is applied."
+          },
+          "upperEnergy": {
+            "type": "number",
+            "description": "Optional: maximum energy (in keV) for peaks to return. If not specified, no upper bound is applied."
           }
       }
     })"),
@@ -1269,6 +1437,8 @@ nlohmann::json ToolRegistry::executePeakFit(const nlohmann::json& params, InterS
   AnalystChecks::FitPeakOptions options;
   from_json(params, options);
   
+  UndoRedoManager::PeakModelChange undo_sentry;
+  
   // Call the AnalystChecks function to perform the actual peak detection
   const AnalystChecks::FitPeakStatus result = AnalystChecks::fit_user_peak( options, interspec );
   
@@ -1306,7 +1476,35 @@ nlohmann::json ToolRegistry::executeGetUserPeaks(const nlohmann::json& params, I
   
   return result_json;
 }//nlohmann::json executeGetUserPeaks(const nlohmann::json& params, InterSpec* interspec)
-  
+
+
+nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error( "No InterSpec session available." );
+
+  // Parse parameters
+  AnalystChecks::EditAnalysisPeakOptions options;
+  from_json( params, options );
+
+  UndoRedoManager::PeakModelChange undo_sentry;
+
+  // Execute the edit operation
+  const AnalystChecks::EditAnalysisPeakStatus result = AnalystChecks::edit_analysis_peak( options, interspec );
+
+  // Get the spectrum for JSON conversion
+  shared_ptr<const SpecUtils::Measurement> meas;
+  if( interspec )
+    meas = interspec->displayedHistogram( options.specType );
+
+  // Convert the result to JSON and return
+  json result_json;
+  to_json( result_json, result, meas );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &params, InterSpec *interspec )
+
+
 json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* interspec) {
   if (!interspec) {
     throw std::runtime_error("No InterSpec session available");
