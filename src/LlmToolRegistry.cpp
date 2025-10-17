@@ -25,8 +25,11 @@
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
+#include "InterSpec/PhysicalUnitsLocalized.h"
+#include "InterSpec/IsotopeSearchByEnergyModel.h"
 
 #include <Wt/WApplication>
 #include <Wt/Dbo/Dbo>
@@ -401,6 +404,43 @@ namespace {
     
     j = json{{"rois", peak_rois}};
   }
+  
+  /** Returns a `nlohmann::json::array` containing the source catagories (Medical, Industrial, NORM, etc) that a source (Nuclide, Element, or Reaction),
+   belongs to.
+   
+   The `src` must be a `const SandiaDecay::Element *`, `const ReactionGamma::Reaction *` , or `const SandiaDecay::Nuclide *`
+   */
+  template<class T>
+  typename std::enable_if<
+    std::is_same<T, const SandiaDecay::Nuclide *>::value ||
+    std::is_same<T, const SandiaDecay::Element *>::value ||
+    std::is_same<T, const ReactionGamma::Reaction *>::value,
+    nlohmann::json
+  >::type source_categories( T src, InterSpec *interspec )
+  {
+    nlohmann::json sourceCatagories = nlohmann::json::array();
+    
+    IsotopeSearchByEnergy * const search = interspec ? interspec->nuclideSearch() : nullptr;
+    if( !search || !src )
+      return sourceCatagories;
+    
+    const std::vector<IsotopeSearchByEnergy::NucSearchCategory> &categories = search->search_categories();
+    
+    if( IsotopeSearchByEnergy::is_in_category(src, IsotopeSearchByEnergy::sm_medical_category_key, categories) )
+      sourceCatagories.push_back( "Medical" );
+    if( IsotopeSearchByEnergy::is_in_category(src, IsotopeSearchByEnergy::sm_industrial_category_key, categories) )
+      sourceCatagories.push_back( "Industrial" );
+    if( IsotopeSearchByEnergy::is_in_category(src, IsotopeSearchByEnergy::sm_norm_category_key, categories) )
+      sourceCatagories.push_back( "NORM" );
+    if( IsotopeSearchByEnergy::is_in_category(src, IsotopeSearchByEnergy::sm_snm_category_key, categories) )
+      sourceCatagories.push_back( "SNM" );
+    if( IsotopeSearchByEnergy::is_in_category(src, IsotopeSearchByEnergy::sm_common_category_key, categories) )
+      sourceCatagories.push_back( "Common" );
+    if( IsotopeSearchByEnergy::is_in_category(src, IsotopeSearchByEnergy::sm_fission_category_key, categories) )
+      sourceCatagories.push_back( "Fission" );
+    
+    return sourceCatagories;
+  }//source_categories(...)
 }//namespace
 
 namespace LlmTools {
@@ -484,8 +524,8 @@ void ToolRegistry::registerDefaultTools() {
   
   // Register detected_peaks tool
   registerTool({
-    "get_user_peaks",
-    "Gets the user peaks that have either been manually fit by the user, or by the 'fit_peak' tool call, or similar.",
+    "get_analysis_peaks",
+    "Gets the peaks to use for further analysis that have either been manually fit by the user, or by the 'fit_peak' tool call, or similar.  These peaks tracked by an internal state.",
     json::parse(R"({
       "type": "object",
       "properties": {
@@ -547,10 +587,10 @@ void ToolRegistry::registerDefaultTools() {
     }
   });
 
-// TODO: combine nuclides_with_primary_gammas_in_energy_range and nuclides_with_primary_gammas_near_energy, and make them return the nuclide search tool results, not just primary nuclides
+// TODO: combine sources_with_primary_gammas_in_energy_range and sources_with_primary_gammas_near_energy, and make them return the nuclide search tool results, not just primary nuclides
   registerTool({
-    "nuclides_with_primary_gammas_in_energy_range",
-    "Get the commonly encountered field nuclides, x-ray elements, or nuclear reactions with primary gammas in the specified energy range.",
+    "sources_with_primary_gammas_in_energy_range",
+    "Get the commonly encountered field nuclides, x-ray elements, or reactions with primary gammas in the specified energy range.",
     json::parse(R"({
       "type": "object",
       "properties": {
@@ -562,9 +602,9 @@ void ToolRegistry::registerDefaultTools() {
           "type": "number",
           "description": "The upper energy (in keV) to search for primary gammas."
         },
-        "userSession": { 
-          "type": "string", 
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        "userSession": {
+          "type": "string",
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session."
         }
       },
       "required": ["lowerEnergy", "upperEnergy"]
@@ -575,8 +615,8 @@ void ToolRegistry::registerDefaultTools() {
   });
 
   registerTool({
-    "nuclides_with_primary_gammas_near_energy",
-    "Get the commonly encountered field nuclides, x-ray elements, or nuclear reactions with primary gammas near the specified energy.",
+    "sources_with_primary_gammas_near_energy",
+    "Get the commonly encountered field nuclides, x-ray elements, or reactions with primary gammas near the specified energy.",
     json::parse(R"({
       "type": "object",
       "properties": {
@@ -584,9 +624,9 @@ void ToolRegistry::registerDefaultTools() {
           "type": "number",
           "description": "The energy (in keV) to search for primary gammas."
         },
-        "userSession": { 
-          "type": "string", 
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
+        "userSession": {
+          "type": "string",
+          "description": "Optional: the user session identifier.  If not specified, will use most recent session."
         }
       },
       "required": ["energy"]
@@ -639,7 +679,7 @@ void ToolRegistry::registerDefaultTools() {
 #if( !INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
     "Gets nuclear data information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, etc.",
 #else
-    "Gets relevant information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, analyst notes (such as when the source is used/seen, typical activity ranges of nuclides, etc.), associated sources (i.e. sources that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source - you should check for these associated sources being present or not when the specified source is observed), and other nuclear data.",
+    "Gets relevant information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, analyst notes (such as when the source is used/seen, typical activity ranges of nuclides, etc.), associated sources (i.e. sources that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source - you should check for these associated sources being present or not when the specified source is observed), source catagories (medical, NORM, industrial, etc), and other nuclear data.",
 #endif
     json::parse(R"({
       "type": "object",
@@ -652,7 +692,7 @@ void ToolRegistry::registerDefaultTools() {
       "required": ["source"]
     })"),
     [](const json& params, InterSpec* interspec) -> json {
-      return executeGetSourceInfo(params);
+      return executeGetSourceInfo(params, interspec);
     }
   });
 
@@ -1049,9 +1089,9 @@ R"(,
     json::parse(R"({
       "type": "object",
       "properties": {
-        "name": { 
-          "type": "string", 
-          "description": "Optional: The name of the detector efficiency function to return information about. If not specified, will return information about the currently loaded detector efficiency function." 
+        "name": {
+          "type": "string",
+          "description": "Optional: The name of the detector efficiency function to return information about. If not specified, will return information about the currently loaded detector efficiency function."
           }
       },
       "required": []
@@ -1060,7 +1100,62 @@ R"(,
       return executeGetDetectorInfo( params, interspec);
     }
   });
-  
+
+  registerTool({
+    "search_sources_by_energy",
+    "Searches for radiation sources (nuclides, x-rays, reactions) that have gammas, x-rays, alphas, and/or beta-end-point at specified energies. Returns candidate sources ranked by how well they match the input energies and current foreground spectrum.\n\nIt is best to only search on a single energy at a time, and only for foreground peaks whose source is not identified; do not search on multiple energies unless you are investigating or suspect they are from the same source, or are really having a hard time identifying a source.\n\nThe 'profile_score' metric (larger = better match) is the best indicator of fit quality for the loaded spectrum, considering peak heights and detector response.\n\nFurther investigation of top returned candidates is required to make sure they match the spectrum (e.g., the spectrum is not missing a peak it should have from that source, or the peaks in the spectrum have expected relative amplitudes, etc.)",
+    json::parse(R"({
+      "type": "object",
+      "properties": {
+        "energies": {
+          "type": "array",
+          "description": "The energies the source MUST match.  Since the source must match ALL entries, it is best to only search on one to a few unidentified peaks at a time, ususally starting with only a single peak, and then moving to two only if no satisfactory answer can be found. You usually will not want to search on a foreground peak that roughly aligns in energy with a background peak (either auto-search peak, or user/analysis fit peak), unless the foreground peak CPS is substantially elevated relative to the background peak.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "energy": {
+                "type": "number",
+                "description": "Energy in keV to search for"
+              },
+              "window": {
+                "type": "number",
+                "description": "Search window (±keV) around this energy. If not specified, defaults to the recomended window of 1.27 times the expected FWHM at that energy, or if expected FWHM cant be determined, 1.5 keV for HPGe detectors or 10 keV for other detector types.  If the expected FWHM is not known, then it is recomended to not specify this field."
+              }
+            },
+            "required": ["energy"]
+          },
+          "minItems": 1,
+          "description": "Array of energies to search for. Each source must have emissions matching ALL specified energies."
+        },
+        "source_category": {
+          "type": "string",
+          "description": "Category filter for source types to search. Can use either the display name (e.g., 'Nuclides + X-rays') or the i18n key (e.g., 'isbe-category-nuc-xray'). Default is 'Nuclides + X-rays'. Common values: 'Nuclides + X-rays', 'Nuclides, X-rays, Reactions', 'Fluorescence x-rays', 'Reactions', 'Medical Nuclides', 'Industrial Nuclides', 'SNM', 'NORM', 'Field Encountered Sources', 'Field Encountered Nuclides', 'Fission Products', 'Alphas', 'Beta Endpoint', 'Un-aged Nuclides'."
+        },
+        "min_half_life": {
+          "type": "string",
+          "description": "Minimum nuclide half-life as a string (e.g., '10 s', '5 min', '1 h', '2 y'). Default is '100 m'."
+        },
+        "min_branching_ratio": {
+          "type": "number",
+          "description": "Minimum relative branching ratio (0.0 to 1.0). This is the aged gamma line BR divided by max intensity line. Default is 0.0."
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "Maximum number of results to return. Default is 10."
+        },
+        "sort_by": {
+          "type": "string",
+          "enum": ["ProfileScore", "SumEnergyDifference"],
+          "description": "Sort criterion: 'ProfileScore' (larger=better, considers spectrum fit and peak heights) or 'SumEnergyDifference' (smaller=better, simple energy distance). Default is 'ProfileScore'."
+        }
+      },
+      "required": ["energies"]
+    })"),
+    [](const json& params, InterSpec* interspec) -> json {
+      return executeSearchSourcesByEnergy( params, interspec);
+    }
+  });
+
   /*
    TODO: tool calls to add
      - executeGetNuclidesWithCharacteristicsInEnergyRange - this should be _replaced_ with an energyrange search - like the GUI tool, and not just the characteristic gamma search
@@ -1388,7 +1483,7 @@ nlohmann::json ToolRegistry::executeGetSourceAnalystNotes( const nlohmann::json&
 }//nlohmann::json executeGetSourceAnalystNotes(const nlohmann::json& params, InterSpec* interspec)
 
   
-nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params )
+nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params, InterSpec* interspec )
 {
   const string nuclide = params.at("source").get<string>();
   
@@ -1549,10 +1644,30 @@ nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params )
   }catch( std::exception & )
   {
   }
-  
-  
+
+  try
+  {
+    nlohmann::json sourceCatagories;
+    
+    if( nuc )
+      sourceCatagories = source_categories( nuc, interspec );
+    else if( el )
+      sourceCatagories = source_categories( el, interspec );
+    else if( rctn )
+      sourceCatagories = source_categories( rctn, interspec );
+    
+    if( !sourceCatagories.empty() )
+    {
+      assert( sourceCatagories.is_array() );
+      result["sourceCatagories"] = sourceCatagories;
+    }
+  }catch( std::exception & )
+  {
+  }
+
+
   return result;
-}//nlohmann::json executeGetSourceInfo(const nlohmann::json& params )
+}//nlohmann::json executeGetSourceInfo(const nlohmann::json& params, InterSpec* interspec )
 
 nlohmann::json ToolRegistry::executeGetNuclideDecayChain(const nlohmann::json& params )
 {
@@ -3193,6 +3308,313 @@ nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params
 
   return result;
 }//nlohmann::json executeGetDetectorInfo(InterSpec* interspec)
+
+
+nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(const nlohmann::json& params, InterSpec* interspec)
+{
+  if( !interspec )
+    throw std::runtime_error( "No InterSpec session available." );
+
+  // Parse energies array (required)
+  if( !params.contains("energies") || !params["energies"].is_array() || params["energies"].empty() )
+    throw std::runtime_error( "The 'energies' parameter must be a non-empty array." );
+
+  const json& energies_array = params["energies"];
+  std::vector<double> energies;
+  std::vector<double> windows;
+
+  // Get detector type for fallback window calculation
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
+
+  for( const auto& energy_obj : energies_array )
+  {
+    if( !energy_obj.contains("energy") )
+      throw std::runtime_error( "Each energy object must contain an 'energy' field." );
+
+    const double energy = get_number( energy_obj, "energy" );
+    if( energy <= 0.0 )
+      throw std::runtime_error( "Energy values must be positive." );
+
+    energies.push_back( energy );
+
+    double window = 10.0; // fallback default
+    if( energy_obj.contains("window") )
+    {
+      window = get_number( energy_obj, "window" );
+    }
+    else
+    {
+      // Calculate default window as (3.0/2.35482) * FWHM
+      // This corresponds to about ±1.27 sigma, which is kinda within an "okay" energy calbration.
+      try
+      {
+        const double fwhm = AnalystChecks::get_expected_fwhm( energy, interspec );
+        window = (3.0 / 2.35482) * fwhm;
+      }catch( std::exception & )
+      {
+        // Failed to get FWHM, will use detector-type-based fallback
+        window = isHPGe ? 1.5 : 10.0;
+      }
+    }//if( window specified ) / else
+
+    if( window < 0.0 )
+      throw std::runtime_error( "Window values must be non-negative." );
+
+    windows.push_back( window );
+  }//for( loop over energies_array )
+
+  // Parse optional parameters
+  // Use i18n key as default since translations may not be available in all environments
+  std::string category_str = "isbe-category-nuc-xray";  // "Nuclides + X-rays"
+  if( params.contains("source_category") && params["source_category"].is_string() )
+    category_str = params["source_category"].get<std::string>();
+
+  std::string min_half_life_str = "100 m";
+  if( params.contains("min_half_life") && params["min_half_life"].is_string() )
+    min_half_life_str = params["min_half_life"].get<std::string>();
+
+  double min_br = 0.0;
+  if( params.contains("min_branching_ratio") )
+    min_br = get_number( params, "min_branching_ratio" );
+
+  int max_results = 10;
+  if( params.contains("max_results") )
+    max_results = static_cast<int>( get_number( params, "max_results" ) );
+
+  if( max_results <= 0 )
+    throw std::runtime_error( "max_results must be positive." );
+
+  std::string sort_by = "ProfileScore";
+  if( params.contains("sort_by") && params["sort_by"].is_string() )
+    sort_by = params["sort_by"].get<std::string>();
+
+  if( (sort_by != "ProfileScore") && (sort_by != "SumEnergyDifference") )
+    throw std::runtime_error( "sort_by must be either 'ProfileScore' or 'SumEnergyDifference'." );
+
+  // Parse minimum half-life
+  double min_half_life = 0.0;
+  try
+  {
+    min_half_life = PhysicalUnits::stringToTimeDuration( min_half_life_str );
+  }catch( std::exception &e )
+  {
+    throw std::runtime_error( std::string("Invalid min_half_life format: ") + e.what()
+                             + ". Examples: '10 s', '5 min', '1 h', '2 y'" );
+  }
+
+  // Load category information
+  std::vector<IsotopeSearchByEnergy::NucSearchCategory> categories;
+  try
+  {
+    IsotopeSearchByEnergy::init_category_info( categories );
+  }catch( std::exception &e )
+  {
+    throw std::runtime_error( std::string("Failed to initialize search categories: ") + e.what() );
+  }
+
+  // Find the matching category
+  const IsotopeSearchByEnergy::NucSearchCategory *selected_category = nullptr;
+  for( const auto& cat : categories )
+  {
+    std::string cat_name = cat.m_name.toUTF8();
+    std::string cat_key = cat.m_name.key();
+
+    if( (cat_name == category_str) || (cat_key == category_str) )
+    {
+      selected_category = &cat;
+      break;
+    }
+  }//for( loop over categories )
+
+  if( !selected_category )
+  {
+    std::string error_msg = "Invalid source_category '" + category_str + "'. Valid categories: ";
+    for( size_t i = 0; i < categories.size(); ++i )
+    {
+      if( i > 0 )
+        error_msg += ", ";
+      error_msg += "'" + categories[i].m_name.toUTF8() + "'";
+    }
+    throw std::runtime_error( error_msg );
+  }
+
+  // Build radiation source flags from category
+  Wt::WFlags<IsotopeSearchByEnergyModel::RadSource> srcs;
+  if( selected_category->m_nuclides )
+    srcs |= IsotopeSearchByEnergyModel::RadSource::NuclideGammaOrXray;
+  if( selected_category->m_fluorescence_xrays )
+    srcs |= IsotopeSearchByEnergyModel::RadSource::kFluorescenceXRay;
+  if( selected_category->m_reactions )
+    srcs |= IsotopeSearchByEnergyModel::RadSource::kReaction;
+  if( selected_category->m_alphas )
+    srcs |= IsotopeSearchByEnergyModel::RadSource::kAlpha;
+  if( selected_category->m_beta_endpoint )
+    srcs |= IsotopeSearchByEnergyModel::RadSource::kBetaEndpoint;
+  if( selected_category->m_no_progeny )
+    srcs |= IsotopeSearchByEnergyModel::RadSource::kNoNuclideProgeny;
+
+  // Create working space for search
+  auto workingspace = std::make_shared<IsotopeSearchByEnergyModel::SearchWorkingSpace>();
+  workingspace->energies = energies;
+  workingspace->windows = windows;
+  workingspace->isHPGe = isHPGe;
+
+  // Get foreground spectrum data if available
+  std::shared_ptr<SpecMeas> foreground = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+  if( foreground )
+  {
+    const std::set<int> samplenums = interspec->displayedSamples( SpecUtils::SpectrumType::Foreground );
+    auto userpeaks = foreground->peaks( samplenums );
+    auto autopeaks = foreground->automatedSearchPeaks( samplenums );
+
+    workingspace->foreground = foreground;
+    workingspace->foreground_samplenums = samplenums;
+
+    if( userpeaks )
+      workingspace->user_peaks.insert( end(workingspace->user_peaks),
+                                       begin(*userpeaks), end(*userpeaks) );
+    if( autopeaks )
+      workingspace->automated_search_peaks.insert( end(workingspace->automated_search_peaks),
+                                                   begin(*autopeaks), end(*autopeaks) );
+
+    workingspace->detector_response_function = foreground->detector();
+    workingspace->displayed_measurement = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  }//if( foreground )
+
+  // Perform search synchronously (no threading for LLM tool)
+  const std::string appid = "";  // Empty since we're not posting to event loop
+  boost::function< void(void) > updatefcn;  // No callback needed
+
+  try
+  {
+    IsotopeSearchByEnergyModel::setSearchEnergies( workingspace, min_br, min_half_life, srcs,
+                                                   selected_category->m_specific_elements,
+                                                   selected_category->m_specific_nuclides,
+                                                   selected_category->m_specific_reactions,
+                                                   appid, updatefcn );
+  }catch( std::exception &e )
+  {
+    throw std::runtime_error( std::string("Search failed: ") + e.what() );
+  }
+
+  // Check for errors
+  if( !workingspace->error_msg.empty() )
+    throw std::runtime_error( "Search error: " + workingspace->error_msg );
+
+  // Sort results
+  const IsotopeSearchByEnergyModel::Column sort_column =
+    (sort_by == "ProfileScore")
+      ? IsotopeSearchByEnergyModel::Column::ProfileDistance
+      : IsotopeSearchByEnergyModel::Column::Distance;
+
+  const Wt::SortOrder sort_order = (sort_by == "ProfileScore")
+                                     ? Wt::DescendingOrder  // Larger ProfileScore is better
+                                     : Wt::AscendingOrder;  // Smaller distance is better
+
+  IsotopeSearchByEnergyModel::sortData( workingspace->matches, energies, sort_column, sort_order );
+
+  // Build JSON output
+  json result;
+  json sources_array = json::array();
+
+  const size_t num_results = std::min( static_cast<size_t>(max_results), workingspace->matches.size() );
+
+  for( size_t i = 0; i < num_results; ++i )
+  {
+    const std::vector<IsotopeSearchByEnergyModel::IsotopeMatch>& match_set = workingspace->matches[i];
+
+    if( match_set.empty() )
+      continue;
+
+    const IsotopeSearchByEnergyModel::IsotopeMatch& first_match = match_set[0];
+
+    json source_obj;
+
+    // Determine source type and name
+    nlohmann::json catagories;
+    if( first_match.m_nuclide )
+    {
+      source_obj["source"] = first_match.m_nuclide->symbol;
+      source_obj["source_type"] = "nuclide";
+      source_obj["half_life"] = first_match.m_displayData[IsotopeSearchByEnergyModel::ParentHalfLife].toUTF8();
+      source_obj["assumed_age"] = first_match.m_displayData[IsotopeSearchByEnergyModel::AssumedAge].toUTF8();
+      catagories = source_categories( first_match.m_nuclide, interspec );
+    }
+    else if( first_match.m_element )
+    {
+      source_obj["source"] = first_match.m_element->symbol + " x-ray";
+      source_obj["source_type"] = "x-ray";
+      catagories = source_categories( first_match.m_element, interspec );
+    }
+    else if( first_match.m_reaction )
+    {
+      source_obj["source"] = first_match.m_reaction->name();
+      source_obj["source_type"] = "reaction";
+      catagories = source_categories( first_match.m_reaction, interspec );
+    }
+    else
+    {
+      continue; // Unknown source type
+    }
+    
+    source_obj["sum_energy_difference"] = rount_to_hundredth( first_match.m_distance );
+    source_obj["profile_score"] = rount_to_hundredth( first_match.m_profileDistance );
+    
+    if( catagories.is_array() && !catagories.empty() )
+      source_obj["sourceCatagories"] = catagories;
+
+    // Build energy matches array
+    json energy_matches_array = json::array();
+
+    for( size_t j = 0; j < match_set.size(); ++j )
+    {
+      const IsotopeSearchByEnergyModel::IsotopeMatch& match = match_set[j];
+
+      json energy_match;
+      energy_match["search_energy"] = energies[j];
+
+      const std::string energy_str = match.m_displayData[IsotopeSearchByEnergyModel::Energy].toUTF8();
+      energy_match["matched_energy"] = std::stod( energy_str );
+
+      const std::string br_str = match.m_displayData[IsotopeSearchByEnergyModel::BranchRatio].toUTF8();
+      energy_match["relative_br"] = std::stod( br_str );
+
+      if( match.m_nuclide && match.m_transition )
+      {
+        const std::string transition_str =
+          match.m_displayData[IsotopeSearchByEnergyModel::SpecificIsotope].toUTF8();
+        energy_match["transition"] = transition_str;
+      }
+
+      energy_matches_array.push_back( energy_match );
+    }//for( loop over match_set )
+
+    source_obj["energy_matches"] = energy_matches_array;
+    sources_array.push_back( source_obj );
+  }//for( loop over workingspace->matches )
+
+  result["sources"] = sources_array;
+
+  // Add search parameters for reference
+  json search_params;
+  search_params["energies"] = json::array();
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    json e;
+    e["energy"] = energies[i];
+    e["window"] = windows[i];
+    search_params["energies"].push_back( e );
+  }
+  search_params["category"] = category_str;
+  search_params["min_half_life"] = min_half_life_str;
+  search_params["min_branching_ratio"] = min_br;
+  search_params["max_results"] = max_results;
+  search_params["sort_by"] = sort_by;
+
+  result["search_parameters"] = search_params;
+
+  return result;
+}//nlohmann::json executeSearchSourcesByEnergy(...)
 
 
 } // namespace LlmTools

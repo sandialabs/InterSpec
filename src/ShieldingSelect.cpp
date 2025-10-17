@@ -5667,6 +5667,14 @@ std::string ShieldingSelect::encodeStateToUrl() const
     std::string material_name = m_materialEdit->text().toUTF8();
     SpecUtils::ireplace_all(material_name, "#", "%23" );
     SpecUtils::ireplace_all(material_name, "&", "%26" );
+    const string::size_type open_pos = material_name.find('(');
+    if( open_pos != string::npos )
+    {
+      const string::size_type close_pos = material_name.find(')', open_pos);
+      if( close_pos != string::npos )
+        material_name.erase(open_pos, close_pos - open_pos + 1);
+    }
+    SpecUtils::trim( material_name );
     
     if( !m_currentMaterial )
       material_name = "";

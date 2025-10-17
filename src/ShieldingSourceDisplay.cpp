@@ -8235,7 +8235,11 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   
   if( initial_shieldings.size() != gui_shieldings.size() )
   {
-    passMessage( "Programming Logic Error - number of shieldings have changed.", WarningWidget::WarningMsgHigh );
+    passMessage( "Programming Logic Error - number of shieldings have changed from "
+                + std::to_string(initial_shieldings.size())
+                + " to "
+                + std::to_string(gui_shieldings.size())
+                , WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, "Programming Logic Error - number of shieldings changed - fit results when model was no longer valid." );
 #endif

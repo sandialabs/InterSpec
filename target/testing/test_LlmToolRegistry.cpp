@@ -1346,3 +1346,158 @@ BOOST_AUTO_TEST_CASE( test_executeGetExpectedFwhm )
   params["energy"] = -100.0;
   BOOST_CHECK_THROW( registry.executeTool("get_expected_fwhm", params, fixture.m_interspec), std::runtime_error );
 }
+
+
+BOOST_AUTO_TEST_CASE( test_executeSearchSourcesByEnergy )
+{
+  InterSpecTestFixture fixture;
+  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+
+  // Test basic search with Co-60 energies (1173 and 1332 keV)
+  json params;
+  json energies_array = json::array();
+
+  json energy1;
+  energy1["energy"] = 1173.0;
+  energy1["window"] = 0.5;
+  energies_array.push_back( energy1 );
+
+  json energy2;
+  energy2["energy"] = 1332.0;
+  energy2["window"] = 0.75;
+  energies_array.push_back( energy2 );
+
+  params["energies"] = energies_array;
+
+  json result;
+  try
+  {
+    result = registry.executeTool("search_sources_by_energy", params, fixture.m_interspec);
+  }
+  catch( const std::exception &e )
+  {
+    BOOST_TEST_MESSAGE( "Exception thrown: " << e.what() );
+    throw;
+  }
+  //BOOST_REQUIRE_NO_THROW( result = registry.executeTool("search_sources_by_energy", params, fixture.m_interspec) );
+
+  // Check basic structure
+  BOOST_CHECK( result.is_object() );
+  BOOST_CHECK( result.contains("sources") );
+  BOOST_CHECK( result.contains("search_parameters") );
+  BOOST_CHECK( result["sources"].is_array() );
+  BOOST_CHECK( !result["sources"].empty() );
+
+  // Co-60 should be in the results (if any results returned)
+  if( !result["sources"].empty() )
+  {
+    bool found_co60 = false;
+    for( const auto& source : result["sources"] )
+    {
+      BOOST_CHECK( source.contains("source") );
+      BOOST_CHECK( source.contains("source_type") && source["source_type"].is_string() ); //"nuclide", "x-ray", "reaction"
+      BOOST_CHECK( source.contains("sum_energy_difference") && source["sum_energy_difference"].is_number() );
+      BOOST_CHECK( source.contains("profile_score") && source["profile_score"].is_number() );
+      BOOST_CHECK( source.contains("energy_matches") );
+      BOOST_CHECK( source["energy_matches"].is_array() );
+
+      // Print source information to stdout
+      std::cout << "\nSource: " << source["source"].get<std::string>()
+                << " (type: " << source["source_type"].get<std::string>() << ")\n";
+      std::cout << "  Sum energy difference: " << source["sum_energy_difference"].get<double>() << "\n";
+      std::cout << "  Profile score: " << source["profile_score"].get<double>() << "\n";
+      std::cout << "  Energy matches (" << source["energy_matches"].size() << "):\n";
+      for( const auto& match : source["energy_matches"] )
+      {
+        std::cout << "    Search: " << match["search_energy"].get<double>() << " keV"
+                  << " -> Matched: " << match["matched_energy"].get<double>() << " keV"
+                  << " (BR: " << match["relative_br"].get<double>() << ")"
+                  << " [" << match["transition"].get<std::string>() << "]\n";
+      }
+
+      const std::string source_name = source["source"].get<std::string>();
+      if( source_name == "Co60" )
+      {
+        found_co60 = true;
+        BOOST_CHECK_EQUAL( source["source_type"].get<std::string>(), "nuclide" );
+        BOOST_CHECK( source.contains("half_life") );
+        BOOST_CHECK( source.contains("assumed_age") );
+        BOOST_CHECK_EQUAL( source["energy_matches"].size(), 2 );
+
+        // Check energy matches
+        for( const auto& match : source["energy_matches"] )
+        {
+          BOOST_CHECK( match.contains("search_energy") );
+          BOOST_CHECK( match.contains("matched_energy") );
+          BOOST_CHECK( match.contains("relative_br") );
+          BOOST_CHECK( match.contains("transition") );
+        }
+      }
+    }
+
+    BOOST_TEST_MESSAGE( "Found " << result["sources"].size() << " sources" );
+    BOOST_CHECK_MESSAGE( found_co60, "Did not find Co60 in top results" );
+  }
+
+  // Test with different category (using i18n key which is more reliable in test environment)
+  params["source_category"] = "isbe-category-nuc-xray-rctn";  // Nuclides, X-rays, Reactions
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("search_sources_by_energy", params, fixture.m_interspec) );
+  BOOST_CHECK( result["sources"].is_array() );
+
+  // Test with single energy (Cs-137 @ 661.7 keV)
+  params = json::object();
+  energies_array = json::array();
+  energy1 = json::object();
+  energy1["energy"] = 661.7;
+  energies_array.push_back( energy1 );
+  params["energies"] = energies_array;
+  params["max_results"] = 5;
+
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("search_sources_by_energy", params, fixture.m_interspec) );
+  BOOST_CHECK( result["sources"].is_array() );
+  BOOST_CHECK( result["sources"].size() <= 5 );
+
+  // Test with min_half_life parameter
+  params["min_half_life"] = "1 y";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("search_sources_by_energy", params, fixture.m_interspec) );
+  BOOST_CHECK( result["sources"].is_array() );
+
+  // Test sort_by parameter
+  params["sort_by"] = "SumEnergyDifference";
+  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("search_sources_by_energy", params, fixture.m_interspec) );
+  BOOST_CHECK( result["sources"].is_array() );
+
+  // Test error handling - empty energies array
+  params = json::object();
+  params["energies"] = json::array();
+  BOOST_CHECK_THROW( registry.executeTool("search_sources_by_energy", params, fixture.m_interspec), std::runtime_error );
+
+  // Test error handling - missing energies parameter
+  params = json::object();
+  BOOST_CHECK_THROW( registry.executeTool("search_sources_by_energy", params, fixture.m_interspec), std::runtime_error );
+
+  // Test error handling - invalid category
+  params = json::object();
+  params["energies"] = energies_array;
+  params["source_category"] = "InvalidCategory";
+  BOOST_CHECK_THROW( registry.executeTool("search_sources_by_energy", params, fixture.m_interspec), std::runtime_error );
+
+  // Test error handling - invalid half-life format
+  params["source_category"] = "Nuclides + X-rays";
+  params["min_half_life"] = "invalid format";
+  BOOST_CHECK_THROW( registry.executeTool("search_sources_by_energy", params, fixture.m_interspec), std::runtime_error );
+
+  // Test error handling - invalid sort_by
+  params["min_half_life"] = "100 m";
+  params["sort_by"] = "InvalidSort";
+  BOOST_CHECK_THROW( registry.executeTool("search_sources_by_energy", params, fixture.m_interspec), std::runtime_error );
+
+  // Test error handling - negative energy
+  params = json::object();
+  energies_array = json::array();
+  energy1 = json::object();
+  energy1["energy"] = -100.0;
+  energies_array.push_back( energy1 );
+  params["energies"] = energies_array;
+  BOOST_CHECK_THROW( registry.executeTool("search_sources_by_energy", params, fixture.m_interspec), std::runtime_error );
+}

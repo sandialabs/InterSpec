@@ -2938,7 +2938,6 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           // The WColor could have been created with string like "rgba(12,1,99,0.1)", so we will override the alpha
           Wt::WColor c( orig_color.red(), orig_color.green(), orig_color.blue(), override_alpha );
           color_str = c.cssText(true);
-          cout << "using color str '" << color_str << endl;
         }else
         {
           Wt::WColor c;

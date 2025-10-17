@@ -124,7 +124,7 @@ private:
 #define INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO 1
   static nlohmann::json executeGetAssociatedSources(const nlohmann::json& params );
   static nlohmann::json executeGetSourceAnalystNotes(const nlohmann::json& params );
-  static nlohmann::json executeGetSourceInfo(const nlohmann::json& params );
+  static nlohmann::json executeGetSourceInfo(const nlohmann::json& params, InterSpec* interspec );
   static nlohmann::json executeGetNuclideDecayChain(const nlohmann::json& params );
   static nlohmann::json executeGetAutomatedRiidId(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeFitPeaksForNuclide(const nlohmann::json& params, InterSpec* interspec);
@@ -140,6 +140,7 @@ private:
   static nlohmann::json executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeSearchSourcesByEnergy(const nlohmann::json& params, InterSpec* interspec);
 
   /** Helper function to find and load a detector by identifier.
    @param identifier The detector identifier (name, path, or URI)

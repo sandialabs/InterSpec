@@ -1370,6 +1370,14 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
       std::string material = m_material ? m_material->name : string();
       SpecUtils::ireplace_all(material, "#", "%23" );
       SpecUtils::ireplace_all(material, "&", "%26" );
+      const string::size_type open_pos = material.find('(');
+      if( open_pos != string::npos )
+      {
+        const string::size_type close_pos = material.find(')', open_pos);
+        if( close_pos != string::npos )
+          material.erase(open_pos, close_pos - open_pos + 1);
+      }
+      SpecUtils::trim( material );
       
       answer += "&N=" + material;
       

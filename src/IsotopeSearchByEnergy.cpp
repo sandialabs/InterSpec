@@ -1162,11 +1162,23 @@ void IsotopeSearchByEnergy::init_category_info( std::vector<NucSearchCategory> &
 
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
   // Load user specific category info
-  const string user_data_dir = InterSpec::writableDataDirectory();
-  const std::string user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
-  if( append_categories(user_xml) == 0 )
+  string user_xml;
+  try
   {
-    if( SpecUtils::is_file(user_xml) )
+    const string user_data_dir = InterSpec::writableDataDirectory();
+    user_xml = SpecUtils::append_path(def_xml, "NuclideSearchCatagories.xml");
+  }catch( std::exception & )
+  {
+    // We may not have set `writableDataDirectory`, especially if we are doing unit tests
+  }
+  
+  if( !user_xml.empty() && SpecUtils::is_file(user_xml) )
+  {
+    // If we throw an exception here, the try/catch in `initFilterTypes()` will just catch it and print out a message
+    // - the catagories we aredy loaded will be used.  If no catagories are loaded (including from the default
+    //   catagories), then the GUI will just have one catagory (nuclides + x-rays).
+    // I'm not sure why we we mix printing out to stderr and throwing exceptions, but whatever
+    if( append_categories(user_xml) == 0 )
       throw runtime_error( "Error loading user NuclideSearchCatagories.xml" );
   }
 #endif
