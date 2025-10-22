@@ -2222,6 +2222,7 @@ bool SpecMeas::load_N42_from_data( char *data, char *data_end )
   reset();
   
   data_end = SpecUtils::convert_n42_utf16_xml_to_utf8( data, data_end );
+  SpecUtils::rsi_portal_xml_to_n42_hack( data, data_end );
 
   // Some times a bunch of null characters can get appended to the end
   //  of the file - lets remove them, or rapidxml::parse will fail.
