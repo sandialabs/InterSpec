@@ -75,13 +75,13 @@
   <message id="dcc-xAxisTitle">Csökkenő atomtömeg</message>
   <message id="dcc-yAxisTitle">Növekvő atomszám</message>
   <message id="dcc-clickNucTxt">Kattintson a nuklidra további információért.</message>
-  <message id="dcc-clickNucMoreInfoTxt1">Dupla kattintás a nuklidon az általa kibocsátott részecskesért.</message>
   <message id="dcc-clickNucMoreInfoTxt2">Kattintson egy másik forrás nuklidra fent a</message>
   <message id="dcc-clickNucMoreInfoTxt3">megjelenített bomlási lánc megváltoztatásához.</message>
   <message id="dcc-clickNucMblTxt">Koppintson a nuklidra további információért.</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">Érintse meg a nuklidot 1 másodpercig az általa kibocsátott részecskesért.</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">Kattintson egy másik forrás nuklidra fent a</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">megjelenített bomlási lánc megváltoztatásához.</message>
+  <message id="dcc-show-decay-products">{nuclide} bomlási termékek megjelenítése</message>
+  <message id="dcc-show-decays-through">Bomlások megjelenítése {nuclide} keresztül</message>
 
 
   <message id="dcn-initial-age">Kezdeti életkor: </message>

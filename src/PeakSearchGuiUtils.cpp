@@ -1913,7 +1913,7 @@ namespace PeakSearchGuiUtils
     chart->setModel( dataModel );
     chart->setPeakModel( peakmodel );
     peakmodel->setForeground( meas );
-    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers() );
+    peakmodel->setPeakFromSpecMeas( specmeas, specmeas->sample_numbers(), SpecUtils::SpectrumType::Foreground );
     
     dataModel->setDataHistogram( meas );
     

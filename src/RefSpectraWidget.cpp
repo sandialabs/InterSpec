@@ -415,7 +415,6 @@ void RefSpectraWidget::setupUI()
   // Set up the spectrum display, making it compact, and match current color theme and log y setting
   const bool wasLogY = UserPreferences::preferenceValue<bool>( "LogY", interspec );
   m_spectrum->setCompactAxis( true );
-  m_spectrum->applyColorTheme( interspec->getColorTheme() );
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->disableLegend();
@@ -423,7 +422,6 @@ void RefSpectraWidget::setupUI()
   //m_spectrum->showYAxisScalers( true );
   //m_spectrum->setShowPeakLabel( 0, true ); //SpectrumChart::PeakLabels::kShowPeakUserLabel
   //m_spectrum->setReferncePhotoPeakLines( ReferenceLineInfo() );
-  interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
 
   m_stack->addWidget( m_spectrum );
   

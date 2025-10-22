@@ -2361,7 +2361,16 @@ void SpecMeas::setPeaks( const std::deque< std::shared_ptr<const PeakDef> > &pea
 {
   if( !m_peaks )
     m_peaks.reset( new SampleNumsToPeakMap() );
-  (*m_peaks)[samplenums].reset( new PeakDeque( peakdeque ) );
+  
+  shared_ptr<deque<shared_ptr<const PeakDef>>> &deque = (*m_peaks)[samplenums];
+  if( deque )
+  {
+    deque->clear();
+    deque->insert( begin(*deque), begin(peakdeque), end(peakdeque) );
+  }else
+  {
+    deque.reset( new std::deque<shared_ptr<const PeakDef>>( peakdeque ) );
+  }
 }//void setPeaks(...)
 
 

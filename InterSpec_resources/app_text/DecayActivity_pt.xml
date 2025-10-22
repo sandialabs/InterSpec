@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">Massa Atômica Decrescente</message>
   <message id="dcc-yAxisTitle">Número Atômico Crescente</message>
   <message id="dcc-clickNucTxt">Clique no nuclídeo para mais informações.</message>
-  <message id="dcc-clickNucMoreInfoTxt1">Clique duplo no nuclídeo para partículas que ele emite.</message>
   <message id="dcc-clickNucMoreInfoTxt2">Clique em um nuclídeo fonte diferente acima para</message>
   <message id="dcc-clickNucMoreInfoTxt3">alterar a cadeia de decaimento exibida.</message>
   <message id="dcc-clickNucMblTxt">Toque no nuclídeo para mais informações.</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">Toque no nuclídeo por 1 segundo para partículas que ele emite.</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">Clique em um nuclídeo fonte diferente acima para</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">alterar a cadeia de decaimento exibida.</message>
+  <message id="dcc-show-decay-products">Mostrar produtos de decaimento de {nuclide}</message>
+  <message id="dcc-show-decays-through">Mostrar decaimentos através de {nuclide}</message>
 
 
   <message id="dcn-initial-age">Idade Inicial: </message>

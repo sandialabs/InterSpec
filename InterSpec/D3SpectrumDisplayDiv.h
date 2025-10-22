@@ -160,29 +160,32 @@ public:
   void scheduleUpdateSecondData();
   
   
-  /** Schedules the foreground peaks to be re-loaded to the client during the
-   next call to #render (which Wt takes care of calling); this function is called by the PeakModel.
-   */
-  void scheduleForegroundPeakRedraw();
-  
-  /** Schedules peak redraw for the given spectrum.
-   
-   TODO: As of 20250802, only foreground spectrum has any effect.
+  /** Schedules the peaks to be re-loaded to the client, for the specified spectrum, during the
+   next call to #render (which Wt takes care of calling).
    */
   void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type );
   
-  /** Applies the current color theme.
-   if nullptr, then sets to default colors.
+  /** Applies the color theme globally to all D3SpectrumDisplayDiv instances in the current app.
+      Should be called once when the color theme changes, typically from InterSpec::applyColorTheme().
+      If nullptr, then sets to default colors.
+
+      Uses InterSpecApp::setGlobalD3SpectrumCssRule() to track the global CSS rules per app instance.
    */
-  void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
+  static void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
+
+  /** Updates the default peak color for this specific instance based on the color theme.
+      This is needed because peak color is passed in JSON, not via CSS variables.
+      Also updates peak label size/rotation and log Y-axis min from theme.
+   */
+  void updateDefaultPeakColorForColorTheme( std::shared_ptr<const ColorTheme> theme );
   
-  void setForegroundSpectrumColor( const Wt::WColor &color );
-  void setBackgroundSpectrumColor( const Wt::WColor &color );
-  void setSecondarySpectrumColor( const Wt::WColor &color );
-  void setTextColor( const Wt::WColor &color );
-  void setAxisLineColor( const Wt::WColor &color );
-  void setChartMarginColor( const Wt::WColor &color );
-  void setChartBackgroundColor( const Wt::WColor &color );
+  void overrideForegroundSpectrumColor( const Wt::WColor &color );
+  void overrideBackgroundSpectrumColor( const Wt::WColor &color );
+  void overrideSecondarySpectrumColor( const Wt::WColor &color );
+  void overrideTextColor( const Wt::WColor &color );
+  void overrideAxisLineColor( const Wt::WColor &color );
+  void overrideChartMarginColor( const Wt::WColor &color );
+  void overrideChartBackgroundColor( const Wt::WColor &color );
   void setDefaultPeakColor( const Wt::WColor &color );
   
   /** Sets the charts font size.
@@ -467,12 +470,6 @@ protected:
   /** Sets the highlight regions to client - currently unimplemented. */
   void setHighlightRegionsToClient();
   
-  void setForegroundPeaksToClient();
-  
-  void setSecondaryPeaksToClient();
-  
-  void setBackgroundPeaksToClient();
-  
   void setReferenceLinesToClient();
 
 protected:
@@ -500,7 +497,6 @@ protected:
     
     UpdateDynamicRefLines = 0x80,
 
-    // TODO: Currently background and secondary peaks not loaded to client, so these flags have no effect.
     UpdateBackgroundPeaks = 0x0100,
     UpdateSecondaryPeaks  = 0x0200,
     //ToDo: maybe add a few other things to this mechanism.
@@ -694,13 +690,17 @@ protected:
    */
   int m_comptonPeakAngle;
   
-  Wt::WColor m_foregroundLineColor;
-  Wt::WColor m_backgroundLineColor;
-  Wt::WColor m_secondaryLineColor;
-  Wt::WColor m_textColor;
-  Wt::WColor m_axisColor;
-  Wt::WColor m_chartMarginColor;
-  Wt::WColor m_chartBackgroundColor;
+  // Member variables for instance-specific color overrides
+  // When default (isDefault() == true), the global CSS variable from the theme is used
+  Wt::WColor m_foregroundLineColorOverride;
+  Wt::WColor m_backgroundLineColorOverride;
+  Wt::WColor m_secondaryLineColorOverride;
+  Wt::WColor m_textColorOverride;
+  Wt::WColor m_axisColorOverride;
+  Wt::WColor m_chartMarginColorOverride;
+  Wt::WColor m_chartBackgroundColorOverride;
+
+  // Default peak color - used directly in JSON, not via CSS
   Wt::WColor m_defaultPeakColor;
   
   std::string m_peakLabelFontSize;

@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">原子质量递减</message>
   <message id="dcc-yAxisTitle">原子序数递增</message>
   <message id="dcc-clickNucTxt">点击核素以获取更多信息。</message>
-  <message id="dcc-clickNucMoreInfoTxt1">双击核素以查看其释放的粒子。</message>
   <message id="dcc-clickNucMoreInfoTxt2">点击上方不同的源核素以</message>
   <message id="dcc-clickNucMoreInfoTxt3">更改显示的衰变链。</message>
   <message id="dcc-clickNucMblTxt">轻触核素以获取更多信息。</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">触摸核素1秒以查看其释放的粒子。</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">点击上方不同的源核素以</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">更改显示的衰变链。</message>
+  <message id="dcc-show-decay-products">显示{nuclide}衰变产物</message>
+  <message id="dcc-show-decays-through">显示通过{nuclide}的衰变</message>
 
 
   <message id="dcn-initial-age">初始年龄：</message>

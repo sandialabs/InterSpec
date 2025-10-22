@@ -270,8 +270,6 @@ void DetectionLimitSimple::init()
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->setYAxisLog( false );
-  m_spectrum->applyColorTheme( m_viewer->getColorTheme() );
-  m_viewer->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->disableLegend();
   m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   

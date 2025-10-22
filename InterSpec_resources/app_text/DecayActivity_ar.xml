@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">تناقص الكتلة الذرية</message>
   <message id="dcc-yAxisTitle">تزايد العدد الذري</message>
   <message id="dcc-clickNucTxt">انقر على النواة للمزيد من المعلومات.</message>
-  <message id="dcc-clickNucMoreInfoTxt1">انقر مرتين على النواة للجسيمات التي تطلقها.</message>
   <message id="dcc-clickNucMoreInfoTxt2">انقر على نواة مصدر مختلفة أعلاه لـ</message>
   <message id="dcc-clickNucMoreInfoTxt3">تغيير سلسلة التحلل المعروضة.</message>
   <message id="dcc-clickNucMblTxt">اضغط على النواة للمزيد من المعلومات.</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">المس النواة لثانية واحدة للجسيمات التي تطلقها.</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">انقر على نواة مصدر مختلفة أعلاه لـ</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">تغيير سلسلة التحلل المعروضة.</message>
+  <message id="dcc-show-decay-products">إظهار منتجات تحلل {nuclide}</message>
+  <message id="dcc-show-decays-through">إظهار التحللات عبر {nuclide}</message>
 
 
   <message id="dcn-initial-age">العمر الأولي: </message>
