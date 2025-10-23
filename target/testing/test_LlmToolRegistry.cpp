@@ -150,8 +150,9 @@ public:
     m_interspec = m_app->viewer();
     BOOST_REQUIRE( m_interspec );
 
-    // Register default LLM tools
-    LlmTools::ToolRegistry::instance().registerDefaultTools();
+    // Load LLM configuration and register default LLM tools
+    std::shared_ptr<const LlmConfig> llmConfig = LlmConfig::load();
+    LlmTools::ToolRegistry::instance().registerDefaultTools( llmConfig );
 
     // Load a test spectrum file for detector-related tests
     try
@@ -1975,4 +1976,151 @@ BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
   params["stringValue"] = "InvalidSkewType";
   result = registry.executeTool("edit_analysis_peak", params, fixture.m_interspec);
   BOOST_CHECK( !result["success"].get<bool>() || result.contains("message") );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
+{
+  using namespace LlmTools;
+
+  // Use a minimal fixture just to set up data directory
+  InterSpecTestFixture fixture;
+
+  // Get the registry (tools should already be registered by fixture)
+  ToolRegistry& registry = ToolRegistry::instance();
+
+  // Get all registered tools
+  const std::map<std::string, SharedTool>& tools = registry.getTools();
+
+  // Check that we have a reasonable number of tools
+  BOOST_CHECK_GT( tools.size(), 20 );
+
+  // Define the expected tools (same list as in the validation code)
+  const std::vector<std::string> expectedTools = {
+    "detected_peaks",
+    "fit_peak",
+    "edit_analysis_peak",
+    "get_analysis_peaks",
+    "get_spectrum_info",
+    "primary_gammas_for_source",
+    "sources_with_primary_gammas_in_energy_range",
+    "sources_with_primary_gammas_near_energy",
+    // These are always included, regardless of INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO
+    "sources_associated_with_source",
+    "analyst_notes_for_source",
+    "source_info",
+    "nuclide_decay_chain",
+    "automated_isotope_id_results",
+    "loaded_spectra",
+    "fit_peaks_for_nuclide",
+    "get_counts_in_energy_range",
+    "get_expected_fwhm",
+    "currie_mda_calc",
+    "source_photons",
+    "photopeak_detection_efficiency",
+    "get_materials",
+    "get_material_info",
+    "avaiable_detector_efficiency_functions",
+    "load_detector_efficiency_function",
+    "detector_efficiency_function_info",
+    "search_sources_by_energy"
+  };
+
+  // Check that all expected tools are present
+  for( const std::string &toolName : expectedTools )
+  {
+    const SharedTool* tool = registry.getTool(toolName);
+    BOOST_REQUIRE_MESSAGE( tool != nullptr, "Tool '" + toolName + "' not found in registry" );
+
+    // Check that tool has a name
+    BOOST_CHECK_EQUAL( tool->name, toolName );
+
+    // Check that tool has a description
+    BOOST_CHECK_MESSAGE( !tool->description.empty(), "Tool '" + toolName + "' has no description" );
+
+    // Check that tool has a parameters schema (non-null; empty object {} is valid for no-parameter tools)
+    BOOST_CHECK_MESSAGE( !tool->parameters_schema.is_null(),
+                        "Tool '" + toolName + "' has no parameters schema" );
+
+    // Check that tool has an executor
+    BOOST_CHECK_MESSAGE( tool->executor != nullptr, "Tool '" + toolName + "' has no executor" );
+  }
+
+  // Check for unexpected tools (excluding invoke_ tools which are dynamically created)
+  for( const auto &[toolName, tool] : tools )
+  {
+    // Skip invoke_ tools
+    if( toolName.find("invoke_") == 0 )
+      continue;
+
+    bool found = false;
+    for( const std::string &expected : expectedTools )
+    {
+      if( toolName == expected )
+      {
+        found = true;
+        break;
+      }
+    }
+    BOOST_WARN_MESSAGE( found, "Unexpected tool '" + toolName + "' found in registry" );
+  }
+
+  cout << "Successfully validated " << expectedTools.size() << " tools from XML configuration" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
+{
+  // Load configuration
+  std::shared_ptr<const LlmConfig> llmConfig = LlmConfig::load();
+  BOOST_REQUIRE( llmConfig );
+
+  // Check that agents were loaded
+  BOOST_REQUIRE_MESSAGE( !llmConfig->agents.empty(), "No agents loaded from XML" );
+
+  // Expected agents: MainAgent, NuclideId, ActivityFit
+  const std::set<std::string> expectedAgents = { "MainAgent", "NuclideId", "ActivityFit" };
+
+  cout << "Loaded " << llmConfig->agents.size() << " agents from XML configuration:" << endl;
+
+  std::set<std::string> foundAgents;
+  for( const LlmConfig::AgentConfig &agent : llmConfig->agents )
+  {
+    cout << "  - " << agent.name << " (type: " << static_cast<int>(agent.type) << ")" << endl;
+    cout << "    System prompt length: " << agent.systemPrompt.length() << " characters" << endl;
+
+    // Check that agent has a non-empty name
+    BOOST_CHECK_MESSAGE( !agent.name.empty(), "Agent has empty name" );
+
+    // Check that agent has a non-empty system prompt
+    BOOST_CHECK_MESSAGE( !agent.systemPrompt.empty(),
+                        "Agent '" << agent.name << "' has empty system prompt" );
+
+    // Check that system prompt is substantial (at least 100 characters)
+    BOOST_CHECK_MESSAGE( agent.systemPrompt.length() >= 100,
+                        "Agent '" << agent.name << "' has suspiciously short system prompt: "
+                        << agent.systemPrompt.length() << " chars" );
+
+    foundAgents.insert( agent.name );
+  }
+
+  // Verify we got all expected agents
+  BOOST_CHECK_EQUAL( foundAgents.size(), expectedAgents.size() );
+
+  for( const std::string &expectedName : expectedAgents )
+  {
+    BOOST_CHECK_MESSAGE( foundAgents.count(expectedName) > 0,
+                        "Expected agent '" << expectedName << "' not found in loaded agents" );
+  }
+
+  // Check for unexpected agents
+  for( const std::string &foundName : foundAgents )
+  {
+    if( expectedAgents.count(foundName) == 0 )
+    {
+      cout << "WARNING: Unexpected agent found: " << foundName << endl;
+    }
+  }
+
+  cout << "Successfully validated " << expectedAgents.size() << " agents from XML configuration" << endl;
 }

@@ -56,6 +56,7 @@
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
 #include "SpecUtils/DateTime.h"
 #endif
+#include "SpecUtils/StringAlgo.h"
 
 static_assert( USE_LLM_INTERFACE, "This file shouldnt be compiled unless USE_LLM_INTERFACE is true" );
 
@@ -65,6 +66,7 @@ using json = nlohmann::json;
 LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const LlmConfig> &config )
   : m_interspec(interspec),
     m_config( config ),
+    m_tool_registry( config ? make_shared<LlmTools::ToolRegistry>(*config) : shared_ptr<LlmTools::ToolRegistry>() ),
     m_history(std::make_shared<LlmConversationHistory>()),
 #ifdef USE_JS_BRIDGE_FOR_LLM
     m_responseSignal(std::make_unique<Wt::JSignal<std::string, int>>(interspec, "llmResponse")),
@@ -74,7 +76,8 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
     m_currentRequestId(0),
 #endif
     m_nextRequestId(1),
-    m_currentConversationId("")
+    m_currentConversationId(""),
+    m_currentAgentName("MainAgent")
 {
   if( !m_interspec )
     throw std::runtime_error("InterSpec instance cannot be null");
@@ -82,15 +85,15 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   if( !m_config || !m_config->llmApi.enabled )
     throw std::logic_error( "LlmInterface: not configured" );
   
+  if( !m_tool_registry )
+    throw std::logic_error( "LlmInterface: couldnt create tool registry from config" );
+  
   // Get session ID through WApplication
   string sessionId = "unknown";
   if (Wt::WApplication* app = Wt::WApplication::instance()) {
     sessionId = app->sessionId();
   }
   cout << "LlmInterface created for session: " << sessionId << endl;
-  
-  // Register default tools
-  LlmTools::ToolRegistry::instance().registerDefaultTools();
   
 #ifdef USE_JS_BRIDGE_FOR_LLM
   // Connect the JavaScript response signal
@@ -177,6 +180,39 @@ void LlmInterface::setHistory(std::shared_ptr<LlmConversationHistory> history) {
 bool LlmInterface::isConfigured() const {
   return (m_config && m_config->llmApi.enabled && !m_config->llmApi.apiEndpoint.empty());
 }
+
+namespace {
+  // Map from WApplication pointer to current LlmInterface instance
+  // This allows tools to access the active LlmInterface during execution
+  std::map<Wt::WApplication*, LlmInterface*> s_currentInstances;
+}
+
+LlmInterface* LlmInterface::getCurrentInstance()
+{
+  auto app = Wt::WApplication::instance();
+  if( !app )
+    return nullptr;
+
+  const auto iter = s_currentInstances.find(app);
+  if( iter != s_currentInstances.end() )
+    return iter->second;
+
+  return nullptr;
+}//getCurrentInstance()
+
+
+void LlmInterface::setCurrentInstance( LlmInterface *instance )
+{
+  auto app = Wt::WApplication::instance();
+  if( !app )
+    return;
+
+  if( instance )
+    s_currentInstances[app] = instance;
+  else
+    s_currentInstances.erase(app);
+}//setCurrentInstance(...)
+
 
 Wt::Signal<>& LlmInterface::responseReceived() {
   return m_responseReceived;
@@ -384,10 +420,10 @@ void LlmInterface::handleApiResponse(const std::string& response) {
         if (role == "assistant") {
           // Extract thinking content and clean content
           auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
-          
-          // Add assistant message to history with thinking content
-          m_history->addAssistantMessageWithThinking(cleanContent, thinkingContent, m_currentConversationId);
-          
+
+          // Add assistant message to history with thinking content and current agent name
+          m_history->addAssistantMessageWithThinking(cleanContent, thinkingContent, m_currentConversationId, m_currentAgentName);
+
           // Handle structured tool calls first (OpenAI format)
           if (message.contains("tool_calls")) {
             executeToolCalls(message["tool_calls"]);
@@ -414,45 +450,100 @@ void LlmInterface::handleApiResponse(const std::string& response) {
   }
 }
 
-void LlmInterface::executeToolCalls(const nlohmann::json& toolCalls) {
+void LlmInterface::executeToolCalls( const nlohmann::json &toolCalls )
+{
   cout << "Executing " << toolCalls.size() << " tool calls" << endl;
-  
+
   // Track executed tool calls for follow-up
   std::vector<std::string> executedToolCallIds;
-  
-  for (const auto& toolCall : toolCalls) {
+  bool hasSubAgentInvocation = false;
+  int subAgentRequestId = -1;
+
+  for( const nlohmann::json &toolCall : toolCalls )
+  {
     const string callId = toolCall.value("id", "");
-    
-    try {
+
+    try
+    {
       const string toolName = toolCall["function"]["name"];
       json arguments = json::parse(toolCall["function"]["arguments"].get<string>());
-      
+
       cout << "Calling tool: " << toolName << " with ID: " << callId << endl;
-      
-      // Add tool call to history with conversation ID and invocation ID
-      m_history->addToolCall(toolName, m_currentConversationId, callId, arguments);
-      
-      // Execute the tool
-      json result = LlmTools::ToolRegistry::instance().executeTool(toolName, arguments, m_interspec);
-      
-      // Add result to history with conversation ID and invocation ID
-      m_history->addToolResult(m_currentConversationId, callId, result);
-    } catch (const std::exception& e) {
+
+      // Add tool call to history with conversation ID, invocation ID, and current agent name
+      m_history->addToolCall(toolName, m_currentConversationId, callId, arguments, m_currentAgentName);
+
+      // Set current instance so tools can access this LlmInterface (e.g., for sub-agent invocation)
+      setCurrentInstance(this);
+
+      // Check if this is an invoke_* tool (sub-agent invocation) - handle specially
+    
+      if( SpecUtils::istarts_with(toolName, "invoke_") && (toolName.length() > 7) )
+      {
+        // Extract agent name from tool name (e.g., "invoke_NuclideId" -> "NuclideId")
+        const string agentName = toolName.substr(7);
+        const string context = arguments.at("context").get<string>();
+        const string task = arguments.at("task").get<string>();
+
+        cout << "Detected sub-agent invocation: " << agentName << " via tool: " << toolName << endl;
+
+        // Invoke sub-agent (returns request ID)
+        subAgentRequestId = invokeSubAgent(agentName, context, task, callId);
+
+        hasSubAgentInvocation = true;
+
+        // Add placeholder result that will be updated when sub-agent completes
+        json result;
+        result["status"] = "pending";
+        result["message"] = "Sub-agent " + agentName + " is processing (will update when complete)";
+        result["requestId"] = subAgentRequestId;
+        m_history->addToolResult(m_currentConversationId, callId, result, m_currentAgentName);
+
+        cout << "Sub-agent invocation deferred - will resume main agent when complete" << endl;
+      }else
+      {
+        // Normal tool execution
+        json result = m_tool_registry->executeTool(toolName, arguments, m_interspec);
+
+        // Add result to history with conversation ID, invocation ID, and current agent name
+        m_history->addToolResult(m_currentConversationId, callId, result, m_currentAgentName);
+      }
+
+      // Clear current instance
+      setCurrentInstance(nullptr);
+    }catch( const std::exception &e )
+    {
       cout << "Tool execution error: " << e.what() << endl;
-      
+
       json result;
       result["error"] = "Tool call failed: " + string(e.what());
-      m_history->addToolResult(m_currentConversationId, callId, result);
-    }
-    
+      m_history->addToolResult(m_currentConversationId, callId, result, m_currentAgentName);
+    }//try / catch
+
     // Track this tool call for follow-up
     executedToolCallIds.push_back(callId);
   }
-  
-  // If we executed any tools, send the results back to the LLM for processing
-  if (!executedToolCallIds.empty()) {
-    cout << "Sending tool results back to LLM for " << executedToolCallIds.size() << " executed tools" << endl;
-    sendToolResultsToLLM(executedToolCallIds);
+
+  // If we have a sub-agent invocation, defer sending results until sub-agent completes
+  if( hasSubAgentInvocation )
+  {
+    cout << "Deferring tool results - sub-agent must complete first (requestId: " << subAgentRequestId << ")" << endl;
+
+    DeferredToolResult deferred;
+    deferred.conversationId = m_currentConversationId;
+    deferred.toolCallIds = executedToolCallIds;
+    deferred.subAgentToolCallId = executedToolCallIds.back(); // The invoke_sub_agent call should be last
+
+    m_deferredToolResults[subAgentRequestId] = deferred;
+
+    // Don't send results yet - wait for sub-agent
+  }else
+  {
+    // No sub-agent - send results immediately
+    if (!executedToolCallIds.empty()) {
+      cout << "Sending tool results back to LLM for " << executedToolCallIds.size() << " executed tools" << endl;
+      sendToolResultsToLLM(executedToolCallIds);
+    }
   }
 }
 
@@ -525,30 +616,36 @@ void LlmInterface::parseContentForToolCalls(const std::string& content) {
           }
           
           cout << "Found text-based tool call: " << toolName << " with args: " << arguments.dump() << endl;
-          
-          
-          // Add tool call to history with conversation ID and invocation ID
-          m_history->addToolCall(toolName, m_currentConversationId, invocationId, arguments);
+
+
+          // Add tool call to history with conversation ID, invocation ID, and current agent name
+          m_history->addToolCall(toolName, m_currentConversationId, invocationId, arguments, m_currentAgentName);
           cout << "Added tool call to history. History now has " << m_history->getConversations().size() << " conversations" << endl;
-          
+
+          // Set current instance so tools can access this LlmInterface (e.g., for sub-agent invocation)
+          setCurrentInstance(this);
+
           // Execute the tool
-          json result = LlmTools::ToolRegistry::instance().executeTool(toolName, arguments, m_interspec);
-          
-          // Add result to history with conversation ID and invocation ID
-          m_history->addToolResult(m_currentConversationId, invocationId, result);
+          json result = m_tool_registry->executeTool(toolName, arguments, m_interspec);
+
+          // Clear current instance
+          setCurrentInstance(nullptr);
+
+          // Add result to history with conversation ID, invocation ID, and current agent name
+          m_history->addToolResult(m_currentConversationId, invocationId, result, m_currentAgentName);
           cout << "Added tool result to history. History now has " << m_history->getConversations().size() << " conversations" << endl;
-          
+
           // Track this tool call for follow-up
           executedToolCallIds.push_back(invocationId);
-          
+
           cout << "Tool " << toolName << " executed successfully" << endl;
-          
+
         } catch (const std::exception& e) {
           cout << "Error parsing/executing text-based tool call: " << e.what() << endl;
-          
+
           json result;
           result["error"] = "Tool call failed: " + string(e.what());
-          m_history->addToolResult(m_currentConversationId, invocationId, result);
+          m_history->addToolResult(m_currentConversationId, invocationId, result, m_currentAgentName);
         }
       }
     }
@@ -638,6 +735,161 @@ std::pair<std::string, std::string> LlmInterface::extractThinkingAndContent(cons
   return {cleanContent, thinkingContent};
 }
 
+std::string LlmInterface::getSystemPromptForAgent( const std::string &agentName ) const
+{
+  if( !m_config || !m_config->llmApi.enabled )
+    return "";
+
+  // Search for agent in config
+  for( const LlmConfig::AgentConfig &agent : m_config->agents )
+  {
+    if( agent.name == agentName )
+      return agent.systemPrompt;
+  }
+
+  return "";
+}//getSystemPromptForAgent(...)
+
+
+nlohmann::json LlmInterface::buildMessagesArrayForAgent( const std::string &agentName, const std::string &userMessage, bool isSystemGenerated )
+{
+  if( !m_config || !m_config->llmApi.enabled )
+    throw std::logic_error( "LlmInterface: not configured" );
+
+  json request;
+  request["model"] = m_config->llmApi.model;
+
+  // Use max_completion_tokens for newer OpenAI models, max_tokens for others
+  const string modelName = m_config->llmApi.model;
+  if( modelName.find("gpt-4") != string::npos || modelName.find("gpt-3.5") != string::npos ||
+      modelName.find("o1") != string::npos || modelName.find("gpt-5") != string::npos )
+  {
+    request["max_completion_tokens"] = m_config->llmApi.maxTokens;
+  }else
+  {
+    request["max_tokens"] = m_config->llmApi.maxTokens;
+  }
+
+  json messages = json::array();
+
+  // Add system prompt for this specific agent
+  const string systemPrompt = getSystemPromptForAgent(agentName);
+  if( !systemPrompt.empty() )
+  {
+    json systemMsg;
+    systemMsg["role"] = "system";
+    systemMsg["content"] = systemPrompt;
+    messages.push_back(systemMsg);
+  }
+
+  // For sub-agents, we typically don't include full history - just the task context
+  // Main agent uses buildMessagesArray() which includes history
+
+  // Add current user message (the task/context for sub-agent)
+  if( !userMessage.empty() )
+  {
+    json userMsg;
+    userMsg["role"] = "user";
+    userMsg["content"] = userMessage;
+    messages.push_back(userMsg);
+  }
+
+  request["messages"] = messages;
+
+  // Add tools available for this agent
+  const AgentType agentType = stringToAgentType(agentName);
+  const std::map<std::string, LlmTools::SharedTool> agentTools = m_tool_registry->getToolsForAgent(agentType);
+  json tools = json::array();
+
+  for( const auto &[toolName, tool] : agentTools )
+  {
+    json toolDef;
+    toolDef["type"] = "function";
+    toolDef["function"]["name"] = tool.name;
+
+    // Use role-specific description if available
+    const string description = m_tool_registry->getDescriptionForAgent(toolName, agentType);
+    toolDef["function"]["description"] = description;
+
+    // Most functions include a "userSession" argument for the MCP server - but we dont need that here since we are in a Wt session
+    nlohmann::json par_schema = tool.parameters_schema;
+    if( par_schema.contains("properties") && par_schema["properties"].contains("userSession") )
+      par_schema["properties"].erase( "userSession" );
+
+    toolDef["function"]["parameters"] = par_schema;
+    tools.push_back(toolDef);
+  }
+
+  if( !tools.empty() )
+  {
+    request["tools"] = tools;
+    request["tool_choice"] = "auto";
+  }
+
+  return request;
+}//buildMessagesArrayForAgent(...)
+
+
+int LlmInterface::invokeSubAgent( const std::string &agentName, const std::string &context, const std::string &task,
+                                  const std::string &invokeToolCallId )
+{
+  cout << "=== Invoking sub-agent: " << agentName << " (async with pause) ===" << endl;
+  cout << "Context: " << context.substr(0, 100) << (context.length() > 100 ? "..." : "") << endl;
+  cout << "Task: " << task << endl;
+  cout << "Invoke tool call ID: " << invokeToolCallId << endl;
+
+  // Build a combined message with context and task
+  const string combinedMessage = "Context:\n" + context + "\n\nTask:\n" + task;
+
+  // Build API request for this specific agent
+  const json requestJson = buildMessagesArrayForAgent(agentName, combinedMessage, false);
+
+  // Save current state (will be restored when sub-agent completes)
+  const string savedAgentName = m_currentAgentName;
+  const string savedConversationId = m_currentConversationId;
+
+  // Set current agent and create a new conversation ID for sub-agent
+  m_currentAgentName = agentName;
+  m_currentConversationId = "subagent_" + agentName + "_" + std::to_string(
+    chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count()
+  );
+
+  // Add sub-agent context message to history
+  m_history->addUserMessage(combinedMessage, m_currentConversationId);
+
+  // Make tracked API call
+  const int requestId = m_nextRequestId++;
+
+  // Create pending request with sub-agent info
+  PendingRequest pending;
+  pending.requestId = requestId;
+  pending.originalUserMessage = combinedMessage;
+  pending.isToolResultFollowup = false;
+  pending.isSubAgentRequest = true;
+  pending.subAgentName = agentName;
+  pending.savedAgentName = savedAgentName;
+  pending.savedConversationId = savedConversationId;
+  // No callback needed - we'll handle resumption directly
+
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+  pending.requestJson = requestJson;
+#endif
+
+  m_pendingRequests[requestId] = pending;
+
+  cout << "Sub-agent " << agentName << " request ID: " << requestId << " (conversation: " << m_currentConversationId << ")" << endl;
+  cout << "Main agent will pause until sub-agent completes" << endl;
+
+  // Make the actual API call
+  makeApiCallWithId(requestJson, requestId);
+
+  // Note: m_currentAgentName will be restored when the response is received
+  // For now, keep it set to the sub-agent so any immediate processing is correctly attributed
+
+  return requestId;
+}//invokeSubAgent(...)
+
+
 nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, bool isSystemGenerated)
 {
   if( !m_config || !m_config->llmApi.enabled )
@@ -656,12 +908,16 @@ nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, 
   }
   
   json messages = json::array();
-  
-  // Add system prompt
-  json systemMsg;
-  systemMsg["role"] = "system";
-  systemMsg["content"] = m_config->llmApi.systemPrompt;
-  messages.push_back(systemMsg);
+
+  // Add system prompt (use MainAgent's prompt)
+  const string systemPrompt = getSystemPromptForAgent("MainAgent");
+  if( !systemPrompt.empty() )
+  {
+    json systemMsg;
+    systemMsg["role"] = "system";
+    systemMsg["content"] = systemPrompt;
+    messages.push_back(systemMsg);
+  }
   
 
   
@@ -705,7 +961,7 @@ nlohmann::json LlmInterface::buildMessagesArray(const std::string& userMessage, 
   
   // Add tools
   json tools = json::array();
-  for (const auto& [name, tool] : LlmTools::ToolRegistry::instance().getTools()) {
+  for (const auto& [name, tool] : m_tool_registry->getTools()) {
     json toolDef;
     toolDef["type"] = "function";
     toolDef["function"]["name"] = tool.name;
@@ -816,14 +1072,15 @@ void LlmInterface::setupJavaScriptBridge() {
   cout << "JavaScript bridge setup complete" << endl;
 }
 
-void LlmInterface::handleJavaScriptResponse(std::string response, int requestId) {
-  
-  //cout << ":handleJavaScriptResponse: " << response << endl << endl << endl;
-  try {
+void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
+{
+  try
+  {
     // Find and remove the pending request
     PendingRequest pendingRequest;
     bool foundPending = false;
-    if (m_pendingRequests.find(requestId) != m_pendingRequests.end()) {
+    if( m_pendingRequests.find(requestId) != m_pendingRequests.end() )
+    {
       pendingRequest = std::move(m_pendingRequests[requestId]);
       foundPending = true;
       m_pendingRequests.erase(requestId);
@@ -831,38 +1088,38 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     
     // Check for errors first
     json responseJson = json::parse(response);
-    if (responseJson.contains("error") && !responseJson["error"].is_null()) {
-
-#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
-    if( foundPending )
+    if( responseJson.contains("error") && !responseJson["error"].is_null() )
     {
-      const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
-      string now_str = SpecUtils::to_iso_string( now );
-      const string::size_type period_pos = now_str.find('.');
-      if( period_pos != string::npos )
-        now_str = now_str.substr(0,period_pos);
-
-      string debug_name = "llm_request_with_error_id" + std::to_string(requestId) + "_" + now_str + ".json";
-      string debug_result = "llm_result_with_error_id" + std::to_string(requestId) + "_" + now_str + ".json";
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+      if( foundPending )
+      {
+        const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+        string now_str = SpecUtils::to_iso_string( now );
+        const string::size_type period_pos = now_str.find('.');
+        if( period_pos != string::npos )
+          now_str = now_str.substr(0,period_pos);
+        
+        string debug_name = "llm_request_with_error_id" + std::to_string(requestId) + "_" + now_str + ".json";
+        string debug_result = "llm_result_with_error_id" + std::to_string(requestId) + "_" + now_str + ".json";
 #ifdef _WIN32
-      const std::wstring wdebug_name = SpecUtils::convert_from_utf8_to_utf16(debug_name);
-      std::ofstream output_request_json( wdebug_name.c_str(), ios::binary | ios::out );
-      const std::wstring wdebug_result = SpecUtils::convert_from_utf8_to_utf16(debug_result);
-      std::ofstream output_result_json( wdebug_result.c_str(), ios::binary | ios::out );
+        const std::wstring wdebug_name = SpecUtils::convert_from_utf8_to_utf16(debug_name);
+        std::ofstream output_request_json( wdebug_name.c_str(), ios::binary | ios::out );
+        const std::wstring wdebug_result = SpecUtils::convert_from_utf8_to_utf16(debug_result);
+        std::ofstream output_result_json( wdebug_result.c_str(), ios::binary | ios::out );
 #else
-      std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
-      std::ofstream output_result_json( debug_result.c_str(), ios::binary | ios::out );
+        std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
+        std::ofstream output_result_json( debug_result.c_str(), ios::binary | ios::out );
 #endif
-      if( output_request_json )
-        output_request_json << pendingRequest.requestJson.dump(2);
-      if( output_result_json )
-        output_result_json << response;
-      cout << "\nLLM request error: wrote request input and output to '"
-      << debug_name << "', and '" << debug_result << "', respectively."
-      << endl << endl;
-    }//if( foundPending )
+        if( output_request_json )
+          output_request_json << pendingRequest.requestJson.dump(2);
+        if( output_result_json )
+          output_result_json << response;
+        cout << "\nLLM request error: wrote request input and output to '"
+        << debug_name << "', and '" << debug_result << "', respectively."
+        << endl << endl;
+      }//if( foundPending )
 #endif //#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
-
+      
       string errorMsg = "LLM API Error: " + responseJson["error"].dump(2);
       cout << errorMsg << endl;
       
@@ -882,13 +1139,98 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       return;
     }
     
-    // Use the enhanced handleApiResponse method for consistent processing
-    handleApiResponse(response);
-    
-  } catch (const json::parse_error& e) {
+    // Check if this is a sub-agent request
+    if( foundPending && pendingRequest.isSubAgentRequest )
+    {
+      cout << "=== Processing sub-agent response for: " << pendingRequest.subAgentName << " ===" << endl;
+
+      // Process the response normally first (this adds messages to history with correct agent name)
+      handleApiResponse(response);
+
+      // Extract the final assistant message as the sub-agent summary
+      string subAgentSummary;
+      if( responseJson.contains("choices") && !responseJson["choices"].empty() )
+      {
+        const json &choice = responseJson["choices"][0];
+        if( choice.contains("message") && choice["message"].contains("content") )
+        {
+          const string content = choice["message"]["content"].get<string>();
+          // Extract clean content (strip thinking tags if present)
+          auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
+          subAgentSummary = cleanContent;
+        }
+      }
+
+      cout << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
+
+      // Restore the saved agent name and conversation ID
+      m_currentAgentName = pendingRequest.savedAgentName;
+      m_currentConversationId = pendingRequest.savedConversationId;
+
+      cout << "Restored agent: " << m_currentAgentName << ", conversation: " << m_currentConversationId << endl;
+
+      // Check if there are deferred tool results waiting for this sub-agent
+      const auto deferredIter = m_deferredToolResults.find(requestId);
+      if( deferredIter != m_deferredToolResults.end() )
+      {
+        const DeferredToolResult &deferred = deferredIter->second;
+
+        cout << "=== Resuming main agent with sub-agent summary ===" << endl;
+
+        // Update the invoke_sub_agent tool result with the actual summary
+        // Find the tool result in history and update it
+        if( m_history )
+        {
+          std::vector<LlmConversationStart> &conversations = m_history->getConversations();
+          for( LlmConversationStart &conv : conversations )
+          {
+            if( conv.conversationId == deferred.conversationId )
+            {
+              for( LlmConversationResponse &resp : conv.responses )
+              {
+                if( resp.type == LlmConversationResponse::Type::ToolResult &&
+                   resp.invocationId == deferred.subAgentToolCallId )
+                {
+                  // Update the tool result with the real summary
+                  json updatedResult;
+                  updatedResult["status"] = "completed";
+                  updatedResult["summary"] = subAgentSummary;
+                  updatedResult["agentName"] = pendingRequest.subAgentName;
+                  resp.content = updatedResult.dump();
+
+                  cout << "Updated invoke_sub_agent tool result with summary" << endl;
+                  break;
+                }
+              }
+              break;
+            }
+          }
+        }
+
+        // Now send all the deferred tool results back to the main agent LLM
+        cout << "Sending " << deferred.toolCallIds.size() << " deferred tool results back to main agent" << endl;
+        sendToolResultsToLLM(deferred.toolCallIds);
+
+        // Clean up deferred results
+        m_deferredToolResults.erase(deferredIter);
+      }else
+      {
+        cout << "Warning: No deferred tool results found for sub-agent request " << requestId << endl;
+      }
+
+      cout << "=== Sub-agent processing complete ===" << endl;
+    }else
+    {
+      // Normal (non-sub-agent) request - use the enhanced handleApiResponse method for consistent processing
+      handleApiResponse(response);
+    }
+
+  }catch( const json::parse_error &e )
+  {
     cout << "Failed to parse LLM response as JSON: " << e.what() << endl;
     cout << "Raw response: " << response << endl;
-  } catch (const std::exception& e) {
+  }catch( const std::exception &e )
+  {
     cout << "Error processing LLM response: " << e.what() << endl;
   }
 }

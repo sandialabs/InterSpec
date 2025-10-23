@@ -3,6 +3,7 @@
 
 #if( USE_LLM_INTERFACE )
 
+#include <algorithm>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
@@ -10,7 +11,9 @@
 #include "rapidxml/rapidxml.hpp"
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/LlmInterface.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
@@ -559,807 +562,370 @@ namespace {
   }//source_categories(...)
 }//namespace
 
-namespace LlmTools {
+namespace LlmTools
+{
 
-ToolRegistry& ToolRegistry::instance() {
-  static ToolRegistry registry;
-  return registry;
+ToolRegistry::ToolRegistry( const LlmConfig &config )
+{
+  registerDefaultTools( config );
 }
+  
 
 void ToolRegistry::registerTool(const SharedTool& tool) {
   m_tools[tool.name] = tool;
 }
 
-void ToolRegistry::registerDefaultTools() {
-  if (m_defaultToolsRegistered) {
+SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
+{
+  SharedTool tool;
+  tool.name = toolName;
+
+  // Assign executor based on tool name
+  if( toolName == "detected_peaks" )
+  {
+    tool.executor = [](const json& params, InterSpec* interspec) -> json {
+      return executePeakDetection(params, interspec);
+      };
+    }else if( toolName == "fit_peak" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executePeakFit(params, interspec);
+      };
+    }else if( toolName == "edit_analysis_peak" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeEditAnalysisPeak(params, interspec);
+      };
+    }else if( toolName == "get_analysis_peaks" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetUserPeaks(params, interspec);
+      };
+    }else if( toolName == "get_spectrum_info" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetSpectrumInfo(params, interspec);
+      };
+    }else if( toolName == "primary_gammas_for_source" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetCharacteristicGammasForSource(params);
+      };
+    }else if( toolName == "sources_with_primary_gammas_in_energy_range" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
+      };
+    }else if( toolName == "sources_with_primary_gammas_near_energy" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
+      };
+    }else if( toolName == "sources_associated_with_source" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetAssociatedSources(params);
+      };
+    }else if( toolName == "analyst_notes_for_source" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetSourceAnalystNotes(params);
+      };
+    }else if( toolName == "source_info" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetSourceInfo(params, interspec);
+      };
+    }else if( toolName == "nuclide_decay_chain" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetNuclideDecayChain(params);
+      };
+    }else if( toolName == "automated_isotope_id_results" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetAutomatedRiidId(params, interspec);
+      };
+    }else if( toolName == "loaded_spectra" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetLoadedSpectra(params, interspec);
+      };
+    }else if( toolName == "fit_peaks_for_nuclide" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeFitPeaksForNuclide(params, interspec);
+      };
+    }else if( toolName == "get_counts_in_energy_range" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetCountsInEnergyRange(params, interspec);
+      };
+    }else if( toolName == "get_expected_fwhm" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetExpectedFwhm(params, interspec);
+      };
+    }else if( toolName == "currie_mda_calc" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeCurrieMdaCalc(params, interspec);
+      };
+    }else if( toolName == "source_photons" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetSourcePhotons(params);
+      };
+    }else if( toolName == "photopeak_detection_efficiency" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executePhotopeakDetectionCalc(params, interspec);
+      };
+    }else if( toolName == "get_materials" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetMaterials(interspec);
+      };
+    }else if( toolName == "get_material_info" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetMaterialInfo(params, interspec);
+      };
+    }else if( toolName == "avaiable_detector_efficiency_functions" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeAvailableDetectors(params, interspec);
+      };
+    }else if( toolName == "load_detector_efficiency_function" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeLoadDetectorEfficiency(params, interspec);
+      };
+    }else if( toolName == "detector_efficiency_function_info" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeGetDetectorInfo(params, interspec);
+      };
+    }else if( toolName == "search_sources_by_energy" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeSearchSourcesByEnergy(params, interspec);
+      };
+    }else
+    {
+      throw std::runtime_error( "Unknown tool name: " + toolName );
+    }
+
+    return tool;
+}//ToolRegistry::createToolWithExecutor(...)
+
+
+void ToolRegistry::registerDefaultTools( const LlmConfig &config )
+{
+  if( !m_tools.empty() )
     return;
-  }
+
+  // Get tool configurations from config (already loaded from llm_tools_config.xml)
+  if( config.tools.empty() )
+    throw std::runtime_error("No tools configuration provided - cannot initialize LLM interface");
   
   cout << "Registering default LLM tools..." << endl;
+
+  // Helper lambda to apply config overrides to a tool
+  auto applyToolConfig = [&config](SharedTool &tool) {
+    // Look for this tool in the config
+    for( const LlmConfig::ToolConfig &toolConfig : config.tools )
+    {
+      if( toolConfig.name == tool.name )
+      {
+        // Apply agent restrictions
+        if( !toolConfig.availableForAgents.empty() )
+          tool.availableForAgents = toolConfig.availableForAgents;
+
+        // Apply default description override
+        if( !toolConfig.defaultDescription.empty() )
+          tool.description = toolConfig.defaultDescription;
+
+        // Apply role-specific descriptions
+        tool.roleDescriptions = toolConfig.roleDescriptions;
+
+        // Apply parameter schema override (already parsed and validated; {} is a valid empty schema)
+        if( !toolConfig.parametersSchema.is_null() )
+        {
+          tool.parameters_schema = toolConfig.parametersSchema;
+        }
+
+        cout << "  Applied config overrides for tool: " << tool.name << endl;
+        break;
+      }
+    }
+  };
+
+  // Register agent-specific invoke tools dynamically from config
+  for( const LlmConfig::AgentConfig &agent : config.agents )
+  {
+    // Skip MainAgent - it doesn't get its own invoke tool
+    if( agent.type == AgentType::MainAgent )
+      continue;
+    
+    // Create invoke_<AgentName> tool
+    const string toolName = "invoke_" + agent.name;
+    
+    SharedTool invokeTool;
+    invokeTool.name = toolName;
+    invokeTool.description = "Invoke the " + agent.name + " sub-agent to handle specialized " + agent.name + " analysis tasks.";
+    
+    // Schema for invoke tool
+    invokeTool.parameters_schema = json::parse(R"({
+        "type": "object",
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "Background context about the current analysis state"
+          },
+          "task": {
+            "type": "string",
+            "description": "The specific task for the sub-agent to perform"
+          }
+        },
+        "required": ["context", "task"]
+      })");
+    
+    // Executor is a placeholder - actual invocation handled in executeToolCalls
+    invokeTool.executor = [](const json& params, InterSpec* interspec) -> json {
+      assert( 0 );
+      throw std::runtime_error( "invoke_* tools should be handled by executeToolCalls, not called directly" );
+    };
+    
+    // Only MainAgent can invoke sub-agents
+    invokeTool.availableForAgents = {AgentType::MainAgent};
+    
+    registerTool(invokeTool);
+    cout << "  Registered sub-agent invoke tool: " << toolName << endl;
+  }//for( loop over agents in config )
   
-  // Register detected_peaks tool
-  registerTool({
+
+  // Register tools from configs
+  for( const LlmConfig::ToolConfig &toolConfig : config.tools )
+  {
+    try
+    {
+      // Create tool with executor
+      SharedTool tool = createToolWithExecutor( toolConfig.name );
+
+      // Apply description and schema from config
+      if( !toolConfig.defaultDescription.empty() )
+        tool.description = toolConfig.defaultDescription;
+
+      // Apply parameter schema (already parsed and validated; {} is a valid empty schema)
+      if( !toolConfig.parametersSchema.is_null() )
+      {
+        tool.parameters_schema = toolConfig.parametersSchema;
+      }
+
+      // Apply role-specific descriptions
+      tool.roleDescriptions = toolConfig.roleDescriptions;
+
+      // Apply agent restrictions
+      tool.availableForAgents = toolConfig.availableForAgents;
+
+      registerTool(tool);
+      cout << "  Registered tool: " << tool.name << endl;
+    }catch( const std::exception &e )
+    {
+      cerr << "Warning: Failed to create tool '" << toolConfig.name << "': " << e.what() << endl;
+    }
+  }//for( loop over tool configs )
+
+  // NOTE: Hard-coded fallback tool definitions have been removed.
+  // If no tools are loaded from XML, we throw an exception above.
+  // This ensures that:
+  //   1. The XML configuration is the single source of truth for tool definitions
+  //   2. Tool descriptions and schemas can be updated without recompilation
+  //   3. Missing configuration is caught early rather than silently using outdated hardcoded values
+
+  // Runtime validation: Check that all expected tools are registered
+  const std::vector<std::string> expectedTools = {
     "detected_peaks",
-    "Returns all Regions Of Interest (ROI) with peaks detected by automated peak search. For ROI gives lower and upper energies, and for each peak it gives energy (in keV), FWHM, amplitude (area), and statistical significance (numSigma); if the peak is associated with a source, will also give information on that. Does not add peaks to the user peaks.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-          "specType": { 
-            "type": "string", 
-            "description": "Which displayed spectrum to search for peaks in; the user is almost always interested in the Foreground, except to check if a peak is in both the foreground and background.", 
-            "enum": ["Foreground", "Background", "Secondary"] 
-          },
-          "userSession": { 
-            "type": "string", 
-            "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-          }
-      },
-      "required": ["specType"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executePeakDetection(params, interspec);
-    }
-  });
-  
-  // Register detected_peaks tool
-  registerTool({
     "fit_peak",
-    "Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns Region Of Interest that was either created, or the peak was added to.  If fit failed, reason will be described in 'error' field.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-          "energy": { 
-            "type": "number", 
-            "description": "Approximate energy (in keV) to look for a peak to fit." 
-          },
-          "source": {
-            "type": "string",
-            "description": "Optional: The parent nuclide (ex U235, I131, Ba133) or x-ray flourescense element (ex Pb, U, W) or nuclear reaction (ex H(n,g)) assigned to the peak."
-          },
-          "specType": { 
-            "type": "string", 
-            "description": "Optional: Which displayed spectrum to search for peaks in; if not specified will use foreground (which is what user usually wants).", 
-            "enum": ["Foreground", "Background", "Secondary"] 
-          },
-          "addToUsersPeaks": {
-            "type": "boolean",
-            "description": "Optional: if fit peak should be added to users peaks; defaults to true."
-          },
-          "userSession": { 
-            "type": "string", 
-            "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-          }
-      },
-      "required": ["energy"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executePeakFit(params, interspec);
-    }
-  });
-
-  // Register edit_analysis_peak tool
-  registerTool({
     "edit_analysis_peak",
-    "Edit or delete a peak at approximately the specified energy. Can modify peak properties (energy, FWHM, amplitude and their uncertainties), ROI bounds (lower/upper), continuum type (None, Constant, Linear, Quadratic, Cubic, FlatStep, LinearStep, BiLinearStep, External), skew type (NoSkew, Bortel, GaussExp, CrystalBall, ExpGaussExp, DoubleSidedCrystalBall), assign source (nuclide like Ba133, Co60 1332.49 keV, xray like Pb, or reaction like H(n,g)), set peak color (CSS color string), set user label, set flags for energy calibration/shielding/efficiency usage, delete peak, split peak into its own ROI, or merge ROI with adjacent peak.",
-    json::parse(R"json({
-      "type": "object",
-      "properties": {
-          "energy": {
-            "type": "number",
-            "description": "Energy (in keV) of the peak to edit; will find nearest peak within 1 FWHM."
-          },
-          "editAction": {
-            "type": "string",
-            "description": "Action to perform on the peak",
-            "enum": ["SetEnergy", "SetFwhm", "SetAmplitude", "SetEnergyUncertainty", "SetFwhmUncertainty", "SetAmplitudeUncertainty", "SetRoiLower", "SetRoiUpper", "SetSkewType", "SetContinuumType", "SetSource", "SetColor", "SetUserLabel", "SetUseForEnergyCalibration", "SetUseForShieldingSourceFit", "SetUseForManualRelEff", "DeletePeak", "SplitFromRoi", "MergeWithLeft", "MergeWithRight"]
-          },
-          "doubleValue": {
-            "type": "number",
-            "description": "Numeric value for actions that require a number (SetEnergy, SetFwhm, SetAmplitude, SetRoiLower, SetRoiUpper, and uncertainty variants)"
-          },
-          "stringValue": {
-            "type": "string",
-            "description": "String value for SetSource (e.g., Ba133, Co60 1332.49 keV), SetColor (CSS color), SetUserLabel (text note), SetSkewType (NoSkew/Bortel/GaussExp/CrystalBall/ExpGaussExp/DoubleSidedCrystalBall), or SetContinuumType (None/Constant/Linear/Quadratic/Cubic/FlatStep/LinearStep/BiLinearStep/External)"
-          },
-          "boolValue": {
-            "type": "boolean",
-            "description": "Boolean value for SetUseForEnergyCalibration, SetUseForShieldingSourceFit, or SetUseForManualRelEff actions"
-          },
-          "specType": {
-            "type": "string",
-            "enum": ["Foreground", "Background", "Secondary"],
-            "description": "Optional: Which spectrum the peak is in (default: Foreground)"
-          },
-          "userSession": {
-            "type": "string",
-            "description": "Optional: user session identifier"
-          }
-      },
-      "required": ["energy", "editAction"]
-    })json"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeEditAnalysisPeak(params, interspec);
-    }
-  });
-
-  // Register get_analysis_peaks tool
-  registerTool({
     "get_analysis_peaks",
-    "Gets the peaks to use for further analysis that have either been manually fit by the user, or by the 'fit_peak' tool call, or similar.  These peaks tracked by an internal state.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-          "specType": {
-            "type": "string",
-            "description": "Optional: Which displayed spectrum to search for peaks in; if not specified will use foreground (which is what user usually wants).",
-            "enum": ["Foreground", "Background", "Secondary"]
-          },
-          "userSession": {
-            "type": "string",
-            "description": "Optional: the user session identifier.  If not specified, will use most recent session."
-          },
-          "lowerEnergy": {
-            "type": "number",
-            "description": "Optional: minimum energy (in keV) for peaks to return. If not specified, no lower bound is applied."
-          },
-          "upperEnergy": {
-            "type": "number",
-            "description": "Optional: maximum energy (in keV) for peaks to return. If not specified, no upper bound is applied."
-          }
-      }
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetUserPeaks(params, interspec);
-    }
-  });
-  
-  // Register spectrum_info tool
-  registerTool({
-    "get_spectrum_info", 
-    "Get basic information about the currently loaded spectrum",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-          "specType": { 
-            "type": "string", 
-            "description": "Which spectrum to get info for", 
-            "enum": ["Foreground", "Background", "Secondary"] 
-          },
-          "userSession": { 
-            "type": "string", 
-            "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-          }
-      },
-      "required": ["specType"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetSpectrumInfo(params, interspec);
-    }
-  });
-
-  registerTool({
+    "get_spectrum_info",
     "primary_gammas_for_source",
-    "Get the most likely energies a peak will be detected at for a source (nuclide, x-ray element, or nuclear reaction). Returns one to a few energies (in keV).  This is only a rough guess at the most prominent or unique peaks for the source; not detecting a peak at these energies does not rule out a source, but it makes the source a candidate.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "The source (nuclide, x-ray element, or nuclear reaction) to get the characteristic gammas for."
-        }
-      },
-      "required": ["source"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetCharacteristicGammasForSource(params);
-    }
-  });
-
-// TODO: combine sources_with_primary_gammas_in_energy_range and sources_with_primary_gammas_near_energy, and make them return the nuclide search tool results, not just primary nuclides
-  registerTool({
     "sources_with_primary_gammas_in_energy_range",
-    "Get the commonly encountered field nuclides, x-ray elements, or reactions with primary gammas in the specified energy range.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "lowerEnergy": {
-          "type": "number",
-          "description": "The lower energy (in keV) to search for primary gammas."
-        },
-        "upperEnergy": {
-          "type": "number",
-          "description": "The upper energy (in keV) to search for primary gammas."
-        },
-        "userSession": {
-          "type": "string",
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session."
-        }
-      },
-      "required": ["lowerEnergy", "upperEnergy"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
-    }
-  });
-
-  registerTool({
     "sources_with_primary_gammas_near_energy",
-    "Get the commonly encountered field nuclides, x-ray elements, or reactions with primary gammas near the specified energy.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "energy": {
-          "type": "number",
-          "description": "The energy (in keV) to search for primary gammas."
-        },
-        "userSession": {
-          "type": "string",
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session."
-        }
-      },
-      "required": ["energy"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
-    }
-  });
-
 #if( !INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
-  registerTool({
     "sources_associated_with_source",
-    "Gets other sources (nuclides, reactions, x-rays) that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source.  You you should check for these associated sources being present or not when the specified source is observed.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "The source to get associated sources for."
-        }
-      },
-      "required": ["source"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetAssociatedSources(params);
-    }
-  });
-
-  registerTool({
     "analyst_notes_for_source",
-    "Gets analyst notes for the specified source (nuclide, x-ray, reaction), such as when the source is used/seen, typical activity ranges of nuclides, etc.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "The source to get analyst notes for."
-        }
-      },
-      "required": ["source"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetSourceAnalystNotes(params);
-    }
-  });
-#endif //!INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO
-  
-  registerTool({
-    "source_info",
-#if( !INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
-    "Gets nuclear data information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, etc.",
-#else
-    "Gets relevant information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, analyst notes (such as when the source is used/seen, typical activity ranges of nuclides, etc.), associated sources (i.e. sources that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source - you should check for these associated sources being present or not when the specified source is observed), source catagories (medical, NORM, industrial, etc), and other nuclear data.",
 #endif
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "source": {
-          "type": "string",
-          "description": "The source to get data for."
-        }
-      },
-      "required": ["source"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetSourceInfo(params, interspec);
-    }
-  });
-
-  registerTool({
+    "source_info",
     "nuclide_decay_chain",
-    "Returns a list of all progeny nuclides, of the specified nuclide, and thier decay modes and branching ratios.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "nuclide": {
-          "type": "string",
-          "description": "The nuclide to get data for."
-        }
-      },
-      "required": ["nuclide"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetNuclideDecayChain(params);
-    }
-  });
-
-  registerTool({
     "automated_isotope_id_results",
-    "Get the isotope ID from the avaiable automated ID algorithms. Will return the detection systems on-board nuclide ID results, if present, as well as the GADRAS Full Spectrum Isotope ID results if the app is configured to get.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "userSession": { 
-          "type": "string", 
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-        }
-      }
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetAutomatedRiidId(params, interspec);
-    }
-  });
-
-  registerTool({
     "loaded_spectra",
-    "Returns array of the currently loaded spectra from [\"Foreground\", \"Background\", \"Secondary\"].  If no spectra are loaded, returns empty array.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "userSession": { 
-            "type": "string", 
-            "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-          }
-      }
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetLoadedSpectra(params, interspec);
-    }
-  });
-
-  registerTool({
     "fit_peaks_for_nuclide",
-    "Fits peaks for the one or more specified nuclide(s). Returns the peaks that were fit.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "nuclide": {
-          "anyOf": [
-            {"type": "string"},
-            {"type": "array", "items": {"type": "string"}}
-          ],
-          "description": "The nuclide or array of nuclides to fit peaks for (ex U235, I131, Ba133)."
-        },
-        "userSession": { 
-          "type": "string", 
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-        },
-        "doNotAddPeaksToUserSession": {
-          "type": "boolean",
-          "description": "Optional: if true, fitted peaks will not be added to the user's peak collection; defaults to false."
-        }
-      },
-      "required": ["nuclide"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return ToolRegistry::executeFitPeaksForNuclide(params, interspec);
-    }
-  });
-
-  registerTool({
     "get_counts_in_energy_range",
-    "Get the counts in the spectra for the specified energy range as well as compares statistical significance of differences between foreground and background and/or secondary count-rates, if those spectra are loaded.  This function can be used to check if the count rate of an energy range is elevated in the foreground relative to the background, especially above the 2614 keV peak.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "lowerEnergy": {
-          "type": "number",
-          "description": "The lower energy bound in keV."
-        },
-        "upperEnergy": {
-          "type": "number",
-          "description": "The upper energy bound in keV."
-        },
-        "userSession": { 
-          "type": "string", 
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-        }
-      },
-      "required": ["lowerEnergy", "upperEnergy"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return ToolRegistry::executeGetCountsInEnergyRange(params, interspec);
-    }
-  });
-
-  registerTool({
     "get_expected_fwhm",
-    "Calculate the expected Full Width at Half Maximum (FWHM) for a peak at the specified energy, based on the detector response function, detected peaks, or detector type. This is useful for determining the expected width of a peak for ROI calculations.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "energy": {
-          "type": "number",
-          "description": "The energy (in keV) to calculate the expected FWHM for."
-        },
-        "userSession": { 
-          "type": "string", 
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-        }
-      },
-      "required": ["energy"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return ToolRegistry::executeGetExpectedFwhm(params, interspec);
-    }
-  });
-
-  registerTool({
     "currie_mda_calc",
-    "Calculate Minimum Detectable Activity (MDA) and detection confidence intervals using Currie-style (ISO 11929) methodology. Determines if a peak is detectable at a specified energy. Returns decision threshold, detection limit, and confidence intervals - as well as if it looks like a peak is at the energy (see `peakPresentInData` in output).",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "energy": {
-          "type": "number",
-          "description": "The energy (in keV) of the photopeak for which the detection limit is being calculated."
-        },
-        "detectionProbability": {
-          "type": "number",
-          "description": "Optional: Detection probability (confidence level), typically 0.95 for 95% confidence. Defaults to 0.95.",
-          "minimum": 0.5,
-          "maximum": 0.999,
-          "default": 0.95
-        },
-        "additionalUncertainty": {
-          "type": "number",
-          "description": "Optional: Additional relative uncertainty to include (e.g., from detector response function uncertainties). Defaults to 0.0.",
-          "minimum": 0.0,
-          "default": 0.0
-        },
-        "userSession": { 
-          "type": "string", 
-          "description": "Optional: the user session identifier.  If not specified, will use most recent session." 
-        }
-      },
-      "required": ["energy"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return ToolRegistry::executeCurrieMdaCalc(params, interspec);
-    }
-  });
-
-
-  registerTool({
     "source_photons",
-    "Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-rays, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel for nuclides, or normalized to 1 for flourescence or reactions.  Results will be sorted by energy.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "Source": {
-          "type": "string",
-          "description": "The nuclide, element, or reaction for which to retrieve decay product data. Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction)."
-        },
-        "Age": {
-          "type": "string",
-          "description":  "The age of the nuclide at which to return decay products. Applicable only for nuclides; specifying this for elements or reactions will result in an error. If not specified for nuclides, a default age will be used. Examples: '23.25 y', '23 years 60 days', '0s', '5 half-lives'. An age of '0 seconds' will return products from the specified nuclide only, while a positive value will include products from the nuclide's full decay chain, aged to the specified amount."
-        },
-        "MaxResults": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "The maximum number of energy/intensity pairs to return; if the source has more than this number of photons, then information for this number of the largest intensity photons will be returned.  If not specified, a value of 125 will be assumed."
-        }
-      },
-      "required": ["Source"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetSourcePhotons(params);
-    }
-  });
-
-  /*
-  registerTool({
-    "attenuation_factor_of_shielding",
-    "Given an array of photon energies, returns the fraction of photons that pass through the shielding without being attenuated. For each energy, the returned value will be between 0 and 1, where 1 indicates no attenuation (all photons pass through) and 0 indicates complete attenuation (all photons interact).",
-    json::parse(R"({
-  "type": "object",
-  "properties": {
-    "Shielding": {
-      "type": "object",
-      "description": "Defines the shielding properties used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names and materials returned by the `get_materials` tool.",
-      "properties": {
-        "AD": {
-          "type": "number",
-          "description": "Areal density of the shielding material in g/cm²."
-        },
-        "AN": {
-          "type": "number",
-          "description": "Effective atomic number of the shielding material."
-        },
-        "Material": {
-          "type": "string",
-          "description": "The shielding material, specified as an element symbol or name. Example: 'Fe' or 'Iron'."
-        },
-        "Thickness": {
-          "type": "string",
-          "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
-        }
-      },
-      "additionalProperties": false
-    },
-    "Energies": {
-      "type": "array",
-      "items": {
-        "type": "number"
-      },
-      "description": "An array of photon energy values in keV to apply the attenuation calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
-    }
-  },
-  "required": ["Shielding", "Energies"]
-})"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetAttenuationOfShielding(params, interspec);
-    }
-  });
-*/
-  
-  const string shielding_desc = R"("Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified as an object with one of the following formats:\n\n1. **Areal density and effective atomic number**: Provide an object with the keys `AD` (areal density in g/cm²) and `AN` (effective atomic number). Example: `{ \"AD\": 20.25, \"AN\": 26 }`.\n\n2. **Material and thickness**: Provide an object with the keys `Material` (element symbol or name) and `Thickness` (thickness in cm). Example: `{ \"Material\": \"Fe\", \"Thickness\": \"1.25cm\" }`.\n\nAvailable materials include element symbols or names and materials returned by the `get_materials` tool.")";
-  
-  // Note: If using OpenAI's `strict: true` mode for structured outputs, `oneOf` is not supported - instead use `anyOf`.
-  
-  const string shielding_obj_properties = R"({
-      "type": "object",
-      "description": "Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified in one of two formats.",
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "AD": {
-              "type": "number",
-              "description": "Areal density of the shielding material in g/cm²."
-            },
-            "AN": {
-              "type": "number",
-              "description": "Effective atomic number of the shielding material."
-            }
-          },
-          "required": ["AD", "AN"],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "Material": {
-              "type": "string",
-              "description": "The shielding material, specified as an element symbol or material name. Available material names are returned by the `get_materials` tool. Example: 'Fe', which is equivalent to 'Iron', or 'glass_plate', which is returned from `get_materials`."
-            },
-            "Thickness": {
-              "type": "string",
-              "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
-            }
-          },
-          "required": ["Material", "Thickness"],
-          "additionalProperties": false
-        }
-      ]
-    })";
-  
-  const string distance_obj_properties = R"({
-    "type": "string",
-    "description": "Optional: The distance the detector is from the center of the radioactive source.  If not specified, the gemoetric detection factor will not be accounted for. If a detector efficiency is not currently loaded for the foreground, or the detector efficiency is for a 'fixed geometry', then distance may not be specified. Example distances: '1.25 cm', '3 ft, 2 inches', etc." 
-  })";
-  
-  const string par_schema = R"({
-"type": "object",
-"properties": {
-  "Shielding": {
-    "type": "array",
-    "items": )" + shielding_obj_properties +
-R"(,
-    "description": "An array of shielding objects, applied in order from source to detector. Each shielding layer attenuates the photons that pass through it."
-  },
-  "Distance": )" + distance_obj_properties +
-R"(,
-  "IncludeAirAttenuation": {
-    "type": "boolean",
-    "description": "Optional: If true, includes attenuation from air between the source and detector. Only applies when Distance is specified. Defaults to false."
-  },
-  "Energies": {
-    "type": "array",
-    "items": {
-      "type": "number"
-    },
-    "description": "An array of photon energy values in keV to apply the calculation to. Each value must be a positive float representing the energy of a photon. Example: [511.0, 1460.8, 2614.5]. The returned attenuation fractions will correspond 1:1 to these input energies."
-  }
-},
-"required": ["Energies"]
-})";
-  
-  registerTool({
     "photopeak_detection_efficiency",
-    "Given an array of source photon energies, returns the fraction of photons that will contribute to a peak in data. The returned answer will include the attenuation factor of shielding (if specified), the fraction of photons making it to the detector (if distance is specified), the detection probability of photons that are incident upon the detector (i.e., the intrinsic detection efficiency) if a detector efficiency function is loaded (use 'detector_efficiency_function_info' tool call with no arguments to see if a detector efficiency function is loaded, and 'avaiable_detector_efficiency_functions' and 'load_detector_efficiency_function' to load an efficiency function), and gives total detection probability.",
-    json::parse(par_schema),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executePhotopeakDetectionCalc(params, interspec);
-    }
-  });
-
-  registerTool({
     "get_materials",
-    "Returns a list of avaiable materials for shielding. The materials name is what you will specify to other functions to use it as a shielding.",
-    json{},
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetMaterials(interspec);
-    }
-  });
-
-  registerTool({
     "get_material_info",
-    "Returns shielding material information (density, effective atomic number, elemental mass fractions, etc).",
-  json::parse(R"({
-      "type": "object",
-      "properties": {
-        "material": { 
-          "type": "string", 
-          "description": "The shielding material name to get information about." 
-          }
-      },
-      "required": ["material"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetMaterialInfo( params, interspec);
-    }
-  });
-
-
-  registerTool({
     "avaiable_detector_efficiency_functions",
-    "Returns a list of detector efficiency function names that can be loaded to the foreground spectrum.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {},
-      "required": []
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeAvailableDetectors( params, interspec);
-    }
-  });
-  
-  registerTool({
     "load_detector_efficiency_function",
-    "Loads a detector efficiency function to use for calculations. Can load from default available detectors, user previously used, filesystem path, GADRAS directory, or URI.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "identifier": {
-          "type": "string",
-          "description": "The detector efficiency function identifier. Can be a name from avaiable_detector_efficiency_functions, a filesystem path to a detector file or GADRAS directory, or a URI. Required."
-        },
-        "detectorName": {
-          "type": "string",
-          "description": "Optional: The specific detector name to use when the identifier points to a file containing multiple detector efficiencies (e.g., RelEff CSV files). If not specified and the file contains only one detector, that detector will be used. If not specified and the file contains multiple detectors, an error will be returned."
-        },
-        "source": {
-          "type": "string",
-          "enum": ["DefaultAvailable", "UserPreviouslyUsed", "FilePath", "GadrasDirectory", "URI", "AnySource"],
-          "description": "Optional: Source type hint for loading. DefaultAvailable: built-in detectors. UserPreviouslyUsed: user's database. FilePath: filesystem path to detector file. GadrasDirectory: GADRAS detector directory. URI: web URI. AnySource: try all options in order. Defaults to AnySource if not specified."
-        }
-      },
-      "required": ["identifier"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeLoadDetectorEfficiency( params, interspec);
-    }
-  });
-  
-  registerTool({
     "detector_efficiency_function_info",
-    "Returns information (name, description, if has FWHM info, or if is fixed geometry, etc) about either the currently loaded detector efficiency function, or if a name is specified, that detectors efficiency function.",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Optional: The name of the detector efficiency function to return information about. If not specified, will return information about the currently loaded detector efficiency function."
-          }
-      },
-      "required": []
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeGetDetectorInfo( params, interspec);
-    }
-  });
+    "search_sources_by_energy"
+  };
 
-  registerTool({
-    "search_sources_by_energy",
-    "Searches for radiation sources (nuclides, x-rays, reactions) that have gammas, x-rays, alphas, and/or beta-end-point at specified energies. Returns candidate sources ranked by how well they match the input energies and current foreground spectrum.\n\nIt is best to only search on a single energy at a time, and only for foreground peaks whose source is not identified; do not search on multiple energies unless you are investigating or suspect they are from the same source, or are really having a hard time identifying a source.\n\nThe 'profile_score' metric (larger = better match) is the best indicator of fit quality for the loaded spectrum, considering peak heights and detector response.\n\nFurther investigation of top returned candidates is required to make sure they match the spectrum (e.g., the spectrum is not missing a peak it should have from that source, or the peaks in the spectrum have expected relative amplitudes, etc.)",
-    json::parse(R"({
-      "type": "object",
-      "properties": {
-        "energies": {
-          "type": "array",
-          "description": "The energies the source MUST match.  Since the source must match ALL entries, it is best to only search on one to a few unidentified peaks at a time, ususally starting with only a single peak, and then moving to two only if no satisfactory answer can be found. You usually will not want to search on a foreground peak that roughly aligns in energy with a background peak (either auto-search peak, or user/analysis fit peak), unless the foreground peak CPS is substantially elevated relative to the background peak.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "energy": {
-                "type": "number",
-                "description": "Energy in keV to search for"
-              },
-              "window": {
-                "type": "number",
-                "description": "Search window (±keV) around this energy. If not specified, defaults to the recomended window of 1.27 times the expected FWHM at that energy, or if expected FWHM cant be determined, 1.5 keV for HPGe detectors or 10 keV for other detector types.  If the expected FWHM is not known, then it is recomended to not specify this field."
-              }
-            },
-            "required": ["energy"]
-          },
-          "minItems": 1,
-          "description": "Array of energies to search for. Each source must have emissions matching ALL specified energies."
-        },
-        "source_category": {
-          "type": "string",
-          "description": "Category filter for source types to search. Can use either the display name (e.g., 'Nuclides + X-rays') or the i18n key (e.g., 'isbe-category-nuc-xray'). Default is 'Nuclides + X-rays'. Common values: 'Nuclides + X-rays', 'Nuclides, X-rays, Reactions', 'Fluorescence x-rays', 'Reactions', 'Medical Nuclides', 'Industrial Nuclides', 'SNM', 'NORM', 'Field Encountered Sources', 'Field Encountered Nuclides', 'Fission Products', 'Alphas', 'Beta Endpoint', 'Un-aged Nuclides'."
-        },
-        "min_half_life": {
-          "type": "string",
-          "description": "Minimum nuclide half-life as a string (e.g., '10 s', '5 min', '1 h', '2 y'). Default is '100 m'."
-        },
-        "min_branching_ratio": {
-          "type": "number",
-          "description": "Minimum relative branching ratio (0.0 to 1.0). This is the aged gamma line BR divided by max intensity line. Default is 0.0."
-        },
-        "max_results": {
-          "type": "integer",
-          "description": "Maximum number of results to return. Default is 10."
-        },
-        "sort_by": {
-          "type": "string",
-          "enum": ["ProfileScore", "SumEnergyDifference"],
-          "description": "Sort criterion: 'ProfileScore' (larger=better, considers spectrum fit and peak heights) or 'SumEnergyDifference' (smaller=better, simple energy distance). Default is 'ProfileScore'."
-        }
-      },
-      "required": ["energies"]
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      return executeSearchSourcesByEnergy( params, interspec);
+  std::vector<std::string> missingTools;
+  for( const std::string &toolName : expectedTools )
+  {
+    if( m_tools.find(toolName) == m_tools.end() )
+    {
+      missingTools.push_back(toolName);
     }
-  });
+  }
 
-  /*
-   TODO: tool calls to add
-     - executeGetNuclidesWithCharacteristicsInEnergyRange - this should be _replaced_ with an energyrange search - like the GUI tool, and not just the characteristic gamma search
-     - `primary_gammas_for_source` has been renamed from `primary_gammas_for_nuclide` to better reflect it handles sources (nuclides, x-rays, reactions)
-     - Activity/Shielding fit
-     - RelActAuto
-     - Loading of spectra from filesystem to foreground/background
-     - Energy calibration...
-     - Dose calc
-   
-   */
-  
-  
-
-  /*
-  // Register test tool
-  registerTool({
-    "test_tool",
-    "A simple test tool that returns session information",
-    json::parse(R"({
-      "type": "object",
-      "properties": {},
-      "required": []
-    })"),
-    [](const json& params, InterSpec* interspec) -> json {
-      json result;
-      result["message"] = "Test tool executed successfully";
-      result["sessionId"] = interspec ? "valid_session" : "null_session";
-      result["timestamp"] = chrono::duration_cast<chrono::seconds>(
-        chrono::system_clock::now().time_since_epoch()).count();
-      return result;
+  if( !missingTools.empty() )
+  {
+    cerr << "WARNING: The following expected tools were not registered:" << endl;
+    for( const std::string &toolName : missingTools )
+    {
+      cerr << "  - " << toolName << endl;
     }
-  });
-  */
-  
-  m_defaultToolsRegistered = true;
+  }
+
+  // Check for unexpected tools (tools in registry but not in expected list)
+  std::vector<std::string> unexpectedTools;
+  for( const auto &[toolName, tool] : m_tools )
+  {
+    // Skip invoke_ tools as they are dynamically created
+    if( toolName.find("invoke_") == 0 )
+      continue;
+
+    bool found = false;
+    for( const std::string &expected : expectedTools )
+    {
+      if( toolName == expected )
+      {
+        found = true;
+        break;
+      }
+    }
+    if( !found )
+    {
+      unexpectedTools.push_back(toolName);
+    }
+  }
+
+  if( !unexpectedTools.empty() )
+  {
+    cerr << "WARNING: The following unexpected tools were registered:" << endl;
+    for( const std::string &toolName : unexpectedTools )
+    {
+      cerr << "  - " << toolName << endl;
+    }
+  }
+
   cout << "Registered " << m_tools.size() << " default tools" << endl;
 }
 
@@ -1372,9 +938,52 @@ const SharedTool* ToolRegistry::getTool(const std::string& name) const {
   return (it != m_tools.end()) ? &it->second : nullptr;
 }
 
+std::map<std::string, SharedTool> ToolRegistry::getToolsForAgent( AgentType agentType ) const
+{
+  std::map<std::string, SharedTool> filteredTools;
+
+  for( const auto &[toolName, tool] : m_tools )
+  {
+    // If availableForAgents is empty, tool is available to all agents
+    if( tool.availableForAgents.empty() )
+    {
+      filteredTools[toolName] = tool;
+      continue;
+    }
+
+    // Check if this agent is in the availableForAgents list
+    const bool agentAllowed = std::find( tool.availableForAgents.begin(),
+                                         tool.availableForAgents.end(),
+                                         agentType ) != tool.availableForAgents.end();
+
+    if( agentAllowed )
+      filteredTools[toolName] = tool;
+  }//for( loop over all tools )
+
+  return filteredTools;
+}//getToolsForAgent(...)
+
+
+std::string ToolRegistry::getDescriptionForAgent( const std::string &toolName, AgentType agentType ) const
+{
+  const SharedTool * const tool = getTool(toolName);
+  if( !tool )
+    return "";
+
+  // Check if there's a role-specific description for this agent
+  const auto iter = tool->roleDescriptions.find( agentType );
+  if( iter != tool->roleDescriptions.end() )
+    return iter->second;
+
+  // Fall back to default description
+  return tool->description;
+}//getDescriptionForAgent(...)
+
+
 nlohmann::json ToolRegistry::executeTool(const std::string& toolName, 
                                        const nlohmann::json& parameters, 
-                                       InterSpec* interspec) {
+                                       InterSpec* interspec)  const
+{
   const SharedTool* tool = getTool(toolName);
   if (!tool) {
     throw std::runtime_error("Tool not found: " + toolName);
@@ -1401,7 +1010,6 @@ nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
 
 void ToolRegistry::clearTools() {
   m_tools.clear();
-  m_defaultToolsRegistered = false;
 }
 
 // Implementation of specific tool functions

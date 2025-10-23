@@ -453,16 +453,13 @@ void startWebServer( string name,
       {
 #if( MCP_ENABLE_AUTH )
         assert( config->mcpServer.bearerToken != LlmConfig::McpServer::sm_invalid_bearer_token );
-          
         if( config->mcpServer.bearerToken == LlmConfig::McpServer::sm_invalid_bearer_token )
           throw runtime_error( "MCP bearer token is invalid" );
-          
         if( config->mcpServer.bearerToken.empty() )
           std::cerr << "WARNING: MCP bearer token not specified - not requiring authentication!" << std::endl;
-        ns_mcp_resource = std::make_unique<LlmMcpResource>( config->mcpServer.bearerToken );
-#else
-        ns_mcp_resource = std::make_unique<LlmMcpResource>();
 #endif
+        
+        ns_mcp_resource = std::make_unique<LlmMcpResource>( config ); //Throws exception if there is trouble setting up the tool calls
           
         // Add the resource to the existing server at /mcp-api
         ns_server->addResource( ns_mcp_resource.get(), "/mcp-api");

@@ -60,6 +60,10 @@ class InterSpec;
 class LlmConfig;
 class LlmConversationHistory;
 
+namespace LlmTools {
+  class ToolRegistry;
+}
+
 namespace Wt {
   class WResource;
 
@@ -115,13 +119,34 @@ public:
   
   /** Check if LLM interface is properly configured and ready to use */
   bool isConfigured() const;
-  
+
+  /** Get the current LlmInterface instance (for tool executors that need to invoke sub-agents).
+   This uses Wt's application-specific storage to avoid threading issues.
+   @return Pointer to the current LlmInterface, or nullptr if not set
+   */
+  static LlmInterface* getCurrentInstance();
+
+  /** Set the current LlmInterface instance (called automatically during tool execution).
+   @param instance Pointer to the LlmInterface instance to set as current
+   */
+  static void setCurrentInstance( LlmInterface *instance );
+
   /** Signal emitted when a new response is received from the LLM */
   Wt::Signal<>& responseReceived();
-  
+
   /** Check if a specific request ID is still pending */
   bool isRequestPending(int requestId) const;
-  
+
+  /** Invoke a sub-agent to handle a specific task (async).
+   @param agentName The name of the sub-agent (e.g., "NuclideId", "ActivityFit")
+   @param context Context to provide to the sub-agent
+   @param task The specific task for the sub-agent to perform
+   @param invokeToolCallId The tool call ID of the invoke_sub_agent call (to update with final result)
+   @return Request ID for the sub-agent invocation
+   */
+  int invokeSubAgent( const std::string &agentName, const std::string &context, const std::string &task,
+                      const std::string &invokeToolCallId );
+
 #ifdef USE_JS_BRIDGE_FOR_LLM
   /** JavaScript callback to handle LLM response */
   void handleJavaScriptResponse(std::string response, int requestId);
@@ -129,7 +154,8 @@ public:
 
 private:
   InterSpec* m_interspec;
-  std::shared_ptr<const LlmConfig> m_config;
+  const std::shared_ptr<const LlmConfig> m_config;
+  const std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;
   
   Wt::Signal<> m_responseReceived; // Signal emitted when new responses are received
@@ -146,17 +172,34 @@ private:
   // Request tracking
   int m_nextRequestId;
   std::string m_currentConversationId; // Track the current conversation ID for message association
+  std::string m_currentAgentName;      // Track which agent is currently handling the conversation (default = "MainAgent")
+
   struct PendingRequest {
     int requestId;
     std::string originalUserMessage;
     bool isToolResultFollowup;
     std::vector<std::string> toolCallIds; // For tracking which tool calls this request contains
 
+    // Sub-agent support
+    bool isSubAgentRequest = false;      // True if this request is from a sub-agent
+    std::string subAgentName;             // Name of the sub-agent (if isSubAgentRequest == true)
+    std::string savedAgentName;           // Agent name before sub-agent was invoked (for restoration)
+    std::string savedConversationId;      // Conversation ID before sub-agent was invoked (for restoration)
+    std::function<void(const std::string&)> subAgentCallback;  // Callback to invoke when sub-agent completes
+
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
     nlohmann::json requestJson;
 #endif
   };
   std::map<int, PendingRequest> m_pendingRequests;
+
+  // Deferred tool results (for sub-agent invocations that need to pause main agent)
+  struct DeferredToolResult {
+    std::string conversationId;
+    std::vector<std::string> toolCallIds;  // Tool call IDs to send back when sub-agent completes
+    std::string subAgentToolCallId;        // The invoke_sub_agent tool call ID to update with summary
+  };
+  std::map<int, DeferredToolResult> m_deferredToolResults; // Key is sub-agent requestId
   
   /** Make an API call to the LLM endpoint */
   void makeApiCall(const nlohmann::json& requestJson);
@@ -187,6 +230,20 @@ private:
   
   /** Build the messages array for the API request including history and system prompt */
   nlohmann::json buildMessagesArray(const std::string& userMessage, bool isSystemGenerated = false);
+
+  /** Build the messages array for a specific agent
+   @param agentName The name of the agent to build messages for
+   @param userMessage The user/system message
+   @param isSystemGenerated Whether this is a system-generated message
+   @return JSON messages array for the API request
+   */
+  nlohmann::json buildMessagesArrayForAgent( const std::string &agentName, const std::string &userMessage, bool isSystemGenerated = false );
+
+  /** Get the system prompt for a specific agent from config
+   @param agentName The name of the agent
+   @return System prompt string, or empty if not found
+   */
+  std::string getSystemPromptForAgent( const std::string &agentName ) const;
   
 #ifdef USE_JS_BRIDGE_FOR_LLM
   /** Set up the JavaScript bridge for making HTTPS requests */

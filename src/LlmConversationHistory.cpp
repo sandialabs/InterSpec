@@ -24,21 +24,23 @@ void LlmConversationHistory::addUserMessage(const std::string& message, const st
   m_conversations->push_back(conv);
 }
 
-void LlmConversationHistory::addAssistantMessage(const std::string& message, const std::string& conversationId) {
+void LlmConversationHistory::addAssistantMessage(const std::string& message, const std::string& conversationId, const std::string& agentName) {
   // If we have a conversation ID, try to add this as a follow-up to an existing conversation
   if (!conversationId.empty()) {
     LlmConversationStart* parentConv = findConversationByConversationId(conversationId);
     if (parentConv) {
       LlmConversationResponse response(LlmConversationResponse::Type::Assistant, message);
+      response.agentName = agentName;
       parentConv->responses.push_back(response);
       return;
     }
   }
-  
+
   // Otherwise, add as a new top-level conversation (this shouldn't happen in normal flow)
   LlmConversationStart conv(LlmConversationStart::Type::User, ""); // Empty user message as placeholder
   conv.conversationId = conversationId;
   LlmConversationResponse response(LlmConversationResponse::Type::Assistant, message);
+  response.agentName = agentName;
   conv.responses.push_back(response);
   m_conversations->push_back(conv);
 }
@@ -51,30 +53,33 @@ void LlmConversationHistory::addSystemMessage(const std::string& message, const 
   m_conversations->push_back(conv);
 }
 
-void LlmConversationHistory::addAssistantMessageWithThinking(const std::string& message, const std::string& thinkingContent, 
-                                                           const std::string& conversationId) {
+void LlmConversationHistory::addAssistantMessageWithThinking(const std::string& message, const std::string& thinkingContent,
+                                                           const std::string& conversationId, const std::string& agentName) {
   // If we have a conversation ID, try to add this as a follow-up to an existing conversation
   if (!conversationId.empty()) {
     LlmConversationStart* parentConv = findConversationByConversationId(conversationId);
     if (parentConv) {
       LlmConversationResponse response(LlmConversationResponse::Type::Assistant, message);
       response.thinkingContent = thinkingContent;
+      response.agentName = agentName;
       parentConv->responses.push_back(response);
       return;
     }
   }
-  
+
   // Otherwise, add as a new top-level conversation (this shouldn't happen in normal flow)
   LlmConversationStart conv(LlmConversationStart::Type::User, ""); // Empty user message as placeholder
   conv.conversationId = conversationId;
   LlmConversationResponse response(LlmConversationResponse::Type::Assistant, message);
   response.thinkingContent = thinkingContent;
+  response.agentName = agentName;
   conv.responses.push_back(response);
   m_conversations->push_back(conv);
 }
 
-void LlmConversationHistory::addToolCall(const std::string& toolName, const std::string& conversationId, 
-                                       const std::string& invocationId, const nlohmann::json& parameters) {
+void LlmConversationHistory::addToolCall(const std::string& toolName, const std::string& conversationId,
+                                       const std::string& invocationId, const nlohmann::json& parameters,
+                                       const std::string& agentName) {
   // If we have a conversation ID, try to add this as a follow-up to an existing conversation
   if (!conversationId.empty()) {
     LlmConversationStart* parentConv = findConversationByConversationId(conversationId);
@@ -83,11 +88,12 @@ void LlmConversationHistory::addToolCall(const std::string& toolName, const std:
       response.toolName = toolName;
       response.invocationId = invocationId;
       response.toolParameters = parameters;
+      response.agentName = agentName;
       parentConv->responses.push_back(response);
       return;
     }
   }
-  
+
   // Otherwise, add as a new top-level conversation (this shouldn't happen in normal flow)
   LlmConversationStart conv(LlmConversationStart::Type::User, ""); // Empty user message as placeholder
   conv.conversationId = conversationId;
@@ -95,28 +101,31 @@ void LlmConversationHistory::addToolCall(const std::string& toolName, const std:
   response.toolName = toolName;
   response.invocationId = invocationId;
   response.toolParameters = parameters;
+  response.agentName = agentName;
   conv.responses.push_back(response);
   m_conversations->push_back(conv);
 }
 
-void LlmConversationHistory::addToolResult(const std::string& conversationId, const std::string& invocationId, 
-                                         const nlohmann::json& result) {
+void LlmConversationHistory::addToolResult(const std::string& conversationId, const std::string& invocationId,
+                                         const nlohmann::json& result, const std::string& agentName) {
   // If we have a conversation ID, try to add this as a follow-up to an existing conversation
   if (!conversationId.empty()) {
     LlmConversationStart* parentConv = findConversationByConversationId(conversationId);
     if (parentConv) {
       LlmConversationResponse response(LlmConversationResponse::Type::ToolResult, result.dump());
       response.invocationId = invocationId;
+      response.agentName = agentName;
       parentConv->responses.push_back(response);
       return;
     }
   }
-  
+
   // Otherwise, add as a new top-level conversation (this shouldn't happen in normal flow)
   LlmConversationStart conv(LlmConversationStart::Type::User, ""); // Empty user message as placeholder
   conv.conversationId = conversationId;
   LlmConversationResponse response(LlmConversationResponse::Type::ToolResult, result.dump());
   response.invocationId = invocationId;
+  response.agentName = agentName;
   conv.responses.push_back(response);
   m_conversations->push_back(conv);
 }
@@ -190,6 +199,10 @@ LlmConversationStart* LlmConversationHistory::findConversationByConversationId(c
 }
 
 const std::vector<LlmConversationStart>& LlmConversationHistory::getConversations() const {
+  return *m_conversations;
+}
+
+std::vector<LlmConversationStart>& LlmConversationHistory::getConversations() {
   return *m_conversations;
 }
 
@@ -343,11 +356,25 @@ void LlmConversationHistory::toXml(const std::vector<LlmConversationStart>& conv
         
         // Add thinking content
         if (!response.thinkingContent.empty()) {
-          rapidxml::xml_node<char>* thinkingContentNode = doc->allocate_node(rapidxml::node_element, "ThinkingContent", 
+          rapidxml::xml_node<char>* thinkingContentNode = doc->allocate_node(rapidxml::node_element, "ThinkingContent",
                                                   doc->allocate_string(response.thinkingContent.c_str()));
           responseNode->append_node(thinkingContentNode);
         }
-        
+
+        // Add agent name (if not MainAgent, which is the default)
+        if (!response.agentName.empty() && response.agentName != "MainAgent") {
+          rapidxml::xml_node<char>* agentNameNode = doc->allocate_node(rapidxml::node_element, "AgentName",
+                                                  doc->allocate_string(response.agentName.c_str()));
+          responseNode->append_node(agentNameNode);
+        }
+
+        // Add sub-agent summary
+        if (response.subAgentSummary.has_value() && !response.subAgentSummary.value().empty()) {
+          rapidxml::xml_node<char>* summaryNode = doc->allocate_node(rapidxml::node_element, "SubAgentSummary",
+                                                  doc->allocate_string(response.subAgentSummary.value().c_str()));
+          responseNode->append_node(summaryNode);
+        }
+
         // Add tool-specific fields for responses
         if (response.type == LlmConversationResponse::Type::ToolCall || response.type == LlmConversationResponse::Type::ToolResult) {
           if (!response.toolName.empty()) {
@@ -440,7 +467,17 @@ void LlmConversationHistory::fromXml(const rapidxml::xml_node<char>* node, std::
         if (rapidxml::xml_node<char>* thinkingContentNode = responseNode->first_node("ThinkingContent")) {
           response.thinkingContent = thinkingContentNode->value();
         }
-        
+
+        // Read agent name
+        if (rapidxml::xml_node<char>* agentNameNode = responseNode->first_node("AgentName")) {
+          response.agentName = agentNameNode->value();
+        }
+
+        // Read sub-agent summary
+        if (rapidxml::xml_node<char>* summaryNode = responseNode->first_node("SubAgentSummary")) {
+          response.subAgentSummary = summaryNode->value();
+        }
+
         // Read response tool fields
         if (rapidxml::xml_node<char>* responseToolNameNode = responseNode->first_node("ToolName")) {
           response.toolName = responseToolNameNode->value();

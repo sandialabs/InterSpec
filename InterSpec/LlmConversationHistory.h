@@ -41,7 +41,7 @@ namespace rapidxml {
 }
 
 /** Represents a response within a conversation thread.
- 
+
  This can be an assistant response, tool call, or tool result that follows
  up on a conversation start.
  */
@@ -52,19 +52,25 @@ struct LlmConversationResponse {
     ToolResult,  // Result from tool execution
     Error        // Error message
   };
-  
+
   Type type;
   std::string content;
   std::string thinkingContent;  // Raw thinking content from LLM (e.g., <think>...</think>)
   std::chrono::system_clock::time_point timestamp;
-  
+
   // For tool calls/results
   std::string toolName;
   std::string invocationId;    // ID for specific tool invocation
   nlohmann::json toolParameters;
-  
-  LlmConversationResponse(Type t, const std::string& c) 
-    : type(t), content(c), timestamp(std::chrono::system_clock::now()) {}
+
+  // Agent tracking
+  std::string agentName;       // Which agent generated this response (default = "MainAgent")
+
+  // Sub-agent summary (when a sub-agent completes its task)
+  std::optional<std::string> subAgentSummary;
+
+  LlmConversationResponse(Type t, const std::string& c)
+    : type(t), content(c), timestamp(std::chrono::system_clock::now()), agentName("MainAgent") {}
 };
 
 /** Represents the start of a conversation thread.
@@ -116,22 +122,23 @@ public:
   void addUserMessage(const std::string& message, const std::string& conversationId = "");
   
   /** Add an assistant response as a follow-up to the last message */
-  void addAssistantMessage(const std::string& message, const std::string& conversationId = "");
-  
+  void addAssistantMessage(const std::string& message, const std::string& conversationId = "", const std::string& agentName = "MainAgent");
+
   /** Add an assistant response with thinking content as a follow-up to the last message */
-  void addAssistantMessageWithThinking(const std::string& message, const std::string& thinkingContent, 
-                                     const std::string& conversationId = "");
+  void addAssistantMessageWithThinking(const std::string& message, const std::string& thinkingContent,
+                                     const std::string& conversationId = "", const std::string& agentName = "MainAgent");
   
   /** Add a system message */
   void addSystemMessage(const std::string& message, const std::string& conversationId = "");
   
   /** Add a tool call request as a follow-up to the last message */
-  void addToolCall(const std::string& toolName, const std::string& conversationId, 
-                   const std::string& invocationId, const nlohmann::json& parameters);
-  
+  void addToolCall(const std::string& toolName, const std::string& conversationId,
+                   const std::string& invocationId, const nlohmann::json& parameters,
+                   const std::string& agentName = "MainAgent");
+
   /** Add a tool call result as a follow-up to the last message */
-  void addToolResult(const std::string& conversationId, const std::string& invocationId, 
-                     const nlohmann::json& result);
+  void addToolResult(const std::string& conversationId, const std::string& invocationId,
+                     const nlohmann::json& result, const std::string& agentName = "MainAgent");
   
   /** Add an error message as a follow-up to the last message */
   void addErrorMessage(const std::string& errorMessage, const std::string& conversationId = "");
@@ -148,9 +155,12 @@ public:
   /** Find a conversation start by conversation ID */
   LlmConversationStart* findConversationByConversationId(const std::string& conversationId);
   
-  /** Get all conversation starts */
+  /** Get all conversation starts (const) */
   const std::vector<LlmConversationStart>& getConversations() const;
-  
+
+  /** Get all conversation starts (mutable) */
+  std::vector<LlmConversationStart>& getConversations();
+
   /** Set conversations from shared pointer */
   void setConversations(std::shared_ptr<std::vector<LlmConversationStart>> conversations);
   

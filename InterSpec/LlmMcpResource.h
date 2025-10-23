@@ -41,6 +41,11 @@ static_assert( USE_LLM_INTERFACE, "You should not include this library unless US
 // Forward declarations
 class InterSpec;
 
+class LlmConfig;
+namespace LlmTools {
+  class ToolRegistry;
+}
+
 namespace Wt {
   namespace Http {
     class Request;
@@ -49,38 +54,34 @@ namespace Wt {
 }
 
 
-// A struct to hold all information about a single tool, including how to execute it.
-struct Tool {
+class LlmMcpResource : public Wt::WResource
+{
+public:
+  /** May throw exception. */
+  LlmMcpResource( const std::shared_ptr<const LlmConfig> &config );
+  
+  virtual ~LlmMcpResource();
+
+protected:
+    void handleRequest(const Wt::Http::Request& request, Wt::Http::Response& response) override;
+
+private:
+  // A struct to hold all information about a single tool, including how to execute it.
+  struct Tool {
     std::string name;
     std::string description;
     nlohmann::json parameters_schema;
     // The executor takes the parameters as JSON and returns the result as JSON.
     // NOTE: For shared tool registry compatibility, the executor should be compatible with
     // std::function<nlohmann::json(const nlohmann::json&, InterSpec*)> when possible
-    std::function<nlohmann::json(const nlohmann::json&)> executor;
-};
-
-class LlmMcpResource : public Wt::WResource
-{
-public:
-#if( MCP_ENABLE_AUTH )
-  // Constructor accepts the secret token.
-  LlmMcpResource(std::string secret_token);
-#else
-  LlmMcpResource();
-#endif
+    std::function<nlohmann::json( nlohmann::json )> executor;
+  };
   
-    virtual ~LlmMcpResource();
-
-    // Method to register a new tool with the server.
-    void register_tool(Tool tool);
+  // Method to register a new tool with the server.
+  void register_tool(Tool tool);
   
   void register_default_tools();
-
-protected:
-    void handleRequest(const Wt::Http::Request& request, Wt::Http::Response& response) override;
-
-private:
+  
 #if( MCP_ENABLE_AUTH )
   // This function is only called if authentication is enabled at compile time.
   //  If invalid request, will set response status to 401, and content to a short message.
@@ -99,7 +100,12 @@ private:
     // Find InterSpec instance by session ID for session-agnostic tool execution
     InterSpec* findInterSpecBySessionId(const std::string& sessionId);
 
-    std::map<std::string, Tool> registered_tools_;
+  const std::shared_ptr<const LlmConfig> llm_config_;
+  const std::unique_ptr<const LlmTools::ToolRegistry> tool_registry_;
+  
+  /** This class adds a "userSession" field to the parameters JSON schema, so we will make a copy. */
+  std::map<std::string, Tool> registered_tools_;
+  
 #if( MCP_ENABLE_AUTH )
   /** Bearer token required to use the MCP server.
    If empty, no authorization is required.

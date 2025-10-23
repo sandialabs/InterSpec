@@ -42,26 +42,33 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   if( !m_viewer )
     throw std::runtime_error("InterSpec instance cannot be null");
   
+  wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
+  
   std::shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
   
   if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint.empty() )
     throw std::runtime_error("LLM API not enabled");
   
   // Create our own LLM interface instance
-  m_llmInterface = std::make_unique<LlmInterface>(m_viewer, config);
-  
-  wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
-  
-  // Connect to LLM interface response signal
-  m_llmInterface->responseReceived().connect(this, &LlmToolGui::handleResponseReceived);
-  
-  // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
-  m_viewer->displayedSpectrumChanged().connect(this, &LlmToolGui::handleSpectrumChanged);
-  
-  initializeUI();
-  
-  // Initial display refresh
-  refreshDisplay();
+  try
+  {
+    m_llmInterface = std::make_unique<LlmInterface>(m_viewer, config);
+    
+    // Connect to LLM interface response signal
+    m_llmInterface->responseReceived().connect(this, &LlmToolGui::handleResponseReceived);
+    
+    // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
+    m_viewer->displayedSpectrumChanged().connect(this, &LlmToolGui::handleSpectrumChanged);
+    
+    initializeUI();
+    
+    // Initial display refresh
+    refreshDisplay();
+  }catch( std::exception &e )
+  {
+    m_llmInterface.reset();
+    WText *err_msg = new WText( "Error initializing LLM assistant: " + string(e.what()), this );
+  }
 }
 
 LlmToolGui::~LlmToolGui()
@@ -133,24 +140,19 @@ void LlmToolGui::initializeUI()
 
 void LlmToolGui::focusInput()
 {
-  if (m_inputEdit) {
+  if( m_inputEdit )
     m_inputEdit->setFocus(true);
-  }
 }
 
 void LlmToolGui::clearHistory()
 {
-  if (m_conversationDisplay) {
+  if( m_conversationDisplay )
     m_conversationDisplay->setText("");
-  }
   
   // Also clear the LLM interface history if needed
-  if (m_llmInterface) {
-    auto history = m_llmInterface->getHistory();
-    if (history) {
-      history->clear();
-    }
-  }
+  shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
+  if( history )
+    history->clear();
 }
 
 void LlmToolGui::handleInputSubmit()
@@ -160,9 +162,8 @@ void LlmToolGui::handleInputSubmit()
 
 void LlmToolGui::handleSendButton()
 {
-  if (!m_inputEdit) {
+  if( !m_inputEdit )
     return;
-  }
   
   string message = m_inputEdit->text().toUTF8();
   if (message.empty()) {
@@ -205,7 +206,6 @@ void LlmToolGui::sendMessage(const std::string& message)
     
     // Update display immediately to show user message
     updateConversationDisplay();
-    
   } catch (const std::exception& e) {
     cout << "Error sending message to LLM: " << e.what() << endl;
     
@@ -228,11 +228,11 @@ void LlmToolGui::updateConversationDisplay()
 
 void LlmToolGui::refreshDisplay()
 {
-  if( !m_conversationDisplay) {
+  if( !m_conversationDisplay )
     return;
-  }
   
-  if (!m_llmInterface ){
+  if( !m_llmInterface )
+  {
     m_conversationDisplay->setText("No conversation yet.");
     return;
   }
@@ -340,13 +340,28 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
       // Format response type and content
       switch (response.type) {
         case LlmConversationResponse::Type::Assistant:
-          formatted << "LLM: " << response.content;
+          // Show agent name if not MainAgent
+          if( !response.agentName.empty() && response.agentName != "MainAgent" )
+            formatted << "[" << response.agentName << "] LLM: ";
+          else
+            formatted << "LLM: ";
+
+          formatted << response.content;
+
+          // Show sub-agent summary if present
+          if( response.subAgentSummary.has_value() && !response.subAgentSummary.value().empty() )
+            formatted << "\n      [Sub-agent summary: " << response.subAgentSummary.value() << "]";
+
           break;
-          
+
         case LlmConversationResponse::Type::ToolCall:
+          // Show agent name for tool calls from sub-agents
+          if( !response.agentName.empty() && response.agentName != "MainAgent" )
+            formatted << "[" << response.agentName << "] ";
+
           formatted << "TOOL_CALL[" << response.toolName << "]: " << response.toolParameters.dump();
           break;
-          
+
         case LlmConversationResponse::Type::ToolResult:
           formatted << "TOOL_RESULT: ";
           if( response.content.size() < 128 )
@@ -354,11 +369,11 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
           else
             formatted << response.content.substr(0,125) + "...";
           break;
-          
+
         case LlmConversationResponse::Type::Error:
           formatted << "ERROR: " << response.content;
           break;
-          
+
         default:
           formatted << "UNKNOWN: " << response.content;
           break;
@@ -404,21 +419,24 @@ std::map<int, std::vector<const LlmConversationStart*>> LlmToolGui::groupConvers
 
 void LlmToolGui::setInputEnabled(bool enabled)
 {
-  if (m_inputEdit) {
+  if( m_inputEdit )
     m_inputEdit->setEnabled(enabled);
-  }
-  if (m_sendButton) {
+  if( m_sendButton )
     m_sendButton->setEnabled(enabled);
-  }
   
   // Update visual appearance
-  if (enabled) {
-    m_inputEdit->removeStyleClass("disabled");
-    m_sendButton->removeStyleClass("disabled");
-  } else {
-    m_inputEdit->addStyleClass("disabled");
-    m_sendButton->addStyleClass("disabled");
-  }
+  if( m_inputEdit && m_sendButton )
+  {
+    if( enabled )
+    {
+      m_inputEdit->removeStyleClass("disabled");
+      m_sendButton->removeStyleClass("disabled");
+    }else
+    {
+      m_inputEdit->addStyleClass("disabled");
+      m_sendButton->addStyleClass("disabled");
+    }
+  }//if( m_inputEdit && m_sendButton )
 }
 
 void LlmToolGui::handleSpectrumChanged()
@@ -455,7 +473,7 @@ std::shared_ptr<std::vector<LlmConversationStart>> LlmToolGui::getConversationHi
     return nullptr;
   }
   
-  auto history = m_llmInterface->getHistory();
+  shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
   if (!history) {
     return nullptr;
   }
@@ -475,15 +493,16 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<LlmCon
     return;
   }
   
-  auto llmHistory = m_llmInterface->getHistory();
-  if (!llmHistory) {
+  shared_ptr<LlmConversationHistory> llmHistory = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
+  if( !llmHistory )
     return;
-  }
   
-  if (history && !history->empty()) {
+  if( history && !history->empty() )
+  {
     // Set the conversations in the LLM history
     llmHistory->setConversations(history);
-  } else {
+  }else
+  {
     // Clear the history if no valid history provided
     llmHistory->clear();
   }
@@ -494,14 +513,12 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<LlmCon
 
 void LlmToolGui::clearConversationHistory()
 {
-  if (!m_llmInterface) {
+  if( !m_llmInterface )
     return;
-  }
   
-  auto history = m_llmInterface->getHistory();
-  if (history) {
+  shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
+  if( history )
     history->clear();
-  }
   
   // Refresh the display to show the cleared history
   refreshDisplay();
