@@ -998,7 +998,10 @@ nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
     json result = tool->executor(parameters, interspec);
     
 #if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
-    cout << "Tool result: " << result.dump() << endl;
+    std::string resultStr = result.dump();
+    if( resultStr.length() > 100 )
+      resultStr = resultStr.substr(0, 100) + "...";
+    cout << "Tool result: " << resultStr << endl;
 #endif
     
     return result;

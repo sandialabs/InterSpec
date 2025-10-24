@@ -69,6 +69,8 @@ public:
    */
   static bool llmToolIsConfigured();
   
+  LlmInterface *llmInterface();
+  
   /** Focus the input text field */
   void focusInput();
   
@@ -82,10 +84,10 @@ public:
   void handleResponseReceived();
   
   /** Get the current conversation history for saving to SpecMeas */
-  std::shared_ptr<std::vector<LlmConversationStart>> getConversationHistory() const;
-  
+  std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> getConversationHistory() const;
+
   /** Set the conversation history from SpecMeas */
-  void setConversationHistory(const std::shared_ptr<std::vector<LlmConversationStart>>& history);
+  void setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>& history);
   
   /** Clear the current conversation history */
   void clearConversationHistory();

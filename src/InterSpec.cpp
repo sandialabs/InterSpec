@@ -13710,7 +13710,12 @@ void InterSpec::createLlmTool()
       m_llmTool = nullptr;
     }//if( m_llmTool )
   }//try / catch
-}//void InterSpec::createLlmTool()
+}//void createLlmTool()
+
+LlmToolGui *InterSpec::currentLlmTool()
+{
+  return m_llmTool;
+}//LlmToolGui *currentLlmTool();
 
 void InterSpec::handleLlmToolClose()
 {

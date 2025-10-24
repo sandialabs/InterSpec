@@ -35,7 +35,7 @@
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 
 /** Agent types for LLM sub-agents */
-enum class AgentType
+enum class AgentType : int
 {
   MainAgent,
   NuclideId,

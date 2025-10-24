@@ -82,6 +82,13 @@ bool LlmToolGui::llmToolIsConfigured()
   return (config && config->llmApi.enabled && !config->llmApi.apiEndpoint.empty());
 }
 
+
+LlmInterface *LlmToolGui::llmInterface()
+{
+  return m_llmInterface.get();
+}
+
+
 void LlmToolGui::initializeUI()
 {
   addStyleClass("LlmToolGui");
@@ -260,7 +267,7 @@ void LlmToolGui::refreshDisplay()
     // Fallback: show all messages in chronological order
     const auto& conversations = history->getConversations();
     for (size_t i = 0; i < conversations.size(); ++i) {
-      displayText << formatMessage(conversations[i]) << "\n";
+      displayText << formatMessage(*conversations[i]) << "\n";
     }
   } else {
     // Show conversations grouped by request ID
@@ -338,26 +345,23 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
       formatted << "[" << std::put_time(std::localtime(&responseTime_t), "%H:%M:%S") << "] ";
       
       // Format response type and content
-      switch (response.type) {
+      switch( response.type )
+      {
         case LlmConversationResponse::Type::Assistant:
           // Show agent name if not MainAgent
-          if( !response.agentName.empty() && response.agentName != "MainAgent" )
-            formatted << "[" << response.agentName << "] LLM: ";
+          if( conversation.agent_type != AgentType::MainAgent )
+            formatted << "[" << agentTypeToString(conversation.agent_type) << "] LLM: ";
           else
             formatted << "LLM: ";
 
           formatted << response.content;
-
-          // Show sub-agent summary if present
-          if( response.subAgentSummary.has_value() && !response.subAgentSummary.value().empty() )
-            formatted << "\n      [Sub-agent summary: " << response.subAgentSummary.value() << "]";
-
+          
           break;
 
         case LlmConversationResponse::Type::ToolCall:
           // Show agent name for tool calls from sub-agents
-          if( !response.agentName.empty() && response.agentName != "MainAgent" )
-            formatted << "[" << response.agentName << "] ";
+          if( conversation.agent_type != AgentType::MainAgent )
+            formatted << "[" << agentTypeToString(conversation.agent_type) << "] ";
 
           formatted << "TOOL_CALL[" << response.toolName << "]: " << response.toolParameters.dump();
           break;
@@ -403,8 +407,8 @@ std::map<int, std::vector<const LlmConversationStart*>> LlmToolGui::groupConvers
   std::map<std::string, std::vector<const LlmConversationStart*>> conversationGroups;
   
   for (const auto& conversation : conversations) {
-    std::string conversationId = conversation.conversationId.empty() ? "default" : conversation.conversationId;
-    conversationGroups[conversationId].push_back(&conversation);
+    std::string conversationId = conversation->conversationId.empty() ? "default" : conversation->conversationId;
+    conversationGroups[conversationId].push_back(conversation.get());
   }
   
   // Convert conversation groups to numbered groups for display
@@ -467,40 +471,44 @@ void LlmToolGui::cancelCurrentRequest()
   // when it comes back since we've cleared the pending request state
 }
 
-std::shared_ptr<std::vector<LlmConversationStart>> LlmToolGui::getConversationHistory() const
+std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> LlmToolGui::getConversationHistory() const
 {
   if (!m_llmInterface) {
     return nullptr;
   }
-  
+
   shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
   if (!history) {
     return nullptr;
   }
-  
+
   const auto& conversations = history->getConversations();
   if (conversations.empty()) {
     return nullptr;
   }
-  
-  // Convert the conversations to a vector for storage
-  return std::make_shared<std::vector<LlmConversationStart>>(conversations.begin(), conversations.end());
+
+  // Return a copy of the conversations vector for storage
+  return std::make_shared<std::vector<std::shared_ptr<LlmConversationStart>>>(conversations.begin(), conversations.end());
 }
 
-void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<LlmConversationStart>>& history)
+void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>& history)
 {
   if (!m_llmInterface) {
     return;
   }
-  
+
   shared_ptr<LlmConversationHistory> llmHistory = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
   if( !llmHistory )
     return;
-  
+
   if( history && !history->empty() )
   {
-    // Set the conversations in the LLM history
-    llmHistory->setConversations(history);
+    // Clear current history and add conversations from saved history
+    llmHistory->clear();
+    for( const auto& conv : *history )
+    {
+      llmHistory->getConversations().push_back(conv);
+    }
   }else
   {
     // Clear the history if no valid history provided

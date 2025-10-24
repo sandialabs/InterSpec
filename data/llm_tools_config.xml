@@ -492,7 +492,11 @@ Further investigation of top returned candidates is required to make sure they m
 
   <Tool name="get_materials">
     <Description>Returns a list of avaiable materials for shielding. The materials name is what you will specify to other functions to use it as a shielding.</Description>
-    <ParametersSchema>{}</ParametersSchema>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }</ParametersSchema>
   </Tool>
 
   <Tool name="get_material_info">
