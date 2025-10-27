@@ -320,9 +320,9 @@ public:
             for( size_t i = 0; i < m_displayed.size(); ++i )
             {
               if( i && ((i+1) == m_displayed.size()) )
-                srcs + " or ";
+                srcs += " or ";
               else if( i )
-                srcs + ", ";
+                srcs += ", ";
               srcs += m_displayed[i]->m_input.m_input_txt;
             }
             WString msg = WString::tr("psw-keep-only-assigned-peaks").arg(srcs);

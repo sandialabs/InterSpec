@@ -933,7 +933,8 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
       const double expected_sigma = expected_fwhm/2.35482;
       const double expected_area = nearest_expected_peak->peak_area;
 
-      const double area_score = fabs(found_peak.amplitude() - expected_area) / sqrt(expected_area);
+      const double area_diff = fabs(found_peak.amplitude() - expected_area);
+      const double area_score = area_diff / sqrt( (expected_area < 1.0) ? 1.0 : expected_area );
       const double width_score = fabs( expected_fwhm - found_fwhm ) / expected_sigma;
       const double position_score = fabs(found_energy - expected_energy) / expected_sigma;
 
@@ -1001,8 +1002,11 @@ FinalFitScore eval_final_peak_fit( const FinalPeakFitSettings &final_fit_setting
     }//if( !nearest_expected_peak )
   }//for( PeakDef &found_peak : fit_peaks )
 
-  score.total_weight = score.area_score / score.num_peaks_used;
   // TODO: we could/should add in weight for peak area_score, width_score, and position_score
+  if( score.num_peaks_used <= 1 )
+    score.total_weight = score.area_score;
+  else
+    score.total_weight = score.area_score / score.num_peaks_used;
 
   if( write_n42 )
   {
@@ -1159,31 +1163,32 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
     cout << "Starting to fit final peaks." << endl;
     const double start_wall = SpecUtils::get_wall_time();
     const double start_cpu = SpecUtils::get_cpu_time();
-    SpecUtilsAsync::ThreadPool pool;
 
-    for( size_t input_src_index = 0; input_src_index < input_srcs.size(); ++input_src_index )
+    boost::asio::thread_pool pool(PeakFitImprove::sm_num_optimization_threads);
+    std::atomic<long long> num_completed{0};
+    const size_t num_total = input_srcs.size();
+
+    for( size_t input_src_index = 0; input_src_index < num_total; ++input_src_index )
     {
       const DataSrcInfo &src = input_srcs[input_src_index];
       vector<PeakDef> *result = &(initial_peak_fits[input_src_index]);
       shared_ptr<const SpecUtils::Measurement> data = src.src_info.src_spectra[0];
 
-      auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, data, result](){
+      auto fit_initial_peaks_worker = [&candidate_settings, &initial_fit_settings, &num_completed, num_total, data, result](){
         size_t dummy1, dummy2;
         *result = InitialFit_GA::initial_peak_find_and_fit( initial_fit_settings, candidate_settings, data, false, dummy1, dummy2 );
+
+        long long val = num_completed.fetch_add(1, std::memory_order_relaxed);
+        if( ((val+1) % 100) == 0 )
+          cout << "Completed " << (val + 1) << " spectra of " << num_total << " for initial peak fits." << endl;
       }; //fit_initial_peaks_worker
 
-      pool.post( fit_initial_peaks_worker );
-
-      if( ((input_src_index % 50) == 0) && (input_src_index > 0) )
-      {
-        pool.join();
-
-        if( (input_src_index % 200) == 0 )
-          cout << "Completed " << input_src_index << " spectra of " << input_srcs.size() << " for initial peak fits." << endl;
-      }//if( (num_posted % 50) == 0 )
+      boost::asio::post(pool, fit_initial_peaks_worker);
     }//for( loop over input_srcs )
 
+    cout << "Submitted initial peak fits to the queue" << endl;
     pool.join();
+    cout << "Done fitting initial peaks" << endl;
 
     const double end_wall = SpecUtils::get_wall_time();
     const double end_cpu = SpecUtils::get_cpu_time();
@@ -1247,6 +1252,10 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
       }//for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
 
       pool.join();
+
+      cout << "Finished individual"
+      << settings.print( "  indiv" ) << endl
+      << "With score " << sum_score.print("  score") << endl << endl;
     }else
     {
       for( size_t src_index = 0; src_index < data_srcs_ref.size(); ++src_index )
@@ -1310,12 +1319,12 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
       cout << "Wrote output N42 files." << endl;
     }//if( sum_score.total_weight < sm_best_score.total_weight )
 
-    //cout << "Individual " << ns_individuals_eval.load()
-    //    << " of gen " << ns_generation_num.load()
-    //    << " weight over " << data_srcs_ref.size() << " spectra:\n"
-    //    << sum_score.print("\tsum_score")
-    //    << "--------" << endl
-    //    << endl;
+    cout << "Individual " << ns_individuals_eval.load()
+        << " of gen " << ns_generation_num.load()
+        << " weight over " << data_srcs_ref.size() << " spectra:\n"
+        << sum_score.print("\tsum_score")
+        << "--------" << endl
+        << endl;
 
     ns_individuals_eval += 1;
 
@@ -1467,6 +1476,19 @@ bool eval_solution( const FinalFitSolution &p, FinalFitCost &c )
 
   c.objective1 = ns_ga_eval_fcn( settings );
 
+  if( IsInf(c.objective1) || IsNan(c.objective1) )
+  {
+    cerr << "Value of c.objective1 is " << c.objective1 << " - will set to large positive value" << endl
+    << settings.print("    bad_settings") << endl;
+
+    c.objective1 = std::numeric_limits<double>::max();
+    return false;
+  }else
+  {
+    cout << "\n\nEvaluation gave " << c.objective1 << " for\n"
+    << settings.print("    settings") << endl << endl;
+  }
+
   return true;
 }
 
@@ -1558,6 +1580,12 @@ double calculate_SO_total_fitness(const GA_Type::thisChromosomeType &X)
   // finalize the cost
   double final_cost = 0.0;
   final_cost = X.middle_costs.objective1;
+
+  if( IsInf(final_cost) || IsNan(final_cost) )
+  {
+    cerr << "calculate_SO_total_fitness: final-cost of is " << final_cost << endl;
+  }
+
   return final_cost;
 }
 
