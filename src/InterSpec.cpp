@@ -669,6 +669,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
+  // Check that the reaction database initialized, before we use it in RefLineDynamic
+  if( !ReactionGammaServer::database() && ReactionGammaServer::init_error() )
+    throw runtime_error( ReactionGammaServer::init_error() );
+  
   m_refLineDynamic = new RefLineDynamic( m_spectrum, this );
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
