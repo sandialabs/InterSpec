@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">Confirmar Atribuição de Nuclídeo</message>
+  <message id="psw-title-check-search">Verificar Resultados da Busca de Picos</message>
+  <message id="psw-title-prev-spec">Picos a Manter do Espectro Anterior</message>
+  <message id="psw-title-csv-import">Picos a importar do CSV</message>
+  <message id="psw-search-instruct-adjust">Ajustar atribuições de nuclídeos ou quais picos manter.</message>
+  <message id="psw-search-instruct-unselect">Desmarcar quaisquer picos que você não gostaria de manter.</message>
+  <message id="psw-search-instruct-assign">Verificar e corrigir atribuições de nuclídeos.</message>
+  <message id="psw-search-instruct-keep">Selecionar picos que você gostaria de manter.</message>
+  <message id="psw-show-all-peaks">Mostrar todos os picos</message>
+  <message id="psw-show-prev-peaks">Mostrar picos anteriores também</message>
+  <message id="psw-show-missing-peaks">Mostrar picos ausentes</message>
+  <message id="psw-keep-only-assigned-peaks">Manter apenas novos picos atribuídos a {1}</message>
+  <message id="psw-orig-nuc">Nuclídeo Original</message>
+  <message id="psw-assigned-nuc">Nuclídeo Atribuído</message>
+  <message id="psw-peak-preview">Visualização do Pico</message>
+  <message id="psw-not-found">Não Encontrado</message>
+  <message id="psw-keep-peak">Manter Pico</message>
+  <message id="psw-keep-peak-q">Manter Pico?    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">Não alterar</message>
+  <message id="psw-no-nuc-changed">Nenhum nuclídeo alterado</message>
+  <message id="psw-rel-eff-plot-title">Gráfico de Eficiência Relativa</message>
+  <message id="psw-rel-eff-plot-y-axis-title">Área Rel. do Pico / RR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">Picos não atualizados, espectro foi alterado.</message>
+  <message id="psgu-peaks-updated-msg">Picos atualizados.</message>
+
+  <message id="psgu-search-wait-title">Apenas alguns momentos</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>Buscando picos - isto pode demorar um pouco.</div>
+      <div>Você pode fechar este diálogo e quando a busca terminar,</div>
+      você será notificado
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">Informação de FWHM é necessária</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>A resposta do detector atual não contém informação de FWHM.</div>
+    <div>Você gostaria de ajustar informação de FWHM do espectro atual?</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>Nenhuma resposta de detector está selecionada.</div>
+    <div>Você gostaria de ajustar informação de FWHM do espectro atual?</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">Falha ao reajustar pico (tornou-se insignificante), de {1} para {2} picos</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">Não havia pico para definir para a energia do gama</message>
+  <message id="psgu-no-ref-line-near-peak-msg">Não havia energia de gama de referência para definir a média do pico.</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    Falha ao reajustar pico após fixar média ao fotopico de referência.
+    Um pico tornou-se insignificante; de {1} para {2} picos.
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  Alterar o tipo de contínuo para {1} causou {2} pico a tornar-se insignificante.<br />
+  Por favor, use o <b>Editor de Picos</b> para fazer esta alteração.
+  </message>
+  <message id="psgu-failed-change-cont-singular">o</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">pelo menos um</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  Alterar ingenuamente o tipo de contínuo para {1} causou o pico a tornar-se insignificante.<br />
+  Por favor, use o <b>Editor de Picos</b> para fazer esta alteração.
+  </message>
+  <message id="psgu-change-skew-not-gaus">Pico na ROI em {1} keV não é definido como Gaussiano - por favor, altere isso no <b>Editor de Picos</b> antes de definir um tipo de assimetria.</message>
+  <message id="psgu-change-skew-make-insig">
+    Alterar o tipo de assimetria para {1} causou {2} pico a tornar-se insignificante.<br />
+    Por favor, use o <b>Editor de Picos</b> para fazer esta alteração.
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  Alterar ingenuamente o tipo de assimetria para {1} causou o pico a tornar-se insignificante.<br />
+  Por favor, use o <b>Editor de Picos</b> para fazer esta alteração.
+  </message>
+
+</messages>

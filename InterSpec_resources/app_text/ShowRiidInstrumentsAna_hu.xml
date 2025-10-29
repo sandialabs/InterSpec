@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- srria- is short for ShowRiidIntrumentAna -->
+  <message id="srria-algo-info-label">Algoritmus Információ:</message>
+  <message id="srria-creator">Készítő</message>
+  <message id="srria-version">Verzió</message>
+  <message id="srria-remarks">Megjegyzések</message>
+  <message id="srria-category">Kategória</message>
+  <message id="srria-confidence">Megbízhatóság</message>
+  <message id="srria-no-id-provided">Nincsenek nuklid azonosítások megadva.</message>
+  <message id="srria-algo-results">Algoritmus Eredmények</message>
+  <message id="srria-no-algo-results">Nincsenek algoritmus eredmények elérhetők.</message>
+  <message id="srria-no-nucs">nincsenek nuklidok azonosítva.</message>
+  <message id="srria-inst-ana-window-title">A Detektorok ID Eredményei</message>
+</messages>

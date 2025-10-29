@@ -114,9 +114,17 @@ public:
   void handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleRelEffEqnOrderChanged();
   void handleFwhmFormChanged();
   void handleFwhmEstimationMethodChanged();
+  
+  /** Helper function to get the current FwhmForm from the combo box model data. */
+  RelActCalcAuto::FwhmForm getFwhmFormFromCombo() const;
+  
+  /** Helper function to set the FwhmForm in the combo box by finding the matching model data. */
+  void setFwhmFormFromCombo( const RelActCalcAuto::FwhmForm form );
+  void handleUserNoteChanged();
   void handleFitEnergyCalChanged();
   void handleBackgroundSubtractChanged();
   void handleSameAgeChanged();
@@ -219,9 +227,9 @@ public:
 protected:
   void handleRoiDrag( double new_roi_lower_energy,
                      double new_roi_upper_energy,
-                     double new_roi_lower_px,
-                     double new_roi_upper_px,
+                     double new_roi_px,
                      const double original_roi_lower_energy,
+                     std::string spectrum_type,
                      const bool is_final_range );
   
   void handleCreateRoiDrag( const double lower_energy,
@@ -347,6 +355,9 @@ protected:
    they can go back to it. The map index corresponds to the #m_preset index for the state.
    */
   std::map<int,std::unique_ptr<rapidxml::xml_document<char>>> m_previous_presets;
+
+  /** This is a note next to the presets drop-down for the user to make notes about a setup. */
+  Wt::WInPlaceEdit *m_user_note;
 
   /** The place to indicate errors in calculation, when calc is not successful. */
   Wt::WText *m_error_msg;

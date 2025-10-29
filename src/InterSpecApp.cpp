@@ -48,6 +48,7 @@
 #include <Wt/WGridLayout>
 #include <Wt/WApplication>
 #include <Wt/WEnvironment>
+#include <Wt/WCssStyleSheet>
 #include <Wt/WContainerWidget>
 
 #if( PROMPT_USER_BEFORE_LOADING_PREVIOUS_STATE )
@@ -810,7 +811,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
       }else
       {
-        Wt::log("error") << "Could not load previously saved state.";
+        Wt::log("info") << "No previous state to load.";
       }
     }//if(  saveState )
   }catch( std::exception &e )
@@ -1309,6 +1310,10 @@ void InterSpecApp::prepareForEndOfSession()
   if( !m_viewer || !m_viewer->user() )
     return;
 
+#if( BUILD_AS_UNIT_TEST_SUITE )
+  return;
+#endif
+  
   updateUsageTimeToDb();
   
   const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
@@ -1632,13 +1637,46 @@ const set<string> &InterSpecApp::languagesAvailable()
 }//vector<string> languagesAvailable();
 
 
+void InterSpecApp::setGlobalCssRule( const std::string &rulename,
+                                     const std::string &selector,
+                                     const std::string &declarations )
+{
+  WCssStyleSheet &style = styleSheet();
+
+  // Remove old rule if it exists
+  if( m_globalD3SpectrumCssRules.count(rulename) )
+  {
+    style.removeRule( m_globalD3SpectrumCssRules[rulename] );
+    m_globalD3SpectrumCssRules.erase( rulename );
+  }
+
+  // Add new rule
+  m_globalD3SpectrumCssRules[rulename] = style.addRule( selector, declarations, rulename );
+}//void setGlobalCssRule(...)
+
+
+bool InterSpecApp::removeGlobalCssRule( const std::string &rulename )
+{
+  if( !m_globalD3SpectrumCssRules.count(rulename) )
+    return false;
+
+  WCssStyleSheet &style = styleSheet();
+  style.removeRule( m_globalD3SpectrumCssRules[rulename] );
+  m_globalD3SpectrumCssRules.erase( rulename );
+
+  return true;
+}//bool removeGlobalCssRule(...)
+
+
 void InterSpecApp::finalize()
 {
   prepareForEndOfSession();
   
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   if( m_viewer && m_viewer->user() )
     Wt::log("info") << "Have finalized session " << sessionId() << " for user "
          << m_viewer->user()->userName();
+#endif
 }//void InterSpecApp::finalize()
 
 

@@ -53,8 +53,6 @@ DecayChainChart = function(elem, options) {
   
   if( (typeof this.options.clickNucTxt) !== 'string' ) 
     this.options.clickNucTxt = "Click nuclide for more information.";
-  if( (typeof this.options.clickNucMoreInfoTxt1) !== 'string' )
-    this.options.clickNucMoreInfoTxt1 = "Double-click nuclide for particles it gives off.";
   if( (typeof this.options.clickNucMoreInfoTxt2) !== 'string' )
     this.options.clickNucMoreInfoTxt2 = "Click a different source nuclide above to";
   if( (typeof this.options.clickNucMoreInfoTxt3) !== 'string' )
@@ -62,13 +60,16 @@ DecayChainChart = function(elem, options) {
   
   if( (typeof this.options.clickNucMblTxt) !== 'string' ) 
     this.options.clickNucMblTxt = "Tap nuclide for more information.";
-  if( (typeof this.options.clickNucMblMoreInfoTxt1) !== 'string' ) 
-    this.options.clickNucMblMoreInfoTxt1 = "Touch nuclide for 1 second for particles it gives off.";
   if( (typeof this.options.clickNucMblMoreInfoTxt2) !== 'string' ) 
     this.options.clickNucMblMoreInfoTxt2 = "Click a different source nuclide above to";
-  if( (typeof this.options.clickNucMblMoreInfoTxt3) !== 'string' ) 
+  if( (typeof this.options.clickNucMblMoreInfoTxt3) !== 'string' )
     this.options.clickNucMblMoreInfoTxt3 = "change displayed decay chain.";
-  
+
+  if( (typeof this.options.showDecayProductsTxt) !== 'string' )
+    this.options.showDecayProductsTxt = "Show {nuclide} decay products";
+  if( (typeof this.options.showDecaysThroughTxt) !== 'string' )
+    this.options.showDecaysThroughTxt = "Show decays through {nuclide}";
+
   this.svg = d3.select(this.area).append("svg");
   
   this.chartbackground = this.svg.append("rect")
@@ -262,16 +263,14 @@ DecayChainChart.prototype.setDecayData = function( data, decayFrom ){
   {
     this.instructions.html(
       '<tspan x="0">' + this.options.clickNucMblTxt + '</tspan>'
-      + (decayFrom ? '<tspan x="0" dy="1em">' + this.options.clickNucMblMoreInfoTxt1 + '</tspan>'
-      + '<tspan x="0" dy="1em">' + this.options.clickNucMblMoreInfoTxt2 + '</tspan>'
+      + (decayFrom ? '<tspan x="0" dy="1em">' + this.options.clickNucMblMoreInfoTxt2 + '</tspan>'
       + '<tspan x="0" dy="1em">' + this.options.clickNucMblMoreInfoTxt3 + '</tspan>': '')
     );
   }else
   {
     this.instructions.html(
       '<tspan x="0" dy="1em">' + this.options.clickNucTxt + '</tspan>'
-      + (decayFrom ? '<tspan x="0" dy="1em">' + this.options.clickNucMoreInfoTxt1 + '</tspan>'
-      + '<tspan x="0" dy="1em">' + this.options.clickNucMoreInfoTxt2 + '</tspan>'
+      + (decayFrom ? '<tspan x="0" dy="1em">' + this.options.clickNucMoreInfoTxt2 + '</tspan>'
       + '<tspan x="0" dy="1em">' + this.options.clickNucMoreInfoTxt3 + '</tspan>': '')
     );
   }//if( no data ) / else mobile / else
@@ -501,7 +500,6 @@ DecayChainChart.prototype.redraw = function() {
     self.decays.selectAll('.DecayChartNuc').classed('MousedOver',false);
   } )
   .on("click", function(d){ self.nuclideClicked(d); } )
-  .on("dblclick", function(d){ self.nuclideDoubleClicked(d); } )
   ;
   
   rects.exit().remove();
@@ -667,7 +665,6 @@ DecayChainChart.prototype.redraw = function() {
          self.decays.selectAll('.DecayChartNuc').classed('MousedOver',false);
        } )
        .on("click", function(d){ self.nuclideClicked(d); } )
-       .on("dblclick", function(d){ self.nuclideDoubleClicked(d); } )
        .html( function(d){ return labelTxtFcn(d,txtXPos); } )
        .attr("font-family", "sans-serif")
        .attr("font-size", function(){ return font_size + "px";} )
@@ -759,12 +756,19 @@ DecayChainChart.prototype.redraw = function() {
   //I cant decide if its better to underline the "Show Decays Through ..." text,
   //  or draw a box around it; currently underlineing, but I left the box
   //  implementation commented out in the various lines below.
-  
+
   if( !this.selectedNuclide && this.showParentsTxt ){
     self.showParentsTxt.remove();
     self.showParentsRect.remove();
     self.showParentsTxt = null;
     self.showParentsRect = null;
+
+    if( self.showDecayProductsTxt ){
+      self.showDecayProductsTxt.remove();
+      self.showDecayProductsRect.remove();
+      self.showDecayProductsTxt = null;
+      self.showDecayProductsRect = null;
+    }
   }else if( this.selectedNuclide && this.options.isDecayChain ){
     if( !self.showParentsTxt ) {
       self.showParentsRect = this.chart.append("rect")
@@ -776,33 +780,76 @@ DecayChainChart.prototype.redraw = function() {
         .attr("stroke", "none")
         .attr("class", "ShowDecaysThroughRect" )
         .on("click", function(){ self.emitShowDecaysThrough(); } );
-      
+
       self.showParentsTxt = this.chart.append("text")
         .attr("class", "ShowDecaysThroughTxt")
         .attr("x",0)
         .attr("y","0")
         .attr("fill", self.options.linkColor)
         .on("click", function(){ self.emitShowDecaysThrough(); } );
+
+      self.showDecayProductsRect = this.chart.append("rect")
+        .attr("x", 0 )
+        .attr("y", 0 )
+        .attr("fill", "#ffffff")  //add fill so mouse over will be active for entire rect area
+        .attr("fill-opacity", "0")
+        .attr("stroke", "none")
+        .attr("class", "ShowDecayProductsRect" )
+        .on("click", function(){ self.showNuclideDecayProducts( self.selectedNuclide ); } );
+
+      self.showDecayProductsTxt = this.chart.append("text")
+        .attr("class", "ShowDecayProductsTxt")
+        .attr("x",0)
+        .attr("y","0")
+        .attr("fill", self.options.linkColor)
+        .on("click", function(){ self.showNuclideDecayProducts( self.selectedNuclide ); } );
     }
-    
+
+    // Position the "Show decay products" text first, below the instructions
+    const decayProductsText = self.options.showDecayProductsTxt.replace( '{nuclide}', self.selectedNuclide.nuclide );
+    self.showDecayProductsTxt
+        .html( decayProductsText )
+        .attr("font-size", 0.9*inst_font_size )
+        .attr("text-decoration", "underline" )
+        ;
+
+    const decayprodtxtbb = self.showDecayProductsTxt.node().getBoundingClientRect();
+    const decayprod_txt_h = decayprodtxtbb.height;
+    const decayprod_txt_w = decayprodtxtbb.width;
+    const box_x = chartwidth - txtbb.width - 4;
+
+    // Position below the instructions text
+    const decayprod_box_y = txtbb.height + 4 + 0.15*decayprod_txt_h;
+
+    self.showDecayProductsTxt.attr("transform", "translate(" + box_x + "," + (decayprod_box_y + 0.9*decayprod_txt_h) + ")")
+
+    self.showDecayProductsRect
+        .attr("height", 1.2*decayprod_txt_h )
+        .attr("width", decayprod_txt_w + 0.75*decayprod_txt_h )
+        .attr("rx", 0.08*1.2*decayprod_txt_h )
+        .attr("transform", "translate(" + (box_x - 0.375*decayprod_txt_h) + "," + decayprod_box_y + ")")
+        ;
+
+    // Position the "Show Decays Through" text below the decay products text
+    const decaysThroughText = self.options.showDecaysThroughTxt.replace( '{nuclide}', self.selectedNuclide.nuclide );
     self.showParentsTxt
-        .html( 'Show Decays Through ' + self.selectedNuclide.nuclide )
+        .html( decaysThroughText )
         //.attr("font-size", 0.8*inst_font_size )
         .attr("font-size", 0.9*inst_font_size )
         .attr("text-decoration", "underline" )
         ;
-        
+
     const showtxtpbb = self.showParentsTxt.node().getBoundingClientRect();
     const txt_h = showtxtpbb.height;
     const txt_w = showtxtpbb.width;
-    const box_x = chartwidth - txtbb.width - 4;
-    //const box_y = txtbb.height + 4 + 0.25*txt_h;
-    const box_y = txtbb.height + 4 + 0.15*txt_h;
-    
+
+    // Position below the decay products text, with some spacing
+    const box_y = decayprod_box_y + decayprod_txt_h + 0.3*txt_h;
+
     //self.showParentsTxt.attr("transform", "translate(" + (box_x + 0.375*txt_h) + "," + (box_y + 0.90*txt_h) + ")");
     self.showParentsTxt.attr("transform", "translate(" + box_x + "," + (box_y + 0.9*txt_h) + ")")
-    
-    
+
+
     self.showParentsRect
         .attr("height", 1.2*txt_h )
         .attr("width", txt_w + 0.75*txt_h )
@@ -849,12 +896,12 @@ DecayChainChart.prototype.nuclideClicked = function( d ) {
 
 
 
-DecayChainChart.prototype.nuclideDoubleClicked = function( d ) {
+DecayChainChart.prototype.showNuclideDecayProducts = function( d ) {
   let nucstr = (d && d.nuclide) ? d.nuclide : '';
   ((d && d.additionalIsos) ? d.additionalIsos :  []).forEach( function(nuc){
     nucstr += "," + nuc.nuclide;
   } );
-  
+
   this.WtEmit(this.area.id, {name: 'ShowDecayParticleInfo'}, nucstr );
 }
 

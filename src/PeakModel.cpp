@@ -1178,6 +1178,8 @@ void PeakModel::PeakCsvResource::handleRequest( const Wt::Http::Request &/*reque
 PeakModel::PeakModel( Wt::WObject *parent )
   : WAbstractItemModel( parent ),
     m_foreground( nullptr ),
+    m_backgroundPeaksChanged( this ),
+    m_secondaryPeaksChanged( this ),
     m_sortColumn( kMean ),
     m_sortOrder( Wt::AscendingOrder ),
     m_csvResource( NULL )
@@ -1205,12 +1207,37 @@ void PeakModel::setForeground( shared_ptr<const SpecUtils::Measurement> spec )
 
 
 void PeakModel::setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
-                                     const std::set<int> &samplenums )
+                                     const std::set<int> &samplenums,
+                                    const SpecUtils::SpectrumType specType )
 {
+  
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > > peaks;
 
-  if( !!meas )
+  if( meas )
     peaks = meas->peaks( samplenums );
+  
+  if( specType != SpecUtils::SpectrumType::Foreground )
+  {
+    const bool is_background = (specType == SpecUtils::SpectrumType::Background);
+    weak_ptr<SpecMeas> &meas_ptr = is_background ? m_background : m_secondary;
+    shared_ptr<deque<shared_ptr<const PeakDef>>> &peaks_ptr =  is_background ? m_background_peaks : m_secondary_peaks;
+    
+    const bool was_empty = ((!peaks_ptr) || peaks_ptr->empty());
+    
+    meas_ptr = meas;
+    peaks_ptr = peaks;
+    
+    const bool is_empty = ((!peaks_ptr) || peaks_ptr->empty());
+    
+    if( !was_empty || !is_empty )
+    {
+      Wt::Signal<> &signal = (is_background ? m_backgroundPeaksChanged : m_secondaryPeaksChanged);
+      signal.emit();
+    }
+    
+    return;
+  }//if( specType != SpecUtils::SpectrumType::Foreground )
+  
   
   m_measurment = meas;
   
@@ -1394,6 +1421,48 @@ const std::deque<std::shared_ptr<const PeakDef>> &PeakModel::sortedPeaks() const
   return m_sortedPeaks;
 }
 
+shared_ptr<const deque<shared_ptr<const PeakDef>>> PeakModel::peaks( const SpecUtils::SpectrumType type ) const
+{
+  switch( type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      return m_peaks;
+    case SpecUtils::SpectrumType::SecondForeground:
+      return m_secondary_peaks;
+    case SpecUtils::SpectrumType::Background:
+      return m_background_peaks;
+  }
+  
+  assert( 0 );
+  return nullptr;
+}
+
+weak_ptr<SpecMeas> PeakModel::measurement( const SpecUtils::SpectrumType type )
+{
+  switch( type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      return m_measurment;
+    case SpecUtils::SpectrumType::SecondForeground:
+      return m_background;
+    case SpecUtils::SpectrumType::Background:
+      return m_secondary;
+  }
+  
+  assert( 0 );
+  return weak_ptr<SpecMeas>{};
+}
+
+Wt::Signal<> &PeakModel::backgroundPeaksChanged()
+{
+  return m_backgroundPeaksChanged;
+}
+
+
+Wt::Signal<> &PeakModel::secondaryPeaksChanged()
+{
+  return m_secondaryPeaksChanged;
+}
 
 bool PeakModel::isWithinRange( const PeakDef &peak ) const
 {
@@ -1719,6 +1788,36 @@ void PeakModel::setPeaks( vector<PeakDef> peaks )
   notifySpecMeasOfPeakChange();
    */
 }//void setPeaks( const vector<PeakDef> &peaks )
+
+
+void PeakModel::setPeaks( const deque<shared_ptr<const PeakDef>> &peakdeque, const SpecUtils::SpectrumType type )
+{
+  if( type == SpecUtils::SpectrumType::Foreground )
+  {
+    vector<shared_ptr<const PeakDef>> peaks( begin(peakdeque), end(peakdeque) );
+    setPeaks( peaks );
+    return;
+  }
+  
+  const bool is_background = (type == SpecUtils::SpectrumType::Background);
+    
+  weak_ptr<SpecMeas> &meas_wk = is_background ? m_background : m_secondary;
+  shared_ptr<deque<shared_ptr<const PeakDef>>> &peaks = is_background ? m_background_peaks : m_background_peaks;
+  assert( peaks );
+  if( !peaks )
+    throw runtime_error( "PeakModel::setPeaks(...) for " + std::string(is_background ? "background" : "secondary")
+                        + " doesnt have peaks set.");
+  
+  const bool was_empty = peaks->empty();
+  peaks->clear();
+  peaks->insert( begin(*peaks), begin(peakdeque), end(peakdeque) );
+  
+  if( !was_empty || !peaks->empty() )
+  {
+    Wt::Signal<> &signal = (type == SpecUtils::SpectrumType::Background) ? m_backgroundPeaksChanged : m_secondaryPeaksChanged;
+    signal.emit();
+  }
+}//void setPeaks( peakdeque, SpectrumType );
 
 
 void PeakModel::removePeak( const size_t peakn )  //throws if invalid peak numbers

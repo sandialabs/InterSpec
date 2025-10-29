@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+  
+  <!-- Window title -->
+  <message id="esf-window-title">Spektrum Fájl Exportálás</message>
+  
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">Exportálandó Fájl</message>
+  <message id="esf-file-format">Fájl Formátum</message>
+  <message id="esf-samples-to-include">Belefoglalandó Minták</message>
+  
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">Fájl</message>
+  <message id="esf-format-tab">Formátum</message>
+  <message id="esf-options-tab">Opciók</message>
+  
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + Háttér</message>
+  <message id="esf-plus-secondary"> + Másod.</message>
+  <message id="esf-fore-plus-back-tt">Az előtér és háttér és/vagy másodlagos spektrumok együttes exportálása ugyanabba a fájlba.</message>
+  
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">Megjelenített Előtér</message>
+  <message id="esf-disp-background">Megjelenített Háttér</message>
+  <message id="esf-disp-secondary">Megjelenített Másodlagos</message>
+  <message id="esf-all-samples">Összes Minta</message>
+  <message id="esf-custom-samples">Egyéni Minták</message>
+  <message id="esf-custom-samples-tt">Adja meg itt a megjeleníteni kívánt minta számát. Megadhat minta számok tartományát mint '33-39' vagy '33 to 39', vagy CSV minta számokat mint '34,39,84'</message>
+  <message id="esf-filter-detectors">Detektorok Szűrése</message>
+  
+  <!-- Options section -->
+  <message id="esf-options">Opciók</message>
+  <message id="esf-sum-to-single-record">Összegzés egyetlen rekordba</message>
+  <message id="esf-sum-to-single-record-tt">Minden kiválasztott minta és/vagy detektor összegződik egyetlen spektrumban.<br />Figyelem: ha mind az előtér, mind a háttér ki van választva, akkor összegződnek.</message>
+  
+  <message id="esf-sum-fore-to-single-record">Előtér összegzése egyetlen rekordba</message>
+  <message id="esf-sum-fore-to-single-record-tt">Több minta szám vagy több detektor alkotja a megjelenített előteret; ezen opció bejelölése mindezeket egyetlen spektrumba összegzi a kimeneti fájlban.</message>
+  
+  <message id="esf-sum-back-to-single-record">Háttér összegzése egyetlen rekordba</message>
+  <message id="esf-sum-back-to-single-record-tt">Több minta szám vagy több detektor alkotja a megjelenített hátteret; ezen opció bejelölése mindezeket egyetlen spektrumba összegzi a kimeneti fájlban.</message>
+  
+  <message id="esf-sum-sec-to-single-record">Másod. összegzése egyetlen rekordba</message>
+  
+  <message id="esf-background-subtract">Háttér kivonása</message>
+  <message id="esf-background-subtract-tt">A kimeneti spektrum az előtér lesz, mínusz a háttér.</message>
+  
+  <message id="esf-sum-det-per-sample">Det. összegzése mintánként</message>
+  <message id="esf-sum-det-per-sample-tt">Minden minta számhoz, az összes detektor összegzése az adott minta számhoz.<br />Pl., ha 8 detektora van a spektrum fájlban, mindegyik 120 mintával, akkor az eredmények 120 spektrumot tartalmaznak, mindegyik a megfelelő minták 8 detektorának összege.</message>
+  
+  <message id="esf-sum-samples-per-det">Minták összegzése detektoronként</message>
+  <message id="esf-sum-samples-per-det-tt">Minden detektorhoz, az összes minta szám összegzése.<br />Pl., ha 8 detektora van a spektrum fájlban, mindegyik 120 mintával, akkor az eredmények 8 spektrumot tartalmaznak, mindegyik a megfelelő detektorok 120 mintájának összege.</message>
+  
+  <message id="esf-remove-interspec-info">InterSpec info eltávolítása</message>
+  <message id="esf-remove-interspec-info-tt">Eltávolítja a detektor választ, csúcsokat és egyéb elemzési eredményeket, amelyeket esetleg hozzáadott az InterSpec-ben.</message>
+  
+  <message id="esf-remove-gps">GPS eltávolítása</message>
+  
+  <!-- Status text -->
+  <message id="esf-not-applicable">Nem Alkalmazható</message>
+  <message id="esf-none-available">Nincs Elérhető</message>
+  
+  <!-- Buttons -->
+  <message id="esf-export">Exportálás</message>
+  <message id="esf-show-qr-code">QR-kód megjelenítése</message>
+  
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">Megjelenítve Mint</message>
+  <message id="esf-fore-abbrev">Előtér</message>
+  <message id="esf-back-abbrev">Háttér</message>
+  <message id="esf-sec-abbrev">Másod</message>
+  
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">Következő QR kód</message>
+  <message id="esf-url-link">URL Link</message>
+  <message id="esf-email-link">Email Link</message>
+  
+  <!-- Error dialogs -->
+  <message id="esf-error-title">Hiba</message>
+  <message id="esf-qr-encode-failed">Nem sikerült a spektrum megjelenítése QR kódként: {1}</message>
+  
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">Megj.&nbsp;Minta</plural>
+    <plural case="1">Megj.&nbsp;Minták</plural>
+  </message>
+  
+  <!-- Table headers -->
+  <message id="esf-start-time">Kezdő Idő</message>
+  <message id="esf-end-time">Vég Idő</message>
+  <message id="esf-first-sample">Első Minta</message>
+  <message id="esf-last-sample">Utolsó Minta</message>
+  <message id="esf-num-samples">Minták Száma</message>
+  <message id="esf-neut-dets">Neutron Det.</message>
+  <message id="esf-gamma-dets">Gamma Det.</message>
+  <message id="esf-num-dets">Det. Száma</message>
+  <message id="esf-latitude">Szélesség</message>
+  <message id="esf-longitude">Hosszúság</message>
+  <message id="esf-total-time">Teljes Idő</message>
+  <message id="esf-sum-gamma">Gamma Összeg</message>
+  <message id="esf-sum-neut">Neutron Összeg</message>
+  <message id="esf-manufacturer">Gyártó</message>
+  <message id="esf-model">Modell</message>
+  <message id="esf-serial">Sorozatszám</message>
+</messages>

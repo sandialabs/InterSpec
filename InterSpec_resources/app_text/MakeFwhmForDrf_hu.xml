@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">FWHM Bizonytalanság</message>
+  <message id="fpm-peak-source">Csúcs Forrás</message>
+  <message id="fpm-user">Felhasználó</message>
+  <message id="fpm-auto-fit">Auto-illesztés</message>
+  
+  
+  <message id="mffdw-use-fwhm-btn">FWHM Használata</message>
+  
+  <message id="mffd-eqn-type-label">Egyenlet Típus:</message>
+  <message id="mffd-num-terms-label">Tagok Száma:</message>
+  <message id="mffd-par-vals-label">Paraméter Értékek:</message>
+  <message id="mffd-err-no-foreground">Nincs adat a csúcsok keresésére.</message>
+  <message id="mffd-tt-par">Bizonytalansággal: {1}</message>
+  <message id="mffd-err-fail-fit">FWHM egyenlet illesztése sikertelen: {1}</message>
+  <message id="mffd-err-waiting-for-search">Jelenleg csúcsokat keres - kérem, legyen türelmes</message>
+</messages>

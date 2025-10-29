@@ -1,0 +1,221 @@
+<RelActCalcAuto version="0">
+	<Options version="2">
+		<FitEnergyCal>true</FitEnergyCal>
+		<FwhmForm remark="Possible values: Gadras, Polynomial_2, Polynomial_3, Polynomial_4, Polynomial_5, Polynomial_6, Berstein_2, Berstein_3, Berstein_4, Berstein_5, Berstein_6">Berstein_4</FwhmForm>
+		<FwhmEstimationMethod remark="Possible values: StartFromDetEffOrPeaksInSpectrum, StartingFromAllPeaksInSpectrum, FixedToAllPeaksInSpectrum, StartingFromDetectorEfficiency, FixedToDetectorEfficiency">StartFromDetEffOrPeaksInSpectrum</FwhmEstimationMethod>
+		<Title>Foreground</Title>
+		<SkewType>GaussExp</SkewType>
+		<AddUncert>0.00000000e+00</AddUncert>
+		<RelEffCurveInputs>
+			<RelEffCurveInput version="0">
+				<Name>Curve 0</Name>
+				<NucInputInfoList>
+					<NucInputInfo version="0">
+						<Nuclide>U235</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#D13711</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>U238</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#00B9FF</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>U234</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#006600</PeakColorCss>
+					</NucInputInfo>
+					<NucInputInfo version="0">
+						<Nuclide>U232</Nuclide>
+						<Age>20.0000000000 y</Age>
+						<FitAge>false</FitAge>
+						<PeakColorCss>#5c0700</PeakColorCss>
+					</NucInputInfo>
+				</NucInputInfoList>
+				<NucsOfElSameAge>true</NucsOfElSameAge>
+				<RelEffEqnType remark='Possible values: Possible values: LnX, LnY, LnXLnY, "FRAM Empirical", "FRAM Physical"'>FRAM Physical</RelEffEqnType>
+				<PhysicalModelOptions>
+					<SelfAtten>
+						<PhysicalModelShield version="0">
+							<AtomicNumber>0.00000000e+00</AtomicNumber>
+							<Material>Uranium trioxide</Material>
+							<ArealDensity>1.25000000e+00</ArealDensity>
+							<FitAtomicNumber>false</FitAtomicNumber>
+							<LowerFitAtomicNumber>1.00000000e+00</LowerFitAtomicNumber>
+							<UpperFitAtomicNumber>9.80000000e+01</UpperFitAtomicNumber>
+							<FitArealDensity>true</FitArealDensity>
+							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
+							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+						</PhysicalModelShield>
+					</SelfAtten>
+					<ExtAtten>
+						<PhysicalModelShield version="0">
+							<AtomicNumber>0.00000000e+00</AtomicNumber>
+							<Material>Fe (iron)</Material>
+							<ArealDensity>1.25000000e+00</ArealDensity>
+							<FitAtomicNumber>false</FitAtomicNumber>
+							<LowerFitAtomicNumber>1.00000000e+00</LowerFitAtomicNumber>
+							<UpperFitAtomicNumber>9.80000000e+01</UpperFitAtomicNumber>
+							<FitArealDensity>true</FitArealDensity>
+							<LowerFitArealDensity>0.00000000e+00</LowerFitArealDensity>
+							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
+						</PhysicalModelShield>
+					</ExtAtten>
+					<PhysModelUseHoerl>true</PhysModelUseHoerl>
+				</PhysicalModelOptions>
+			</RelEffCurveInput>
+		</RelEffCurveInputs>
+		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<RoiRangeList>
+			<RoiRange version="0">
+				<LowerEnergy>1.80695999e+02</LowerEnergy>
+				<UpperEnergy>1.88829971e+02</UpperEnergy>
+				<ContinuumType>FlatStep</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.00125000e+02</LowerEnergy>
+				<UpperEnergy>2.07500000e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.40917999e+02</LowerEnergy>
+				<UpperEnergy>1.46748947e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.61375000e+02</LowerEnergy>
+				<UpperEnergy>1.65500000e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.93000000e+02</LowerEnergy>
+				<UpperEnergy>1.97125000e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.56125000e+02</LowerEnergy>
+				<UpperEnergy>2.60500000e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.24919998e+02</LowerEnergy>
+				<UpperEnergy>2.28694000e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>5.66686707e+02</LowerEnergy>
+				<UpperEnergy>5.72216003e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>7.62023010e+02</LowerEnergy>
+				<UpperEnergy>7.70023743e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>7.37494019e+02</LowerEnergy>
+				<UpperEnergy>7.46825012e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>7.83000000e+02</LowerEnergy>
+				<UpperEnergy>7.89375000e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>9.18882996e+02</LowerEnergy>
+				<UpperEnergy>9.29398010e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>9.97052979e+02</LowerEnergy>
+				<UpperEnergy>1.00591394e+03</UpperEnergy>
+				<ContinuumType>FlatStep</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>9.43123718e+02</LowerEnergy>
+				<UpperEnergy>9.48974976e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>8.77979980e+02</LowerEnergy>
+				<UpperEnergy>8.85366028e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.19365005e+02</LowerEnergy>
+				<UpperEnergy>2.23544998e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.89580994e+02</LowerEnergy>
+				<UpperEnergy>2.95419250e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>3.43643005e+02</LowerEnergy>
+				<UpperEnergy>3.48233002e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>1.18456001e+02</LowerEnergy>
+				<UpperEnergy>1.23162819e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+			<RoiRange version="0">
+				<LowerEnergy>2.36733002e+02</LowerEnergy>
+				<UpperEnergy>2.42766998e+02</UpperEnergy>
+				<ContinuumType>Linear</ContinuumType>
+				<ForceFullRange>true</ForceFullRange>
+				<AllowExpandForPeakWidth>false</AllowExpandForPeakWidth>
+			</RoiRange>
+		</RoiRangeList>
+		<BackgroundSubtract>true</BackgroundSubtract>
+		<ShowRefGammaLines>true</ShowRefGammaLines>
+		<LowerDisplayEnergy>110</LowerDisplayEnergy>
+		<UpperDisplayEnergy>1100</UpperDisplayEnergy>
+	</Options>
+</RelActCalcAuto>
+

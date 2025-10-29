@@ -35,6 +35,12 @@
 struct Material;
 class MaterialDB;
 class DetectorPeakResponse;
+class PeakDef;
+
+namespace SpecUtils
+{
+  class Measurement;
+}
 
 namespace rapidxml
 {
@@ -310,10 +316,16 @@ struct PhysicalModelShieldInput
   */
   bool fit_areal_density = true;
       
-  /** The lower AD for the shielding.  Must be in range [0,500] g/cm2, if fitting AD. */
+  /** The lower AD for the shielding.  Must be in range [0,500] g/cm2, if fitting AD.
+
+   In units of `PhysicalUnits` - i.e., you need to divide by `PhysicalUnits::g_per_cm2` to printout to g/cm2 human values.
+   */
   double lower_fit_areal_density = 0.0;
       
-  /** The upper AD for the shielding.  Must be greater than to lower AD, if fitting, and must be in range [0,500] g/cm2. */
+  /** The upper AD for the shielding.  Must be greater than to lower AD, if fitting, and must be in range [0,500] g/cm2.
+
+   In units of `PhysicalUnits` - i.e., you need to divide by `PhysicalUnits::g_per_cm2` to printout to g/cm2 human values.
+   */
   double upper_fit_areal_density = 0.0;
     
   /** Checks specified constraints are obeyed - throwing an exception if not. */
@@ -386,6 +398,19 @@ std::string physical_model_rel_eff_eqn_js_function( const std::optional<PhysMode
                                                    const DetectorPeakResponse * const drf,
                                                    std::optional<double> hoerl_b,
                                                    std::optional<double> hoerl_c );
+
+/** Refit the continuums for ROIs (peaks grouped by shared continuum) in polynomial-based continuums.
+ 
+ @param solution_peaks The fit peaks from solution.m_fit_peaks_in_spectrums_cal
+ @param foreground The foreground spectrum measurement
+ @returns A vector of all peaks (both modified and unmodified) sorted by energy
+ 
+ For polynomial-based continuums (excluding NoOffset and External), this function groups peaks
+ by their shared continuum and refits the continuum coefficients. If there are more than 4 ROIs,
+ the refitting is done using ThreadPool for parallel processing.
+ */
+std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_peaks,
+                                          std::shared_ptr<const SpecUtils::Measurement> foreground );
 
 }//namespace RelActCalc
 

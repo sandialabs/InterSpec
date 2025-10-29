@@ -71,6 +71,7 @@ public:
   Wt::Signal<RelActAutoGuiRelEffOptions *> &equationTypeChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &sameHoerlOnAllCurvesChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &sameExternalShieldingChanged();
+  Wt::Signal<RelActAutoGuiRelEffOptions *> &shieldedByOtherCurvesChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &optionsChanged();
 
   RelActCalc::RelEffEqnForm rel_eff_eqn_form() const;
@@ -83,6 +84,8 @@ public:
   void setPhysModelSameHoerlOnAllCurves(const bool same_hoerl_all_curves);
   bool physModelSameExtShieldAllCurves() const;
   void setPhysModelSameExtShieldAllCurves(const bool same_ext_shield_all_curves);
+  bool physModelShieldedByOtherCurves() const;
+  void setPhysModelShieldedByOtherCurves( const bool shielded_by_others );
   RelActCalc::PuCorrMethod pu242_correlation_method() const;
 
   void update_self_atten_shield_widget( const std::optional<RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo> &self_atten );
@@ -101,7 +104,8 @@ protected:
   void handleRelEffEqnTypeChanged();
   void handleSameHoerlOnAllCurvesChanged();
   void handleSameExternalShieldingChanged();
-  
+  void handleShieldedByOtherCurvesChanged();
+
 protected:
   RelActAutoGui *const m_gui;
 
@@ -124,6 +128,7 @@ protected:
   Wt::WCheckBox *m_phys_model_use_hoerl;
   Wt::WCheckBox *m_phys_model_same_hoerl_on_all_curves;
   Wt::WCheckBox *m_phys_model_same_ext_shield_all_curves;
+  Wt::WCheckBox *m_phys_model_shielded_by_other_curves;
   Wt::WText *m_eqn_txt;
   Wt::WContainerWidget *m_add_del_rel_eff_div;
   Wt::WPushButton *m_add_rel_eff_btn;
@@ -134,7 +139,8 @@ protected:
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_eqn_form_changed;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_hoerl_on_all_curves;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_ext_shield_on_all_curves;
-  
+  Wt::Signal<RelActAutoGuiRelEffOptions *> m_shielded_by_other_curves;
+
 
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_options_changed_signal;
   

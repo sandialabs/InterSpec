@@ -234,7 +234,7 @@ namespace AnalystChecks
     
     // get fit peak
     
-    if( options.source.has_value() )
+    if( options.source.has_value() && !options.source.value().empty() )
     {
       const string source = options.source.value();
       
@@ -299,18 +299,14 @@ namespace AnalystChecks
       }
     }//if( options.source.has_value() )
     
-    
-    if( options.addToUsersPeaks )
+    PeakModel *pmodel = interspec->peakModel();
+    assert( pmodel );
+    if( options.addToUsersPeaks && pmodel )
     {
       if( options.specType == SpecUtils::SpectrumType::Foreground )
       {
-        PeakModel *pmodel = interspec->peakModel();
-        assert( pmodel );
-        if( pmodel )
-        {
-          pmodel->removePeaks( peaks_to_remove );
-          pmodel->addPeaks( peaks_to_add_in );
-        }//if( pmodel )
+        pmodel->removePeaks( peaks_to_remove );
+        pmodel->addPeaks( peaks_to_add_in );
       }else
       {
         // It would also be valid to handle the Foreground in this logic block, I think
@@ -328,7 +324,8 @@ namespace AnalystChecks
         for( shared_ptr<const PeakDef> new_peak : peaks_to_add_in )
           peak_deque.push_back( new_peak );
         std::sort( begin(peak_deque), end(peak_deque), &PeakDef::lessThanByMeanShrdPtr );
-        interspec->setPeaks( options.specType, new_deque );
+        
+        pmodel->setPeaks( peak_deque, options.specType );
       }
     }//if( options.addToUsersPeaks )
     
@@ -373,13 +370,42 @@ namespace AnalystChecks
     assert( meas_peaks );
     if( !meas_peaks )
       throw runtime_error( "Unexpected error getting existing peak list" );
-    
-    
+
+
     GetUserPeakStatus status;
     status.userSession = user_session;
+
     if( meas_peaks )
-      status.peaks.insert( end(status.peaks), begin(*meas_peaks), end(*meas_peaks) );
-    
+    {
+      // Filter peaks by energy range if specified
+      const bool has_lower = options.lowerEnergy.has_value();
+      const bool has_upper = options.upperEnergy.has_value();
+
+      // Validate energy range if both bounds are specified
+      if( has_lower && has_upper && (*options.upperEnergy < *options.lowerEnergy) )
+      {
+        throw std::runtime_error( "upperEnergy (" + std::to_string(*options.upperEnergy)
+                                  + " keV) must be greater than or equal to lowerEnergy ("
+                                  + std::to_string(*options.lowerEnergy) + " keV)" );
+      }
+
+      if( !has_lower && !has_upper )
+      {
+        // No filtering, return all peaks
+        status.peaks.insert( end(status.peaks), begin(*meas_peaks), end(*meas_peaks) );
+      }else
+      {
+        const double lower_energy = has_lower ? *options.lowerEnergy : -std::numeric_limits<double>::infinity();
+        const double upper_energy = has_upper ? *options.upperEnergy : std::numeric_limits<double>::infinity();
+
+        for( const shared_ptr<const PeakDef> &peak : *meas_peaks )
+        {
+          if( peak && peak->mean() >= lower_energy && peak->mean() <= upper_energy )
+            status.peaks.push_back( peak );
+        }
+      }
+    }
+
     return status;
   }
   
@@ -479,6 +505,8 @@ namespace AnalystChecks
 
       return {std::get<0>(importances[0])};
     }//if( !nuc )
+    
+    // TODO: should we use `photopeak_lis()`?
     
     const vector<tuple<string, const SandiaDecay::Nuclide *, float>> &nuc_characteristics = IsotopeId::characteristicGammas();
     
@@ -1072,4 +1100,402 @@ namespace AnalystChecks
 
     return answer;
   }//SpectrumCountsInEnergyRange get_counts_in_energy_range( const double lower_energy, const double upper_energy, InterSpec *interspec )
+
+
+  const char* to_string( EditPeakAction action )
+  {
+    switch( action )
+    {
+      case EditPeakAction::SetEnergy:                    return "SetEnergy";
+      case EditPeakAction::SetFwhm:                      return "SetFwhm";
+      case EditPeakAction::SetAmplitude:                 return "SetAmplitude";
+      case EditPeakAction::SetEnergyUncertainty:         return "SetEnergyUncertainty";
+      case EditPeakAction::SetFwhmUncertainty:           return "SetFwhmUncertainty";
+      case EditPeakAction::SetAmplitudeUncertainty:      return "SetAmplitudeUncertainty";
+      case EditPeakAction::SetRoiLower:                  return "SetRoiLower";
+      case EditPeakAction::SetRoiUpper:                  return "SetRoiUpper";
+      case EditPeakAction::SetSkewType:                  return "SetSkewType";
+      case EditPeakAction::SetContinuumType:             return "SetContinuumType";
+      case EditPeakAction::SetSource:                    return "SetSource";
+      case EditPeakAction::SetColor:                     return "SetColor";
+      case EditPeakAction::SetUserLabel:                 return "SetUserLabel";
+      case EditPeakAction::SetUseForEnergyCalibration:   return "SetUseForEnergyCalibration";
+      case EditPeakAction::SetUseForShieldingSourceFit:  return "SetUseForShieldingSourceFit";
+      case EditPeakAction::SetUseForManualRelEff:        return "SetUseForManualRelEff";
+      case EditPeakAction::DeletePeak:                   return "DeletePeak";
+      case EditPeakAction::SplitFromRoi:                 return "SplitFromRoi";
+      case EditPeakAction::MergeWithLeft:                return "MergeWithLeft";
+      case EditPeakAction::MergeWithRight:               return "MergeWithRight";
+    }//switch( action )
+
+    throw runtime_error( "Invalid EditPeakAction value" );
+  }//const char* to_string( EditPeakAction action )
+
+
+  EditPeakAction edit_peak_action_from_string( const std::string &str )
+  {
+    if( str == "SetEnergy" )                   return EditPeakAction::SetEnergy;
+    if( str == "SetFwhm" )                     return EditPeakAction::SetFwhm;
+    if( str == "SetAmplitude" )                return EditPeakAction::SetAmplitude;
+    if( str == "SetEnergyUncertainty" )        return EditPeakAction::SetEnergyUncertainty;
+    if( str == "SetFwhmUncertainty" )          return EditPeakAction::SetFwhmUncertainty;
+    if( str == "SetAmplitudeUncertainty" )     return EditPeakAction::SetAmplitudeUncertainty;
+    if( str == "SetRoiLower" )                 return EditPeakAction::SetRoiLower;
+    if( str == "SetRoiUpper" )                 return EditPeakAction::SetRoiUpper;
+    if( str == "SetSkewType" )                 return EditPeakAction::SetSkewType;
+    if( str == "SetContinuumType" )            return EditPeakAction::SetContinuumType;
+    if( str == "SetSource" )                   return EditPeakAction::SetSource;
+    if( str == "SetColor" )                    return EditPeakAction::SetColor;
+    if( str == "SetUserLabel" )                return EditPeakAction::SetUserLabel;
+    if( str == "SetUseForEnergyCalibration" )  return EditPeakAction::SetUseForEnergyCalibration;
+    if( str == "SetUseForShieldingSourceFit" ) return EditPeakAction::SetUseForShieldingSourceFit;
+    if( str == "SetUseForManualRelEff" )       return EditPeakAction::SetUseForManualRelEff;
+    if( str == "DeletePeak" )                  return EditPeakAction::DeletePeak;
+    if( str == "SplitFromRoi" )                return EditPeakAction::SplitFromRoi;
+    if( str == "MergeWithLeft" )               return EditPeakAction::MergeWithLeft;
+    if( str == "MergeWithRight" )              return EditPeakAction::MergeWithRight;
+
+    throw runtime_error( "Invalid edit action: " + str );
+  }//EditPeakAction edit_peak_action_from_string( const std::string &str )
+
+
+  EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw runtime_error( "edit_analysis_peak: No InterSpec session available" );
+
+    // Get session ID
+    string user_session = "direct_call";
+    if( Wt::WApplication *app = Wt::WApplication::instance() )
+      user_session = app->sessionId();
+
+    // Override with provided session if available
+    if( options.userSession )
+      user_session = *options.userSession;
+
+    // Get the PeakModel for the specified spectrum type
+    PeakModel *peakModel = interspec->peakModel();
+    if( !peakModel )
+      throw runtime_error( "edit_analysis_peak: No peak model available" );
+
+    // Find nearest peak
+    PeakModel::PeakShrdPtr peak = peakModel->nearestPeak( options.energy );
+    if( !peak )
+    {
+      return EditAnalysisPeakStatus{
+        user_session,
+        false,
+        "No peak found near " + std::to_string(options.energy) + " keV",
+        std::nullopt,
+        {}
+      };
+    }//if( !peak )
+
+    // Validate peak is within 1 FWHM of requested energy
+    const double fwhm = get_expected_fwhm( options.energy, interspec );
+    const double energy_diff = std::fabs( peak->mean() - options.energy );
+    if( energy_diff > fwhm )
+    {
+      return EditAnalysisPeakStatus{
+        user_session,
+        false,
+        "Nearest peak at " + std::to_string(peak->mean()) + " keV is more than 1 FWHM ("
+          + std::to_string(fwhm) + " keV) away from requested " + std::to_string(options.energy) + " keV",
+        std::nullopt,
+        {}
+      };
+    }//if( energy_diff > fwhm )
+
+    // Handle delete action separately since it doesn't need a modified peak
+    if( options.editAction == EditPeakAction::DeletePeak )
+    {
+      peakModel->removePeak( peak );
+      return EditAnalysisPeakStatus{
+        user_session,
+        true,
+        "Deleted peak at " + std::to_string(peak->mean()) + " keV",
+        std::nullopt,
+        {}
+      };
+    }//if( DeletePeak )
+
+    // Create a modified copy of the peak
+    PeakDef modifiedPeak = *peak;
+
+    // Perform the edit based on action
+    try
+    {
+      switch( options.editAction )
+      {
+        case EditPeakAction::SetEnergy:
+        {
+          if( !options.doubleValue )
+            throw runtime_error( "SetEnergy requires doubleValue parameter" );
+          modifiedPeak.setMean( *options.doubleValue );
+          break;
+        }
+
+        case EditPeakAction::SetFwhm:
+        {
+          if( !options.doubleValue )
+            throw runtime_error( "SetFwhm requires doubleValue parameter" );
+          // Convert FWHM to sigma (sigma = FWHM / 2.35482)
+          modifiedPeak.setSigma( (*options.doubleValue) / 2.35482 );
+          break;
+        }
+
+        case EditPeakAction::SetAmplitude:
+        {
+          if( !options.doubleValue )
+            throw runtime_error( "SetAmplitude requires doubleValue parameter" );
+          modifiedPeak.setAmplitude( *options.doubleValue );
+          break;
+        }
+
+        case EditPeakAction::SetEnergyUncertainty:
+        {
+          if( !options.doubleValue )
+            throw runtime_error( "SetEnergyUncertainty requires doubleValue parameter" );
+          modifiedPeak.setMeanUncert( *options.doubleValue );
+          break;
+        }
+
+        case EditPeakAction::SetFwhmUncertainty:
+        {
+          if( !options.doubleValue )
+            throw runtime_error( "SetFwhmUncertainty requires doubleValue parameter" );
+          // Convert FWHM uncertainty to sigma uncertainty
+          modifiedPeak.setSigmaUncert( (*options.doubleValue) / 2.35482 );
+          break;
+        }
+
+        case EditPeakAction::SetAmplitudeUncertainty:
+        {
+          if( !options.doubleValue )
+            throw runtime_error( "SetAmplitudeUncertainty requires doubleValue parameter" );
+          modifiedPeak.setAmplitudeUncert( *options.doubleValue );
+          break;
+        }
+
+        case EditPeakAction::SetRoiLower:
+        case EditPeakAction::SetRoiUpper:
+        {
+          if( !options.doubleValue )
+            throw runtime_error( string(to_string(options.editAction)) + " requires doubleValue parameter" );
+
+          shared_ptr<PeakContinuum> continuum = modifiedPeak.getContinuum();
+          const double current_lower = continuum->lowerEnergy();
+          const double current_upper = continuum->upperEnergy();
+
+          const double new_lower = (options.editAction == EditPeakAction::SetRoiLower)
+                                    ? *options.doubleValue : current_lower;
+          const double new_upper = (options.editAction == EditPeakAction::SetRoiUpper)
+                                    ? *options.doubleValue : current_upper;
+
+          if( new_lower >= new_upper )
+            throw runtime_error( "ROI lower energy must be less than upper energy" );
+
+          continuum->setRange( new_lower, new_upper );
+          break;
+        }
+
+        case EditPeakAction::SetSkewType:
+        {
+          if( !options.stringValue )
+            throw runtime_error( "SetSkewType requires stringValue parameter" );
+
+          // Parse skew type string
+          PeakDef::SkewType skew_type;
+          const string &skew_str = *options.stringValue;
+          if( skew_str == "NoSkew" )                      skew_type = PeakDef::SkewType::NoSkew;
+          else if( skew_str == "Bortel" )                 skew_type = PeakDef::SkewType::Bortel;
+          else if( skew_str == "GaussExp" )               skew_type = PeakDef::SkewType::GaussExp;
+          else if( skew_str == "CrystalBall" )            skew_type = PeakDef::SkewType::CrystalBall;
+          else if( skew_str == "ExpGaussExp" )            skew_type = PeakDef::SkewType::ExpGaussExp;
+          else if( skew_str == "DoubleSidedCrystalBall" ) skew_type = PeakDef::SkewType::DoubleSidedCrystalBall;
+          else throw runtime_error( "Invalid skew type: " + skew_str );
+
+          modifiedPeak.setSkewType( skew_type );
+          break;
+        }
+
+        case EditPeakAction::SetContinuumType:
+        {
+          if( !options.stringValue )
+            throw runtime_error( "SetContinuumType requires stringValue parameter" );
+
+          // Parse continuum type string
+          PeakContinuum::OffsetType continuum_type;
+          const string &cont_str = *options.stringValue;
+          if( cont_str == "None" )           continuum_type = PeakContinuum::OffsetType::NoOffset;
+          else if( cont_str == "Constant" )  continuum_type = PeakContinuum::OffsetType::Constant;
+          else if( cont_str == "Linear" )    continuum_type = PeakContinuum::OffsetType::Linear;
+          else if( cont_str == "Quadratic" ) continuum_type = PeakContinuum::OffsetType::Quadratic;
+          else if( cont_str == "Cubic" )     continuum_type = PeakContinuum::OffsetType::Cubic;
+          else if( cont_str == "FlatStep" )  continuum_type = PeakContinuum::OffsetType::FlatStep;
+          else if( cont_str == "LinearStep" )continuum_type = PeakContinuum::OffsetType::LinearStep;
+          else if( cont_str == "BiLinearStep" )continuum_type = PeakContinuum::OffsetType::BiLinearStep;
+          else if( cont_str == "External" )  continuum_type = PeakContinuum::OffsetType::External;
+          else throw runtime_error( "Invalid continuum type: " + cont_str );
+
+          shared_ptr<PeakContinuum> continuum = modifiedPeak.getContinuum();
+          continuum->setType( continuum_type );
+          break;
+        }
+
+        case EditPeakAction::SetSource:
+        {
+          if( !options.stringValue )
+            throw runtime_error( "SetSource requires stringValue parameter" );
+
+          // Use PeakModel::setNuclideXrayReaction to parse and set the source
+          PeakModel::SetGammaSource result = PeakModel::setNuclideXrayReaction( modifiedPeak, *options.stringValue, 4.0 );
+          if( result == PeakModel::SetGammaSource::NoSourceChange )
+            throw runtime_error( "Failed to set source: " + *options.stringValue );
+          break;
+        }
+
+        case EditPeakAction::SetColor:
+        {
+          if( !options.stringValue )
+            throw runtime_error( "SetColor requires stringValue parameter" );
+
+          // Parse CSS color string to Wt::WColor
+          Wt::WColor color( *options.stringValue );
+          modifiedPeak.setLineColor( color );
+          break;
+        }
+
+        case EditPeakAction::SetUserLabel:
+        {
+          if( !options.stringValue )
+            throw runtime_error( "SetUserLabel requires stringValue parameter" );
+
+          modifiedPeak.setUserLabel( *options.stringValue );
+          break;
+        }
+
+        case EditPeakAction::SetUseForEnergyCalibration:
+        {
+          if( !options.boolValue )
+            throw runtime_error( "SetUseForEnergyCalibration requires boolValue parameter" );
+
+          modifiedPeak.useForEnergyCalibration( *options.boolValue );
+          break;
+        }
+
+        case EditPeakAction::SetUseForShieldingSourceFit:
+        {
+          if( !options.boolValue )
+            throw runtime_error( "SetUseForShieldingSourceFit requires boolValue parameter" );
+
+          modifiedPeak.useForShieldingSourceFit( *options.boolValue );
+          break;
+        }
+
+        case EditPeakAction::SetUseForManualRelEff:
+        {
+          if( !options.boolValue )
+            throw runtime_error( "SetUseForManualRelEff requires boolValue parameter" );
+
+          modifiedPeak.useForManualRelEff( *options.boolValue );
+          break;
+        }
+
+        case EditPeakAction::SplitFromRoi:
+        {
+          // Make the peak have its own unique continuum
+          modifiedPeak.makeUniqueNewContinuum();
+          break;
+        }
+
+        case EditPeakAction::MergeWithLeft:
+        case EditPeakAction::MergeWithRight:
+        {
+          // Find the adjacent peak to merge with
+          shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
+          if( !all_peaks_ptr )
+            throw runtime_error( "No peaks available in model" );
+
+          const deque<shared_ptr<const PeakDef>> &all_peaks = *all_peaks_ptr;
+
+          // Find current peak index
+          auto peak_iter = find( all_peaks.begin(), all_peaks.end(), peak );
+          if( peak_iter == all_peaks.end() )
+            throw runtime_error( "Could not find peak in model" );
+
+          shared_ptr<const PeakDef> adjacent_peak;
+          if( options.editAction == EditPeakAction::MergeWithLeft )
+          {
+            if( peak_iter == all_peaks.begin() )
+              throw runtime_error( "No peak to the left to merge with" );
+            adjacent_peak = *(peak_iter - 1);
+          }
+          else // MergeWithRight
+          {
+            if( (peak_iter + 1) == all_peaks.end() )
+              throw runtime_error( "No peak to the right to merge with" );
+            adjacent_peak = *(peak_iter + 1);
+          }
+
+          // Share the continuum with the adjacent peak
+          // Need to const_cast because setContinuum expects non-const shared_ptr
+          modifiedPeak.setContinuum( const_pointer_cast<PeakContinuum>(adjacent_peak->continuum()) );
+          break;
+        }
+
+        case EditPeakAction::DeletePeak:
+          // Already handled above
+          assert( false );
+          break;
+      }//switch( options.editAction )
+
+      // Update the peak in the model
+      peakModel->updatePeak( peak, modifiedPeak );
+
+      // Get all peaks in the same ROI for the return value
+      vector<shared_ptr<const PeakDef>> peaks_in_roi;
+      shared_ptr<const PeakDef> updated_peak;
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
+      if( all_peaks_ptr )
+      {
+        const deque<shared_ptr<const PeakDef>> &all_peaks = *all_peaks_ptr;
+        shared_ptr<const PeakContinuum> continuum = modifiedPeak.continuum();
+
+        for( const auto &p : all_peaks )
+        {
+          if( p->continuum() == continuum )
+          {
+            peaks_in_roi.push_back( p );
+            // Find the updated peak by comparing energies
+            if( !updated_peak && fabs(p->mean() - modifiedPeak.mean()) < 0.01 )
+              updated_peak = p;
+          }
+        }
+      }
+
+      // If we couldn't find the updated peak in the model, use our local copy
+      if( !updated_peak )
+        updated_peak = make_shared<const PeakDef>(modifiedPeak);
+
+      return EditAnalysisPeakStatus{
+        user_session,
+        true,
+        "Successfully performed " + string(to_string(options.editAction)) + " on peak at " + std::to_string(modifiedPeak.mean()) + " keV",
+        updated_peak,
+        peaks_in_roi
+      };
+    }
+    catch( const exception &e )
+    {
+      return EditAnalysisPeakStatus{
+        user_session,
+        false,
+        string("Error performing ") + to_string(options.editAction) + ": " + e.what(),
+        std::nullopt,
+        {}
+      };
+    }//try / catch
+  }//EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec )
+
 } // namespace AnalystChecks

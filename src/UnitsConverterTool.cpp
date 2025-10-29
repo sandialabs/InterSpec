@@ -460,7 +460,7 @@ void run_tests()
 
 UnitsConverterTool::UnitsConverterTool()
   : AuxWindow( WString::tr("window-title-units-convert"),
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
+               (AuxWindowProperties::PhoneNotFullScreen
                | AuxWindowProperties::DisableCollapse
                | AuxWindowProperties::SetCloseable) ),
     m_input( NULL ),

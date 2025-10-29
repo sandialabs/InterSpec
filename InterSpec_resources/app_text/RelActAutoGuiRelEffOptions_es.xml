@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
+  
+  <!-- Labels -->
+  <message id="raageo-eqn-type">Tipo ecu.</message>
+  <message id="raageo-eqn-order">Orden ecu.</message>
+  <message id="raageo-pu242-corr">Corr. Pu242</message>
+  
+  <!-- Checkboxes -->
+  <message id="raageo-use-corr-fcn">Usar fcn. corr.</message>
+  <message id="raageo-share-corr-fcn">Compartir fcn. corr.</message>
+  <message id="raageo-share-ext-atten">Compartir aten. ext.</message>
+  <message id="raageo-shielded-by-other-curves">Blindado por otras curvas</message>
+  
+  <!-- Equation types -->
+  <message id="raageo-eqn-log-x">Log(x)</message>
+  <message id="raageo-eqn-log-y">Log(y)</message>
+  <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
+  <message id="raageo-eqn-empirical">Empírico</message>
+  <message id="raageo-eqn-physical">Físico</message>
+  
+  <!-- Placeholders -->
+  <message id="raageo-curve-name">Nombre curva</message>
+  
+  <!-- Tooltips -->
+  <message id="raageo-eqn-type-tt">La forma funcional a usar para la curva de eficiencia relativa.<br />Las opciones son:<table style="margin-left: 10px;"><tr><th>Log(energía):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(ef. rel.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(energía)Log(ef. rel.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Empírico:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Físico:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Ef. det.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">El orden (cuántos términos dependientes de energía) de ecuación de eficiencia relativa a usar.</message>
+  <message id="raageo-pu242-corr-tt">Pu-242 a menudo no es directamente observable en espectros gamma. Sin embargo, para corregir por este isótopo al calcular enriquecimiento, las contribuciones esperadas de este isótopo pueden inferirse de los otros isótopos Pu. Esta forma le permite seleccionar el método de corrección.</message>
+  <message id="raageo-share-corr-fcn-tt">Cuando está marcado, la configuración de función de correlación se sincronizará a través de todas las curvas del modelo físico.</message>
+  <message id="raageo-share-ext-atten-tt">Cuando está marcado, la configuración de blindaje externo se sincronizará a través de todas las curvas del modelo físico.</message>
+  <message id="raageo-shielded-by-other-curves-tt">Cuando está marcado, las fuentes de esta curva serán blindadas por todas las otras curvas del modelo físico.</message>
+  <message id="raageo-del-rel-eff-curve-tt">Quita esta curva de eficiencia relativa.</message>
+  <message id="raageo-add-rel-eff-curve-tt">Añadir otra curva de eficiencia relativa.</message>
+  
+</messages>
+
+

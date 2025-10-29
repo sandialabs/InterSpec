@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">Подсчитать количество гамм в указанном диапазоне энергий.</message>
+  <message id="gcd-lower-energy-label">Нижняя энергия</message>
+  <message id="gcd-upper-energy-label">Верхняя энергия</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-Перетаскивание</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-Перетаскивание</message>
+  <message id="gcd-select-shortcut">Вы также можете <b>{1}</b> на графике для выбора диапазона энергий</message>
+  <message id="gcd-foreground-counts-label">Отсчеты переднего плана:</message>
+  <message id="gcd-secondary-counts-label">Отсчеты вторичного:</message>
+  <message id="gcd-background-counts-label">Отсчеты фона:</message>
+  <message id="gcd-tt-n-sigma">
+    Количество сигм разности рассчитывается путем деления
+    разности между передним планом и (масштабированным) фоном
+    на неопределенность. Неопределенность рассчитывается путем
+    суммирования статистических неопределенностей переднего плана и фона в
+    квадратуре, затем извлечения квадратного корня
+  </message>
+  <message id="gcd-qr-window-title">Состояние суммы диапазона энергий</message>
+  <message id="gcd-qr-window-text">Текущее состояние инструмента суммы диапазона энергий.</message>
+  <message id="gcd-background-scale-note">Фон масштабируется на {1}</message>
+  <message id="gcd-and-secondary-scaled"> и вторичный на </message>
+  <message id="gcd-secondary-scale-note">Вторичный фон масштабируется на </message>
+  <message id="gcd-foreground-above-background">Передний план на {1} σ выше фона.</message>
+  <message id="gcd-foreground-below-background">Передний план на {1} σ ниже фона.</message>
+</messages>

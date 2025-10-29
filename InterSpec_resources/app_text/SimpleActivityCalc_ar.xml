@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">حاسبة النشاط البسيطة</message>
+  <message id="simple-activity-calc-menu">حساب النشاط البسيط</message>
+  
+  <message id="sac-peak-label">القمة:</message>
+  <message id="sac-background-subtract-label">طرح الخلفية</message>
+  
+  <message id="sac-distance-label">المسافة:</message>
+  <message id="sac-age-label">العمر:</message>
+  <message id="sac-shielding-label">التدريع:</message>
+  <message id="sac-geometry-label">الهندسة:</message>
+  <message id="sac-result-label">النشاط:</message>
+  <message id="sac-advanced-btn">ملائمة النشاط/التدريع المتقدمة</message>
+  
+  <message id="sac-geometry-point">مصدر نقطي</message>
+  <message id="sac-geometry-plane">مستوى لا نهائي</message>
+  <message id="sac-geometry-self-atten">كرة ذاتية الامتصاص</message>
+  <message id="sac-geometry-trace-src">مصدر أثر</message>
+  
+  <message id="sac-error-no-peak">لا توجد قمة مختارة</message>
+  <message id="sac-error-no-detector">لا توجد استجابة كاشف محملة</message>
+  <message id="sac-error-invalid-distance">مسافة غير صالحة مدخلة</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>لا يبدو أن هناك قمة في الخلفية في نفس موقع هذه القمة.</p>
+    <p>إذا كنت تعتقد أن هناك واحدة، يرجى تبديل أطياف المقدمة والخلفية، وملائمة القمة في طيف الخلفية، ثم تبديلهما مرة أخرى.</p>
+  </message>
+  
+  
+  <message id="sac-use-fit-background-peak">هل تريد استخدام قمة الخلفية الملائمة تلقائيًا؟</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>كان هناك خطأ في محاولة ملائمة قمة لطيف الخلفية:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+  
+  <message id="sac-qr-tool-state-title">حالة أداة حساب النشاط البسيط</message>
+  <message id="sac-qr-tool-state-txt">الحالة الحالية لأداة حساب النشاط البسيط.</message>
+</messages>

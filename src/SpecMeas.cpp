@@ -39,6 +39,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "SpecUtils/CAMIO.h"
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/ParseUtils.h"
@@ -53,6 +54,7 @@
 #include "InterSpec/LlmConversationHistory.h"
 #endif
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace Wt;
@@ -1110,19 +1112,19 @@ void SpecMeas::setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<cha
 
 
 #if( USE_LLM_INTERFACE )
-std::shared_ptr<std::vector<LlmConversationStart>> SpecMeas::llmConversationHistory( const std::set<int> &samplenums ) const
+std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> SpecMeas::llmConversationHistory( const std::set<int> &samplenums ) const
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
-  
+
   auto pos = m_llmConversationHistory.find( samplenums );
   if( pos != m_llmConversationHistory.end() )
     return pos->second;
-  
+
   return nullptr;
 }
 
 
-void SpecMeas::setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<LlmConversationStart>> history )
+void SpecMeas::setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> history )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
@@ -1449,7 +1451,205 @@ bool SpecMeas::load_from_iaea( std::istream &istr )
 }//bool SpecMeas::load_from_iaea( std::istream &istr )
 
 
+void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
+{
+  SpecUtils::SpecFile::load_cnf_using_reader( reader );
 
+  if( measurements_.empty() )
+    return;
+
+  assert( measurements_.size() == 1 );
+  std::shared_ptr<SpecUtils::Measurement> &meas = measurements_[0];
+  assert( meas );
+
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = meas->energy_calibration();
+  const bool valid_cal = (cal && cal->valid()
+                          && (cal->type() != SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial));
+
+  const int sample_num = meas->sample_number_; //This will be 1.
+
+  std::vector<float> fileEneCal;
+
+  shared_ptr<DetectorPeakResponse> det;
+  try
+  {
+    const vector<CAMInputOutput::EfficiencyPoint> &points = reader.GetEfficiencyPoints();
+
+    vector<DetectorPeakResponse::EnergyEffPoint> eff_points;
+
+    for( const CAMInputOutput::EfficiencyPoint &p : points )
+    {
+      DetectorPeakResponse::EnergyEffPoint ep;
+      ep.energy = p.Energy;
+      ep.efficiency = p.Efficiency;
+      ep.efficiencyUncert = p.EfficiencyUncertainty;
+      eff_points.push_back( std::move(ep) );
+    }//for( const CAMInputOutput::EfficiencyPoint &p : points )
+
+    if( eff_points.size() > 2 )
+    {
+      //const CAMInputOutput::CAMIO::EfficiencyModel eff_model = reader.GetEfficiencyModel(); //
+      // In principle, depending on `eff_model`, we could instead use `MakeDrfFit::performEfficiencyFit(...)`...
+
+      det = make_shared<DetectorPeakResponse>();
+      const float detDiameter = 0.0f;
+      // I'm not actually sure how to, or if we can, know what type of efficiency this is
+      const DetectorPeakResponse::EffGeometryType geom_type = DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct;
+      det->setEfficiencyPoints( eff_points, detDiameter, geom_type );
+      m_detector = det;
+    }//if( eff_points.size() > 2 )
+  }catch( std::exception & )
+  {
+    det.reset();
+  }//try / catch to get efficiency
+
+  // If we have efficiency, try to get shape info
+  if( det )
+  {
+    cout << "Got shape cal: [";  //[0.872247, 0.0260896, 0, 0, ]
+    try
+    {
+      vector<float> coeffs = reader.GetShapeCalibration();
+      while( coeffs.empty() && (coeffs.back() == 0.0f) )
+        coeffs.resize( coeffs.size() - 1 );
+
+      if( coeffs.size() == 2 )
+      {
+        det->setFwhmCoefficients( coeffs, DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy );
+      }else if( coeffs.size() > 2 )
+      {
+        det->setFwhmCoefficients( coeffs, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+      }
+    }catch( std::exception & )
+    {
+      cout << "none";
+    }
+    cout << "]" << endl;
+  }//if( det )
+
+
+  
+  try
+  {
+    deque<shared_ptr<const PeakDef>> peaks_from_file;
+
+    map<pair<int,int>,shared_ptr<PeakContinuum>> channels_to_roi;
+
+    const vector<CAMInputOutput::Peak> &peaks = reader.GetPeaks();
+    for( const CAMInputOutput::Peak &p : peaks )
+    {
+      try
+      {
+        auto peak = make_shared<PeakDef>( p.Energy, p.FullWidthAtHalfMaximum/2.35482, p.Area );
+
+        if( (p.Centroid > 0.0) && (p.CentroidUncertainty > 0.0) )
+          peak->setMeanUncert( p.Energy * p.CentroidUncertainty / p.Centroid );
+        if( p.AreaUncertainty > 0.0 )
+          peak->setPeakAreaUncert( p.AreaUncertainty );
+
+        //p.LowTail
+
+        double lower_energy, upper_energy;
+        if( valid_cal )
+        {
+          lower_energy = cal->energy_for_channel(p.LeftChannel);
+          upper_energy = cal->energy_for_channel(p.RightChannel + 1);
+        }else
+        {
+          lower_energy = p.Energy - ((p.Centroid - p.LeftChannel) * (p.Energy / p.Centroid));
+          upper_energy = p.Energy + ((p.RightChannel - p.Centroid) * (p.Energy / p.Centroid));
+        }//if( valid_cal ) / else
+
+        const pair<int,int> channel_pair( p.LeftChannel, p.RightChannel );
+        const auto pos = channels_to_roi.find( channel_pair );
+        if( pos != end(channels_to_roi) )
+        {
+          peak->setContinuum( pos->second );
+        }else
+        {
+          // We may be able to parse a little more out of the peak continuum in the future.
+          auto cont = make_shared<PeakContinuum>();
+          cont->setRange( p.Energy - p.FullWidthAtHalfMaximum, p.Energy + p.FullWidthAtHalfMaximum );
+          cont->setType(PeakContinuum::OffsetType::Linear);
+          cont->calc_linear_continuum_eqn( measurements_[0], p.Energy, lower_energy, upper_energy, 3, 3 );
+
+          channels_to_roi[channel_pair] = cont;
+
+          peak->setContinuum( cont );
+        }//if( pos != end ) / else
+
+/*
+        try
+        {
+          const vector<CAMInputOutput::Line> &lines = reader.GetLines();
+          const vector<CAMInputOutput::Nuclide> &nucs = reader.GetNuclides();
+
+          for( const CAMInputOutput::Line &line : lines )
+          {
+            const CAMInputOutput::Nuclide *cam_nuc = nullptr;
+            for( const CAMInputOutput::Nuclide &nuc : nucs )
+            {
+              if( (nuc.Index >= 0) && (nuc.Index == line.NuclideIndex) )
+              {
+                cam_nuc = &nuc;
+                break;
+              }
+            }
+
+            if( (fabs(line.Energy - p.Energy) < 0.25*p.FullWidthAtHalfMaximum) && cam_nuc )
+            {
+              string nuc = cam_nuc->Name;
+              SpecUtils::trim( nuc );
+
+              const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
+              const SandiaDecay::Nuclide * nuclide = db ? db->nuclide(nuc) : nullptr;
+              if( db && !nuclide && SpecUtils::icontains(nuc, "dau") )
+              {
+                SpecUtils::ireplace_all(nuc, "dau", "");
+                nuclide = db->nuclide(nuc);
+              }
+
+              if( nuclide )
+              {
+                const double window_width = 0.25*p.FullWidthAtHalfMaximum;
+                PeakModel::setNuclide( *peak, PeakDef::SourceGammaType::NormalGamma, nuclide, line.Energy, window_width );
+              }
+            }
+          }//for( const CAMInputOutput::Line &line : lines )
+
+        }catch( std::exception & )
+        {
+          //cerr << "Failed to get lines or nucs: " << e.what() << endl;
+        }
+ */
+
+
+        peaks_from_file.push_back( peak );
+      }catch( std::exception & )
+      {
+        //cerr << "Failed to add peak from CNF file: " << e.what() << endl;
+      }
+    }//for( const CAMInputOutput::Peak &p : peaks )
+
+
+    if( !peaks_from_file.empty() )
+      setPeaks( peaks_from_file, set<int>{sample_num} );
+  }catch ( std::exception & )
+  {
+  }
+
+  try
+  {
+    cout << "DetInfo.Type=" << reader.GetDetectorInfo().Type
+    << ", DetInfo.Name=" << reader.GetDetectorInfo().Name
+    << ", DetInfo.SerialNo=" << reader.GetDetectorInfo().SerialNo
+    << ", DetInfo.MCAType=" << reader.GetDetectorInfo().MCAType
+    << endl;
+  }catch ( std::exception & )
+  {
+    cout << "No detector info" << endl;
+  }
+}//virtual void load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
 
 
 void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *interspecnode )
@@ -1665,14 +1865,14 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
       }
       
       // Parse conversations for this sample set
-      std::vector<LlmConversationStart> conversations;
-      
+      std::vector<std::shared_ptr<LlmConversationStart>> conversations;
+
       // Use the static fromXml function from LlmConversationHistory
       LlmConversationHistory::fromXml( node, conversations );
-      
+
       if( !conversations.empty() )
       {
-        m_llmConversationHistory[samplenums] = std::make_shared<std::vector<LlmConversationStart>>( conversations );
+        m_llmConversationHistory[samplenums] = std::make_shared<std::vector<std::shared_ptr<LlmConversationStart>>>( conversations );
       }
     }
     catch( std::exception &e )
@@ -1822,15 +2022,15 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     for( const auto &entry : m_llmConversationHistory )
     {
       const std::set<int> &samplenums = entry.first;
-      const std::shared_ptr<std::vector<LlmConversationStart>> &conversations = entry.second;
-      
+      const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> &conversations = entry.second;
+
       if( conversations->empty() )
         continue;
-      
+
       // Create a container node for this sample set's history
       auto sampleHistoryNode = doc->allocate_node( node_element, "LlmConversationHistory" );
       interspec_node->append_node( sampleHistoryNode );
-      
+
       // Add sample numbers as an attribute
       stringstream samplesStream;
       bool first = true;
@@ -1844,7 +2044,7 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
       const char *samplesAttr = doc->allocate_string( samplesStr.c_str() );
       auto samplesAttribute = doc->allocate_attribute( "samples", samplesAttr );
       sampleHistoryNode->append_attribute( samplesAttribute );
-      
+
       // Use the static toXml function from LlmConversationHistory
       LlmConversationHistory::toXml( *conversations, sampleHistoryNode, doc );
     }
@@ -2158,7 +2358,16 @@ void SpecMeas::setPeaks( const std::deque< std::shared_ptr<const PeakDef> > &pea
 {
   if( !m_peaks )
     m_peaks.reset( new SampleNumsToPeakMap() );
-  (*m_peaks)[samplenums].reset( new PeakDeque( peakdeque ) );
+  
+  shared_ptr<deque<shared_ptr<const PeakDef>>> &deque = (*m_peaks)[samplenums];
+  if( deque )
+  {
+    deque->clear();
+    deque->insert( begin(*deque), begin(peakdeque), end(peakdeque) );
+  }else
+  {
+    deque.reset( new std::deque<shared_ptr<const PeakDef>>( peakdeque ) );
+  }
 }//void setPeaks(...)
 
 
@@ -2384,17 +2593,50 @@ const map<set<int>,long long int> &SpecMeas::dbUserStateIndexes() const
 
 void SpecMeas::cleanup_after_load( const unsigned int flags )
 {
-  if( m_fileWasFromInterSpec )
+  // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
+  //  SpecMeas specific things that use the sample numbers
+  bool has_specific_info = !m_dbUserStateIndexes.empty();
+  if( !has_specific_info && m_peaks )
+  {
+    for( auto iter = begin(*m_peaks); !has_specific_info && (iter != end(*m_peaks)); ++iter )
+      has_specific_info = (iter->second && !iter->second->empty());
+  }//if( m_peaks )
+
+  if( !has_specific_info && !m_autoSearchPeaks.empty() )
+  {
+    for( auto iter = begin(m_autoSearchPeaks); !has_specific_info && (iter != end(m_autoSearchPeaks)); ++iter )
+      has_specific_info = (iter->second && !iter->second->empty());
+  }//if( !has_specific_info && m_autoSearchPeaks )
+
+
+  if( m_fileWasFromInterSpec && !(flags & SpecFile::ReorderSamplesByTime) )
   {
     SpecFile::cleanup_after_load( (flags | SpecFile::DontChangeOrReorderSamples) );
+  }if( has_specific_info )
+  {
+    // Grab a mapping from Measurement* to sample numbers.
+    vector<pair<int,shared_ptr<const SpecUtils::Measurement>>> orig_sample_nums;
+    orig_sample_nums.reserve( measurements_.size() );
+    for( const std::shared_ptr<SpecUtils::Measurement> &m : measurements_ )
+      orig_sample_nums.emplace_back( m->sample_number_, m );
+
+    // Do cleanup - which _could_ change some of the Measurements sample numbers
+    SpecFile::cleanup_after_load( flags );
+
+    // Now fixup m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes to use the newly assigned sample numbers
+    vector<pair<int,int>> from_to_sample_nums;
+    for( const pair<int,shared_ptr<const SpecUtils::Measurement>> &samplenum_meas : orig_sample_nums )
+    {
+      if( samplenum_meas.first != samplenum_meas.second->sample_number() )
+        from_to_sample_nums.emplace_back( samplenum_meas.first, samplenum_meas.second->sample_number() );
+    }
+
+    if( !from_to_sample_nums.empty() )
+      change_sample_numbers_spec_meas_stuff( from_to_sample_nums );
   }else
   {
     SpecFile::cleanup_after_load( flags );
   }
-
-  //should detect if the detector was loaded, and if not, if we know the type,
-  //  we could then load it.
-  //   -instead for right now lets do this in InterSpec...
 }//void SpecMeas::cleanup_after_load()
 
 
@@ -2457,7 +2699,12 @@ void SpecMeas::cleanup_orphaned_info()
 void SpecMeas::change_sample_numbers( const vector<pair<int,int>> &from_to_sample_nums )
 {
   SpecFile::change_sample_numbers( from_to_sample_nums );
-  
+  change_sample_numbers_spec_meas_stuff( from_to_sample_nums );
+}
+
+
+void SpecMeas::change_sample_numbers_spec_meas_stuff( const std::vector<std::pair<int,int>> &from_to_sample_nums )
+{
   // I *think*, m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes are the only
   //  SpecMeas specific things that use the sample numbers
   

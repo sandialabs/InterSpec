@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sm3dc- is short for SearchMode3DChart -->
+  <message id="sm3dc-loading">Carregando...</message>
+  <message id="sm3dc-min-energy">Energia Mín</message>
+  <message id="sm3dc-max-energy">Energia Máx</message>
+  <message id="sm3dc-min-time">Tempo Mín (s)</message>
+  <message id="sm3dc-max-time">Tempo Máx (s)</message>
+  <message id="sm3dc-time-bins">Compartimentos de exibição de tempo</message>
+  <message id="sm3dc-tt-time-bins">
+    O número máximo de divisões de tempo a plotar; se seus dados tiverem mais amostras de tempo do que
+    isso na faixa exibida, amostras de tempo serão combinadas juntas, até que seja menor que este valor.
+    <br />
+    <br />
+    Por exemplo, se este valor for 60, mas sua medição tiver 208 amostras, então cada 4
+    amostras serão somadas juntas para um único compartimento para o eixo de tempo,
+    com um total de 52 compartimentos no eixo de tempo.
+    <br />
+    Se o produto do número de canais de tempo, vezes o número de canais de energia
+    for muito grande, problemas de desempenho podem ser encontrados.
+  </message>
+  <message id="sm3dc-energy-bins">Compartimentos de exibição de energia</message>
+  <message id="sm3dc-tt-energy-bins">
+    O número máximo de divisões de energia a plotar; se seus dados tiverem mais canais de energia do que
+    isso na faixa exibida, canais serão combinados juntos, até que seja menor que este valor.
+    <br />
+    <br />
+    Se o produto do número de canais de tempo, vezes o número de canais de energia
+    for muito grande, problemas de desempenho podem ser encontrados.
+  </message>
+  <message id="sm3dc-time-axis-label">Tempo (segundos)</message>
+  <message id="sm3dc-counts-axis-label">Contagens por Canal</message>
+</messages>

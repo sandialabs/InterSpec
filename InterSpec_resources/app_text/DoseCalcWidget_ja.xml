@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">遮蔽量の収束に失敗しました。</message>
+  <message id="dcw-qr-tool-state-title">線量ツール状態</message>
+  <message id="dcw-qr-tool-state-txt">線量ツールの現在の状態。</message>
+  <message id="dcw-inputs">入力</message>
+  <message id="dcw-answer">答え</message>
+  <message id="dcw-intro-instructions">左側で計算したい量を選択してください</message>
+  <message id="dcw-intro-instructions-vert-phone">上で計算したい量を選択してください</message>
+  <message id="dcw-intro-calc-desc">線量値はANSI/ANS-6.1.1-1991の最も
+    保守的なケースを使用して計算されます：前後方向。
+    線量計算は良くても大まかな指針であり、
+    多くの不確実性やエラーの対象となります。
+  </message>
+  <message id="dcw-source-label">線源:</message>
+  <message id="dcw-neutron">中性子</message>
+  <message id="dcw-tt-neut-not-imp">中性子線量計算はまだ実装されていません。</message>
+  <message id="dcw-tt-distance">線源の中心から検出器面までの距離。数値の後に単位が必要です。有効な単位は: meters, m, cm, mm, km, feet,
+    ft, ', in, inches, または \"。複数の距離を追加することもできます。
+    例: '3ft 4in'、または'3.6E-2 m 12 cm'はそれぞれ
+    40インチと15.6cmに相当します。</message>
+  <message id="dcw-shield-empty-text">遮蔽材料</message>
+  <message id="dcw-runtime-checks-failed">実行時健全性チェックが失敗しました！</message>
+  <message id="dcw-runtime-check-msg">
+    <div>この計算機ユーティリティの結果を信用しないでください</div>
+    <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>にこのエラーメッセージを
+    メールし、デバイスタイプとモデル（例：iPad pro、
+    Windows 10 Dellラップトップなど）を含めてください
+  </message>
+  <message id="dcw-runtime-check-err-div">結果は疑わしい - 信用しない</message>
+  <message id="dcw-err-no-nuc">空または無効な線源核種</message>
+  <message id="dcw-act-invalid">放射能が無効です</message>
+  <message id="dcw-shield-invalid">無効な遮蔽</message>
+  <message id="dcw-generic-shield-invalid">線量計算エラー、無効な遮蔽、申し訳ありません :{</message>
+  <message id="dcw-dist-invalid">距離が無効です。</message>
+  <message id="dcw-err-other">線源からの線量計算エラー、申し訳ありません :{</message>
+  <message id="dcw-invalid-src-dose">無効な線源線量。</message>
+  <message id="dcw-invalid-src-act">無効な線源放射能。</message>
+  <message id="dcw-invalid-src-dose">無効な線源線量。</message>
+  <message id="dcw-failed-find-lower-dist">{1} cmで下限距離の発見に失敗しました。</message>
+  <message id="dcw-failed-find-upper-dist">{1} cmで上限距離の発見に失敗しました。</message>
+  <message id="dcw-failed-find-dist">距離を見つけられませんでした；最大反復を超えました。</message>
+  <message id="dcw-got-neg-dist">負の距離を取得: {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">距離を検索中の線量計算エラー、申し訳ありません :{</message>
+  <message id="dcw-material-not-valid">材料が有効ではありません</message>
+  <message id="dcw-no-an-entered">遮蔽材料の原子番号を入力する必要があります。</message>
+  <message id="dcw-no-shield-name">遮蔽材料タイプを入力する必要があります。</message>
+  <message id="dcw-brehm-warning">警告: ベータ崩壊の制動放射が考慮されていません、結果は信頼できない可能性があります。</message>
+  <message id="dcw-no-dose-entered">線量の数値が入力されていません</message>
+  <message id="dcw-stay-time">滞在時間</message>
+  <message id="dcw-dental-xray">歯科X線</message>
+  <message id="dcw-annual-background">典型的年間バックグラウンド</message>
+  <message id="dcw-annual-occ-limit">年間職業限度</message>
+  <message id="dcw-save-property">貴重な財産の保存</message>
+  <message id="dcw-life-saving">生命救助</message>
+  <message id="dcw-radiation-sickness">放射線病</message>
+  <message id="dcw-units-label">単位：</message>
+</messages>

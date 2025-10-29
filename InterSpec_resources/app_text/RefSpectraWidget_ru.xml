@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">Референсные спектры</message>
+  <message id="rs-show-foreground">Показать передний план</message>
+  <message id="rs-show-background">Фон</message>
+  <message id="rs-tt-add-dir-btn">Добавить каталог для открытия референсных спектров.</message>
+  <message id="rs-tt-delete-dir-btn">Удаляет текущий выбранный каталог из списка мест для показа референсных спектров.</message>
+  <message id="rs-no-dir-selected-desktop">
+    Выберите референсный спектр для загрузки. <br />
+    <br />
+    Добавьте каталоги референсных спектров, используя
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/> иконку.
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    Выберите референсный спектр для загрузки. <br /> 
+    <div style="font-size: smaller;">
+      (вы также можете добавить свой собственный каталог референсных спектров, создав каталог "reference_spectra" 
+      в каталоге данных <em>InterSpec</em> (используя приложение Файлы), а затем добавить дополнительные подкаталоги
+      с вашими спектрами в них)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} каталогов больше недоступны и были удалены.</message>
+  <message id="rs-dir-added-successfully">Добавлен путь '{1}'.</message>
+  <message id="rs-show-as">Загрузить как</message>
+  <message id="rs-add-dir-dialog-title">Добавить каталог референсных спектров</message>
+  <message id="rs-duplicate-dir-path">Каталог уже выбран: '{1}'</message>
+  <message id="rs-dir-not-found">Каталог не найден, поэтому не удален из настроек: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">Каталог содержит {1} файлов спектров<br /></message>
+  <message id="rs-dir-info-only-subdir">Каталог содержит {1} подкаталогов<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">Каталог содержит {1} файлов спектров и {2} подкаталогов<br /></message>
+  <message id="rs-error-loading-file">Ошибка загрузки файла: '{1}'</message>
+  <message id="rs-show-in-explorer">Показать в Проводнике</message>
+  <message id="rs-show-in-finder">Показать в Finder</message>
+  <message id="rs-show-in-linux-file-manager">Показать в файловом менеджере</message>
+  <message id="rs-error-invalid-file">Недействительный файл спектра: '{1}'.</message>
+  <message id="rs-error-invalid-type-selected">Выбран недействительный тип спектра.</message>
+  </messages>
+

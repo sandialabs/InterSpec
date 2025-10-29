@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">न्यूक्लाइड असाइनमेंट पुष्टि करें</message>
+  <message id="psw-title-check-search">शिखर खोज परिणाम जांचें</message>
+  <message id="psw-title-prev-spec">पिछले स्पेक्ट्रम से रखने के लिए शिखर</message>
+  <message id="psw-title-csv-import">CSV से आयात करने के लिए शिखर</message>
+  <message id="psw-search-instruct-adjust">न्यूक्लाइड असाइनमेंट या कौन से शिखर रखने हैं समायोजित करें।</message>
+  <message id="psw-search-instruct-unselect">कोई भी शिखर जिसे आप रखना नहीं चाहते उसका चयन रद्द करें।</message>
+  <message id="psw-search-instruct-assign">न्यूक्लाइड असाइनमेंट जांचें और ठीक करें।</message>
+  <message id="psw-search-instruct-keep">उन शिखरों का चयन करें जिन्हें आप रखना चाहते हैं।</message>
+  <message id="psw-show-all-peaks">सभी शिखर दिखाएं</message>
+  <message id="psw-show-prev-peaks">पिछले शिखर भी दिखाएं</message>
+  <message id="psw-show-missing-peaks">अनुपस्थित शिखर दिखाएं</message>
+  <message id="psw-keep-only-assigned-peaks">केवल {1} को असाइन किए गए नए शिखर रखें</message>
+  <message id="psw-orig-nuc">मूल न्यूक्लाइड</message>
+  <message id="psw-assigned-nuc">असाइन किया गया न्यूक्लाइड</message>
+  <message id="psw-peak-preview">शिखर पूर्वावलोकन</message>
+  <message id="psw-not-found">नहीं मिला</message>
+  <message id="psw-keep-peak">शिखर रखें</message>
+  <message id="psw-keep-peak-q">शिखर रखें?    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">बदलें नहीं</message>
+  <message id="psw-no-nuc-changed">कोई न्यूक्लाइड नहीं बदला</message>
+  <message id="psw-rel-eff-plot-title">सापेक्ष दक्षता प्लॉट</message>
+  <message id="psw-rel-eff-plot-y-axis-title">सापेक्ष शिखर क्षेत्र / BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">शिखर अपडेट नहीं किए गए, स्पेक्ट्रम बदल गया है।</message>
+  <message id="psgu-peaks-updated-msg">शिखर अपडेट किए गए।</message>
+
+  <message id="psgu-search-wait-title">बस कुछ क्षण</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>शिखर खोज रहा है - इसमें थोड़ा समय लग सकता है।</div>
+      <div>आप यह संवाद बंद कर सकते हैं और जब खोज पूरी हो जाएगी,</div>
+      आपको सूचित किया जाएगा
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">FWHM जानकारी आवश्यक है</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>वर्तमान डिटेक्टर प्रतिक्रिया में FWHM जानकारी नहीं है।</div>
+    <div>क्या आप वर्तमान स्पेक्ट्रा से FWHM जानकारी फिट करना चाहेंगे?</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>कोई डिटेक्टर प्रतिक्रिया चयनित नहीं है।</div>
+    <div>क्या आप वर्तमान स्पेक्ट्रा से FWHM जानकारी फिट करना चाहेंगे?</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">शिखर को पुनः फिट करने में विफल (अनावश्यक हो गया), {1} से {2} शिखर</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">गामा की ऊर्जा पर सेट करने के लिए कोई शिखर नहीं था</message>
+  <message id="psgu-no-ref-line-near-peak-msg">शिखर के औसत को सेट करने के लिए कोई संदर्भ गामा ऊर्जा नहीं थी।</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    औसत को संदर्भ फोटोपीक पर निश्चित करने के बाद शिखर को पुनः फिट करने में विफल।
+    एक शिखर अनावश्यक हो गया; {1} से {2} शिखर।
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  निरंतरता प्रकार को {1} में बदलने से {2} शिखर अनावश्यक हो गया।<br />
+  कृपया यह परिवर्तन करने के लिए <b>शिखर संपादक</b> का उपयोग करें।
+  </message>
+  <message id="psgu-failed-change-cont-singular">वह</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">कम से कम एक</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  निरंतरता प्रकार को {1} में सरलता से बदलने से शिखर अनावश्यक हो गया।<br />
+  कृपया यह परिवर्तन करने के लिए <b>शिखर संपादक</b> का उपयोग करें।
+  </message>
+  <message id="psgu-change-skew-not-gaus">{1} keV पर ROI में शिखर गाउसियन परिभाषित नहीं है - कृपया विषमता प्रकार सेट करने से पहले <b>शिखर संपादक</b> में इसे बदलें।</message>
+  <message id="psgu-change-skew-make-insig">
+    विषमता प्रकार को {1} में बदलने से {2} शिखर अनावश्यक हो गया।<br />
+    कृपया यह परिवर्तन करने के लिए <b>शिखर संपादक</b> का उपयोग करें।
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  विषमता प्रकार को {1} में सरलता से बदलने से शिखर अनावश्यक हो गया।<br />
+  कृपया यह परिवर्तन करने के लिए <b>शिखर संपादक</b> का उपयोग करें।
+  </message>
+
+</messages>

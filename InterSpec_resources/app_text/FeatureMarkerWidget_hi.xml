@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fmw- is short for FeatureMarkerWidget
+  -->
+  <message id="fmw-escape-peaks">पलायन पीक</message>
+  <message id="fmw-compton-peak">Compton पीक</message>
+  <message id="fmw-angle">कोण</message>
+  <message id="fmw-compton-edge">Compton किनारा</message>
+  <message id="fmw-sum-peak">योग पीक</message>
+</messages>

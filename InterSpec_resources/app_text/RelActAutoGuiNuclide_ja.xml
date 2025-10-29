@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+  
+  <!-- Labels -->
+  <message id="raagn-nuclide">核種:</message>
+  <message id="raagn-age">年数:</message>
+  <message id="raagn-min-age">最小年数:</message>
+  <message id="raagn-max-age">最大年数:</message>
+  
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">制約タイプを選択。</message>
+  <message id="raagn-min">最小:</message>
+  <message id="raagn-max">最大:</message>
+  <message id="raagn-src">線源:</message>
+  <message id="raagn-val">値:</message>
+  
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">なし</message>
+  <message id="raagn-constraint-rel-act">相対放射能</message>
+  <message id="raagn-constraint-act-ratio">放射能比</message>
+  <message id="raagn-constraint-mass-frac">質量分率</message>
+  
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">年数フィット</message>
+  
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">制約追加</message>
+  
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">例: <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (準安定状態), <b>Cs137</b>, Pb, Fe(n,n) など。</message>
+  <message id="raagn-remove-constraint-tt">この制約を削除</message>
+  <message id="raagn-add-constraint-tt">この核種に制約を追加</message>
+  
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1}は有効な核種、X線、または反応ではありません。</message>
+  <message id="raagn-stable-nuclide">{1}は安定核種です。</message>
+  
+</messages>

@@ -56,6 +56,14 @@ struct ColorTheme
    */
   static const char * const sm_color_theme_json_version;  //Currently "1"
   
+  /** Default colors for dynamic reference lines by category. */
+  static const char * const sm_dynamic_ref_line_medical_color;
+  static const char * const sm_dynamic_ref_line_industrial_color;
+  static const char * const sm_dynamic_ref_line_norm_color;
+  static const char * const sm_dynamic_ref_line_snm_color;
+  static const char * const sm_dynamic_ref_line_common_color;
+  static const char * const sm_dynamic_ref_line_other_color;
+  
   /** A listing of the predifeined color themes.
       Note that a userPreference for "ColorThemeIndex" that has a negative value
       indicates to use one of these predifined values, where the absolute value
@@ -235,6 +243,14 @@ struct ColorTheme
       The key will be something like 'U235', 'Co65', 'Fe', etc.,
    */
   std::map<std::string,Wt::WColor> referenceLineColorForSources;
+  
+  /** Dynamic reference line colors for specific categories. */
+  Wt::WColor dynamicRefLineMedicalColor;
+  Wt::WColor dynamicRefLineIndustrialColor;
+  Wt::WColor dynamicRefLineNormColor;
+  Wt::WColor dynamicRefLineSnmColor;
+  Wt::WColor dynamicRefLineCommonColor;
+  Wt::WColor dynamicRefLineOtherColor;
 };//struct ColorTheme
 
 

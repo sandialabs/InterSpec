@@ -2670,8 +2670,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     
     disp = new ShieldingSourceDisplay( peakModel, viewer, shieldSuggest, matdb );
     window = new AuxWindow( WString::tr("window-title-act-shield-fit"),
-                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                           | AuxWindowProperties::EnableResize);
+                           (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     if( !viewer->isPhone() )
@@ -3026,7 +3025,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   HelpSystem::attachToolTipOn( m_shieldingSelects, WString::tr("ssd-tt-shieldings"), showToolTips );
 
   WLabel *addShieldingLabel = new WLabel( WString::tr("ssd-add-shield-label") );
-  m_addMaterialShielding = new WPushButton( "Material" );
+  m_addMaterialShielding = new WPushButton( WString::tr("Material") );
   HelpSystem::attachToolTipOn( m_addMaterialShielding, WString::tr("ssd-tt-add-shield"),
                               showToolTips, HelpSystem::ToolTipPosition::Top  );
   m_addMaterialShielding->setIcon( "InterSpec_resources/images/shield_white.png" );
@@ -3760,8 +3759,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
   //Also, if you change the model any while this window is open - bad things will happen.
   
   AuxWindow *window = new AuxWindow( "Input Truth Values",
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                                     | AuxWindowProperties::TabletNotFullScreen) );
+                                     (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   
   WContainerWidget *contents = window->contents();
   
@@ -6134,8 +6132,7 @@ void ShieldingSourceDisplay::startModelUpload()
     return;
   
   m_modelUploadWindow = new AuxWindow( WString::tr("ssd-import-model-window-title"),
-                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                        | AuxWindowProperties::TabletNotFullScreen) );
+                      (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   
   WContainerWidget *contents = m_modelUploadWindow->contents();
   WFileUpload *upload = new WFileUpload( contents );
@@ -6382,7 +6379,7 @@ void ShieldingSourceDisplay::startBrowseDatabaseModels()
   WTextArea *summary = NULL;
   WPushButton *accept = NULL, *cancel = NULL, *del = NULL;
   m_modelDbBrowseWindow = new AuxWindow( WString::tr("ssd-prev-saved-window-title"),
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen) );
+              (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   m_modelDbBrowseWindow->finished().connect( this, &ShieldingSourceDisplay::closeBrowseDatabaseModelsWindow );
   
   try
@@ -6659,7 +6656,7 @@ void ShieldingSourceDisplay::startSaveModelToDatabase( bool prompt )
     return;
   
   m_modelDbSaveWindow = new AuxWindow( WString::tr("ssd-save-model-to-db-window-title"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                  (AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse) );
   WContainerWidget *contents = m_modelDbSaveWindow->contents();
@@ -8238,7 +8235,11 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   
   if( initial_shieldings.size() != gui_shieldings.size() )
   {
-    passMessage( "Programming Logic Error - number of shieldings have changed.", WarningWidget::WarningMsgHigh );
+    passMessage( "Programming Logic Error - number of shieldings have changed from "
+                + std::to_string(initial_shieldings.size())
+                + " to "
+                + std::to_string(gui_shieldings.size())
+                , WarningWidget::WarningMsgHigh );
 #if( PERFORM_DEVELOPER_CHECKS )
     log_developer_error( __func__, "Programming Logic Error - number of shieldings changed - fit results when model was no longer valid." );
 #endif

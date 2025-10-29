@@ -133,10 +133,12 @@ div.SampleSelectRow .NextNextSample{
 }
 
 div.DispType .SpecTitle {
-  margin-top: 15px;
+  margin-top: 10px; /* If info table 4 rows, then title is partially cutoff if we make this 15px, like I like. */
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .CompactFileManager .StretcherRow {

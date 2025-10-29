@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">रंग थीम</message>
+
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">वर्तमान में चयनित थीम को हटाता है।</message>
+  <message id="ctw-clone-tooltip">वर्तमान में चयनित थीम के आधार पर एक नई रंग थीम बनाता है।</message>
+  <message id="ctw-upload-tooltip">उपयोग के लिए एक रंग थीम JSON फ़ाइल आयात करता है।</message>
+  <message id="ctw-download-tooltip">वर्तमान में चयनित थीम को JSON फ़ाइल में निर्यात करता है।</message>
+
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">OS से "Dark" स्वतः लागू करें</message>
+  <message id="ctw-auto-dark-tooltip">ऑपरेटिंग सिस्टम के वर्तमान मान के अनुसार, या जब यह परिवर्तित होता है तब "Dark" रंग थीम स्वचालित रूप से लागू करें।</message>
+
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (क्लोन)</message>
+
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">{1} हटाएं?</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">क्या आप वाकई <em>{1}</em> को हटाना चाहते हैं?</span>]]></message>
+
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">रंग थीम JSON अपलोड करें</message>
+  <message id="ctw-upload-error-open">अपलोड की गई फ़ाइल खोलने में त्रुटि।</message>
+  <message id="ctw-upload-error-empty">अपलोड की गई फ़ाइल खाली है।</message>
+  <message id="ctw-upload-error-large">अपलोड की गई फ़ाइल बहुत बड़ी है; अधिकतम आकार 64kb।</message>
+  <message id="ctw-upload-error-read">अपलोड की गई फ़ाइल पढ़ने में असमर्थ।</message>
+  <message id="ctw-upload-error-json">अमान्य JSON, या आवश्यक जानकारी गायब।</message>
+  <message id="ctw-upload-too-large">बहुत बड़ी फ़ाइल।</message>
+  <message id="ctw-import-confirm"><![CDATA[क्या आप <em>{1}</em> आयात करना चाहेंगे?]]></message>
+
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">परिवर्तन सहेजें?</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;"><em>{1}</em> में परिवर्तन सहेजें?</span>]]></message>
+  <message id="ctw-discard-btn">त्यागें</message>
+</messages>

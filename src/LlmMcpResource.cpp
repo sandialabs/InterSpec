@@ -24,6 +24,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/LlmToolRegistry.h"
@@ -216,20 +217,21 @@ EnrichmentStatus get_enrichment(const EnrichOptions& options) {
 
 // --- LlmMcpResource Implementation ---
 
-#if( MCP_ENABLE_AUTH )
-LlmMcpResource::LlmMcpResource(std::string secret_token)
+
+LlmMcpResource::LlmMcpResource( const std::shared_ptr<const LlmConfig> &config )
 : Wt::WResource(),
-  secret_token_(std::move(secret_token))
+  llm_config_( config ),
+  tool_registry_( config ? make_unique<LlmTools::ToolRegistry>(*config) : unique_ptr<LlmTools::ToolRegistry>() )  //This can throw
 {
+  if( !llm_config_ )
+    throw std::logic_error( "LlmMcpResource must be initialized with a valid config" );
+  
+  if( !config->mcpServer.enabled )
+    throw std::logic_error( "Cannot initialize LlmMcpResource if MCP isnt enabled in the config" );
+  
   register_default_tools();
 }
-#else
-LlmMcpResource::LlmMcpResource()
- : Wt::WResource()
-{
-  register_default_tools();
-}
-#endif
+
 
 LlmMcpResource::~LlmMcpResource() = default;
 
@@ -543,11 +545,17 @@ void LlmMcpResource::handle_call_tool(const Wt::Http::Request& request, Wt::Http
 
 void LlmMcpResource::register_default_tools()
 {
-  // Use shared tool registry to get the tool definitions
-  LlmTools::ToolRegistry::instance().registerDefaultTools();
+  assert( tool_registry_ && llm_config_ );
+  
+  if( !tool_registry_ )
+    throw std::logic_error( "LlmMcpResource: should not have null tool registry" );
+  
+  if( !llm_config_ )
+    throw std::logic_error( "LlmMcpResource: should not have null llm config" );
   
   // Create MCP-compatible tools by adapting the shared tools
-  for (const auto& toolPair : LlmTools::ToolRegistry::instance().getTools()) {
+  for( const auto &toolPair : tool_registry_->getTools() )
+  {
     const std::string& name = toolPair.first;
     const LlmTools::SharedTool& sharedTool = toolPair.second;
     
@@ -556,13 +564,34 @@ void LlmMcpResource::register_default_tools()
     mcpTool.description = sharedTool.description;
     mcpTool.parameters_schema = sharedTool.parameters_schema;
     
+    // Add userSession parameter to schema if not already present
+    if( mcpTool.parameters_schema.is_object() )
+    {
+      // Ensure "properties" object exists
+      if( !mcpTool.parameters_schema.contains("properties") )
+        mcpTool.parameters_schema["properties"] = nlohmann::json::object();
+
+      // Add userSession to properties if not already there
+      if( !mcpTool.parameters_schema["properties"].contains("userSession") )
+      {
+        mcpTool.parameters_schema["properties"]["userSession"] = {
+          {"type", "string"},
+          {"description", "Optional: the user session identifier.  If not specified, will use most recent session."}
+        };
+      }
+    }
+    
+    
     // Create an adapter that finds the InterSpec session and calls the shared tool
-    mcpTool.executor = [this, name](const json& params) -> json {
+    mcpTool.executor = [this, name]( json params ) -> json {
       // Extract session ID from params if available
       string sessionId;
       if (params.contains("userSession") && params["userSession"].is_string()) {
         sessionId = params["userSession"];
       }
+      
+      if( params.contains("userSession") )
+        params.erase( "userSession" ); //Tool registry doesnt need to know that this parameter exists
       
       // Find the appropriate InterSpec instance
       InterSpec* interspec = findInterSpecBySessionId(sessionId);
@@ -572,7 +601,7 @@ void LlmMcpResource::register_default_tools()
       }
       
       // Use the shared tool registry to execute the tool
-      return LlmTools::ToolRegistry::instance().executeTool(name, params, interspec);
+      return tool_registry_->executeTool(name, params, interspec);
     };
     
     register_tool(mcpTool);

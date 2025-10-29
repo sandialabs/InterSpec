@@ -173,7 +173,16 @@ ColorSelect::ColorSelect( Wt::WFlags<ColorSelectOptions> options, Wt::WContainer
   {
     wApp->require( "InterSpec_resources/assets/js/spectrum_1.8.0/spectrum.min.js" );
     wApp->useStyleSheet( "InterSpec_resources/assets/js/spectrum_1.8.0/spectrum.min.css" );
-    
+
+    WCssStyleSheet &style = wApp->styleSheet();
+    const string rulename = "ColorPickStyle";
+    if( !style.isDefined(rulename) )
+    {
+      style.addRule( "div.sp-replacer.sp-light, div.sp-replacer.sp-dark",
+                    "display: flex; flex-direction: row; flex-wrap: nowrap; overflow: unset; flex-wrap: nowrap; margin-right: 2px;",
+                    rulename );
+    }
+
     string init_js = "$('#" + id() + "').spectrum({"
       "showSelectionPalette: true, "
       //"showInitial: true, "

@@ -223,8 +223,8 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
   }//for( int col = 0; col < poly_terms; ++col )
   
   // TODO: determine if HouseholderQr or BDC SVD is better/more-stable/faster/whatever
-  //const Eigen::VectorXd solution = A.colPivHouseholderQr().solve(b);
-  
+  //const Eigen::VectorX<T> solution = A.colPivHouseholderQr().solve(b);
+
   // deprecated way to compute the BDCSVD matrix
   //const Eigen::BDCSVD<Eigen::MatrixX<T>> bdc = A.bdcSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
   // What I think is the updated way.
@@ -325,8 +325,20 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
       
       raw_rel_counts += line.m_yield * rel_act_value;
     }//for( const GenericLineInfo &line : peak.m_source_gammas )
-    
-    
+
+    //assert( raw_rel_counts > 0.0 );
+    if( raw_rel_counts <= std::numeric_limits<double>::epsilon() )
+    {
+      string rel_cnts_str;
+      if constexpr ( !std::is_same_v<T, double> )
+        rel_cnts_str = to_string(raw_rel_counts.a);
+      else
+        rel_cnts_str = to_string(raw_rel_counts);
+      throw runtime_error( "fit_rel_eff_eqn_lls_imp: predicted counts for peak " + to_string(peak.m_energy)
+                          + " is " + rel_cnts_str + " vs actual " + to_string(peak.m_counts)
+                          + "; this will cause computation to fail." );
+    }
+
     T measured_rel_eff = counts / raw_rel_counts;
     T measured_rel_eff_uncert = counts_uncert / raw_rel_counts;
     
@@ -365,6 +377,11 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
         const T add_uncert( counts * peak.m_base_rel_eff_uncert );
         measured_rel_eff_uncert = sqrt( pow(counts_uncert,2.0) + pow(add_uncert, 2.0) );
         measured_rel_eff_uncert /= raw_rel_counts;
+        assert( !isinf(counts) && !isnan(counts) );
+        assert( !isinf(measured_rel_eff_uncert) && !isnan(measured_rel_eff_uncert) );
+        assert( !isinf(raw_rel_counts) && !isnan(raw_rel_counts) );
+        assert( !isinf(raw_rel_counts) && !isnan(raw_rel_counts) );
+        assert( !isinf(measured_rel_eff_uncert) && !isnan(measured_rel_eff_uncert) );
       }//if( peak.m_base_rel_eff_uncert > 0.0 )
       
       // else keep as counts_uncert / raw_rel_counts
@@ -374,6 +391,8 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
     energies[row] = energy;
     meas_rel_eff[row] = measured_rel_eff;
     meas_rel_eff_uncert[row] = measured_rel_eff_uncert;
+    //cout << "energy(" << energy << "): meas_rel_eff[" << row << "] = " << meas_rel_eff[row] << ", meas_rel_eff_uncert[" << row << "] = " << meas_rel_eff_uncert[row] << endl;
+    assert( !isinf(measured_rel_eff_uncert) && !isnan(measured_rel_eff_uncert) );
   }//for( int col = 0; col < poly_terms; ++col )
   
   
@@ -1379,8 +1398,13 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     const T * const pars = x.data();
     vector<T> rel_activities( num_isotopes );
     for( size_t i = 0; i < num_isotopes; ++i )
+    {
       rel_activities[i] = this->relative_activity(m_isotopes[i], x);
-    
+      if( isnan(rel_activities[i]) || isinf(rel_activities[i]) )
+        cerr << "Got inf/nan rel act for iso " << i << endl;
+      assert( !isnan(rel_activities[i]) && !isinf(rel_activities[i]) );
+    }
+
     vector<T> eqn_coefficients;
     vector<vector<T>> eqn_cov;
     fit_rel_eff_eqn_lls_imp<T>( m_input.eqn_form, m_input.eqn_order,
@@ -1460,6 +1484,8 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         const double uncert = sqrt( pow(peak.m_counts_uncert,2.0) + pow(add_uncert,2.0) );
         
         residuals[index] = (peak.m_counts - pred_counts) / uncert;
+        //cout << "residuals[index] = (peak.m_counts - pred_counts) / uncert --> " << residuals[index] << " = (" << peak.m_counts << " - " << pred_counts << ") / " << uncert << endl;
+        //cout << "curve_val=" << curve_val << ", rel_src_counts=" << rel_src_counts << endl;
       }
     }//for( loop over energies to evaluate at )
   }//eval_internal_lls_rel_eff(...)
@@ -1686,6 +1712,30 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       eval_internal_nl_rel_eff<T>( x, residuals );
     else
       eval_internal_lls_rel_eff<T>( x, residuals );
+
+
+#ifndef NDEBUG
+    for( size_t index = 0; index < number_residuals(); ++index )
+    {
+      assert( !isnan(residuals[index]) && !isinf(residuals[index]) );
+      if( isnan(residuals[index]) || isinf(residuals[index]) )
+        cerr << "Residual " << index << " has inf or nan value." << endl;
+
+      if constexpr ( !std::is_same_v<T, double> )
+      {
+        for( size_t jac_index = 0; jac_index < residuals[index].v.rows(); ++jac_index )
+        {
+          assert( !IsNan(residuals[index].v[jac_index]) && !IsInf(residuals[index].v[jac_index]) );
+          if( isnan(residuals[index].v[jac_index]) || isinf(residuals[index].v[jac_index]) )
+            cerr << "Residual " << index << " has Jacobian " << jac_index << " value if inf or nan" << endl;
+        }
+        //cout << "Residual " << index << " has value " << residuals[index].a << endl;
+      }else
+      {
+        //cout << "Residual " << index << " has value " << residuals[index] << endl;
+      }//if constexpr ( !std::is_same_v<T, double> ) / else
+    }//for( size_t index = 0; index < number_residuals(); ++index )
+#endif
   }
   
 
@@ -1767,6 +1817,44 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     
     return num_pars;
   }
+  
+  // Walk to controlling nuclide similar to solution.walk_to_controlling_nuclide()
+  bool walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const
+  {
+    assert( multiple == 1.0 );
+    multiple = 1.0;
+    assert( iso_index < m_isotopes.size() );
+    
+    if( m_input.act_ratio_constraints.empty() )
+      return false;
+    
+    size_t controller_index = std::numeric_limits<size_t>::max();
+    bool found_controller = false;
+    size_t sentinel = 0; // Safety counter to prevent infinite loops
+    
+    while( controller_index != iso_index )
+    {
+      sentinel += 1;
+      assert( sentinel < 100 );
+      if( sentinel > 1000 )
+        throw std::logic_error( "ManualGenericRelActFunctor::walk_to_controlling_nuclide: possible infinite loop - logic error" );
+      
+      controller_index = iso_index;
+      for( const RelActCalcManual::ManualActRatioConstraint &constraint : m_input.act_ratio_constraints )
+      {
+        if( constraint.m_constrained_nuclide == m_isotopes[iso_index] )
+        {
+          // Find the index of the controlling nuclide
+          iso_index = this->iso_index( constraint.m_controlling_nuclide );
+          multiple *= constraint.m_constrained_to_controlled_activity_ratio;
+          found_controller = true;
+          break;
+        }
+      }
+    }//while( controller_index != iso_index )
+    
+    return found_controller;
+  }//bool walk_to_controlling_nuclide( size_t &iso_index, double &multiple ) const
   
   // The return value indicates whether the computation of the
   // residuals and/or jacobians was successful or not.
@@ -2696,6 +2784,23 @@ double RelEffSolution::relative_activity( const std::string &nuclide ) const
 }//double relative_activity( const std::string &nuclide ) const
 
 
+double RelEffSolution::relative_activity_uncertainty( const std::string &nuclide ) const
+{
+  for( const IsotopeRelativeActivity &i : m_rel_activities )
+  {
+    if( i.m_isotope == nuclide )
+    {
+      if( i.m_rel_activity_uncert < 0.0 )
+        throw runtime_error( "RelEffSolution::relative_activity_uncertainty: uncertainties not able to be computed." );
+      return i.m_rel_activity_uncert;
+    }
+  }
+
+  throw runtime_error( "RelEffSolution::relative_activity_uncertainty: no nuclide '" + nuclide + "'" );
+  return 0.0;
+}//double relative_activity_uncertainty( const std::string &nuclide ) const
+
+
 double RelEffSolution::relative_efficiency( const double energy ) const
 {
   if( m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -2773,6 +2878,7 @@ bool RelEffSolution::walk_to_controlling_nuclide( size_t &iso_index, double &mul
     }
   }//while( controller_index != iso_index )
 
+  
 #ifndef NDEBUG
   assert( fabs((multiple * m_rel_activities[iso_index].m_rel_activity_uncert) - m_rel_activities[original_iso_index].m_rel_activity_uncert) < 1e-6 );
 #endif
@@ -2997,7 +3103,9 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << m_rel_activities[nuc_index].m_rel_activity_uncert << endl;
     cout << "m_rel_activities[nuc_index].m_rel_activity = " << m_rel_activities[nuc_index].m_rel_activity << endl;
   }
-  assert( (norm_for_nuc * sqrt_cov_nuc_nuc) == m_rel_activities[nuc_index].m_rel_activity_uncert );
+  assert( (fabs((norm_for_nuc * sqrt_cov_nuc_nuc) - m_rel_activities[nuc_index].m_rel_activity_uncert)
+            < 1.0E-6*m_rel_activities[nuc_index].m_rel_activity_uncert)
+         || (fabs((norm_for_nuc * sqrt_cov_nuc_nuc) - m_rel_activities[nuc_index].m_rel_activity_uncert) < 1.0E-3) );
 
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
   for( size_t loop_index = 0; loop_index < m_rel_activities.size(); ++loop_index )
@@ -4427,7 +4535,7 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
     vector<shared_ptr<const PeakDef>> peaks;
     for( const auto &p : display_peaks )
       peaks.push_back( make_shared<PeakDef>(*p) );
-    spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum );
+    spec_options.peaks_json = PeakDef::peak_json( peaks, spectrum, Wt::WColor(0,51,255), 255 );
     
     
     vector<pair<const SpecUtils::Measurement *,D3SpectrumExport::D3SpectrumOptions> > meas_to_plot;
@@ -4927,15 +5035,17 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 
   // Okay - we've set our problem up
   ceres::Solver::Options ceres_options;
+  ceres_options.minimizer_type = ceres::TRUST_REGION; //ceres::LINE_SEARCH
+  ceres_options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT; //ceres::DOGLEG
   ceres_options.linear_solver_type = ceres::DENSE_QR;
-  ceres_options.logging_type = ceres::SILENT;
-  ceres_options.minimizer_progress_to_stdout = false; //true;
-  ceres_options.max_num_iterations = 150;
+  ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION; //ceres::SILENT;
+  ceres_options.minimizer_progress_to_stdout = true; //false; //true;
+  ceres_options.max_num_iterations = 1000;
   ceres_options.max_solver_time_in_seconds = 60.0;
   //ceres_options.min_trust_region_radius = 1e-10;
   
-  //ceres_options.use_nonmonotonic_steps = true;
-  //ceres_options.max_consecutive_nonmonotonic_steps = 5;
+  ceres_options.use_nonmonotonic_steps = true;
+  ceres_options.max_consecutive_nonmonotonic_steps = 5;
   // There are a lot more options that could be useful here!
 
   //parameter_tolerance = 1e-8;
@@ -5184,12 +5294,21 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 #endif
         else
         {
+          assert( is_constrolled );
           assert( fabs(parameters[i] - -1.0) < 1.0E-6 );
           assert( parameters.size() == solution.m_nonlin_covariance.size() );
 
-          const double par_uncert = std::sqrt( solution.m_nonlin_covariance[i][i] );
+          // Use the cost_functor's walk_to_controlling_nuclide function to find the ultimate
+          // controlling nuclide and calculate the uncertainty
+          size_t ultimate_controller_index = i;
+          double multiple = 1.0;
+          const bool found_controller = cost_functor->walk_to_controlling_nuclide( ultimate_controller_index, multiple );
+          assert( found_controller );
 
-          rel_act.m_rel_activity_uncert = cost_functor->m_rel_act_norms[i] * par_uncert;
+          const double par_uncert = std::sqrt( solution.m_nonlin_covariance[ultimate_controller_index][ultimate_controller_index] );
+          rel_act.m_rel_activity_uncert = multiple * cost_functor->m_rel_act_norms[ultimate_controller_index] * par_uncert;
+          assert( (fabs(rel_act.m_rel_activity - multiple*cost_functor->relative_activity( cost_functor->m_isotopes[ultimate_controller_index], parameters )) < 1.0E-5*rel_act.m_rel_activity)
+                  || (fabs(rel_act.m_rel_activity - multiple*cost_functor->relative_activity( cost_functor->m_isotopes[ultimate_controller_index], parameters )) < 1.0E-3) );
         }//if( input.act_ratio_constraints.empty() ) / else
       }//if( input.act_ratio_constraints.empty() ) / else
       

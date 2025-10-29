@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">দাবিত্যাগ</message>
+  <message id="ladw-mi-credits">ক্রেডিট</message>
+  <message id="ladw-mi-contact">যোগাযোগ</message>
+  <message id="ladw-mi-license">লাইসেন্স</message>
+  <message id="ladw-mi-data">ডেটা</message>
+  <message id="ladw-data-location-user">
+    ব্যবহারকারী ডেটা সংরক্ষিত আছে
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    InterSpec এর সাথে আসা ডেটা, যেমন পারমাণবিক ক্ষয় তথ্য, ক্রস-সেকশন এবং অনুরূপ সংরক্ষিত আছে
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">এক্সপ্লোরারে খুলুন</message>
+  <message id="ladw-show-data-location-macOS">ফাইন্ডারে খুলুন</message>
+  <message id="ladw-show-data-location-win">দেখান</message>
+  <message id="ladw-data-location-network">
+    আপনি আপনার ব্রাউজার থেকে InterSpec ব্যবহার করতে পারেন (আপনি InterSpec পুনরায় চালু করলে পোর্ট নম্বর পরিবর্তন হবে):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      আপনি {4} থেকে {3} সেশনে {2} ফাইল খুলতে প্রায় {1} সক্রিয়ভাবে InterSpec ব্যবহার করেছেন।
+  </message>
+  <message id="ladw-external-none">InterSpec আপনার ডিভাইসের বাইরে ডেটা পাঠায় বা গ্রহণ করে না।</message>
+  <message id="ladw-external-only-remote-rid">InterSpec আপনার ডিভাইসের বাইরে ডেটা পাঠায় বা গ্রহণ করে না, বহিরাগত RID বৈশিষ্ট্য ব্যবহার করা হলে ছাড়া।</message>
+  <message id="ladw-external-only-map">InterSpec আপনার ডিভাইসের বাইরে ডেটা পাঠায় বা গ্রহণ করে না, মানচিত্র বৈশিষ্ট্য ব্যবহার করা হলে ছাড়া।</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec আপনার ডিভাইসের বাইরে ডেটা পাঠায় বা গ্রহণ করে না, মানচিত্র বা বহিরাগত RID বৈশিষ্ট্য ব্যবহার করা হলে ছাড়া।</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpec স্থানীয়ভাবে পছন্দ, আপনার লোড করা স্পেকট্রা, সংরক্ষিত অ্যাপ স্টেট এবং ব্যবহার পরিসংখ্যান সংরক্ষণ করে।
+    এই তথ্য আপনার ডিভাইস ছেড়ে যায় না, এবং উপরে দেখানো ব্যবহারকারী ডেটা ডিরেক্টরি সরিয়ে মুছে ফেলা যেতে পারে।
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    যখন Google Maps বৈশিষ্ট্য ব্যবহার করা হয়, তখন প্রাসঙ্গিক অবস্থানের মানচিত্র পেতে স্পেকট্রাম ফাইল অবস্থান তথ্য Google-এ পাঠানো হয়।
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    যখন মানচিত্র টুল ব্যবহার করা হয়, তখন রেডিয়েশন পরিমাপের GPS স্থানাঙ্ককে ঘিরে থাকা এলাকার জন্য <a href="https://arcgis.com">https://arcgis.com</a> থেকে মানচিত্র টাইল অনুরোধ করা হয়, কিন্তু মানচিত্রে রেডিয়েশন ডেটার চিহ্নিতকরণ/প্রদর্শন আপনার ডিভাইসে করা হয়।
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    বহিরাগত RID টুলের জন্য, অনুগ্রহ করে গোপনীয়তা নীতি পরামর্শ করুন
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    বহিরাগত RID টুলের জন্য, অনুগ্রহ করে আপনার প্রবেশ করা URL এর জন্য গোপনীয়তা নীতি পরামর্শ করুন।
+  </message>
+</messages>

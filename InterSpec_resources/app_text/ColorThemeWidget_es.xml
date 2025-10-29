@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+  
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">Nombre del Tema</message>
+  <message id="ctwidget-description">Descripción</message>
+  <message id="ctwidget-title-placeholder">Título no asignado</message>
+  <message id="ctwidget-desc-placeholder">Desc no asignada</message>
+  <message id="ctwidget-empty">(vacío)</message>
+  
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">Área Sin Gráfico</message>
+  <message id="ctwidget-backdrop-theme">Tema de Fondo</message>
+  <message id="ctwidget-backdrop-desc">Tema para toda área sin gráfico</message>
+  
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">Colores del Gráfico</message>
+  
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">Espec. Primer Plano</message>
+  <message id="ctwidget-spec-foreground-desc">Color de línea para el espectro de primer plano</message>
+  <message id="ctwidget-spec-background">Espec. Fondo</message>
+  <message id="ctwidget-spec-background-desc">Color de línea para el espectro de fondo</message>
+  <message id="ctwidget-spec-secondary">Espec. Secundario</message>
+  <message id="ctwidget-spec-secondary-desc">Color de línea para el espectro secundario</message>
+  
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">Picos Usan Color Línea Referencia</message>
+  <message id="ctwidget-peaks-use-ref-desc">Determina si picos recién ajustados toman el color de la línea de referencia para ese pico.</message>
+  <message id="ctwidget-default-peak-color">Color Pico Predeterminado</message>
+  <message id="ctwidget-default-peak-desc">Color usado para picos que no tienen color asignado</message>
+  
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">Eje Gráfico Espectro</message>
+  <message id="ctwidget-spectrum-axis-desc">Color de línea para eje X e Y del espectro</message>
+  <message id="ctwidget-spectrum-text">Texto Gráfico Espectro</message>
+  <message id="ctwidget-spectrum-text-desc">Color texto gráfico espectro (etiquetas eje y y x)</message>
+  <message id="ctwidget-spectrum-area">Área Espectro</message>
+  <message id="ctwidget-spectrum-area-desc">Color de fondo para gráfico de espectro</message>
+  <message id="ctwidget-spectrum-margin">Fondo Gráfico Espectro</message>
+  <message id="ctwidget-spectrum-margin-desc">Color para márgenes del gráfico de espectro</message>
+  <message id="ctwidget-same-as-spectrum">Igual que área espectro</message>
+  
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">Conteos Gamma Tiempo</message>
+  <message id="ctwidget-time-gamma-desc">Color de línea para conteos gamma en gráfico tiempo</message>
+  <message id="ctwidget-time-neutron">Conteos Neutrón Tiempo</message>
+  <message id="ctwidget-time-neutron-desc">Color de línea para conteos neutrón en gráfico tiempo</message>
+  <message id="ctwidget-time-axis">Eje Gráfico Tiempo</message>
+  <message id="ctwidget-time-axis-desc">Color de línea para eje X e Y del gráfico tiempo</message>
+  <message id="ctwidget-time-background">Fondo Gráfico Tiempo</message>
+  <message id="ctwidget-time-background-desc">Color de fondo para gráfico de tiempo</message>
+  <message id="ctwidget-time-margins">Márgenes Gráfico Tiempo</message>
+  <message id="ctwidget-time-margins-desc">Color para márgenes del gráfico de espectro</message>
+  <message id="ctwidget-same-as-background">Igual que fondo</message>
+  <message id="ctwidget-time-text">Texto Gráfico Tiempo</message>
+  <message id="ctwidget-time-text-desc">Color texto para gráfico tiempo (etiquetas eje x e y)</message>
+  
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">Líneas Indicador Ocup.</message>
+  <message id="ctwidget-occ-lines-desc">Líneas que indican inicio y fin de ocupación (datos portal) o período de interés (datos modo búsqueda)</message>
+  <message id="ctwidget-time-fore-highlight">Resaltado primer plano tiempo</message>
+  <message id="ctwidget-time-fore-highlight-desc">Color usado para indicar en gráfico tiempo, qué segmentos se suman para espectro primer plano.</message>
+  <message id="ctwidget-time-back-highlight">Resaltado fondo tiempo</message>
+  <message id="ctwidget-time-back-highlight-desc">Color usado para indicar en gráfico tiempo, qué segmentos se suman para espectro fondo.</message>
+  <message id="ctwidget-time-sec-highlight">Resaltado secundario tiempo</message>
+  <message id="ctwidget-time-sec-highlight-desc">Color usado para indicar en gráfico tiempo, qué segmentos se suman para espectro secundario.</message>
+  
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">Colores Líneas Referencia</message>
+  <message id="ctwidget-ref-line-colors-desc">Colores ordenados para líneas de referencia</message>
+  <message id="ctwidget-specific-ref-colors">Colores Líneas Ref. Fuente Específica</message>
+  <message id="ctwidget-specific-ref-desc">Colores para líneas referencia de fuentes dadas</message>
+  <message id="ctwidget-dynamic-ref-lines">Líneas Referencia Dinámicas</message>
+  <message id="ctwidget-dynamic-ref-desc">Colores a usar, basado en tipo de nucleidos</message>
+  
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">Médico</message>
+  <message id="ctwidget-industrial">Industrial</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">Común</message>
+  <message id="ctwidget-other">Otro</message>
+  
+  <!-- Other options -->
+  <message id="ctwidget-other-options">Otras Opciones</message>
+  <message id="ctwidget-peak-label-size">Tamaño etiqueta pico</message>
+  <message id="ctwidget-peak-label-size-desc">Especifica tamaño fuente etiquetas pico</message>
+  <message id="ctwidget-peak-label-angle">Ángulo etiqueta pico</message>
+  <message id="ctwidget-peak-label-angle-desc">Rotación, en grados, etiquetas pico</message>
+  <message id="ctwidget-log-y-min">Mínimo Log-Y</message>
+  <message id="ctwidget-log-y-min-desc">Valor mínimo mostrado en eje y logarítmico, cuando hay canal con conteos cero o negativos en rango x mostrado.</message>
+</messages>

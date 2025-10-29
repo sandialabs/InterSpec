@@ -99,6 +99,8 @@ namespace AnalystChecks
   struct GetUserPeakOptions {
     SpecUtils::SpectrumType specType;
     std::optional<std::string> userSession;
+    std::optional<double> lowerEnergy;
+    std::optional<double> upperEnergy;
   };
   
   struct GetUserPeakStatus {
@@ -186,6 +188,83 @@ namespace AnalystChecks
   };//struct SpectrumCountsInEnergyRange
 
   SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy, InterSpec *interspec );
+
+  /** Enum specifying the action to perform when editing a peak. */
+  enum class EditPeakAction
+  {
+    SetEnergy,
+    SetFwhm,
+    SetAmplitude,
+    SetEnergyUncertainty,
+    SetFwhmUncertainty,
+    SetAmplitudeUncertainty,
+    SetRoiLower,
+    SetRoiUpper,
+    SetSkewType,
+    SetContinuumType,
+    SetSource,
+    SetColor,
+    SetUserLabel,
+    SetUseForEnergyCalibration,
+    SetUseForShieldingSourceFit,
+    SetUseForManualRelEff,
+    DeletePeak,
+    SplitFromRoi,
+    MergeWithLeft,
+    MergeWithRight
+  };//enum class EditPeakAction
+
+  /** Converts EditPeakAction enum to string representation.
+
+   @param action The edit action to convert
+   @return String representation of the action
+   */
+  const char* to_string( EditPeakAction action );
+
+  /** Converts string to EditPeakAction enum.
+
+   @param str String representation of the action
+   @return The corresponding EditPeakAction enum value
+   @throws std::runtime_error if string does not match a valid action
+   */
+  EditPeakAction edit_peak_action_from_string( const std::string &str );
+
+  /** Options for editing a peak at a specified energy. */
+  struct EditAnalysisPeakOptions
+  {
+    double energy;
+    EditPeakAction editAction;
+    SpecUtils::SpectrumType specType;
+    std::optional<double> doubleValue;
+    std::optional<std::string> stringValue;
+    std::optional<bool> boolValue;
+    std::optional<double> uncertainty;
+    std::optional<std::string> userSession;
+  };//struct EditAnalysisPeakOptions
+
+  /** Results of peak edit operation. */
+  struct EditAnalysisPeakStatus
+  {
+    std::string userSession;
+    bool success;
+    std::string message;
+    std::optional<std::shared_ptr<const PeakDef>> modifiedPeak;
+    std::vector<std::shared_ptr<const PeakDef>> peaksInRoi;
+  };//struct EditAnalysisPeakStatus
+
+  /** Edit or delete a peak at the specified energy.
+
+   This function allows modifying peak properties (energy, FWHM, amplitude),
+   ROI bounds, continuum/skew types, assigning sources, setting colors/labels,
+   deleting peaks, or splitting/merging ROIs.
+
+   @param options Specifies the energy, action, and values for the edit
+   @param interspec Pointer to the InterSpec session containing the peak
+   @return EditAnalysisPeakStatus containing success/failure and modified peak info
+   @throws std::runtime_error if InterSpec is null or other errors occur
+   */
+  InterSpec_API EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec );
+
 } // namespace AnalystChecks
 
 #endif // AnalystChecks_h 

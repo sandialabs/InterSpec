@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">使用在不同位置的两次测量来找到看不见的源的距离。例如，当源在墙后时。</message>
+  <message id="oor2c-near-meas-label">近处测量强度：</message>
+  <message id="oor2c-far-meas-label">远处测量强度：</message>
+  <message id="oor2c-background-intensity">本底强度（可选）：</message>
+  <message id="oor2c-dist-label">测量之间的距离：</message>
+  <message id="oor2c-power-law-label">幂律</message>
+  <message id="oor2c-low-scatter">低散射或使用峰面积，1/r²</message>
+  <message id="oor2c-mid-scatter">中散射剂量率，1/r^1.85</message>
+  <message id="oor2c-high-scatter">高散射剂量率，1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">近处测量到源的距离：</message>
+  <message id="oor2c-bottom-message">近处、本底和远处
+    测量使用相同的单位。结果与
+    测量之间距离使用的单位相同。
+  </message>
+  <message id="oor2c-qr-state-title">1/r²计算器状态</message>
+  <message id="oor2c-qr-state-txt">1/r<sup>2</sup>计算器工具的当前状态。</message>
+  <message id="oor2c-invalid-near">近处测量无效</message>
+  <message id="oor2c-invalid-far">远处测量无效</message>
+  <message id="oor2c-invalid-dist">距离无效</message>
+  <message id="oor2c-far-larger-than-near">远处测量必须小于近处测量</message>
+  <message id="oor2c-back-larger-than-far">本底必须小于远处测量</message>
+  <message id="oor2c-near-is-zero">近处测量必须非零</message>
+  <message id="oor2c-far-is-zero">远处测量必须非零</message>
+  <message id="oor2c-dist-is-zero">测量之间的距离必须非零</message>
+</messages>
+

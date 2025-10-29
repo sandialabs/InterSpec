@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">कोई सापेक्ष सक्रियता समाधान उपलब्ध नहीं</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">वर्तमान में दिखाई जा रही स्पेक्ट्रम फ़ाइल प्राप्त करने में त्रुटि: {1}</message>
+
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">विशिष्ट सक्रियता</message>
+  <message id="mrend-X(a,n)">{1} पर अल्फा न्यूट्रॉन बना रहे हैं</message>
+  <message id="mrend-X(n,a)">{1} पर न्यूट्रॉन अल्फा बना रहे हैं</message>
+  <message id="mrend-X(a,p)">{1} पर अल्फा प्रोटॉन बना रहे हैं</message>
+  <message id="mrend-X(n,g)">{1} पर धीमे न्यूट्रॉन कैप्चर हो रहे हैं</message>
+  <message id="mrend-X(n,n)">{1} से तेज़ न्यूट्रॉन अप्रत्यास्थ प्रकीर्णन</message>
+  <message id="mrend-X(a,a)">{1} से अप्रत्यास्थ अल्फा प्रकीर्णन</message>
+  <message id="mrend-annih">विनाश गामा</message>
+  <message id="mrend-unknown-rxctn">अज्ञात प्रतिक्रिया</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">माप के दौरान क्षय</message>
+  <message id="mrend-tt-decay-during-meas">जब चेक किया जाता है, तो माप के दौरान न्यूक्लाइड क्षय का हिसाब लगाया जाएगा, उद्धृत सापेक्ष सक्रियता माप की शुरुआत में सक्रियता होगी।</message>
+
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">समीकरण रूप</message>
+  <message id="ramg-options-label">विकल्प</message>
+  <message id="ramg-tt-eqn-form">
+    सापेक्ष दक्षता वक्र के लिए उपयोग करने के लिए कार्यात्मक रूप।
+    <br />
+    विकल्प हैं:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM Physical:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [Det. Eff.]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">समीकरण क्रम</message>
+  <message id="ramg-tt-eqn-order">क्रम (कितने ऊर्जा-निर्भर पद) सापेक्ष दक्षता समीकरण का उपयोग करना है।</message>
+  <message id="ramg-phys-model-use-hoerl">सुधार फ़ंक्शन उपयोग करें</message>
+  <message id="ramg-tt-phys-model-use-hoerl">जब चेक किया जाता है, तो संशोधित Hoerl सुधार कारक (यानी E<sup>b</sup> * C<sup>1/E</sup>) का उपयोग भौतिक मॉडल और/या डिटेक्टर दक्षता और देखे गए डेटा के बीच अंतर के लिए किया जाता है।</message>
+  <message id="ramg-yield-info-label">उपज जानकारी</message>
+  <message id="ramg-tt-data-src">गामा शाखा अनुपात के लिए परमाणु डेटा स्रोत।</message>
+  <message id="ramg-match-tol-label">मिलान सहिष्णुता</message>
+  <message id="ramg-tt-match-tol">
+    शिखर औसत से FWHM की संख्या, शिखर क्षेत्र में योगदान करने वाले स्रोत गामा को शामिल करने के लिए।
+    <br />
+    कुछ न्यूक्लाइडों के कुछ फोटोपीक के लिए ऊर्जा में करीब कई गामा एक
+    पहचाने गए शिखर क्षेत्र बनाने में योगदान कर सकते हैं। यह मिलान सहिष्णुता निर्दिष्ट करती है कि देखे गए शिखर औसत से
+    कितने FWHM स्रोत गामा को शाखा अनुपात निर्धारित करने के लिए जोड़ा जाना चाहिए।
+    <br />
+    शून्य का मान निर्दिष्ट करने से केवल शिखर को असाइन की गई गामा ऊर्जा का
+    उपयोग किया जाएगा, भले ही बहुत निकट अन्य गामा हों।
+  </message>
+  <message id="ramg-add-uncert-label">अतिरिक्त अनिश्चितता</message>
+  <message id="ramg-tt-add-uncert">
+    प्रत्येक फिट फोटोपीक के लिए सापेक्ष दक्षता रेखा में जोड़ने के लिए एक अतिरिक्त अनिश्चितता।
+    <br />
+    एक या कुछ उच्च सांख्यिकी शिखरों के लिए पहचान की दक्षता में छोटे विचलन दक्षता वक्र को अन्य बिंदुओं से
+    स्पष्ट रूप से विचलित कर सकते हैं यदि केवल सांख्यिकीय अनिश्चितताओं का उपयोग किया जाता है; जब एक अतिरिक्त
+    अनिश्चितता जोड़ी जाती है तो सापेक्ष दक्षता सभी डेटा बिंदुओं से दृश्यमान रूप से गुजरने का बेहतर काम करेगी,
+    और सीमित परीक्षण से अधिक सटीक परिणाम उत्पन्न करेगी। आप इसे प्रत्येक पहचाने गए फोटोपीक में एक व्यवस्थित
+    अनिश्चितता जोड़ने के रूप में सोच सकते हैं, जो शिखरों के बीच असंबद्ध है। सीमित परीक्षण से उपयोग किया गया
+    मूल्य बहुत महत्वपूर्ण नहीं है, जब तक कि कुछ हो। आप एक अभारित फिट का उपयोग करना भी चुन सकते हैं,
+    जहां प्रत्येक शिखर समान रूप से फिट में योगदान देगा, इसकी सांख्यिकीय अनिश्चितता की परवाह किए बिना।
+  </message>
+  <message id="ramg-unweighted-label">अभारित</message>
+  <message id="ramg-stat-only-label">केवल सांख्यिकीय</message>
+  <message id="ramg-back-sub-cb">पृष्ठभूमि घटाएं</message>
+  <message id="ramg-html-export-label">HTML रिपोर्ट</message>
+  <message id="ramg-nucs-label">न्यूक्लाइड</message>
+  <message id="ramg-nucs-shield-label">परिरक्षण/न्यूक्लाइड</message>
+  <message id="ramg-peaks-to-use-label">उपयोग के लिए शिखर</message>
+  <message id="ramg-results-label">परिणाम</message>
+  <message id="ramg-mi-results">तालिका</message>
+  <message id="ramg-mi-chart">ग्राफ</message>
+  <message id="ramg-back-sub-neg">पृष्ठभूमि घटाव के बाद, {1} keV पर शिखर में नकारात्मक गणना थी इसलिए उपयोग नहीं किया गया।</message>
+  <message id="ramg-warn-reaction">प्रतिक्रिया फोटोपीक का उपयोग संभवतः मान्य नहीं है, जब तक कि गामा एक ही वस्तु से समरूप रूप से उत्सर्जित न हों।</message>
+  <message id="ramg-warn-no-bkg-sub-used">पृष्ठभूमि शिखरों की घटाव का चयन किया गया था, लेकिन चयनित अग्रभूमि शिखरों से कोई पृष्ठभूमि शिखर मेल नहीं खाए।</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">सापेक्ष दक्षता वक्र x-ray अवशोषण किनारों के लिए जिम्मेदार नहीं है - U या Pu समस्याओं के लिए 120 keV से कम शिखरों का उपयोग अनुशंसित नहीं है।</message>
+  <message id="ramg-warn-rel-eff-other-xray">सापेक्ष दक्षता वक्र किसी भी संभावित परिरक्षण के x-ray अवशोषण किनारों के लिए जिम्मेदार नहीं है - कृपया सुनिश्चित करें कि उपयोग किए गए शिखर किसी भी परिरक्षण के अवशोषण किनारों के पार नहीं फैले हैं।</message>
+  <message id="ramg-warn-match-outside-tol">{2} keV के असाइन किए गए गामा{1} {3} के शिखर{1} के साथ मिलान सहिष्णुता से बाहर हैं; ध्यान दें कि असाइन की गई गामा ऊर्जा का उपयोग निकट गामा के लिए क्षतिपूर्ति करने के लिए किया जाता है, न कि फिट शिखर औसत का।</message>
+  <message id="ramg-warn-failed-match">किसी भी शिखर से न्यूक्लाइड{1} को मिलाने में विफल: {2}</message>
+  <message id="ramg-err-setting-up-calc">सापेक्ष दक्षता गणना सेट करने में त्रुटि: {1}</message>
+  <message id="ramg-err-performing-calc">सापेक्ष दक्षता गणना करने में त्रुटि: {1}</message>
+  <message id="ramg-no-results-available">कोई परिणाम उपलब्ध नहीं।</message>
+  <message id="ramg-result-error-msg">त्रुटि: {1}</message>
+  <message id="ramg-result-warn-msg">चेतावनी: {1}</message>
+  <message id="ramg-and-there-were">और थे</message>
+  <message id="ramg-dof">DOF</message> <!-- Degrees of freedom -->
+  <message id="ramg-fit-unweighted-txt">फिट अभारित था; अनिश्चितताएं समझ में नहीं आ सकती हैं।</message>
+  <message id="ramg-fit-stat-only">अनिश्चितताएं केवल सांख्यिकीय हैं।</message>
+  <message id="ramg-fit-uncert-increased">"अतिरिक्त अनिश्चितता" द्वारा अनिश्चितताएं कृत्रिम रूप से बढ़ाई गईं।</message>
+  <message id="ramg-consider-add-uncert-u">आप यूरेनियम समस्याओं के लिए "अतिरिक्त अनिश्चितता" जोड़ने पर विचार करना चाह सकते हैं।</message>
+  <message id="ramg-you-using-add-uncert-u">आप "अतिरिक्त अनिश्चितता" जोड़ रहे हैं - गणना की गई अनिश्चितताओं की सावधानी से व्याख्या करें।</message>
+  <message id="ramg-you-using-add-uncert-non-u">आप वर्तमान में "अतिरिक्त अनिश्चितता" जोड़ रहे हैं, जो गणना की गई अनिश्चितताओं को सही नहीं होने का कारण बनेगा।</message>
+  <message id="ramg-chart-info-title">χ²/dof = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pval={1})</message>
+  <message id="ramg-1-pval"> (1-pval={1})</message>
+</messages>

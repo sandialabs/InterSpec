@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">Менеджер спектров</message>
+  <message id="smm-load-spec-from">Загрузить спектр из: </message>
+  <message id="smm-tt-upload-file">Импорт спектра из файла</message>
+
+  <message id="smm-err-zip">Ошибка извлечения файла из zip</message>
+  <message id="smm-zip-sel-file-no-name">
+    Загруженный файл является ZIP файлом.
+    <br />
+    {2}
+    Выберите, какой файл в нём вы хотите открыть.
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b> является ZIP файлом.
+    <br />
+    {2}
+    Выберите, какой файл в нём вы хотите открыть.
+  </message>
+  <message id="smm-zip-window-title">Содержимое загруженного ZIP файла</message>
+  <message id="smm-zip-filename-hdr">Имя файла</message>
+  <message id="smm-zip-kilobyte-hdr">кб</message>
+  <message id="smm-zip-display-btn">Отобразить</message>
+  <message id="smm-empty-file">Файл вероятно был пустой - не файл спектра.</message>
+  <message id="smm-failed-reading-nonspec-file">Не удалось прочитать файл, не являющийся спектром.</message>
+  <message id="smm-not-spec-file">Не файл спектра</message>
+  <message id="smm-image-file">Выбран файл изображения</message>
+  <message id="smm-icd2">Это похоже на файл N42 ICD2, который содержит результаты анализа,
+    а не необработанные спектры.
+    <br />
+    Если вы считаете, что это легитимный файл спектра, пожалуйста, отправьте его на 
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>
+    для поддержки этого типа файлов.
+  </message>
+  <message id="smm-invalid-zip">Этот файл кажется недействительным ZIP файлом (или xlsx, pptx, 
+    <br />
+    docx, odp, jar, apk и т.д.), извините, я не могу его открыть :(
+  </message>
+  <message id="smm-unsupported-archive">Этот файл похож на архивный файл, пока не поддерживается InterSpec.
+    Пожалуйста, свяжитесь с 
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    если хотите добавить поддержку этого типа архива.
+  </message>
+  <message id="smm-unsupported-document">Этот файл похож на документ и не поддерживается InterSpec.</message>
+  <message id="smm-invalid-peak-csv">Загруженный файл выглядел как Peak CSV файл, но был недействительным.</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      Этот файл похож на функцию отклика детектора.
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      Имя: {1}
+    </p>
+   <p>Хотите использовать этот DRF?</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    Сохранён '{1}' для последующего использования и будет доступен в
+    разделе "<em>Отн. эфф.</em>" инструмента "<em>Выбор функции отклика детектора</em>".
+  </message>
+  <message id="smm-err-saving-drf">Ошибка сохранения DRF файла для последующего использования.</message>
+  <message id="smm-file-is-drf">Этот файл похож на функцию отклика детектора.</message>
+  <message id="smm-file-is-multi-drf">Этот файл содержит несколько функций отклика детектора.</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>Нет текущего отображаемого основного спектра - пропуск CALp файла.</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      Содержимое этого CALp файла было
+      <br />
+      нечитаемым или несовместимым с данными
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">Этот файл, кажется, содержит энергетическую калибровку.</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>Имеются калибровки для {1} детекторов</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    Предупреждение: Этот CALp файл содержит одну калибровку; она будет<br />
+    применена к основной отображаемой энергетической калибровке, и<br />
+    относительное изменение будет применено к энергетическим<br />
+    калибровкам других детекторов, что вероятно то, что вам нужно.
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    Предупреждение: Эта энергетическая калибровка может быть несовместима<br />
+    со структурой текущих данных.
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">Применить только к отображаемым образцам</message>
+  <message id="smm-CALp-cb-apply-to-fore">Применить к основному</message>
+  <message id="smm-CALp-cb-apply-to-back">Применить к фону</message>
+  <message id="smm-CALp-cb-apply-to-second">Применить к вторичному</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">Хотите его использовать?</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      Примечание: текущая энергетическая калибровка имеет энергии нижних каналов;<br />
+      возможно, вы захотите линеаризовать спектр перед применением этой<br />
+      энергетической калибровки.
+    </p>
+  </message>
+
+  <message id="smm-CALp-err-applying-single">Произошла ошибка при применении калибровки:
+    <br />
+    {1}
+    <br />
+    <br />
+    Калибровка была применена к основному спектру.
+  </message>
+  <message id="smm-CALp-err-applying-mult">Произошла ошибка при применении калибровки:
+    <br />
+    {1}
+    <br />
+    <br />
+    Калибровка была применена к основному и фоновому спектрам.
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc">Ошибка загрузки XML конфигурационного файла <em>Изотопики по нуклидам</em>: {1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">Ошибка разбора конфигурационного XML: {1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">Недействительный XML конфигурационный файл <em>Изотопики по нуклидам</em>.</message>
+  <message id="smm-ecc-curve">DRF кривой калибровки эффективности ISOCS</message>
+  <message id="smm-ecc-how-to-interpret">Как интерпретировать</message>
+  <message id="smm-ecc-far-field">DRF дальнего поля</message>
+  <message id="smm-ecc-fix-geom-total-act">Фиксированная геометрия - общая активность</message>
+  <message id="smm-ecc-fix-geom-act-cm2">Фиксированная геометрия - активность на см2</message>
+  <message id="smm-ecc-fix-geom-act-m2">Фиксированная геометрия - активность на м2</message>
+  <message id="smm-ecc-fix-geom-act-gram">Фиксированная геометрия - активность на грамм</message>
+  <message id="smm-ecc-det-diam">Диаметр детектора.</message>
+  <message id="smm-ecc-dist">Расстояние.</message>
+  <message id="smm-ecc-use-drf">Использовать DRF</message>
+  <message id="smm-ecc-error">Ошибка создания DRF из ECC: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">XML активности/экранирования</message>
+  <message id="smm-act-shield-use">Использовать эту настройку фитинга активности/экранирования?</message>
+  <message id="smm-err-act-shield">Извините, произошла ошибка при загрузке модели фитинга активности/экранирования: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">Файл библиотеки характеризационного источника</message>
+  <message id="smm-source-source-use">
+    Это будет использовать этот Source.lib файл в инструменте создания отклика детектора.
+    <br />
+    Хотите автоматически заполнить источники первым совпадающим нуклидом в библиотеке?
+  </message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">Возможно, истекло время загрузки файла - 120 секунд без получения данных файла.</message>
+  <message id="smm-finishing-upload">Завершение загрузки</message>
+  <message id="smm-finishing-copying">Завершение копирования файла</message>
+  <message id="smm-finish-up-txt">из {1} {2} файла - может занять минуту.</message> <!-- ex. "of 112.2 kb foreground file - may take a minute."-->
+  <message id="smm-window-title-parsing">Разбор файла</message>
+  <message id="smm-window-msg-parsing">Это может занять секунду.</message>
+  <message id="smm-no-file-disp">Ошибка, измерение {1} не отображается.</message>
+  <message id="smm-no-spec-disp">Извините, {1} не похож на отображение спектра.</message>
+  <message id="smm-err-parse-spec-title">Не удалось разобрать файл</message>
+  <message id="smm-err-parse-spec">
+    <p>Извините, не удалось разобрать файл {1}:</p>
+  <p>Ошибка: <em>{2}</em></p>
+  <p>Если вы думаете, что это действительный файл спектра, пожалуйста, отправьте его на 
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a>, и
+   мы попробуем исправить эту проблему.</p>
+  </message>
+  <message id="smm-failed-combine">Не удалось объединить файлы: {1}</message>
+  <message id="smm-failed-sum">Не удалось просуммировать спектры: {1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">Нет гамма-измерений в URL/QR коде</message>
+  <message id="smm-qr-no-gamma">Нет гамма-измерений в URL/QR коде</message>
+  <message id="smm-qr-name-placeholder">Из QR-кода/URL</message>
+  <message id="smm-qr-err-decode">Ошибка декодирования URL/QR кода спектра: {1}</message>
+  <message id="smm-qr-couldnt-encode">
+    Спектр не может быть закодирован в QR код.
+    <br />
+    Вероятно, из-за необходимости более 9 QR кодов.
+  </message>
+  <message id="smm-qr-encode-fail">Не удалось закодировать спектр в QR код: {1} </message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">Какие виртуальные детекторы загрузить?</message>
+  <message id="smm-vd-load-msg">
+    <div>Этот файл содержал несколько "виртуальных детекторов", которые</div>
+    <div>могут быть суммами нескольких физических детекторов или нет.</div>
+    <div>Если вы загрузите все, см. меню <b>Вид</b>→<b>Детекторы</b>, чтобы</div>
+    <div>отобразить подмножество.</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      Какие данные детекторов вы хотите загрузить?
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>Имеется {1} VD, выбираются только "Все" или первые 5.</div>
+  </message>
+  <message id="smm-vd-all-btn">Все</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">Использовать производные данные?</message>
+  <message id="smm-derived-window-txt">
+    <div>Этот файл содержал спектры "производных данных", которые</div>
+    <div>обычно используются системой обнаружения для анализа.</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      Какие данные вы хотите загрузить?
+    </div>
+  </message>
+  <message id="smm-derived-all">Все данные</message>
+  <message id="smm-derived-raw">Сырые данные</message>
+  <message id="smm-derived-derived">Производные данные</message>
+  <message id="smm-multiple-binnings-window-title">Выберите энергетическое биннинг</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">В файле спектра найдено несколько энергетических биннингов.</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">Пожалуйста, выберите, какой вы хотите</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">Оставить все</message>
+  <message id="smm-warn-has-intrinsic">Загруженный файл содержал спектр внутренней активности, но в настоящее время показывает другой спектр в файле.</message>
+  <message id="smm-warn-upload-mult-spec">Загруженный файл содержал {1} образцов<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">Показывается первый основной образец.<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">Показывается первый образец.<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">Показывается образец {1}.<br /></message>
+  <message id="smm-warn-upload-use-spec-manager">Используйте вкладку <b>Файлы спектров</b> или <b>Файловый менеджер</b> для выбора других записей.</message>
+  <message id="smm-warn-upload-use-file-manager">Используйте <b>Файловый менеджер</b> для выбора других.</message>
+
+  <message id="smm-multi-cal-present">Загруженный файл содержал {1} образцов калибровки или производных данных
+    <br />
+    {2}
+    не будет отображён.
+    <br />
+    Используйте вкладку <b>Файлы спектров</b> или <b>Файловый менеджер</b> для изменения этого.
+  </message>
+  <message id="smm-multi-cal-it">Он</message>
+  <message id="smm-multi-cal-they">Они</message>
+  <message id="smm-multi-spectra-using-back">Файл имеет несколько спектров, поэтому отображён только фоновый спектр.</message>
+  <message id="smm-multi-spectra-using-first">Загруженный файл содержал {1} образцов, поэтому
+    <br />
+    отображается первый.
+    <br />
+    Используйте <b>Файловый менеджер</b> для изменения этого.
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">Выбранный спектр: </message>
+  <message id="smm-disp-as-btn">Отобразить как</message>
+  <message id="smm-to-new-file">В новый файл</message>
+  <message id="smm-tt-to-new-file">Создаёт новый файл спектра в памяти из текущего выбора.</message>
+  <message id="smm-as-new-file">Как новый файл</message>
+  <message id="smm-tt-as-new-file">Создаёт новый файл спектра в памяти из текущего выбора.</message>
+  <message id="smm-sum-spectra">Суммировать спектры</message>
+  <message id="smm-tt-sum-spectra">Создаёт новый файл спектра в памяти из текущего выбора.</message>
+  <message id="smm-export-btn">Экспорт...</message>
+  <message id="smm-unload-btn">Выгрузить</message>
+  <message id="smm-unassign-label">Отменить назначение: </message>
+
+
+  <message id="smm-prev-states-window-title">Ранее сохранённые состояния</message>
+  <message id="smm-err-prev-state-unexpected">Неожиданная проблема отображения доступных сохранённых состояний: {1}</message>
+  <message id="smm-tab-saved-states">Сохранённые состояния</message>
+  <message id="smm-tab-auto-saved">Автосохранённые спектры</message>
+  <message id="smm-auto-check-prev-cb">Автоматически проверять пред. работу.</message>
+  <message id="smm-cant-save">
+    Этот файл спектра слишком большой для сохранения во внутренней базе данных.<br />
+    В результате ваша работа не будет автосохранена во внутренней базе данных, и вы не сможете продолжить с того места, где остановились, при следующей загрузке файла.
+    <p>Размер этого файла {1}, в то время как максимальный размер для сохранения {2}.</p>
+  </message>
+  <message id="smm-max-file-to-large">Попытка загрузить слишком большой файл; максимальный размер {1} кб, вы пытались загрузить {2} кб.</message>
+  <message id="smm-must-specify-name">Вы должны указать имя</message>
+  <message id="smm-save-spectype-as-window-title">Сохранить спектр {1} как</message>
+  <message id="smm-save-spectype-name-empty-txt">(Имя для сохранения)</message>
+  <message id="smm-save-spectype-desc-empty-txt">(Необязательное описание)</message>
+  <message id="smm-save-state-toast">Сохранено состояние {1}</message>
+  <message id="smm-save-spec-version-window-title">Сохранить версию спектра</message>
+  <message id="smm-save-state">Сохранить состояние</message>
+  <message id="smm-create-new-tag-toast">Создан новый тег: '{1}'.</message>
+
+  <message id="smm-next-qr">Следующий QR код</message>
+  <message id="smm-qr-desc">{1} для спектра {2}.</message>
+  <message id="smm-qr-title">Файл спектра {1}</message>
+  <message id="smm-qr-sequence-single">QR код</message>
+  <message id="smm-qr-sequence-multi">QR код {1} из {2}</message>
+  
+  
+  <message id="smm-changed-background">
+    Фоновый спектр также был обновлён на тот, который включён в вновь загруженный файл.
+  </message>
+  <message id="smm-didnt-changed-background">
+    Вновь загруженный файл основного спектра содержал фоновый спектр
+    - но отображаемый фон <b>НЕ БЫЛ</b> обновлён.
+  </message>
+  
+  <message id="fud-dialog-title">Выберите файл для открытия</message>
+  <message id="fud-open-foreground-only-msg">{1} ниже, чтобы выбрать файл основного спектра для открытия.</message>
+  <message id="fud-open-any-type-msg">Выберите, как вы хотите открыть файл спектра, затем {1} ниже, чтобы найти файл.</message>
+  <message id="fud-btn-grp-title">Открыть файл как:</message>
+  <message id="fud-drg-n-drop-msg">
+    Вы также можете перетащить файл прямо в окно <br />
+    приложения как более быструю альтернативу.<br />
+    <br />Для более продвинутого открытия файлов и<br />
+    манипуляций используйте <b>Файловый менеджер</b>
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      Вы также можете открывать файлы спектров из приложений электронной почты или файлов.
+    </span>
+  </message>
+  
+  <message id="musd-dialog-title">Многочастный QR/URL спектр</message>
+  <message id="musd-err-diff-spec">Полученный URL/QR-код был из другого спектра, чем предыдущий URL/QR-код</message>
+  <message id="musd-err-duplicate-url">Уже получен этот URL/QR-код</message>
+  <message id="musd-from-qr-file-name">Из QR-кода/URL</message>
+  <message id="musd-err-decoding-url">Ошибка декодирования URL: {1}</message>
+  <message id="musd-received-urls-list">Получены URL {1} из {2}.<p>Ожидание дополнительных URL/QR-кодов</p></message>
+
+
+  <message id="uid-qr-code-pic">Изображение QR-кода</message>
+  <message id="uid-no-qr-found">QR-коды не найдены ⓘ</message>
+  <message id="uid-no-qr-found-title">QR-код не найден</message>
+  <message id="uid-no-qr-content">
+    <p>
+      Если в изображении есть QR-код, вы можете попробовать обрезать фото или отрегулировать уровень цвета.
+      <br/>
+      Использование стороннего приложения/веб-сайта или встроенных возможностей iOS или Android также часто работает лучше.
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">Ошибка поиска QR-кода</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      Значение ошибки: {1}
+    </div>
+    <p>
+      Сообщение об ошибке: {2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">{1} из QR-кодов имели недействительные URI.</message>
+  <message id="uid-qr-didnt-have-uri">QR-код не содержал URI <code>interspec://</code> или <code>raddata://</code>.</message>
+  <message id="uid-invalid-qr">Недействительный QR-код</message>
+  <message id="uid-invalid-uri">QR-код содержал недействительный URI</message>
+  <message id="uid-multi-qr-found-title">Найдено {1} QR-кодов</message>
+  <message id="uid-multi-qr-found-content">Хотите использовать все их?</message>
+  <message id="uid-multi-qr-status">Найдено {1} QR-кодов</message>
+  <message id="uid-qr-found-title">Найден QR-код</message>
+  <message id="uid-qr-found-content">Хотите использовать QR-код, начинающийся с <br /> <code>{1}...</code></message>
+  <message id="uid-found-qr">Найден QR-код</message>
+  <message id="uid-err-getting-data">Ошибка получения данных для встраивания - изображение не встраивается.</message>
+  <message id="uid-err-no-foreground-embedd">Основной спектр не загружен - изображение не встраивается.</message>
+  <message id="uid-image-embed-conf">Изображение было встроено в файл основного спектра; только экспорт в формате файла N42-2012 сохранит это.</message>
+  <message id="uid-image-not-spectrum">Этот файл похож на изображение, а не на файл спектра.</message>
+  <message id="uid-err-to-large">Загруженный файл был слишком большим для попытки отображения.</message>
+  <message id="uid-err-reading-upload">Не удалось прочитать загруженный файл.</message>
+  <message id="uid-embed-image-btn">Встроить изображение в файл спектра</message>
+  <message id="uid-no-qr-found">QR-код не найден ⓘ</message>
+  <message id="uid-looking-for-qr">Поиск QR-кодов.</message>
+  <message id="uid-check-for-qr-btn">Проверить на QR-код</message>
+  <message id="uid-tt-auto-qr">
+    Изображения автоматически проверяются на QR-коды, которые могут быть использованы InterSpec.
+    <br/>
+    Если в изображении есть QR-код, который не найден, возможно, у вас
+    будет больше удачи, используя стороннее приложение/веб-сайт или встроенные возможности iOS
+    или Android.
+    <br />
+    Если вы используете сторонний инструмент для извлечения URI из QR-кода, вы
+    можете ввести его в InterSpec, используя пункт "<b>Ввести URL</b>"
+    в меню "<b>Редактировать</b>".
+  </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">Файл</message>
+  <message id="sfm-col-n-samples">К-во обр.</message>
+  <message id="sfm-col-live-time">Время изм. (с)</message>
+  <message id="sfm-col-real-time">Реал. время (с)</message>
+  <message id="sfm-col-gam-count">Гамма счёт</message>
+  <message id="sfm-col-neut-count">Нейт. счёт</message>
+  <message id="sfm-col-time-taken">Время съёмки</message>
+  <message id="sfm-col-n-dets">К-во дет.</message>
+  <message id="sfm-col-loaded">Загружен</message>
+  <message id="sfm-col-file-rid">RID файла</message>
+</messages>

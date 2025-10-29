@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ect- is short for EnergyCalTool -->
+  <message id="ect-no-spec">কোনো স্পেকট্রাম লোড করা হয়নি</message>
+  <message id="ect-more-act">আরো কাজ</message>
+  <message id="ect-linearize">রৈখিকীকরণ...</message>
+  <message id="ect-tt-linearize">স্পেকট্রা রৈখিকীকরণ করে যাতে প্রতিটি শক্তি চ্যানেলের প্রস্থ একই হয়।</message>
+  <message id="ect-truncate">শক্তি ছাঁটাই...</message>
+  <message id="ect-tt-truncate">ডেটা চ্যানেল বাদ দিয়ে স্পেকট্রামের শক্তি রেঞ্জ ছাঁটাই করে।</message>
+  <message id="ect-combine">চ্যানেল একত্রিত করুন...</message>
+  <message id="ect-tt-combine">শক্তি চ্যানেলগুলি একত্রিত করে যাতে স্পেকট্রামে কম ডেটা চ্যানেল থাকে</message>
+  <message id="ect-to-frf">FRF তে...</message>
+  <message id="ect-tt-to-frf">শক্তি ক্যালিব্রেশন টাইপ Full Range Fraction এ রূপান্তরিত করে</message>
+  <message id="ect-to-poly">পলিনোমিয়ালে...</message>
+  <message id="ect-tt-to-poly">শক্তি ক্যালিব্রেশন টাইপ পলিনোমিয়ালে রূপান্তরিত করে।</message>
+  <message id="ect-multi-file">মাল্টি ফাইল ক্যাল...</message>
+  <message id="ect-tt-multi-file">
+    একটি বা একাধিক স্পেকট্রাম ফাইল থেকে, পিক ফিট সহ একাধিক স্পেকট্রা ব্যবহার করে শক্তি ক্যালিব্রেশন সম্পাদন করার অনুমতি দেয়। নিম্ন-রেজোলিউশন ডিটেক্টরগুলির জন্য বিশেষভাবে দরকারী হতে পারে যেখানে প্রতিটি স্পেকট্রামের একটি ভিন্ন পরীক্ষা উৎস রয়েছে
+  </message>
+  <message id="ect-tt-CALp">একটি .CALp ফাইল ডাউনলোড করুন যাতে বর্তমান শক্তি ক্যালিব্রেশন রয়েছে।
+    এই শক্তি ক্যালিব্রেশন পুনরায় ব্যবহার করতে আপনি পরে এই ফাইলটি InterSpec-এ ড্র্যাগ-এন-ড্রপ করতে পারেন।
+    এটি বিশেষভাবে দরকারী যদি আপনি প্রায়শই এমন একটি ডিটেক্টর থেকে ডেটা ব্যবহার করেন যার ক্যালিব্রেশন ধারাবাহিকভাবে সামঞ্জস্য করা প্রয়োজন।
+  </message>
+  <message id="ect-export-CALp-msg">আপনি এই CALp ফাইলটি পরে একটি ভিন্ন স্পেকট্রামে প্রয়োগ করতে পারেন CALp ফাইলটি InterSpec-এ ড্র্যাগ এবং ড্রপ করে।</message>
+  <message id="ect-fit-coeff-btn">সহগ ফিট করুন</message>
+  <message id="ect-tt-fit-coeff-btn">
+    শক্তি সহগের জন্য ফিট করতে ফিট করা পিকগুলির সাথে সম্পর্কিত ফটোপিকের প্রত্যাশিত শক্তি ব্যবহার করে। যদি কোনো সহগ ফিট করার জন্য নির্বাচন না করা হয়, বা সহগের চেয়ে কম পিক নির্বাচন করা হয় তবে এই বোতামটি অক্ষম হয়।
+  </message>
+  <message id="ect-apply-changes-to">পরিবর্তন প্রয়োগ করুন</message>
+  <message id="ect-disp-dets">প্রদর্শিত ডিটেক্টর</message>
+  <message id="ect-all-dets">সমস্ত ডিটেক্টর</message>
+  <message id="ect-disp-samples">প্রদর্শিত নমুনা</message>
+  <message id="ect-all-samples">সমস্ত নমুনা</message>
+  <message id="ect-calib-coeffs">ক্যালিব্রেশন সহগ</message>
+  <message id="ect-cal-peaks">ক্যালিব্রেশন পিক</message>
+  <message id="ect-CALp-no-meas">{1} এর জন্য কোনো পরিমাপ প্রদর্শিত হয়নি</message>
+  <message id="ect-CALp-not-applic-det">ক্যালিব্রেশন পরিবর্তন {1} এর কোনো ডিটেক্টরে প্রযোজ্য নয়</message>
+  <message id="ect-CALp-not-applic-sample">ক্যালিব্রেশন পরিবর্তন {1} এর কোনো নমুনায় প্রযোজ্য নয়</message>
+  <message id="ect-CALp-invalid-input">অবৈধ ইনপুট শক্তি ক্যালিব্রেশন</message>
+  <message id="ect-CALp-num-channel-mismatch">নতুন ক্যালিব্রেশন চ্যানেলের সংখ্যা ({1}) পুরানো ক্যালিব্রেশনের ({2}) সাথে মিলছে না।</message>
+  <message id="ect-CALp-missing-det">CALp ফাইলে ডিটেক্টরগুলির জন্য ক্যালিব্রেশন নেই: {1}.{2}</message>
+  <message id="ect-CALp-extra-det">  অস্তিত্বহীন ডিটেক্টরগুলির জন্য অতিরিক্ত ক্যালিব্রেশন ছিল: {1}।</message>
+  <message id="ect-CALp-named-vs-unamed">CALp ফাইলে সমস্ত ক্যালিব্রেশন একটি ডিটেক্টর নাম নির্দিষ্ট করে, কিন্তু বর্তমান স্পেকট্রাম ডিটেক্টর নামহীন।</message>
+  <message id="ect-CALp-no-cal-for-det">ডিটেক্টর '{1}' এর জন্য কোনো ক্যালিব্রেশন উপলব্ধ নেই</message>
+  <message id="ect-CALp-no-prev-for-det">ডিটেক্টর '{1}' এর জন্য ব্যবহার করার জন্য পূর্ববর্তী ক্যালিব্রেশন সনাক্ত করা যায়নি।</message>
+  <message id="ect-CALp-nchannel-mismatch-det">নতুন ক্যালিব্রেশন চ্যানেলের সংখ্যা ({1}) ডিটেক্টর '{3}' এর জন্য পুরানো ক্যালিব্রেশনের ({2}) সাথে মিলছে না।</message>
+  <message id="ect-import-CALp">CALp ফাইল ইমপোর্ট করুন</message>
+  <message id="ect-select-CALp"><p>ব্যবহার করার জন্য CALp ফাইল নির্বাচন করুন</p></message>
+  <message id="ect-upload-CALp-to-large">ফাইল আপলোড করার জন্য খুব বড়</message>
+  <message id="ect-invalid-CALp">বৈধ CALp ফাইল নয়</message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">নোট: আপনি CALp ফাইলগুলি InterSpec-এ ড্র্যাগ-এন-ড্রপও করতে পারেন<br /></p></message>
+  <message id="ect-change-made-invalid">ক্যালিব্রেশন পরিবর্তন একটি শক্তি ক্যালিব্রেশন অবৈধ করে দিয়েছে{1}।  ত্রুটি: {2}</message>
+  <message id="ect-for-the-fore"> ফোরগ্রাউন্ডের জন্য</message>
+  <message id="ect-for-the-back"> ব্যাকগ্রাউন্ডের জন্য</message>
+  <message id="ect-for-the-sec"> সেকেন্ডারি স্পেকট্রামের জন্য</message>
+  <message id="ect-set-cal-invalid-nchan">নমুনা {1}, ডিটেক্টর '{2}' এর {3} চ্যানেল আছে কিন্তু সেট করা ক্যালিব্রেশনের {4} আছে।</message>
+  <message id="ect-error-setting-cal">নতুন শক্তি ক্যালিব্রেশন সেট করতে ত্রুটি: {1}</message>
+  <message id="ect-add-dev-pair-made-invalid">বিচ্যুতি পেয়ার যোগ করা শক্তি ক্যালিব্রেশন অবৈধ করে দিয়েছে{1}। ত্রুটি: {2}</message>
+  <message id="ect-unexpected-error-prev-coefs">পূর্ববর্তী ক্যালিব্রেশন সহগ পুনরুদ্ধারে অপ্রত্যাশিত ত্রুটি - পরিবর্তন প্রয়োগ করা হচ্ছে না</message>
+  <message id="ect-changed-cal-not-selected">মনে হচ্ছে আপনি যে শক্তি ক্যালিব্রেশন পরিবর্তন করেছেন তা পরিবর্তন প্রয়োগ করার জন্য চিহ্নিত নয়; অনুগ্রহ করে এটি সংশোধন করুন।</message>
+  <message id="ect-dev-pair-change-invalid">বিচ্যুতি পেয়ার পরিবর্তন করা শক্তি ক্যালিব্রেশন অবৈধ করে দিয়েছে।  ত্রুটি: {1}</message>
+  <message id="ect-set-dev-pair-err">এই ডিটেক্টরের জন্য বিচ্যুতি পেয়ার সেট করতে একটি ত্রুটি হয়েছে।</message>
+  <message id="ect-dev-applied-dets-samples">বিচ্যুতি পেয়ার শুধুমাত্র '{1}' ডিটেক্টরে প্রয়োগ করা হয়েছে, কিন্তু সমস্ত নমুনা সংখ্যায়{2}।</message>
+  <message id="ect-dev-applied-to-samples">বিচ্যুতি পেয়ার সমস্ত নমুনা সংখ্যায় প্রয়োগ করা হয়েছে{1}।</message>
+  <message id="ect-of-the-fore"> ফোরগ্রাউন্ডের।</message>
+  <message id="ect-of-the-sec"> সেকেন্ডারির।</message>
+  <message id="ect-of-the-back"> ব্যাকগ্রাউন্ডের।</message>
+  <message id="ect-err-not-enough-peaks">এখন ক্যালিব্রেশন সহগ ফিট করা যাচ্ছে না। আপনি যতগুলি সহগ ফিট করার জন্য নির্বাচন করেছেন তার অন্তত ততগুলি পিক নির্বাচন করতে হবে।</message>
+  <message id="ect-no-peaks">কোনো পিক উপলব্ধ নেই।</message>
+  <message id="ect-select-cal-of-disp-det">অনুগ্রহ করে একটি প্রদর্শিত ডিটেক্টরের ক্যালিব্রেশন নির্বাচন করুন</message>
+  <message id="ect-not-enough-channel">ডেটাতে পর্যাপ্ত চ্যানেল নেই।</message>
+  <message id="ect-no-coeff-selected">আপনাকে ফিট করার জন্য অন্তত একটি সহগ নির্বাচন করতে হবে।</message>
+  <message id="ect-fail-min">ত্রুটি বার্তা ম্যাট্রিক্স এবং পুনরাবৃত্ত উভয় পদ্ধতি ব্যবহার করে শক্তি ক্যালিব্রেশন ফিট করতে ব্যর্থ</message>
+  <message id="ect-fit-successful">শক্তি ক্যালিব্রেশন ফিটিং থেকে আপডেট করা হয়েছে।</message>
+  <message id="ect-fail-fit">পিক গড় ফিট করে ক্যালিব্রেশন ব্যর্থ। {1}</message>
+  <message id="ect-del-graphical-msg">যদি আপনি স্পেকট্রামের অন্য অংশে ALT+CTRL+DRAG করে আবার পুনঃক্যালিব্রেট করেন, তাহলে আপনাকে এই ক্যালিব্রেশনের প্রভাবও সংরক্ষণের বিকল্প দেওয়া হবে।</message>
+  <message id="ect-lc-disp-dets">প্রদর্শিত ডিটেক্টর</message>
+  <message id="ect-lc-all-dets">সমস্ত ডিটেক্টর</message>
+  <message id="ect-lc-all-samples">সমস্ত নমুনা</message>
+  <message id="ect-lc-disp-samples">প্রদর্শিত নমুনা</message>
+  <message id="ect-short-fore">ফোর।</message>
+  <message id="ect-short-back">ব্যাক</message>
+  <message id="ect-short-secondary">সেক।</message>
+
+  <message id="ect-offset-label">অফসেট</message>
+  <message id="ect-linear-label">রৈখিক</message>
+  <message id="ect-quad-label">দ্বিঘাত।</message>
+  <message id="ect-cubic-label">ঘন</message>
+  <message id="ect-nth-label">{1} তম ক্রম</message>
+
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">নিম্ন চ্যানেল শক্তি</message>
+  <message id="ect-cal-type-not-defined">সংজ্ঞায়িত নয়</message>
+  <message id="ect-cal-type-polynomial">পলিনোমিয়াল</message>
+  <message id="ect-cal-type-default-poly">ডিফল্ট পলিনোমিয়াল</message>
+  <message id="ect-cal-type-frf">সম্পূর্ণ রেঞ্জ ভগ্নাংশ</message>
+  <message id="ect-convert-to-poly-msg">সম্পাদনা করতে অনুগ্রহ করে পলিনোমিয়াল ক্যালিব্রেশনে রূপান্তর করুন</message>
+  <message id="ect-deviation-pairs">বিচ্যুতি পেয়ার</message>
+</messages>

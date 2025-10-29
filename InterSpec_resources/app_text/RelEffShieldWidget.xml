@@ -4,7 +4,6 @@
   -->
   <message id="resw-self-atten-title">Self Attenuation</message>
   <message id="resw-ext-atten-title">External Attenuation</message>
-  <message id="resw-material-label">Material</message>
   <message id="resw-thickness-label">Thick.</message>
   <message id="resw-atomic-number-label">AN</message>
   <message id="resw-areal-density-label">AD</message>

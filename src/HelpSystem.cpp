@@ -167,7 +167,7 @@ namespace HelpSystem
   
   HelpWindow::HelpWindow(std::string preselect)
    : AuxWindow( WString::tr("window-title-help"),
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+               (AuxWindowProperties::IsModal
                  | AuxWindowProperties::IsHelpWindow
                  | AuxWindowProperties::EnableResize
                  | AuxWindowProperties::SetCloseable) ),

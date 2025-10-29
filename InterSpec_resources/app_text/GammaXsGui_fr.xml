@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
+  <!-- gxsg- is short for GammaXsGui -->
+  <message id="gxsg-material-formula">Matériau/Formule</message>
   <message id="gxsg-tt-material">
     Vous pouvez soit entrer le nom d'un matériau ou d'un élément prédéfini (effacez le texte du formulaire
     et cliquez sur la flèche à droite du formulaire pour voir toutes les options prédéfinies), ou vous pouvez

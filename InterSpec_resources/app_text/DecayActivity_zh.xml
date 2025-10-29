@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">衰变工具状态</message>
+  <message id="dw-qr-window-text">衰变工具状态的当前状态。</message>
+  <message id="dad-units-label">显示单位：</message>
+  <message id="dad-units-label-phone">单位：</message>
+  <message id="dad-logy-cb">对数Y刻度</message>
+  <message id="dad-grid-cb">网格线</message>
+  <message id="dad-add-nucs">添加核素...</message>
+  <message id="dad-remove-all">全部删除</message>
+  <message id="dad-sel-nuc-window-title">选择要添加的核素</message>
+  <message id="dad-mi-act-chart">活度图</message>
+  <message id="dad-mi-decay-chain">衰变链</message>
+  <message id="dad-mi-calc">计算器</message>
+  <message id="dad-arbitrary">任意</message>
+  <message id="dad-time-span-label">时间跨度：</message>
+  <message id="dad-tt-age">
+    <div>
+      年龄可以使用时间单位的组合来指定，类似于'<b>5.3y 8d 22m</b>'或半衰期，如'<b>2.5 HL</b>'。
+    </div>
+    <div>
+      可接受的时间单位：<b>year</b>、<b>yr</b>、<b>y</b>、<b>day</b>、<b>d</b>、<b>hrs</b>、<b>hour</b>、<b>h</b>、<b>minute</b>、
+      <b>min</b>、<b>m</b>、<b>second</b>、<b>s</b>、<b>ms</b>、<b>microseconds</b>、<b>us</b>、<b>nanoseconds</b>、<b>ns</b>，或
+      您可以通过<b>hh:mm:ss</b>指定时间段。半衰期单位可以
+      使用<b>hl</b>、<b>halflife</b>、<b>halflives</b>、<b>half-life</b>、<b>half-lives</b>、
+      <b>half lives</b>或<b>half life</b>指定。
+    </div>
+    <div>
+      半衰期单位或时间段不能与
+      其他单位混合，如果指定多个核素，则假定为第一个。当指定多个时间段时，
+      它们会求和，例如'1y6months 3m'被解释为
+      18个月加3分钟
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Y轴：</message>
+  <message id="dad-yaxis-label">Y轴类型：</message>
+  <message id="dad-gamma-rate">伽马率</message>
+  <message id="dad-beta-rate">贝塔率</message>
+  <message id="dad-alpha-rate">阿尔法率</message>
+  <message id="dad-click-for-more-info">点击了解更多信息</message>
+  <message id="dad-tt-double-click">双击编辑此源核素。单击使衰变链显示此核素</message>
+  <message id="dad-summary-at-time">t={1}时的汇总</message>
+  <message id="dad-hdr-date">日期（{1}）</message>
+  <message id="dad-hdr-total-act">总活度</message>
+  <message id="dad-hdr-total-gammas">总伽马</message>
+  <message id="dad-yaxis-title-total-gammas">伽马/秒</message>
+  <message id="dad-hdr-total-betas">总贝塔</message>
+  <message id="dad-yaxis-title-total-betas">贝塔/秒</message>
+  <message id="dad-hdr-total-alphas">总阿尔法</message>
+  <message id="dad-yaxis-title-total-alphas">阿尔法/秒</message>
+  <message id="dad-chart-click-more-info">点击了解更多信息 - 在T0后{1} {2}我们有：</message>
+
+  <message id="dcc-window-title-decay-chain">{1}衰变链</message>
+  <message id="dcc-window-title-decay-through">通过{1}衰变</message>
+  <message id="dcc-nuc-info-protons">质子数：{1}</message>
+  <message id="dcc-nuc-info-mass">质量：{1} Da</message>
+  <message id="dcc-nuc-info-hl-stable">半衰期：稳定</message>
+  <message id="dcc-nuc-info-hl">半衰期：{1}</message>
+  <message id="dcc-nuc-info-br-from">来自{1}的BR：{2}</message>
+  <message id="dcc-nuc-info-br-through">通过{1}的BR：{2}</message>
+  <message id="dcc-nuc-info-specific-act">比活度：{1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1}衰变到{2}，BR {3}</message>
+  <message id="dcc-particle-window-title">衰变粒子能量</message>
+  <message id="dcc-particles-from">来自{1}的粒子</message>
+  <message id="dcc-nuc-has-no-particles">该核素没有来自衰变的粒子</message>
+  <message id="dcc-particle">粒子</message>
+  <message id="dcc-intensity">强度</message>
+  <message id="dcc-decay-through-window-title">通过{1}衰变</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">原子质量递减</message>
+  <message id="dcc-yAxisTitle">原子序数递增</message>
+  <message id="dcc-clickNucTxt">点击核素以获取更多信息。</message>
+  <message id="dcc-clickNucMoreInfoTxt2">点击上方不同的源核素以</message>
+  <message id="dcc-clickNucMoreInfoTxt3">更改显示的衰变链。</message>
+  <message id="dcc-clickNucMblTxt">轻触核素以获取更多信息。</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">点击上方不同的源核素以</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">更改显示的衰变链。</message>
+  <message id="dcc-show-decay-products">显示{nuclide}衰变产物</message>
+  <message id="dcc-show-decays-through">显示通过{nuclide}的衰变</message>
+
+
+  <message id="dcn-initial-age">初始年龄：</message>
+
+</messages>
+

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- cfm is short for CompactFileManager -->
+  <message id='cfm-tt-sample-num'>
+    ここに表示したいサンプル番号を入力してください。
+    '33-39'や'33 to 39'のようなサンプル番号の範囲を入力したり、
+    '34,39,84'のようなCSVサンプル番号を入力することができます。
+  </message>
+  <message id='cfm-scale-factor-label'>スケール係数: </message>
+  <message id='cfm-tt-scale-factor'>
+    スペクトルをスケールする係数。空文字列を入力すると
+    スペクトルはフォアグラウンドスペクトルに対してライブタイム正規化されます。
+  </message>
+
+  <message id='cfm-norm-btn'>正規化</message>
+  <message id='cfm-more-info-btn'>詳細情報</message>
+  <message id='cfm-show-rid-result-btn'>RID結果</message>
+  <message id='cfm-show-image-btn'>埋め込み画像</message>
+
+  <message id='cfm-db-spec'>以前に保存されたスペクトル</message>
+  <message id='cfm-ref-spectra-btn'>参照スペクトル...</message>
+  <message id='cfm-err-invalid-sample-num'>要求されたサンプル番号が存在しません。</message>
+  <message id='cfm-err-no-meas'>サンプル番号を変更できません。現在の測定がありません。</message>
+  <message id='cfm-err-missing-sample-num'>要求されたサンプル番号の一つが存在しません。</message>
+  <message id='cfm-err-sample-num-doesnt-exist'>サンプル番号 {1} が存在しません。</message>
+  <message id='cfm-err-sample-num-doesnt-exist-2'>サンプル番号 {1} は測定に存在しません。</message>
+  <message id='cfm-err-general-1'>要求されたサンプル番号への変更エラー</message>
+  <message id='cfm-err-advancing'>スペクトル進行エラー</message>
+  <message id='cfm-no-spectra'>読み込み済み/利用可能なスペクトルがありません。</message>
+
+  <message id='cfm-no-fore'>フォアグラウンドなし</message>
+  <message id='cfm-no-back'>バックグラウンドなし</message>
+  <message id='cfm-no-second'>セカンドフォアグラウンドなし</message>
+
+  <message id='cfm-date'>日付</message>
+  <message id='cfm-start-time'>開始時刻</message>
+  <message id='cfm-gamma-cps'>ガンマCPS</message>
+  <message id='cfm-neut-live-time'>中性子L.T.</message>
+  <message id='cfm-neut-counts'>中性子カウント</message>
+  <message id='cfm-neut-cps'>中性子CPS</message>
+  <message id='cfm-gps'>緯度/経度</message>
+  <message id='cfm-manufacturer'>製造者</message>
+  <message id='cfm-model'>モデル</message>
+  <message id='cfm-meas-type'>記録タイプ</message>
+  <message id='cfm-tt-meas-type'>スペクトルファイル内に記録された記録タイプ。</message>
+
+  <message id='cfm-tt-clear-spectrum'>現在のスペクトルをクリアします。</message>
+  
+  <message id='cfm-swap-back-with-foreground-btn'>フォアグラウンド↔バックグラウンド</message>
+  <message id='cfm-tt-swap-back-with-foreground-btn'>フォアグラウンドとバックグラウンドのスペクトルを交換</message>
+  <message id='cfm-swap-secondary-with-foreground-btn'>フォアグラウンド↔セカンダリ</message>
+  <message id='cfm-tt-swap-secondary-with-foreground-btn'>フォアグラウンドとセカンダリのスペクトルを交換</message>
+</messages>

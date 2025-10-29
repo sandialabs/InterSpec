@@ -377,7 +377,7 @@ public:
 
 MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
  : AuxWindow( WString::tr("window-title-add-fwhm"),
-             (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+             (AuxWindowProperties::TabletNotFullScreen
               | AuxWindowProperties::SetCloseable
               | AuxWindowProperties::DisableCollapse
               | AuxWindowProperties::EnableResize

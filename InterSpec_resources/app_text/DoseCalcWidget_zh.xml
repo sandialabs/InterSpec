@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">未能收敛于屏蔽量。</message>
+  <message id="dcw-qr-tool-state-title">剂量工具状态</message>
+  <message id="dcw-qr-tool-state-txt">剂量工具的当前状态。</message>
+  <message id="dcw-inputs">输入</message>
+  <message id="dcw-answer">答案</message>
+  <message id="dcw-intro-instructions">在左侧选择您要计算的量</message>
+  <message id="dcw-intro-instructions-vert-phone">在上方选择您要计算的量</message>
+  <message id="dcw-intro-calc-desc">使用ANSI/ANS-6.1.1-1991最保守情况计算剂量值：前后方向。
+    剂量计算充其量只是粗略指南，并且
+    受到许多不确定性或错误的影响。
+  </message>
+  <message id="dcw-source-label">源：</message>
+  <message id="dcw-neutron">中子</message>
+  <message id="dcw-tt-neut-not-imp">尚未实现中子剂量计算。</message>
+  <message id="dcw-tt-distance">从源中心到探测器表面的距离。数字后面必须跟单位；有效单位为：meters、m、cm、mm、km、feet、ft、'、in、inches或\"。您还可以添加多个距离，例如'3ft 4in'或'3.6E-2 m 12 cm'，它们分别等于40英寸和15.6厘米。</message>
+  <message id="dcw-shield-empty-text">屏蔽材料</message>
+  <message id="dcw-runtime-checks-failed">运行时健全性检查失败！</message>
+  <message id="dcw-runtime-check-msg">
+    <div>不要信任此计算器实用程序的结果</div>
+    请将此错误消息发送至<a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>
+    并包含您的设备类型和型号（例如iPad pro、
+    Windows 10 Dell笔记本电脑等）
+  </message>
+  <message id="dcw-runtime-check-err-div">结果可疑 - 不要信任</message>
+  <message id="dcw-err-no-nuc">源核素为空或无效</message>
+  <message id="dcw-act-invalid">活度无效</message>
+  <message id="dcw-shield-invalid">屏蔽无效</message>
+  <message id="dcw-generic-shield-invalid">计算剂量时出错，屏蔽无效，抱歉 :{</message>
+  <message id="dcw-dist-invalid">距离无效。</message>
+  <message id="dcw-err-other">从源计算剂量时出错，抱歉 :{</message>
+  <message id="dcw-invalid-src-dose">源剂量无效。</message>
+  <message id="dcw-invalid-src-act">源活度无效。</message>
+  <message id="dcw-invalid-src-dose">源剂量无效。</message>
+  <message id="dcw-failed-find-lower-dist">在{1} cm处找不到下限距离。</message>
+  <message id="dcw-failed-find-upper-dist">在{1} cm处找不到上限距离。</message>
+  <message id="dcw-failed-find-dist">找不到距离；超过最大迭代次数。</message>
+  <message id="dcw-got-neg-dist">得到负距离：{1}</message>
+  <message id="dcw-err-calc-dose-for-dist">搜索距离时计算剂量出错，抱歉 :{</message>
+  <message id="dcw-material-not-valid">材料无效</message>
+  <message id="dcw-no-an-entered">您必须输入屏蔽材料的原子序数。</message>
+  <message id="dcw-no-shield-name">您必须输入屏蔽材料类型。</message>
+  <message id="dcw-brehm-warning">警告：未考虑贝塔衰变的轫致辐射，结果可能不可信。</message>
+  <message id="dcw-no-dose-entered">未输入剂量数值</message>
+  <message id="dcw-stay-time">停留时间</message>
+  <message id="dcw-dental-xray">牙科X射线</message>
+  <message id="dcw-annual-background">典型年度本底</message>
+  <message id="dcw-annual-occ-limit">年度职业限值</message>
+  <message id="dcw-save-property">保存贵重财产</message>
+  <message id="dcw-life-saving">挽救生命</message>
+  <message id="dcw-radiation-sickness">辐射病</message>
+  <message id="dcw-units-label">单位：</message>
+</messages>
+

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">مسار التنفيذ</message>
+  <message id="rr-url-empty-text">URL لخدمة FullSpectrum</message>
+  <message id="rr-exe-path-empty-text">مسار ملف FullSpectrum التنفيذي</message>
+  <message id="rr-get-detectors">استرداد DRFs</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">بعد إدخال URL لخدمة الويب، يرجى (اختياريًا) استرداد DRFs، ثم اضغط على "<em>إرسال</em>"</message>
+  <message id="rr-only-disp-samples-cb">العينات المعروضة فقط</message>
+  <message id="rr-tt-only-disp-samples">عادة يتم تحليل بيانات وضع البحث والبوابة بالكامل، لكن اختيار هذا الخيار سيتسبب في تحليل المقدمة/الخلفية المعروضة فقط.</message>
+  <message id="rr-submit-ana-btn">إرسال التحليل</message>
+  <message id="rr-show-dialog-cb">إظهار الحوار</message>
+  <message id="rr-always-call-cb">الاستدعاء دائمًا عند تحميل الطيف</message>
+  <message id="rr-tt-show-dialog">إذا تم التحديد، سيتم عرض حوار يجب أن يرفضه المستخدم مع نتائج RID. إذا لم يتم التحديد، سيتم عرض إشعار فقط سيختفي بعد وقت قصير، مع نتائج RID.</message>
+  <message id="rr-gadras-rid-error">خطأ GADRAS RID: {1}</message>
+  <message id="rr-gadras-rid-error-code">رمز خطأ GADRAS RID {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: لا شيء محدد</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">فشل في تحليل نتائج GADRAS RID.</message>
+  <message id="rr-rid-results-window-title">نتائج التعرف الخارجي</message>
+  <message id="rr-rid-tool-btn">أداة RID</message>
+  <message id="rr-err-incorrect-url">خطأ في استدعاء التحليل: URL غير صحيح أو لا يوجد إنترنت.</message>
+  <message id="rr-err-locating-exe">خطأ في تحديد موقع الملف التنفيذي: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">خطأ في إنشاء اسم الملف المؤقت.</message>
+  <message id="rr-err-opening-tmp-file">خطأ في فتح الملف المؤقت.</message>
+  <message id="rr-requesting-ana">طلب التحليل</message>
+  <message id="rr-err-no-spec">لا يوجد طيف معروض</message>
+  <message id="rr-requesting-service-info">طلب معلومات الخدمة.</message>
+  <message id="rr-error-parsing-service-info">خطأ في تحليل نتائج معلومات الخدمة: <code></code></message>
+  <message id="rr-incorrect-url">URL غير صحيح أو لا يوجد إنترنت.</message>
+  <message id="rr-err-requesting-service-info">خطأ في استرداد معلومات الخدمة: <code>{1}</code></message>
+</messages>

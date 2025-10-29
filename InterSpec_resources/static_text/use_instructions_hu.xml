@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder 
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this 
+      video to a video playing widget in the WTemplate widget.  However since we 
+      dont want to have to hard code the bind placeholder name, and which video 
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [ 
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"Egér bemutató"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"Gamma vonalak"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"Kalibrálás"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"Csúcs azonosítás"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"Aktivitás árnyékolás"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Nagy­ítás</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         A spektrum egy adott részének nagyításához
+         <u>nyomja szét</u> két ujját egymástól.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Kicsinyítés</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         A kicsinyítéshez
+         <u>csípje össze</u> két ujját egymás felé.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">Energia tartomány módosítása</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         A diagram x tengelye (energia) mentén való mozgáshoz
+         helyezzen egy ujját a diagramra és mozgassa balra vagy jobbra a megjelenített energia módosításához.
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Csúcs illesztése</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>1. módszer</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      <u>Koppintson duplán</u> a spektrumra ott, ahol csúcsot szeretne illeszteni.
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        <u>Újbóli dupla koppintás</u> egy meglévő csúcs közelében több csúcsot illeszti.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>2. módszer</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      Ha meg szeretné adni a csúcsok számát egy érdeklődési területen:
+      <u>húzzon</u> két vízszintesen igazított ujjat az érdeklődési terület felett.
+      <u>Vegye fel</u> ujjait és <u>válassza ki</u> az azonosítani kívánt csúcsok számát.
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>Egyéb módszerek</b></h3>
+      A <em>Menü</em>&rarr;<em>Eszközök</em>&rarr;<em>Csúcskezelő</em> segítségével automatikusan illesztheti
+      a spektrum összes csúcsát a
+      <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" /> gombbal.
+      Ajánlott a nuklid hivatkozási vonalak megjelenítése ezen
+      automatikus csúcskereső használata előtt, hogy a csúcsok automatikusan társítsák a
+      csúcsot létrehozó nuklidokkal.
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Csúcsszerkesztő indítása</div>
+         Ha újra szeretné illeszteni vagy kézzel módosítani egy csúcsot, használja a <em>Csúcsszerkesztőt</em>
+         egy ujj körülbelül egy másodpercig való lenyomásával a csúcson, és menü jelenik meg,
+         hogy kiválasztsa, mit szeretne tenni.
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">Csúcs törlése</div>
+      <p>
+        A csúcs törlésének legegyszerűbb módja, ha körülbelül egy másodpercig lenyomva tartja rajta az ujját,
+        és menü jelenik meg, ahol kiválaszthatja a csúcs törlését.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        Két ujját is helyezheti a törölni kívánt csúcsok energia tartományára a képernyőre, és felfelé mozgathatja őket.
+        Minden olyan csúcs, amelynek centroidja az ujjai között van, teljesen eltávolításra kerül; ugyanezzel a mozdulattal
+        csökkentheti is a csúcsok energia tartományát, amennyiben a csúcs centroidja nem esik az ujjai közé.
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        A <em>Csúcskezelő</em> (<b>Menü</b>&rarr;<b>Eszközök</b>&rarr;<b>Csúcskezelő</b>) és
+        <em>Csúcsszerkesztő</em> (tartsa lenyomva ujját a csúcson egy másodpercig, válassza a <b>Csúcsszerkesztőt</b>) szintén törölheti a csúcsokat.
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "Nagy-/Kicsinyítés",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "Energia mozgatás",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "Energia csúszka",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "Csúcs illesztés",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "ROI illesztés",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "Csúcs törlés",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "Energia kalibrálás",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "Csúcsszerkesztő",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "ROI beállítás",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "Y skála",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "Gamma számlálás",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "Billentyű parancsikonok",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>Bal-kattintás húzás <b>jobbra</b> nagyításhoz.</center></div>
+<div><center>Bal-kattintás húzás <b>balra</b> kicsinyítéshez.</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>Jobb-kattintás húzás</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center>A <b>Nézet</b> menüből válassza a "<b>Energia csúszka megjelenítése</b>" opciót.</center>
+<div>Ez egy könnyen használható módja a spektrum energia tartomány beállításának.</div>
+<div>Az <b>InterSpec</b> megjegyzi, ha szeretné, hogy az energia csúszka diagram megjelenjen.</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">Számos módja van a csúcsok illesztésének, többek között: </p>
+</center>
+<ol>
+  <li>Dupla-bal-kattintás. Újra duplán kattinthat ugyanarra a csúcsra közel újabb hozzáadásához.</li>
+  <li><b><kbd>CTRL</kbd></b> + Bal-kattintás húzás &rarr; Bal-kattintás (lásd "ROI illesztés") </li>
+  <li>A "<b>Csúcskezelő</b>" lapon kattintson a "<b>Hozzáadás</b>" gombra &rarr;. Ezután beállíthatja a táblázat paramétereit a kívánt értékekre.</li>
+  <li>A "<b>Csúcskezelő</b>" lapon kattintson a "<b>Csúcsok keresése</b>" gombra a spektrum összes csúcsának megtalálásához.</li>
+<li>Jobb-kattintson egy meglévő csúcsra és válassza a "<b>Csúcs hozzáadása</b>" opciót egy csúcs ugyanazon ROI-hoz adásához.</li>
+</ol>
+
+<p>Tipp: csúcs illesztése előtt hasznos megjeleníteni az érte felelős
+nuklid hivatkozási vonalait, így amikor a csúcsot illesztik, az társítva lesz
+azzal a nukliddal. Ezt az információt energia kalibrálás, detektor válasz, aktivitás és árnyékolási mennyiségek illesztéséhez használják.
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>Meghatározott számú csúcs illesztéséhez egy érdeklődési területen (ROI):</div>
+<center>
+<b><kbd>CTRL</kbd></b> + Bal-kattintás húzás &rarr; majd válassza ki hány csúcsot.
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>Jobb-kattintás &rarr; "<b>Csúcs törlése</b>"</li>
+<li>Jobb-kattintás &rarr; "<b>Csúcsszerkesztő</b>" &rarr; "<b>Törlés</b>"</li>
+<li><b><kbd>SHIFT</kbd></b> + Bal-kattintás húzás</li>
+<li>Bal-kattintás "<b>Összes csúcs törlése</b>" &rarr; Bal-kattintás "<b>Igen</b>"</li>
+<li>Húzza a ROI egyik oldalát a másik oldal túloldalára.</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>Az energia kalibrálás grafikus beállításához:</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + Bal-kattintás húzás &rarr; <u>Opcionális</u>: Mennyiségek beállítása &rarr; "<b>Elfogadás</b>"</center>
+<div>Megjegyzés: ha újra végrehajtja ezt a műveletet, például először egy magas energiájú csúcson, majd egy alacsony energiájú csúcson (vagy fordítva), a megjelenő párbeszédpanel
+lehetőséget ad mindkét művelet megőrzésére az eltolás és erősítés beállításával, így mindkét csúcs azokon az energiákon marad, ahova húzta őket.
+</div>
+<p>Az "Energia kalibrálás" lap szintén lehetővé teszi az energia kalibrálási együtthatók
+kézi beállítását vagy azok illesztését a csúcsokhoz társított nuklidok használatával.
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>Jobb-kattintás &rarr; "Csúcsszerkesztő"</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>Helyezze az egeret az érdeklődési terület (ROI) széle közelébe és húzza.</div></center>
+<div>Az egérnek a csúcs y-tartományán belül és a ROI szélétől 10 pixelen belül kell lennie.</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center>A háttér és/vagy másodlagos spektrumok amplitúdójának skálázása az előtérhez képest
+a <b>Nézet</b> &rarr; "<b>Y-tengely skálázók megjelenítése</b>" kiválasztásával.
+</center>
+<p>A háttér vagy másodlagos spektrum élettartam-normalizálttá visszaállításához kattintson a "Normalizálás" gombra a "Spektrum fájlok" lapon.</p>
+<p>Az <b>InterSpec</b> megjegyzi, ha szeretné ezeket a csúszkákat megjeleníteni, amikor háttér vagy másodlagos spektrum van,
+de a menü elemek letiltásra kerülnek, ha nincs háttér vagy másodlagos spektrum betöltve.</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + Bal-kattintás húzás &rarr; <u>Opcionális</u>: Mennyiségek beállítása</li>
+      <li><b>Eszközök</b> &rarr; <b>Energia tartomány összeg</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <ul>
+    <li>
+      <b><code>Ctrl-s</code></b>: Átkapcsol a "<em><u>S</u>pektrum fájlok</em>" lapra, vagy
+      ha az <em>Eszköz lapok</em> rejtve vannak, megjeleníti a <em>Spektrum fájlok</em> eszközt.
+    </li>
+    <li>
+      <b><code>Ctrl-p</code></b>: Átkapcsol a "<em>Csúcske<u>z</u>elő</em>" lapra, vagy
+      megjeleníti az eszközt.
+    </li>
+    <li>
+      <b><code>Ctrl-r</code></b>: Átkapcsol a "<em>Hivatkozási foto<u>c</u>súcsok</em>"
+      lapra, vagy megjeleníti az eszközt.
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>: Átkapcsol az "<em><u>E</u>nergia kalibrálás</em>"
+      lapra, vagy megjeleníti az eszközt.
+    </li>
+    <li>
+      <b><code>Ctrl-n</code></b>: Átkapcsol a "<em><u>N</u>uklid keresés</em>" lapra,
+      vagy megjeleníti az eszközt.
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>: Megjeleníti az alkalmazáson belüli <em><u>S</u>egítséget</em>.
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>: Megjeleníti az <em>Üdvözlő <u>I</u>nformációs</em> képernyőt.
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>: Átváltja a spektrum y-tengelyét <u>l</u>ogaritmikus és <u>l</u>ineáris között.
+    </li>
+    <li>
+      <b><code>Ctrl-c</code></b>: <u>T</u>örli az összes megjelenített hivatkozási vonalat.
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    Jelenlegi ismert problémák:
+    <ul>
+<li><b>Minden:</b> (Csúcskezelő) "ID nuklid" ritka esetekben nem működik </li>
+        <li><b>Minden:</b> "Állapot mentése kilépéskor" ritka esetekben nem működik</li>
+    </ul>
+  </message>
+</messages>

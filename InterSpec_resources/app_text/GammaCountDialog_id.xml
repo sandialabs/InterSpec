@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">Hitung jumlah gamma dalam rentang energi yang ditentukan.</message>
+  <message id="gcd-lower-energy-label">Energi Bawah</message>
+  <message id="gcd-upper-energy-label">Energi Atas</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-Tarik</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-Tarik</message>
+  <message id="gcd-select-shortcut">Anda juga dapat <b>{1}</b> pada grafik untuk memilih rentang energi</message>
+  <message id="gcd-foreground-counts-label">Cacahan Latar Depan:</message>
+  <message id="gcd-secondary-counts-label">Cacahan Sekunder:</message>
+  <message id="gcd-background-counts-label">Cacahan Latar Belakang:</message>
+  <message id="gcd-tt-n-sigma">
+    Jumlah perbedaan sigma dihitung dengan membagi
+    perbedaan antara latar depan dan latar belakang (yang diskala),
+    dibagi dengan ketidakpastian. Ketidakpastian dihitung dengan
+    menjumlahkan ketidakpastian statistik dari latar depan dan latar belakang secara
+    kuadratur, lalu mengambil akar kuadrat
+  </message>
+  <message id="gcd-qr-window-title">Status Jumlah Rentang Energi</message>
+  <message id="gcd-qr-window-text">Status saat ini alat jumlah rentang energi.</message>
+  <message id="gcd-background-scale-note">Latar belakang sedang diskala dengan {1}</message>
+  <message id="gcd-and-secondary-scaled"> dan sekunder dengan </message>
+  <message id="gcd-secondary-scale-note">Latar belakang sekunder sedang diskala dengan </message>
+  <message id="gcd-foreground-above-background">Latar depan {1} σ di atas latar belakang.</message>
+  <message id="gcd-foreground-below-background">Latar depan {1} σ di bawah latar belakang.</message>
+</messages>
+

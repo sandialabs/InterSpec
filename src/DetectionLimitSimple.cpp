@@ -105,7 +105,7 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( MaterialDB *materialDB,
                                 Wt::WSuggestionPopup *materialSuggestion,
                                 InterSpec *viewer )
 : AuxWindow( WString::tr("window-title-simple-mda"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+            (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) )
 {
@@ -270,8 +270,6 @@ void DetectionLimitSimple::init()
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->setYAxisLog( false );
-  m_spectrum->applyColorTheme( m_viewer->getColorTheme() );
-  m_viewer->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
   m_spectrum->disableLegend();
   m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   
@@ -541,9 +539,9 @@ void DetectionLimitSimple::init()
 
 void DetectionLimitSimple::roiDraggedCallback( double new_roi_lower_energy,
                  double new_roi_upper_energy,
-                 double new_roi_lower_px,
-                 double new_roi_upper_px,
+                 double new_roi_px,
                  double original_roi_lower_energy,
+                 const std::string &spec_type,
                  bool is_final_range )
 {
   if( !is_final_range )

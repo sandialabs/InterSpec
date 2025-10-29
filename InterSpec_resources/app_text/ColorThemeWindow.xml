@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctw- is short for ColorThemeWindow -->
+  
+  <!-- Window and main UI -->
+  <message id="ctw-window-title">Color Themes</message>
+  
+  <!-- Button tooltips -->
+  <message id="ctw-remove-tooltip">Removes the currently selected theme.</message>
+  <message id="ctw-clone-tooltip">Creates a new color theme based upon the currently selected theme.</message>
+  <message id="ctw-upload-tooltip">Imports a color theme JSON file to use.</message>
+  <message id="ctw-download-tooltip">Exports the currently selected theme to a JSON file.</message>
+  
+  <!-- Auto dark mode -->
+  <message id="ctw-auto-dark-cb">Auto apply "Dark" from OS</message>
+  <message id="ctw-auto-dark-tooltip">Apply the "Dark" color theme automatically according to the operating systems current value, or when it transisitions.</message>
+  
+  <!-- Clone theme -->
+  <message id="ctw-cloned-name">{1} (cloned)</message>
+  
+  <!-- Delete confirmation dialog -->
+  <message id="ctw-delete-confirm-title">Delete {1}?</message>
+  <message id="ctw-delete-confirm-text"><![CDATA[<span style="white-space: nowrap;">Are you sure you would like to delete <em>{1}</em>?</span>]]></message>
+  
+  <!-- Upload dialog -->
+  <message id="ctw-upload-title">Upload Color Theme JSON</message>
+  <message id="ctw-upload-error-open">Error opening uploaded file.</message>
+  <message id="ctw-upload-error-empty">Uploaded file empty.</message>
+  <message id="ctw-upload-error-large">Uploaded file too large; max size 64kb.</message>
+  <message id="ctw-upload-error-read">Unable to read in uploaded file.</message>
+  <message id="ctw-upload-error-json">Invalid JSON, or missing required info.</message>
+  <message id="ctw-upload-too-large">Too Large of file.</message>
+  <message id="ctw-import-confirm"><![CDATA[Would you like to import <em>{1}</em>?]]></message>
+  
+  <!-- Save changes dialog -->
+  <message id="ctw-save-changes-title">Save Changes?</message>
+  <message id="ctw-save-changes-text"><![CDATA[<span style="white-space: nowrap;">Save changes to <em>{1}</em>?</span>]]></message>
+  <message id="ctw-discard-btn">Discard</message>
+</messages>

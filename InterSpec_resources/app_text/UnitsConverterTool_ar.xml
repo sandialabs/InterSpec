@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uct- is short for UnitsConverterTool
+  -->
+  <message id="uct-mult-nucs">نوى متعددة ({1} + {2})</message>
+  <message id="uct-instructions">التحويل بين الوحدات المتعلقة بالإشعاع.<br />
+    مثال: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert, 10 gram U235, 1.2 uCi Pu238
+  </message>
+  <message id="uct-input-label">الإدخال: </message>
+  <message id="uct-output-label">الإخراج: </message>
+  <message id="uct-qr-window-title">حالة محول الوحدات</message>
+  <message id="uct-qr-window-txt">الحالة الحالية لأداة محول الوحدات.</message>
+  <message id="uct-err-empty-input">إدخال فارغ</message>
+  <message id="uct-couldnt-find-units">لم يتمكن من تحديد الوحدات</message>
+  <message id="uct-nuc-unknown">لم يتمكن من فعل شيء مع {1} '{2}'</message>
+  <message id="uct-invalid-input">إدخال غير صالح</message>
+  <message id="uct-err-gen">خطأ: {1}.<br />
+    وحدات النشاط المسموحة: bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,
+    roentgen, m, meter, ft, inch, in, gram, g, ounce, oz, pound, lb, و grain.<br />
+    البادئات المسموحة (اختيارية): n, nano, u, µ, micro, m, milli,
+     k, killo, M, mega, G, Giga, T, و Tera
+  </message>
+</messages>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uct- is short for UnitsConverterTool
+  -->
+  <message id="uct-mult-nucs">একাধিক নিউক্লাইড ({1} + {2})</message>
+  <message id="uct-instructions">বিকিরণ সম্পর্কিত ইউনিটের মধ্যে রূপান্তর করুন।<br />
+    উদাহরণ: 5 MBq, 2 nCi, 1.2rad, 15E-3gy, 0.2mrem, 8feet, 9milli-sievert, 10 gram U235, 1.2 uCi Pu238
+  </message>
+  <message id="uct-input-label">ইনপুট: </message>
+  <message id="uct-output-label">আউটপুট: </message>
+  <message id="uct-qr-window-title">ইউনিট কনভার্টার স্টেট</message>
+  <message id="uct-qr-window-txt">ইউনিট কনভার্টার টুলের বর্তমান স্টেট।</message>
+  <message id="uct-err-empty-input">খালি ইনপুট</message>
+  <message id="uct-couldnt-find-units">ইউনিট নির্ধারণ করতে পারেনি</message>
+  <message id="uct-nuc-unknown">{1} '{2}'-এর সাথে কিছু করতে পারেনি</message>
+  <message id="uct-invalid-input">অবৈধ ইনপুট</message>
+  <message id="uct-err-gen">ত্রুটি: {1}।<br />
+    অনুমোদিত কার্যকলাপ ইউনিট: bq, becquerel, ci, curie, gray, Gy, rad, sievert, Sv, rem,
+    roentgen, m, meter, ft, inch, in, gram, g, ounce, oz, pound, lb, এবং grain।<br />
+    অনুমোদিত (ঐচ্ছিক) প্রিফিক্স: n, nano, u, µ, micro, m, milli,
+     k, killo, M, mega, G, Giga, T, এবং Tera
+  </message>
+</messages>

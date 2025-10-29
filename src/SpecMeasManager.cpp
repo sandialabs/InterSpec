@@ -327,7 +327,7 @@ namespace
   public:
     FileUploadDialog( InterSpec *viewer,
                       SpecMeasManager *manager )
-    : AuxWindow( "", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+    : AuxWindow( "", (AuxWindowProperties::IsModal
                       | AuxWindowProperties::PhoneNotFullScreen
                       | AuxWindowProperties::DisableCollapse
                       | AuxWindowProperties::SetCloseable) ),
@@ -719,10 +719,18 @@ public:
 };//MultiUrlSpectrumDialog
 #endif //USE_QR_CODES
   
-  
+
+/** Searches the image if an `<img />` element for a QR code.
+
+ @param sender_id The string ID of the element that should be used to emit the found/not-found signal
+ @param img The JS ref to the <img /> element holding the image to process
+ @param numTimesMoreCall For some reason, a search for the QR code can randomly fail for one call, and then succeed the next with nothing changing; I dont know why, and it makes me uneasy.  But to work around this, this function will recursively call itself this many times.
+
+ Emits the 'QrDecodedFromImg' signal when found/not-found.
+ */
 WT_DECLARE_WT_MEMBER
 (SearchForQrUsingCanvas, Wt::JavaScriptFunction, "SearchForQrUsingCanvas",
- async function( sender_id, img )
+ async function( sender_id, img, numTimesMoreCall )
 {
   try
   {
@@ -746,7 +754,8 @@ WT_DECLARE_WT_MEMBER
     
     // Function to adjust image properties
     //  wcjohns knowns nothing about image transformations - this function was thanks to a LLM - seems to work, kinda
-    function adjustImage(canvas, ctx, options) {
+    function adjustImage(canvas, options) {
+      const ctx = canvas.getContext('2d');
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data; // Pixel data (RGBA)
       
@@ -790,32 +799,35 @@ WT_DECLARE_WT_MEMBER
       
       // Put the adjusted image data back onto the canvas
       ctx.putImageData(imageData, 0, 0);
+
+      return canvas;
     };//function adjustImage(...)
     
     
-    // We will make a number of transforms to try an look for the QR code in
+    // We will make a number of transforms to try an look for the QR code in.
+    //  These have NOT been carefully chosen - will need adjusting as we run into pictures that dont work
     let canvas_transforms_to_try = [
+      function(){return resizeCanvas(0.75);},
       function(){return resizeCanvas(0.5);},
       function(){return resizeCanvas(0.25);},
       function(){return resizeCanvas(0.15);},
       function(){ //increase contrast
         let c = resizeCanvas(1.0);
-        const ctx = c.getContext('2d');
-        adjustImage(c, ctx, {
+        adjustImage(c, {
           exposure: 1.0,    // exposure - leave nominal
           contrast: 1.5,    // Increase contrast
           saturation: 1.0,  // leave saturation
-          highlights: 0,   // Brighten highlights - adds to pixel values (e.g. 0,255)
-          shadows: 0      // Darken shadows - subtracts to pixel values (e.g. 0,255)
+          highlights: 0,    // Brighten highlights - adds to pixel values (e.g. 0,255)
+          shadows: 0        // Darken shadows - subtracts to pixel values (e.g. 0,255)
         });
         return c;
       },
-      function(){ //cut size in half and increase contrast
-        let c = resizeCanvas(0.5);
-        const ctx = c.getContext('2d');
-        adjustImage(c, ctx, { contrast: 1.5 });
-        return c;
-      }
+      function(){ return adjustImage( resizeCanvas(0.5), { contrast: 1.5 });  }, //cut size in half and increase contrast
+      function(){ return adjustImage( resizeCanvas(1.0), { contrast: 1.5 });  }, //Leaves size alone, but increases contrast
+      function(){ return adjustImage( resizeCanvas(1.0), { highlights: 20 }); },
+      function(){ return adjustImage( resizeCanvas(1.0), { exposure: 1.2 });  },
+      function(){ return adjustImage( resizeCanvas(1.0), { exposure: 0.8 });  },
+      function(){ return adjustImage( resizeCanvas(1.0), { shadows: 20 });    }
     ];//let canvas_transforms_to_try = [...]
   
     let error_status = null;
@@ -828,9 +840,11 @@ WT_DECLARE_WT_MEMBER
       let zxingBuffer = zxing._malloc(u8Buffer.length);
       zxing.HEAPU8.set(u8Buffer, zxingBuffer);
       
-      let results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, "QRCode", 0xff);
+      const results = zxing.readBarcodesFromImage(zxingBuffer, u8Buffer.length, true, "QRCode", 0xff);
       zxing._free(zxingBuffer);
-      
+
+      console.log( "results:", results );
+
       const firstRes = (results.size() > 0) ? results.get(0) : null;
       
       if( (results.size() === 0)
@@ -871,8 +885,14 @@ WT_DECLARE_WT_MEMBER
         new_canvas.toBlob( LookForQrCode, 'image/png' );
         return;
       }
-      
-      Wt.emit( sender_id, 'QrDecodedFromImg', error_status ? error_status.status : 0, error_status ? error_status.msg : "" );
+
+      if( numTimesMoreCall && (numTimesMoreCall > 0) )
+      {
+        setTimeout( function(){ Wt.WT.SearchForQrUsingCanvas( sender_id, img, numTimesMoreCall-1 ); }, 1 );
+      }else
+      {
+        Wt.emit( sender_id, 'QrDecodedFromImg', error_status ? error_status.status : 0, error_status ? error_status.msg : "" );
+      }
     };//function LookForQrCode
     
     
@@ -1168,7 +1188,7 @@ protected:
     LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
     wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
     
-    this->doJavaScript( "Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ");" );
+    this->doJavaScript( "Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ", 5);" );
   }//void check_for_qr_from_canvas()
   
   
@@ -1305,7 +1325,7 @@ public:
         
       // If `imageLoaded()` is never called, it means the image couldnt be displayed, for example
       //  if image file is invalid, or a HEIC on Windows.
-      m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + "); }" );
+      m_image->imageLoaded().connect( "function(){ Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ", 5); }" );
       m_image->imageLoaded().connect( boost::bind( &WText::setText, m_qrCodeStatusTxt, WString("Looking for QR-codes.") ) );
     }else
     {
@@ -1343,7 +1363,7 @@ class UploadBrowser : public AuxWindow
 public:
   UploadBrowser( SpecMeasManager *manager )
   : AuxWindow( "Import Spectrum Files",
-               (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+               (AuxWindowProperties::IsModal
                 | AuxWindowProperties::DisableCollapse
                 | AuxWindowProperties::EnableResize) ),
   m_manager( manager )
@@ -1503,7 +1523,7 @@ void SpecMeasManager::startSpectrumManager()
   }//if( m_spectrumManagerWindow )
   
     m_spectrumManagerWindow = new AuxWindow( WString::tr("smm-window-title"),
-                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                    (AuxWindowProperties::IsModal
                      | AuxWindowProperties::TabletNotFullScreen
                      | AuxWindowProperties::DisableCollapse
                      | AuxWindowProperties::SetCloseable
@@ -1800,7 +1820,7 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     }
     
     AuxWindow *window = new AuxWindow( WString::tr("smm-zip-window-title"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                  (AuxWindowProperties::IsModal
                    | AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::EnableResize) );
     window->stretcher()->addWidget( t, 0, 0 );
@@ -2018,8 +2038,6 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
     assert( manager );
     if( !manager )
       return;
-    
-    cerr << "deleting m_nonSpecFileDialog of" << manager->m_nonSpecFileDialog << endl;
     
     assert( !manager->m_nonSpecFileDialog || (dialog == manager->m_nonSpecFileDialog) );
     
@@ -3002,7 +3020,7 @@ bool SpecMeasManager::handleCALpFile( std::istream &infile, SimpleDialog *dialog
       }
     }catch( std::exception &e )
     {
-      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "mm-CALp-err-applying-mult";
+      const char *key = (napplied == 1) ? "smm-CALp-err-applying-single" : "smm-CALp-err-applying-mult";
       passMessage( WString::tr(key).arg( e.what() ), WarningWidget::WarningMsgHigh );
     }//try / catch
   };//applyLambda(...)
@@ -5986,7 +6004,7 @@ void SpecMeasManager::showPreviousSpecFileUsesDialog( std::shared_ptr<SpectraFil
     handleCancelPreviousStatesDialog( m_previousStatesDialog );
   
   AuxWindow *window = new AuxWindow( WString::tr("smm-prev-states-window-title"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::DisableCollapse)
+                                    (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::EnableResize
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::SetCloseable) );

@@ -64,6 +64,13 @@ public:
   LlmToolGui(InterSpec *viewer, Wt::WContainerWidget *parent = nullptr);
   ~LlmToolGui();
   
+  /** Returns if the user has added a `llm_config.xml` file, and enabled the `LlmApi`, and this was read in when the
+   InterSpec server was started.
+   */
+  static bool llmToolIsConfigured();
+  
+  LlmInterface *llmInterface();
+  
   /** Focus the input text field */
   void focusInput();
   
@@ -77,10 +84,10 @@ public:
   void handleResponseReceived();
   
   /** Get the current conversation history for saving to SpecMeas */
-  std::shared_ptr<std::vector<LlmConversationStart>> getConversationHistory() const;
-  
+  std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> getConversationHistory() const;
+
   /** Set the conversation history from SpecMeas */
-  void setConversationHistory(const std::shared_ptr<std::vector<LlmConversationStart>>& history);
+  void setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>& history);
   
   /** Clear the current conversation history */
   void clearConversationHistory();

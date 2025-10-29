@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+  
+  <!-- Labels -->
+  <message id="raager-lower-energy">下限エネルギー</message>
+  <message id="raager-upper-energy">上限エネルギー</message>
+  <message id="raager-continuum-type">連続成分タイプ:</message>
+  
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">全範囲強制</message>
+  
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">どのガンマを一緒にグループ化するか、別々にするかに基づいて、このエネルギー範囲を個別のROIに変換します（例：重複するピークを持つガンマは単一のROIに残し、2つのガンマが離れている場合は別々のROIに分割します）。</message>
+  
+</messages>

@@ -85,6 +85,7 @@
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 
 #if( USE_QR_CODES )
@@ -196,43 +197,8 @@ namespace RestRidImp
 {
 class ExternalRidWidget;
 
-// Some structs to represent the results from the Full-Spectrum analysis service
-struct FullSpecIsotope
-{
-  string name;
-  string type;
-  string confidenceStr;
-  
-  double countRate;
-  double confidence;
-};//struct FullSpecIsotope
 
-
-struct FullSpecResults
-{
-  int code = -1;
-  int analysisError = 0;
-  string errorMessage;
-  vector<string> analysisWarnings;
-  string drf;
-  double chi2 = -1.0;
-  //estimatedDose: in PhysicalUnits (i.e., 1.0E-6*PhysicalUnits::rem/PhysicalUnits::hour)
-  double estimatedDose = -1.0;
-  double stuffOfInterest = 1.0;
-  double alarmBasisDuration = -1.0;
-  
-  string foregroundDescription;
-  string foregroundTitle;
-  string isotopeString;
-  
-  string analysisType;
-  
-  vector<FullSpecIsotope> isotopes;
-};//struct FullSpecResults
-
-
-
-FullSpecResults json_to_results( const string &input )
+ExternalRidResults json_to_results( const string &input )
 {
   /*
    // Input will look something like:
@@ -265,8 +231,9 @@ FullSpecResults json_to_results( const string &input )
   if( code.isNull() )
     throw runtime_error( "Analysis response JSON did not include a 'code' field." );
   
-  FullSpecResults answer;
+  ExternalRidResults answer;
   
+  answer.algorithmName = "GADRAS";
   answer.code = code;
   answer.errorMessage = result["errorMessage"].orIfNull("");
   answer.analysisError = result["analysisError"].orIfNull(0);
@@ -296,20 +263,21 @@ FullSpecResults json_to_results( const string &input )
     {
       const Json::Object &obj = isotopes[i];
       
-      FullSpecIsotope iso;
+      ExternalRidIsotope iso;
       
       iso.confidence = obj.get("confidence").orIfNull( -1.0 );
       iso.countRate = obj.get("countRate").orIfNull( -1.0 );
       iso.name = obj.get("name").orIfNull( "null" );
       iso.type = obj.get("type").orIfNull( "null" );
       iso.confidenceStr = obj.get("confidenceStr").orIfNull( "null" );
+      iso.init();
       
       answer.isotopes.push_back( iso );
     }//for( size_t i = 0; i < isotopes.size(); ++i )
   }//if( result.contains("isotopes") )
   
   return answer;
-}//FullSpecResults json_to_results(string)
+}//ExternalRidResults json_to_results(string)
 
 
 /** A class to stream the current spectrum data and analysis options to the JavaScript FormData
@@ -330,6 +298,8 @@ class RestRidInputResource : public Wt::WResource
 {
   Wt::WFlags<RemoteRid::AnaFileOptions> m_flags;
   std::string m_drf;
+  std::mutex m_drf_flags_mutex;
+
   Wt::WApplication *m_app; //it looks like WApplication::instance() will be valid in handleRequest, but JIC
   InterSpec *m_interspec;
   
@@ -964,29 +934,28 @@ public:
     {
       // `code == 0` just means the http response was okay - there could still be GADRAS error
       vector<string> nuclides;
-      vector<pair<string,string>> iso_descrips;
-      std::unique_ptr<const FullSpecResults> result_ptr;
+      auto results = std::make_shared<ExternalRidResults>();
       try
       {
-        const FullSpecResults result = json_to_results( res );
-        result_ptr.reset( new FullSpecResults(result) );
+        *results = json_to_results( res );
         
-        string iso_str = result.isotopeString;
+        string iso_str = results->isotopeString;
         SpecUtils::ireplace_all( iso_str, "+", ", " );
         
         if( iso_str.empty() )
         {
-          if( result.errorMessage.size() )
+          if( results->errorMessage.size() )
           {
-            result_ptr.reset();
-            message = WString::tr("rr-gadras-rid-error").arg( result.errorMessage );
-          }else if( result.code )
+            message = WString::tr("rr-gadras-rid-error").arg( results->errorMessage );
+            results.reset();
+          }else if( results->code )
           {
-            result_ptr.reset();
-            message = WString::tr("rr-gadras-rid-error-code").arg(result.code);
+            message = WString::tr("rr-gadras-rid-error-code").arg(results->code);
+            results.reset();
           }else
           {
             message = "rr-gadras-rid-no-id";
+            results.reset();
           }
         }else
         {
@@ -995,30 +964,20 @@ public:
         
         const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
         assert( db );
-        for( const auto &iso : result.isotopes )
+        if( results )
         {
-          const SandiaDecay::Nuclide *nuc = db->nuclide(iso.name);
-          if( nuc )
-            nuclides.push_back( nuc->symbol );
-          
-          // ReferencePhotopeakDisplay::updateOtherNucsDisplay() uses following convention
-          //  to decide if a user should be able to click on a result
-          if( nuc )
-            iso_descrips.emplace_back( nuc->symbol, iso.type );
-          else
-            iso_descrips.emplace_back( iso.name, "" );
+          for( auto &iso : results->isotopes )
+          {
+            const SandiaDecay::Nuclide *nuc = db->nuclide(iso.name);
+            if( nuc )
+            {
+              nuclides.push_back( nuc->symbol );
+              iso.source = nuc;
+            }
+          }
         }
         
-        // We should set the results to ReferencePhotopeakDisplay, and then in
-        //  ReferencePhotopeakDisplay::handleSpectrumChange clear out the old results
-        //  when the file changes.  Also, should modify the auto submital to submit
-        //  the file only if all samples are displayed, and otherwise just the
-        //  displayed spectra, and do this when the sample numbers change.
-        //
-        //  TODO: the results we just got might be for the previous file
-        ReferencePhotopeakDisplay *reflines = interspec->referenceLinesWidget();
-        if( reflines )
-          reflines->setExternalRidResults( "GADRAS", iso_descrips );
+        interspec->externalRidResultsRecieved().emit( results );
       }catch( std::exception &e )
       {
         message = WString::tr("rr-gadras-fail-parse");
@@ -1028,10 +987,10 @@ public:
       }//try / catch
       
       
-      if( make_dialog && result_ptr )
+      if( make_dialog && results )
       {
         WStringStream msg_html_strm;
-        generateResultHtml( msg_html_strm, *result_ptr );
+        generateResultHtml( msg_html_strm, *results );
         const string msg_html = msg_html_strm.str();
           
         wApp->useStyleSheet( "InterSpec_resources/RemoteRid.css" );
@@ -1546,7 +1505,7 @@ public:
   }//void handleInfoResponseError()
 
   
-  static void generateResultHtml( WStringStream &rslttxt, const FullSpecResults &results )
+  static void generateResultHtml( WStringStream &rslttxt, const ExternalRidResults &results )
   {
     const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
     
@@ -1576,7 +1535,7 @@ public:
     {
       const size_t nres = results.isotopes.size();
       
-      for( const FullSpecIsotope &res_iso : results.isotopes )
+      for( const ExternalRidIsotope &res_iso : results.isotopes )
       {
         const string &iso = res_iso.name;
         string type = res_iso.type;
@@ -1651,10 +1610,10 @@ public:
   {
     m_submit->enable();
     
-    FullSpecResults results;
+    shared_ptr<ExternalRidResults> results = make_shared<ExternalRidResults>();
     try
     {
-      results = json_to_results( msg );
+      *results = json_to_results( msg );
     }catch( std::exception &e )
     {
       m_error->setText( "Error parsing analysis results: <code>" + string(e.what()) + "</code>" );
@@ -1663,15 +1622,17 @@ public:
     
     try
     {
-      if( !results.errorMessage.empty() )
-        throw runtime_error( "Analysis service returned error message: " + results.errorMessage );
+      if( !results->errorMessage.empty() )
+        throw runtime_error( "Analysis service returned error message: " + results->errorMessage );
       
       WStringStream rslttxt;
       rslttxt << "<div class=\"ResultLabel\">Results:</div>";
-      generateResultHtml( rslttxt, results );
+      generateResultHtml( rslttxt, *results );
       
       m_result->setText( rslttxt.str() );
       m_status_stack->setCurrentIndex( m_status_stack->indexOf(m_result) );
+      
+      m_interspec->externalRidResultsRecieved().emit( results );
     }catch( std::exception &e )
     {
       m_error->setText( e.what() );
@@ -2140,6 +2101,7 @@ RestRidInputResource::RestRidInputResource( InterSpec *interspec, WObject* paren
 : WResource( parent ),
 m_flags( 0 ),
 m_drf( "auto" ),
+m_drf_flags_mutex{},
 m_app( WApplication::instance() ),
 m_interspec( interspec )
 {
@@ -2154,40 +2116,66 @@ RestRidInputResource::~RestRidInputResource()
 
 void RestRidInputResource::setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
 {
+  std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
   m_flags = flags;
 }//void setAnaFlags( Wt::WFlags<RemoteRid::AnaFileOptions> flags )
 
 
 void RestRidInputResource::setDrf( const std::string &drf )
 {
+  std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
   m_drf = drf;
 }
 
 void RestRidInputResource::handleRequest( const Wt::Http::Request &request,
                                          Wt::Http::Response &response )
 {
-  WApplication::UpdateLock lock( m_app );
-  
-  if( !lock )
+
+  std::string ana_drf;
+  Wt::WFlags<RemoteRid::AnaFileOptions> ana_flags;
+
+  {// Begin lock on m_drf_flags_mutex
+    std::lock_guard<std::mutex> lock( m_drf_flags_mutex );
+    ana_drf = m_drf;
+    ana_flags = m_flags;
+  }// End lock on m_drf_flags_mutex
+
+  shared_ptr<const SpecUtils::SpecFile> spec_file;
+
+  {// Begin WApplication::UpdateLock
+    WApplication::UpdateLock lock( m_app );
+
+
+    if( !lock )
+    {
+      log("error") << "Failed to WApplication::UpdateLock in RestRidInputResource.";
+
+      response.out() << "Error grabbing application lock to form RestRidInputResource resource; please report to InterSpec@sandia.gov.";
+      response.setStatus(500);
+      assert( 0 );
+
+      return;
+    }//if( !lock )
+
+    spec_file = RemoteRid::fileForAnalysis(m_interspec, ana_flags);
+    assert( spec_file );
+  }// End WApplication::UpdateLock
+
+  if( !spec_file )
   {
-    log("error") << "Failed to WApplication::UpdateLock in RestRidInputResource.";
-    
-    response.out() << "Error grabbing application lock to form RestRidInputResource resource; please report to InterSpec@sandia.gov.";
+    response.out() << "Error creating spectrum file to send.";
     response.setStatus(500);
-    assert( 0 );
-    
     return;
-  }//if( !lock )
-  
+  }//if( !spec_file )
+
   // Generate some JSON then
-  shared_ptr<SpecUtils::SpecFile> spec_file = RemoteRid::fileForAnalysis(m_interspec, m_flags);
-  assert( spec_file );
-  
-  string options = "{\"drf\": \"" + m_drf + "\"";
+
+  Wt::Json::Object json;
+  json["drf"] = WString::fromUTF8(ana_drf);
   if( spec_file && (spec_file->num_measurements() < 2) )
-    options += ", \"synthesizeBackground\": true";
-  options += "}";
-  
+    json["synthesizeBackground"] = true;
+
+  const string options = Wt::Json::serialize(json);
   const string boundary = "InterSpec_MultipartBoundary_InterSpec";
   
   string n42_content;
@@ -2302,13 +2290,13 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   cb->addStyleClass( "NoShowAgain" );
   cb->setInline( false );
   
-  Wt::WPushButton *btn = dialog->addButton( "Cancel" );
+  Wt::WPushButton *btn = dialog->addButton( WString::tr("Cancel") );
   btn->clicked().connect( std::bind([callback](){
     if( callback )
       callback( nullptr, nullptr );
   }) );
   
-  btn = dialog->addButton( "Continue" );
+  btn = dialog->addButton( WString::tr("Continue") );
   btn->clicked().connect( std::bind([viewer,callback,cb](){
     if( cb->isChecked() )
       UserPreferences::setPreferenceValue("ExternalRidWarn", false, viewer );
@@ -2325,7 +2313,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
 pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-external-rid"),
-                                    (Wt::WFlags<AuxWindowProperties> (AuxWindowProperties::DisableCollapse)
+                                    (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::TabletNotFullScreen)
                                     );

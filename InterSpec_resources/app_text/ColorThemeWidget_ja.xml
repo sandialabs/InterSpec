@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+  
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">テーマ名</message>
+  <message id="ctwidget-description">説明</message>
+  <message id="ctwidget-title-placeholder">タイトルが割り当てられていません</message>
+  <message id="ctwidget-desc-placeholder">説明が割り当てられていません</message>
+  <message id="ctwidget-empty">(空)</message>
+  
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">非チャート領域</message>
+  <message id="ctwidget-backdrop-theme">背景テーマ</message>
+  <message id="ctwidget-backdrop-desc">すべての非チャート領域用テーマ</message>
+  
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">チャート色</message>
+  
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">スペクトル前景</message>
+  <message id="ctwidget-spec-foreground-desc">前景スペクトルの線色</message>
+  <message id="ctwidget-spec-background">スペクトル背景</message>
+  <message id="ctwidget-spec-background-desc">背景スペクトルの線色</message>
+  <message id="ctwidget-spec-secondary">スペクトル副</message>
+  <message id="ctwidget-spec-secondary-desc">副スペクトルの線色</message>
+  
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">ピークが参照線色を使用</message>
+  <message id="ctwidget-peaks-use-ref-desc">新しくフィットされたピークがそのピークの参照線の色を取るかどうかを決定します。</message>
+  <message id="ctwidget-default-peak-color">デフォルトピーク色</message>
+  <message id="ctwidget-default-peak-desc">割り当てられた色を持たないピークに使用される色</message>
+  
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">スペクトラムチャート軸</message>
+  <message id="ctwidget-spectrum-axis-desc">スペクトラムXおよびY軸の線色</message>
+  <message id="ctwidget-spectrum-text">スペクトラムチャートテキスト</message>
+  <message id="ctwidget-spectrum-text-desc">スペクトラムチャートテキスト（yおよびx軸ラベル）色</message>
+  <message id="ctwidget-spectrum-area">スペクトラム領域</message>
+  <message id="ctwidget-spectrum-area-desc">スペクトラムチャートの背景色</message>
+  <message id="ctwidget-spectrum-margin">スペクトラムチャート背景</message>
+  <message id="ctwidget-spectrum-margin-desc">スペクトラムチャートマージンの色</message>
+  <message id="ctwidget-same-as-spectrum">スペクトラム領域と同じ</message>
+  
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">時間ガンマカウント</message>
+  <message id="ctwidget-time-gamma-desc">時間チャートでのガンマカウントの線色</message>
+  <message id="ctwidget-time-neutron">時間中性子カウント</message>
+  <message id="ctwidget-time-neutron-desc">時間チャートでの中性子カウントの線色</message>
+  <message id="ctwidget-time-axis">時間チャート軸</message>
+  <message id="ctwidget-time-axis-desc">時間チャートXおよびY軸の線色</message>
+  <message id="ctwidget-time-background">時間チャート背景</message>
+  <message id="ctwidget-time-background-desc">時間チャートの背景色</message>
+  <message id="ctwidget-time-margins">時間チャートマージン</message>
+  <message id="ctwidget-time-margins-desc">スペクトラムチャートマージンの色</message>
+  <message id="ctwidget-same-as-background">背景と同じ</message>
+  <message id="ctwidget-time-text">時間チャートテキスト</message>
+  <message id="ctwidget-time-text-desc">時間チャートのテキスト色（xおよびy軸ラベル）</message>
+  
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">占有インジケーター線</message>
+  <message id="ctwidget-occ-lines-desc">占有（ポータルデータ）または関心の時間期間（検索モードデータ）の開始と終了を示す線</message>
+  <message id="ctwidget-time-fore-highlight">時間前景ハイライト</message>
+  <message id="ctwidget-time-fore-highlight-desc">時間チャートで前景スペクトラムのために合計されている時間セグメントを示すのに使用される色。</message>
+  <message id="ctwidget-time-back-highlight">時間背景ハイライト</message>
+  <message id="ctwidget-time-back-highlight-desc">時間チャートで背景スペクトラムのために合計されている時間セグメントを示すのに使用される色。</message>
+  <message id="ctwidget-time-sec-highlight">時間副ハイライト</message>
+  <message id="ctwidget-time-sec-highlight-desc">時間チャートで副スペクトラムのために合計されている時間セグメントを示すのに使用される色。</message>
+  
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">参照線色</message>
+  <message id="ctwidget-ref-line-colors-desc">参照線に使用する順序色</message>
+  <message id="ctwidget-specific-ref-colors">特定ソース参照線色</message>
+  <message id="ctwidget-specific-ref-desc">指定されたソースの参照線に使用する色</message>
+  <message id="ctwidget-dynamic-ref-lines">動的参照線</message>
+  <message id="ctwidget-dynamic-ref-desc">核種タイプに基づいて使用する色</message>
+  
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">医療</message>
+  <message id="ctwidget-industrial">工業</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">一般</message>
+  <message id="ctwidget-other">その他</message>
+  
+  <!-- Other options -->
+  <message id="ctwidget-other-options">その他のオプション</message>
+  <message id="ctwidget-peak-label-size">ピークラベルサイズ</message>
+  <message id="ctwidget-peak-label-size-desc">ピークラベルのフォントサイズを指定</message>
+  <message id="ctwidget-peak-label-angle">ピークラベル角度</message>
+  <message id="ctwidget-peak-label-angle-desc">ピークラベルの回転（度）</message>
+  <message id="ctwidget-log-y-min">Log-Y最小値</message>
+  <message id="ctwidget-log-y-min-desc">表示されるx範囲にゼロまたは負のカウントを持つチャンネルがある場合の対数y軸に表示される最小値。</message>
+</messages>

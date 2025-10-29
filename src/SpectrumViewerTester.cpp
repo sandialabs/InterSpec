@@ -1204,9 +1204,9 @@ SpectrumViewerTester::Score SpectrumViewerTester::testManualPeakClicking()
       
       const double frac = double(attempt) / sm_num_manual_click;
       const double x = peak->mean() + (2.0*frac-1.0)*sm_nfwhm_manually_click*peak->fwhm();
-      
+
       const size_t nprepeaks = peakModel->npeaks();
-      m_viewer->searchForSinglePeak( x );
+      m_viewer->searchForSinglePeak( x, "", Wt::WFlags<Wt::KeyboardModifier>() );
       
       const size_t npostpeaks = peakModel->npeaks();
       if( nprepeaks == npostpeaks )

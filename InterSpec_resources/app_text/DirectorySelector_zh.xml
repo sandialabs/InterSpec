@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DirectorySelector -->
+  <message id="ds-path-label">路径：</message>
+  <message id="ds-txt-input-placeholder">输入目录路径...</message>
+  <message id="ds-native-select-path-button">选择路径</message>
+  <message id="ds-native-no-path-placeholder">（未选择路径）</message>
+</messages>
+

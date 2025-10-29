@@ -2661,11 +2661,17 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
 
 #if( SpecUtils_ENABLE_D3_CHART )
 std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const PeakDef> > &peaks,
-                                  const std::shared_ptr<const SpecUtils::Measurement> &foreground )
+                                        const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                                        const Wt::WColor &defaultPeakColor,
+                                        int override_alpha )
 {
   //Need to check all numbers to make sure not inf or nan
   
   stringstream answer;
+  
+  if( (override_alpha < 0) || (override_alpha > 255) )
+    override_alpha = 255; //0 is completely transparent, 255 is totally solid
+  const bool use_alpha = (override_alpha != 255);
   
   if (peaks.empty())
     return answer.str();
@@ -2902,8 +2908,90 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
       }
     }
 
-    if (!p.lineColor().isDefault())
-      answer << q << "lineColor" << q << ":" << q << p.lineColor().cssText(false) << q << ",";
+    if( !p.lineColor().isDefault() || (use_alpha && !defaultPeakColor.isDefault()) )
+    {
+      const Wt::WColor &orig_color = p.lineColor().isDefault() ? defaultPeakColor : p.lineColor();
+      string color_str = orig_color.cssText(true);
+      
+      // Note: the WColor could have been created with a string like "rgba(12,1,99,0.1)", and we will only over-ride
+      //       the alpha value, if `use_alpha` is true, because `Wt::WColor::cssText` will always output the string the
+      //       color was created with, regardless of if we specify to use alpha or not.
+      
+      if( use_alpha )
+      {
+        // TODO: move all this into its own function
+        
+        // The `WColor::cssText(bool)` function will return the string the WColor was
+        // created with, even if it was a string like "#FFA1GT", which WColor also parsed
+        // out the RGB components of.  So we will work around this for colors except
+        // black, or if a string like "red", "silver", etc was used.
+        // Unfortuanetly WColor doesnt currently have a great way to check for this, so we'll
+        // half-heartedly do some string checks
+#if( WT_VERSION > 0x4000000 )
+#pragma message( "Need to check if WColor can have a bit better of a treatment" )
+#endif
+        
+        if( (color_str.find("rgba(") != string::npos)
+           || (color_str.find("rgb(") != string::npos)
+           || orig_color.red() || orig_color.green() || orig_color.blue() )
+        {
+          // The WColor could have been created with string like "rgba(12,1,99,0.1)", so we will override the alpha
+          Wt::WColor c( orig_color.red(), orig_color.green(), orig_color.blue(), override_alpha );
+          color_str = c.cssText(true);
+        }else
+        {
+          Wt::WColor c;
+          if( color_str.empty()  )
+            c.setRgb(0, 0, 0, override_alpha);
+          else if( color_str == "black" )
+            c.setRgb(0, 0, 0, override_alpha);
+          else if( color_str == "silver" )
+            c.setRgb(192, 192, 192, override_alpha);
+          else if( color_str == "white" )
+            c.setRgb(255, 255, 255, override_alpha);
+          else if( color_str == "red" )
+            c.setRgb(255, 0, 0, override_alpha);
+          else if( color_str == "green" )
+            c.setRgb(0, 128, 0, override_alpha);
+          else if( color_str == "blue" )
+            c.setRgb(0, 0, 255, override_alpha);
+          else if( color_str == "yellow" )
+            c.setRgb(255, 255, 0, override_alpha);
+          else if( color_str == "cyan" )
+            c.setRgb(0, 255, 255, override_alpha);
+          else if( color_str == "magenta" )
+            c.setRgb(255, 0, 255, override_alpha);
+          else if( color_str == "orange" )
+            c.setRgb(255, 165, 0, override_alpha);
+          else if( color_str == "purple" )
+            c.setRgb(128, 0, 128, override_alpha);
+          else if( color_str == "lime" )
+            c.setRgb(0, 255, 0, override_alpha);
+          else if( color_str == "navy" )
+            c.setRgb(0, 0, 128, override_alpha);
+          else if( color_str == "gray" || color_str == "grey" )
+            c.setRgb(128, 128, 128, override_alpha);
+          else if( color_str == "maroon" )
+            c.setRgb(128, 0, 0, override_alpha);
+          else if( color_str == "olive" )
+            c.setRgb(128, 128, 0, override_alpha);
+          else if( color_str == "teal" )
+            c.setRgb(0, 128, 128, override_alpha);
+          else if( color_str == "aqua" )
+            c.setRgb(0, 255, 255, override_alpha);
+          else if( color_str == "fuchsia" )
+            c.setRgb(255, 0, 255, override_alpha);
+          
+          if( !c.isDefault() )
+            color_str = c.cssText(true);
+          else 
+            cerr << "Warning: not setting alpha color for WColor of text '" << color_str << "'." << endl;
+        }
+      }//if( !use_alpha ) / else
+        
+      answer << q << "lineColor" << q << ":" << q << color_str << q << ",";
+    }//if( !p.lineColor().isDefault() )
+    
     answer << q << "type" << q << ":" << q << PeakDef::to_str(p.type()) << q << ",";
     
     double dist_norm = 0.0;
@@ -3207,7 +3295,9 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
 
 
 string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks,
-                          const std::shared_ptr<const SpecUtils::Measurement> &foreground )
+                          const std::shared_ptr<const SpecUtils::Measurement> &foreground,
+                          const Wt::WColor &defaultPeakColor,
+                          int override_alpha )
 {
   if (inpeaks.empty())
     return "[]";
@@ -3220,7 +3310,7 @@ string PeakDef::peak_json(const vector<std::shared_ptr<const PeakDef> > &inpeaks
 
   string json = "[";
   for (const ContinuumToPeakMap_t::value_type &vt : continuumToPeaks)
-    json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground);
+    json += ((json.size()>2) ? "," : "") + gaus_peaks_to_json(vt.second,foreground,defaultPeakColor,override_alpha);
 
   json += "]";
   
@@ -3767,6 +3857,18 @@ bool PeakDef::hasSourceGammaAssigned() const
   return ((m_parentNuclide && m_transition && m_radparticleIndex>=0) 
     || (m_parentNuclide && (m_sourceGammaType == PeakDef::SourceGammaType::AnnihilationGamma))
     || m_xrayElement || m_reaction);
+}
+
+
+std::string PeakDef::sourceName() const
+{
+  if( m_parentNuclide )
+    return m_parentNuclide->symbol;
+  if( m_xrayElement )
+    return m_xrayElement->symbol;
+  if( m_reaction )
+    return m_reaction->name();
+  return "";
 }
 
 void PeakDef::setNuclearTransition( const SandiaDecay::Nuclide *parentNuclide,

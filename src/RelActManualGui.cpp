@@ -2222,7 +2222,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
       break;
       
     case AddUncert::StatOnly:
-      results_html << WString::tr("ramg-fit-stat-only");
+      results_html << WString::tr("ramg-fit-stat-only").toUTF8();
       break;
       
     case AddUncert::OnePercent:
@@ -2243,7 +2243,7 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   results_html << "</div>\n";
   
   
-  new WText( results_html.str(), m_results );
+  new WText( WString::fromUTF8(results_html.str()), m_results );
 }//void updateGuiWithResults( const RelActCalcManual::RelEffSolution &solution );
 
 

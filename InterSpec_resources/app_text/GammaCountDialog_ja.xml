@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">指定されたエネルギー範囲内のガンマ線数をカウントします。</message>
+  <message id="gcd-lower-energy-label">下限エネルギー</message>
+  <message id="gcd-upper-energy-label">上限エネルギー</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-ドラッグ</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-ドラッグ</message>
+  <message id="gcd-select-shortcut">チャート上で<b>{1}</b>してエネルギー範囲を選択することもできます</message>
+  <message id="gcd-foreground-counts-label">フォアグラウンドカウント:</message>
+  <message id="gcd-secondary-counts-label">セカンダリカウント:</message>
+  <message id="gcd-background-counts-label">バックグラウンドカウント:</message>
+  <message id="gcd-tt-n-sigma">
+    シグマ差の数は、フォアグラウンドと（スケールされた）バックグラウンドの
+    差を不確実性で割ることで計算されます。不確実性は
+    フォアグラウンドとバックグラウンドの統計的不確実性を
+    二乗和で合計し、平方根を取ることで計算されます
+  </message>
+  <message id="gcd-qr-window-title">エネルギー範囲合計状態</message>
+  <message id="gcd-qr-window-text">エネルギー範囲合計ツールの現在の状態。</message>
+  <message id="gcd-background-scale-note">バックグラウンドは{1}でスケールされています</message>
+  <message id="gcd-and-secondary-scaled"> およびセカンダリは </message>
+  <message id="gcd-secondary-scale-note">セカンダリバックグラウンドは次でスケールされています </message>
+  <message id="gcd-foreground-above-background">フォアグラウンドはバックグラウンドより{1} σ上です。</message>
+  <message id="gcd-foreground-below-background">フォアグラウンドはバックグラウンドより{1} σ下です。</message>
+</messages>

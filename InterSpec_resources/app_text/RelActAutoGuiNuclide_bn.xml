@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+
+  <!-- Labels -->
+  <message id="raagn-nuclide">নিউক্লাইড:</message>
+  <message id="raagn-age">বয়স:</message>
+  <message id="raagn-min-age">সর্বনিম্ন বয়স:</message>
+  <message id="raagn-max-age">সর্বোচ্চ বয়স:</message>
+
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">একটি সীমাবদ্ধতা টাইপ নির্বাচন করুন।</message>
+  <message id="raagn-min">সর্বনিম্ন:</message>
+  <message id="raagn-max">সর্বোচ্চ:</message>
+  <message id="raagn-src">উৎস:</message>
+  <message id="raagn-val">মান:</message>
+
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">কোনোটিই নয়</message>
+  <message id="raagn-constraint-rel-act">আপেক্ষিক অ্যাক্ট</message>
+  <message id="raagn-constraint-act-ratio">অ্যাক্ট অনুপাত</message>
+  <message id="raagn-constraint-mass-frac">ভর ভগ্নাংশ</message>
+
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">বয়স ফিট করুন</message>
+
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">সীমাবদ্ধতা যোগ করুন</message>
+
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">উদা. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (মেটা স্থিতিশীল অবস্থা), <b>Cs137</b>, Pb, Fe(n,n), ইত্যাদি।</message>
+  <message id="raagn-remove-constraint-tt">এই সীমাবদ্ধতা সরান</message>
+  <message id="raagn-add-constraint-tt">এই নিউক্লাইডে একটি সীমাবদ্ধতা যোগ করুন</message>
+
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1} একটি বৈধ নিউক্লাইড, x-রে, বা প্রতিক্রিয়া নয়।</message>
+  <message id="raagn-stable-nuclide">{1} একটি স্থিতিশীল নিউক্লাইড।</message>
+
+</messages>

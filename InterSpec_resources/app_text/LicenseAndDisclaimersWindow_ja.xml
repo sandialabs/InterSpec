@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">免責事項</message>
+  <message id="ladw-mi-credits">クレジット</message>
+  <message id="ladw-mi-contact">連絡先</message>
+  <message id="ladw-mi-license">ライセンス</message>
+  <message id="ladw-mi-data">データ</message>
+  <message id="ladw-data-location-user">
+    ユーザーデータは次に保存されています
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    核崩壊情報、断面積、その他のInterSpecに付属するデータは次に保存されています
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">エクスプローラーで開く</message>
+  <message id="ladw-show-data-location-macOS">Finderで開く</message>
+  <message id="ladw-show-data-location-win">表示</message>
+  <message id="ladw-data-location-network">
+    ブラウザからInterSpecを使用することもできます（ポート番号はInterSpec再起動時に変更されます）:
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      あなたは{4}以降、{3}セッションにわたって{2}ファイルを開き、約{1}間InterSpecを積極的に使用しています。
+  </message>
+  <message id="ladw-external-none">InterSpecはあなたのデバイス外部でデータを送受信しません。</message>
+  <message id="ladw-external-only-remote-rid">InterSpecは外部RID機能を使用する場合を除き、あなたのデバイス外部でデータを送受信しません。</message>
+  <message id="ladw-external-only-map">InterSpecはマップ機能を使用する場合を除き、あなたのデバイス外部でデータを送受信しません。</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpecはマップまたは外部RID機能を使用する場合を除き、あなたのデバイス外部でデータを送受信しません。</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpecは設定、読み込むスペクトル、保存されたアプリ状態、使用統計をローカルに保存します。
+    この情報はあなたのデバイスから離れることはなく、上に表示されたユーザーデータディレクトリを削除することで削除できます。
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    Google Maps機能を使用する場合、関連する場所のマップを受信するためにスペクトルファイルの位置情報がGoogleに送信されます。
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    マップツールを使用する場合、放射線測定のGPS座標を含む領域の<a href="https://arcgis.com">https://arcgis.com</a>からマップタイルが要求されますが、マップ上の放射線データのマーキング/表示はあなたのデバイス上で行われます。
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    外部RIDツールについては、次のプライバシーポリシーをご確認ください
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    外部RIDツールについては、入力するURLのプライバシーポリシーをご確認ください。
+  </message>
+</messages>

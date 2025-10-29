@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+  
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">Nama Tema</message>
+  <message id="ctwidget-description">Deskripsi</message>
+  <message id="ctwidget-title-placeholder">Judul belum ditetapkan</message>
+  <message id="ctwidget-desc-placeholder">Deskripsi belum ditetapkan</message>
+  <message id="ctwidget-empty">(kosong)</message>
+  
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">Area Non-Grafik</message>
+  <message id="ctwidget-backdrop-theme">Tema Latar Belakang</message>
+  <message id="ctwidget-backdrop-desc">Tema untuk semua area non-grafik</message>
+  
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">Warna Grafik</message>
+  
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">Spektrum Latar Depan</message>
+  <message id="ctwidget-spec-foreground-desc">Warna garis untuk spektrum latar depan</message>
+  <message id="ctwidget-spec-background">Spektrum Latar Belakang</message>
+  <message id="ctwidget-spec-background-desc">Warna garis untuk spektrum latar belakang</message>
+  <message id="ctwidget-spec-secondary">Spektrum Sekunder</message>
+  <message id="ctwidget-spec-secondary-desc">Warna garis untuk spektrum sekunder</message>
+  
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">Puncak Gunakan Warna Garis Referensi</message>
+  <message id="ctwidget-peaks-use-ref-desc">Menentukan apakah puncak yang baru di-fit mengambil warna garis referensi untuk puncak tersebut.</message>
+  <message id="ctwidget-default-peak-color">Warna Puncak Default</message>
+  <message id="ctwidget-default-peak-desc">Warna yang digunakan untuk puncak yang tidak memiliki warna yang ditetapkan</message>
+  
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">Sumbu Grafik Spektrum</message>
+  <message id="ctwidget-spectrum-axis-desc">Warna garis untuk sumbu X dan Y spektrum</message>
+  <message id="ctwidget-spectrum-text">Teks Grafik Spektrum</message>
+  <message id="ctwidget-spectrum-text-desc">Warna teks grafik spektrum (label sumbu y dan x)</message>
+  <message id="ctwidget-spectrum-area">Area Spektrum</message>
+  <message id="ctwidget-spectrum-area-desc">Warna latar belakang untuk grafik spektrum</message>
+  <message id="ctwidget-spectrum-margin">Latar Belakang Grafik Spektrum</message>
+  <message id="ctwidget-spectrum-margin-desc">Warna untuk margin grafik spektrum</message>
+  <message id="ctwidget-same-as-spectrum">Sama dengan area spektrum</message>
+  
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">Grafik Waktu Cacahan Gamma</message>
+  <message id="ctwidget-time-gamma-desc">Warna garis untuk cacahan gamma dalam grafik waktu</message>
+  <message id="ctwidget-time-neutron">Grafik Waktu Cacahan Neutron</message>
+  <message id="ctwidget-time-neutron-desc">Warna garis untuk cacahan neutron dalam grafik waktu</message>
+  <message id="ctwidget-time-axis">Sumbu Grafik Waktu</message>
+  <message id="ctwidget-time-axis-desc">Warna garis untuk sumbu X dan Y grafik waktu</message>
+  <message id="ctwidget-time-background">Latar Belakang Grafik Waktu</message>
+  <message id="ctwidget-time-background-desc">Warna latar belakang untuk grafik waktu</message>
+  <message id="ctwidget-time-margins">Margin Grafik Waktu</message>
+  <message id="ctwidget-time-margins-desc">Warna untuk margin grafik spektrum</message>
+  <message id="ctwidget-same-as-background">Sama dengan latar belakang</message>
+  <message id="ctwidget-time-text">Teks Grafik Waktu</message>
+  <message id="ctwidget-time-text-desc">Warna teks untuk grafik waktu (label sumbu x dan y)</message>
+  
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">Garis Indikator Okupansi</message>
+  <message id="ctwidget-occ-lines-desc">Garis yang menunjukkan awal dan akhir okupansi (data portal) atau periode waktu yang menarik (data mode pencarian)</message>
+  <message id="ctwidget-time-fore-highlight">Sorotan latar depan waktu</message>
+  <message id="ctwidget-time-fore-highlight-desc">Warna yang digunakan untuk menunjukkan pada grafik waktu, segmen waktu mana yang dijumlahkan untuk spektrum latar depan.</message>
+  <message id="ctwidget-time-back-highlight">Sorotan latar belakang waktu</message>
+  <message id="ctwidget-time-back-highlight-desc">Warna yang digunakan untuk menunjukkan pada grafik waktu, segmen waktu mana yang dijumlahkan untuk spektrum latar belakang.</message>
+  <message id="ctwidget-time-sec-highlight">Sorotan sekunder waktu</message>
+  <message id="ctwidget-time-sec-highlight-desc">Warna yang digunakan untuk menunjukkan pada grafik waktu, segmen waktu mana yang dijumlahkan untuk spektrum sekunder.</message>
+  
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">Warna Garis Referensi</message>
+  <message id="ctwidget-ref-line-colors-desc">Warna terurut yang digunakan untuk garis referensi</message>
+  <message id="ctwidget-specific-ref-colors">Warna Garis Referensi Sumber Spesifik</message>
+  <message id="ctwidget-specific-ref-desc">Warna yang digunakan untuk garis referensi untuk sumber yang diberikan</message>
+  <message id="ctwidget-dynamic-ref-lines">Garis Referensi Dinamis</message>
+  <message id="ctwidget-dynamic-ref-desc">Warna yang digunakan, berdasarkan jenis nuklida</message>
+  
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">Medis</message>
+  <message id="ctwidget-industrial">Industri</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">Umum</message>
+  <message id="ctwidget-other">Lainnya</message>
+  
+  <!-- Other options -->
+  <message id="ctwidget-other-options">Opsi Lainnya</message>
+  <message id="ctwidget-peak-label-size">Ukuran label puncak</message>
+  <message id="ctwidget-peak-label-size-desc">Menentukan ukuran font label puncak</message>
+  <message id="ctwidget-peak-label-angle">Sudut label puncak</message>
+  <message id="ctwidget-peak-label-angle-desc">Rotasi, dalam derajat, label puncak</message>
+  <message id="ctwidget-log-y-min">Minimum Y-Log</message>
+  <message id="ctwidget-log-y-min-desc">Nilai minimum yang ditampilkan pada sumbu y logaritmik, ketika ada kanal dengan cacahan nol atau negatif dalam rentang x yang ditampilkan.</message>
+</messages>
+

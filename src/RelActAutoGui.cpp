@@ -24,6 +24,9 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <cstdio>
+
+#include <boost/math/distributions/chi_squared.hpp>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_print.hpp"
@@ -107,6 +110,29 @@ extern void android_download_workaround( Wt::WResource *resource, std::string de
 
 namespace
 {
+  /** Helper function to format numeric values consistently for localization.
+   * 
+   * \param value The numeric value to format
+   * \param decimal_places Number of decimal places to show (e.g., 1 for "123.4", 2 for "123.45")
+   * \returns Formatted string representation of the number
+   * 
+   * Examples:
+   *   formatNumber(123.456, 1) → "123.5" (for energy values)
+   *   formatNumber(0.12345, 5) → "0.12345" (for gain/quad values)  
+   *   formatNumber(12.345, 2) → "12.35" (for energy offsets)
+   */
+  std::string formatNumber( const double value, const int decimal_places )
+  {
+    char buffer[32];
+    char format_str[8];
+    snprintf( format_str, sizeof(format_str), "%%.%df", decimal_places );
+    
+    //std::snprintf(buffer, sizeof(buffer), "%.*f", decimal_places, value);
+    
+    snprintf( buffer, sizeof(buffer), format_str, value );
+    return std::string( buffer );
+  }//formatNumber(...)
+
   struct DoWorkOnDestruct
   {
     std::function<void()> m_worker;
@@ -293,9 +319,8 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
   {
     disp = new RelActAutoGui( viewer );
     
-    window = new AuxWindow( "Relative Act. Isotopics", 
-                           Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                           | AuxWindowProperties::EnableResize );
+    window = new AuxWindow( WString::tr("raag-window-title"), 
+                            (AuxWindowProperties::SetCloseable | AuxWindowProperties::EnableResize) );
     // We have to set minimum size before calling setResizable, or else Wt's Resizable.js functions
     //  will be called first, which will then default to using the initial size as minimum allowable
     window->setMinimumSize( 800, 480 );
@@ -359,7 +384,7 @@ std::pair<RelActAutoGui *,AuxWindow *> RelActAutoGui::createWindow( InterSpec *v
     window->centerWindow();
   }catch( std::exception &e )
   {
-    passMessage( "Error creating Relative Act. Isotopics tool: " + string(e.what()),
+    passMessage( WString::tr("raag-error-creating-tool").arg(e.what()),
                 WarningWidget::WarningMsgHigh );
     
     if( disp )
@@ -417,6 +442,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_presets( nullptr ),
   m_loading_preset( false ),
   m_current_preset_index( -1 ),
+  m_user_note( nullptr ),
   m_error_msg( nullptr ),
   m_fit_chi2_msg( nullptr ),
   m_rel_eff_opts_menu( nullptr ),
@@ -462,6 +488,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   if( !m_interspec )
     throw runtime_error( "RelActAutoGui: requires pointer to InterSpec" );
   
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  assert( app );
+  if( app )
+    app->useMessageResourceBundle( "RelActAutoGui" );
+    
   new UndoRedoManager::BlockGuiUndoRedo( this );
     
   wApp->useStyleSheet( "InterSpec_resources/RelActAutoGui.css" );
@@ -479,9 +510,10 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   WStackedWidget *upper_stack = new WStackedWidget();
   upper_stack->addStyleClass( "UpperStack" );
-  WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
-  upper_stack->setTransitionAnimation( animation, true );
-  
+  // Adding this transformation causes the "Rel. Eff." chart to resize wrong initially when you click to it
+  //WAnimation animation(Wt::WAnimation::Fade, Wt::WAnimation::Linear, 200);
+  //upper_stack->setTransitionAnimation( animation, true );
+
   m_upper_menu = new WMenu( upper_stack, Wt::Vertical, upper_div );
   m_upper_menu->addStyleClass( "UpperMenu LightNavMenu" );
   upper_div->addWidget( upper_stack );
@@ -490,9 +522,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum = new D3SpectrumDisplayDiv();
   m_spectrum->setCompactAxis( true );
   m_spectrum->disableLegend();
-  m_interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
-  m_spectrum->applyColorTheme( m_interspec->getColorTheme() );
-  
+
   const bool logypref = UserPreferences::preferenceValue<bool>( "LogY", m_interspec );
   m_spectrum->setYAxisLog( logypref );
   
@@ -504,10 +534,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     else
       set_lin_y();
   };
-  
-  m_interspec->preferences()->addCallbackWhenChanged( "LogY", m_spectrum, 
+    
+  UserPreferences * const preferences = m_interspec->preferences();
+    
+  preferences->addCallbackWhenChanged( "LogY", m_spectrum,
                                                      &D3SpectrumDisplayDiv::setYAxisLog );
-  
+  preferences->addIntCallbackWhenChanged( "RefLineThickness", m_spectrum,
+                                             &D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback );
+  const int ref_line_thick = std::max(0, std::min(3, UserPreferences::preferenceValue<int>( "RefLineThickness", m_interspec) ));
+  m_spectrum->setRefLineThickness( static_cast<D3SpectrumDisplayDiv::RefLineThickness>(ref_line_thick) );
+
+  preferences->addIntCallbackWhenChanged( "RefLineVerbosity", m_spectrum,
+                                             &D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback );
+  const int ref_line_verbosity = std::max(0, std::min(2, UserPreferences::preferenceValue<int>( "RefLineVerbosity", m_interspec) ));
+  m_spectrum->setRefLineVerbosity( static_cast<D3SpectrumDisplayDiv::RefLineVerbosity>(ref_line_verbosity) );
+    
   m_peak_model = new PeakModel( m_spectrum );
   m_peak_model->setNoSpecMeasBacking();
   
@@ -522,7 +563,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_rel_eff_chart = new RelEffChart();
   m_txt_results = new RelActTxtResults();
   
-  WMenuItem *item = new WMenuItem( "Spec.", m_spectrum );
+  WMenuItem *item = new WMenuItem( WString::tr("raag-spec"), m_spectrum );
   m_upper_menu->addItem( item );
   
   // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
@@ -531,7 +572,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     item->triggered().emit( item );
   }) );
   
-  item = new WMenuItem( "Rel. Eff.", m_rel_eff_chart );
+  item = new WMenuItem( WString::tr("raag-rel-eff"), m_rel_eff_chart );
   m_upper_menu->addItem( item );
   
   item->clicked().connect( std::bind([this,item](){
@@ -540,7 +581,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   }) );
   
   
-  item = new WMenuItem( "Result", m_txt_results );
+  item = new WMenuItem( WString::tr("raag-result"), m_txt_results );
   m_upper_menu->addItem( item );
   
   item->clicked().connect( std::bind([this,item](){
@@ -575,11 +616,11 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   WContainerWidget *presetDiv = new WContainerWidget( this );
   presetDiv->addStyleClass( "PresetsRow" );
-  WLabel *label = new WLabel( "Presets", presetDiv );
+  WLabel *label = new WLabel( WString::tr("raag-presets"), presetDiv );
   m_presets = new WComboBox( presetDiv );
   label->setBuddy( m_presets );
   
-  m_presets->addItem( "Blank" );
+  m_presets->addItem( WString::tr("raag-preset-blank") );
   m_preset_paths.push_back( "" );
   
   for( const string &filename : default_par_sets )
@@ -598,7 +639,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     if( dispname.size() > 4 )
       dispname = dispname.substr(0, filename.size() - 4);
     
-    m_presets->addItem( WString::fromUTF8("User: " + dispname) );
+    m_presets->addItem( WString::tr("raag-user-preset").arg(WString::fromUTF8(dispname)) );
     m_preset_paths.push_back( filename );
   }//for( string filename : default_par_sets )
   
@@ -607,61 +648,72 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_presets->setCurrentIndex( 0 );
   m_current_preset_index = 0;
   m_presets->changed().connect( this, &RelActAutoGui::handlePresetChange );
-  
-  WContainerWidget *spacer = new WContainerWidget( presetDiv );
-  spacer->addStyleClass( "RelActAutoSpacer" );
 
-  m_error_msg = new WText( "Not Calculated.", presetDiv );
+  // We'll add a place the user can make a note about the RelEff setup -
+  // TODO: we currently have zero discoverability that the user can enter a note
+  m_user_note = new WInPlaceEdit( presetDiv );
+  m_user_note->setButtonsEnabled( false );
+  m_user_note->addStyleClass( "RelActAutoUserNote" );
+  m_user_note->valueChanged().connect( this, &RelActAutoGui::handleUserNoteChanged );
+  // We need to make the widget clickable
+  m_user_note->setMinimumSize( 15, 10 );
+  m_user_note->textWidget()->setMinimumSize( 15, 10 );
+  m_user_note->textWidget()->setInline( false );
+
+  //WContainerWidget *spacer = new WContainerWidget( presetDiv );
+  //spacer->addStyleClass( "RelActAutoSpacer" );
+
+  m_error_msg = new WText( WString::tr("raag-not-calculated"), presetDiv );
   m_error_msg->addStyleClass( "RelActAutoErrMsg" );
 
   m_fit_chi2_msg = new WText( "", presetDiv );
   m_fit_chi2_msg->addStyleClass( "RelActAutoChi2Msg" );
 
-  m_status_indicator = new WText( "Calculating...", presetDiv );
+  m_status_indicator = new WText( WString::tr("raag-calculating"), presetDiv );
   m_status_indicator->addStyleClass( "RelActAutoStatusMsg" );
   m_status_indicator->hide();
   
   // We'll take care of the options that apply to all types of Rel Eff curves now.
-  WGroupBox *generalOptionsDiv = new WGroupBox( "Spectrum and Peak Options", this );
+  WGroupBox *generalOptionsDiv = new WGroupBox( WString::tr("raag-spectrum-peak-options"), this );
   generalOptionsDiv->addStyleClass( "RelActAutoGeneralOptionsRow" );
 
-  m_fit_energy_cal = new WCheckBox( "Fit Energy Cal.", generalOptionsDiv );
+  m_fit_energy_cal = new WCheckBox( WString::tr("raag-fit-energy-cal"), generalOptionsDiv );
   m_fit_energy_cal->checked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
   m_fit_energy_cal->unChecked().connect( this, &RelActAutoGui::handleFitEnergyCalChanged );
   
-  m_background_subtract = new WCheckBox( "Back. Sub.", generalOptionsDiv );
+  m_background_subtract = new WCheckBox( WString::tr("raag-back-sub"), generalOptionsDiv );
   m_background_subtract->checked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   m_background_subtract->unChecked().connect( this, &RelActAutoGui::handleBackgroundSubtractChanged );
   
   WContainerWidget *fwhmEstDiv = new WContainerWidget( generalOptionsDiv );
   fwhmEstDiv->addStyleClass( "RelActAutoFwhmEstDiv" );
-  label = new WLabel( "FWHM Est.", fwhmEstDiv );
+  label = new WLabel( WString::tr("raag-fwhm-est"), fwhmEstDiv );
   m_fwhm_estimation_method = new WComboBox( fwhmEstDiv );
   label->setBuddy( m_fwhm_estimation_method );
 
   for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency); ++i )
   {
-    const char *name = "";
+    WString name;
     switch( RelActCalcAuto::FwhmEstimationMethod(i) )
     {
       case RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum: 
-        name = "Start from Det/Peaks"; 
+        name = WString::tr("raag-fwhm-start-det-peaks"); 
         break;
 
       case RelActCalcAuto::FwhmEstimationMethod::StartingFromAllPeaksInSpectrum: 
-        name = "Start from Peaks"; 
+        name = WString::tr("raag-fwhm-start-peaks"); 
         break;
       
       case RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum: 
-        name = "Fixed to Peaks"; 
+        name = WString::tr("raag-fwhm-fixed-peaks"); 
         break;
 
       case RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency: 
-        name = "Start from Det. Eff."; 
+        name = WString::tr("raag-fwhm-start-det-eff"); 
         break;
 
       case RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency: 
-        name = "Fixed to Det. Eff."; 
+        name = WString::tr("raag-fwhm-fixed-det-eff"); 
         break;
     }//switch( RelActCalcAuto::FwhmEstimationMethod(i) )
     
@@ -670,46 +722,59 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
 
   WContainerWidget *fwhmFormDiv = new WContainerWidget( generalOptionsDiv );
   fwhmFormDiv->addStyleClass( "RelActAutoFwhmFormDiv" );
-  label = new WLabel( "FWHM Form", fwhmFormDiv );
+  label = new WLabel( WString::tr("raag-fwhm-form"), fwhmFormDiv );
   
   m_fwhm_eqn_form = new WComboBox( fwhmFormDiv );
   label->setBuddy( m_fwhm_eqn_form );
+  WAbstractItemModel *fwhm_eqn_form_model = m_fwhm_eqn_form->model();
 
-  for( int i = 0; i <= static_cast<int>(RelActCalcAuto::FwhmForm::Polynomial_6); ++i )
+  int SqrtEnergyPlusInverse_index = -1;
+  for( int i = 0; i < static_cast<int>(RelActCalcAuto::FwhmForm::NotApplicable); ++i )
   {
-    const char *name = "";
-    switch( RelActCalcAuto::FwhmForm(i) )
+    WString name;
+    const RelActCalcAuto::FwhmForm fwhm_form = RelActCalcAuto::FwhmForm(i);
+    switch( fwhm_form )
     {
-      case RelActCalcAuto::FwhmForm::Gadras:        name = "Gadras"; break;
-      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:  name = "sqrt(A0 + A1*E + A2/E)"; break;
-      case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = "A0 + A1*sqrt(E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_2:  name = "sqrt(A0 + A1*E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_3:  name = "sqrt(A0 + A1*E + A2*E*E)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_4:  name = "sqrt(A0 + A1*E^1...A3*E^3)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_5:  name = "sqrt(A0 + A1*E^1...A4*E^4)"; break;
-      case RelActCalcAuto::FwhmForm::Polynomial_6:  name = "sqrt(A0 + A1*E^1...A5*E^5)"; break;
-      case RelActCalcAuto::FwhmForm::NotApplicable: name = "Use Det. Eff."; break;
+      case RelActCalcAuto::FwhmForm::Gadras:        name = WString::fromUTF8("Gadras"); break;
+      case RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse:
+        name = WString::fromUTF8("sqrt(A0 + A1*E + A2/E)");
+        SqrtEnergyPlusInverse_index = i;
+        break;
+      case RelActCalcAuto::FwhmForm::ConstantPlusSqrtEnergy: name = WString::fromUTF8("A0 + A1*sqrt(E)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_2:  name = WString::fromUTF8("sqrt(A0 + A1*E)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_3:  name = WString::fromUTF8("sqrt(A0 + A1*E + A2*E*E)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_4:  name = WString::fromUTF8("sqrt(A0 + A1*E^1...A3*E^3)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_5:  name = WString::fromUTF8("sqrt(A0 + A1*E^1...A4*E^4)"); break;
+      case RelActCalcAuto::FwhmForm::Polynomial_6:  name = WString::fromUTF8("sqrt(A0 + A1*E^1...A5*E^5)"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_2:    name = WString::fromUTF8("sqrt(A0 + A1*E) - stable"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_3:    name = WString::fromUTF8("sqrt(A0 + A1*E + A2*E*E) - stable"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_4:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A3*E^3) - stable"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_5:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A4*E^4) - stable"); break;
+      case RelActCalcAuto::FwhmForm::Berstein_6:    name = WString::fromUTF8("sqrt(A0 + A1*E^1...A5*E^5) - stable"); break;
+      case RelActCalcAuto::FwhmForm::NotApplicable: name = WString::tr("raag-use-det-eff"); break;
     }//switch( RelActCalcAuto::FwhmForm(i) )
     
+    const int num_rows = fwhm_eqn_form_model->rowCount();
     m_fwhm_eqn_form->addItem( name );
+    fwhm_eqn_form_model->setData( fwhm_eqn_form_model->index(num_rows, 0), fwhm_form, Wt::UserRole );
   }//for( loop over RelActCalcAuto::FwhmForm )
   
-  const char *tooltip = "The equation type used to model peak FWHM as a function of energy.";
+  WString tooltip = WString::tr("raag-tt-fwhm-form");
   HelpSystem::attachToolTipOn( fwhmFormDiv, tooltip, showToolTips );
-  
+    
   // TODO: need to set m_fwhm_eqn_form based on energy ranges selected
-  m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse) );
+  m_fwhm_eqn_form->setCurrentIndex( SqrtEnergyPlusInverse_index );
   m_fwhm_estimation_method->setCurrentIndex( static_cast<int>(RelActCalcAuto::FwhmEstimationMethod::StartFromDetEffOrPeaksInSpectrum) );
   m_fwhm_eqn_form->changed().connect( this, &RelActAutoGui::handleFwhmFormChanged );
   m_fwhm_estimation_method->changed().connect( this, &RelActAutoGui::handleFwhmEstimationMethodChanged );
   
   WContainerWidget *skewDiv = new WContainerWidget( generalOptionsDiv );
   skewDiv->addStyleClass( "RelActAutoSkewDiv" );
-  label = new WLabel( "Peak Skew", skewDiv );
+  label = new WLabel( WString::tr("raag-peak-skew"), skewDiv );
   m_skew_type = new WComboBox( skewDiv );
   label->setBuddy( m_skew_type );
   m_skew_type->activated().connect( this, &RelActAutoGui::handleSkewTypeChanged );
-  tooltip = "The type of skew to apply to the peaks; skew parameters will be fit.";
+  tooltip = WString::tr("raag-tt-skew-type");
   HelpSystem::attachToolTipOn( {label,m_skew_type}, tooltip, showToolTips );
   for( auto st = PeakDef::SkewType(0); st <= PeakDef::SkewType::DoubleSidedCrystalBall;
       st = PeakDef::SkewType(st + 1) )
@@ -722,7 +787,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   
   WContainerWidget *addUncertDiv = new WContainerWidget( generalOptionsDiv );
   addUncertDiv->addStyleClass( "RelActAutoAddUncertDiv" );
-  label = new WLabel( "Add. Uncert", addUncertDiv );
+  label = new WLabel( WString::tr("raag-add-uncert"), addUncertDiv );
   m_add_uncert = new WComboBox( addUncertDiv );
   label->setBuddy( m_add_uncert );
   m_add_uncert->activated().connect( this, &RelActAutoGui::handleAdditionalUncertChanged );
@@ -734,7 +799,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
     WString uncert_txt;
     switch( i )
     {
-      case AddUncert::StatOnly:           uncert_txt = WString::fromUTF8("None");  break;
+      case AddUncert::StatOnly:           uncert_txt = WString::tr("raag-none");  break;
       case AddUncert::OneHundrethPercent: uncert_txt = WString::fromUTF8("0.01%"); break;
       case AddUncert::OneTenthPercent:    uncert_txt = WString::fromUTF8("0.1%");  break;
       case AddUncert::OnePercent:         uncert_txt = WString::fromUTF8("1%");    break;
@@ -753,7 +818,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
     
   
-  WGroupBox *optionsDiv = new WGroupBox( "Relative Efficiency Curve Options", this );
+  WGroupBox *optionsDiv = new WGroupBox( WString::tr("raag-rel-eff-curve-options"), this );
   optionsDiv->addStyleClass( "RelActAutoOptions" );
 
   m_rel_eff_opts_stack = new WStackedWidget();
@@ -767,7 +832,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   optionsDiv->addWidget( m_rel_eff_opts_stack );
 
 /*
-  label = new WLabel( "Yield Info", optionsDiv );
+  label = new WLabel( WString::tr("raag-yield-info"), optionsDiv );
   label->addStyleClass( "GridSeventhCol GridFirstRow" );
   
   m_u_pu_data_source = new WComboBox( optionsDiv );
@@ -775,7 +840,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_u_pu_data_source->activated().connect( this, &RelActAutoGui::handleNucDataSrcChanged );
   m_u_pu_data_source->addStyleClass( "GridEighthCol GridFirstRow" );
   
-  tooltip = "The nuclear data source for gamma branching ratios of uranium and plutonium.";
+  tooltip = WString::tr("raag-tt-u-pu-data-source");
   HelpSystem::attachToolTipOn( {label, m_u_pu_data_source}, tooltip, showToolTips );
   
   using RelActCalcManual::PeakCsvInput::NucDataSrc;
@@ -808,26 +873,26 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   if( is_phone )
     m_more_options_menu->addPhoneBackItem( nullptr );
   
-  m_apply_energy_cal_item = m_more_options_menu->addMenuItem( "Apply Energy Cal" );
+  m_apply_energy_cal_item = m_more_options_menu->addMenuItem( WString::tr("raag-apply-energy-cal") );
   m_apply_energy_cal_item->triggered().connect( this, &RelActAutoGui::startApplyFitEnergyCalToSpecFile );
   
-  m_show_ref_lines_item = m_more_options_menu->addMenuItem( "Show Ref. Gamma Lines" );
+  m_show_ref_lines_item = m_more_options_menu->addMenuItem( WString::tr("raag-show-ref-lines") );
   m_show_ref_lines_item->triggered().connect( boost::bind( &RelActAutoGui::handleShowRefLines, this, true ) );
   
-  m_hide_ref_lines_item = m_more_options_menu->addMenuItem( "Hide Ref. Gamma Lines" );
+  m_hide_ref_lines_item = m_more_options_menu->addMenuItem( WString::tr("raag-hide-ref-lines") );
   m_hide_ref_lines_item->triggered().connect( boost::bind( &RelActAutoGui::handleShowRefLines, this, false ) );
   m_hide_ref_lines_item->setHidden( true );
   m_hide_ref_lines_item->setDisabled( true );
   
-  m_set_peaks_foreground = m_more_options_menu->addMenuItem( "Set Peaks to foreground" );
+  m_set_peaks_foreground = m_more_options_menu->addMenuItem( WString::tr("raag-set-peaks-foreground") );
   m_set_peaks_foreground->triggered().connect( boost::bind( &RelActAutoGui::setPeaksToForeground, this ) );
   m_set_peaks_foreground->setDisabled( true );
 
-  m_show_background = m_more_options_menu->addMenuItem( "Show Background" );
+  m_show_background = m_more_options_menu->addMenuItem( WString::tr("raag-show-background") );
   m_show_background->triggered().connect( boost::bind( &RelActAutoGui::handleShowBackground, this, true ) );
   m_show_background->setDisabled( true );
 
-  m_hide_background = m_more_options_menu->addMenuItem( "Hide Background" );
+  m_hide_background = m_more_options_menu->addMenuItem( WString::tr("raag-hide-background") );
   m_hide_background->triggered().connect( boost::bind( &RelActAutoGui::handleShowBackground, this, false ) );
   m_hide_background->setDisabled( true );
 
@@ -840,15 +905,15 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   bottomArea->addStyleClass( "EnergiesAndNuclidesHolder" );
   
   //WContainerWidget *nuclidesHolder = new WContainerWidget( bottomArea );
-  WGroupBox *nuclidesHolder = new WGroupBox( "Nuclides", bottomArea );
+  WGroupBox *nuclidesHolder = new WGroupBox( WString::tr("raag-nuclides"), bottomArea );
   nuclidesHolder->addStyleClass( "NuclidesHolder" );
   
   //WContainerWidget *energiesHolder = new WContainerWidget( bottomArea );
-  WGroupBox *energiesHolder = new WGroupBox( "Energy Ranges", bottomArea );
+  WGroupBox *energiesHolder = new WGroupBox( WString::tr("raag-energy-ranges"), bottomArea );
   energiesHolder->addStyleClass( "EnergiesHolder" );
   
   //m_free_peaks_container = new WContainerWidget( bottomArea );
-  m_free_peaks_container = new WGroupBox( "Free Peaks", bottomArea );
+  m_free_peaks_container = new WGroupBox( WString::tr("raag-free-peaks"), bottomArea );
   m_free_peaks_container->addStyleClass( "FreePeaksHolder" );
   m_free_peaks_container->hide();
   
@@ -874,16 +939,16 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   add_nuc_icon->setStyleClass( "AddEnergyRangeOrNuc Wt-icon" );
   add_nuc_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_nuc_icon->clicked().connect( this, &RelActAutoGui::handleAddNuclideForCurrentRelEffCurve );
-  tooltip = "Add a source.";
+  tooltip = WString::tr("raag-tt-add-source");
   HelpSystem::attachToolTipOn( add_nuc_icon, tooltip, showToolTips );
 
-  spacer = new WContainerWidget( nuc_footer );
+  WContainerWidget *spacer = new WContainerWidget( nuc_footer );
   spacer->addStyleClass( "RelActAutoSpacer" );
 
   // same_z_age is something that _could_ be a per-relative-efficiency option, 
   //  but it's a little cleaner and maybe clearer to have it here, near the nuclides
   //  (and we are currently forcing nuclides to be same age between RelEff curves...)
-  m_same_z_age = new WCheckBox( "Same Z same age", nuc_footer );
+  m_same_z_age = new WCheckBox( WString::tr("raag-same-z-same-age"), nuc_footer );
   m_same_z_age->addStyleClass( "SameZAgeCb CbNoLineBreak" );
   m_same_z_age->checked().connect( this, &RelActAutoGui::handleSameAgeChanged );
   m_same_z_age->unChecked().connect( this, &RelActAutoGui::handleSameAgeChanged );
@@ -903,7 +968,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   add_energy_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_energy_icon->clicked().connect( this, &RelActAutoGui::handleAddEnergy );
   
-  tooltip = "Add an energy range.";
+  tooltip = WString::tr("raag-tt-add-energy-range");
   HelpSystem::attachToolTipOn( add_energy_icon, tooltip, showToolTips );
 
 
@@ -911,23 +976,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_sort_energy_ranges->setStyleClass( "SortEneRanges Decend Wt-icon" );
   m_sort_energy_ranges->setIcon("InterSpec_resources/images/sort_decend_icon.svg");
   m_sort_energy_ranges->clicked().connect( this, &RelActAutoGui::handleSortEnergyRanges );
-  tooltip = "Sort energy ranges.";
-  HelpSystem::attachToolTipOn( m_sort_energy_ranges, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_sort_energy_ranges, WString::tr("raag-sort-energy-ranges-tt"), showToolTips );
   m_sort_energy_ranges->hide();
 
 
   spacer = new WContainerWidget( energies_footer );
   spacer->addStyleClass( "RelActAutoSpacer" );
 
-  m_show_free_peak = new WPushButton( "add free peaks", energies_footer );
+  m_show_free_peak = new WPushButton( WString::tr("raag-add-free-peaks"), energies_footer );
   m_show_free_peak->addStyleClass( "ShowFreePeaks LightButton" );
   m_show_free_peak->clicked().connect( this, &RelActAutoGui::handleShowFreePeaks );
   
-  m_clear_energy_ranges = new WPushButton( "clear all ranges", energies_footer );
+  m_clear_energy_ranges = new WPushButton( WString::tr("raag-clear-all-ranges"), energies_footer );
   m_clear_energy_ranges->addStyleClass( "ClearEnergyRanges LightButton" );
   m_clear_energy_ranges->clicked().connect( this, &RelActAutoGui::handleClearAllEnergyRanges );
-  tooltip = "Removes all energy ranges.";
-  HelpSystem::attachToolTipOn( m_clear_energy_ranges, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_clear_energy_ranges, WString::tr("raag-remove-all-ranges-tt"), showToolTips );
   m_clear_energy_ranges->hide();
   m_sort_energy_ranges->hide();
 
@@ -944,19 +1007,14 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   add_free_peak_icon->setIcon("InterSpec_resources/images/plus_min_black.svg");
   add_free_peak_icon->clicked().connect( boost::bind( &RelActAutoGui::handleAddFreePeak, this, 0.0, true, true ) );
   
-  WPushButton *hide_free_peak = new WPushButton( "Close", free_peaks_footer );
+  WPushButton *hide_free_peak = new WPushButton( WString::tr("Close"), free_peaks_footer );
   hide_free_peak->addStyleClass( "HideFreePeaks LightButton" );
   hide_free_peak->clicked().connect( this, &RelActAutoGui::handleHideFreePeaks );
   
-  tooltip = "Remove all free peaks, and hide the free peaks input.";
-  HelpSystem::attachToolTipOn( hide_free_peak, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( hide_free_peak, WString::tr("raag-remove-free-peaks-tt"), showToolTips );
   
   
-  tooltip = "&quot;Free peaks&quot; are peaks with a specific energy, that are not associated with any nuclide,"
-  " and their amplitude is fit to the best value for the data.  The peaks may optionally be released from the"
-  " functional FWHM constraint as well.<br />"
-  "Free peaks are useful to handle peaks from reactions, or from unidentified nuclides.";
-  HelpSystem::attachToolTipOn( {m_free_peaks_container,m_show_free_peak}, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( {m_free_peaks_container,m_show_free_peak}, WString::tr("raag-free-peaks-tt"), showToolTips );
   
     
   auto html_rsc = dynamic_cast<RelActAutoReportResource *>( m_html_download_rsc );
@@ -1101,7 +1159,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   
   
   options.fit_energy_cal = m_fit_energy_cal->isChecked();
-  options.fwhm_form = RelActCalcAuto::FwhmForm( std::max(0,m_fwhm_eqn_form->currentIndex()) );
+  options.fwhm_form = getFwhmFormFromCombo();
   options.fwhm_estimation_method = RelActCalcAuto::FwhmEstimationMethod( std::max(0,m_fwhm_estimation_method->currentIndex()) );
   if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
     options.fwhm_form = RelActCalcAuto::FwhmForm::NotApplicable;
@@ -1175,8 +1233,22 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
         phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
       same_ext_shieldings = (same_ext_shieldings || opts->physModelSameExtShieldAllCurves());
       same_hoerl_all_curves = (same_hoerl_all_curves || opts->physModelSameHoerlOnAllCurves());
-    }
-    
+
+      if( opts->physModelShieldedByOtherCurves() )
+      {
+        for( int outer_index = 0; outer_index < num_rel_eff_curves; ++outer_index )
+        {
+          if( outer_index == rel_eff_curve_index )
+            continue;
+          const RelActAutoGuiRelEffOptions *outer_opts = getRelEffCurveOptions( outer_index );
+          if( !outer_opts )
+            throw runtime_error( "Failed to get outer RelActAutoGuiRelEffOptions" );
+          if( outer_opts->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+            rel_eff_curve.shielded_by_other_phys_model_curve_shieldings.insert( outer_index );
+        }//for( int outer_index = 0; outer_index < num_rel_eff_curves; ++outer_index )
+      }//if( opts->physModelShieldedByOtherCurves() )
+    }//if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+
     options.rel_eff_curves.push_back( rel_eff_curve );
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
@@ -1363,9 +1435,9 @@ void RelActAutoGui::updateMultiPhysicalModelUI( RelActAutoGuiRelEffOptions *chan
 
 void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
                    double new_roi_upper_energy,
-                   double new_roi_lower_px,
-                   double new_roi_upper_px,
+                   double new_roi_px,
                    const double original_roi_lower_energy,
+                   string spectrum_type,
                    const bool is_final_range )
 {
   //cout << "RelActAutoGui::handleRoiDrag: original_roi_lower_energy=" << original_roi_lower_energy
@@ -1414,7 +1486,7 @@ void RelActAutoGui::handleRoiDrag( double new_roi_lower_energy,
     return;
   }//if( failed to find continuum )
   
-  if( is_final_range && (new_roi_upper_px < new_roi_lower_px) )
+  if( is_final_range && (new_roi_px < 0.0) )
   {
     handleRemoveEnergy( range );
     return;
@@ -1531,7 +1603,10 @@ void RelActAutoGui::handleCreateRoiDrag( const double lower_energy,
     auto peak = make_shared<PeakDef>(mean, sigma, amplitude );
     
     peak->continuum()->setRange( roi_lower, roi_upper );
-    peak->continuum()->calc_linear_continuum_eqn( m_foreground, mean, roi_lower, roi_upper, 3, 3 );
+    shared_ptr<const SpecUtils::Measurement> histogram = m_spectrum->data();
+    if( !histogram )
+      histogram = m_foreground;
+    peak->continuum()->calc_linear_continuum_eqn( histogram, mean, roi_lower, roi_upper, 3, 3 );
     
     m_spectrum->updateRoiBeingDragged( vector< shared_ptr<const PeakDef>>{peak} );
   }catch( std::exception &e )
@@ -1567,19 +1642,18 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
 {
   try
   {
-    char buffer[256] = { '\0' };
-    
     // Check if click was in a ROI, and if so ignore it
     const vector<RelActCalcAuto::RoiRange> orig_rois = getRoiRanges();
     for( const RelActCalcAuto::RoiRange &roi : orig_rois )
     {
       if( (energy > roi.lower_energy) && (energy < roi.upper_energy) )
       {
-        snprintf( buffer, sizeof(buffer),
-                 "%.1f keV is already in the energy range [%.1f, %.1f] keV - no action will be taken.",
-                 energy, roi.lower_energy, roi.upper_energy );
+        const WString msg = WString::tr("raag-energy-already-in-range")
+                          .arg(formatNumber(energy, 1))
+                          .arg(formatNumber(roi.lower_energy, 1))
+                          .arg(formatNumber(roi.upper_energy, 1));
         
-        passMessage( buffer, WarningWidget::WarningMsgMedium );
+        passMessage( msg, WarningWidget::WarningMsgMedium );
         return;
       }
     }//for( const RelActCalcAuto::RoiRange &roi : orig_rois )
@@ -1688,19 +1762,20 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     lower_energy = new_roi_w->lowerEnergy();
     upper_energy = new_roi_w->upperEnergy();
     
+    WString msg;
     if( combined_an_roi )
     {
-      snprintf( buffer, sizeof(buffer),
-               "Extended existing energy range to [%.1f, %.1f] keV.",
-               lower_energy, upper_energy );
+      msg = WString::tr("raag-extended-energy-range")
+            .arg(formatNumber(lower_energy, 1))
+            .arg(formatNumber(upper_energy, 1));
     }else
     {
-      snprintf( buffer, sizeof(buffer),
-               "Added a new new energy range from %.1f to %.1f keV.",
-               lower_energy, upper_energy );
+      msg = WString::tr("raag-added-new-energy-range")
+            .arg(formatNumber(lower_energy, 1))
+            .arg(formatNumber(upper_energy, 1));
     }//if( combined_an_roi ) / else
         
-    passMessage( buffer, WarningWidget::WarningMsgLow );
+    passMessage( msg, WarningWidget::WarningMsgLow );
     
     checkIfInUserConfigOrCreateOne( false );
     m_render_flags |= RenderActions::UpdateEnergyRanges;
@@ -1708,7 +1783,7 @@ void RelActAutoGui::handleDoubleLeftClick( const double energy, const double /* 
     scheduleRender();
   }catch( std::exception &e )
   {
-    passMessage( "handleDoubleLeftClick error: " + string(e.what()), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("raag-handle-double-click-error").arg(e.what()), WarningWidget::WarningMsgHigh );
   }//try / catch
 }//void handleDoubleLeftClick( const double energy, const double counts )
 
@@ -1767,7 +1842,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   if( is_phone )
     item = menu->addPhoneBackItem( nullptr );
   
-  item = menu->addMenuItem( "ROI options:" );
+  item = menu->addMenuItem( WString::tr("raag-roi-options") );
   item->disable();
   item->setSelectable( false );
   menu->addSeparator();
@@ -1784,12 +1859,11 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
       item->setDisabled( true );
   }//for( loop over PeakContinuum::OffsetTypes )
   
-  item = menu->addMenuItem( "Remove ROI" );
+  item = menu->addMenuItem( WString::tr("raag-remove-roi") );
   item->triggered().connect( boost::bind( &RelActAutoGui::handleRemoveEnergy, this, static_cast<WWidget *>(range) ) );
   
-  char buffer[128] = { '\0' };
-  snprintf( buffer, sizeof(buffer), "Split ROI at %.1f keV", energy );
-  item = menu->addMenuItem( buffer );
+  const WString split_text = WString::tr("raag-split-roi-at").arg(formatNumber(energy, 1));
+  item = menu->addMenuItem( split_text );
   item->triggered().connect( boost::bind( &RelActAutoGui::handleSplitEnergyRange, this, static_cast<WWidget *>(range), energy ) );
   
   const char *item_label = "";
@@ -1803,7 +1877,7 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   // TODO: we could be a little more intelligent about when offering to combine ROIs
   if( range_to_left )
   {
-    item = menu->addMenuItem( "Combine with ROI to left" );
+    item = menu->addMenuItem( WString::tr("raag-combine-roi-left") );
     item->triggered().connect( boost::bind( &RelActAutoGui::handleCombineRoi, this,
                                            static_cast<WWidget *>(range_to_left),
                                            static_cast<WWidget *>(range) ) );
@@ -1811,15 +1885,15 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   
   if( range_to_right )
   {
-    item = menu->addMenuItem( "Combine with ROI to right" );
+    item = menu->addMenuItem( WString::tr("raag-combine-roi-right") );
     item->triggered().connect( boost::bind( &RelActAutoGui::handleCombineRoi, this,
                                            static_cast<WWidget *>(range),
                                            static_cast<WWidget *>(range_to_right) ) );
   }//if( range_to_right )
   
   // TODO: Add floating peak item
-  snprintf( buffer, sizeof(buffer), "Add free peak at %.1f keV", energy );
-  item = menu->addMenuItem( buffer );
+  const WString free_peak_text = WString::tr("raag-add-free-peak-at").arg(formatNumber(energy, 1));
+  item = menu->addMenuItem( free_peak_text );
   item->triggered().connect( boost::bind( &RelActAutoGui::handleAddFreePeak, this, energy, true, true ) );
   
   
@@ -1850,7 +1924,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( m_fwhm_eqn_form->label() )
     m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
   if( !fixed_to_det_eff && (options.fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable) )
-    m_fwhm_eqn_form->setCurrentIndex( static_cast<int>(options.fwhm_form) );
+    setFwhmFormFromCombo( options.fwhm_form );
   
   m_skew_type->setCurrentIndex( static_cast<int>(options.skew_type) );
   
@@ -2130,6 +2204,7 @@ Wt::WWidget *RelActAutoGui::handleCombineRoi( Wt::WWidget *left_roi, Wt::WWidget
 rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
   RelActCalcAuto::RelActAutoGuiState state;
+  state.note = m_user_note->text().toUTF8();
   state.options = getCalcOptions();
   state.background_subtract = (m_background_subtract->isEnabled() && m_background_subtract->isChecked());
   state.show_ref_lines = m_hide_ref_lines_item->isEnabled();
@@ -2146,7 +2221,11 @@ void RelActAutoGui::deSerialize( const rapidxml::xml_node<char> *base_node )
   
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( base_node, materialDb );
-  
+
+  const WString user_note = WString::fromUTF8(state.note);
+  m_user_note->setText( user_note );
+  m_user_note->setToolTip( user_note );
+
   m_background_subtract->setChecked( state.background_subtract );
   
   m_show_ref_lines_item->setHidden( state.show_ref_lines );
@@ -2264,17 +2343,14 @@ void RelActAutoGui::handlePresetChange()
     const auto iter = m_previous_presets.find(index);
     if( iter == std::end(m_previous_presets) )
     {
-      passMessage( "Expected state information for '" + m_presets->currentText().toUTF8()
-                   + "' is not available - this is not expected - sorry!", WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("raag-expected-state-info").arg(m_presets->currentText()), WarningWidget::WarningMsgHigh );
       
       return;
     }//if( iter == std::end(m_previous_presets) )
     
     if( !iter->second )
     {
-      passMessage( "State information was not previously able to be saved for '"
-                  + m_presets->currentText().toUTF8() + "' - this is not expected - sorry!",
-                  WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("raag-state-info-not-saved").arg(m_presets->currentText()), WarningWidget::WarningMsgHigh );
       
       return;
     }//if( !iter->second )
@@ -2284,7 +2360,7 @@ void RelActAutoGui::handlePresetChange()
       setGuiStateFromXml( iter->second.get() );
     }catch( std::exception &e )
     {
-      passMessage( "Error de-serializing tool state: " + string(e.what()),
+      passMessage( WString::tr("raag-error-deserializing").arg(e.what()),
                   WarningWidget::WarningMsgHigh );
     }
     
@@ -2320,7 +2396,7 @@ void RelActAutoGui::handlePresetChange()
     passMessage( msg, WarningWidget::WarningMsgHigh );
   }catch( std::exception &e )
   {
-    passMessage( "Error loading preset: " + string(e.what()), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("raag-error-loading-preset").arg(e.what()), WarningWidget::WarningMsgHigh );
   }//try / cat to read the XML
 }//void RelActAutoGui::handlePresetChange()
 
@@ -2419,6 +2495,10 @@ void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEf
   {
     RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
     assert( options );
+
+    if( options && same_shield )
+      options->setPhysModelShieldedByOtherCurves( false );
+
     if( !options || (options == rel_eff_curve_gui) )
       continue;
     
@@ -2436,6 +2516,36 @@ void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEf
 }//void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
 
+void RelActAutoGui::handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+{
+  assert( rel_eff_curve_gui );
+  if( !rel_eff_curve_gui )
+    return;
+
+  const bool shielded_by_others = rel_eff_curve_gui->physModelShieldedByOtherCurves();
+  if( shielded_by_others )
+  {
+    rel_eff_curve_gui->setPhysModelSameExtShieldAllCurves( false );
+
+    for( int index = 0; index < m_rel_eff_opts_menu->count(); ++index )
+    {
+      WMenuItem *this_item = m_rel_eff_opts_menu->itemAt( index );
+      RelActAutoGuiRelEffOptions *this_curve = dynamic_cast<RelActAutoGuiRelEffOptions *>( this_item->contents() );
+      assert( this_curve );
+      if( this_curve && (this_curve != rel_eff_curve_gui) )
+      {
+        this_curve->setPhysModelShieldedByOtherCurves( false );
+        this_curve->setPhysModelSameExtShieldAllCurves( false );
+      }
+    }
+  }//if( shielded_by_others )
+
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::UpdateCalculations;
+  scheduleRender();
+}//void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+
+
 void RelActAutoGui::handleRelEffEqnOrderChanged()
 {
   checkIfInUserConfigOrCreateOne( false );
@@ -2450,6 +2560,75 @@ void RelActAutoGui::handleFwhmFormChanged()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFwhmFormChanged()
+
+
+RelActCalcAuto::FwhmForm RelActAutoGui::getFwhmFormFromCombo() const
+{
+  if( !m_fwhm_eqn_form )
+  {
+    cerr << "RelActAutoGui::getFwhmFormFromCombo(): m_fwhm_eqn_form is null" << endl;
+    throw std::logic_error( "m_fwhm_eqn_form is null" );
+  }
+    
+  const int current_index = m_fwhm_eqn_form->currentIndex();
+  if( current_index < 0 )
+  {
+    cerr << "RelActAutoGui::getFwhmFormFromCombo(): current_index is negative (" << current_index << ")" << endl;
+    throw std::logic_error( "m_fwhm_eqn_form has invalid current index" );
+  }
+    
+  const WAbstractItemModel *model = m_fwhm_eqn_form->model();
+  const WModelIndex model_index = model->index( current_index, 0 );
+  const boost::any data = model->data( model_index, Wt::UserRole );
+  
+  try
+  {
+    return boost::any_cast<RelActCalcAuto::FwhmForm>( data );
+  }catch( const boost::bad_any_cast &e )
+  {
+    cerr << "RelActAutoGui::getFwhmFormFromCombo(): Failed to cast model data to FwhmForm at index " 
+         << current_index << ": " << e.what() << endl;
+    throw std::logic_error( "Failed to get FwhmForm from combo box model data" );
+  }
+}//RelActCalcAuto::FwhmForm getFwhmFormFromCombo()
+
+
+void RelActAutoGui::setFwhmFormFromCombo( const RelActCalcAuto::FwhmForm form )
+{
+  if( !m_fwhm_eqn_form )
+  {
+    cerr << "RelActAutoGui::setFwhmFormFromCombo(): m_fwhm_eqn_form is null" << endl;
+    throw std::logic_error( "m_fwhm_eqn_form is null" );
+  }
+    
+  const WAbstractItemModel *model = m_fwhm_eqn_form->model();
+  const int num_rows = model->rowCount();
+  
+  for( int i = 0; i < num_rows; ++i )
+  {
+    const WModelIndex model_index = model->index( i, 0 );
+    const boost::any data = model->data( model_index, Wt::UserRole );
+    
+    try
+    {
+      const RelActCalcAuto::FwhmForm stored_form = boost::any_cast<RelActCalcAuto::FwhmForm>( data );
+      if( stored_form == form )
+      {
+        m_fwhm_eqn_form->setCurrentIndex( i );
+        return;
+      }
+    }catch( const boost::bad_any_cast &e )
+    {
+      cerr << "RelActAutoGui::setFwhmFormFromCombo(): Failed to cast model data at index " 
+           << i << ": " << e.what() << endl;
+      continue;
+    }
+  }
+  
+  cerr << "RelActAutoGui::setFwhmFormFromCombo(): Could not find FwhmForm " 
+       << static_cast<int>(form) << " in combo box model data" << endl;
+  throw std::logic_error( "Could not find specified FwhmForm in combo box model data" );
+}//void setFwhmFormFromCombo()
 
 
 void RelActAutoGui::handleFwhmEstimationMethodChanged()
@@ -2475,6 +2654,12 @@ void RelActAutoGui::handleFitEnergyCalChanged()
   m_render_flags |= RenderActions::UpdateCalculations;
   scheduleRender();
 }//void handleFitEnergyCalChanged();
+
+
+void RelActAutoGui::handleUserNoteChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+}
 
 
 void RelActAutoGui::handleBackgroundSubtractChanged()
@@ -3014,9 +3199,9 @@ void RelActAutoGui::handleSortEnergyRanges()
 
 void RelActAutoGui::handleClearAllEnergyRanges()
 {
-  SimpleDialog *dialog = new SimpleDialog( "Clear energy ranges?", "&nbsp;" );
-  WPushButton *yes = dialog->addButton( "Yes" );
-  dialog->addButton( "No" );
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-clear-energy-ranges-title"), "&nbsp;" );
+  WPushButton *yes = dialog->addButton( WString::tr("Yes") );
+  dialog->addButton( WString::tr("No") );
   yes->clicked().connect( this, &RelActAutoGui::removeAllEnergyRanges );
 }//void handleClearAllEnergyRanges()
 
@@ -3121,18 +3306,18 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   if( !solution || (solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
   {
     // TODO: just hide/disable the button untill we have a valid solution
-    SimpleDialog *dialog = new SimpleDialog( "Can't perform this action.",
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"),
                                             "Sorry, a valid solution is needed before an energy range can be split." );
-    dialog->addButton( "Continue" );
+    dialog->addButton( WString::tr("Continue") );
     
     return;
   }//if( !solution || (solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
   
   if( !energy_range || energy_range->isEmpty() )
   {
-    SimpleDialog *dialog = new SimpleDialog( "Can't perform this action.",
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"),
                                             "Sorry, energy range is currently not valid." );
-    dialog->addButton( "Continue" );
+    dialog->addButton( WString::tr("Continue") );
     return;
   }
   
@@ -3165,27 +3350,26 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   } );
   
   
-  char buffer[512] = { '\0' };
   if( to_ranges.empty() )
   {
-    snprintf( buffer, sizeof(buffer),
-             "The energy range %.1f keV to %.1f keV did not contain any significant gamma contributions.",
-             lower_energy, upper_energy);
-    SimpleDialog *dialog = new SimpleDialog( "Can't perform this action.", buffer );
-    dialog->addButton( "Continue" );
+    const WString msg = WString::tr("raag-energy-range-no-contributions")
+                      .arg(formatNumber(lower_energy, 1))
+                      .arg(formatNumber(upper_energy, 1));
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-perform-action"), msg );
+    dialog->addButton( WString::tr("Continue") );
     return;
   }//if( to_ranges.empty() )
   
 
   
-  snprintf( buffer, sizeof(buffer),
-           "This action will divide the energy range from %.1f keV to %.1f keV into %i seperate energy ranges.<br />"
-           "<p>Would you like to continue?</p>",
-           lower_energy, upper_energy, static_cast<int>(to_ranges.size()) );
+  const WString msg = WString::tr("raag-divide-energy-range-msg")
+                    .arg(formatNumber(lower_energy, 1))
+                    .arg(formatNumber(upper_energy, 1))
+                    .arg(static_cast<int>(to_ranges.size()));
   
-  SimpleDialog *dialog = new SimpleDialog( "Divide Energy Range Up?", buffer );
-  WPushButton *yes_button = dialog->addButton( "Yes" );
-  dialog->addButton( "No" );
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-divide-energy-range-title"), msg );
+  WPushButton *yes_button = dialog->addButton( WString::tr("Yes") );
+  dialog->addButton( WString::tr("No") );
   
   
   const auto on_yes = [this,w,to_ranges](){
@@ -3194,9 +3378,9 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     const auto pos = std::find( begin(kids), end(kids), w );
     if( pos == end(kids) )
     {
-      SimpleDialog *dialog = new SimpleDialog( "Error", "There was an unexpected error finding the original"
-                                              " energy range - sorry, cant complete operation." );
-      dialog->addButton( "Continue" );
+      SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-error"), WString::tr("raag-unexpected-error-finding-original")
+                                              + " energy range - sorry, cant complete operation." );
+      dialog->addButton( WString::tr("Continue") );
       return;
     }//
     
@@ -3265,7 +3449,7 @@ void RelActAutoGui::handleRemovePartOfEnergyRange( Wt::WWidget *w,
     return;
   }
   
-  const int orig_w_index = pos - begin( kids );
+  const int orig_w_index = static_cast<int>( pos - begin(kids) );
   RelActAutoGuiEnergyRange *range = dynamic_cast<RelActAutoGuiEnergyRange *>( w );
   assert( range );
   if( !range )
@@ -3414,17 +3598,14 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
   if( !fit_offset && !fit_gain )
     return;
   
-  string msg = "This will";
-  
-  char buffer[128] = { '\0' };
-  
+  // Build the adjustments part of the message
+  WString adjustments;
   bool printed_some = false;
   if( fit_offset )
   {
     double offset = -(m_solution->m_energy_cal_adjustments[0]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
                       * RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV;
-    snprintf( buffer, sizeof(buffer), " add an offset of %.2f keV", offset );
-    msg += buffer;
+    adjustments += WString::tr("raag-add-energy-offset").arg(formatNumber(offset, 2));
     printed_some = true;
   }
   
@@ -3432,8 +3613,8 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
   {
     double gain = -(m_solution->m_energy_cal_adjustments[1]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
                       * RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
-    snprintf( buffer, sizeof(buffer), "%s increase gain by %.5f", (printed_some ? " and" : ""), gain );
-    msg += buffer;
+    adjustments += WString::tr(printed_some ? "raag-increase-gain-additional" : "raag-increase-gain-first")
+                   .arg(formatNumber(gain, 5));
     printed_some = true;
   }//if( fit_gain )
   
@@ -3441,23 +3622,24 @@ void RelActAutoGui::startApplyFitEnergyCalToSpecFile()
   {
     double quad = -(m_solution->m_energy_cal_adjustments[2]/RelActCalcAuto::RelActAutoSolution::sm_energy_par_offset - 1.0)
                       * RelActCalcAuto::RelActAutoSolution::sm_energy_quad_range_keV;
-    snprintf( buffer, sizeof(buffer), "%s increase quadratic by %.5f", (printed_some ? " and" : ""), quad );
-    msg += buffer;
+    adjustments += WString::tr(printed_some ? "raag-increase-quad-additional" : "raag-increase-quad-first")
+                   .arg(formatNumber(quad, 5));
     printed_some = true;
   }//if( fit_gain )
   
-  
-  msg += " for the primary foreground";
+  // Build the complete message
   const bool has_back = !!m_interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
-  if( has_back )
-    msg += " and background";
-  msg += has_back ? " files" : " file";
-  msg += ".<br />Would you like to do this?";
+  const WString background_part = has_back ? WString::tr("raag-and-background") : WString();
+  const WString files_part = has_back ? WString::tr("raag-files") : WString::tr("raag-file");
   
+  const WString msg = WString::tr("raag-apply-energy-cal-msg")
+                      .arg(adjustments)
+                      .arg(background_part)
+                      .arg(files_part);
   
-  SimpleDialog *dialog = new SimpleDialog( "Apply fit energy calibration?", msg );
-  WPushButton *yes = dialog->addButton( "Yes" );
-  dialog->addButton( "No" );
+  SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-apply-fit-energy-cal-title"), msg );
+  WPushButton *yes = dialog->addButton( WString::tr("Yes") );
+  dialog->addButton( WString::tr("No") );
   yes->clicked().connect( this, &RelActAutoGui::applyFitEnergyCalToSpecFile );
 }//void startApplyFitEnergyCalToSpecFile();
 
@@ -3520,15 +3702,14 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
     
     tool->applyCalChange( orig_cal, new_cal, change_meas, false );
     
-    string msg = "Have updated energy calibration for displayed foreground";
-    if( back.meas )
-      msg += " and background.";
+    const WString background_part = back.meas ? WString::tr("raag-and-background-period") : WString();
+    const WString msg = WString::tr("raag-energy-cal-updated").arg(background_part);
     
     passMessage( msg, WarningWidget::WarningMsgInfo );
     m_fit_energy_cal->setChecked( false );
   }catch( std::exception &e )
   {
-    passMessage( "Error applying energy calibration: " + string(e.what()), WarningWidget::WarningMsgHigh );
+    passMessage( WString::tr("raag-error-applying-energy-cal").arg(e.what()), WarningWidget::WarningMsgHigh );
   }// try / catch
   
   if( ownEnergyCal && tool )
@@ -3600,8 +3781,8 @@ void RelActAutoGui::setPeaksToForeground()
   assert( m_solution && !m_solution->m_fit_peaks_in_spectrums_cal.empty() );
   if( !m_solution || m_solution->m_fit_peaks_in_spectrums_cal.empty() )
   {
-    SimpleDialog *dialog = new SimpleDialog( "Can't Continue", "No peaks in current solution" );
-    dialog->addButton( "Close" );
+    SimpleDialog *dialog = new SimpleDialog( WString::tr("raag-cant-continue"), WString::tr("raag-no-peaks-in-solution") );
+    dialog->addButton( WString::tr("Close") );
     return;
   }//if( no solution peaks )
   
@@ -3612,10 +3793,7 @@ void RelActAutoGui::setPeaksToForeground()
   
   SimpleDialog *dialog = new SimpleDialog( "Use peaks with foreground?", "" );
   dialog->addStyleClass( "SetToPeaksDialog" );
-  WText *message = new WText( "Peaks uncertainties will be based on total relative efficiency fit (eg.,"
-                             " peaks helping each other out to reduce uncertainties), unless you choose"
-                             " to refit them, in which case they will not be constrained by Rel. Eff."
-                             " curve of FWHM functional form.", dialog->contents() );
+  WText *message = new WText( WString::tr("raag-peaks-uncert-based-on-fit"), dialog->contents() );
   message->addStyleClass( "content" );
   message->setInline( false );
   
@@ -3632,7 +3810,7 @@ void RelActAutoGui::setPeaksToForeground()
   
   WContainerWidget *refit_holder = new WContainerWidget( dialog->contents() );
   refit_holder->addStyleClass( "AddOrReplaceRefitRow" );
-  WCheckBox *refit_peaks = new WCheckBox( "Refit Peaks", refit_holder );
+  WCheckBox *refit_peaks = new WCheckBox( WString::tr("raag-refit-peaks"), refit_holder );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   const char *tooltip = 
@@ -3905,6 +4083,8 @@ void RelActAutoGui::handleAddRelEffCurve()
   rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( boost::bind( &RelActAutoGui::handleSameHoerlOnAllCurvesChanged, this, boost::placeholders::_1 ) );
   rel_eff_curve->sameExternalShieldingChanged().connect( boost::bind( &RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged, this, boost::placeholders::_1 ) );
 
+  rel_eff_curve->shieldedByOtherCurvesChanged().connect( boost::bind( &RelActAutoGui::handleShieldedByOtherCurvesChanged, this, boost::placeholders::_1 ) );
+
   const bool single_curve = (m_rel_eff_opts_menu->count() == 1);
 
   m_rel_eff_opts_menu->setHidden( single_curve );
@@ -4152,7 +4332,7 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 #endif //ANDROID
 #endif
 
-  btn->setText( "HTML Report" );
+  btn->setText( WString::tr("raag-html-report") );
   
   m_calc_started.connect( btn, &WWidget::disable );
   m_calc_failed.connect( btn, &WWidget::disable );
@@ -4162,9 +4342,9 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
   btn = new WAnchor( WLink(m_xml_download_rsc), parent );
   btn->setTarget( AnchorTarget::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadLink RelActDownload" );
-  btn->setText( "XML Config" );
+  btn->setText( WString::tr("raag-xml-config") );
 #else
-  btn = new WPushButton( "XML Config", parent );
+  btn = new WPushButton( WString::tr("raag-xml-config"), parent );
   btn->setIcon( "InterSpec_resources/images/download_small.svg" );
   btn->setLinkTarget( Wt::TargetNewWindow );
   btn->setStyleClass( "LinkBtn DownloadBtn RelActDownload" );
@@ -4190,17 +4370,17 @@ void RelActAutoGui::addDownloadAndUploadLinks( Wt::WContainerWidget *parent )
 void RelActAutoGui::handleRequestToUploadXmlConfig()
 {
   SimpleDialog *dialog = new SimpleDialog();
-  WPushButton *closeButton = dialog->addButton( "Cancel" );
+  WPushButton *closeButton = dialog->addButton( WString::tr("Cancel") );
   WGridLayout *stretcher = new WGridLayout();
   stretcher->setContentsMargins( 0, 0, 0, 0 );
   dialog->contents()->setLayout( stretcher );
   dialog->contents()->setOverflow( WContainerWidget::Overflow::OverflowVisible,
                                   Wt::Horizontal | Wt::Vertical );
-  WText *title = new WText( "Import XML config file" );
+  WText *title = new WText( WString::tr("raag-import-xml-config-title") );
   title->addStyleClass( "title" );
   stretcher->addWidget( title, 0, 0 );
   
-  WText *t = new WText( "<p>Select the <em>Isotopics by nuclide</em> XML file to use</p>" );
+  WText *t = new WText( WString::tr("raag-select-isotopics-xml-file") );
   stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
   t->setTextAlignment( Wt::AlignCenter );
   
@@ -4210,11 +4390,11 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
     dialog->contents()->clear();
     dialog->footer()->clear();
     
-    WPushButton *closeButton = dialog->addButton( "Close" );
+    WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
     WGridLayout *stretcher = new WGridLayout();
     stretcher->setContentsMargins( 0, 0, 0, 0 );
     dialog->contents()->setLayout( stretcher );
-    WText *title = new WText( "File to large to upload" );
+    WText *title = new WText( WString::tr("raag-file-too-large-title") );
     title->addStyleClass( "title" );
     stretcher->addWidget( title, 0, 0 );
   }) );
@@ -4245,8 +4425,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
       passMessage( msg, WarningWidget::WarningMsgHigh );
     }catch( std::exception &e )
     {
-      passMessage( "Error loading <em>Isotopics by nuclide</em> XML config file: "
-                  + string(e.what()), WarningWidget::WarningMsgHigh );
+      passMessage( WString::tr("raag-error-loading-xml-config").arg(e.what()), WarningWidget::WarningMsgHigh );
     }//try / cat to read the XML
     
     dialog->accept();
@@ -4260,7 +4439,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
   InterSpec *interspec = InterSpec::instance();
   if( interspec && !interspec->isPhone() )
   {
-    t = new WText( "<p style=\"font-size: small;\">Note: you can also drag-n-drop the XML config files onto InterSpec<br /></p>" );
+    t = new WText( WString::tr("raag-drag-drop-note") );
     stretcher->addWidget( t, stretcher->rowCount(), 0, AlignCenter | AlignMiddle );
     t->setTextAlignment( Wt::AlignCenter );
   }
@@ -4268,7 +4447,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
   /*
    //In case we want to use AuxWindow instead of SimpleDialog
    AuxWindow *window = new AuxWindow( "Import CALp file",
-   (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+   (AuxWindowProperties::IsModal
    | AuxWindowProperties::PhoneNotFullScreen
    | AuxWindowProperties::DisableCollapse
    | AuxWindowProperties::SetCloseable) );
@@ -4280,7 +4459,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
    window->resizeToFitOnScreen();
    window->centerWindow();
    
-   WPushButton *close = window->addCloseButtonToFooter( "Cancel" );
+   WPushButton *close = window->addCloseButtonToFooter( WString::tr("Cancel") );
    close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
    
    window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
@@ -4288,7 +4467,7 @@ void RelActAutoGui::handleRequestToUploadXmlConfig()
    // TODO: add link to relevant section of documentation
    //AuxWindow::addHelpInFooter( window->footer(), "energy-cal-CALp" );
    */
-}//void handleRequestToUploadCALp();
+}//void handleRequestToUploadXmlConfig();
 
 
 RelActAutoGuiRelEffOptions *RelActAutoGui::getRelEffCurveOptions( const int index )
@@ -4739,7 +4918,7 @@ void RelActAutoGui::startUpdatingCalculation()
       RelActAutoGuiNuclide *nuclide = dynamic_cast<RelActAutoGuiNuclide *>( child );
       assert( nuclide );
       if( nuclide )
-        nuclide->setSummaryText( "" );
+        nuclide->setSummaryText( "", "" );
     }//for( WWidget *child : this_content->children() )
   }//for( int rel_eff_index = 0; rel_eff_index < m_rel_eff_nuclides_menu->count(); ++rel_eff_index )
 
@@ -4799,7 +4978,7 @@ void RelActAutoGui::startUpdatingCalculation()
     return;
   }//try / catch
   
-  m_status_indicator->setText( "Calculating..." );
+  m_status_indicator->setText( WString::tr("raag-calculating") );
   m_status_indicator->show();
   
   if( m_cancel_calc )
@@ -4983,21 +5162,32 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
-  
-  WString chi2_title("χ²/dof = {1}/{2}{3}");
-  chi2_title.arg( SpecUtils::printCompact(answer->m_chi2, 3) )
-            .arg( static_cast<int>(answer->m_dof) );
+
+  const string chi2_str = SpecUtils::printCompact(answer->m_chi2, 3);
+  const int dof = static_cast<int>(answer->m_dof);
+  WString chi2_title_tooltip;
+  WString chi2_title = WString("χ²/dof = {1}/{2}{3}").arg( chi2_str ).arg( dof );
+  try
+  {
+    const double chi2_dof = answer->m_chi2 / answer->m_dof;
+    const string chi2_dof_str = SpecUtils::printCompact(chi2_dof, 3);
+    boost::math::chi_squared chi2_dist(dof);
+    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2); //Probability we would have seen a chi2 this large.
+    const double p_value = 1.0 - prob; //Probability we would have observed this good of a chi2, or better
+    const string p_value_str = SpecUtils::printCompact(p_value, 3);
+
+    chi2_title_tooltip = WString("χ²/dof = {1}/{2} = {3} --> p-value = {4}" );
+    chi2_title_tooltip.arg(chi2_str).arg(dof).arg(chi2_dof_str).arg(p_value_str);
+  }catch( std::exception & )
+  {
+  }//try / catch to compute the Chi2/DOF
 
   // If we have U or Pu, we'll give the enrichment, or if we have two nuclides we'll
   //  give their ratio
-  set<const SandiaDecay::Nuclide *> isotopes;
-  for( const auto &relact : answer->m_rel_activities[0] )
-  {
-    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(relact.source);
-    if( nuc )
-      isotopes.insert( nuc );
-  }
-  
+  size_t num_curves_with_enrich = 0;
+  set<const SandiaDecay::Nuclide *> unique_enrich_isos;
+  vector<const SandiaDecay::Nuclide *> enrich_iso;
+  vector<set<const SandiaDecay::Nuclide *>> curve_isotopes;
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   assert( db );
   const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
@@ -5005,75 +5195,122 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   const SandiaDecay::Nuclide * const pu239 = db->nuclide( "Pu239" );
   const SandiaDecay::Nuclide * const pu240 = db->nuclide( "Pu240" );
   assert( u235 && u238 && pu239 && pu240 );
-  
-  if( (isotopes.count(u235) && isotopes.count(u238) && !isotopes.count(pu239))
-     || (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235)) )
+
+  for( size_t rel_eff_index = 0; rel_eff_index < answer->m_rel_activities.size(); ++rel_eff_index )
   {
-    const SandiaDecay::Nuclide * const iso = isotopes.count(u235) ? u235 : pu239;
-    string enrich;
-
-    try
+    set<const SandiaDecay::Nuclide *> isotopes;
+    for( const auto &relact : answer->m_rel_activities[rel_eff_index] )
     {
-      pair<double,optional<double>> enrich_val = answer->mass_enrichment_fraction( iso, 0 );
-      
-      const double nominal = enrich_val.first;
-      enrich = ", " + SpecUtils::printCompact(100.0*nominal, 4) + "%";
-
-      if( enrich_val.second.has_value() )
-      {
-        const double neg_2sigma = nominal - 2.0*enrich_val.second.value();
-        const double pos_2sigma = nominal + 2.0*enrich_val.second.value();
-        enrich += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, 4) + "%, "
-        + SpecUtils::printCompact(100.0*pos_2sigma, 4) + "%)";
-      }
-    }catch( std::exception & )
-    {
-      // Happens if covariance computation failed, or Pu with Pu242 correlation correction
+      const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(relact.source);
+      if( nuc )
+        isotopes.insert( nuc );
     }
 
-    enrich += " " + iso->symbol;
-    chi2_title.arg( enrich );
-  }else if( isotopes.size() == 2 ) // We are only considering nuclides here, not elements or reactions - not sure why
-  {
-    const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities.at(0);
-    const RelActCalcAuto::NuclideRelAct *num_rel_act = nullptr, *denom_rel_act = nullptr;
-    for( size_t i = 0; i < rel_acts.size(); ++i )
+    const bool u_enrich = (isotopes.count(u235) && isotopes.count(u238) && !isotopes.count(pu239));
+    const bool pu_enrich = (isotopes.count(pu239) && isotopes.count(pu240) && !isotopes.count(u235));
+
+    num_curves_with_enrich += (u_enrich || pu_enrich);
+    if( u_enrich )
     {
-      // We only want nuclides here
-      if( RelActCalcAuto::nuclide(rel_acts[i].source) )
-      {
-        if( !num_rel_act )
-          num_rel_act = &(rel_acts[i]);
-        else
-          denom_rel_act = &(rel_acts[i]);
-      }
-    }//for( size_t i = 0; i < rel_acts.size(); ++i )
-    
-    assert( num_rel_act && denom_rel_act );
-    
-    if( num_rel_act && denom_rel_act )
+      enrich_iso.push_back( u235 );
+      unique_enrich_isos.insert( u235 );
+    }else if( pu_enrich )
     {
-      if( num_rel_act->rel_activity > denom_rel_act->rel_activity )
-        std::swap( num_rel_act, denom_rel_act );
-      
-      const string num_name = RelActCalcAuto::to_name(num_rel_act->source);
-      const string den_name = RelActCalcAuto::to_name(denom_rel_act->source);
-      
-      const double ratio = answer->activity_ratio( num_rel_act->source, denom_rel_act->source, 0 );
-      // TODO: add errors
-      string ratio_txt = ", act(" + num_name + "/" + den_name + ")="
-      + SpecUtils::printCompact(ratio, 4);
-      
-      chi2_title.arg( ratio_txt );
+      enrich_iso.push_back( pu239 );
+      unique_enrich_isos.insert( pu239 );
     }else
     {
-      chi2_title.arg( "" );
+      enrich_iso.push_back( nullptr );
     }
-  }else
-  {
-    chi2_title.arg( "" );
-  }
 
+    curve_isotopes.push_back( isotopes );
+  }//for( loop over enrich )
+
+  assert( enrich_iso.size() == answer->m_rel_activities.size() );
+  assert( curve_isotopes.size() == answer->m_rel_activities.size() );
+
+  string chi2_info_arg;
+  if( num_curves_with_enrich == 0 )
+  {
+    // We are only considering nuclides here, not elements or reactions - not sure why
+    if( (answer->m_rel_activities.size() == 1) && (curve_isotopes[0].size() == 2) )
+    {
+      const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = answer->m_rel_activities.at(0);
+      const RelActCalcAuto::NuclideRelAct *num_rel_act = nullptr, *denom_rel_act = nullptr;
+      for( size_t i = 0; i < rel_acts.size(); ++i )
+      {
+        // We only want nuclides here
+        if( RelActCalcAuto::nuclide(rel_acts[i].source) )
+        {
+          if( !num_rel_act )
+            num_rel_act = &(rel_acts[i]);
+          else
+            denom_rel_act = &(rel_acts[i]);
+        }
+      }//for( size_t i = 0; i < rel_acts.size(); ++i )
+
+      assert( num_rel_act && denom_rel_act );
+
+      if( num_rel_act && denom_rel_act )
+      {
+        if( num_rel_act->rel_activity > denom_rel_act->rel_activity )
+          std::swap( num_rel_act, denom_rel_act );
+
+        const string num_name = RelActCalcAuto::to_name(num_rel_act->source);
+        const string den_name = RelActCalcAuto::to_name(denom_rel_act->source);
+
+        const pair<double,optional<double>> ratio = answer->activity_ratio( num_rel_act->source, 0, denom_rel_act->source, 0 );
+
+        string ratio_txt = ", act(" + num_name + "/" + den_name + ")="
+                       + SpecUtils::printCompact(ratio.first, 4);
+        if( ratio.second.has_value() )
+          ratio_txt += "±" + SpecUtils::printCompact(ratio.second.value(), 4);
+
+        chi2_info_arg = ratio_txt;
+      }
+    }//if( isotopes.size() == 2 )
+  }else //if( num_curves_with_enrich == 0 )
+  {
+    size_t enrich_num = 0;
+    for( size_t rel_eff_index = 0; rel_eff_index < enrich_iso.size(); ++rel_eff_index )
+    {
+      const SandiaDecay::Nuclide * const iso = enrich_iso[rel_eff_index];
+      if( !iso )
+        continue;
+
+      try
+      {
+        const size_t precision = (num_curves_with_enrich > 1) ? 3 : 4;
+        pair<double,optional<double>> enrich_val = answer->mass_enrichment_fraction( iso, rel_eff_index );
+
+        const double nominal = enrich_val.first;
+        chi2_info_arg += ", " + SpecUtils::printCompact(100.0*nominal, precision) + "%";
+
+        if( enrich_val.second.has_value() )
+        {
+          if( num_curves_with_enrich == 1 )
+          {
+            const double neg_2sigma = nominal - 2.0*enrich_val.second.value();
+            const double pos_2sigma = nominal + 2.0*enrich_val.second.value();
+            chi2_info_arg += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, precision) + "%, "
+            + SpecUtils::printCompact(100.0*pos_2sigma, precision) + "%)";
+          }else
+          {
+            chi2_info_arg += " ± " + SpecUtils::printCompact(100.0*enrich_val.second.value(), precision) + "%";
+          }
+        }
+      }catch( std::exception & )
+      {
+        // Shouldnt normally happen
+      }
+
+      enrich_num += 1;
+      if( (unique_enrich_isos.size() > 1) || (enrich_num == enrich_iso.size()) )
+        chi2_info_arg += " " + iso->symbol;
+    }//for( size_t rel_eff_index = 0; rel_eff_index < enrich_iso.size(); ++rel_eff_index )
+  }//if( num_curves_with_enrich == 0 ) / else
+
+  chi2_title.arg( chi2_info_arg );
 
   assert( answer->m_fit_peaks_for_each_curve.size() == answer->m_rel_activities.size() );
   
@@ -5082,7 +5319,21 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     RelEffChart::ReCurveInfo info;
     info.live_time = live_time;
-    info.fit_peaks = answer->m_fit_peaks_for_each_curve[i];
+    if( i < answer->m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
+    {
+      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4, and peak
+      //  mean+-1sigma is fully within ROI
+      for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : answer->m_obs_eff_for_each_curve[i] )
+      {
+        if( (obs_eff.observed_efficiency > 0.0)
+           && (obs_eff.num_sigma_significance > 2.5)
+           && (obs_eff.fraction_roi_counts > 0.05)
+           && obs_eff.within_roi )
+        {
+          info.obs_eff_data.push_back( obs_eff );
+        }
+      }
+    }
     info.rel_acts = answer->m_rel_activities[i];
     info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
     info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
@@ -5103,6 +5354,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   m_rel_eff_chart->setData( info_sets );
 
   m_fit_chi2_msg->setText( chi2_title );
+  m_fit_chi2_msg->setToolTip( chi2_title_tooltip );
   m_fit_chi2_msg->show();
 
 
@@ -5155,9 +5407,21 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       //const double rel_act = fit_nuc.rel_activity;
       const double rel_act = this->m_solution->rel_activity(src, rel_eff_index);
 
+
       const string rel_act_str = SpecUtils::printCompact(rel_act, 4);
       string summary_text = "Rel. Act=" + rel_act_str;
-      
+      string tooltip_text = summary_text;
+
+      try
+      {
+        const pair<double,double> act_uncert = this->m_solution->rel_activity_with_uncert(src, rel_eff_index);
+        assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act))
+               || (fabs(act_uncert.first - rel_act) < 1.0E-6) );
+        tooltip_text += " ± " + SpecUtils::printCompact(act_uncert.second, 4);
+      }catch( std::exception &e )
+      {
+      }
+
       
       if( fit_nuc.age_was_fit )
       {
@@ -5193,7 +5457,14 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
             const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
             const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
             const string el_symbol = el ? el->symbol : "?";
-            summary_text += ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+            const string mass_frac_str = ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
+            summary_text += mass_frac_str;
+
+            if( enrich_val.second.has_value() )
+            {
+              const double rel_mass_uncert_percent = 100.0 * enrich_val.second.value();
+              tooltip_text += (mass_frac_str + " ± " +  SpecUtils::printCompact(rel_mass_uncert_percent, 3));
+            }
           }catch( std::exception & )
           {
             // We shouldnt get here
@@ -5202,7 +5473,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
         }//if( num_same_z > 1 )
       }//if( RelActCalcAuto::nuclide(src) )
       
-      src_widget->setSummaryText( summary_text );
+      src_widget->setSummaryText( summary_text, tooltip_text );
     };//set_info_to_widget lambda
     
      // Update the rel. act., and if applicable, mass fraction for the nuclide displays
@@ -5288,7 +5559,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
           continue;
         
         //Maybe remove the GUI component for this source.
-        nuc->setSummaryText( "" );
+        nuc->setSummaryText( "", "" );
         
         RelActCalcAuto::NucInputInfo info;
         info.peak_color_css = nuc->color().cssText(false);

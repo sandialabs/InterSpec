@@ -38,6 +38,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/RelActAutoGuiFreePeak.h"
@@ -55,11 +56,14 @@ RelActAutoGuiFreePeak::RelActAutoGuiFreePeak( WContainerWidget *parent )
   m_updated( this ),
   m_remove( this )
 {
+  InterSpecApp *app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
+  if( app )
+    app->useMessageResourceBundle( "RelActAutoGuiFreePeak" );
   addStyleClass( "RelActAutoGuiFreePeak" );
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
   
-  WLabel *label = new WLabel( "Energy", this );
+  WLabel *label = new WLabel( WString::tr("Energy"), this );
   label->addStyleClass( "GridFirstCol GridFirstRow" );
   
   m_energy = new NativeFloatSpinBox( this );
@@ -78,31 +82,25 @@ RelActAutoGuiFreePeak::RelActAutoGuiFreePeak( WContainerWidget *parent )
   removeFreePeak->clicked().connect( this, &RelActAutoGuiFreePeak::handleRemoveSelf );
   removeFreePeak->addStyleClass( "GridThirdCol GridFirstRow" );
   
-  m_fwhm_constrained = new WCheckBox( "Constrain FWHM", this );
+  m_fwhm_constrained = new WCheckBox( WString::tr("raagfp-constrain-fwhm"), this );
   m_fwhm_constrained->setChecked( true );
   m_fwhm_constrained->checked().connect( this, &RelActAutoGuiFreePeak::handleFwhmConstrainChanged );
   m_fwhm_constrained->unChecked().connect( this, &RelActAutoGuiFreePeak::handleFwhmConstrainChanged );
   m_fwhm_constrained->addStyleClass( "FreePeakConstrain GridFirstCol GridSecondRow GridSpanThreeCol" );
   
-  const char *tooltip = "When checked, this peak will be constrained to the FWHM functional form gamma and x-ray"
-  "peaks are normally constrained to.<br />"
-  "When un-checked, the FWHM for this peak will be fit from the data, independent of all other peak widths.<br />"
-  "Un-checking this option is useful for annihilation and reaction photopeaks.";
-  HelpSystem::attachToolTipOn( m_fwhm_constrained, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_fwhm_constrained, WString::tr("raagfp-constrain-fwhm-tt"), showToolTips );
   
   
-  m_apply_energy_cal = new WCheckBox( "True Energy", this );
+  m_apply_energy_cal = new WCheckBox( WString::tr("raagfp-true-energy"), this );
   m_apply_energy_cal->setStyleClass( "CbNoLineBreak" );
   m_apply_energy_cal->setChecked( true );
   m_apply_energy_cal->checked().connect( this, &RelActAutoGuiFreePeak::handleApplyEnergyCalChanged );
   m_apply_energy_cal->unChecked().connect( this, &RelActAutoGuiFreePeak::handleApplyEnergyCalChanged );
   m_apply_energy_cal->addStyleClass( "FreePeakConstrain GridFirstCol GridThirdRow GridSpanThreeCol" );
-  tooltip = "Check this option if the peak is for a gamma of known energy.<br />"
-  "Un-check this option if this peak is an observed peak in the spectrum with unknown true energy.";
-  HelpSystem::attachToolTipOn( m_apply_energy_cal, tooltip, showToolTips );
+  HelpSystem::attachToolTipOn( m_apply_energy_cal, WString::tr("raagfp-true-energy-tt"), showToolTips );
   
   
-  m_invalid = new WText( "Not in a ROI.", this );
+  m_invalid = new WText( WString::tr("raagfp-not-in-roi"), this );
   m_invalid->addStyleClass( "InvalidFreePeakEnergy GridFirstCol GridFourthRow GridSpanThreeCol" );
   m_invalid->hide();
 }//RelActAutoGuiFreePeak constructor

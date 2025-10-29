@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+  
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">اسم السمة</message>
+  <message id="ctwidget-description">وصف</message>
+  <message id="ctwidget-title-placeholder">العنوان غير مخصص</message>
+  <message id="ctwidget-desc-placeholder">الوصف غير مخصص</message>
+  <message id="ctwidget-empty">(فارغ)</message>
+  
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">منطقة غير المخطط</message>
+  <message id="ctwidget-backdrop-theme">سمة الخلفية</message>
+  <message id="ctwidget-backdrop-desc">سمة لجميع المناطق غير المخطط</message>
+  
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">ألوان المخطط</message>
+  
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">طيف أمامي</message>
+  <message id="ctwidget-spec-foreground-desc">لون الخط للطيف الأمامي</message>
+  <message id="ctwidget-spec-background">طيف خلفي</message>
+  <message id="ctwidget-spec-background-desc">لون الخط للطيف الخلفي</message>
+  <message id="ctwidget-spec-secondary">طيف ثانوي</message>
+  <message id="ctwidget-spec-secondary-desc">لون الخط للطيف الثانوي</message>
+  
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">القمم تستخدم لون الخط المرجعي</message>
+  <message id="ctwidget-peaks-use-ref-desc">يحدد ما إذا كانت القمم المناسبة حديثا تأخذ لون الخط المرجعي لتلك القمة.</message>
+  <message id="ctwidget-default-peak-color">لون القمة الافتراضي</message>
+  <message id="ctwidget-default-peak-desc">لون يستخدم للقمم التي ليس لديها لون مخصص</message>
+  
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">محور مخطط الطيف</message>
+  <message id="ctwidget-spectrum-axis-desc">لون الخط لمحور X و Y للطيف</message>
+  <message id="ctwidget-spectrum-text">نص مخطط الطيف</message>
+  <message id="ctwidget-spectrum-text-desc">لون نص مخطط الطيف (تسميات محور y و x)</message>
+  <message id="ctwidget-spectrum-area">منطقة الطيف</message>
+  <message id="ctwidget-spectrum-area-desc">لون خلفية مخطط الطيف</message>
+  <message id="ctwidget-spectrum-margin">خلفية مخطط الطيف</message>
+  <message id="ctwidget-spectrum-margin-desc">لون هوامش مخطط الطيف</message>
+  <message id="ctwidget-same-as-spectrum">نفس منطقة الطيف</message>
+  
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">عداد غاما الوقت</message>
+  <message id="ctwidget-time-gamma-desc">لون الخط لعداد غاما في مخطط الوقت</message>
+  <message id="ctwidget-time-neutron">عداد نيوترون الوقت</message>
+  <message id="ctwidget-time-neutron-desc">لون الخط لعداد النيوترون في مخطط الوقت</message>
+  <message id="ctwidget-time-axis">محور مخطط الوقت</message>
+  <message id="ctwidget-time-axis-desc">لون الخط لمحور X و Y لمخطط الوقت</message>
+  <message id="ctwidget-time-background">خلفية مخطط الوقت</message>
+  <message id="ctwidget-time-background-desc">لون خلفية مخطط الوقت</message>
+  <message id="ctwidget-time-margins">هوامش مخطط الوقت</message>
+  <message id="ctwidget-time-margins-desc">لون هوامش مخطط الطيف</message>
+  <message id="ctwidget-same-as-background">نفس الخلفية</message>
+  <message id="ctwidget-time-text">نص مخطط الوقت</message>
+  <message id="ctwidget-time-text-desc">لون نص مخطط الوقت (تسميات محور x و y)</message>
+  
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">خطوط مؤشر الإشغال</message>
+  <message id="ctwidget-occ-lines-desc">خطوط تشير إلى بداية ونهاية إشغال (بيانات بوابة) أو فترة زمنية مثيرة للاهتمام (بيانات وضع البحث)</message>
+  <message id="ctwidget-time-fore-highlight">تمييز أمامي للوقت</message>
+  <message id="ctwidget-time-fore-highlight-desc">لون يستخدم للإشارة على مخطط الوقت، أي قطاعات الوقت يتم جمعها للطيف الأمامي.</message>
+  <message id="ctwidget-time-back-highlight">تمييز خلفي للوقت</message>
+  <message id="ctwidget-time-back-highlight-desc">لون يستخدم للإشارة على مخطط الوقت، أي قطاعات الوقت يتم جمعها للطيف الخلفي.</message>
+  <message id="ctwidget-time-sec-highlight">تمييز ثانوي للوقت</message>
+  <message id="ctwidget-time-sec-highlight-desc">لون يستخدم للإشارة على مخطط الوقت، أي قطاعات الوقت يتم جمعها للطيف الثانوي.</message>
+  
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">ألوان الخطوط المرجعية</message>
+  <message id="ctwidget-ref-line-colors-desc">الألوان المرتبة لاستخدامها للخطوط المرجعية</message>
+  <message id="ctwidget-specific-ref-colors">ألوان خطوط مرجعية مصدر محدد</message>
+  <message id="ctwidget-specific-ref-desc">الألوان لاستخدامها للخطوط المرجعية لمصادر محددة</message>
+  <message id="ctwidget-dynamic-ref-lines">خطوط مرجعية ديناميكية</message>
+  <message id="ctwidget-dynamic-ref-desc">الألوان لاستخدامها، بناء على نوع النويدات</message>
+  
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">طبي</message>
+  <message id="ctwidget-industrial">صناعي</message>
+  <message id="ctwidget-norm">عادي</message>
+  <message id="ctwidget-snm">مواد نووية خاصة</message>
+  <message id="ctwidget-common">شائع</message>
+  <message id="ctwidget-other">آخر</message>
+  
+  <!-- Other options -->
+  <message id="ctwidget-other-options">خيارات أخرى</message>
+  <message id="ctwidget-peak-label-size">حجم تسمية القمة</message>
+  <message id="ctwidget-peak-label-size-desc">يحدد حجم خط تسميات القمة</message>
+  <message id="ctwidget-peak-label-angle">زاوية تسمية القمة</message>
+  <message id="ctwidget-peak-label-angle-desc">دوران، بالدرجات، تسميات القمة</message>
+  <message id="ctwidget-log-y-min">أدنى Log-Y</message>
+  <message id="ctwidget-log-y-min-desc">القيمة الدنيا المعروضة على المحور اللوغاريتمي y، عندما يكون هناك قناة بعدد صفر أو سالب في النطاق المعروض x.</message>
+</messages>

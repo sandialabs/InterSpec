@@ -1,4 +1,4 @@
-.Wt-domRoot, .dialog-layout, .Wt-panel .body {
+.Wt-domRoot, .dialog-layout, .Wt-panel .body, textarea {
   background: rgb(44,45,48) !important; 
   color: white;
 }
@@ -227,7 +227,9 @@ ul.HeavyNavMenu > li.item:hover  {
   filter: invert(100%);
 }
 
-.DoseAnswerTxt, .DoseCalcRuntimeCheckFailMsg {
+.DoseAnswerTxt, 
+.DoseCalcRuntimeCheckFailMsg,
+.SimpleActivityCalc .result {
   color: black;
 }
 

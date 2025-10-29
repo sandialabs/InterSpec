@@ -70,13 +70,13 @@
   <message id="dcc-xAxisTitle">Masse atomique décroissante</message>
   <message id="dcc-yAxisTitle">Numéro atomique croissant</message>
   <message id="dcc-clickNucTxt">Cliquez sur le nucléide pour plus d'informations.</message>
-  <message id="dcc-clickNucMoreInfoTxt1">Double-cliquez sur le nucléide pour les particules qu'il émet.</message>
   <message id="dcc-clickNucMoreInfoTxt2">Cliquez sur un nucléide source différent ci-dessus pour</message>
   <message id="dcc-clickNucMoreInfoTxt3">changer la chaîne de désintégration affichée.</message>
   <message id="dcc-clickNucMblTxt">Appuyez sur le nucléide pour plus d'informations.</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">Touchez le nucléide pendant 1 seconde pour les particules qu'il émet.</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">Cliquez sur un nucléide source différent ci-dessus pour</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">changer la chaîne de désintégration affichée.</message>
+  <message id="dcc-show-decay-products">Afficher les produits de désintégration de {nuclide}</message>
+  <message id="dcc-show-decays-through">Afficher les désintégrations via {nuclide}</message>
 
 
   <message id="dcn-initial-age">Âge initial : </message>

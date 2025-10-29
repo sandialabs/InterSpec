@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">Удалить все пики?</message>
+
+  <message id="pid-err-no-foreground">Для добавления пика должен быть загружен основной спектр.</message>
+
+  <message id="pid-search-peaks-btn">Поиск пиков</message>
+  <message id="pid-tt-search-peaks-btn">Поиск пиков с использованием автоматического алгоритма обнаружения пиков.</message>
+  <message id="pid-clear-peaks-btn">Очистить все пики</message>
+  <message id="pid-tt-clear-peaks-btn">Удаляет <b>все</b> существующие пики.</message>
+  <message id="pid-nuc-from-ref-btn">Нукл. из реф.</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    Присваивает нуклиды пикам из отображаемых справочных линий. Применяется только к
+    пикам, с которыми ещё не связан нуклид.
+  </message>
+
+  <message id="pid-add-peak-btn">Добавить...</message>
+  <message id="pid-tt-add-peak-btn">Вручную добавить новый пик.</message>
+  <message id="pid-tt-del-peaks">Удаляет пик, который в данный момент редактируется.</message>
+  <message id="pid-better-editor-hint">Щёлкните правой кнопкой на пиках для лучшего редактора</message>
+  <message id="pid-better-editor-hint-mobile">Нажмите и удерживайте на пиках для лучшего редактора</message>
+  <message id="pid-tt-csv-export">Экспорт информации об идентифицированных пиках в формат CSV.</message>
+  <message id="pid-tt-csv-copy">Копировать CSV информацию о пиках в буфер обмена.
+    <p>Данные пиков будут скопированы в буфер обмена как в форматированном, так и в обычном текстовом варианте,
+      поэтому формат данных будет зависеть от приложения, в которое вы вставляете.
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">Копировать полный CSV пиков</message>
+  <message id="pid-csv-copy-no-hdr">Копировать без заголовков</message>
+  <message id="pid-csv-copy-compact">Копировать инф. о фитинге пиков</message>
+</messages>

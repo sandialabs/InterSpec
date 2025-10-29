@@ -136,12 +136,6 @@
   margin-right: 5px;
 }
 
-.ExportSpecFileTool .ExportSpecSelect .ExportSpecInfo
-{
-  display: inline-block;
-  overflow-y: auto;
-}
-
 
 .ExportSpecFileTool .ExportForPlusBack
 {
@@ -162,11 +156,18 @@
   
 }
 
-.ExportSpecInfo .ExportSpecInfoTable
+.ExportSpecFileTool .ExportSpecSelect .ExportSpecInfo
+{
+  display: inline-block;
+  overflow-y: auto;
+}
+
+.ExportSpecFileTool .ExportSpecInfoTable
 {
 }
 
-.ExportSpecInfo .ExportSpecInfoTable th, .ExportSpecInfo .ExportSpecInfoTable td
+
+.ExportSpecFileTool .ExportSpecInfo .ExportSpecInfoTable th, .ExportSpecFileTool .ExportSpecInfo .ExportSpecInfoTable td
 {
   text-align: left;
   font-weight: normal;
@@ -174,12 +175,13 @@
   padding-bottom: 1px;
 }
 
-.ExportSpecInfo .ExportSpecInfoTable td
+.ExportSpecFileTool .ExportSpecInfo .ExportSpecInfoTable td
 {
   white-space: nowrap;
 }
 
-.ExportSpecInfo .ExportSpecInfoTable td > div
+/* The div also should have style class DetInfoNoWrap */
+.ExportSpecFileTool .ExportSpecInfo .ExportSpecInfoTable td > div
 {
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -187,7 +189,7 @@
   width: 110px;
 }
 
-.ExportSpecInfo .ExportSpecInfoTable th
+.ExportSpecFileTool .ExportSpecInfo .ExportSpecInfoTable th
 {
   width: 100px;
   display: block;

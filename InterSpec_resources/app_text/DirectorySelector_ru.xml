@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DirectorySelector -->
+  <message id="ds-path-label">Путь:</message>
+  <message id="ds-txt-input-placeholder">Введите путь к каталогу...</message>
+  <message id="ds-native-select-path-button">Выбрать путь</message>
+  <message id="ds-native-no-path-placeholder">(Путь не выбран)</message>
+</messages>

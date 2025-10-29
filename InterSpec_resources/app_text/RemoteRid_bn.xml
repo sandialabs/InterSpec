@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">Exe পথ</message>
+  <message id="rr-url-empty-text">FullSpectrum সেবার URL</message>
+  <message id="rr-exe-path-empty-text">FullSpectrum এক্সিকিউটেবলের পথ</message>
+  <message id="rr-get-detectors">DRF পুনরুদ্ধার করুন</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">ওয়েব সেবার URL লেখার পরে, অনুগ্রহ করে (ঐচ্ছিকভাবে) DRF পুনরুদ্ধার করুন, এবং তারপর "<em>জমা দিন</em>" চাপুন</message>
+  <message id="rr-only-disp-samples-cb">শুধুমাত্র প্রদর্শিত নমুনা</message>
+  <message id="rr-tt-only-disp-samples">সাধারণত সার্চ-মোড এবং পোর্টাল ডেটা সম্পূর্ণভাবে বিশ্লেষণ করা হয়, কিন্তু এই বিকল্পটি নির্বাচন করলে শুধুমাত্র প্রদর্শিত ফোরগ্রাউন্ড/ব্যাকগ্রাউন্ড বিশ্লেষণ করা হবে।</message>
+  <message id="rr-submit-ana-btn">বিশ্লেষণ জমা দিন</message>
+  <message id="rr-show-dialog-cb">ডায়ালগ দেখান</message>
+  <message id="rr-always-call-cb">স্পেকট্রাম লোডে সর্বদা কল করুন</message>
+  <message id="rr-tt-show-dialog">চেক করা থাকলে, একটি ডায়ালগ যা ব্যবহারকারীকে বাতিল করতে হবে RID ফলাফল সহ দেখানো হবে। চেক না করা থাকলে, শুধুমাত্র একটি বিজ্ঞপ্তি যা অল্প সময়ের পরে অদৃশ্য হয়ে যাবে, RID ফলাফল সহ দেখানো হবে।</message>
+  <message id="rr-gadras-rid-error">GADRAS RID ত্রুটি: {1}</message>
+  <message id="rr-gadras-rid-error-code">GADRAS RID ত্রুটি কোড {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: কিছু সনাক্ত করা হয়নি</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">GADRAS RID ফলাফল পার্স করতে ব্যর্থ।</message>
+  <message id="rr-rid-results-window-title">বাহ্যিক RID ফলাফল</message>
+  <message id="rr-rid-tool-btn">RID টুল</message>
+  <message id="rr-err-incorrect-url">বিশ্লেষণ কল করতে ত্রুটি: ভুল URL বা ইন্টারনেট নেই।</message>
+  <message id="rr-err-locating-exe">এক্সিকিউটেবল সনাক্ত করতে ত্রুটি: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">টেম্প ফাইল নাম তৈরি করতে ত্রুটি।</message>
+  <message id="rr-err-opening-tmp-file">টেম্প ফাইল খুলতে ত্রুটি।</message>
+  <message id="rr-requesting-ana">বিশ্লেষণ অনুরোধ করছে</message>
+  <message id="rr-err-no-spec">কোনো প্রদর্শিত স্পেকট্রাম নেই</message>
+  <message id="rr-requesting-service-info">সেবা তথ্য অনুরোধ করছে।</message>
+  <message id="rr-error-parsing-service-info">সেবা তথ্য ফলাফল পার্স করতে ত্রুটি: <code></code></message>
+  <message id="rr-incorrect-url">ভুল URL বা ইন্টারনেট নেই।</message>
+  <message id="rr-err-requesting-service-info">সেবা তথ্য পুনরুদ্ধার করতে ত্রুটি: <code>{1}</code></message>
+</messages>

@@ -19,7 +19,9 @@
 #include <Wt/WSignal>
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmInterface.h"
+#include "InterSpec/InterSpecServer.h"
 #include "InterSpec/LlmConversationHistory.h"
 
 using namespace std;
@@ -37,31 +39,55 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
     m_isRequestPending(false),
     m_currentRequestId(-1)
 {
-  if (!m_viewer) {
+  if( !m_viewer )
     throw std::runtime_error("InterSpec instance cannot be null");
-  }
-  
-  // Create our own LLM interface instance
-  m_llmInterface = std::make_unique<LlmInterface>(m_viewer);
   
   wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
   
-  // Connect to LLM interface response signal
-  m_llmInterface->responseReceived().connect(this, &LlmToolGui::handleResponseReceived);
+  std::shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
   
-  // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
-  m_viewer->displayedSpectrumChanged().connect(this, &LlmToolGui::handleSpectrumChanged);
+  if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint.empty() )
+    throw std::runtime_error("LLM API not enabled");
   
-  initializeUI();
-  
-  // Initial display refresh
-  refreshDisplay();
+  // Create our own LLM interface instance
+  try
+  {
+    m_llmInterface = std::make_unique<LlmInterface>(m_viewer, config);
+    
+    // Connect to LLM interface response signal
+    m_llmInterface->responseReceived().connect(this, &LlmToolGui::handleResponseReceived);
+    
+    // Connect to spectrum change signal to cancel pending requests when foreground spectrum changes
+    m_viewer->displayedSpectrumChanged().connect(this, &LlmToolGui::handleSpectrumChanged);
+    
+    initializeUI();
+    
+    // Initial display refresh
+    refreshDisplay();
+  }catch( std::exception &e )
+  {
+    m_llmInterface.reset();
+    WText *err_msg = new WText( "Error initializing LLM assistant: " + string(e.what()), this );
+  }
 }
 
 LlmToolGui::~LlmToolGui()
 {
   
 }
+
+bool LlmToolGui::llmToolIsConfigured()
+{
+  shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
+  return (config && config->llmApi.enabled && !config->llmApi.apiEndpoint.empty());
+}
+
+
+LlmInterface *LlmToolGui::llmInterface()
+{
+  return m_llmInterface.get();
+}
+
 
 void LlmToolGui::initializeUI()
 {
@@ -121,24 +147,19 @@ void LlmToolGui::initializeUI()
 
 void LlmToolGui::focusInput()
 {
-  if (m_inputEdit) {
+  if( m_inputEdit )
     m_inputEdit->setFocus(true);
-  }
 }
 
 void LlmToolGui::clearHistory()
 {
-  if (m_conversationDisplay) {
+  if( m_conversationDisplay )
     m_conversationDisplay->setText("");
-  }
   
   // Also clear the LLM interface history if needed
-  if (m_llmInterface) {
-    auto history = m_llmInterface->getHistory();
-    if (history) {
-      history->clear();
-    }
-  }
+  shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
+  if( history )
+    history->clear();
 }
 
 void LlmToolGui::handleInputSubmit()
@@ -148,9 +169,8 @@ void LlmToolGui::handleInputSubmit()
 
 void LlmToolGui::handleSendButton()
 {
-  if (!m_inputEdit) {
+  if( !m_inputEdit )
     return;
-  }
   
   string message = m_inputEdit->text().toUTF8();
   if (message.empty()) {
@@ -193,7 +213,6 @@ void LlmToolGui::sendMessage(const std::string& message)
     
     // Update display immediately to show user message
     updateConversationDisplay();
-    
   } catch (const std::exception& e) {
     cout << "Error sending message to LLM: " << e.what() << endl;
     
@@ -216,11 +235,11 @@ void LlmToolGui::updateConversationDisplay()
 
 void LlmToolGui::refreshDisplay()
 {
-  if( !m_conversationDisplay) {
+  if( !m_conversationDisplay )
     return;
-  }
   
-  if (!m_llmInterface ){
+  if( !m_llmInterface )
+  {
     m_conversationDisplay->setText("No conversation yet.");
     return;
   }
@@ -248,7 +267,7 @@ void LlmToolGui::refreshDisplay()
     // Fallback: show all messages in chronological order
     const auto& conversations = history->getConversations();
     for (size_t i = 0; i < conversations.size(); ++i) {
-      displayText << formatMessage(conversations[i]) << "\n";
+      displayText << formatMessage(*conversations[i]) << "\n";
     }
   } else {
     // Show conversations grouped by request ID
@@ -326,15 +345,27 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
       formatted << "[" << std::put_time(std::localtime(&responseTime_t), "%H:%M:%S") << "] ";
       
       // Format response type and content
-      switch (response.type) {
+      switch( response.type )
+      {
         case LlmConversationResponse::Type::Assistant:
-          formatted << "LLM: " << response.content;
-          break;
+          // Show agent name if not MainAgent
+          if( conversation.agent_type != AgentType::MainAgent )
+            formatted << "[" << agentTypeToString(conversation.agent_type) << "] LLM: ";
+          else
+            formatted << "LLM: ";
+
+          formatted << response.content;
           
+          break;
+
         case LlmConversationResponse::Type::ToolCall:
+          // Show agent name for tool calls from sub-agents
+          if( conversation.agent_type != AgentType::MainAgent )
+            formatted << "[" << agentTypeToString(conversation.agent_type) << "] ";
+
           formatted << "TOOL_CALL[" << response.toolName << "]: " << response.toolParameters.dump();
           break;
-          
+
         case LlmConversationResponse::Type::ToolResult:
           formatted << "TOOL_RESULT: ";
           if( response.content.size() < 128 )
@@ -342,11 +373,11 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
           else
             formatted << response.content.substr(0,125) + "...";
           break;
-          
+
         case LlmConversationResponse::Type::Error:
           formatted << "ERROR: " << response.content;
           break;
-          
+
         default:
           formatted << "UNKNOWN: " << response.content;
           break;
@@ -376,8 +407,8 @@ std::map<int, std::vector<const LlmConversationStart*>> LlmToolGui::groupConvers
   std::map<std::string, std::vector<const LlmConversationStart*>> conversationGroups;
   
   for (const auto& conversation : conversations) {
-    std::string conversationId = conversation.conversationId.empty() ? "default" : conversation.conversationId;
-    conversationGroups[conversationId].push_back(&conversation);
+    std::string conversationId = conversation->conversationId.empty() ? "default" : conversation->conversationId;
+    conversationGroups[conversationId].push_back(conversation.get());
   }
   
   // Convert conversation groups to numbered groups for display
@@ -392,21 +423,24 @@ std::map<int, std::vector<const LlmConversationStart*>> LlmToolGui::groupConvers
 
 void LlmToolGui::setInputEnabled(bool enabled)
 {
-  if (m_inputEdit) {
+  if( m_inputEdit )
     m_inputEdit->setEnabled(enabled);
-  }
-  if (m_sendButton) {
+  if( m_sendButton )
     m_sendButton->setEnabled(enabled);
-  }
   
   // Update visual appearance
-  if (enabled) {
-    m_inputEdit->removeStyleClass("disabled");
-    m_sendButton->removeStyleClass("disabled");
-  } else {
-    m_inputEdit->addStyleClass("disabled");
-    m_sendButton->addStyleClass("disabled");
-  }
+  if( m_inputEdit && m_sendButton )
+  {
+    if( enabled )
+    {
+      m_inputEdit->removeStyleClass("disabled");
+      m_sendButton->removeStyleClass("disabled");
+    }else
+    {
+      m_inputEdit->addStyleClass("disabled");
+      m_sendButton->addStyleClass("disabled");
+    }
+  }//if( m_inputEdit && m_sendButton )
 }
 
 void LlmToolGui::handleSpectrumChanged()
@@ -437,41 +471,46 @@ void LlmToolGui::cancelCurrentRequest()
   // when it comes back since we've cleared the pending request state
 }
 
-std::shared_ptr<std::vector<LlmConversationStart>> LlmToolGui::getConversationHistory() const
+std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> LlmToolGui::getConversationHistory() const
 {
   if (!m_llmInterface) {
     return nullptr;
   }
-  
-  auto history = m_llmInterface->getHistory();
+
+  shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
   if (!history) {
     return nullptr;
   }
-  
+
   const auto& conversations = history->getConversations();
   if (conversations.empty()) {
     return nullptr;
   }
-  
-  // Convert the conversations to a vector for storage
-  return std::make_shared<std::vector<LlmConversationStart>>(conversations.begin(), conversations.end());
+
+  // Return a copy of the conversations vector for storage
+  return std::make_shared<std::vector<std::shared_ptr<LlmConversationStart>>>(conversations.begin(), conversations.end());
 }
 
-void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<LlmConversationStart>>& history)
+void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>& history)
 {
   if (!m_llmInterface) {
     return;
   }
-  
-  auto llmHistory = m_llmInterface->getHistory();
-  if (!llmHistory) {
+
+  shared_ptr<LlmConversationHistory> llmHistory = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
+  if( !llmHistory )
     return;
-  }
-  
-  if (history && !history->empty()) {
-    // Set the conversations in the LLM history
-    llmHistory->setConversations(history);
-  } else {
+
+  if( history && !history->empty() )
+  {
+    // Clear current history and add conversations from saved history
+    llmHistory->clear();
+    for( const auto& conv : *history )
+    {
+      llmHistory->getConversations().push_back(conv);
+    }
+  }else
+  {
     // Clear the history if no valid history provided
     llmHistory->clear();
   }
@@ -482,14 +521,12 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<LlmCon
 
 void LlmToolGui::clearConversationHistory()
 {
-  if (!m_llmInterface) {
+  if( !m_llmInterface )
     return;
-  }
   
-  auto history = m_llmInterface->getHistory();
-  if (history) {
+  shared_ptr<LlmConversationHistory> history = m_llmInterface ? m_llmInterface->getHistory() : nullptr;
+  if( history )
     history->clear();
-  }
   
   // Refresh the display to show the cleared history
   refreshDisplay();

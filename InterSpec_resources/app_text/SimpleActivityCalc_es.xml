@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">Calculadora simple de actividad</message>
+  <message id="simple-activity-calc-menu">Calc. act. simple</message>
+  
+  <message id="sac-peak-label">Pico:</message>
+  <message id="sac-background-subtract-label">sustraer fondo</message>
+  
+  <message id="sac-distance-label">Distancia:</message>
+  <message id="sac-age-label">Edad:</message>
+  <message id="sac-shielding-label">Blindaje:</message>
+  <message id="sac-geometry-label">Geometría:</message>
+  <message id="sac-result-label">Actividad:</message>
+  <message id="sac-advanced-btn">Ajuste avanzado act/blindaje</message>
+  
+  <message id="sac-geometry-point">Fuente puntual</message>
+  <message id="sac-geometry-plane">Plano infinito</message>
+  <message id="sac-geometry-self-atten">Esfera auto-atenuante</message>
+  <message id="sac-geometry-trace-src">Fuente traza</message>
+  
+  <message id="sac-error-no-peak">Ningún pico seleccionado</message>
+  <message id="sac-error-no-detector">Ninguna respuesta del detector cargada</message>
+  <message id="sac-error-invalid-distance">Distancia inválida ingresada</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>No parece haber un pico en el fondo en la misma ubicación que este pico.</p>
+    <p>Si cree que lo hay, por favor intercambie los espectros de primer plano y fondo, ajuste el pico en el espectro de fondo, y luego intercámbielos de vuelta.</p>
+  </message>
+  
+  
+  <message id="sac-use-fit-background-peak">¿Le gustaría usar el pico de fondo ajustado automáticamente?</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>Hubo un error al intentar ajustar un pico al espectro de fondo:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+  
+  <message id="sac-qr-tool-state-title">Estado de herramienta de cálculo simple de actividad</message>
+  <message id="sac-qr-tool-state-txt">Estado actual de la herramienta de cálculo simple de actividad.</message>
+</messages>
+
+

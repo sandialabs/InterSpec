@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">কোনো আপেক্ষিক কার্যকলাপ সমাধান উপলব্ধ নেই</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">বর্তমানে প্রদর্শিত স্পেকট্রাম ফাইল পেতে ত্রুটি: {1}</message>
+
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">নির্দিষ্ট কার্যকলাপ</message>
+  <message id="mrend-X(a,n)">{1} এ আলফা নিউট্রন তৈরি করছে</message>
+  <message id="mrend-X(n,a)">{1} এ নিউট্রন আলফা তৈরি করছে</message>
+  <message id="mrend-X(a,p)">{1} এ আলফা প্রোটন তৈরি করছে</message>
+  <message id="mrend-X(n,g)">{1} এ ধীর নিউট্রন ক্যাপচার হচ্ছে</message>
+  <message id="mrend-X(n,n)">{1} থেকে দ্রুত নিউট্রন অস্থিতিস্থাপক বিক্ষেপণ</message>
+  <message id="mrend-X(a,a)">{1} থেকে অস্থিতিস্থাপক আলফা বিক্ষেপণ</message>
+  <message id="mrend-annih">অ্যানিহিলেশন গামা</message>
+  <message id="mrend-unknown-rxctn">অজানা বিক্রিয়া</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">পরিমাপের সময় ক্ষয়</message>
+  <message id="mrend-tt-decay-during-meas">যখন চেক করা হয়, পরিমাপের সময় নিউক্লাইডের ক্ষয় হিসাব করা হবে, উদ্ধৃত আপেক্ষিক কার্যকলাপ পরিমাপের শুরুতে কার্যকলাপ হবে।</message>
+
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">সমীকরণ ফর্ম</message>
+  <message id="ramg-options-label">বিকল্পসমূহ</message>
+  <message id="ramg-tt-eqn-form">
+    আপেক্ষিক দক্ষতা বক্ররেখার জন্য ব্যবহার করার ফাংশনাল ফর্ম।
+    <br />
+    বিকল্পগুলি হল:
+    <table style="margin-left: 10px;">
+      <tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM Physical:</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [Det. Eff.]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">সমীকরণ অর্ডার</message>
+  <message id="ramg-tt-eqn-order">অর্ডার (কতগুলি শক্তি-নির্ভর পদ) আপেক্ষিক দক্ষতা সমীকরণ ব্যবহার করতে হবে।</message>
+  <message id="ramg-phys-model-use-hoerl">সংশোধন ফাংশন ব্যবহার করুন</message>
+  <message id="ramg-tt-phys-model-use-hoerl">যখন চেক করা হয়, মডিফাইড হয়েরল সংশোধন ফ্যাক্টর (অর্থাৎ E<sup>b</sup> * C<sup>1/E</sup>) ফিজিক্যাল মডেল এবং/অথবা ডিটেক্টর দক্ষতা এবং পর্যবেক্ষিত ডেটার মধ্যে পার্থক্যের জন্য হিসাব করতে ব্যবহৃত হয়।</message>
+  <message id="ramg-yield-info-label">ইয়েল্ড তথ্য</message>
+  <message id="ramg-tt-data-src">গামা ব্রাঞ্চিং অনুপাতের জন্য পারমাণবিক ডেটা উৎস।</message>
+  <message id="ramg-match-tol-label">ম্যাচ সহনশীলতা</message>
+  <message id="ramg-tt-match-tol">
+    পিক গড় থেকে FWHM এর সংখ্যা, যা একটি পিক ক্ষেত্রফলে অবদানকারী হিসাবে উৎস গামা অন্তর্ভুক্ত করতে হবে।
+    <br />
+    কিছু নিউক্লাইডের কিছু ফটোপিকের জন্য শক্তিতে কাছাকাছি একাধিক গামা একটি সনাক্ত পিক ক্ষেত্রফল তৈরিতে অবদান রাখতে পারে। এই ম্যাচ সহনশীলতা নির্দিষ্ট করে পর্যবেক্ষিত পিক গড় থেকে কত FWHM দূরে উৎস গামাগুলি ব্যবহার করার জন্য ব্রাঞ্চিং অনুপাত নির্ধারণ করতে সমষ্টি করা উচিত।
+    <br />
+    শূন্যের মান নির্দিষ্ট করলে শুধুমাত্র একটি পিকে বরাদ্দ করা গামা শক্তি ব্যবহার করা হবে, এমনকি যদি খুব কাছাকাছি অন্যান্য গামা থাকে।
+  </message>
+  <message id="ramg-add-uncert-label">অতিরিক্ত অনিশ্চয়তা</message>
+  <message id="ramg-tt-add-uncert">
+    প্রতিটি ফিট ফটোপিকের জন্য আপেক্ষিক দক্ষতা লাইনে যোগ করার জন্য একটি অতিরিক্ত অনিশ্চয়তা।
+    <br />
+    যদি শুধুমাত্র পরিসংখ্যানগত অনিশ্চয়তা ব্যবহার করা হয়, তবে একটি বা কয়েকটি উচ্চ পরিসংখ্যান পিকের জন্য সনাক্তকরণের দক্ষতায় ছোট বিচ্যুতি দক্ষতা বক্ররেখাকে অন্যান্য পয়েন্ট থেকে উল্লেখযোগ্যভাবে বিচ্যুত করতে পারে; যখন একটি অতিরিক্ত অনিশ্চয়তা যোগ করা হয় তখন আপেক্ষিক দক্ষতা সব ডেটা পয়েন্টের মধ্য দিয়ে দৃশ্যমানভাবে যাওয়ার আরও ভাল কাজ করবে, এবং সীমিত পরীক্ষা থেকে আরও সঠিক ফলাফল তৈরি করবে। আপনি এটিকে প্রতিটি সনাক্ত ফটোপিকে একটি সিস্টেমেটিক অনিশ্চয়তা যোগ করা হিসাবে ভাবতে পারেন, যা পিকগুলির মধ্যে সম্পর্কহীন। সীমিত পরীক্ষা থেকে ব্যবহৃত মান অত্যন্ত গুরুত্বপূর্ণ নয়, যতক্ষণ কিছু আছে। আপনি একটি আনওয়েইটেড ফিট ব্যবহার করতেও বেছে নিতে পারেন, যেখানে প্রতিটি পিক তার পরিসংখ্যানগত অনিশ্চয়তা নির্বিশেষে ফিটে সমানভাবে অবদান রাখবে।
+  </message>
+  <message id="ramg-unweighted-label">আনওয়েইটেড</message>
+  <message id="ramg-stat-only-label">শুধুমাত্র পরিসংখ্যানগত</message>
+  <message id="ramg-back-sub-cb">ব্যাকগ্রাউন্ড বিয়োগ</message>
+  <message id="ramg-html-export-label">HTML রিপোর্ট</message>
+  <message id="ramg-nucs-label">নিউক্লাইড</message>
+  <message id="ramg-nucs-shield-label">শিল্ড/নিউক্লাইড</message>
+  <message id="ramg-peaks-to-use-label">ব্যবহার করার পিক</message>
+  <message id="ramg-results-label">ফলাফল</message>
+  <message id="ramg-mi-results">টেবিল</message>
+  <message id="ramg-mi-chart">গ্রাফ</message>
+  <message id="ramg-back-sub-neg">ব্যাকগ্রাউন্ড বিয়োগের পরে, {1} keV এ পিকটি ঋণাত্মক গণনা পেয়েছে তাই ব্যবহার করা হয়নি।</message>
+  <message id="ramg-warn-reaction">বিক্রিয়া ফটোপিক ব্যবহার সম্ভবত বৈধ নয়, যদি না গামা একটি একক বস্তু থেকে সমজাতীয়ভাবে নির্গত হয়।</message>
+  <message id="ramg-warn-no-bkg-sub-used">ব্যাকগ্রাউন্ড পিক বিয়োগ নির্বাচন করা হয়েছিল, কিন্তু নির্বাচিত ফোরগ্রাউন্ড পিকের সাথে কোনো ব্যাকগ্রাউন্ড পিক মিলেনি।</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">আপেক্ষিক দক্ষতা বক্ররেখা এক্স-রে শোষণ এজ বিবেচনা করে না - U বা Pu সমস্যার জন্য 120 keV এর নিচে পিক ব্যবহার সুপারিশ করা হয় না।</message>
+  <message id="ramg-warn-rel-eff-other-xray">আপেক্ষিক দক্ষতা বক্ররেখা কোনো সম্ভাব্য শিল্ডিংয়ের এক্স-রে শোষণ এজ বিবেচনা করে না - অনুগ্রহ করে নিশ্চিত করুন যে ব্যবহৃত পিকগুলি কোনো শিল্ডিংয়ের শোষণ এজ জুড়ে বিস্তৃত নয়।</message>
+  <message id="ramg-warn-match-outside-tol">{2} keV এর বরাদ্দকৃত গামা{1} {3} এর পিক{1} সাথে ম্যাচ সহনশীলতার বাইরে; মনে রাখবেন যে বরাদ্দকৃত গামা শক্তি কাছাকাছি গামার জন্য ক্ষতিপূরণ করতে ব্যবহৃত হয়, এবং ফিট পিক গড় নয়।</message>
+  <message id="ramg-warn-failed-match">নিউক্লাইড{1} কোনো পিকের সাথে মিল করতে ব্যর্থ: {2}</message>
+  <message id="ramg-err-setting-up-calc">আপেক্ষিক দক্ষতা গণনা সেট আপ করতে ত্রুটি: {1}</message>
+  <message id="ramg-err-performing-calc">আপেক্ষিক দক্ষতা গণনা সম্পাদন করতে ত্রুটি: {1}</message>
+  <message id="ramg-no-results-available">কোনো ফলাফল উপলব্ধ নেই।</message>
+  <message id="ramg-result-error-msg">ত্রুটি: {1}</message>
+  <message id="ramg-result-warn-msg">সতর্কতা: {1}</message>
+  <message id="ramg-and-there-were">এবং ছিল</message>
+  <message id="ramg-dof">DOF</message> <!-- Degrees of freedom -->
+  <message id="ramg-fit-unweighted-txt">ফিট আনওয়েইটেড ছিল; অনিশ্চয়তা অর্থবহ নাও হতে পারে।</message>
+  <message id="ramg-fit-stat-only">অনিশ্চয়তা শুধুমাত্র পরিসংখ্যানগত।</message>
+  <message id="ramg-fit-uncert-increased">অনিশ্চয়তা "অতিরিক্ত অনিশ্চয়তা" দ্বারা কৃত্রিমভাবে বৃদ্ধি করা হয়েছে।</message>
+  <message id="ramg-consider-add-uncert-u">আপনি ইউরেনিয়াম সমস্যার জন্য "অতিরিক্ত অনিশ্চয়তা" যোগ করার বিবেচনা করতে পারেন।</message>
+  <message id="ramg-you-using-add-uncert-u">আপনি "অতিরিক্ত অনিশ্চয়তা" যোগ করছেন - গণনাকৃত অনিশ্চয়তা সাবধানে ব্যাখ্যা করুন।</message>
+  <message id="ramg-you-using-add-uncert-non-u">আপনি বর্তমানে "অতিরিক্ত অনিশ্চয়তা" যোগ করছেন, যা গণনাকৃত অনিশ্চয়তা সঠিক না হওয়ার কারণ হবে।</message>
+  <message id="ramg-chart-info-title">χ²/dof = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pval={1})</message>
+  <message id="ramg-1-pval"> (1-pval={1})</message>
+</messages>

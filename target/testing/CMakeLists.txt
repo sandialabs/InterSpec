@@ -168,6 +168,45 @@ add_test( NAME TGammaInteractionCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+
+add_executable( test_SimpleActivityCalc test_SimpleActivityCalc.cpp )
+target_link_libraries( test_SimpleActivityCalc PRIVATE InterSpecLib )
+add_test( NAME TSimpleActivityCalc
+  COMMAND $<TARGET_FILE:test_SimpleActivityCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_BersteinPolynomial test_BersteinPolynomial.cpp )
+target_link_libraries( test_BersteinPolynomial PRIVATE InterSpecLib )
+add_test( NAME TBersteinPolynomial
+  COMMAND $<TARGET_FILE:test_BersteinPolynomial> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_MakeDrfFit test_MakeDrfFit.cpp )
+target_link_libraries( test_MakeDrfFit PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfFit
+  COMMAND $<TARGET_FILE:test_MakeDrfFit> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_EnergyCal test_EnergyCal.cpp )
+target_link_libraries( test_EnergyCal PRIVATE InterSpecLib )
+add_test( NAME TEnergyCal
+  COMMAND $<TARGET_FILE:test_EnergyCal> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+if( USE_LLM_INTERFACE )
+  add_executable( test_LlmToolRegistry test_LlmToolRegistry.cpp )
+  target_link_libraries( test_LlmToolRegistry PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmToolRegistry
+    COMMAND $<TARGET_FILE:test_LlmToolRegistry> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+endif( USE_LLM_INTERFACE )
+
+
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 
 #            debug "${Wt_TEST_DEBUG_LIBRARY}"

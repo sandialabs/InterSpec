@@ -190,8 +190,6 @@ void find_roi_for_2nd_deriv_candidate( double &lowerEnengy, double &upperEnergy,
 //  the chi2_significance_test(..) function
 //The fixedpeaks passed in are not included in the results, and are taken as
 //  fixed in the fit, and will not be deleted even if they are not significant.
-//If isRefit==true, then tighter restrictions are made on the mean and widths
-//  of the peaks; see kRefitPeakParameters notes above.
 //Results includes all the 'all_peaks' passed in, with the ones in the specified
 //  range having been refit.
 // isHPGe is only used if a peak doesnt have its ROI range already defined.

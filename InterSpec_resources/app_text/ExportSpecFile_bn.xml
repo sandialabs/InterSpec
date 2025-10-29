@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+
+  <!-- Window title -->
+  <message id="esf-window-title">স্পেকট্রাম ফাইল এক্সপোর্ট</message>
+
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">এক্সপোর্ট করার ফাইল</message>
+  <message id="esf-file-format">ফাইল ফরম্যাট</message>
+  <message id="esf-samples-to-include">অন্তর্ভুক্ত করার নমুনা</message>
+
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">ফাইল</message>
+  <message id="esf-format-tab">ফরম্যাট</message>
+  <message id="esf-options-tab">বিকল্প</message>
+
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + ব্যাক।</message>
+  <message id="esf-plus-secondary"> + সেকন।</message>
+  <message id="esf-fore-plus-back-tt">একই ফাইলে ফোরগ্রাউন্ড এবং ব্যাকগ্রাউন্ড এবং/অথবা সেকেন্ডারি স্পেকট্রা একসাথে এক্সপোর্ট করুন।</message>
+
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">প্রদর্শিত ফোরগ্রাউন্ড</message>
+  <message id="esf-disp-background">প্রদর্শিত ব্যাকগ্রাউন্ড</message>
+  <message id="esf-disp-secondary">প্রদর্শিত সেকেন্ডারি</message>
+  <message id="esf-all-samples">সমস্ত নমুনা</message>
+  <message id="esf-custom-samples">কাস্টম নমুনা</message>
+  <message id="esf-custom-samples-tt">আপনি যে নমুনা সংখ্যা প্রদর্শিত করতে চান তা এখানে লিখুন। আপনি '33-39' বা '33 to 39' এর মতো নমুনা সংখ্যার একটি রেঞ্জ বা '34,39,84' এর মতো CSV নমুনা সংখ্যা লিখতে পারেন</message>
+  <message id="esf-filter-detectors">ডিটেক্টর ফিল্টার করুন</message>
+
+  <!-- Options section -->
+  <message id="esf-options">বিকল্প</message>
+  <message id="esf-sum-to-single-record">একক রেকর্ডে যোগ করুন</message>
+  <message id="esf-sum-to-single-record-tt">সমস্ত নির্বাচিত নমুনা এবং/অথবা ডিটেক্টর একক স্পেকট্রামে একসাথে যোগ করা হবে।<br />সতর্কতা: যদি আপনার ফোরগ্রাউন্ড এবং ব্যাকগ্রাউন্ড উভয়ই নির্বাচিত থাকে, তাহলে তারা একসাথে যোগ করা হবে।</message>
+
+  <message id="esf-sum-fore-to-single-record">একক রেকর্ডে ফোর যোগ করুন</message>
+  <message id="esf-sum-fore-to-single-record-tt">একাধিক নমুনা সংখ্যা বা একাধিক ডিটেক্টর আছে যা প্রদর্শিত ফোরগ্রাউন্ড গঠন করে; এই বিকল্পটি চেক করলে আউটপুট ফাইলে এগুলি একটি একক স্পেকট্রামে যোগ হবে।</message>
+
+  <message id="esf-sum-back-to-single-record">একক রেকর্ডে ব্যাক যোগ করুন</message>
+  <message id="esf-sum-back-to-single-record-tt">একাধিক নমুনা সংখ্যা বা একাধিক ডিটেক্টর আছে যা প্রদর্শিত ব্যাকগ্রাউন্ড গঠন করে; এই বিকল্পটি চেক করলে আউটপুট ফাইলে এগুলি একটি একক স্পেকট্রামে যোগ হবে।</message>
+
+  <message id="esf-sum-sec-to-single-record">একক রেকর্ডে সেক যোগ করুন</message>
+
+  <message id="esf-background-subtract">ব্যাকগ্রাউন্ড বিয়োগ</message>
+  <message id="esf-background-subtract-tt">আউটপুট স্পেকট্রাম হবে ফোরগ্রাউন্ড, বিয়োগ ব্যাকগ্রাউন্ড।</message>
+
+  <message id="esf-sum-det-per-sample">প্রতি নমুনায় ডিট যোগ করুন</message>
+  <message id="esf-sum-det-per-sample-tt">প্রতিটি নমুনা সংখ্যার জন্য, সেই নমুনা সংখ্যার সমস্ত ডিটেক্টর একসাথে যোগ করুন।<br />উদাহরণস্বরূপ, যদি আপনার স্পেকট্রাম ফাইলে 8টি ডিটেক্টর থাকে, প্রতিটি 120টি নমুনা সহ তাহলে ফলাফলে 120টি স্পেকট্রা থাকবে, যার প্রতিটি সংশ্লিষ্ট নমুনার 8টি ডিটেক্টরের যোগফল।</message>
+
+  <message id="esf-sum-samples-per-det">প্রতি ডিট নমুনা যোগ করুন।</message>
+  <message id="esf-sum-samples-per-det-tt">প্রতিটি ডিটেক্টরের জন্য, সমস্ত নমুনা সংখ্যা একসাথে যোগ করে।<br />উদাহরণস্বরূপ, যদি আপনার স্পেকট্রাম ফাইলে 8টি ডিটেক্টর থাকে, প্রতিটি 120টি নমুনা সহ তাহলে ফলাফলে 8টি স্পেকট্রা থাকবে, যার প্রতিটি তাদের সংশ্লিষ্ট ডিটেক্টরের 120টি নমুনার যোগফল।</message>
+
+  <message id="esf-remove-interspec-info">InterSpec তথ্য সরান</message>
+  <message id="esf-remove-interspec-info-tt">আপনি InterSpec-এ যোগ করতে পারেন এমন ডিটেক্টর রেসপন্স, পিক এবং অন্যান্য বিশ্লেষণ ফলাফল সরিয়ে দেয়।</message>
+
+  <message id="esf-remove-gps">GPS সরান</message>
+
+  <!-- Status text -->
+  <message id="esf-not-applicable">প্রযোজ্য নয়</message>
+  <message id="esf-none-available">কোনোটি উপলব্ধ নেই</message>
+
+  <!-- Buttons -->
+  <message id="esf-export">এক্সপোর্ট</message>
+  <message id="esf-show-qr-code">QR-কোড দেখান</message>
+
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">প্রদর্শিত হিসাবে</message>
+  <message id="esf-fore-abbrev">ফোর।</message>
+  <message id="esf-back-abbrev">ব্যাক</message>
+  <message id="esf-sec-abbrev">সেক</message>
+
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">পরবর্তী QR কোড</message>
+  <message id="esf-url-link">URL লিঙ্ক</message>
+  <message id="esf-email-link">ইমেল লিঙ্ক</message>
+
+  <!-- Error dialogs -->
+  <message id="esf-error-title">ত্রুটি</message>
+  <message id="esf-qr-encode-failed">স্পেকট্রাম QR কোড হিসাবে প্রদর্শন করতে ব্যর্থ: {1}</message>
+
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">প্রদ.&nbsp;নমুনা</plural>
+    <plural case="1">প্রদ.&nbsp;নমুনা</plural>
+  </message>
+
+  <!-- Table headers -->
+  <message id="esf-start-time">শুরুর সময়</message>
+  <message id="esf-end-time">শেষ সময়</message>
+  <message id="esf-first-sample">প্রথম নমুনা</message>
+  <message id="esf-last-sample">শেষ নমুনা</message>
+  <message id="esf-num-samples">নমুনার সংখ্যা</message>
+  <message id="esf-neut-dets">নিউট্রন ডিট</message>
+  <message id="esf-gamma-dets">গামা ডিট</message>
+  <message id="esf-num-dets">ডিটের সংখ্যা</message>
+  <message id="esf-latitude">অক্ষাংশ</message>
+  <message id="esf-longitude">দ্রাঘিমাংশ</message>
+  <message id="esf-total-time">মোট সময়</message>
+  <message id="esf-sum-gamma">গামা যোগফল</message>
+  <message id="esf-sum-neut">নিউট যোগফল।</message>
+  <message id="esf-manufacturer">প্রস্তুতকারক</message>
+  <message id="esf-model">মডেল</message>
+  <message id="esf-serial">সিরিয়াল</message>
+</messages>

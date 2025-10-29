@@ -1,0 +1,54 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<messages>
+  
+  
+  
+  <message id="uiw-load-btn">লোড</message>
+  
+  
+  <message id="uiw-file-too-large">&lt;span style="color: red;"&gt;Too Large of file.&lt;/span&gt;</message>
+  
+  
+  <message id="uiw-cheat-sheet">Cheat Sheet (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">Print out this cheat sheet (PDF format) to quickly reference actions, shortcut keys and troubleshooting.</message>
+  
+  
+  <message id="uiw-show-at-start-cb">show at start when no spectra</message>
+  
+  
+  <message id="uiw-back-to-top">Back to top</message>
+  
+  
+  <message id="uiw-error-loading-faq">ত্রুটি loading FAQ topics: {1}</message>
+  
+  
+  <message id="uiw-mobile-start-example">You can start by opening an example spectra below, or you can use the &lt;em&gt;ইমপোর্ট Spectra&lt;/em&gt; tab to load external files.&lt;br /&gt;</message>
+  <message id="uiw-mobile-saved-spectra">&lt;p&gt;Your previously saved spectra are shown below.  You can use the other tabs to open example spectra, or to import external spectral files.&lt;br /&gt;You can also open spectra attached to email, or cloud storage apps.&lt;/p&gt;</message>
+  <message id="uiw-mobile-select-example">&lt;p&gt;You can select an example spectrum file below, or use the import tab to open one from your iCloud, Dropbox, Google Drive, etc.&lt;br /&gt;You can also open spectrum files attached to eamils.&lt;/p&gt;</message>
+  
+  
+  <message id="uiw-desktop-welcome-title">&lt;h1 align="center"&gt;Welcome To &lt;code&gt;InterSpec&lt;/code&gt;&lt;/h1&gt;&lt;div align="left"&gt;</message>
+  <message id="uiw-desktop-welcome-text">&lt;p&gt;You can use the references on the left to become more familiar with &lt;code&gt;InterSpec&lt;/code&gt;, or you can pick up from a previous session or spectrum below.</message>
+  <message id="uiw-desktop-drag-drop"> Alternatively, you can also drag and drop your own spectrum file onto &lt;code&gt;InterSpec&lt;/code&gt;.&lt;/p&gt;</message>
+  
+  
+  <message id="uiw-mobile-phone-postscript">&lt;p&gt;Tap on the &lt;img src="InterSpec_resources/images/phone_tips.png" width=12 height=12 alt="information icon" class="WhiteIcon" /&gt; icon to the left for the basics of interacting with the chart and fitting for peaks.Tap the &lt;img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /&gt; icon for detailed information about &lt;code&gt;InterSpec&lt;/code&gt;s tools and features.&lt;/p&gt;</message>
+  <message id="uiw-mobile-tablet-postscript">&lt;p&gt;Tap on the &lt;b&gt;Use Info&lt;/b&gt; button to the left for the basics of interacting with the chart and fitting for peaks.Tap the &lt;img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" /&gt; icon for detailed information about &lt;code&gt;InterSpec&lt;/code&gt;s tools and features.&lt;/p&gt;</message>
+  
+  
+  <message id="uiw-tap-choose-file">&lt;p&gt;Tap &lt;em&gt;Choose File&lt;/em&gt; to browse for the file you want to open.&lt;/p&gt;</message>
+  <message id="uiw-open-file-instructions">&lt;p&gt;You can also open spectra files by selecting &lt;em&gt;Open File&lt;/em&gt; in the &lt;code&gt;InterSpec&lt;/code&gt; sub menu after exiting thie screen.&lt;br /&gt;For email attachments, or files in apps like &lt;code&gt;Files&lt;/code&gt;, &lt;code&gt;Dropbox&lt;/code&gt;, &lt;code&gt;Google Drive&lt;/code&gt;, etc., you can open spectra files in &lt;code&gt;InterSpec&lt;/code&gt; by selecting "Copy To InterSpec"&lt;/p&gt;</message>
+  
+  
+  <message id="uiw-tab-saved-states">সংরক্ষণd States</message>
+  <message id="uiw-tab-example-spectra">Example Spectra</message>
+  <message id="uiw-tab-import-spectra">ইমপোর্ট Spectra</message>
+  
+  
+  <message id="uiw-welcome">Welcome</message>
+  <message id="uiw-controls">Controls</message>
+  
+  
+  <message id="uiw-license-and-terms">License and Terms</message>
+  <message id="uiw-more-info">More in depth information</message>
+</messages>

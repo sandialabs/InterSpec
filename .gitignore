@@ -25,6 +25,8 @@ InterSpec_resources/app_text/InterSpec_string*.csv
 
 *OUO*
 *ouo*
+*cui*
+*CUI*
 .svn
 .vscode
 .idea
@@ -53,6 +55,12 @@ README.txt
 CMakeSettings.json
 interspec_messages_to_users.txt
 rebin_by_lower_edge_error.txt
+
+CLAUDE.md
+.cursor*
+.playwright*
+CmakePresets.json
+*prompt*.md
 
 # Xcode spefic (for iOS)
 build/
@@ -102,3 +110,4 @@ target/macOsQuickLook/SpecFilePreview/SpecFilePreview.xcodeproj/project.xcworksp
 
 target/wxWidgets/3rd_party
 .devcontainer/devcontainer.json
+*.bak

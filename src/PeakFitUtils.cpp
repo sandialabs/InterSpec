@@ -208,7 +208,9 @@ bool is_likely_high_res( InterSpec *viewer )
     case SpecUtils::DetectorType::IdentiFinderUnknown:
     case SpecUtils::DetectorType::SAIC8:
     case SpecUtils::DetectorType::MicroRaider:
-    case SpecUtils::DetectorType::RadiaCode:
+    case SpecUtils::DetectorType::RadiaCodeCsI10:
+    case SpecUtils::DetectorType::RadiaCodeCsI14:
+    case SpecUtils::DetectorType::RadiaCodeGAGG10:
     case SpecUtils::DetectorType::RadHunterNaI:
     case SpecUtils::DetectorType::RadHunterLaBr3:
     case SpecUtils::DetectorType::Rsi701:

@@ -76,13 +76,13 @@
   <message id="dcc-xAxisTitle">Decreasing Atomic Mass</message>
   <message id="dcc-yAxisTitle">Increasing Atomic Number</message>
   <message id="dcc-clickNucTxt">Click nuclide for more information.</message>
-  <message id="dcc-clickNucMoreInfoTxt1">Double-click nuclide for particles it gives off.</message>
   <message id="dcc-clickNucMoreInfoTxt2">Click a different source nuclide above to</message>
   <message id="dcc-clickNucMoreInfoTxt3">change displayed decay chain.</message>
   <message id="dcc-clickNucMblTxt">Tap nuclide for more information.</message>
-  <message id="dcc-clickNucMblMoreInfoTxt1">Touch nuclide for 1 second for particles it gives off.</message>
   <message id="dcc-clickNucMblMoreInfoTxt2">Click a different source nuclide above to</message>
   <message id="dcc-clickNucMblMoreInfoTxt3">change displayed decay chain.</message>
+  <message id="dcc-show-decay-products">Show {nuclide} decay products</message>
+  <message id="dcc-show-decays-through">Show decays through {nuclide}</message>
 
 
   <message id="dcn-initial-age">Initial Age: </message>

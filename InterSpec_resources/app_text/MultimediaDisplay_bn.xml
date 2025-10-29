@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">পূর্ববর্তী</message>
+  <message id="smmd-next-btn">পরবর্তী</message>
+  <message id="smmd-auto-show-images-cb">স্বয়ংক্রিয়ভাবে ছবি দেখান</message>
+  <message id="smmd-tt-auto-show-images">স্পেকট্রাম ফাইল লোড হলে স্বয়ংক্রিয়ভাবে ছবি দেখান যেগুলিতে সেগুলি আছে।</message>
+  <message id="smmd-tt-export-image-file">বর্তমানে প্রদর্শিত ছবিটি একটি ফাইলে রপ্তানি করুন।</message>
+  <message id="smmd-err-no-content">প্রদর্শন করার জন্য কোনো মাল্টিমিডিয়া বিষয়বস্তু নেই</message>
+  <message id="smmd-err-file-is-uri">URI='{1}'-এ একটি ফাইল হিসাবে এনকোড করা ডেটা</message>
+  <message id="smmd-err-no-multimedia-src">মাল্টিমিডিয়া উৎসে কোনো ডেটা নেই।</message>
+  <message id="smmd-err-encoding-not-supported">ডেটার মাল্টিমিডিয়া বিষয়বস্তু এনকোডিং সমর্থিত নয়।</message>
+  <message id="smmd-err-not-image">মাল্টিমিডিয়া বিষয়বস্তু টাইপ হয় একটি ছবি টাইপের ছিল না, বা নির্ধারণ করা যায়নি।</message>
+  <message id="smmd-image-index">ছবি {1} / {2}</message>
+  <message id="smmd-Time">সময়</message>
+  <message id="smmd-window-title-single">স্পেকট্রাম ফাইলে ছবি</message>
+  <message id="smmd-window-title-multiple">স্পেকট্রাম ফাইলে ছবি</message>
+</messages>

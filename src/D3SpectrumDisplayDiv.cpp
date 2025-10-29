@@ -50,10 +50,10 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
-#include "InterSpec/ColorTheme.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/SpectrumChart.h"
+#include "InterSpec/RefLineDynamic.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
@@ -260,6 +260,7 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_xAxisCompactnessChanged( this ),
   // These next member variables roughly track state in the JS
   m_jsgraph( jsRef() + ".chart" ),
+  m_num_render_calls( 0 ),
   m_xAxisMinimum(0.0),
   m_xAxisMaximum(0.0),
   m_yAxisMinimum(0.0),
@@ -267,15 +268,21 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
   m_chartWidthPx(0.0),
   m_chartHeightPx(0.0),
   m_showRefLineInfoForMouseOver( true ),
+  m_refLineWidth( 1.0 ),
+  m_refLineWidthHover( 2.0 ),
+  m_refLineVerbosity( RefLineVerbosity::None ),
+  m_dynamic( nullptr ),
+  m_dynamicRefLines{},
+  m_dynamicRefLinesJsFwhmFcn{},
   m_comptonPeakAngle( 180 ),
-  m_foregroundLineColor( 0x00, 0x00, 0x00 ),  //black
-  m_backgroundLineColor( 0x00, 0xff, 0xff ),  //cyan
-  m_secondaryLineColor( 0x00, 0x80, 0x80 ),   //dark green
-  m_textColor( 0x00, 0x00, 0x00 ),
-  m_axisColor( 0x00, 0x00, 0x00 ),
-  m_chartMarginColor(),
-  m_chartBackgroundColor(),
-  m_defaultPeakColor( 0, 51, 255, 155 ),
+  m_foregroundLineColorOverride(),        // default/empty - use global CSS var
+  m_backgroundLineColorOverride(),        // default/empty - use global CSS var
+  m_secondaryLineColorOverride(),         // default/empty - use global CSS var
+  m_textColorOverride(),                  // default/empty - use global CSS var
+  m_axisColorOverride(),                  // default/empty - use global CSS var
+  m_chartMarginColorOverride(),           // default/empty - use global CSS var
+  m_chartBackgroundColorOverride(),       // default/empty - use global CSS var
+  m_defaultPeakColor(),                   // default/empty - use default blue
   m_peakLabelFontSize{},
   m_peakLabelRotationDegrees(0.0),
   m_logYAxisMin(0.1),
@@ -293,7 +300,12 @@ D3SpectrumDisplayDiv::D3SpectrumDisplayDiv( WContainerWidget *parent )
                      "event.cancelBubble = true; event.returnValue = false; return false;" );
   
   InterSpec::instance()->useMessageResourceBundle( "D3SpectrumDisplayDiv" );
-    
+
+  // Hook up the color theme callback to automatically update when the theme changes
+  // This is a hopefully temporary workaround that right now, I think (but unverified) the JS expects the default
+  //  peak color to be in the JSON - this needs to be checked on or updated for.
+  InterSpec::instance()->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::updateDefaultPeakColorForColorTheme, this, boost::placeholders::_1 ) );
+
   //For development it may be useful to directly use the original JS/CSS files,
   //  but normally we should use the resources CMake will copy into
   //  InterSpec_resources (not checked that Andorid build systems will
@@ -335,6 +347,9 @@ void D3SpectrumDisplayDiv::defineJavaScript()
   options += ", compactXAxis: " + jsbool(m_compactAxis);
   options += ", allowDragRoiExtent: true";
   options += ", showRefLineInfoForMouseOver: " + jsbool(m_showRefLineInfoForMouseOver);
+  options += ", refLineWidth: " + std::to_string(m_refLineWidth);
+  options += ", refLineWidthHover: " + std::to_string(m_refLineWidthHover);
+  options += ", refLineVerbosity: " + std::to_string( static_cast<int>(m_refLineVerbosity) );
   options += ", yscale: " + string(m_yAxisIsLog ? "'log'" : "'lin'");
   options += ", backgroundSubtract: " + jsbool( m_backgroundSubtract );
   options += ", showLegend: " + jsbool(m_legendEnabled);
@@ -428,26 +443,29 @@ void D3SpectrumDisplayDiv::defineJavaScript()
     m_rightMouseDraggJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightMouseDragCallback,
                                               this, boost::placeholders::_1, boost::placeholders::_2 ) );
     
-    m_leftClickJS.reset( new JSignal<double,double,double,double>( this, "leftclicked", true ) );
+    m_leftClickJS.reset( new JSignal<double,double,double,double,string>( this, "leftclicked", true ) );
     m_leftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartLeftClickCallback, this,
                                         boost::placeholders::_1, boost::placeholders::_2,
-                                        boost::placeholders::_3, boost::placeholders::_4 ) );
+                                        boost::placeholders::_3, boost::placeholders::_4,
+                                        boost::placeholders::_5) );
     
-    m_doubleLeftClickJS.reset( new JSignal<double,double>( this, "doubleclicked", true ) );
+    m_doubleLeftClickJS.reset( new JSignal<double,double,string,unsigned int>( this, "doubleclicked", true ) );
     m_doubleLeftClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartDoubleLeftClickCallback,
-                                              this, boost::placeholders::_1, boost::placeholders::_2 ) );
+                                              this, boost::placeholders::_1, boost::placeholders::_2,
+                                              boost::placeholders::_3, boost::placeholders::_4 ) );
     
-    m_rightClickJS.reset( new JSignal<double,double,double,double>( this, "rightclicked", true ) );
+    m_rightClickJS.reset( new JSignal<double,double,double,double,string>( this, "rightclicked", true ) );
     m_rightClickJS->connect( boost::bind( &D3SpectrumDisplayDiv::chartRightClickCallback, this,
                                          boost::placeholders::_1, boost::placeholders::_2,
-                                         boost::placeholders::_3, boost::placeholders::_4 ) );
+                                         boost::placeholders::_3, boost::placeholders::_4,
+                                         boost::placeholders::_5) );
     
     m_yAxisDraggedJS.reset( new Wt::JSignal<double,std::string>( this, "yscaled", true ) );
     m_yAxisDraggedJS->connect( boost::bind( &D3SpectrumDisplayDiv::yAxisScaled, this,
                                            boost::placeholders::_1, boost::placeholders::_2 ) );
     
      
-    m_existingRoiEdgeDragJS.reset( new JSignal<double,double,double,double,double,bool>( this, "roiDrag", true ) );
+    m_existingRoiEdgeDragJS.reset( new JSignal<double,double,double,double,std::string,bool>( this, "roiDrag", true ) );
     m_existingRoiEdgeDragJS->connect( boost::bind( &D3SpectrumDisplayDiv::existingRoiEdgeDragCallback, this,
                                          boost::placeholders::_1, boost::placeholders::_2,
                                          boost::placeholders::_3, boost::placeholders::_4,
@@ -528,11 +546,13 @@ void D3SpectrumDisplayDiv::setPeakModel( PeakModel *model )
   
   m_peakModel = model;
 
-  m_peakModel->dataChanged().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsRemoved().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->rowsInserted().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->layoutChanged().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
-  m_peakModel->modelReset().connect( this, &D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw );
+  m_peakModel->dataChanged().connect(   boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
+  m_peakModel->rowsRemoved().connect(   boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
+  m_peakModel->rowsInserted().connect(  boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
+  m_peakModel->layoutChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
+  m_peakModel->modelReset().connect(    boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Foreground) );
+  m_peakModel->backgroundPeaksChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::Background) );
+  m_peakModel->secondaryPeaksChanged().connect( boost::bind(&D3SpectrumDisplayDiv::schedulePeakRedraw, this, SpecUtils::SpectrumType::SecondForeground) );
 }//void setPeakModel( PeakModel *model );
 
 
@@ -621,18 +641,18 @@ bool D3SpectrumDisplayDiv::showingPeakLabel( int peakLabel ) const
 }//bool showingPeakLabel( int peakLabel ) const
 
 
-Signal<double,double,int,int> &D3SpectrumDisplayDiv::chartClicked()
+Signal<double,double,int,int,string> &D3SpectrumDisplayDiv::chartClicked()
 {
   return m_leftClick;
 }//Signal<double,double,int,int> &chartClicked()
 
 
-Wt::Signal<double,double,int,int> &D3SpectrumDisplayDiv::rightClicked()
+Wt::Signal<double,double,int,int,string> &D3SpectrumDisplayDiv::rightClicked()
 {
   return m_rightClick;
 }
 
-Wt::Signal<double,double,double,double,double,bool> &D3SpectrumDisplayDiv::existingRoiEdgeDragUpdate()
+Wt::Signal<double,double,double,double,std::string,bool> &D3SpectrumDisplayDiv::existingRoiEdgeDragUpdate()
 {
   return m_existingRoiEdgeDrag;
 }
@@ -648,7 +668,7 @@ Wt::Signal<double,double,SpecUtils::SpectrumType> &D3SpectrumDisplayDiv::yAxisSc
   return m_yAxisScaled;
 }
 
-Wt::Signal<double,double> &D3SpectrumDisplayDiv::doubleLeftClick()
+Wt::Signal<double,double,std::string,Wt::WFlags<Wt::KeyboardModifier>> &D3SpectrumDisplayDiv::doubleLeftClick()
 {
   return m_doubleLeftClick;
 }
@@ -777,6 +797,132 @@ void D3SpectrumDisplayDiv::setShowRefLineInfoForMouseOver( const bool show )
 }//void setShowRefLineInfoForMouseOver( const bool show )
 
 
+void D3SpectrumDisplayDiv::setRefLineWidths( const double width, const double hoverWidth )
+{
+  m_refLineWidth = width;
+  m_refLineWidthHover = hoverWidth;
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setRefLineWidths(" + std::to_string(width) + "," + std::to_string(hoverWidth) + ")" );
+}//void setRefLineWidths( const double width, const double hoverWidth )
+
+
+void D3SpectrumDisplayDiv::setRefLineThickness( const RefLineThickness thickness )
+{
+  const auto widths = getRefLineWidths( thickness );
+  setRefLineWidths( widths.first, widths.second );
+}//void setRefLineThickness( const RefLineThickness thickness )
+
+
+std::pair<double,double> D3SpectrumDisplayDiv::getRefLineWidths( const RefLineThickness thickness )
+{
+  switch( thickness )
+  {
+    case RefLineThickness::Light:   return {0.5, 1.0};
+    case RefLineThickness::Normal:  return {1.0, 2.0};
+    case RefLineThickness::Thick:   return {2.0, 3.0};
+    case RefLineThickness::Thicker: return {3.0, 5.0};
+  }
+  return {1.0, 2.0}; // Default to Normal
+}//std::pair<double,double> getRefLineWidths( const RefLineThickness thickness )
+
+
+void D3SpectrumDisplayDiv::handleRefLineThicknessPreferenceChangeCallback( int thickness )
+{
+  const int clampedValue = std::max(0, std::min(3, thickness));
+  const RefLineThickness refThickness = static_cast<RefLineThickness>(clampedValue);
+  
+  setRefLineThickness( refThickness );
+}//void handleRefLineThicknessPreferenceChangeCallback( int thickness )
+
+
+void D3SpectrumDisplayDiv::setRefLineVerbosity( const RefLineVerbosity verbosity )
+{
+  m_refLineVerbosity = verbosity;
+  const int verbosityValue = static_cast<int>( verbosity );
+  if( isRendered() )
+    doJavaScript( m_jsgraph + ".setRefLineVerbosity(" + std::to_string(verbosityValue) + ");" );
+}//void setRefLineVerbosity( const RefLineVerbosity verbosity )
+
+
+void D3SpectrumDisplayDiv::handleRefLineVerbosityPreferenceChangeCallback( int verbosity )
+{
+  const int clampedValue = std::max(0, std::min(2, verbosity));
+  const RefLineVerbosity refVerbosity = static_cast<RefLineVerbosity>(clampedValue);
+  
+  setRefLineVerbosity( refVerbosity );
+}//void handleRefLineVerbosityPreferenceChangeCallback( int verbosity )
+
+
+void D3SpectrumDisplayDiv::setDynamicRefLineController( RefLineDynamic *dynamic )
+{
+  m_dynamic = dynamic;
+}
+
+
+void D3SpectrumDisplayDiv::scheduleRenderDynamicRefLine()
+{
+  m_renderFlags |= D3RenderActions::UpdateDynamicRefLines;
+  scheduleRender();
+}//void scheduleRenderDynamicRefLine();
+
+
+
+void D3SpectrumDisplayDiv::setDynamicRefernceLines( vector<pair<double,ReferenceLineInfo>> &&ref_lines,
+                             std::string &&js_fwhm_fcnt )
+{
+  if( m_dynamicRefLines.empty() && ref_lines.empty() && m_dynamicRefLinesJsFwhmFcn.empty() && js_fwhm_fcnt.empty() )
+    return;
+    
+  m_dynamicRefLines = std::move(ref_lines);
+  m_dynamicRefLinesJsFwhmFcn = std::move(js_fwhm_fcnt);
+  
+  setDynamicRefLinesToClient();
+}//void setDynamicRefernceLines(...)
+
+
+void D3SpectrumDisplayDiv::setDynamicRefLinesToClient()
+{
+  if( m_dynamicRefLines.empty() )
+  {
+    const string js = "try{" + m_jsgraph + ".setKineticReferenceLines(null);}catch(e){}";
+    if( isRendered() )
+      doJavaScript( js );
+    else
+      m_pendingJs.push_back( js );
+    return;
+  }//if( m_dynamicRefLines.empty() )
+  
+  string result = "{\n"
+  "  \"fwhm_fcn\": " + (m_dynamicRefLinesJsFwhmFcn.empty() ? "function(){return 1;}"s : m_dynamicRefLinesJsFwhmFcn) + ",\n"
+  " \"ref_lines\": [";
+  
+  for( size_t i = 0; i < m_dynamicRefLines.size(); ++i )
+  {
+    const pair<double,ReferenceLineInfo> &ref = m_dynamicRefLines[i];
+    
+    result += (i ? ",{\n" : "{\n")
+    + string("  \"weight\": ") + std::to_string(ref.first) + ",\n"
+    "  \"src_lines\": ";
+    ref.second.toJson(result);
+    result += "\n}";
+  }
+  result += "]\n"
+  "}";
+  
+  const string js =
+  "try{"
+  + m_jsgraph + ".setKineticReferenceLines(" + result + ");"
+  "}catch(e){ console.log('Exception setting ref lines: ' + e ); }";
+  
+  //cout << "setDynamicRefLinesToClient js=" << js << endl << endl << endl;
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//void setDynamicRefLinesToClient()
+
+
 void D3SpectrumDisplayDiv::highlightPeakAtEnergy( const double energy )
 {
   if( isRendered() )
@@ -820,13 +966,13 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
     renderForegroundToClient();
   
   if( m_renderFlags.testFlag(UpdateForegroundPeaks) )
-    setForegroundPeaksToClient();
+    setPeaksToClient( SpecUtils::SpectrumType::Foreground );
   
   if( m_renderFlags.testFlag(UpdateSecondaryPeaks) )
-    setSecondaryPeaksToClient();
+    setPeaksToClient( SpecUtils::SpectrumType::SecondForeground );
   
   if( m_renderFlags.testFlag(UpdateBackgroundPeaks) )
-    setBackgroundPeaksToClient();
+    setPeaksToClient( SpecUtils::SpectrumType::Background );
   
   if( m_renderFlags.testFlag(UpdateHighlightRegions) )
     setHighlightRegionsToClient();
@@ -834,7 +980,11 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( m_renderFlags.testFlag(D3RenderActions::UpdateRefLines) )
     setReferenceLinesToClient();
   
+  if( m_dynamic && m_renderFlags.testFlag(D3RenderActions::UpdateDynamicRefLines) )
+    m_dynamic->startPushUpdates(); //This does not immediately push updated lines, it starts the computation for this in a background thread that will then push the lines later
+  
   m_renderFlags = 0;
+  m_num_render_calls += 1;
 }//void render( flags )
 
 
@@ -884,6 +1034,8 @@ std::string D3SpectrumDisplayDiv::localizedStringsJson() const
   "recalFromTo: " + WString::tr("d3sdd-recalFromTo").jsStringLiteral() + ",\n\t"                  // "Recalibrate data from {1} to {2} keV"
   "sumFromTo: " + WString::tr("d3sdd-sumFromTo").jsStringLiteral() + ",\n\t"                      // "{1} to {2} keV"
   "comptonPeakAngle: " + WString::tr("d3sdd-comptonPeakAngle").jsStringLiteral() + ",\n\t"        // "{1}° Compton Peak"
+  "candidates: " + WString::tr("d3sdd-candidates").jsStringLiteral() + ",\n\t"                    // "Candidates:"
+  "useArrowsToSelect: " + WString::tr("d3sdd-use-arrows-to-select").jsStringLiteral() + ",\n\t"   // "(use ↑ and ↓ to select)"
   "}";
   
   // In JS, probably need to call: `self.handleResize( false );`
@@ -1217,18 +1369,20 @@ void D3SpectrumDisplayDiv::doSecondaryLiveTimeNormalization()
 }//void doSecondaryLiveTimeNormalization()
 
 
+/*
 void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
 {
   string js;
   
   if( m_peakModel )
   {
-    std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
+    std::shared_ptr<const std::deque<shared_ptr<const PeakDef>> > peaks = m_peakModel->peaks();
     if( peaks )
     {
       vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
       const std::shared_ptr<const Measurement> &foreground = m_foreground;
-      js = PeakDef::peak_json( inpeaks, foreground );
+      const WColor peak_color = m_defaultPeakColor.isDefault() ? WColor(0, 51, 255) : m_defaultPeakColor;
+      js = PeakDef::peak_json( inpeaks, foreground, peak_color, 255 );
     }
   }
   
@@ -1242,26 +1396,66 @@ void D3SpectrumDisplayDiv::setForegroundPeaksToClient()
   else
     m_pendingJs.push_back( js );
 }//void setForegroundPeaksToClient();
+*/
 
 
-void D3SpectrumDisplayDiv::setSecondaryPeaksToClient()
+void D3SpectrumDisplayDiv::setPeaksToClient( const SpecUtils::SpectrumType spectrum_type )
 {
-  cerr << "D3SpectrumDisplayDiv::setSecondaryPeaksToClient() not implemented" << endl;
-}
-
-
-void D3SpectrumDisplayDiv::setBackgroundPeaksToClient()
-{
-  cerr << "D3SpectrumDisplayDiv::setBackgroundPeaksToClient() not implemented" << endl;
-}
-
-
-void D3SpectrumDisplayDiv::scheduleForegroundPeakRedraw()
-{
-  m_renderFlags |= UpdateForegroundPeaks;
+  string js;
+  string spectrum_name;
+  std::shared_ptr<const Measurement> spectrum_measurement;
+  int alpha = 255;
   
-  scheduleRender();
-}//void scheduleForegroundPeakRedraw()
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      spectrum_name = "FOREGROUND";
+      spectrum_measurement = m_foreground;
+      alpha = 255;
+      break;
+      
+    case SpecUtils::SpectrumType::SecondForeground:
+      spectrum_name = "SECONDARY";
+      spectrum_measurement = m_secondary;
+      alpha = 55;
+      break;
+    case SpecUtils::SpectrumType::Background:
+      spectrum_name = "BACKGROUND";
+      spectrum_measurement = m_background;
+      alpha = 55;
+      break;
+  }
+  
+  // This is a hopefully temporary workaround that right now, I think (but unverified) the JS expects the default
+  //  peak color to be in the JSON - this needs to be checked on or updated for.
+  if( m_defaultPeakColor.isDefault() )
+  {
+    InterSpec *viewer = InterSpec::instance();
+    shared_ptr<const ColorTheme> theme = viewer ? viewer->getColorTheme() : nullptr;
+    if( theme )
+      m_defaultPeakColor = theme->defaultPeakLine;
+  }//if( m_defaultPeakColor.isDefault() )
+  
+  
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel ? m_peakModel->peaks(spectrum_type) : nullptr;
+  if( peaks )
+  {
+    vector< std::shared_ptr<const PeakDef> > inpeaks( peaks->begin(), peaks->end() );
+    const WColor peak_color = m_defaultPeakColor.isDefault() ? WColor(0, 51, 255) : m_defaultPeakColor;
+    js = PeakDef::peak_json( inpeaks, spectrum_measurement, peak_color, alpha );
+  }
+  
+  if( js.empty() )
+    js = "[]";
+  
+  js = m_jsgraph + ".setRoiData(" + js + ", '" + spectrum_name + "');";
+  
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}
+
 
 
 void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
@@ -1431,6 +1625,7 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> bac
     setBackgroundSubtract( false );
 
   scheduleUpdateBackground();
+  schedulePeakRedraw( SpecUtils::SpectrumType::Background );
 }//void D3SpectrumDisplayDiv::setBackground(...);
 
 
@@ -1439,6 +1634,7 @@ void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> his
   m_secondary = hist;
   doSecondaryLiveTimeNormalization();
   scheduleUpdateSecondData();
+  schedulePeakRedraw( SpecUtils::SpectrumType::SecondForeground );
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> background );
 
 
@@ -1689,7 +1885,8 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     D3SpectrumExport::D3SpectrumOptions foregroundOptions;
     
     // Set options for the spectrum
-    foregroundOptions.peak_color = m_defaultPeakColor.isDefault() ? string("blue") : m_defaultPeakColor.cssText();
+    const WColor peak_color = m_defaultPeakColor.isDefault() ? WColor(0, 51, 255) : m_defaultPeakColor;
+    foregroundOptions.peak_color = peak_color.cssText();
     foregroundOptions.spectrum_type = SpecUtils::SpectrumType::Foreground;
     foregroundOptions.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );  //will always be 1.0f
     // Leave line color blank, as we set a CSS rule for `--d3spec-fore-line-color`
@@ -1698,12 +1895,12 @@ void D3SpectrumDisplayDiv::renderForegroundToClient()
     // Set the peak data for the spectrum
     if ( m_peakModel )
     {
-      std::shared_ptr<const std::deque< PeakModel::PeakShrdPtr > > peaks = m_peakModel->peaks();
-      vector< std::shared_ptr<const PeakDef> > inpeaks;
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = m_peakModel->peaks();
+      vector<shared_ptr<const PeakDef>> inpeaks;
       if( peaks )
         inpeaks.insert( end(inpeaks), peaks->begin(), peaks->end() );
       
-      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks, data_hist );
+      foregroundOptions.peaks_json = PeakDef::peak_json( inpeaks, data_hist, peak_color, 255 );
     }
     
     measurements.push_back( pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions>(data_hist.get(),foregroundOptions) );
@@ -1816,171 +2013,282 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
 
 void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> theme )
 {
+  // Get the current InterSpecApp instance
+  InterSpecApp *app = dynamic_cast<InterSpecApp*>( wApp );
+  if( !app )
+  {
+    cerr << "D3SpectrumDisplayDiv::applyColorTheme: wApp is not an InterSpecApp instance" << endl;
+    return;
+  }
+
+  // Helper lambda to set or remove a global CSS variable
+  auto setGlobalCssVar = [&app]( const string &var_name, const WColor &color ) {
+    const string rulename = "global_d3spec_" + var_name;
+
+    if( color.isDefault() )
+    {
+      // Remove the CSS rule if color is default
+      app->removeGlobalCssRule( rulename );
+    }
+    else
+    {
+      // Set the CSS rule with the specified color
+      app->setGlobalCssRule(
+        rulename,
+        ":root",
+        "--d3spec-" + var_name + ": " + color.cssText() + ";"
+      );
+    }
+  };
+
   if( theme )
   {
-    setForegroundSpectrumColor( theme->foregroundLine );
-    setBackgroundSpectrumColor( theme->backgroundLine );
-    setSecondarySpectrumColor( theme->secondaryLine );
-    setDefaultPeakColor( theme->defaultPeakLine );
-    
-    setAxisLineColor( theme->spectrumAxisLines );
-    setChartMarginColor( theme->spectrumChartMargins );
-    setChartBackgroundColor( theme->spectrumChartBackground );
-    setTextColor( theme->spectrumChartText );
-    
+    setGlobalCssVar( "fore-line-color", theme->foregroundLine );
+    setGlobalCssVar( "back-line-color", theme->backgroundLine );
+    setGlobalCssVar( "second-line-color", theme->secondaryLine );
+    setGlobalCssVar( "text-color", theme->spectrumChartText );
+    setGlobalCssVar( "axis-color", theme->spectrumAxisLines );
+    setGlobalCssVar( "background-color", theme->spectrumChartMargins );
+    setGlobalCssVar( "chart-area-color", theme->spectrumChartBackground );
+
+    // Grid colors - these might not be in theme, so may be default
+    // If default, the CSS file default will be used
+    setGlobalCssVar( "grid-major-color", WColor() );
+    setGlobalCssVar( "grid-minor-color", WColor() );
+  }
+  else
+  {
+    // Remove all global CSS variable overrides
+    app->removeGlobalCssRule( "global_d3spec_fore-line-color" );
+    app->removeGlobalCssRule( "global_d3spec_back-line-color" );
+    app->removeGlobalCssRule( "global_d3spec_second-line-color" );
+    app->removeGlobalCssRule( "global_d3spec_text-color" );
+    app->removeGlobalCssRule( "global_d3spec_axis-color" );
+    app->removeGlobalCssRule( "global_d3spec_background-color" );
+    app->removeGlobalCssRule( "global_d3spec_chart-area-color" );
+    app->removeGlobalCssRule( "global_d3spec_grid-major-color" );
+    app->removeGlobalCssRule( "global_d3spec_grid-minor-color" );
+  }
+}//void D3SpectrumDisplayDiv::applyColorTheme(...)
+
+
+void D3SpectrumDisplayDiv::updateDefaultPeakColorForColorTheme( std::shared_ptr<const ColorTheme> theme )
+{
+  // Special handling for default peak color since it's used in JSON, not CSS
+  setDefaultPeakColor( theme ? theme->defaultPeakLine : WColor() );
+
+  // Also update other theme-specific settings
+  if( theme )
+  {
     setPeakLabelSize( theme->spectrumPeakLabelSize.toUTF8() );
     setPeakLabelRotation( theme->spectrumPeakLabelRotation );
     setLogYAxisMin( theme->spectrumLogYAxisMin );
   }else
   {
-    setForegroundSpectrumColor( {} );
-    setBackgroundSpectrumColor( {} );
-    setSecondarySpectrumColor( {} );
-    setDefaultPeakColor( {} );
-    
-    setAxisLineColor( {} );
-    setChartMarginColor( {} );
-    setChartBackgroundColor( {} );
-    setTextColor( {} );
-    
     setPeakLabelSize( "" );
     setPeakLabelRotation( 0.0 );
     setLogYAxisMin( 0.1 );
   }
-}//void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
+}//void D3SpectrumDisplayDiv::updateDefaultPeakColorForColorTheme(...)
 
 
-void D3SpectrumDisplayDiv::setForegroundSpectrumColor( const Wt::WColor &color )
+void D3SpectrumDisplayDiv::overrideForegroundSpectrumColor( const Wt::WColor &color )
 {
-  m_foregroundLineColor = color.isDefault() ? WColor( 0x00, 0x00, 0x00 ) : color;
-  
+  m_foregroundLineColorOverride = color;
+
   const string rulename = id() + "_ForeSpecLineColor";
   WCssStyleSheet &style = wApp->styleSheet();
-  if( m_cssRules.count(rulename) )
-    style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-fore-line-color: " + m_foregroundLineColor.cssText(), rulename );
 
-  //scheduleUpdateForeground();
+  // Remove old rule if exists
+  if( m_cssRules.count(rulename) )
+  {
+    style.removeRule( m_cssRules[rulename] );
+    m_cssRules.erase( rulename );
+  }
+
+  // If default, we're done - widget uses global CSS variable
+  if( color.isDefault() )
+    return;
+
+  // Create instance-specific override scoped to this widget's ID
+  m_cssRules[rulename] = style.addRule(
+    "#" + id(),
+    "--d3spec-fore-line-color: " + color.cssText() + ";",
+    rulename
+  );
 }
 
-void D3SpectrumDisplayDiv::setBackgroundSpectrumColor( const Wt::WColor &color )
+void D3SpectrumDisplayDiv::overrideBackgroundSpectrumColor( const Wt::WColor &color )
 {
-  m_backgroundLineColor = color.isDefault() ? WColor(0x00,0xff,0xff) : color;
-  
+  m_backgroundLineColorOverride = color;
+
   const string rulename = id() + "_BackSpecLineColor";
   WCssStyleSheet &style = wApp->styleSheet();
-  if( m_cssRules.count(rulename) )
-    style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-back-line-color: " + m_backgroundLineColor.cssText(), rulename );
 
-  //scheduleUpdateBackground();
+  // Remove old rule if exists
+  if( m_cssRules.count(rulename) )
+  {
+    style.removeRule( m_cssRules[rulename] );
+    m_cssRules.erase( rulename );
+  }
+
+  // If default, we're done - widget uses global CSS variable
+  if( color.isDefault() )
+    return;
+
+  // Create instance-specific override scoped to this widget's ID
+  m_cssRules[rulename] = style.addRule(
+    "#" + id(),
+    "--d3spec-back-line-color: " + color.cssText() + ";",
+    rulename
+  );
 }
 
-void D3SpectrumDisplayDiv::setSecondarySpectrumColor( const Wt::WColor &color )
+void D3SpectrumDisplayDiv::overrideSecondarySpectrumColor( const Wt::WColor &color )
 {
-  m_secondaryLineColor = color.isDefault() ? WColor(0x00,0x80,0x80) : color;
-  
+  m_secondaryLineColorOverride = color;
+
   const string rulename = id() + "_SecondSpecLineColor";
   WCssStyleSheet &style = wApp->styleSheet();
+
+  // Remove old rule if exists
   if( m_cssRules.count(rulename) )
-    style.removeRule( m_cssRules[rulename] );
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-second-line-color: " + m_secondaryLineColor.cssText(), rulename );
-
-  //scheduleUpdateSecondData();
-}
-
-void D3SpectrumDisplayDiv::setTextColor( const Wt::WColor &color )
-{
-  m_textColor = color.isDefault() ? WColor(0,0,0) : color;
-  const string c = m_textColor.cssText();
-  const string rulename = id() + "_TextColor";
-
-  WCssStyleSheet &style = wApp->styleSheet();
-  if( m_cssRules.count(rulename) )
-    style.removeRule( m_cssRules[rulename] );
-  
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-text-color: " + c + ";", rulename );
-}
-
-
-void D3SpectrumDisplayDiv::setAxisLineColor( const Wt::WColor &color )
-{
-  m_axisColor = color.isDefault() ? WColor(0,0,0) : color;
-  
-  const string rulename = id() + "_AxisColor";
-
-  WCssStyleSheet &style = wApp->styleSheet();
-  if( m_cssRules.count(rulename) )
-    style.removeRule( m_cssRules[rulename] );
-  
-  // Sets axis colors, and ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine"
-  
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-axis-color: " + m_axisColor.cssText(), rulename );
-
-  
-  //ToDo: figure out how to make grid lines look okay.
-  //rulename = "GridColor";
-  //if( m_cssRules.count(rulename) )
-  //  style.removeRule( m_cssRules[rulename] );
-  //m_cssRules[rulename] = style.addRule( ".xgrid > .tick, .ygrid > .tick", "stroke: #b3b3b3" );
-  //
-  //rulename = "MinorGridColor";
-  //if( m_cssRules.count(rulename) )
-  //  style.removeRule( m_cssRules[rulename] );
-  //m_cssRules[rulename] = style.addRule( ".minorgrid", "stroke: #e6e6e6" );
-}
-
-void D3SpectrumDisplayDiv::setChartMarginColor( const Wt::WColor &color )
-{
-  m_chartMarginColor = color;
-  
-  const string rulename = id() + "_MarginColor";
-
-  WCssStyleSheet &style = wApp->styleSheet();
-  
-  if( color.isDefault() )
   {
-    if( m_cssRules.count(rulename) )
-    {
-      style.removeRule( m_cssRules[rulename] );
-      m_cssRules.erase( rulename );
-    }
-    
-    return;
-  }//if( color.isDefault() )
-  
-  if( m_cssRules.count(rulename) )
     style.removeRule( m_cssRules[rulename] );
-  
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-background-color: " + color.cssText() + ";", rulename );
+    m_cssRules.erase( rulename );
+  }
+
+  // If default, we're done - widget uses global CSS variable
+  if( color.isDefault() )
+    return;
+
+  // Create instance-specific override scoped to this widget's ID
+  m_cssRules[rulename] = style.addRule(
+    "#" + id(),
+    "--d3spec-second-line-color: " + color.cssText() + ";",
+    rulename
+  );
+}
+
+void D3SpectrumDisplayDiv::overrideTextColor( const Wt::WColor &color )
+{
+  m_textColorOverride = color;
+
+  const string rulename = id() + "_TextColor";
+  WCssStyleSheet &style = wApp->styleSheet();
+
+  // Remove old rule if exists
+  if( m_cssRules.count(rulename) )
+  {
+    style.removeRule( m_cssRules[rulename] );
+    m_cssRules.erase( rulename );
+  }
+
+  // If default, we're done - widget uses global CSS variable
+  if( color.isDefault() )
+    return;
+
+  // Create instance-specific override scoped to this widget's ID
+  m_cssRules[rulename] = style.addRule(
+    "#" + id(),
+    "--d3spec-text-color: " + color.cssText() + ";",
+    rulename
+  );
+}
+
+
+void D3SpectrumDisplayDiv::overrideAxisLineColor( const Wt::WColor &color )
+{
+  m_axisColorOverride = color;
+
+  const string rulename = id() + "_AxisColor";
+  WCssStyleSheet &style = wApp->styleSheet();
+
+  // Remove old rule if exists
+  if( m_cssRules.count(rulename) )
+  {
+    style.removeRule( m_cssRules[rulename] );
+    m_cssRules.erase( rulename );
+  }
+
+  // If default, we're done - widget uses global CSS variable
+  if( color.isDefault() )
+    return;
+
+  // Create instance-specific override scoped to this widget's ID
+  // Sets axis colors, and ".peakLine, .escapeLineForward, .mouseLine, .secondaryMouseLine"
+  m_cssRules[rulename] = style.addRule(
+    "#" + id(),
+    "--d3spec-axis-color: " + color.cssText() + ";",
+    rulename
+  );
+}
+
+void D3SpectrumDisplayDiv::overrideChartMarginColor( const Wt::WColor &color )
+{
+  m_chartMarginColorOverride = color;
+
+  const string rulename = id() + "_MarginColor";
+  WCssStyleSheet &style = wApp->styleSheet();
+
+  // Remove old rule if exists
+  if( m_cssRules.count(rulename) )
+  {
+    style.removeRule( m_cssRules[rulename] );
+    m_cssRules.erase( rulename );
+  }
+
+  // If default, we're done - widget uses global CSS variable
+  if( color.isDefault() )
+    return;
+
+  // Create instance-specific override scoped to this widget's ID
+  m_cssRules[rulename] = style.addRule(
+    "#" + id(),
+    "--d3spec-background-color: " + color.cssText() + ";",
+    rulename
+  );
   //Actually this will set the background for the entire chart...
   //m_cssRules[rulename] = style.addRule( "#" + id() + " > svg", "background: " + color.cssText() ); // to set background color for just this chart
-}//setChartMarginColor(...)
+}//overrideChartMarginColor(...)
 
 
-void D3SpectrumDisplayDiv::setChartBackgroundColor( const Wt::WColor &color )
+void D3SpectrumDisplayDiv::overrideChartBackgroundColor( const Wt::WColor &color )
 {
-  m_chartBackgroundColor = color;
-  const string c = color.isDefault() ? "rgba(0,0,0,0)" : color.cssText();
-  
-  const string rulename = id() + "_BackgroundColor";
+  m_chartBackgroundColorOverride = color;
 
+  const string rulename = id() + "_BackgroundColor";
   WCssStyleSheet &style = wApp->styleSheet();
-  
+
+  // Remove old rule if exists
   if( m_cssRules.count(rulename) )
+  {
     style.removeRule( m_cssRules[rulename] );
-    
-  m_cssRules[rulename] = style.addRule( ":root", "--d3spec-chart-area-color: " + c + ";", rulename );
+    m_cssRules.erase( rulename );
+  }
+
+  // If default, we're done - widget uses global CSS variable
+  if( color.isDefault() )
+    return;
+
+  // Create instance-specific override scoped to this widget's ID
+  m_cssRules[rulename] = style.addRule(
+    "#" + id(),
+    "--d3spec-chart-area-color: " + color.cssText() + ";",
+    rulename
+  );
   //m_cssRules[rulename] = style.addRule( "#chartarea" + id(), "fill: " + c ); //If we wanted to apply this color to only this chart
 }
 
 void D3SpectrumDisplayDiv::setDefaultPeakColor( const Wt::WColor &color )
 {
-  m_defaultPeakColor = color.isDefault() ? WColor(0,51,255,155) : color;
-  
+  m_defaultPeakColor = color;
+
   //The default peak color is specified as part of the foreground JSON, so we
   //  need to reload the foreground to client to update the color.
-  scheduleUpdateForeground();
+  schedulePeakRedraw( SpecUtils::SpectrumType::Foreground );
+  schedulePeakRedraw( SpecUtils::SpectrumType::Background );
+  schedulePeakRedraw( SpecUtils::SpectrumType::SecondForeground );
 }
 
 
@@ -2059,17 +2367,7 @@ void D3SpectrumDisplayDiv::setThumbnailMode()
 
 
   // Set padding to none
-  string js = m_jsgraph + R"delim(.setChartPadding( { "top": 0, 
-  "right":0, 
-  "bottom": 0, 
-  "xTitlePad": 0,
-  "left":0, 
-  "labelPad":0,
-  "title": 0,
-  "label": 0,
-  "sliderChart": 0
-  } );
-  )delim";
+  string js = m_jsgraph + ".setChartPadding( { \"top\": 0, \"right\": 0, \"bottom\": 0, \"xTitlePad\": 0, \"left\": 0, \"labelPad\": 0, \"title\": 0, \"label\": 0, \"sliderChart\": 0 } );";
 
   //Need to set dont have y-axis numbers
   js += m_jsgraph + ".setNoYAxisNumbers(true);\n";
@@ -2188,67 +2486,85 @@ void D3SpectrumDisplayDiv::chartShiftAltKeyDragCallback( double x0, double x1 )
 
 void D3SpectrumDisplayDiv::chartRightMouseDragCallback( double x0, double x1 )
 {
-  // cout << "chartRightMouseDragCallback" << endl;
   m_rightMouseDragg.emit( x0, x1 );
 }//void D3SpectrumDisplayDiv::chartRightMouseDragCallback(...)
 
-void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY )
+void D3SpectrumDisplayDiv::chartLeftClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name )
 {
-  // cout << "chartLeftClickCallback" << endl;
-  m_leftClick.emit( x, y, pageX, pageY );
+  m_leftClick.emit( x, y, pageX, pageY, ref_line_name );
+}//void chartLeftClickCallback(...)
+
+void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name, unsigned int modifiers )
+{
+  const bool shiftKey = (modifiers & 0x01);
+  const bool ctrlKey = (modifiers & 0x02);
+  const bool altKey = (modifiers & 0x04);
+  const bool metaKey = (modifiers & 0x08);
+  
+  WFlags<Wt::KeyboardModifier> keymods = Wt::KeyboardModifier::NoModifier;
+  if( shiftKey )
+    keymods |= Wt::KeyboardModifier::ShiftModifier;
+  if( ctrlKey )
+    keymods |= Wt::KeyboardModifier::ControlModifier;
+  if( altKey )
+    keymods |= Wt::KeyboardModifier::AltModifier;
+  if( metaKey )
+    keymods |= Wt::KeyboardModifier::MetaModifier;
+  
+  m_doubleLeftClick.emit( x, y, ref_line_name, keymods );
 }//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
 
-void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback( double x, double y )
+void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name )
 {
-  // cout << "chartDoubleLeftClickCallback" << endl;
-  m_doubleLeftClick.emit( x, y );
-}//void D3SpectrumDisplayDiv::chartDoubleLeftClickCallback(...)
-
-void D3SpectrumDisplayDiv::chartRightClickCallback( double x, double y, double pageX, double pageY )
-{
-  // cout << "chartRightClickCallback" << endl;
-  m_rightClick.emit( x, y, pageX, pageY );
+  m_rightClick.emit( x, y, pageX, pageY, ref_line_name );
 }//void D3SpectrumDisplayDiv::chartRightClickCallback(...)
 
 
 void D3SpectrumDisplayDiv::existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
-                                                  double new_lower_px, double new_upper_px,
-                                                  double original_lower_energy, bool isfinal )
+                                                  double new_roi_px,
+                                                  double original_lower_energy,
+                                                  const std::string &spectrum_type,
+                                                  bool isfinal )
 {
-  m_existingRoiEdgeDrag.emit( new_lower_energy, new_upper_energy, new_lower_px, new_upper_px,
-                                             original_lower_energy, isfinal );
+  m_existingRoiEdgeDrag.emit( new_lower_energy, new_upper_energy, new_roi_px,
+                             original_lower_energy, spectrum_type, isfinal );
 }//void D3SpectrumDisplayDiv::chartRoiDragedCallback(...)
 
 
-void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
-                                                  double new_lower_energy, double new_upper_energy,
-                                                  double new_lower_px, double new_upper_px,
-                                                  double original_lower_energy, bool isfinal )
+void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_energy,
+                                                          double new_upper_energy,
+                                                          double new_roi_px,
+                                                          double original_lower_energy,
+                                                          std::string spectrum_type,
+                                                          bool isfinal )
 {
+  assert( m_peakModel );
+  if( !m_peakModel )
+    return;
+  
   std::unique_ptr<UndoRedoManager::PeakModelChange> peak_undo_creator;
   if( isfinal )
     peak_undo_creator.reset( new UndoRedoManager::PeakModelChange() );
   
-//  cout << "chartRoiDragedCallback: energy={" << new_lower_energy << "," << new_upper_energy << "}, "
-//       << "newPx={" << new_lower_px << "," << new_upper_px << "}, original_lower_energy=" << original_lower_energy
-//       << ", isfinal=" << isfinal << endl;
-  D3SpectrumDisplayDiv *spectrum = this;
+  const bool for_background = (spectrum_type == "BACKGROUND");
+  const bool for_secondary = (!for_background && (spectrum_type == "SECONDARY"));
+  assert( for_background || for_secondary || (spectrum_type == "FOREGROUND") );
+  const SpecUtils::SpectrumType spec_type = for_background ? SpecUtils::SpectrumType::Background
+          : (for_secondary ? SpecUtils::SpectrumType::SecondForeground : SpecUtils::SpectrumType::Foreground);
+  shared_ptr<const Measurement> spectrum = for_background ? m_background : (for_secondary ? m_secondary : m_foreground);
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> origpeaks = m_peakModel->peaks(spec_type);
   
-  //if( !spectrum )
-  //  return;
+  shared_ptr<deque<shared_ptr<const PeakDef>>> final_mondified_peaks;
+  if( (for_background || for_secondary) && isfinal && origpeaks )
+    final_mondified_peaks = make_shared<deque<shared_ptr<const PeakDef>>>( begin(*origpeaks), end(*origpeaks) );
   
-  PeakModel *peakModel = spectrum->m_peakModel;
-  shared_ptr<const Measurement> foreground = spectrum->data();
+  assert( origpeaks && spectrum );
+  if( !origpeaks || !spectrum )  //Shouldnt ever happen
+    return;
+  
   
   try
   {
-    if( !peakModel || !foreground )  //Shouldnt ever happen
-      return;
-    
-    shared_ptr<const deque<PeakModel::PeakShrdPtr>> origpeaks = peakModel->peaks();
-    if( !origpeaks )
-      return;  //shouldnt ever happen
-    
     double minDe = 999999.9;
     std::shared_ptr<const PeakContinuum> continuum;
     for( auto p : *origpeaks )
@@ -2263,7 +2579,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
     
     if( !continuum || minDe > 1.0 )  //0.001 would probably be fine instead of 1.0
     {
-      spectrum->updateRoiBeingDragged( {} );
+      this->updateRoiBeingDragged( {} );
       
       throw runtime_error( "Couldnt find a continuum with lower energy " + std::to_string(original_lower_energy)
                           + " (de=" + std::to_string(minDe) + ")" );
@@ -2321,25 +2637,43 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       }
     }//if( new_roi_initial_peaks.size() > 1 )
     
+    if( isfinal && (for_background || for_secondary) )
+    {
+      assert( final_mondified_peaks );
+      final_mondified_peaks->erase( std::remove_if( begin(*final_mondified_peaks), end(*final_mondified_peaks),
+                                                   [&continuum]( const shared_ptr<const PeakDef> &ptr ){
+        return (continuum == ptr->continuum());
+      }), end(*final_mondified_peaks) );
+    }//if( isfinal && (for_background || for_secondary) )
+    
     //If region to narrow, or fit fails, pass back null if !isFinal, or original ROI if isFinal
     //cout << "new_upper_px=" << new_upper_px << ", new_lower_px=" << new_lower_px << endl;
     if( !allPeaksInRoiAreGaus )
     {
       if( isfinal )
       {
-        // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
-        peakModel->removePeaks( orig_roi_peaks );
-        
-        std::vector<PeakDef> peaks_to_add;
-        for( auto p : new_roi_initial_peaks )
-          peaks_to_add.push_back( *p );
-        
-        peakModel->addPeaks( peaks_to_add );
+        if( for_background || for_secondary )
+        {
+          final_mondified_peaks->insert( end(*final_mondified_peaks), begin(new_roi_initial_peaks), end(new_roi_initial_peaks) );
+          std::sort( begin(*final_mondified_peaks), end(*final_mondified_peaks), &PeakDef::lessThanByMeanShrdPtr );
+          m_peakModel->setPeaks( *final_mondified_peaks, spec_type );
+        }else
+        {
+          assert( m_peakModel );
+          // TODO: add a `PeakModel::replacePeaks(orig,newer)` function to allow updating peak quanitites in one step, or allow setting kLowerX/kUpperX columns in setData(...) function
+          m_peakModel->removePeaks( orig_roi_peaks );
+          
+          std::vector<PeakDef> peaks_to_add;
+          for( auto p : new_roi_initial_peaks )
+            peaks_to_add.push_back( *p );
+          
+          m_peakModel->addPeaks( peaks_to_add );
+        }
       }else
       {
-        spectrum->updateRoiBeingDragged( new_roi_initial_peaks );
+        this->updateRoiBeingDragged( new_roi_initial_peaks );
       }
-    }else if( new_upper_px >= (new_lower_px+10) )  //perhaps this should be by percentage of ROI?
+    }else if( new_roi_px > 10.0 )  //perhaps this should be by percentage of ROI?
     {
       //Need to check that all peaks are Gaussian.
       //  Actually should make sure a ROI can only have data defined or Gausian peaks only (what happens now)
@@ -2371,7 +2705,7 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
       }//if( we should start from the peaks we last fit while dragging )
       
       vector<shared_ptr<const PeakDef>> refitpeaks
-                  = refitPeaksThatShareROI( foreground, detector, new_roi_initial_peaks, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
+                  = refitPeaksThatShareROI( spectrum, detector, new_roi_initial_peaks, PeakFitLM::PeakFitLMOptions::MediumRefinementOnly );
       
       m_continuum_being_drug = continuum;
       m_last_being_drug_peaks = refitpeaks;
@@ -2391,24 +2725,45 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork(
         for( auto p : newpeaks )
           peaks_to_add.push_back( *p );
         
-        peakModel->removePeaks( orig_roi_peaks );
-        peakModel->addPeaks( peaks_to_add );
+        if( for_background || for_secondary )
+        {
+          if( origpeaks )
+          {
+            final_mondified_peaks->insert( end(*final_mondified_peaks), begin(new_roi_initial_peaks), end(new_roi_initial_peaks) );
+            std::sort( begin(*final_mondified_peaks), end(*final_mondified_peaks), &PeakDef::lessThanByMeanShrdPtr );
+            
+            m_peakModel->setPeaks( *final_mondified_peaks, spec_type ); // will take care of undo/redo
+          }
+        }else
+        {
+          assert( m_peakModel );
+          m_peakModel->removePeaks( orig_roi_peaks );
+          m_peakModel->addPeaks( peaks_to_add );
+        }
         
         m_continuum_being_drug.reset();
         m_last_being_drug_peaks.clear();
         m_last_drag_time = chrono::steady_clock::time_point{};
       }else
       {
-        spectrum->updateRoiBeingDragged( newpeaks );
+        this->updateRoiBeingDragged( newpeaks );
       }
-      
     }else
     {
       cout << "User wants to erase peaks" << endl;
-      spectrum->updateRoiBeingDragged( {} );
+      this->updateRoiBeingDragged( {} );
       
       if( isfinal )
-        peakModel->removePeaks( orig_roi_peaks );
+      {
+        if( for_background || for_secondary )
+        {
+          m_peakModel->setPeaks( *final_mondified_peaks, spec_type );
+        }else
+        {
+          assert( m_peakModel );
+          m_peakModel->removePeaks( orig_roi_peaks );
+        }
+      }
     }//if( not narrow region ) / else
   }catch( std::exception &e )
   {
@@ -2675,7 +3030,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         
         UndoRedoManager::PeakModelChange peak_undo_creator;
         
-        deque< PeakModel::PeakShrdPtr > preaddpeaks, postaddpeaks;
+        deque<shared_ptr<const PeakDef>> preaddpeaks, postaddpeaks;
         if( peakModel->peaks() ) //should always be true, but JIC
           preaddpeaks = *peakModel->peaks();
         
@@ -2690,7 +3045,7 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
         if( peakModel->peaks() ) //should always be true, but JIC
           postaddpeaks = *peakModel->peaks();
         
-        vector< PeakModel::PeakShrdPtr > added_peaks;
+        vector<shared_ptr<const PeakDef>> added_peaks;
         for( const auto &p : postaddpeaks )
         {
           if( !std::count(begin(preaddpeaks), end(preaddpeaks), p) )
@@ -2835,7 +3190,8 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
 void D3SpectrumDisplayDiv::updateRoiBeingDragged( const vector<shared_ptr<const PeakDef> > &peaks )
 {
   const shared_ptr<const Measurement> &fore = m_foreground;
-  const string json = peaks.empty() ? string("null") : PeakDef::gaus_peaks_to_json( peaks, fore );
+  const WColor peak_color = m_defaultPeakColor.isDefault() ? WColor(0, 51, 255) : m_defaultPeakColor;
+  const string json = peaks.empty() ? string("null") : PeakDef::gaus_peaks_to_json( peaks, fore, peak_color, 255 );
   
   doJavaScript( "try{" + m_jsgraph + ".updateRoiBeingDragged(" + json + ");}catch(error){}" );
 }//void updateRoiBeingDragged( vector<shared_ptr<const PeakDef> > &roiBeingDragged )
@@ -2921,16 +3277,12 @@ void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
 {
-  //doJavaScript( "try{" + m_jsgraph + "=null;}catch(){}" );
-
-  // Cleanup the style rules we created.
+  // The below false lets the JS run before load
+  wApp->doJavaScript( "try{" + m_jsgraph + ".destroy();}catch(e){console.log('Failed to cleanup:',e);}", false );
+  
+  // Cleanup the instance-specific style rules we created.
   WCssStyleSheet &style = wApp->styleSheet();
-  for( const auto name_rule : m_cssRules )
-  {
-    cout << "Not remove style rule '" << name_rule.first << "' since it messes things up - need to implement applying chart rules globally, instead of for each instance." << endl;
-    //if( !name_rule.first.empty() && style.isDefined(name_rule.first) )
-    //  style.removeRule( name_rule.second );
-  }
+  for( const auto &name_rule : m_cssRules )
+    style.removeRule( name_rule.second );
+  m_cssRules.clear();
 }//~D3SpectrumDisplayDiv()
-
-

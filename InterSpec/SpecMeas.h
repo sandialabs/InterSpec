@@ -73,7 +73,7 @@ public:
 
 #if( USE_LLM_INTERFACE )
   // Forward declaration for LLM conversation history
-  typedef std::map<std::set<int>, std::shared_ptr<std::vector<LlmConversationStart>>> SampleNumsToLlmHistoryMap;
+  typedef std::map<std::set<int>, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>> SampleNumsToLlmHistoryMap;
 #endif
   
   //
@@ -140,9 +140,11 @@ public:
                                const std::set<int> &det_nums ) const;
   /** Adds reading back in peak information (only from InterSpec exported SPE files though). */
   virtual bool load_from_iaea( std::istream &istr );
-  
+
+  virtual void load_cnf_using_reader( CAMInputOutput::CAMIO &reader );
+
   virtual std::shared_ptr< ::rapidxml::xml_document<char> > create_2012_N42_xml() const;
-  
+
   /** Same as #SpecFile::set_energy_calibration, but marks this SpecMeas as modified. */
   virtual void set_energy_calibration( const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal,
                                       const std::shared_ptr<const SpecUtils::Measurement> &measurement );
@@ -195,9 +197,12 @@ public:
    This function is primarily useful if you remove some sample numbers.
    */
   void cleanup_orphaned_info();
-  
+
+  /** overrides the `SpecFile::change_sample_numbers` by first calling that function, and then fixing the SpecMeas
+   specific stuff up for any chnages, by calling `SpecMeas::change_sample_numbers_spec_meas_stuff(...)`.
+   */
   virtual void change_sample_numbers( const std::vector<std::pair<int,int>> &from_to_sample_nums );
-  
+
   std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                                  peaks( const std::set<int> &samplenums );
   /** CAUTION: the returned deque may be modified elsewhere in the app, if for
@@ -361,10 +366,10 @@ public:
 
 #if( USE_LLM_INTERFACE )
   /** Gets the LLM conversation history for the specified sample numbers. */
-  std::shared_ptr<std::vector<LlmConversationStart>> llmConversationHistory( const std::set<int> &samplenums ) const;
-  
+  std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> llmConversationHistory( const std::set<int> &samplenums ) const;
+
   /** Sets the LLM conversation history for the specified sample numbers. */
-  void setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<LlmConversationStart>> history );
+  void setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> history );
   
   /** Removes LLM conversation history for the specified sample numbers. */
   void removeLlmConversationHistory( const std::set<int> &samplenums );
@@ -377,6 +382,12 @@ public:
 #endif //#if( USE_LLM_INTERFACE )
 
 protected:
+  /** Changes all instances of the first sample number, to the second sample number in `m_peaks`, `m_autoSearchPeaks`, and
+   `m_dbUserStateIndexes`.  DOES NOT change the sample numbers of `SpecUtils::Measurement` - see `change_sample_numbers`
+   for that.
+   */
+  void change_sample_numbers_spec_meas_stuff( const std::vector<std::pair<int,int>> &from_to_sample_nums );
+
   //m_peaks: is only accessed by the PeakModel class for the foreground spectrum - it shouldnt be set or
   //         modified anywhere else. When a new primary spectrum is loaded in
   //         InterSpec::setSpectrum(...), the m_peaks variable is passed

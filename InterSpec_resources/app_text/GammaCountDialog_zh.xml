@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- gcd- is short for GammaCountDialog
+  -->
+  <message id="gcd-summary">计算指定能量范围内的伽马数。</message>
+  <message id="gcd-lower-energy-label">下限能量</message>
+  <message id="gcd-upper-energy-label">上限能量</message>
+  <message id="gcd-shift-alt-drag">Shift-Alt-拖动</message>
+  <message id="gcd-shift-option-drag">Shift-⌘-拖动</message>
+  <message id="gcd-select-shortcut">您还可以在图表上<b>{1}</b>以选择能量范围</message>
+  <message id="gcd-foreground-counts-label">前景计数：</message>
+  <message id="gcd-secondary-counts-label">次要计数：</message>
+  <message id="gcd-background-counts-label">本底计数：</message>
+  <message id="gcd-tt-n-sigma">
+    sigma差异数的计算方法是将
+    前景与（缩放的）本底之间的差异
+    除以不确定度。不确定度的计算方法是
+    将前景和本底的统计不确定度
+    平方求和，然后取平方根
+  </message>
+  <message id="gcd-qr-window-title">能量范围求和状态</message>
+  <message id="gcd-qr-window-text">能量范围求和工具的当前状态。</message>
+  <message id="gcd-background-scale-note">本底正在按{1}缩放</message>
+  <message id="gcd-and-secondary-scaled">次要按以下缩放</message>
+  <message id="gcd-secondary-scale-note">次要本底正在按以下缩放</message>
+  <message id="gcd-foreground-above-background">前景比本底高{1} σ。</message>
+  <message id="gcd-foreground-below-background">前景比本底低{1} σ。</message>
+</messages>
+

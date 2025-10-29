@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- bgw- is short for BatchGuiWidget, strings used by BatchGuiAnaWidget -->
+
+  <!-- Exemplar group -->
+  <message id="bgw-exemplar-grp-title">样本</message>
+  <message id="bgw-exemplar-use-current-fore">使用当前前景</message>
+
+  <!-- Background group -->
+  <message id="bgw-back-grp-title">本底</message>
+  <message id="bgw-back-use-current">使用当前本底</message>
+  <message id="bgw-back-none">无本底</message>
+
+  <!-- Peak fitting options -->
+  <message id="bgw-fit-all-peaks">拟合所有峰</message>
+  <message id="bgw-refit-energy-cal">重新拟合能量刻度</message>
+  <message id="bgw-use-exemplar-energy-cal">使用样本能量刻度</message>
+  <message id="bgw-write-n42-with-results">写入含结果的N42</message>
+  <message id="bgw-show-nonfit-peaks">显示未拟合峰</message>
+  <message id="bgw-overwrite-output-files">覆盖输出文件</message>
+  <message id="bgw-create-csv-output">峰CSV</message>
+  <message id="bgw-create-json-output">写入JSON</message>
+  <message id="bgw-concatenate-to-n42">创建连接N42</message>
+  <message id="bgw-use-existing-background-peaks">使用现有本底峰</message>
+  <message id="bgw-use-exemplar-energy-cal-for-background">本底使用样本能量刻度</message>
+  
+  <!-- Threshold labels -->
+  <message id="bgw-peak-stat-threshold-label">峰统计阈值：</message>
+  <message id="bgw-peak-hypothesis-threshold-label">峰假设阈值：</message>
+  
+  <!-- File convert options options -->
+  <message id="bgw-overwrite-output-cb">覆盖输出</message>
+  <message id="bgw-sum-multirecord-to-single">将多记录文件合并为单记录</message>
+  <message id="bgw-info-will-convert-file-type">文件将转换为所选类型。</message>
+  
+  
+  <!-- Reports group -->
+  <message id="bgw-reports-grp-title">要写入的报告</message>
+  <message id="bgw-reports-write-html">HTML</message>
+  <message id="bgw-reports-write-html-tooltip">写入分析结果的HTML报告。</message>
+  <message id="bgw-reports-write-csv">汇总CSV</message>
+  <message id="bgw-reports-write-csv-tooltip">写入包含所有输入文件分析结果的汇总CSV文件。</message>
+  <message id="bgw-reports-write-custom-per-file">自定义单文件</message>
+  <message id="bgw-reports-write-custom-per-file-tooltip">上传自定义报告模板用于每个文件。</message>
+  <message id="bgw-reports-write-custom-summary">自定义汇总</message>
+  <message id="bgw-reports-write-custom-summary-tooltip">一个或多个模板文件用于提供所有输入文件的汇总。</message>
+
+  <!-- Reasons analysis cant be done -->
+  <message id="bgw-no-ana-peak-fit-no-peaks">样本中无峰。</message>
+  <message id="bgw-no-ana-peak-fit-need-peaks">需要带峰的样本谱或峰CSV文件。</message>
+  <message id="bgw-no-ana-peak-fit-bad-background">需要有效本底</message>
+  <message id="bgw-no-ana-act-shield-no-drf">无探测器效率可用。</message>
+  <message id="bgw-no-ana-act-shield-no-exemplar">未选择样本谱。</message>
+  <message id="bgw-no-ana-act-shield-no-peaks-in-exemplar">所选样本谱中无峰。</message>
+  <message id="bgw-no-ana-act-shield-no-act-fit-model">样本中无活度/屏蔽拟合模型。</message>
+  <message id="bgw-no-ana-act-shield-invalid-background">本底无效</message>
+  <message id="bgw-no-ana-no-input-files">无输入文件。</message>
+  <message id="bgw-no-ana-invalid-output-path">请选择有效的输出目录。</message>
+
+
+  <!-- Analysis progress and results -->
+  <message id="bgw-performing-work-title">正在执行工作</message>
+  <message id="bgw-performing-work-msg">请稍候，正在执行批量分析...</message>
+  <message id="bgw-error-analysis-title">执行批量分析错误</message>
+  <message id="bgw-error-analysis-msg">错误：{1}</message>
+  <message id="bgw-analysis-summary-title">批量分析汇总</message>
+  <message id="bgw-json-parse-error">
+    <p>解析JSON结果时出错：</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-inja-error">
+    <p>创建HTML时因异常出错：</p>
+    <code>{1}</code>
+    <br />
+    来自第{2}行，第{3}列
+  </message>
+  <message id="bgw-misc-error">
+    <p>由于异常无法生成结果汇总：</p>
+    <code>{1}</code>
+  </message>
+  <message id="bgw-warning-title">警告</message>
+ 
+  <!-- Tooltips matching command line help text -->
+  <message id="bgw-fit-all-peaks-tt">不是拟合样本文件中的峰 - 而是拟合谱中的所有峰。</message>
+  
+  <message id="bgw-refit-energy-cal-tt">初始峰拟合后，使用这些峰（及其指定的核素）调整能量增益，然后用更新后的能量刻度重新拟合峰。
+  如果您正在拟合活度/屏蔽，这也适用于本底文件。
+  </message>
+  
+  <message id="bgw-use-exemplar-energy-cal-tt">对输入的前景文件使用样本N42能量刻度。
+如果refit-energy-cal指定为true，则样本能量刻度将用于初始拟合，然后细化并重新拟合峰。
+  </message>
+
+  <message id="bgw-write-n42-with-results-tt">将拟合的峰添加到输入谱文件中，然后另存为N42。如果指定此选项，您必须指定'output_path'；同时将拒绝覆盖现有文件。</message>
+  
+  <message id="bgw-show-nonfit-peaks-tt">在输出CSV峰结果中包含未拟合的峰；这些峰将设置为零幅度。</message>
+  
+  <message id="bgw-overwrite-output-files-tt">允许覆盖输出N42、CSV或报告文件。默认情况下不会覆盖文件。</message>
+  
+  <message id="bgw-create-csv-output-tt">输出峰拟合CSV。</message>
+  
+  <message id="bgw-create-json-output-tt">将用于创建报告模板的JSON写入文件。</message>
+  
+  <message id="bgw-concatenate-to-n42-tt">创建一个包含所有输入文件峰拟合的输出N42文件。</message>
+  
+  <message id="bgw-use-existing-background-peaks-tt">使用指定本底的拟合峰，而不是重新拟合峰。
+峰必须存在于InterSpec的谱文件中，此选项不能与硬本底减除一起使用。</message>
+  
+  <message id="bgw-use-exemplar-energy-cal-for-background-tt">对本底文件使用样本N42能量刻度。
+仅当样本使用N42文件时适用。</message>
+  
+  <message id="bgw-peak-stat-threshold-tt">相对于仅拟合连续谱到ROI，峰拟合所需的Chi2改进。
+负值或零值表示无要求（默认值，因为我们断言峰很可能在批量分析的谱中），对于一般峰搜索，合理值在~1（弱峰）到~5（显著峰）之间。</message>
+  
+  <message id="bgw-peak-hypothesis-threshold-tt">要求ROI与高斯峰+连续谱的兼容程度。
+它是零假设chi2（仅连续谱，无高斯）与测试假设（连续谱+高斯）chi2的比率。
+此值的合理范围似乎在1到5之间。
+零值或负值将意味着无要求，也无'peak-stat-threshold'要求。</message>
+  
+  <message id="bgw-reports-write-custom-per-file-tooltip">一个或多个谱报告模板文件 - 对于每个输入文件，将使用指定的每个模板生成报告。</message>
+
+  <message id="bgw-reports-write-custom-summary-tooltip">一个或多个模板文件用于提供所有输入文件的汇总。</message>
+
+  <!-- Activity/Shielding Analysis specific strings -->
+  <message id="bgw-use-bq">使用Bq单位</message>
+  <message id="bgw-hard-background-sub">硬本底减除</message>
+  
+  <!-- Detector input strings -->
+  <message id="bgw-detector-input-label">探测器响应函数</message>
+  <message id="bgw-use-detector-override">使用自定义探测器</message>
+  
+  <!-- Distance override strings -->
+  <message id="bgw-override-distance">覆盖距离</message>
+  <message id="bgw-distance-label">距离：</message>
+  
+  <!-- Error and completion messages -->
+  <message id="bgw-no-exemplar-msg">无可用样本谱。请选择前景谱或上传样本文件。</message>
+</messages> 
+

@@ -51,4 +51,10 @@
   <message id="ss-tt-with-uncert">{1}</message>
   <message id="ss-tt-without"></message>
   <message id="ss-warning-only-one-src-frac">Pour ajuster les fractions massiques, veuillez sélectionner au moins deux composants de {1} à ajuster.</message>
+  
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">Source de Trace</message>
+  <message id="ss-select-option">Sélectionner</message>
+  <message id="ss-fit-activity-cb">Ajuster valeur d'activité</message>
+  <message id="ss-total-activity">Total</message>
 </messages>

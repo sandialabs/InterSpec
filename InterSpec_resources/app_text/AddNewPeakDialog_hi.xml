@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- anpd is short for AddNewPeakDialog -->
+  <message id="anpd-dialog-add-peak-title">पीक जोड़ें</message>
+  <message id="anpd-err-no-foreground">पीक जोड़ने के लिए foreground स्पेक्ट्रम लोड होना चाहिए।</message>
+  <message id="anpd-err-no-foreground-1">कोई foreground स्पेक्ट्रम नहीं</message>
+  <message id="anpd-peak-mean">पीक माध्य</message>
+  <message id="anpd-peak-fwhm">पीक FWHM</message>
+  <message id="anpd-peak-amp">पीक Amp.</message>
+  <message id="anpd-roi-lower">ROI निचला</message>
+  <message id="anpd-roi-upper">ROI ऊपरी</message>
+  <message id="anpd-tt-more-adv">अधिक उन्नत विकल्पों के लिए, जोड़ने के बाद <em>पीक संपादक</em> देखें।</message>
+  <message id="anpd-screen-to-small">पूर्वावलोकन के लिए स्क्रीन बहुत छोटी।</message>
+  <message id="anpd-err-preview">पूर्वावलोकन रेंडरिंग में त्रुटि</message>
+  <message id="anpd-err-fit-failed">फिटिंग विफल।</message>
+  <message id="anpd-associate-with">{1} के साथ संबद्ध करें</message>
+</messages>

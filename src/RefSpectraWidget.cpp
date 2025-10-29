@@ -26,6 +26,7 @@
 #include <fstream>
 #include <iostream>
 #include <filesystem>
+#include <algorithm>
 
 #include <Wt/WText>
 #include <Wt/WLabel>
@@ -62,6 +63,10 @@
 
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
 #include "InterSpec/DirectorySelector.h"
+#endif
+
+#if BUILD_AS_OSX_APP
+#include "target/osx/macOsUtils.h"
 #endif
 
 using namespace Wt;
@@ -314,6 +319,15 @@ void RefSpectraWidget::selectLastSelectedPath()
 RefSpectraWidget::~RefSpectraWidget()
 {
   storeLastSelectedPath();
+  
+#if BUILD_AS_OSX_APP
+  // Stop accessing all security scoped resources
+  std::vector<std::string> bookmarkKeys = macOsUtils::getSecurityScopedBookmarkKeys("SecBookmark_RefSpectra_");
+  for( const auto &key : bookmarkKeys )
+  {
+    macOsUtils::stopAccessingSecurityScopedBookmark(key);
+  }
+#endif
 }//~RefSpectraWidget()
 
 
@@ -401,7 +415,6 @@ void RefSpectraWidget::setupUI()
   // Set up the spectrum display, making it compact, and match current color theme and log y setting
   const bool wasLogY = UserPreferences::preferenceValue<bool>( "LogY", interspec );
   m_spectrum->setCompactAxis( true );
-  m_spectrum->applyColorTheme( interspec->getColorTheme() );
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->disableLegend();
@@ -409,7 +422,6 @@ void RefSpectraWidget::setupUI()
   //m_spectrum->showYAxisScalers( true );
   //m_spectrum->setShowPeakLabel( 0, true ); //SpectrumChart::PeakLabels::kShowPeakUserLabel
   //m_spectrum->setReferncePhotoPeakLines( ReferenceLineInfo() );
-  interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
 
   m_stack->addWidget( m_spectrum );
   
@@ -450,13 +462,12 @@ void RefSpectraWidget::setupUI()
   HelpSystem::attachToolTipOn( m_deleteDirButton, WString::tr("rs-tt-delete-dir-btn"), showToolTips );
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
-
-  m_showCurrentForeground = new Wt::WCheckBox( WString::tr("rs-show-foreground"), stackOptions );
+  m_showCurrentForeground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-foreground-portrait" : "rs-show-foreground"), stackOptions );
   m_showCurrentForeground->addStyleClass( "CbNoLineBreak" );
   m_showCurrentForeground->changed().connect( this, &RefSpectraWidget::updatePreview );
   
 
-  m_refBackground = new Wt::WCheckBox( WString::tr("rs-show-background"), stackOptions );
+  m_refBackground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-background-portrait" : "rs-show-background"), stackOptions );
   m_refBackground->addStyleClass( "CbNoLineBreak" );
   m_refBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
   m_refBackground->setHiddenKeepsGeometry( true );
@@ -464,8 +475,9 @@ void RefSpectraWidget::setupUI()
   
   if( portrait )
   {
-    mainLayout->setRowStretch( 0, 1 );
-    mainLayout->setRowStretch( 1, 1 );
+    //mainLayout->setRowStretch( 0, 1 );
+    //mainLayout->setRowStretch( 1, 1 );
+    mainLayout->setRowResizable( 0, true, WLength(50,WLength::Percentage) ); //This is just to make the tree-view and chart-area split the heiht 50/50
   }else
   {
     mainLayout->setRowStretch( 0, 1 );
@@ -573,6 +585,59 @@ void RefSpectraWidget::addDirectory( const std::string &path )
       normed_path = path;
     }
 
+#if BUILD_AS_OSX_APP
+    // For macOS, create and store a security scoped bookmark
+    // Use a deterministic key based on the normalized path (replacing path separators)
+    std::string pathKey = normed_path;
+    std::replace(pathKey.begin(), pathKey.end(), '/', '_');
+    std::replace(pathKey.begin(), pathKey.end(), '\\', '_');
+    std::replace(pathKey.begin(), pathKey.end(), ':', '_');
+    std::string bookmarkKey = "SecBookmark_RefSpectra_" + pathKey;
+    
+    // Check if we already have a bookmark for this path
+    std::vector<std::string> existingKeys = macOsUtils::getSecurityScopedBookmarkKeys("SecBookmark_RefSpectra_");
+    bool bookmarkExists = false;
+    for( const auto &key : existingKeys )
+    {
+      std::string existingPath;
+      if( macOsUtils::resolveAndStartAccessingSecurityScopedBookmark(key, existingPath) )
+      {
+        macOsUtils::stopAccessingSecurityScopedBookmark(key); // Just checking, so stop immediately
+        std::string normedExisting;
+        try
+        {
+          normedExisting = SpecUtils::lexically_normalize_path( existingPath );
+        }catch( const std::exception &e )
+        {
+          normedExisting = existingPath;
+        }
+        
+        if( normedExisting == normed_path )
+        {
+          bookmarkExists = true;
+          break;
+        }
+      }
+    }
+    
+    if( bookmarkExists )
+    {
+      passMessage( WString::tr("rs-duplicate-dir-path").arg( path ), WarningWidget::WarningMsgMedium );
+      return;
+    }
+    
+    // Create the security scoped bookmark
+    if( !macOsUtils::createAndStoreSecurityScopedBookmark(normed_path, bookmarkKey) )
+    {
+      passMessage( WString::tr("rs-error-bookmark-failed").arg( path ), WarningWidget::WarningMsgHigh );
+      std::cerr << "RefSpectraWidget::addDirectory() - Failed to create security scoped bookmark for: " << path << std::endl;
+      return;
+    }
+    
+    passMessage( WString::tr("rs-dir-added-successfully").arg( path ), WarningWidget::WarningMsgInfo );
+    
+#else
+    // For non-macOS platforms, use the old method
     const std::string ref_spectra_dirs = UserPreferences::preferenceValue<std::string>( "RefSpectraDirs", interspec );
     
     std::vector<std::string> base_dirs;
@@ -617,8 +682,9 @@ void RefSpectraWidget::addDirectory( const std::string &path )
     }else
     {
       passMessage( WString::tr("rs-duplicate-dir-path").arg( path ), WarningWidget::WarningMsgMedium );
-      std::cerr << "RefSpectraWidget::addDirectory() - Invalid directory: " << path << std::endl;
+      std::cerr << "RefSpectraWidget::addDirectory() - Duplicate directory: " << path << std::endl;
     }
+#endif
   }else
   {
     passMessage( WString::tr("rs-invalid-dir-path").arg( path ), WarningWidget::WarningMsgHigh );
@@ -664,6 +730,46 @@ void RefSpectraWidget::removeCurrentlySelectedDirectory()
     return path;
   })();
 
+#if BUILD_AS_OSX_APP
+  // For macOS, find and remove the security scoped bookmark
+  std::vector<std::string> bookmarkKeys = macOsUtils::getSecurityScopedBookmarkKeys("SecBookmark_RefSpectra_");
+  bool foundBookmark = false;
+  
+  for( const auto &key : bookmarkKeys )
+  {
+    std::string bookmarkPath;
+    if( macOsUtils::resolveAndStartAccessingSecurityScopedBookmark(key, bookmarkPath) )
+    {
+      macOsUtils::stopAccessingSecurityScopedBookmark(key); // Just checking, so stop immediately
+      std::string normedBookmarkPath;
+      try
+      {
+        normedBookmarkPath = SpecUtils::lexically_normalize_path( bookmarkPath );
+      }catch( const std::exception &e )
+      {
+        normedBookmarkPath = bookmarkPath;
+      }
+      
+      if( normedBookmarkPath == normed_path )
+      {
+        macOsUtils::removeSecurityScopedBookmark(key);
+        foundBookmark = true;
+        break;
+      }
+    }
+  }
+  
+  if( !foundBookmark )
+  {
+    passMessage( WString::tr("rs-dir-not-found").arg( path ), WarningWidget::WarningMsgHigh );
+    std::cerr << "RefSpectraWidget::removeCurrentlySelectedDirectory() - Directory bookmark not found: " << path << std::endl;
+    return;
+  }
+  
+  passMessage( WString::tr("rs-dir-removed-successfully").arg( path ), WarningWidget::WarningMsgInfo );
+  
+#else
+  // For non-macOS platforms, use the old method
   bool found_path_to_exclude = false;
   std::vector<std::string> new_base_dirs;
   std::vector<std::string> old_base_dirs;
@@ -712,6 +818,7 @@ void RefSpectraWidget::removeCurrentlySelectedDirectory()
     std::cerr << "RefSpectraWidget::removeCurrentlySelectedDirectory() - Error setting preferences: " << e.what() << std::endl;
     assert( 0 );
   }
+#endif
 }//void RefSpectraWidget::removeCurrentlySelectedDirectory()
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
@@ -1217,6 +1324,49 @@ void RefSpectraWidget::initBaseDirs()
   InterSpec *interspec = InterSpec::instance();
   assert( interspec );
   
+#if BUILD_AS_OSX_APP
+  // For macOS, resolve security scoped bookmarks
+  std::vector<std::string> bookmarkKeys = macOsUtils::getSecurityScopedBookmarkKeys("SecBookmark_RefSpectra_");
+  std::vector<std::string> failedBookmarks;
+  
+  for( const auto &key : bookmarkKeys )
+  {
+    std::string resolvedPath;
+    if( macOsUtils::resolveAndStartAccessingSecurityScopedBookmark(key, resolvedPath) )
+    {
+      if( SpecUtils::is_directory( resolvedPath ) )
+      {
+        m_treeModel->addBaseDirectory( resolvedPath );
+        // Note: We keep the security scoped resource access active during the app session
+      }
+      else
+      {
+        std::cerr << "RefSpectraWidget::initBaseDirs() - Resolved bookmark path is not a directory: " << resolvedPath << std::endl;
+        macOsUtils::stopAccessingSecurityScopedBookmark(key);
+        failedBookmarks.push_back(key);
+      }
+    }
+    else
+    {
+      std::cerr << "RefSpectraWidget::initBaseDirs() - Failed to resolve security scoped bookmark: " << key << std::endl;
+      failedBookmarks.push_back(key);
+    }
+  }
+  
+  // Clean up failed bookmarks
+  for( const auto &key : failedBookmarks )
+  {
+    macOsUtils::removeSecurityScopedBookmark(key);
+  }
+  
+  if( !failedBookmarks.empty() )
+  {
+    const int numdir = static_cast<int>( failedBookmarks.size() );
+    passMessage( WString::tr("rs-some-dirs-removed").arg(numdir), WarningWidget::WarningMsgMedium );
+  }
+  
+#else
+  // For non-macOS platforms, use the old method
   const std::string ref_spectra_dirs = UserPreferences::preferenceValue<std::string>( "RefSpectraDirs", interspec );
   if( !ref_spectra_dirs.empty() )
   {
@@ -1230,6 +1380,7 @@ void RefSpectraWidget::initBaseDirs()
         std::cerr << "RefSpectraWidget::initBaseDirs() - Invalid directory: " << dir << std::endl;
     }
   }
+#endif
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
   // Sort it so things are in alphabetical order

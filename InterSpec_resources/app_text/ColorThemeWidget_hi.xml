@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ctwidget- is short for ColorThemeWidget -->
+
+  <!-- Basic fields -->
+  <message id="ctwidget-theme-name">थीम नाम</message>
+  <message id="ctwidget-description">विवरण</message>
+  <message id="ctwidget-title-placeholder">शीर्षक निर्दिष्ट नहीं</message>
+  <message id="ctwidget-desc-placeholder">विवरण निर्दिष्ट नहीं</message>
+  <message id="ctwidget-empty">(खाली)</message>
+
+  <!-- Non-chart area -->
+  <message id="ctwidget-non-chart-area">गैर-चार्ट क्षेत्र</message>
+  <message id="ctwidget-backdrop-theme">पृष्ठभूमि थीम</message>
+  <message id="ctwidget-backdrop-desc">सभी गैर-चार्ट क्षेत्र के लिए थीम</message>
+
+  <!-- Chart colors section -->
+  <message id="ctwidget-chart-colors">चार्ट रंग</message>
+
+  <!-- Spectrum colors -->
+  <message id="ctwidget-spec-foreground">स्पेक्ट्रम Foreground</message>
+  <message id="ctwidget-spec-foreground-desc">Foreground स्पेक्ट्रम के लिए रेखा रंग</message>
+  <message id="ctwidget-spec-background">स्पेक्ट्रम Background</message>
+  <message id="ctwidget-spec-background-desc">Background स्पेक्ट्रम के लिए रेखा रंग</message>
+  <message id="ctwidget-spec-secondary">स्पेक्ट्रम द्वितीयक</message>
+  <message id="ctwidget-spec-secondary-desc">द्वितीयक स्पेक्ट्रम के लिए रेखा रंग</message>
+
+  <!-- Peak options -->
+  <message id="ctwidget-peaks-use-ref-color">पीक संदर्भ रेखा रंग उपयोग करें</message>
+  <message id="ctwidget-peaks-use-ref-desc">निर्धारित करता है कि नई फिट पीक उस पीक के लिए संदर्भ रेखा का रंग लें।</message>
+  <message id="ctwidget-default-peak-color">डिफ़ॉल्ट पीक रंग</message>
+  <message id="ctwidget-default-peak-desc">उन पीक के लिए उपयोग किया जाने वाला रंग जिनका निर्दिष्ट रंग नहीं है</message>
+
+  <!-- Spectrum chart -->
+  <message id="ctwidget-spectrum-axis">स्पेक्ट्रम चार्ट अक्ष</message>
+  <message id="ctwidget-spectrum-axis-desc">स्पेक्ट्रम X और Y अक्ष के लिए रेखा रंग</message>
+  <message id="ctwidget-spectrum-text">स्पेक्ट्रम चार्ट टेक्स्ट</message>
+  <message id="ctwidget-spectrum-text-desc">स्पेक्ट्रम चार्ट टेक्स्ट (y और x अक्ष लेबल) रंग</message>
+  <message id="ctwidget-spectrum-area">स्पेक्ट्रम क्षेत्र</message>
+  <message id="ctwidget-spectrum-area-desc">स्पेक्ट्रम चार्ट के लिए पृष्ठभूमि रंग</message>
+  <message id="ctwidget-spectrum-margin">स्पेक्ट्रम चार्ट पृष्ठभूमि</message>
+  <message id="ctwidget-spectrum-margin-desc">स्पेक्ट्रम चार्ट मार्जिन के लिए रंग</message>
+  <message id="ctwidget-same-as-spectrum">स्पेक्ट्रम क्षेत्र के समान</message>
+
+  <!-- Time chart -->
+  <message id="ctwidget-time-gamma">समय चार्ट Gamma गणना</message>
+  <message id="ctwidget-time-gamma-desc">समय चार्ट में gamma गणना के लिए रेखा रंग</message>
+  <message id="ctwidget-time-neutron">समय चार्ट Neutron गणना</message>
+  <message id="ctwidget-time-neutron-desc">समय चार्ट में neutron गणना के लिए रेखा रंग</message>
+  <message id="ctwidget-time-axis">समय चार्ट अक्ष</message>
+  <message id="ctwidget-time-axis-desc">समय चार्ट X और Y अक्ष के लिए रेखा रंग</message>
+  <message id="ctwidget-time-background">समय चार्ट पृष्ठभूमि</message>
+  <message id="ctwidget-time-background-desc">समय चार्ट के लिए पृष्ठभूमि रंग</message>
+  <message id="ctwidget-time-margins">समय चार्ट मार्जिन</message>
+  <message id="ctwidget-time-margins-desc">स्पेक्ट्रम चार्ट मार्जिन के लिए रंग</message>
+  <message id="ctwidget-same-as-background">पृष्ठभूमि के समान</message>
+  <message id="ctwidget-time-text">समय चार्ट टेक्स्ट</message>
+  <message id="ctwidget-time-text-desc">समय चार्ट के लिए टेक्स्ट रंग (x और y-अक्ष लेबल)</message>
+
+  <!-- Occupancy and highlights -->
+  <message id="ctwidget-occ-lines">अधिभोग सूचक रेखाएं</message>
+  <message id="ctwidget-occ-lines-desc">वे रेखाएं जो अधिभोग (पोर्टल डेटा) या रुचि की समय अवधि (खोज मोड डेटा) की शुरुआत और अंत को इंगित करती हैं</message>
+  <message id="ctwidget-time-fore-highlight">समय foreground हाइलाइट</message>
+  <message id="ctwidget-time-fore-highlight-desc">समय चार्ट पर यह इंगित करने के लिए उपयोग किया जाने वाला रंग कि foreground स्पेक्ट्रम के लिए समय के कौन से खंड जोड़े जा रहे हैं।</message>
+  <message id="ctwidget-time-back-highlight">समय background हाइलाइट</message>
+  <message id="ctwidget-time-back-highlight-desc">समय चार्ट पर यह इंगित करने के लिए उपयोग किया जाने वाला रंग कि background स्पेक्ट्रम के लिए समय के कौन से खंड जोड़े जा रहे हैं।</message>
+  <message id="ctwidget-time-sec-highlight">समय द्वितीयक हाइलाइट</message>
+  <message id="ctwidget-time-sec-highlight-desc">समय चार्ट पर यह इंगित करने के लिए उपयोग किया जाने वाला रंग कि द्वितीयक स्पेक्ट्रम के लिए समय के कौन से खंड जोड़े जा रहे हैं।</message>
+
+  <!-- Reference lines -->
+  <message id="ctwidget-ref-line-colors">संदर्भ रेखा रंग</message>
+  <message id="ctwidget-ref-line-colors-desc">संदर्भ रेखाओं के लिए उपयोग करने के लिए क्रमबद्ध रंग</message>
+  <message id="ctwidget-specific-ref-colors">विशिष्ट स्रोत संदर्भ रेखा रंग</message>
+  <message id="ctwidget-specific-ref-desc">दिए गए स्रोतों के लिए संदर्भ रेखाओं के लिए उपयोग करने के लिए रंग</message>
+  <message id="ctwidget-dynamic-ref-lines">गतिशील संदर्भ रेखाएं</message>
+  <message id="ctwidget-dynamic-ref-desc">न्यूक्लाइड प्रकार के आधार पर उपयोग करने के लिए रंग</message>
+
+  <!-- Dynamic reference categories -->
+  <message id="ctwidget-medical">चिकित्सा</message>
+  <message id="ctwidget-industrial">औद्योगिक</message>
+  <message id="ctwidget-norm">NORM</message>
+  <message id="ctwidget-snm">SNM</message>
+  <message id="ctwidget-common">सामान्य</message>
+  <message id="ctwidget-other">अन्य</message>
+
+  <!-- Other options -->
+  <message id="ctwidget-other-options">अन्य विकल्प</message>
+  <message id="ctwidget-peak-label-size">पीक लेबल आकार</message>
+  <message id="ctwidget-peak-label-size-desc">पीक लेबल का फ़ॉन्ट-आकार निर्दिष्ट करता है</message>
+  <message id="ctwidget-peak-label-angle">पीक लेबल कोण</message>
+  <message id="ctwidget-peak-label-angle-desc">पीक लेबल का घुमाव, डिग्री में</message>
+  <message id="ctwidget-log-y-min">Log-Y न्यूनतम</message>
+  <message id="ctwidget-log-y-min-desc">लघुगणकीय y-अक्ष पर प्रदर्शित न्यूनतम मान, जब प्रदर्शित x-सीमा में शून्य या नकारात्मक गणना वाला चैनल हो।</message>
+</messages>

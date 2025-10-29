@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">线性化谱</message>
+  <message id="ecaa-truncate-title">截断伽马道</message>
+  <message id="ecaa-combine-title">合并伽马道</message>
+  <message id="ecaa-convert-frf-title">转换为全范围分数刻度</message>
+  <message id="ecaa-convert-poly-title">转换为多项式刻度</message>
+  <message id="ecaa-multi-file-title">多文件刻度</message>
+  
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">转换不会影响任何谱；请尝试选择更多"应用更改到"条件。</message>
+  <message id="ecaa-already-polynomial">将应用此转换的所有谱已经是多项式。</message>
+  <message id="ecaa-already-frf">将应用此转换的所有谱已经是全范围分数。</message>
+  <message id="ecaa-multiple-cal-types">所选源谱有多种刻度类型；请尝试限制"应用更改到"条件。</message>
+  <message id="ecaa-changes-applied-to">更改将应用到：{1}</message>
+  <message id="ecaa-terms-lost">第四项之后的项将丢失，因为没有类似的项。</message>
+  <message id="ecaa-no-info-lost">如果继续，不会丢失任何信息。</message>
+  <message id="ecaa-conversion-question">您希望如何执行转换？</message>
+  
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">对于{1}道谱：</message>
+  <message id="ecaa-lower-energy">下限能量</message>
+  <message id="ecaa-upper-energy">上限能量</message>
+  <message id="ecaa-num-channels">道数</message>
+  <message id="ecaa-no-undo-note">此操作无法撤消。</message>
+  <message id="ecaa-combine-channels-desc">这将把连续的后续道合并在一起</message>
+  <message id="ecaa-num-channels-to-combine">要合并的道数：</message>
+  <message id="ecaa-first-channel-to-keep">要保留的第一道</message>
+  <message id="ecaa-last-channel-to-keep">要保留的最后道</message>
+  <message id="ecaa-keep-overflow">保留溢出计数</message>
+  <message id="ecaa-tt-keep-overflow">如果选中，来自丢弃道的所有计数将添加到新的第一道或最后道。</message>
+  <message id="ecaa-first-channel-note">请注意，第一道是道0。</message>
+  
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">线性化，重新分箱计数以匹配新宽度</message>
+  <message id="ecaa-linearize-same-counts">线性化，保持道中的计数不变</message>
+  <message id="ecaa-fit-quadratic">将道能量拟合为二次方程。</message>
+  <message id="ecaa-fit-cubic">将道能量拟合为三次方程。</message>
+  
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">结果谱中的道将具有相同的宽度，但每道中的计数将不是整数；此选项保留谱形状（每keV的计数）。</message>
+  <message id="ecaa-tt-linearize-same">道能量将被重新分配，使每道具有相同的宽度，而不考虑道的原始宽度；即，每道中的计数将保持不变，但谱形状（每keV的计数）将改变。</message>
+</messages>
+

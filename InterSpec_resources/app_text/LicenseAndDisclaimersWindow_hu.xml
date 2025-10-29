@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">Jogi Nyilatkozat</message>
+  <message id="ladw-mi-credits">Közreműködők</message>
+  <message id="ladw-mi-contact">Kapcsolat</message>
+  <message id="ladw-mi-license">Licenc</message>
+  <message id="ladw-mi-data">Adatok</message>
+  <message id="ladw-data-location-user">
+    A felhasználói adatok tárolási helye:
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    Az InterSpec-kel együtt szállított adatok, mint nukleáris bomlási információk, keresztmetszetek és hasonlók tárolási helye:
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">Megnyitás az Explorerben</message>
+  <message id="ladw-show-data-location-macOS">Megnyitás a Finderben</message>
+  <message id="ladw-show-data-location-win">megjelenítés</message>
+  <message id="ladw-data-location-network">
+    Az InterSpec-et böngészőjében is használhatja a következő címen (a portszám megváltozik, amikor újraindítja az InterSpec-et):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      Körülbelül {1} ideig aktívan használta az InterSpec-et, {2} fájlt nyitott meg, {3} munkameneten keresztül {4} óta.
+  </message>
+  <message id="ladw-external-none">Az InterSpec nem küld vagy fogad adatokat az eszközén kívülre.</message>
+  <message id="ladw-external-only-remote-rid">Az InterSpec nem küld vagy fogad adatokat az eszközén kívülre, kivéve amikor a Külső RID funkciót használja.</message>
+  <message id="ladw-external-only-map">Az InterSpec nem küld vagy fogad adatokat az eszközén kívülre, kivéve amikor a Térkép funkciót használja.</message>
+  <message id="ladw-external-remote-rid-and-map">Az InterSpec nem küld vagy fogad adatokat az eszközén kívülre, kivéve amikor a Térképek vagy Külső RID funkciókat használja.</message>
+  <message id="ladw-local-store-info">
+    <br />
+    Az InterSpec helyileg tárolja a beállításokat, a betöltött spektrumokat, a mentett alkalmazás állapotokat és a használati statisztikákat.
+    Ez az információ nem hagyja el az eszközét, és törölhető a fent látható felhasználói adatok könyvtárának eltávolításával.
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    Amikor a Google Térképek funkciót használja, a spektrum fájl helyinformációit elküldi a Google-nek, hogy megkapja a releváns hely térképeit.
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    Amikor a Térképek eszközt használja, térkép csempéket kér a <a href="https://arcgis.com">https://arcgis.com</a> oldalról
+    a radiációs mérések GPS koordinátáit magukba foglaló területhez, de a radiációs adatok jelölése/megjelenítése a térképeken az eszközén történik.
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    A Külső RID eszközhöz kérjük, tekintse meg az adatvédelmi irányelveket:
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    A Külső RID eszközhöz kérjük, tekintse meg a beírt URL adatvédelmi irányelveit.
+  </message>
+</messages>

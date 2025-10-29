@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">Antes de proceder</message>
+  <message id="lrm-pre-warn-content">
+    Los mosaicos de mapa se solicitarán de <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>.
+    Ningún dato de radiación saldrá de su dispositivo, pero se harán solicitudes de
+    mosaicos de mapa que abarcan las mediciones a este servicio.
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>Su clave arcgis personalizada que comienza con '{1}' se usará para solicitar mosaicos de mapa.</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>Se especificó una clave arcgis inválida en arcgis_key.txt, así que se usará la clave incorporada.</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">No preguntar de nuevo</message>
+  <message id="lrm-pre-warn-proceed-btn">Proceder</message>
+  <message id="lrm-window-title">Herramienta mapa</message>
+  <message id="lrm-will-use-user-key">Se usará la clave arcgis especificada por el usuario, comenzando con '{1}' para solicitar mapas.</message>
+  <message id="lrm-user-key-invalid">Había un archivo arcgis_key.txt, pero no contenía una clave válida</message>
+  <message id="lrm-err-loading-samples">Error cargando muestras seleccionadas en mapa: {1}</message>
+  <message id="lrm-displayed-as">Mostrado como</message>
+  <message id="lrm-measurements-as">mediciones como</message>
+  <message id="lrm-load-meas-as-short">Cargar como</message>
+  <message id="lrm-filter-label">Filtro</message>
+  <message id="lrm-filter-none">Ninguno</message>
+  <message id="lrm-filter-energy-range">Rango de energía</message>
+  <message id="lrm-filter-peaks-in-range">Picos en rango</message>
+  <message id="lrm-lower-energy">Energía inferior</message>
+  <message id="lrm-upper-energy">Energía superior</message>
+  <message id="lrm-energy-filter-help">
+    Aplicar un filtro de rango de energía cambiará cómo y potencialmente qué datos se muestran en el mapa.
+    <ul>
+    <li><b>Ninguno</b>: No se aplica filtrado - los colores y el texto CPS se basan en la tasa de conteo del espectro completo.</li>
+    <li><b>Rango de energía</b>: Filtrar conteos gamma dentro del rango de energía especificado.</li>
+    <li><b>Picos en rango</b>: Mostrar solo números de muestra que tienen picos dentro del rango de energía con los colores de marcador y CPS basados en la tasa de conteo de picos.</li>
+    </ul>
+  </message>
+</messages>
+
+

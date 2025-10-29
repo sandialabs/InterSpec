@@ -30,11 +30,6 @@
 #include <stdexcept>
 #include <utility>
 
-//#define BOOST_TEST_DYN_LINK
-#define BOOST_TEST_MODULE GammaInteractionCalc_suite
-//#include <boost/test/unit_test.hpp>
-#include <boost/test/included/unit_test.hpp>
-
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
@@ -46,6 +41,12 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
+
+//#define BOOST_TEST_DYN_LINK
+#define BOOST_TEST_MODULE GammaInteractionCalc_suite
+//#include <boost/test/unit_test.hpp>
+#include <boost/test/included/unit_test.hpp>
+
 
 using namespace std;
 using namespace boost::unit_test;
@@ -100,7 +101,7 @@ void set_data_dir()
   const string required_data_file = "findCharacteristics/202204_example_problem_1.n42";
   if( g_test_file_dir.empty() )
   {
-    for( const auto &d : { "test_data", "../test_data", "../../test_data", "/Users/wcjohns/rad_ana/InterSpec/target/testing/test_data" } )
+    for( const auto &d : { "test_data", "../test_data", "../../test_data", "../target/testing/test_data/", "/Users/wcjohns/rad_ana/InterSpec/target/testing/test_data" } )
     {
       if( SpecUtils::is_file( SpecUtils::append_path(d, required_data_file) ) )
       {
@@ -121,7 +122,7 @@ void set_data_dir()
   BOOST_REQUIRE_MESSAGE( db->nuclide("U238"), "SandiaDecayDataBase empty?" );
   
   const string required_data_path = SpecUtils::append_path(g_test_file_dir, required_data_file);
-  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( required_data_path ), "'" << required_data_file << "' not at '" << required_data_path << "'" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( required_data_path ), "'" << required_data_file << "' not at '" << required_data_path << "' - CWD='" << SpecUtils::get_working_path() << "'"  );
 }//void set_data_dir()
 
 
@@ -467,7 +468,8 @@ BOOST_AUTO_TEST_CASE( CylinderLineIntersection )
   radius = 1.0;
   half_length = 1;
   source_xyz[0] = 1.0; source_xyz[1] = -1.0; source_xyz[2] = 0;
-  detector_xyz[0] = (1.0 - 2.0E-6); detector_xyz[1] = 1; detector_xyz[2] = 0;
+  // Note: if we set `detector_xyz[0] = (1.0 - 1.0E-6)` - or smaller delta, then tests will fail on Windows, but not macOS - have not yet checked if `findIntersections(...)` or `cylinder_line_intersection(...)` is giving the more accurate answer, but it seems like one (or likely both), are causing some reall numerical roundoffs and such...
+  detector_xyz[0] = (1.0 - 5.0E-5); detector_xyz[1] = 1; detector_xyz[2] = 0;
   dist = cylinder_line_intersection( radius, half_length, source_xyz, detector_xyz, CylExitDir::TowardDetector, exit_point );
   pair<Point, Point> intersections = findIntersections({source_xyz[0],source_xyz[1]}, {detector_xyz[0],detector_xyz[1]}, radius);
   

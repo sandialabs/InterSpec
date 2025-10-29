@@ -134,7 +134,7 @@ GammaXsGui::GammaXsGui( MaterialDB *materialDB,
 
   ++row;
   
-  label = new WLabel( "Material/mass-formula" );
+  label = new WLabel( WString::tr("gxsg-material-formula") );
   m_layout->addWidget( label, row, 0, 1, 1, AlignLeft );
   m_materialEdit = new WLineEdit( "C0.5H0.2Ni0.3" );
   
@@ -842,7 +842,7 @@ GammaXsWindow::GammaXsWindow( MaterialDB *materialDB,
                               Wt::WSuggestionPopup *materialSuggestion ,
                               InterSpec* viewer)
   : AuxWindow( WString::tr("window-title-xs-calc"),
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
+              (AuxWindowProperties::PhoneNotFullScreen
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
   m_tool( nullptr )

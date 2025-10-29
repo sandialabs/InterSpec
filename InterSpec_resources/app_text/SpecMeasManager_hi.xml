@@ -1,0 +1,380 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file contains most of the strings for SpecMeasManager.cpp - e.g., File -> "Manager..."
+    smm- is short for Spectrum Measurement Manager
+    musd- is short for MultiUrlSpectrumDialog
+    uid- is short for UploadedImgDisplay.
+    fud- is short for FileUploadDialog
+  -->
+  <message id="smm-window-title">स्पेक्ट्रम प्रबंधक</message>
+  <message id="smm-load-spec-from">स्पेक्ट्रम लोड करें से: </message>
+  <message id="smm-tt-upload-file">फ़ाइल से स्पेक्ट्रम आयात करें</message>
+
+  <message id="smm-err-zip">zip से फ़ाइल निकालने में त्रुटि</message>
+  <message id="smm-zip-sel-file-no-name">
+    अपलोड की गई फ़ाइल एक ZIP फ़ाइल है।
+    <br />
+    {2}
+    चुनें कि आप इसमें से कौन सी फ़ाइल खोलना चाहेंगे।
+  </message>
+  <message id="smm-zip-sel-file">
+    <b>{1}</b> एक ZIP फ़ाइल है।
+    <br />
+    {2}
+    चुनें कि आप इसमें से कौन सी फ़ाइल खोलना चाहेंगे।
+  </message>
+  <message id="smm-zip-window-title">अपलोड की गई ZIP फ़ाइल सामग्री</message>
+  <message id="smm-zip-filename-hdr">फ़ाइलनाम</message>
+  <message id="smm-zip-kilobyte-hdr">kb</message>
+  <message id="smm-zip-display-btn">प्रदर्शित करें</message>
+  <message id="smm-empty-file">फ़ाइल शायद एक खाली फ़ाइल थी - स्पेक्ट्रम फ़ाइल नहीं।</message>
+  <message id="smm-failed-reading-nonspec-file">गैर-स्पेक्ट्रम फ़ाइल पढ़ने में विफल।</message>
+  <message id="smm-not-spec-file">स्पेक्ट्रम फ़ाइल नहीं</message>
+  <message id="smm-image-file">छवि फ़ाइल चयनित</message>
+  <message id="smm-icd2">यह एक N42 ICD2 फ़ाइल प्रतीत होती है जिसमें
+    कच्चे स्पेक्ट्रा के बजाय विश्लेषण परिणाम हैं।
+    <br />
+    यदि आपको लगता है कि यह एक वैध स्पेक्ट्रम फ़ाइल है, तो कृपया इसे
+    <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a> पर ईमेल करें
+    इस फ़ाइल प्रकार का समर्थन करने के लिए।
+  </message>
+  <message id="smm-invalid-zip">यह फ़ाइल एक अमान्य ZIP फ़ाइल प्रतीत होती है (या xlsx, pptx,
+    <br />
+    docx, odp, jar, apk, आदि), क्षमा करें मैं इसे नहीं खोल सकता :(
+  </message>
+  <message id="smm-unsupported-archive">यह फ़ाइल एक संग्रह फ़ाइल प्रतीत होती है, जो अभी तक InterSpec द्वारा समर्थित नहीं है।
+    कृपया संपर्क करें
+    <a href="mailto:wcjohns@sandia.gov" target="_blank">wcjohns@sandia.gov</a>
+    यदि आप इस संग्रह प्रकार का समर्थन जोड़ना चाहते हैं।
+  </message>
+  <message id="smm-unsupported-document">यह फ़ाइल एक दस्तावेज़ फ़ाइल प्रतीत होती है, और InterSpec द्वारा समर्थित नहीं है।</message>
+  <message id="smm-invalid-peak-csv">अपलोड की गई फ़ाइल एक शिखर CSV फ़ाइल जैसी लगी, लेकिन अमान्य थी।</message>
+  <message id="smm-file-is-drf">
+    <p style="white-space: nowrap;">
+      यह फ़ाइल एक डिटेक्टर प्रतिक्रिया फ़ंक्शन प्रतीत होती है।
+    </p>
+    <p style="text-align: left; white-space: nowrap;">
+      नाम: {1}
+    </p>
+   <p>क्या आप इस DRF का उपयोग करना चाहेंगे?</p>
+  </message>
+  <message id="smm-saved-drf-conf">
+    '{1}' को बाद में उपयोग के लिए सहेजा गया, और "<em>डिटेक्टर प्रतिक्रिया फ़ंक्शन चयन</em>" उपकरण के
+    "<em>सापेक्ष दक्षता</em>" भाग में उपलब्ध होगा।
+  </message>
+  <message id="smm-err-saving-drf">बाद में उपयोग के लिए DRF फ़ाइल सहेजने में त्रुटि।</message>
+  <message id="smm-file-is-drf">यह फ़ाइल एक डिटेक्टर प्रतिक्रिया फ़ंक्शन प्रतीत होती है।</message>
+  <message id="smm-file-is-multi-drf">इस फ़ाइल में कई डिटेक्टर प्रतिक्रिया फ़ंक्शन हैं।</message>
+
+  <!-- Text for dialog that appears when user drag-n-drop a .CALp file onto InterSpec -->
+  <message id="smm-CALp-no-fore"><p>वर्तमान में कोई प्रदर्शित अग्रभूमि नहीं - CALp फ़ाइल छोड़ रहा है।</p></message>
+  <message id="smm-CALp-invalid">
+    <p style="white-space: nowrap;">
+      इस CALp फ़ाइल की सामग्री
+      <br />
+      अपठनीय या डेटा के साथ असंगत थी
+    </p>
+  </message>
+  <message id="smm-CALp-contains-energy-cal">
+    <p style="white-space: nowrap;">यह फ़ाइल एक ऊर्जा अंशांकन युक्त प्रतीत होती है।</p>
+  </message>
+  <message id="smm-CALp-multi-dets"><p>{1} डिटेक्टरों के लिए अंशांकन हैं</p></message>
+  <message id="smm-warn-single-for-multi">
+    <p style="text-align: left; white-space: nowrap;">
+    चेतावनी: इस CALp फ़ाइल में एक एकल अंशांकन है; यह<br />
+    प्राथमिक प्रदर्शित ऊर्जा अंशांकन पर लागू किया जाएगा, और<br />
+    सापेक्ष परिवर्तन अन्य डिटेक्टरों के<br />
+    ऊर्जा अंशांकन पर लागू किया जाएगा, जो शायद आप चाहते हैं।
+    </p>
+  </message>
+  <message id="smm-warn-multi-for-single">
+    <p style="text-align: left; white-space: nowrap;">
+    चेतावनी: यह ऊर्जा अंशांकन<br />
+    वर्तमान डेटा की संरचना के साथ संगत नहीं हो सकता है।
+    </p>
+  </message>
+  <message id="smm-CALp-cb-disp-samples-only">केवल प्रदर्शित नमूनों पर लागू करें</message>
+  <message id="smm-CALp-cb-apply-to-fore">अग्रभूमि पर लागू करें</message>
+  <message id="smm-CALp-cb-apply-to-back">पृष्ठभूमि पर लागू करें</message>
+  <message id="smm-CALp-cb-apply-to-second">द्वितीयक पर लागू करें</message>
+  <message id="smm-CALp-like-to-use"><p style="white-space: nowrap;">क्या आप इसका उपयोग करना चाहेंगे?</p></message>
+  <message id="smm-CALp-prev-is-channel-lower-energy">
+    <p style="margin-top: 10px; font-style: italic;">
+      नोट: वर्तमान ऊर्जा अंशांकन निम्न-चैनल ऊर्जाएं है;<br />
+      आप इस ऊर्जा अंशांकन को लागू करने से पहले<br />
+      स्पेक्ट्रम को रैखिक करना चाह सकते हैं।
+    </p>
+  </message>
+
+  <message id="smm-CALp-err-applying-single">अंशांकन लागू करने में त्रुटि थी:
+    <br />
+    {1}
+    <br />
+    <br />
+    अंशांकन अग्रभूमि पर लागू किया गया था।
+  </message>
+  <message id="smm-CALp-err-applying-mult">अंशांकन लागू करने में त्रुटि थी:
+    <br />
+    {1}
+    <br />
+    <br />
+    अंशांकन अग्रभूमि और पृष्ठभूमि पर लागू किया गया था।
+  </message>
+
+  <!-- Text for dialog that appears when user drag-n-drops a .ECC file onto InterSpec -->
+  <message id="smm-err-load-iso-by-nuc"><em>न्यूक्लाइड द्वारा समस्थानिक</em> XML कॉन्फ़िगरेशन फ़ाइल लोड करने में त्रुटि: {1}</message>
+  <message id="smm-err-load-xml-iso-by-nuc">कॉन्फ़िगरेशन XML पार्स करने में त्रुटि: {1}{2}</message>
+  <message id="smm-err-iso-by-nuc-window-title">अमान्य <em>न्यूक्लाइड द्वारा समस्थानिक</em> XML कॉन्फ़िगरेशन फ़ाइल।</message>
+  <message id="smm-ecc-curve">ISOCS दक्षता अंशांकन वक्र DRF</message>
+  <message id="smm-ecc-how-to-interpret">कैसे व्याख्या करें</message>
+  <message id="smm-ecc-far-field">दूर क्षेत्र DRF</message>
+  <message id="smm-ecc-fix-geom-total-act">निश्चित ज्यामिति - कुल सक्रियता</message>
+  <message id="smm-ecc-fix-geom-act-cm2">निश्चित ज्यामिति - प्रति cm2 सक्रियता</message>
+  <message id="smm-ecc-fix-geom-act-m2">निश्चित ज्यामिति - प्रति m2 सक्रियता</message>
+  <message id="smm-ecc-fix-geom-act-gram">निश्चित ज्यामिति - प्रति ग्राम सक्रियता</message>
+  <message id="smm-ecc-det-diam">डिटेक्टर व्यास</message>
+  <message id="smm-ecc-dist">दूरी</message>
+  <message id="smm-ecc-use-drf">DRF उपयोग करें</message>
+  <message id="smm-ecc-error">ECC से DRF बनाने में त्रुटि: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop the Activity/Shielding fit file onto app -->
+  <message id="smm-act-shield-xml">सक्रियता/परिरक्षण XML</message>
+  <message id="smm-act-shield-use">इस सक्रियता/परिरक्षण फिट सेटअप का उपयोग करें?</message>
+  <message id="smm-err-act-shield">क्षमा करें, सक्रियता/परिरक्षण फिट मॉडल लोड करने में त्रुटि थी: {1}</message>
+
+  <!-- Text for dialog when user drag-n-drop a Source.lib file onto app, and the Make Detector Response tool is open -->
+  <message id="smm-source-lib-title">लक्षण वर्णन स्रोत लाइब्रेरी फ़ाइल</message>
+  <message id="smm-source-source-use">
+    यह डिटेक्टर प्रतिक्रिया बनाओ उपकरण में इस Source.lib फ़ाइल का उपयोग करेगा।
+    <br />
+    क्या आप लाइब्रेरी में पहले मिलान न्यूक्लाइड के साथ स्रोतों को स्वतः-भरना चाहेंगे?
+  </message>
+
+  <!-- Other errors -->
+  <message id="smm-upload-timeout">फ़ाइल अपलोड शायद समय समाप्त हो गया - 120 सेकंड बिना फ़ाइल डेटा प्राप्त किए।</message>
+  <message id="smm-finishing-upload">अपलोड समाप्त हो रहा है</message>
+  <message id="smm-finishing-copying">फ़ाइल कॉपी करना समाप्त हो रहा है</message>
+  <message id="smm-finish-up-txt">{1} {2} फ़ाइल का - एक मिनट लग सकता है।</message>
+  <message id="smm-window-title-parsing">फ़ाइल पार्स हो रही है</message>
+  <message id="smm-window-msg-parsing">इसमें एक सेकंड लग सकता है।</message>
+  <message id="smm-no-file-disp">त्रुटि, कोई {1} माप प्रदर्शित नहीं।</message>
+  <message id="smm-no-spec-disp">क्षमा करें, {1} स्पेक्ट्रम प्रदर्शित नहीं कर रहा प्रतीत होता है।</message>
+  <message id="smm-err-parse-spec-title">फ़ाइल पार्स नहीं कर सका</message>
+  <message id="smm-err-parse-spec">
+    <p>क्षमा करें, मैं फ़ाइल {1} को पार्स नहीं कर सका:</p>
+  <p>त्रुटि: <em>{2}</em></p>
+  <p>यदि आपको लगता है कि यह एक मान्य स्पेक्ट्रम फ़ाइल है, तो कृपया इसे
+  <a href="mailto:interspec@sandia.gov" target="_blank">interspec@sandia.gov</a> पर भेजें, और
+   हम इस समस्या को ठीक करने का प्रयास करेंगे।</p>
+  </message>
+  <message id="smm-failed-combine">फ़ाइलों को संयोजित करने में विफल: {1}</message>
+  <message id="smm-failed-sum">स्पेक्ट्रा को जोड़ने में विफल: {1}</message>
+
+  <!-- URI entry -->
+  <message id="smm-qr-no-meas">URL/QR कोड में कोई गामा माप नहीं</message>
+  <message id="smm-qr-no-gamma">URL/QR कोड में कोई गामा माप नहीं</message>
+  <message id="smm-qr-name-placeholder">QR-code/URL से</message>
+  <message id="smm-qr-err-decode">स्पेक्ट्रम URL/QR कोड डिकोड करने में त्रुटि: {1}</message>
+  <message id="smm-qr-couldnt-encode">
+    स्पेक्ट्रम को QR कोड में एन्कोड नहीं किया जा सका।
+    <br />
+    संभवतः 9 से अधिक QR कोड की आवश्यकता के कारण।
+  </message>
+  <message id="smm-qr-encode-fail">स्पेक्ट्रम को QR कोड में एन्कोड करने में विफल: {1} </message>
+
+  <!-- Messages for "Virtual Detectors" at RSI systems -->
+  <message id="smm-vd-load-title">लोड करने के लिए वर्चुअल डिटेक्टर?</message>
+  <message id="smm-vd-load-msg">
+    <div>इस फ़ाइल में कई "वर्चुअल डिटेक्टर" थे जो</div>
+    <div>कई भौतिक डिटेक्टरों के योग हो सकते हैं, या नहीं।</div>
+    <div>यदि आप सभी लोड करते हैं, तो <b>दृश्य</b>→<b>डिटेक्टर</b> मेनू देखें</div>
+    <div>एक सबसेट प्रदर्शित करने के लिए।</div>
+    {1}
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      आप किस डिटेक्टर डेटा को लोड करना चाहेंगे?
+    </div>
+  </message>
+  <message id="smm-vd-gt-5dets">
+    <div>{1} VD हैं, केवल "सभी" या पहले 5 चयन योग्य हैं।</div>
+  </message>
+  <message id="smm-vd-all-btn">सभी</message>
+
+  <!-- Derived data related text-->
+  <message id="smm-derived-window-title">व्युत्पन्न डेटा उपयोग करें?</message>
+  <message id="smm-derived-window-txt">
+    <div>इस फ़ाइल में "व्युत्पन्न डेटा" स्पेक्ट्रा थे, जो</div>
+    <div>आमतौर पर पहचान प्रणाली द्वारा विश्लेषण के लिए उपयोग किए जाते हैं।</div>
+    <div style="margin-top: 20px; margin-bottom: 5px; white-space: nowrap; font-weight: bold;">
+      आप किस डेटा को लोड करना चाहेंगे?
+    </div>
+  </message>
+  <message id="smm-derived-all">सभी डेटा</message>
+  <message id="smm-derived-raw">कच्चा डेटा</message>
+  <message id="smm-derived-derived">व्युत्पन्न डेटा</message>
+  <message id="smm-multiple-binnings-window-title">ऊर्जा बिनिंग चुनें</message>
+  <message id="smm-multiple-binnings-window-txt">
+    <div style="white-space: nowrap;">स्पेक्ट्रम फ़ाइल में कई ऊर्जा बिनिंग पाई गईं।</div>
+    <div style="margin-top: 5px; margin-bottom: 5px;">कृपया चुनें कि आप कौन सा चाहेंगे</div>
+  </message>
+  <message id="smm-multiple-binnings-keep-all-btn">सभी रखें</message>
+  <message id="smm-warn-has-intrinsic">अपलोड की गई फ़ाइल में एक आंतरिक सक्रियता स्पेक्ट्रम था, लेकिन वर्तमान में फ़ाइल में अन्य स्पेक्ट्रम दिखा रहा है।</message>
+  <message id="smm-warn-upload-mult-spec">अपलोड की गई फ़ाइल में {1} नमूने थे<br /></message>
+  <message id="smm-warn-upload-mult-showing-fore">पहला अग्रभूमि नमूना दिखाया जा रहा है।<br /></message>
+  <message id="smm-warn-upload-mult-showing-first">पहला नमूना दिखाया जा रहा है।<br /></message>
+  <message id="smm-warn-upload-mult-showing-other">नमूना {1} दिखाया जा रहा है।<br /></message>
+  <message id="smm-warn-upload-use-spec-manager"><b>स्पेक्ट्रम फ़ाइलें</b> टैब, या <b>फ़ाइल प्रबंधक</b> का उपयोग अन्य रिकॉर्ड चुनने के लिए करें।</message>
+  <message id="smm-warn-upload-use-file-manager">अन्य चुनने के लिए <b>फ़ाइल प्रबंधक</b> का उपयोग करें।</message>
+
+  <message id="smm-multi-cal-present">अपलोड की गई फ़ाइल में {1} अंशांकन या व्युत्पन्न-डेटा नमूने थे
+    <br />
+    {2}
+    प्रदर्शित नहीं किया जाएगा।
+    <br />
+    इसे बदलने के लिए <b>स्पेक्ट्रम फ़ाइलें</b> टैब या <b>फ़ाइल प्रबंधक</b> का उपयोग करें।
+  </message>
+  <message id="smm-multi-cal-it">यह</message>
+  <message id="smm-multi-cal-they">वे</message>
+  <message id="smm-multi-spectra-using-back">फ़ाइल में कई स्पेक्ट्रा हैं, इसलिए केवल पृष्ठभूमि स्पेक्ट्रम प्रदर्शित किया गया है।</message>
+  <message id="smm-multi-spectra-using-first">अपलोड की गई फ़ाइल में {1} नमूने थे इसलिए
+    <br />
+    पहला प्रदर्शित कर रहा हूं।
+    <br />
+    इसे बदलने के लिए <b>फ़ाइल प्रबंधक</b> का उपयोग करें।
+  </message>
+
+
+  <!-- The visual components of the Spectrum Measurement Manager GUI -->
+  <message id="smm-selected-spec-label">चयनित स्पेक्ट्रम: </message>
+  <message id="smm-disp-as-btn">इस रूप में प्रदर्शित करें</message>
+  <message id="smm-to-new-file">नई फ़ाइल में</message>
+  <message id="smm-tt-to-new-file">वर्तमान चयन से एक नई इन-मेमोरी स्पेक्ट्रम फ़ाइल बनाता है।</message>
+  <message id="smm-as-new-file">नई फ़ाइल के रूप में</message>
+  <message id="smm-tt-as-new-file">वर्तमान चयन से एक नई इन-मेमोरी स्पेक्ट्रम फ़ाइल बनाता है।</message>
+  <message id="smm-sum-spectra">स्पेक्ट्रा जोड़ें</message>
+  <message id="smm-tt-sum-spectra">वर्तमान चयन से एक नई इन-मेमोरी स्पेक्ट्रम फ़ाइल बनाता है।</message>
+  <message id="smm-export-btn">निर्यात...</message>
+  <message id="smm-unload-btn">अनलोड करें</message>
+  <message id="smm-unassign-label">असाइनमेंट हटाएं: </message>
+
+
+  <message id="smm-prev-states-window-title">पहले संग्रहीत स्थितियां</message>
+  <message id="smm-err-prev-state-unexpected">उपलब्ध सहेजी गई स्थितियां प्रदर्शित करने में अप्रत्याशित समस्या: {1}</message>
+  <message id="smm-tab-saved-states">सहेजी गई स्थितियां</message>
+  <message id="smm-tab-auto-saved">स्वतः-सहेजे गए स्पेक्ट्रा</message>
+  <message id="smm-auto-check-prev-cb">पिछले कार्य के लिए स्वचालित रूप से जांचें।</message>
+  <message id="smm-cant-save">
+    यह स्पेक्ट्रम फ़ाइल आंतरिक डेटाबेस में सहेजने के लिए बहुत बड़ी है।<br />
+    परिणामस्वरूप, आपका कार्य आंतरिक डेटाबेस में स्वतः-सहेजा नहीं जाएगा, और अगली बार जब आप फ़ाइल लोड करेंगे तो आप जहां से छोड़ा था वहां से फिर से शुरू नहीं कर पाएंगे।
+    <p>इस फ़ाइल का आकार {1} है, जबकि अधिकतम जो सहेजा जा सकता है वह {2} है।</p>
+  </message>
+  <message id="smm-max-file-to-large">प्रयास की गई फ़ाइल बहुत बड़ी है; अधिकतम आकार {1} kb है, आपने {2} kb अपलोड करने का प्रयास किया।</message>
+  <message id="smm-must-specify-name">आपको एक नाम निर्दिष्ट करना होगा</message>
+  <message id="smm-save-spectype-as-window-title">{1} स्पेक्ट्रम को इस रूप में सहेजें</message>
+  <message id="smm-save-spectype-name-empty-txt">(संग्रहीत करने के लिए नाम)</message>
+  <message id="smm-save-spectype-desc-empty-txt">(वैकल्पिक विवरण)</message>
+  <message id="smm-save-state-toast">{1} की स्थिति सहेजी गई</message>
+  <message id="smm-save-spec-version-window-title">स्पेक्ट्रम संस्करण सहेजें</message>
+  <message id="smm-save-state">स्थिति सहेजें</message>
+  <message id="smm-create-new-tag-toast">एक नया टैग बनाया गया: '{1}'।</message>
+
+  <message id="smm-next-qr">अगला QR कोड</message>
+  <message id="smm-qr-desc">{2} स्पेक्ट्रम के लिए {1}।</message>
+  <message id="smm-qr-title">स्पेक्ट्रम फ़ाइल {1}</message>
+  <message id="smm-qr-sequence-single">QR कोड</message>
+  <message id="smm-qr-sequence-multi">{2} का QR कोड {1}</message>
+
+
+  <message id="smm-changed-background">
+    नई लोड की गई फ़ाइल के साथ शामिल एक होने के लिए पृष्ठभूमि स्पेक्ट्रम को भी अपडेट किया गया था।
+  </message>
+  <message id="smm-didnt-changed-background">
+    नई लोड की गई अग्रभूमि फ़ाइल में एक पृष्ठभूमि स्पेक्ट्रम था
+    - लेकिन प्रदर्शित पृष्ठभूमि <b>अपडेट नहीं की गई है</b>।
+  </message>
+
+  <message id="fud-dialog-title">खोलने के लिए फ़ाइल चुनें</message>
+  <message id="fud-open-foreground-only-msg">खोलने के लिए अग्रभूमि स्पेक्ट्रम फ़ाइल चुनने के लिए नीचे {1}।</message>
+  <message id="fud-open-any-type-msg">चुनें कि आप स्पेक्ट्रम फ़ाइल को कैसे खोलना चाहते हैं, और फिर फ़ाइल ब्राउज़ करने के लिए नीचे {1}।</message>
+  <message id="fud-btn-grp-title">फ़ाइल को इस रूप में खोलें:</message>
+  <message id="fud-drg-n-drop-msg">
+    आप फ़ाइल को सीधे <br />
+    एप्लिकेशन विंडो में एक त्वरित विकल्प के रूप में ड्रैग और ड्रॉप भी कर सकते हैं।<br />
+    <br />अधिक उन्नत फ़ाइल खोलने और<br />
+    हेरफेर के लिए <b>फ़ाइल प्रबंधक</b> का उपयोग करें
+  </message>
+  <message id="fud-drg-n-drop-msg-mbl">
+    <span style="font-size: 10px;">
+      आप ईमेल या फ़ाइल ऐप से भी स्पेक्ट्रम फ़ाइलें खोल सकते हैं।
+    </span>
+  </message>
+
+  <message id="musd-dialog-title">बहु-भाग QR/URL स्पेक्ट्रम</message>
+  <message id="musd-err-diff-spec">प्राप्त URL/QR-code पिछले URL/QR-code से भिन्न स्पेक्ट्रम से था</message>
+  <message id="musd-err-duplicate-url">यह URL/QR-code पहले ही प्राप्त किया जा चुका है</message>
+  <message id="musd-from-qr-file-name">QR-code/URL से</message>
+  <message id="musd-err-decoding-url">URL डिकोड करने में त्रुटि: {1}</message>
+  <message id="musd-received-urls-list">{2} के {1} url प्राप्त किए हैं।<p>अधिक URLS/QR-code की प्रतीक्षा कर रहा है</p></message>
+
+
+  <message id="uid-qr-code-pic">QR-code चित्र</message>
+  <message id="uid-no-qr-found">कोई QR-code नहीं मिला ⓘ</message>
+  <message id="uid-no-qr-found-title">कोई QR-code नहीं मिला</message>
+  <message id="uid-no-qr-content">
+    <p>
+      यदि छवि में QR-code है, तो आप फ़ोटो क्रॉप करने या रंग स्तर समायोजित करने का प्रयास कर सकते हैं।
+      <br/>
+      तीसरे पक्ष के ऐप/वेबसाइट का उपयोग करना, या iOS या Android में निर्मित क्षमताएं, भी अक्सर बेहतर काम करेंगी।
+    </p>
+  </message>
+  <message id="uid-err-qr-search-title">QR-code खोजने में त्रुटि</message>
+  <message id="uid-err-qr-search-content">
+    <div>
+      त्रुटि मान: {1}
+    </div>
+    <p>
+      त्रुटि संदेश: {2}
+    </p>
+  </message>
+  <message id="uid-some-invalid-qrs">QR-code में से {1} में अमान्य URI थे।</message>
+  <message id="uid-qr-didnt-have-uri">QR-code में <code>interspec://</code> या <code>raddata://</code> URI नहीं था।</message>
+  <message id="uid-invalid-qr">अमान्य QR-code</message>
+  <message id="uid-invalid-uri">QR-code में अमान्य URI था</message>
+  <message id="uid-multi-qr-found-title">{1} QR-code मिले</message>
+  <message id="uid-multi-qr-found-content">क्या आप इन सभी का उपयोग करना चाहेंगे?</message>
+  <message id="uid-multi-qr-status">{1} QR-code मिले</message>
+  <message id="uid-qr-found-title">QR-code मिला</message>
+  <message id="uid-qr-found-content">क्या आप <br /> <code>{1}...</code> से शुरू होने वाले QR-code का उपयोग करना चाहेंगे</message>
+  <message id="uid-found-qr">QR-code मिला</message>
+  <message id="uid-err-getting-data">एम्बेड करने के लिए डेटा पुनर्प्राप्त करने में त्रुटि - छवि एम्बेड नहीं कर रहा।</message>
+  <message id="uid-err-no-foreground-embedd">कोई अग्रभूमि लोड नहीं - छवि एम्बेड नहीं कर रहा।</message>
+  <message id="uid-image-embed-conf">छवि को अग्रभूमि स्पेक्ट्रम फ़ाइल में एम्बेड किया गया है; केवल N42-2012 फ़ाइल प्रारूप में निर्यात करने से यह संरक्षित होगा।</message>
+  <message id="uid-image-not-spectrum">यह फ़ाइल एक छवि प्रतीत होती है, और स्पेक्ट्रम फ़ाइल नहीं।</message>
+  <message id="uid-err-to-large">अपलोड की गई फ़ाइल प्रदर्शित करने के लिए बहुत बड़ी थी।</message>
+  <message id="uid-err-reading-upload">अपलोड की गई फ़ाइल नहीं पढ़ सका।</message>
+  <message id="uid-embed-image-btn">स्पेक्ट्रम फ़ाइल में छवि एम्बेड करें</message>
+  <message id="uid-no-qr-found">QR-code नहीं मिला ⓘ</message>
+  <message id="uid-looking-for-qr">QR-code खोज रहा है।</message>
+  <message id="uid-check-for-qr-btn">QR-code जांचें</message>
+  <message id="uid-tt-auto-qr">
+    छवियों को स्वचालित रूप से QR-code के लिए खोजा जाता है जो InterSpec द्वारा उपयोग योग्य हो सकते हैं।
+    <br/>
+    यदि छवि में QR-code है जो नहीं मिला है, तो आपके पास
+    तीसरे पक्ष के ऐप/वेबसाइट, या iOS या Android में निर्मित क्षमताओं का उपयोग करने से बेहतर भाग्य हो सकता है।
+    <br />
+    यदि आप QR-code से URI निकालने के लिए तीसरे पक्ष के उपकरण का उपयोग करते हैं, तो आप
+    इसे "<b>संपादित करें</b>" मेनू में "<b>URL दर्ज करें</b>"
+    आइटम का उपयोग करके InterSpec में दर्ज कर सकते हैं।
+  </message>
+
+  <!-- Column headers for SpectraFileModel -->
+  <message id="sfm-col-file">फ़ाइल</message>
+  <message id="sfm-col-n-samples">N-नमूने</message>
+  <message id="sfm-col-live-time">लाइव समय (s)</message>
+  <message id="sfm-col-real-time">वास्तविक समय (s)</message>
+  <message id="sfm-col-gam-count">गामा गणना</message>
+  <message id="sfm-col-neut-count">न्यूट्रॉन गणना</message>
+  <message id="sfm-col-time-taken">समय लिया गया</message>
+  <message id="sfm-col-n-dets">N-डिटेक्टर</message>
+  <message id="sfm-col-loaded">लोड किया गया</message>
+  <message id="sfm-col-file-rid">फ़ाइल RID</message>
+</messages>

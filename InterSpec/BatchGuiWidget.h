@@ -128,6 +128,8 @@ protected:
 
   /** Signal used to indicate if the button for doing the analysis should be enabled/disabled */
   Wt::Signal<bool> m_canDoAnalysis;
+
+  const static int sm_max_spec_file_previews = 18;  //Arbitrarily chosen
 };//class BatchGuiWidget
 
 #endif // BatchGuiWidget_h 

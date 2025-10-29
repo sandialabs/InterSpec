@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">異なる場所での2つの測定を使用して、見えない線源までの距離を求めます。例：線源が壁の向こうにある場合。</message>
+  <message id="oor2c-near-meas-label">近距離測定強度:</message>
+  <message id="oor2c-far-meas-label">遠距離測定強度:</message>
+  <message id="oor2c-background-intensity">バックグラウンド強度（オプション）:</message>
+  <message id="oor2c-dist-label">測定間距離:</message>
+  <message id="oor2c-power-law-label">べき法則</message>
+  <message id="oor2c-low-scatter">低散乱またはピーク面積使用、1/r^2</message>
+  <message id="oor2c-mid-scatter">中散乱線量率、1/r^1.85</message>
+  <message id="oor2c-high-scatter">高散乱線量率、1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">近距離測定から線源までの距離:</message>
+  <message id="oor2c-bottom-message">近距離、バックグラウンド、遠距離の
+    測定には同じ単位を使用してください。結果は
+    測定間距離に使用した単位と同じです。
+  </message>
+  <message id="oor2c-qr-state-title">1/r2計算機状態</message>
+  <message id="oor2c-qr-state-txt">1/r<sup>2</sup>計算機ツールの現在の状態。</message>
+  <message id="oor2c-invalid-near">無効な近距離測定</message>
+  <message id="oor2c-invalid-far">無効な遠距離測定</message>
+  <message id="oor2c-invalid-dist">無効な距離</message>
+  <message id="oor2c-far-larger-than-near">遠距離測定は近距離測定より小さくなければなりません</message>
+  <message id="oor2c-back-larger-than-far">バックグラウンドは遠距離測定より小さくなければなりません</message>
+  <message id="oor2c-near-is-zero">近距離測定はゼロ以外でなければなりません</message>
+  <message id="oor2c-far-is-zero">遠距離測定はゼロ以外でなければなりません</message>
+  <message id="oor2c-dist-is-zero">測定間距離はゼロ以外でなければなりません</message>
+</messages>

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ss- is short for ShieldingSelect
+  -->
+  <message id="ss-tt-shield-type-toggle">在材料屏蔽和通用屏蔽之间切换</message>
+  <message id="ss-tt-material-name">
+    您可以在此处输入预定义材料或元素的名称
+    （清除表单文本并单击表单右侧的箭头以查看所有预定义
+    选项），或者您可以指定材料的原子组成，类似于
+    C0.5H0.2Ni0.6，其中数字是材料中
+    前面元素的g/cm³密度，因此示例的总密度为
+    0.5+0.2+0.6=1.3 g/cm³。
+    要输入具有同位素成分的材料，您应该使用单引号或双引号
+    引用核素，例如：'U238'0.2'U235'0.8
+  </message>
+  <message id="ss-tt-material-name-fit">
+  注意：如果用作自衰减源，将使用定义的材料进行
+  衰减目的，但源核素的指定质量分数可能与此
+  衰减不匹配...
+  </message>
+  <message id="ss-tt-areal-density">屏蔽的面密度，单位为g/cm²</message>
+  <message id="ss-areal-density-empty-txt">面密度</message>
+  <message id="ss-tt-atomic-number">屏蔽的原子序数</message>
+  <message id="ss-atomic-number-empty-txt">原子序数</message>
+  <message id="ss-source-for-cb">
+    当这些核素用作源时，它们被
+    视为均匀分布在材料中
+    （假定为球形），因此考虑了自衰减
+    和其他因素。
+  </message>
+  <message id="ss-fit-mass-fractions-cb">拟合质量分数</message>
+  <message id="ss-thickness">厚度</message>
+  <message id="ss-radius">半径</message>
+  <message id="ss-radial-thickness">径向厚度</message>
+  <message id="ss-half-length">半长</message>
+  <message id="ss-length-thickness">长度厚度</message>
+  <message id="ss-half-width">半宽</message>
+  <message id="ss-width-thickness">宽度厚度</message>
+  <message id="ss-half-height">半高</message>
+  <message id="ss-height-thickness">高度厚度</message>
+  <message id="ss-half-depth">半深</message>
+  <message id="ss-depth-thickness">深度厚度</message>
+  <message id="ss-tt-fit-mass-frac">如果拟合质量分数，它们的分数总和将在拟合中保持恒定。</message>
+  <message id="ss-fixed-non-src-frac">假设{1}{2}%其他{3}同位素</message>
+  <message id="ss-fixed">固定 </message> <!-- Note: trailing space is Nbsp character -->
+  <message id="ss-generic">通用</message>
+  <message id="ss-consists-of-mass-frac">由（质量分数，元素）组成</message>
+  <message id="ss-err-invalid-material">{1}不是有效材料</message>
+  <message id="ss-invalid-mat">无效材料</message>
+  <message id="ss-src-mass-frac-label">{1}的质量分数：</message>
+  <message id="ss-non-src-frac">非源分数</message>
+  <message id="ss-add-shield-before">在前面添加屏蔽</message>
+  <message id="ss-add-shield-after">在后面添加屏蔽</message>
+  <message id="ss-add-trace-src">添加微量源</message>
+  <message id="ss-non-src-frac-el">其他{1}：</message>
+  <message id="ss-tt-with-uncert">{1}</message>
+  <message id="ss-tt-without"></message>
+  <message id="ss-warning-only-one-src-frac">要拟合质量分数，请至少选择{1}的两个成分进行拟合。</message>
+  
+  <!-- TraceSrcDisplay labels -->
+  <message id="ss-trace-source-title">微量源</message>
+  <message id="ss-select-option">选择</message>
+  <message id="ss-fit-activity-cb">拟合活度值</message>
+  <message id="ss-total-activity">总计</message>
+</messages>
+

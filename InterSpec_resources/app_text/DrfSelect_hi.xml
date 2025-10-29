@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">उपयोगकर्ता परिभाषित डिटेक्टर</message>
+
+  <message id="ref-tt-remove-drf-file">फ़ाइल को उन फ़ाइलों की सूची से हटाएं जिनमें InterSpec डिटेक्टर प्रतिक्रिया फ़ंक्शन खोजेगा।</message>
+  <message id="ref-remove-drf-window-title">डिटेक्टर प्रतिक्रियाएं हटाएं?</message>
+  <message id="ref-remove-drf-window-txt">क्या आप इन DRF को भविष्य के उपयोग से भी हटाना चाहेंगे?</message>
+  <message id="ref-file-removed-toast">फ़ाइल '{1}' को भविष्य के उपयोग से हटा दिया गया।</message>
+  <message id="ref-file-saved-for-later">बाद में उपयोग के लिए '{1}' सहेजी गई, और "<em>Rel. Eff.</em>" भाग में "<em>डिटेक्टर प्रतिक्रिया फ़ंक्शन चयन</em>" उपकरण में उपलब्ध होगी।</message>
+  <message id="ref-err-saving-drf-file">बाद में उपयोग के लिए DRF फ़ाइल सहेजने में त्रुटि; क्षमा करें।</message>
+  <message id="ref-err-invalid-csv-drf">मान्य TSV या CSV सापेक्ष-दक्षता DRF फ़ाइल नहीं है।</message>
+  <message id="ref-save-drf-window-title">डिटेक्टर प्रतिक्रियाएं सहेजें?</message>
+  <message id="ref-save-drf-window-txt">क्या आप इन डिटेक्टर प्रतिक्रियाओं को बाद में उपयोग के लिए सहेजना चाहेंगे?</message>
+  <message id="ref-upload-csv-file">TSV/CSV फ़ाइल अपलोड करें।</message>
+  <message id="ref-dont-use-drf-in-file">फ़ाइल में कोई प्रतिक्रिया नहीं</message>
+  <message id="ref-select-det-from-file">डिटेक्टर चुनें</message>
+  <message id="ref-no-drfs-in-file">फ़ाइल में कोई मान्य DRF नहीं।</message>
+  <message id="ref-couldnt-open-drf-file">DRF फ़ाइल नहीं खोली जा सकी।</message>
+  <message id="ref-no-rel-eff-drfs-in-file">कोई Rel. Eff. DRF उपलब्ध नहीं।</message>
+  <message id="ref-no-drfs-available">कोई प्रतिक्रिया उपलब्ध नहीं</message>
+  <message id="ref-file-has-no-drfs">फ़ाइल में कोई DRF नहीं है</message>
+  <message id="reds-tt-add-drf-btn">अतिरिक्त सापेक्ष दक्षता डिटेक्टर प्रतिक्रिया फ़ंक्शन फ़ाइल जोड़ने के लिए प्लस बटन पर क्लिक करें।</message>
+  <message id="reds-tt-add-dir">डिटेक्टर प्रतिक्रिया फ़ंक्शन को पुनरावर्ती रूप से खोजने के लिए अतिरिक्त निर्देशिका जोड़ने के लिए प्लस बटन पर क्लिक करें।</message>
+  <message id="reds-gadras-drf-info-ios">आप GADRAS-DRF से आयातित डिटेक्टर प्रतिक्रिया फ़ंक्शन को <b>Files</b> ऐप के भीतर <code>InterSpec</code> निर्देशिका में रख सकते हैं।</message>
+  <message id="reds-gadras-drf-info">ये GADRAS-DRF से आयातित डिटेक्टर प्रतिक्रिया फ़ंक्शन हैं। वर्तमान में केवल डिटेक्टर आयाम, पूर्ण दक्षता, और FWHM संकल्प का उपयोग किया जाता है।</message>
+  <message id="reds-failed-parse-gadras-det">GADRAS डिटेक्टर को पार्स करने में विफल: {1}</message>
+  <message id="reds-err-saving-gad-path">उपयोगकर्ता प्राथमिकताओं में GADRAS पथ सहेजने में त्रुटि: {1}</message>
+  <message id="reds-tt-remove-gad-dir">निर्देशिका को उन निर्देशिकाओं की सूची से हटाएं जिनमें InterSpec डिटेक्टर प्रतिक्रिया फ़ंक्शन खोजेगा।</message>
+  <message id="reds-tt-gad-set-dir">डिटेक्टर प्रतिक्रिया फ़ंक्शन को पुनरावर्ती रूप से खोजने के लिए दर्ज निर्देशिका सेट करें।</message>
+  <message id="reds-err-not-valid-dir">मान्य निर्देशिका नहीं।</message>
+  <message id="reds-invalid-dir">अमान्य निर्देशिका</message>
+  <message id="reds-no-drf-in-dir">निर्देशिका में कोई प्रतिक्रिया नहीं</message>
+  <message id="reds-recursive-no-drfs-in-dir">निर्देशिका या उसकी उपनिर्देशिकाओं में कोई मान्य DRF नहीं।</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      आंतरिक दक्षता CSV फ़ाइल:
+    </div>
+    <div>
+      पहला कॉलम keV में ऊर्जा है।
+      दूसरा कॉलम उस ऊर्जा पर गामा के लिए % दक्षता (0 से 100) है,
+      जो डिटेक्टर पर आपतित है, photopeak में रिकॉर्ड किया जाना है।
+    </div>
+    <div>
+      दक्षता फ़ाइल अपलोड करने के बाद आपको GADRAS Detector.dat फ़ाइल अपलोड करनी होगी,
+      या डिटेक्टर का व्यास दर्ज करना होगा।
+    </div>
+    <div>
+      आप <em>डिटेक्टर प्रतिक्रिया बनाएं</em> उपकरण से निर्यात की गई CSV भी अपलोड कर सकते हैं।
+    </div>
+  </message>
+  <message id="ds-enter-gad-det-diam">डिटेक्टर व्यास दर्ज करें या Detector.dat फ़ाइल अपलोड करें:</message>
+  <message id="ds-det-diam">डिटेक्टर व्यास:</message>
+  <message id="ds-fixed-geom">निश्चित ज्यामिति</message>
+  <message id="ds-gad-det-file-label">GADRAS Detector.Dat फ़ाइल:</message>
+  <message id="ds-manual-det-empty-fcn">उदाहरण: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
+    या समकक्ष: -9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">गणितीय सूत्र द्वारा परिभाषित डिटेक्टर दक्षता, ऊर्जा x दिए जाने पर;
+     या आप मानक समीकरण रूप के लिए गुणांक दर्ज कर सकते हैं। अधिक जानकारी के लिए प्रश्न चिह्न आइकन पर क्लिक करें।
+  </message>
+  <message id="ds-manual-det-name-label">डिटेक्टर नाम </message>
+  <message id="ds-manual-det-name-empty-txt">अद्वितीय डिटेक्टर नाम</message>
+  <message id="ds-manual-function-label">दक्षता f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">दक्षता सूत्र के लिए ऊर्जा इकाई</message>
+  <message id="ds-tt-manual-desc">इस डिटेक्टर प्रतिक्रिया का विवरण</message>
+  <message id="ds-manual-det-diam-label">डिटेक्टर व्यास</message>
+  <message id="ds-energy-range">ऊर्जा सीमा</message>
+  <message id="ds-(optional)">(वैकल्पिक)</message>
+  <message id="ds-min.">न्यूनतम</message>
+  <message id="ds-max.">अधिकतम</message>
+  <message id="ds-intrinsic-eff">आंतरिक दक्षता</message>
+  <message id="ds-abs-eff">पूर्ण दक्षता</message>
+  <message id="ds-fixed-geom-total">निश्चित ज्यामिति - कुल गतिविधि</message>
+  <message id="ds-fixed-geom-cm2">निश्चित ज्यामिति - प्रति cm² गतिविधि</message>
+  <message id="ds-fixed-geom-m2">निश्चित ज्यामिति - प्रति m² गतिविधि</message>
+  <message id="ds-fixed-geom-gram">निश्चित ज्यामिति - प्रति ग्राम गतिविधि</message>
+
+  <message id="ds-tt-manual-drf-type">इस दक्षता को कैसे व्याख्या की जानी चाहिए।<br />
+    <br />
+    आंतरिक दक्षता: डिटेक्टर के फलक पर प्रहार करने वाले x-ray या गामा के लिए
+    पूर्ण-ऊर्जा संसूचन घटना रजिस्टर करने की संभावना।<br />
+    <br />
+    पूर्ण दक्षता: स्रोत से x-ray या गामा के लिए
+    पूर्ण-ऊर्जा संसूचन घटना रजिस्टर करने की संभावना, यह
+    इस दक्षता को 1/r2 द्वारा अन्य दूरियों पर स्केल करने की अनुमति देने के लिए उपयुक्त है (अर्थात, बिंदु-स्रोत के लिए)।<br />
+    <br />
+    निश्चित ज्यामिति - कुल गतिविधि: स्रोत से x-ray या गामा के लिए
+    पूर्ण-ऊर्जा संसूचन घटना रजिस्टर करने की संभावना, और यह उपयुक्त नहीं है कि इस
+    दक्षता को अन्य दूरियों पर स्केल करने की अनुमति दी जाए (जैसे, निकट, या बड़े विस्तारित स्रोत के लिए)।<br />
+    <br />
+    निश्चित ज्यामिति - प्रति cm2 गतिविधि: कुल गतिविधि के समान, लेकिन दक्षता वक्र
+    प्रति क्षय, प्रति वर्ग सेंटीमीटर दक्षता का प्रतिनिधित्व करता है (अर्थात, सतह संदूषण)।<br />
+    <br />
+    निश्चित ज्यामिति - प्रति m2 गतिविधि: प्रति cm2 के समान, लेकिन प्रति वर्ग मीटर के लिए।<br />
+    <br />
+    निश्चित ज्यामिति - प्रति g गतिविधि: प्रति cm2 के समान, लेकिन स्रोत के प्रति ग्राम के लिए।
+  </message>
+  <message id="ds-dist-label">दूरी:</message>
+  <message id="ds-set-btn">सेट करें</message>
+  <message id="ds-last-used">अंतिम उपयोग</message>
+  <message id="ds-det-type-filter-all">सभी</message>
+  <message id="ds-det-type-filter-uploaded">अपलोड किया गया</message>
+  <message id="ds-det-type-filter-formula">दर्ज सूत्र</message>
+  <message id="ds-det-type-filter-data">डेटा से बनाया गया</message>
+  <message id="ds-det-type-filter-N42">N42 फ़ाइल में शामिल</message>
+  <message id="ds-show-label">दिखाएं:</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">Rel. Eff.</message>
+  <message id="ds-mi-import">आयात</message>
+  <message id="ds-mi-formula">सूत्र</message>
+  <message id="ds-mi-previous">पिछला</message>
+  <message id="ds-use-for-serialnum-cb">SN '{1}' के लिए डिफ़ॉल्ट DRF के रूप में उपयोग करें</message>
+  <message id="ds-use-for-model-cb">मॉडल '{1}' के लिए डिफ़ॉल्ट DRF के रूप में उपयोग करें</message>
+  <message id="ds-no-drf-loaded">कोई DRF लोड नहीं किया गया</message>
+  <message id="ds-no-det-btn">कोई डिटेक्टर नहीं</message>
+  <message id="ds-fit-fwhm-btn">FWHM फिट करें...</message>
+  <message id="ds-tt-cancel">इस संवाद द्वारा किए गए सभी परिवर्तनों या चयनों को हटा दें, और संवाद बंद करें।</message>
+  <message id="ds-tt-accept">किए गए सभी परिवर्तनों/चयनों को स्वीकार करें और संवाद बंद करें।</message>
+  <message id="ds-use-det-btn">डिटेक्टर का उपयोग करें</message>
+  <message id="ds-use-drf">DRF का उपयोग करें?</message>
+  <message id="ds-select-drf">उपयोग करने के लिए DRF चुनें</message>
+  <message id="ds-drf-desc">DRF विवरण</message>
+  <message id="ds-save-for-later-cb">बाद में उपयोग के लिए सहेजें?</message>
+  <message id="ds-err-drf-uri-invalid">डिटेक्टर प्रतिक्रिया फ़ंक्शन URL अमान्य था।</message>
+  <message id="ds-err-det-diam-pos">डिटेक्टर व्यास धनात्मक होना चाहिए</message>
+  <message id="ds-err-det-dist-pos">पूर्ण दक्षता के लिए दूरी धनात्मक होनी चाहिए</message>
+  <message id="ds-warn-min-max-energy-swapped">डिटेक्टर न्यूनतम ऊर्जा अधिकतम ऊर्जा से अधिक थी; ऊर्जा सीमा को अनदेखा कर रहे हैं।</message>
+  <message id="ds-need-det-diam">डिटेक्टर के व्यास की आवश्यकता है</message>
+</messages>

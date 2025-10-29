@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+    <message id="dcw-tt-nuc-edit">مثل <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (حالة ما وراء مستقرة), <b>Cs137</b>, إلخ.</message>
+    <message id="dcw-tt-age-edit">
+      <div>
+        يمكن تحديد العمر باستخدام مجموعة من وحدات الوقت،
+        مثل '<b>5.3y 8d 22m</b>' أو بأنصاف الأعمار مثل 
+        '<b>2.5 HL</b>'.
+      </div>
+      <br />
+      <div>
+        العمر لا يؤثر على نشاط النواة المدخلة، بل يؤثر فقط على كمية
+        نمو النسل (أي يغير فقط أنشطة النسل، وليس نشاط النواة الأم)
+        - النشاط الذي أدخلته سيُستخدم دائمًا للنواة الأم التي أدخلتها، بغض
+        النظر عن العمر.
+      </div>
+      <br />
+      <div>
+        وحدات الوقت المقبولة: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, 
+        <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>، أو
+        يمكنك تحديد الفترة الزمنية بـ <b>hh:mm:ss</b>.
+      </div>
+      <div>لا يمكن خلط وحدات نصف العمر أو الفترات الزمنية مع وحدات أخرى.</div>
+      <div>
+        عندما يتم تحديد فترات زمنية متعددة، يتم جمعها، مثل '1y6months 3m' يُفسر كـ 
+        18 شهر و 3 دقائق.
+      </div>
+    </message>
+    <message id="dcw-age-to-big">{1} أنصاف أعمار كثيرة جدًا لتحلل {2}</message>
+    <message id="dcw-nuc-is-stable">{1} مستقر</message>
+    <message id="dcw-made-age-reasonable">تم تغيير العمر إلى قيمة أكثر معقولية لـ {1} من '{2}' إلى '{3}'</message>
+</messages>

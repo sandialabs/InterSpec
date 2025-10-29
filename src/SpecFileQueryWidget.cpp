@@ -277,16 +277,18 @@ namespace
                 case 35: val = static_cast<int>(SpecUtils::DetectorType::VerifinderNaI); break;
                 case 36: val = static_cast<int>(SpecUtils::DetectorType::VerifinderLaBr); break;
                 case 37: val = static_cast<int>(SpecUtils::DetectorType::KromekD3S); break;
-                case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCode); break;
-                case 39: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum); break;
-                case 40: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum40h); break;
-                case 41: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425NaI); break;
-                case 42: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425LaBr); break;
-                case 43: val = static_cast<int>(SpecUtils::DetectorType::Sam950); break;
-                case 44: val = static_cast<int>(SpecUtils::DetectorType::KromekD5); break;
-                case 45: val = static_cast<int>(SpecUtils::DetectorType::KromekGR1); break;
-                case 46: val = static_cast<int>(SpecUtils::DetectorType::Raysid); break;
-                case 47: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
+                case 38: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeCsI10); break;
+                case 39: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeCsI14); break;
+                case 40: val = static_cast<int>(SpecUtils::DetectorType::RadiaCodeGAGG10); break;
+                case 41: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum); break;
+                case 42: val = static_cast<int>(SpecUtils::DetectorType::Fulcrum40h); break;
+                case 43: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425NaI); break;
+                case 44: val = static_cast<int>(SpecUtils::DetectorType::IdentiFinderR425LaBr); break;
+                case 45: val = static_cast<int>(SpecUtils::DetectorType::Sam950); break;
+                case 46: val = static_cast<int>(SpecUtils::DetectorType::KromekD5); break;
+                case 47: val = static_cast<int>(SpecUtils::DetectorType::KromekGR1); break;
+                case 48: val = static_cast<int>(SpecUtils::DetectorType::Raysid); break;
+                case 49: val = static_cast<int>(SpecUtils::DetectorType::Unknown); break;
 
                 default:
                   throw runtime_error( "Unknown DetectionSystemType value type" );
@@ -1481,6 +1483,7 @@ SpecFileQueryWidget::~SpecFileQueryWidget()
 void SpecFileQueryWidget::init()
 {
   wApp->useStyleSheet( "InterSpec_resources/SpecFileQueryWidget.css" );
+  m_viewer->useMessageResourceBundle( "SpecFileQueryWidget" );
   
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/query-builder.default.min.css" );
   wApp->useStyleSheet( "InterSpec_resources/assets/js/QueryBuilder2.5.2/css/QueryBuilderFakeBootstrap.css" );
@@ -1534,11 +1537,11 @@ void SpecFileQueryWidget::init()
   
   m_baseLocation->pathChanged().connect( this, &SpecFileQueryWidget::basePathChanged );  
   
-  m_optionsBtn = new WPushButton( "Options" );
+  m_optionsBtn = new WPushButton( WString::tr("sfqw-options") );
   m_optionsBtn->addStyleClass( "SpecFileQueryOptionsBtn" );
   
   m_optionsMenu = new PopupDivMenu( m_optionsBtn, PopupDivMenu::MenuType::TransientMenu );
-  linelayout->addWidget( m_optionsBtn, 0, 1 );
+  linelayout->addWidget( m_optionsBtn, 0, 1, AlignMiddle );
   
   auto item = m_optionsMenu->addMenuItem( "recursive" );
   item->setCheckable( true );
@@ -1666,12 +1669,12 @@ void SpecFileQueryWidget::init()
   
   
   
-  m_cancelUpdate = new WPushButton( "Cancel" );
+  m_cancelUpdate = new WPushButton( WString::tr("Cancel") );
   m_cancelUpdate->setHidden( true );
   linelayout->addWidget( m_cancelUpdate, 0, linelayout->columnCount() );
   m_cancelUpdate->clicked().connect( this, &SpecFileQueryWidget::cancelUpdate );
   
-  m_update = new WPushButton( "Update" );
+  m_update = new WPushButton( WString::tr("sfqw-update") );
   m_update->clicked().connect(
   "function(){"
     "var result = $('#" + m_conditions->id() + "').queryBuilder('getRules',{ allow_invalid: true });"
@@ -1747,7 +1750,7 @@ void SpecFileQueryWidget::init()
   m_csv->setStyleClass( "LinkBtn" );
   m_csv->disable();
   
-  m_loadSelectedFile = new WPushButton( "Load Selected" );
+  m_loadSelectedFile = new WPushButton( WString::tr("sfqw-load-selected") );
   linelayout->addWidget( m_loadSelectedFile, 0, linelayout->columnCount(), AlignRight );
   m_loadSelectedFile->clicked().connect( this, &SpecFileQueryWidget::loadSelected );
   m_loadSelectedFile->disable();

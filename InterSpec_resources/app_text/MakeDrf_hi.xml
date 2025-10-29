@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">पृष्ठभूमि के लिए {1} cps घटाएगा</message>
+  <message id="dp-no-peak-preview">पूर्वावलोकन बनाने में असमर्थ</message>
+
+  <message id="dsfs-sample">नमूना</message>
+  <message id="dsfs-samples">नमूने</message>
+  <message id="dsfs-using-num-peaks"> ({2} में से {1} शिखर उपयोग)</message>
+  <message id="dsfs-back-peak-txt">ये शिखर अन्य नमूनों से घटाए जाएंगे</message>
+  <message id="dsfs-is-background-cb">पृष्ठभूमि है?</message>
+  <message id="dsfs-all-peaks-cb">सभी शिखर</message>
+
+  <message id="md-det-diam">डिटेक्टर व्यास</message>
+  <message id="md-eff-type">दक्षता प्रकार</message>
+  <message id="md-eqn-in-kev">समीकरण keV में</message>
+  <message id="md-eqn-in-mev">समीकरण MeV में</message>
+  <message id="md-geom-intrinsic-eff">आंतरिक दक्षता</message>
+  <message id="md-geom-fixed-geom">निश्चित ज्यामिति</message>
+  <message id="md-geom-fixed-cm2">निश्चित: प्रति cm2</message>
+  <message id="md-geom-fixed-m2">निश्चित: प्रति m2</message>
+  <message id="md-geom-fixed-gram">निश्चित: प्रति ग्राम</message>
+  <message id="md-tt-eff-interpret">
+    इस दक्षता की व्याख्या कैसे की जानी चाहिए।<br />
+    <br />
+    दूर क्षेत्र: बिंदु स्रोत, या डिटेक्टर की दूरी की तुलना में छोटे स्रोत; 1/r2 के लिए पैमाना बदलने के लिए पहचान दूरी बदलने की अनुमति देगा।<br />
+    <br />
+    निश्चित ज्यामिति: जब लक्षण वर्णन डेटा ज्यामिति और दूरी माप से मेल खाती है, और आप स्रोत की कुल सक्रियता की गणना करना चाहेंगे (जैसे मारिनेली बीकर)।\n
+    <br />
+    निश्चित प्रति cm2: कुल सक्रियता के समान, लेकिन जब अंशांकन डेटा और माप सतह संदूषण के लिए हों, मान प्रति वर्ग सेंटीमीटर दिए गए हों।<br />
+    <br />
+    निश्चित प्रति m2: प्रति cm2 के समान, लेकिन प्रति वर्ग मीटर के लिए।<br />
+    <br />
+    निश्चित प्रति ग्राम: प्रति cm2 के समान, लेकिन स्रोत के प्रति ग्राम के लिए।
+  </message>
+  <message id="md-fwhm-eqn-form-label">FWHM समीकरण</message>
+  <message id="md-fwhm-gadras">Gadras समीकरण</message>
+  <message id="md-sqrt-series">वर्गमूल शक्ति श्रृंखला</message>
+  <message id="md-atten-for-air-cb">वायु के लिए क्षीणन</message>
+  <message id="md-tt-atten-for-air">
+    स्रोत और डिटेक्टर के बीच वायु द्वारा क्षीणन का हिसाब लगाया जाएगा,
+    दूरी स्केलिंग (विभिन्न दूरियों पर दक्षता फ़ंक्शन का उपयोग) को अधिक सटीक रूप से अनुमति देने के लिए।
+    <br />
+    यह कम ऊर्जा पर, या बड़ी अंशांकन दूरी पर अधिक प्रभाव है।
+  </message>
+  <message id="md-show-fwhm-markers">FWHM बिंदु दिखाएं</message>
+  <message id="md-display-energy-lower-label">प्रदर्शन ऊर्जा, निम्न:</message>
+  <message id="md-display-energy-upper-label">उच्च:</message>
+  <message id="md-mi-chart-phone">चार्ट/विकल्प</message>
+  <message id="md-mi-peaks-phone">उपयोग के लिए शिखर</message>
+  <message id="md-export-btn">संग्रहीत/निर्यात...</message>
+  <message id="md-export-window-title">DRF संग्रहीत/निर्यात</message>
+  <message id="md-tt-name">
+    डिटेक्टर प्रतिक्रिया फ़ंक्शन का नाम जो <em>InterSpec</em> के
+    आंतरिक डेटाबेस में सहेजा जाएगा ताकि आप बाद में प्रतिक्रिया फ़ंक्शन का उपयोग कर सकें।
+    नाम एक मान्य फ़ाइलनाम होना चाहिए (जैसे, \, /, :, आदि वर्ण नहीं)।
+  </message>
+  <message id="md-tt-desc">DRF का वैकल्पिक विवरण जो भविष्य में DRF का उपयोग करते समय विवरण याद रखने में मदद करता है।</message>
+  <message id="md-make-default-for-serial-cb">क्रम संख्या '{1}' के लिए डिफ़ॉल्ट DRF बनाएं</message>
+  <message id="md-tt-make-default-serial">
+    ऐसा करें कि जब मिलान क्रम
+    संख्या वाले डिटेक्टर से स्पेक्ट्रा InterSpec में लोड किया जाता है, तो यह डिटेक्टर प्रतिक्रिया फ़ंक्शन
+    स्वचालित रूप से लोड और उपयोग किया जाएगा।
+  </message>
+  <message id="md-make-default-for-model-cb">मॉडल '{1}' के लिए डिफ़ॉल्ट DRF बनाएं</message>
+  <message id="md-tt-make-default-model">
+    ऐसा करें कि जब इस मॉडल डिटेक्टर से स्पेक्ट्रा
+    InterSpec में लोड किया जाता है, तो यह डिटेक्टर प्रतिक्रिया फ़ंक्शन
+    स्वचालित रूप से लोड और उपयोग किया जाएगा।
+  </message>
+  <message id="md-tt-export-n42">
+    इस DRF बनाने के लिए उपयोग किए गए सभी स्पेक्ट्रा और शिखरों वाली N42 फ़ाइल निर्यात करें।
+    स्रोत और परिरक्षण जानकारी भी आमतौर पर फ़ाइल में संग्रहीत की जाती है,
+    सिद्धांत रूप में, डिटेक्टर व्यास और समीकरण क्रम को छोड़कर,
+    DRF बनाने के लिए उपयोग की गई सभी इनपुट जानकारी प्रदान करें।
+  </message>
+  <message id="md-export-as-csv">DRF को CSV के रूप में निर्यात करें।</message>
+  <message id="md-tt-export-as-csv">
+    DRF की सभी जानकारी वाली CSV फ़ाइल में DRF निर्यात करता है।
+    अन्य उपकरणों के साथ उपयोग के लिए विशेष रूप से उपयोगी।
+  </message>
+  <message id="md-export-quick-ref">त्वरित संदर्भ कार्ड निर्यात</message>
+  <message id="md-tt-export-quick-ref">3x5 शैली का कार्ड निर्यात करता है जिसमें डिटेक्टर प्रदर्शन का संक्षिप्त सारांश है।</message>
+  <message id="md-det-name-not-valid">डिटेक्टर नाम मान्य नहीं है।</message>
+  <message id="md-eqn-not-valid">आंतरिक दक्षता समीकरण मान्य नहीं है।</message>
+  <message id="md-err-creating-drf">DRF बनाने में त्रुटि: {1}</message>
+  <message id="md-err-saving-to-db">डेटाबेस में DetectorPeakResponse सहेजने में त्रुटि: {1}</message>
+  <message id="md-saved-to-db">आंतरिक डेटाबेस में '{1}' सहेजा गया।</message>
+  <message id="md-peak-counts">{1} {2} keV, शिखर {3} गणना</message>
+  <message id="md-peak-no-nuc">कोई संबद्ध न्यूक्लाइड नहीं, {1} keV, शिखर {2} गणना</message>
+  <message id="md-err-det-diam-invalid">डिटेक्टर व्यास अमान्य है - 2.54 cm मान रहा है।</message>
+  <message id="md-err-some-src">कुछ स्रोतों में त्रुटियां थीं।</message>
+  <message id="md-n-fit-pars">{1} फिट पैरामीटर</message>
+  <message id="md-html-eff-table-caption">पूर्ण-ऊर्जा पहचान दक्षता (% कुल गामा)</message>
+  <message id="md-html-Intrinsic">आंतरिक</message>
+  <message id="md-chart-data-intrinsic-eff-label">डेटा आंतरिक दक्षता</message>
+  <message id="md-chart-data-fwhm-label">डेटा FWHM</message>
+  <message id="md-chart-fit-intrinsic-eff-label">फिट आंतरिक दक्षता</message>
+  <message id="md-chart-intrinsic-eff-plus-label">आंतरिक दक्षता +2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">फिट आंतरिक दक्षता -2σ</message>
+  <message id="md-chart-fit-fwhm-label">फिट FWHM</message>
+</messages>

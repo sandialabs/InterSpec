@@ -110,6 +110,7 @@ protected:
   Wt::WCheckBox *m_overwrite_output_files = nullptr;
   Wt::WCheckBox *m_create_csv_output = nullptr;
   Wt::WCheckBox *m_create_json_output = nullptr;
+  Wt::WCheckBox *m_concatenate_to_n42 = nullptr;
   Wt::WCheckBox *m_use_existing_background_peaks = nullptr;
   Wt::WCheckBox *m_use_exemplar_energy_cal_for_background = nullptr;
 

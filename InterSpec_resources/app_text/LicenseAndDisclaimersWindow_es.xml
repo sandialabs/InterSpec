@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">Exención</message>
+  <message id="ladw-mi-credits">Créditos</message>
+  <message id="ladw-mi-contact">Contacto</message>
+  <message id="ladw-mi-license">Licencia</message>
+  <message id="ladw-mi-data">Datos</message>
+  <message id="ladw-data-location-user">
+    Los datos de usuario se almacenan en
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    Los datos que vienen con InterSpec, como información de desintegración nuclear, sección transversal y similares se almacenan en
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">Abrir en explorador</message>
+  <message id="ladw-show-data-location-macOS">Abrir en Finder</message>
+  <message id="ladw-show-data-location-win">mostrar</message>
+  <message id="ladw-data-location-network">
+    También puede usar InterSpec desde su navegador en (el número de puerto cambiará cuando reinicie InterSpec):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      Ha usado activamente InterSpec por aproximadamente {1}, para abrir {2} archivos, durante {3} sesiones desde {4}.
+  </message>
+  <message id="ladw-external-none">InterSpec no envía o recibe datos externos a su dispositivo.</message>
+  <message id="ladw-external-only-remote-rid">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usa la característica RID externo.</message>
+  <message id="ladw-external-only-map">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usa la característica de mapa.</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de mapas o RID externo.</message>
+  <message id="ladw-external-remote-rid-and-map-and-update-check">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de mapas, RID externo, o verificación de actualización.</message>
+  <message id="ladw-external-only-update-check">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usa la característica de verificación de actualización.</message>
+  <message id="ladw-external-map-and-update-check">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de mapa o verificación de actualización.</message>
+  <message id="ladw-external-remote-rid-and-update-check">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de RID externo o verificación de actualización.</message>
+  <message id="ladw-external-all">InterSpec no envía o recibe datos externos a su dispositivo, excepto cuando se usan las características de mapa, RID externo, o verificación de actualización.</message>
+  <message id="ladw-build-date">Fecha de construcción: {1}</message>
+  <message id="ladw-build-version">Versión de construcción: {1}</message>
+  <message id="ladw-git-hash">Hash Git: {1}</message>
+  <message id="ladw-git-branch">Rama Git: {1}</message>
+  <message id="ladw-git-describe">Git describe: {1}</message>
+  <message id="ladw-git-clean">Git limpio: {1}</message>
+  <message id="ladw-cmake-config">Config CMake: {1}</message>
+  <message id="ladw-cmake-flags">Banderas CMake: {1}</message>
+  <message id="ladw-compiler">Compilador: {1}</message>
+  <message id="ladw-compiler-flags">Banderas compilador: {1}</message>
+  <message id="ladw-boost-version">Versión Boost: {1}</message>
+  <message id="ladw-wt-version">Versión Wt: {1}</message>
+</messages>
+
+

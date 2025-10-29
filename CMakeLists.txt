@@ -1,6 +1,6 @@
  cmake_minimum_required(VERSION 3.1...3.20 FATAL_ERROR)
 
-project(InterSpec VERSION 1.0.13)
+project(InterSpec VERSION 1.0.14)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -125,12 +125,6 @@ set(GOOGLE_MAPS_KEY "" CACHE STRING "Google maps api key.")
 
 option(USE_LEAFLET_MAP "Use leaflet-based maps widget" OFF)
 set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
-
-option(
-    USE_CSS_FLEX_LAYOUT
-    "Use CSS Flex/Grid Layout in-place of Wts layouts were possible (work in progress)"
-    OFF
-)
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
@@ -263,6 +257,7 @@ set(sources
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
+    src/ReferenceLinePredef.cpp
     src/ReferencePhotopeakDisplay.cpp
     src/IsotopeNameFilterModel.cpp
     src/ReactionGamma.cpp
@@ -345,11 +340,14 @@ set(sources
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
     src/EnterAppUrlWindow.cpp
+    src/ExternalRidResult.cpp
     src/NuclideSourceEnter.cpp
     src/AddNewPeakDialog.cpp
     src/UserPreferences.cpp
     src/RefSpectraWidget.cpp
     src/RefSpectraModel.cpp
+    src/SimpleActivityCalc.cpp
+    src/RefLineDynamic.cpp
     src/AnalystChecks.cpp
     js/SpectrumChart.js
     js/InterSpec.js
@@ -372,6 +370,7 @@ set(headers
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
+    InterSpec/ReferenceLinePredef.h
     InterSpec/ReferencePhotopeakDisplay.h
     InterSpec/IsotopeNameFilterModel.h
     InterSpec/ReactionGamma.h
@@ -452,7 +451,9 @@ set(headers
     InterSpec/MoreNuclideInfoDisplay.h
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
+    InterSpec/BersteinPolynomial.hpp
     InterSpec/ExportSpecFile.h
+    InterSpec/ExternalRidResult.h
     InterSpec/EnterAppUrlWindow.h
     InterSpec/NuclideSourceEnter.h
     InterSpec/AddNewPeakDialog.h
@@ -460,6 +461,8 @@ set(headers
     InterSpec/XmlUtils.hpp
     InterSpec/RefSpectraWidget.h
     InterSpec/RefSpectraModel.h
+    InterSpec/SimpleActivityCalc.h
+    InterSpec/RefLineDynamic.h
     InterSpec/AnalystChecks.h
 )
 
@@ -798,24 +801,34 @@ if( InterSpec_FETCH_DEPENDENCIES )
   # Need to fix copying the "resources" directory and configs and stuff probably
 endif( InterSpec_FETCH_DEPENDENCIES )
 
+# We will explicitly set the Wt include directory, marked as SYSTEM, to
+#  avoid a ton of warning messages from those headers (if you take this
+#  next line out, things will still work just fine, just with more warnings)
+target_include_directories( InterSpecLib PUBLIC SYSTEM ${Wt_INCLUDE_DIR} )
 
 if(WIN32)
     if( NOT InterSpec_FETCH_DEPENDENCIES )
-        target_link_libraries(InterSpecLib PUBLIC 
-            debug "${Wt_DEBUG_LIBRARIES}"
-            optimized "${Wt_LIBRARIES}"
-        )
+      if( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_TEST_DEBUG_LIBRARY}" optimized "${Wt_TEST_LIBRARY}" )
+      else( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_HTTP_DEBUG_LIBRARY}" optimized "${Wt_HTTP_LIBRARY}" )
+      endif( BUILD_AS_UNIT_TEST_SUITE )
+      
+      target_link_libraries(InterSpecLib PUBLIC
+        debug ${Wt_DEBUG_LIBRARY} ${Wt_DBO_DEBUG_LIBRARY} ${Wt_DBOSQLITE3_DEBUG_LIBRARY}
+        optimized ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY}
+      )
     endif( NOT InterSpec_FETCH_DEPENDENCIES )
     
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
 else(WIN32)
-    target_link_libraries(InterSpecLib PUBLIC
-        ${Wt_LIBRARIES}
-        ${Wt_LIBRARY}
-        ${Wt_HTTP_LIBRARY}
-        ${Wt_DBO_LIBRARY}
-        ${Wt_DBOSQLITE3_LIBRARY}
-    )
+  if( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
+  else( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_HTTP_LIBRARY})
+  endif( BUILD_AS_UNIT_TEST_SUITE )
+  
+  target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
 endif(WIN32)
 
 
@@ -866,6 +879,8 @@ if( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
             XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
         )
     endif( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.17.0" )
+    
+    set(CMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO") #macOS 26 requires this, or else we get some error for development
 endif( BUILD_AS_LOCAL_SERVER AND (CMAKE_GENERATOR STREQUAL "Xcode") )
 
 if(MSVC AND (NOT hasParent))
