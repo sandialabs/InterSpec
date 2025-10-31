@@ -41,8 +41,8 @@ namespace PeakFitImprove
 {
 const bool debug_printout = false;
 
-const double debug_lower_energy = 318;
-const double debug_upper_energy = 323;
+const double debug_lower_energy = 715;
+const double debug_upper_energy = 720;
 
 extern size_t sm_num_optimization_threads;
 extern size_t sm_num_threads_per_individual;

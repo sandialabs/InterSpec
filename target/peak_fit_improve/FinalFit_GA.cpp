@@ -1070,7 +1070,7 @@ vector<PeakDef> final_peak_fit_for_roi( const vector<PeakDef> &pre_fit_peaks,
         const double prev_chi2 = std::get<2>(trial_skew_fits[best_skew_index]);
         const double this_chi2 = std::get<2>(trial_skew_fits[i]);
 
-        if( (this_chi2 - final_fit_settings.skew_improve_chi2_dof_threshold) > prev_chi2 )
+        if( (this_chi2 - final_fit_settings.skew_improve_chi2_dof_threshold) < prev_chi2 )
           best_skew_index = i;
       }//for( size_t i = 1; i < trial_skew_fits.size(); ++i )
 

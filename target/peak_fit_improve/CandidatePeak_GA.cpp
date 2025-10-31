@@ -164,7 +164,8 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
   for( size_t channel = start_channel; channel <= end_channel; ++channel )
   {
     const double channel_energy = data->gamma_channel_center(channel);
-    const bool debug_channel = (channel_energy > 1963 && channel_energy < 1996);
+    const bool debug_channel = ((channel_energy >= PeakFitImprove::debug_lower_energy)
+                                && (channel_energy <= PeakFitImprove::debug_upper_energy));
 
     const float secondDeriv = second_deriv[channel]; //Not dividing by binwidth^2 here,
 
@@ -643,9 +644,13 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
       if( figure_of_merit < settings.more_scrutiny_FOM_threshold
          && (settings.more_scrutiny_FOM_threshold >= threshold_FOM) )
       {
-        passed_higher_scrutiny = ( (rougher_scnd_drv < 0.0) && (rougher_FOM >= settings.more_scrutiny_coarser_FOM) );
+        //passed_higher_scrutiny = ( (rougher_scnd_drv < 0.0) && (rougher_FOM >= settings.more_scrutiny_coarser_FOM) );
 
         //rougher_amplitude
+
+        if( debug_channel && !passed_higher_scrutiny )
+          cout << "Failed higher_scrutiny: rougher_scnd_drv=" << rougher_scnd_drv << ", while rougher_FOM="
+          << rougher_FOM << " and settings.more_scrutiny_coarser_FOM=" << settings.more_scrutiny_coarser_FOM << endl;
 
         //passed_higher_scrutiny
       }//if( figure_of_merit < settings.more_scrutiny_FOM_threshold )
@@ -701,12 +706,12 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
           const double pred_chnl_nts = lower_cnts_per_chnl + ((i-roi_begin_index) + 0.5) * diff_per_chnl;
           const double dc = spectrum[i] - pred_chnl_nts;
 
-          //if( mean > 640.0 && mean < 641 )
-          //{
-          //  cout << "For energy " << mean << ", channel " << i << " has energy "
-          //  << data->gamma_channel_lower(i) << " with counts "
-          //  << spectrum[i] << " and predicted counts " << pred_chnl_nts << endl;
-          //}
+          if( debug_channel )
+          {
+            cout << "For energy " << mean << ", channel " << i << " has energy "
+            << data->gamma_channel_lower(i) << " with counts "
+            << spectrum[i] << " and predicted counts " << pred_chnl_nts << endl;
+          }
 
           const double uncert2 = std::max( (pred_chnl_nts > 0.0) ? pred_chnl_nts : static_cast<double>(spectrum[i]), 1.0 );
           const double val = dc*dc / uncert2;
@@ -728,12 +733,21 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
         //                                cont_est_channels, cont_est_channels,
         //                                cont_equation[1], cont_equation[0] );
 
-        passed_higher_scrutiny = (max_chi2 > settings.more_scrutiny_min_dev_from_line);
+        //passed_higher_scrutiny = (max_chi2 > settings.more_scrutiny_min_dev_from_line);
+
+        if( debug_channel && !passed_higher_scrutiny )
+          cout << "Failed higher_scrutiny: max_chi2=" << max_chi2 << ", while settings.more_scrutiny_min_dev_from_line="
+          << settings.more_scrutiny_min_dev_from_line << endl;
       }//if( check Chi2 of region )
 
 
       if( (figure_of_merit < 5) && (rougher_scnd_drv >= 0.0) && !rougher_confident_multi_roi )
+
+        if( debug_channel ){
+          cout << "Failed higher_scrutiny: " << figure_of_merit << ", rougher_scnd_drv=" << rougher_scnd_drv
+          << ", rougher_confident_multi_roi=" << rougher_confident_multi_roi << endl;
         passed_higher_scrutiny = false;
+      }
 
       if( debug_channel )
         cout << "  passed_higher_scrutiny=" << passed_higher_scrutiny << ", figure_of_merit=" << figure_of_merit << ", threshold_FOM=" << threshold_FOM << endl;
@@ -771,6 +785,7 @@ std::vector<PeakDef> find_candidate_peaks( const std::shared_ptr<const SpecUtils
          << ", amp=" << amplitude << ", FWHM=" << sigma*2.35482f
          << ", data_area=" << data_area  << ", rougher_FOM=" << rougher_FOM
          << ", ROI=[" << roi_start_energy << ", " << roi_end_energy
+         << ", passed_higher_scrutiny=" << passed_higher_scrutiny
          << endl;
        }
       }//if( region we were just in passed_threshold )
