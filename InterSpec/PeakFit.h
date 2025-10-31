@@ -89,6 +89,10 @@ struct SavitzyGolayCoeffs
                std::vector<float> &output ) const;
   void smooth( const float *input, const int nSamples,
                std::vector<float> &output ) const;
+
+  void smooth_with_variance( const std::vector<float> &input,
+                             std::vector<float> &output,
+                            std::vector<float> &variance ) const;
 };//struct SavitzyGolayCoeffs
 
 

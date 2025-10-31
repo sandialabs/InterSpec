@@ -789,6 +789,51 @@ void SavitzyGolayCoeffs::smooth( const float *input,
   }//for( loop over input points )
 }//SavitzyGolayCoeffs::smooth(...)
 
+
+void SavitzyGolayCoeffs::smooth_with_variance( const std::vector<float> &input,
+                                               std::vector<float> &output,
+                                               std::vector<float> &variance ) const
+{
+  const int nSamples = static_cast<int>( input.size() );
+  const int nCoeffs = static_cast<int>( coeffs.size() );
+
+  if( nSamples < nCoeffs || nSamples == 0 )
+    throw std::runtime_error( "SavitzyGolayCoeffs::smooth_with_variance(...)\n\tInvalid input size" );
+
+  output.clear();
+  output.resize( nSamples );
+  variance.clear();
+  variance.resize( nSamples );
+
+  for( int pos = 0; pos < nSamples; ++pos )
+  {
+    double sum = 0.0;
+    double var = 0.0;
+
+    for( int coeff = 0; coeff < nCoeffs; ++coeff )
+    {
+      int dataInd = pos - num_left + coeff;
+      if( dataInd < 0 )
+        dataInd = 0;
+      else if( dataInd >= nSamples )
+        dataInd = nSamples - 1;
+
+      const double c = coeffs[coeff];
+      const float N = input[dataInd];
+
+      // Smoothed value
+      sum += c * N;
+
+      // Variance propagation for Poisson data: σ²(N) = N
+      // For linear filter: σ²(output) = Σ c² × σ²(input) = Σ c² × N
+      var += c * c * N;
+    }
+
+    output[pos] = sum;
+    variance[pos] = var;
+  }
+}
+
 std::vector< std::vector<std::shared_ptr<const PeakDef> > >
 causilyDisconnectedPeaks(  const double ncausality,
                          const bool useRoiAsWell,

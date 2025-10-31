@@ -86,7 +86,7 @@ PeakFindAndFitWeights eval_initial_peak_find_and_fit( const InitialPeakFindSetti
     double initial_max_nsigma_roi;
     int fwhm_fcn_form;
     double search_roi_nsigma_deficit;
-    double search_stat_threshold;
+    //double search_stat_threshold;
     double search_hypothesis_threshold;
     double search_stat_significance;
     double ROI_add_nsigma_required;

@@ -40,16 +40,19 @@ namespace FinalFit_GA
 
 /** Takes in peaks in a single ROI, and fits them.
 
-Note: this function assumes you have already delt with `FinalPeakFitSettings::combine_nsigma_near`
+Note: this function assumes you have already delt with `FinalPeakFitSettings::require_combine_num_fwhm_near`
  and `FinalPeakFitSettings::combine_ROI_overlap_frac`.
  */
 std::vector<PeakDef> final_peak_fit_for_roi( const std::vector<PeakDef> &pre_fit_peaks,
                                             const FinalPeakFitSettings &final_fit_settings,
-                                            const DataSrcInfo &src_info );
+                                            const bool isHPGe,
+                                            const std::shared_ptr<const SpecUtils::Measurement> &data );
 
 std::vector<PeakDef> final_peak_fit( const std::vector<PeakDef> &pre_fit_peaks,
                                     const FinalPeakFitSettings &final_fit_settings,
-                                    const DataSrcInfo &src_info );
+                                    const bool isHPGe,
+                                    const std::shared_ptr<const SpecUtils::Measurement> &data,
+                                    const bool multithread );
 
 struct FinalFitScore
 {
@@ -91,7 +94,10 @@ void do_final_peak_fit_ga_optimization( const FindCandidateSettings &candidate_s
 struct FinalFitSolution
 {
   double combine_nsigma_near;
-  double combine_ROI_overlap_frac;
+  double require_combine_num_fwhm_near;
+  double not_allow_combine_num_fwhm_near;
+
+  //double combine_ROI_overlap_frac;
   double cont_type_peak_nsigma_threshold;
   double cont_type_left_right_nsigma;
   //double stepped_roi_extent_lower_side_stat_multiple;
@@ -102,14 +108,29 @@ struct FinalFitSolution
   double left_residual_sum_min_to_try_skew;
   double right_residual_sum_min_to_try_skew;
   double skew_improve_chi2_dof_threshold;
-  double roi_extent_low_num_fwhm_base;
-  double roi_extent_high_num_fwhm_base;
-  int roi_extent_mult_type;
-  double roi_extent_lower_side_stat_multiple;
-  double roi_extent_upper_side_stat_multiple;
-  double multi_roi_extent_lower_side_fwhm_mult;
-  double multi_roi_extent_upper_side_fwhm_mult;
-  
+
+  /** The "starting" amount of ROI extent, below and above peak mean. */
+  double roi_extent_low_num_fwhm_base_;
+  double roi_extent_high_num_fwhm_base_;
+
+  /** The maximum amount extra FWHM beyond `roi_extent_low/high_num_fwhm_base` that the ROI can extend */
+  double roi_extent_low_num_fwhm_extra;
+  double roi_extent_high_num_fwhm_extra;
+
+  /** We will walk away from the extent minimum, towards the extent maximum, but if we detect a second derivative
+   that is above this statisticaly significant, we'll stop, and not include that channel.
+   */
+  double roi_end_second_deriv_thresh;
+
+  /** If data is this number of statistical below away from fit continuum + peak, the multi-peak ROI will be broken up. */
+  double break_multi_roi_up_continuum_away_sigma;
+
+  //int roi_extent_mult_type;
+  //double roi_extent_lower_side_stat_multiple;
+  //double roi_extent_upper_side_stat_multiple;
+  //double multi_roi_extent_lower_side_fwhm_mult;
+  //double multi_roi_extent_upper_side_fwhm_mult;
+
   std::string to_string( const std::string &separator ) const;
 };//struct FinalFitSolution
 

@@ -34,17 +34,16 @@ namespace SpecUtils
   class Measurement;
 }
 
-// While optimizing `FindCandidateSettings`, its better to not return a bunch of PeakDefs,
-//  so while we're transitioning phases here we will return the vector of tuple results, as
-//  well as PeakDefs
-#define RETURN_PeakDef_Candidates 1
-
 
 #define WRITE_ALL_SPEC_TO_HTML 0
 
 namespace PeakFitImprove
 {
 const bool debug_printout = false;
+
+const double debug_lower_energy = 318;
+const double debug_upper_energy = 323;
+
 extern size_t sm_num_optimization_threads;
 extern size_t sm_num_threads_per_individual;
 extern size_t sm_ga_population;
@@ -256,10 +255,10 @@ struct InitialPeakFindSettings
    `search_roi_nsigma_deficit`: Reasonable search range of 1 to 10.
    `search_stat_threshold`: Reasonable search range of 0 and 8.
    `search_hypothesis_threshold`: Reasonable search range of 0 and 8. -0.1 and 10.
-   `search_stat_significance`: Reasonable search range of 1 and 6.
+   `search_stat_significance`: Reasonable search range of 1 and 8.
    */
   double search_roi_nsigma_deficit = 4.241748;
-  double search_stat_threshold = 8.051485;
+  //double search_stat_threshold = 8.051485;
   double search_hypothesis_threshold = 3.342207;
   double search_stat_significance = 2.025582;
 
@@ -280,7 +279,19 @@ struct FinalPeakFitSettings
 
    Reasonable search range of 1 to 10
    */
-  double combine_nsigma_near;
+  double combine_nsigma_near_;
+
+  /** Some very rough guesses as to what we should about expect
+
+    < 0.8 FWHMMust combineSingle peak artifact
+   0.8-2.0 FWHM - Should combineStrong interference
+   2.0-3.0 FWHM - Prefer combineContinuum sharing
+   3.0-4.0 FWHM - Either OKWeak interference
+     > 4.0 FWHM - Prefer separateIndependent peaks
+  */
+  double require_combine_num_fwhm_near;
+  double not_allow_combine_num_fwhm_near;
+
 
   /** Combine ROIs, based on how much initial ROIs are overlapping.
    
@@ -352,39 +363,21 @@ struct FinalPeakFitSettings
   /** Determine ROI left and right base-widths for single peak ROIs.
    Width will be modified based on stat uncert of initial fit.
 
-   Reasonable search range: 0.5 to 7. ???
+   Reasonable search range: 0.5 to 7 - nominal ~2.5 FWHM
   */
-  double roi_extent_low_num_fwhm_base, roi_extent_high_num_fwhm_base;
+  double roi_extent_low_num_fwhm_base_, roi_extent_high_num_fwhm_base_;
 
-  /** How to add/subtract based the multiple based of statistical significance.
+  /** The maximum amount extra FWHM beyond `roi_extent_low/high_num_fwhm_base` that the ROI can extend */
+  double roi_extent_low_num_fwhm_extra;
+  double roi_extent_high_num_fwhm_extra;
+
+  /** We will walk away from the extent minimum, towards the extent maximum, but if we detect a second derivative
+   that is above this statisticaly significant, we'll stop, and not include that channel.
    */
-  enum class RoiExtentMultType : int
-  {
-    Linear, Sqrt
-  };
+  double roi_end_second_deriv_thresh;
 
-  RoiExtentMultType roi_extent_mult_type;
-
-  /** The multiple to add/subtract from ROI width
-
-   The multiple can be peak-area within +-1 FWHM, and continuum-area in +- 1 FWHM
-
-   This does not apply to stepped continua.
-
-   Reasonable search range: 0 to 1. ???
-   */
-  double roi_extent_lower_side_stat_multiple, roi_extent_upper_side_stat_multiple;
-
-  //- Add in upper-bounds on stat uncert for peak (e.g., no differenace above 60 sigma or something)
-  //- Or maybe it should be height mult or divided by stat significance
-
-  /** The multiple to add/subtract from multiple-peak ROI widths
-
-   Use single peak peak value for starting, then have an additional add/subtract on each side
-
-   Reasonable search range: -1 to 2. ???
-   */
-  double multi_roi_extent_lower_side_fwhm_mult, multi_roi_extent_upper_side_fwhm_mult;
+  /** If data is this number of statistical below away from fit continuum + peak, the multi-peak ROI will be broken up. */
+  double break_multi_roi_up_continuum_away_sigma;
 
   std::string print( const std::string &var_name ) const;
 };//struct FinalPeakFitSettings
