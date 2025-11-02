@@ -23,11 +23,12 @@
 
 #include "InterSpec_config.h"
 
-#include <string>
-#include <deque>
 #include <set>
-#include <algorithm>
+#include <cmath>
+#include <deque>
+#include <string>
 #include <limits>
+#include <algorithm>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -64,17 +65,28 @@ namespace AnalystChecks
     if (!interspec) {
       throw std::runtime_error("No InterSpec session available");
     }
-    
+
+    // Validate nonBackgroundPeaksOnly option
+    if( options.nonBackgroundPeaksOnly )
+    {
+      if( options.specType != SpecUtils::SpectrumType::Foreground )
+        throw std::runtime_error("nonBackgroundPeaksOnly may only be specified for Foreground spectrum");
+
+      std::shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+      if( !background )
+        throw std::runtime_error("nonBackgroundPeaksOnly may only be specified when a Background spectrum is loaded");
+    }
+
     // Get session ID from InterSpec (using Wt application)
     string user_session = "direct_call";
     if (Wt::WApplication* app = Wt::WApplication::instance()) {
       user_session = app->sessionId();
     }
-    
+
     std::shared_ptr<SpecMeas> meas = interspec->measurment(options.specType);
     if (!meas) {
-      throw std::runtime_error("No measurement loaded for " 
-          + std::string(SpecUtils::descriptionText(options.specType)) 
+      throw std::runtime_error("No measurement loaded for "
+          + std::string(SpecUtils::descriptionText(options.specType))
           + " spectrum");
     }
 
@@ -141,11 +153,129 @@ namespace AnalystChecks
     }
     
     std::sort(begin(all_peaks), end(all_peaks), &PeakDef::lessThanByMeanShrdPtr);
-    
+
+    // Apply nonBackgroundPeaksOnly filtering if requested
+    if( options.nonBackgroundPeaksOnly )
+    {
+      // Get background spectrum and its peaks
+      std::shared_ptr<SpecMeas> background_meas = interspec->measurment(SpecUtils::SpectrumType::Background);
+      std::shared_ptr<const SpecUtils::Measurement> background_spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+      
+      assert( background_spectrum );
+      if( !background_spectrum )
+        throw std::logic_error( "Somehow lost background spectrum being loaded?" );
+      const set<int> background_sample_nums = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+
+      // Get or search for background auto peaks
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> background_auto_peaks = background_meas->automatedSearchPeaks(background_sample_nums);
+
+      if( !background_auto_peaks && background_spectrum )
+      {
+        const bool singleThreaded = false;
+        const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+        const auto det = background_meas->detector();
+        
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> background_user_peaks;
+        if( background_meas->sampleNumsWithPeaks().count(background_sample_nums) )
+          background_user_peaks = background_meas->peaks(background_sample_nums);
+        
+        const vector<shared_ptr<const PeakDef>> found_background_auto_peaks
+                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, isHPGe);
+
+        auto background_autopeaksdeque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(found_background_auto_peaks), end(found_background_auto_peaks));
+        background_auto_peaks = background_autopeaksdeque;
+        background_meas->setAutomatedSearchPeaks(background_sample_nums, background_autopeaksdeque);
+      }
+
+      // Filter foreground peaks based on background
+      vector<shared_ptr<const PeakDef>> filtered_peaks;
+      const double foreground_live_time = (spectrum->live_time() > 0.0f) ? spectrum->live_time() : 1.0f;
+      const double background_live_time = (background_spectrum->live_time() > 0.0f ? background_spectrum->live_time() : 1.0f);
+
+      for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
+      {
+        bool include_peak = true;
+
+        // Check if there is a corresponding background peak
+        if( background_auto_peaks )
+        {
+          // Find the closest matching background peak
+          shared_ptr<const PeakDef> closest_bg_peak;
+          double smallest_energy_diff = std::numeric_limits<double>::infinity();
+
+          for( const shared_ptr<const PeakDef> &bg_peak : *background_auto_peaks )
+          {
+            assert( fg_peak != bg_peak );
+            
+            // Check if peaks are at roughly the same energy (within their widths)
+            const double energy_diff = fabs(fg_peak->mean() - bg_peak->mean());
+            const double avg_fwhm = 0.75 * (fg_peak->fwhm() + bg_peak->fwhm()) / 2.0;
+
+            if( (energy_diff < avg_fwhm) && (energy_diff < smallest_energy_diff) )
+            {
+              closest_bg_peak = bg_peak;
+              smallest_energy_diff = energy_diff;
+            }
+          }
+
+          // If we found a matching background peak, compare CPS
+          if( closest_bg_peak )
+          {
+            const double fg_cps = (fg_peak->amplitude() / foreground_live_time);
+            const double bg_cps = (closest_bg_peak->amplitude() / background_live_time);
+
+            // Check if foreground peak is elevated by at least 20% relative to background
+            const double elevation_threshold = 1.20;
+            if( fg_cps > (bg_cps * elevation_threshold) )
+            {
+              include_peak = true;
+
+              // Foreground is elevated by >20%, now check statistical significance if uncertainties are available
+              const double fg_amp_uncert = fg_peak->amplitudeUncert();
+              const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
+
+              if( (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0) )
+              {
+                // Calculate CPS uncertainties
+                const double fg_cps_uncert = fg_amp_uncert / foreground_live_time;
+                const double bg_cps_uncert = bg_amp_uncert / background_live_time;
+
+                // Calculate combined uncertainty
+                const double combined_uncert = sqrt(fg_cps_uncert*fg_cps_uncert + bg_cps_uncert*bg_cps_uncert);
+
+                // Check if foreground is elevated by at least 2.25 sigma
+                const double min_sigma = 2.25;
+                const double sigma_elevation = ((fg_cps - bg_cps) / combined_uncert);
+                include_peak = (sigma_elevation > min_sigma);
+              }
+            }else
+            {
+              // Foreground peak is not elevated by 20% - exclude it
+              include_peak = false;
+            }//if( fg_cps > (bg_cps * elevation_threshold) ) / else
+          }else
+          {
+            // If we didnt detect the peak in the background, but this is a pretty insignificant peak that
+            //  could be a background peak, then dont include it
+            if( (fg_peak->amplitude() < 100) && (fg_peak->amplitudeUncert() > 0.0) )
+            {
+              // TODO: check if peak potentually lines up with a background peak, and if so, estimate the amplitude we would expect for it in the background spectrum, and if we wouldnt totally expect to detect it in the background spectrum, and the foreground peak significance isnt that high or its amplitude is consistent with what is expected from other confirmed background peaks of the same series, then dont include it.
+            }
+          }//if( closest_bg_peak )
+        }//if( background_auto_peaks )
+
+        if( include_peak )
+          filtered_peaks.push_back(fg_peak);
+      }//for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
+
+      all_peaks = std::move(filtered_peaks);
+    }//if( options.nonBackgroundPeaksOnly )
+
+
     DetectedPeakStatus result;
     result.userSession = user_session;
     result.peaks = std::move(all_peaks);
-    
+
     return result;
   }
   
@@ -301,7 +431,7 @@ namespace AnalystChecks
     
     PeakModel *pmodel = interspec->peakModel();
     assert( pmodel );
-    if( options.addToUsersPeaks && pmodel )
+    if( !options.doNotAddToAnalysisPeaks && pmodel )
     {
       if( options.specType == SpecUtils::SpectrumType::Foreground )
       {
@@ -312,7 +442,7 @@ namespace AnalystChecks
         // It would also be valid to handle the Foreground in this logic block, I think
         shared_ptr<deque<shared_ptr<const PeakDef>>> new_deque = make_shared<deque<shared_ptr<const PeakDef>>>(*meas_peaks);
         deque<shared_ptr<const PeakDef>> &peak_deque = *new_deque;
-        
+
         for( shared_ptr<const PeakDef> old : peaks_to_remove )
         {
           auto pos = std::find( begin(peak_deque), end(peak_deque), old );
@@ -320,14 +450,14 @@ namespace AnalystChecks
           if( pos != end(peak_deque) )
             peak_deque.erase( pos );
         }
-        
+
         for( shared_ptr<const PeakDef> new_peak : peaks_to_add_in )
           peak_deque.push_back( new_peak );
         std::sort( begin(peak_deque), end(peak_deque), &PeakDef::lessThanByMeanShrdPtr );
-        
+
         pmodel->setPeaks( peak_deque, options.specType );
       }
-    }//if( options.addToUsersPeaks )
+    }//if( !options.doNotAddToAnalysisPeaks )
     
     
     
@@ -437,8 +567,22 @@ namespace AnalystChecks
     if( !nuc )
     {
       // See if its a element for nuclide fluorescence
-      const SandiaDecay::Element * const el = db->element( nuclide );
-      if( !el )
+      string el_str = nuclide;
+      const bool contained_xray = (SpecUtils::icontains(el_str, "x-ray")
+                                   || SpecUtils::icontains(el_str, "x ray")
+                                   || SpecUtils::icontains(el_str, "xray")
+                                   || SpecUtils::icontains(el_str, "element"));
+      if( contained_xray )
+      {
+        SpecUtils::ireplace_all( el_str, "x-ray", "");
+        SpecUtils::ireplace_all( el_str, "x ray", "");
+        SpecUtils::ireplace_all( el_str, "xray", "");
+        SpecUtils::ireplace_all( el_str, "element", "");
+      }
+      SpecUtils::trim( el_str );
+      
+      const SandiaDecay::Element * const el = db->element( el_str );
+      if( !el && !contained_xray )
       {
         if( SpecUtils::istarts_with( nuclide, "Neut" ) )
           return {478.0f, 847.0f, 2223.3f, 2235.3f};
@@ -482,7 +626,7 @@ namespace AnalystChecks
         {
           throw std::runtime_error("No nuclide, element, or reaction found for name '" + nuclide + "'");
         }//try / catch
-      }//if( !el )
+      }//if( !el && !contained_xray )
 
       // For uranium and lead we'll just hard-code the result
       if( el->atomicNumber == 92 ) //Uranium
