@@ -115,6 +115,13 @@ LlmInterface::~LlmInterface() {
   cout << "LlmInterface destroyed" << endl;
 }
 
+
+std::shared_ptr<const LlmTools::ToolRegistry> LlmInterface::toolRegistry()
+{
+  return m_tool_registry;
+}
+
+
 void LlmInterface::sendUserMessage( const std::string &message )
 {
   if( !isConfigured() )
@@ -430,7 +437,9 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
     try
     {
       const string toolName = toolCall["function"]["name"];
+      cout << "--- about to parse tool call arguments for toolName=" << toolName << endl;
       json arguments = json::parse(toolCall["function"]["arguments"].get<string>());
+      cout << "--- done parsing tool call arguments for toolName=" << toolName << endl;
 
       cout << "Calling tool: " << toolName << " with ID: " << callId << endl;
 
@@ -545,6 +554,7 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
             
             json updatedResult;
             
+            string subAgentSummary, subAgentThinkingContent;
             if( sub_agent_convo->responses.empty() )
             {
               updatedResult["status"] = "failed";
@@ -552,23 +562,42 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
               updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
             }else
             {
-              nlohmann::json responseJson = nlohmann::json::parse( sub_agent_convo->responses.back().content );
-              
-              string subAgentSummary;
-              if( responseJson.contains("choices") && !responseJson["choices"].empty() )
+              string last_response = sub_agent_convo->responses.back().content;
+              cout << "--- about to parse sub_agent_convo->responses='" << last_response << "'" << endl;
+              SpecUtils::trim( last_response );
+              nlohmann::json responseJson = nlohmann::json::object();
+              try
               {
-                const json &choice = responseJson["choices"][0];
-                if( choice.contains("message") && choice["message"].contains("content") )
+                if( !last_response.empty() )
+                  responseJson = nlohmann::json::parse( last_response );
+                cout << "--- Done parsing sub_agent_convo->responses" << endl;
+                
+                if( responseJson.contains("choices") && !responseJson["choices"].empty() )
                 {
-                  const string content = choice["message"]["content"].get<string>();
-                  // Extract clean content (strip thinking tags if present)
-                  auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
-                  subAgentSummary = cleanContent;
+                  const json &choice = responseJson["choices"][0];
+                  if( choice.contains("message") && choice["message"].contains("content") )
+                  {
+                    const string content = choice["message"]["content"].get<string>();
+                    // Extract clean content (strip thinking tags if present)
+                    auto [cleanContent, thinkingContent] = extractThinkingAndContent(content);
+                    subAgentSummary = cleanContent;
+                    subAgentThinkingContent = thinkingContent;
+                  }
                 }
+                
+                cout << "--- Done extracting JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
+              }catch( std::exception &e )
+              {
+                // `LlmConversationResponse::content` may not / likely is not, JSON
+                auto [cleanContent, thinkingContent] = extractThinkingAndContent(last_response);
+                subAgentSummary = cleanContent;
+                subAgentThinkingContent = thinkingContent;
+                cout << "--- Done extracting non-JSON subAgentSummary='" << subAgentSummary << "'\n\n" << endl;
               }
               
-              cout << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
               
+              cout << "Sub-agent summary: " << subAgentSummary.substr(0, 100) << (subAgentSummary.length() > 100 ? "..." : "") << endl;
+              cout << "subAgentThinkingContent='" << subAgentThinkingContent << "'" << endl;
               
               updatedResult["status"] = "completed";
               updatedResult["summary"] = subAgentSummary;
@@ -576,6 +605,7 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
             }//if( sub_agent_convo->responses.empty() )
             
             response->content = updatedResult.dump();
+            response->thinkingContent = subAgentThinkingContent;
           }else
           {
             cerr << "Failed to find tool-call response - shouldnt happen!!!" << endl;
@@ -704,9 +734,11 @@ size_t LlmInterface::parseContentForToolCallsAndSendResults( const std::string &
         {
           // Single capture group - JSON object with name and arguments fields
           string toolCallJson = match[1].str();
-          cout << "Found JSON tool call: " << toolCallJson << endl;
+          cout << "Found JSON tool call: " << toolCallJson << " -- and about to parse" << endl;
           
           json toolCallObj = json::parse(toolCallJson);
+          cout << "Done parsing tool call JSON" << endl;
+          
           if( toolCallObj.contains("name") )
             toolName = toolCallObj["name"];
           else
@@ -724,7 +756,13 @@ size_t LlmInterface::parseContentForToolCallsAndSendResults( const std::string &
           
           // Parse arguments JSON
           if( !argumentsStr.empty() && (argumentsStr != "{}") )
+          {
+            cout << "About to parse alone tool call JSON" << endl;
+            
             arguments = json::parse(argumentsStr);
+            
+            cout << "Done parsing alone tool call JSON" << endl;
+          }
         }
         
         cout << "Found text-based tool call: " << toolName << " with args: " << arguments.dump() << endl;
@@ -1003,25 +1041,77 @@ void LlmInterface::setupJavaScriptBridge() {
   // Set up the JavaScript function to handle HTTP requests
   string jsCode = R"(
     window.llmHttpRequest = function(endpoint, requestJsonString, bearerToken, requestId) {
-      //console.log('LLM HTTP Request to:', endpoint, 'For requestID', requestId);
-      //console.log('Request data:', requestJsonString);
-      
+      var startTime = Date.now();
+      var requestObj = null;
+
+      try {
+        requestObj = JSON.parse(requestJsonString);
+      } catch(e) {
+        console.error('Failed to parse request JSON:', e);
+      }
+
+      // Log request diagnostics
+      console.log('=== LLM Request ID', requestId, '===');
+      console.log('Endpoint:', endpoint);
+      console.log('Submit time:', new Date().toISOString());
+      console.log('Request size:', requestJsonString.length, 'bytes');
+
+      if (requestObj) {
+        console.log('Model:', requestObj.model || 'not specified');
+        console.log('Messages count:', requestObj.messages ? requestObj.messages.length : 0);
+        console.log('Tools count:', requestObj.tools ? requestObj.tools.length : 0);
+
+        // Calculate total conversation tokens (rough estimate)
+        var totalChars = 0;
+        if (requestObj.messages) {
+          requestObj.messages.forEach(function(msg) {
+            if (msg.content && typeof msg.content === 'string') {
+              totalChars += msg.content.length;
+            }
+          });
+        }
+        console.log('Estimated input chars:', totalChars);
+
+        // Log truncated request JSON
+        var jsonStr = JSON.stringify(requestObj);
+        if (jsonStr.length > 80) {
+          var truncated = jsonStr.substring(0, 70) + '...' + jsonStr.substring(jsonStr.length - 10);
+          console.log('Request JSON (truncated):', truncated);
+        } else {
+          console.log('Request JSON:', jsonStr);
+        }
+        // Uncomment to see full JSON:
+        // console.log('Request JSON (full):', JSON.stringify(requestObj, null, 2));
+      } else {
+        var truncated = requestJsonString.length > 80
+          ? requestJsonString.substring(0, 70) + '...' + requestJsonString.substring(requestJsonString.length - 10)
+          : requestJsonString;
+        console.log('Request JSON (raw, truncated):', truncated);
+      }
+
       var headers = {
         'Content-Type': 'application/json'
       };
-      
+
       if (bearerToken && bearerToken.trim() !== '') {
         headers['Authorization'] = 'Bearer ' + bearerToken;
       }
-      
+
       // Create AbortController for timeout handling
       var controller = new AbortController();
+      var timeoutMs = 120000; // 2 minutes
       var timeoutId = setTimeout(function() {
-        console.log('LLM Request timeout after 2 minutes');
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.error('=== LLM Request TIMEOUT (ID ' + requestId + ') ===');
+        console.error('Elapsed time: ' + elapsed + 's');
+        console.error('Timeout limit: ' + (timeoutMs / 1000) + 's');
+        console.error('Endpoint: ' + endpoint);
         controller.abort();
-      //}, 120000); // 2 minutes = 120 seconds
-      }, 60000); // 1 minute, for dev
-      
+      }, timeoutMs);
+
+      console.log('Timeout set for:', (timeoutMs / 1000) + 's');
+      console.log('Initiating fetch...');
+
       fetch(endpoint, {
         method: 'POST',
         headers: headers,
@@ -1029,31 +1119,42 @@ void LlmInterface::setupJavaScriptBridge() {
         signal: controller.signal
       })
       .then(function(response) {
-        //console.log('LLM Response status:', response.status);
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log('=== LLM Response received (ID ' + requestId + ') ===');
+        console.log('Status:', response.status, response.statusText);
+        console.log('Elapsed time:', elapsed + 's');
         return response.text();
       })
       .then(function(responseText) {
-        //console.log('LLM Response:', responseText);
-        //console.log( 'Got LLM Response text', responseText ); 
-        
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log('Response parsed, size:', responseText.length, 'bytes');
+        console.log('Total round-trip time:', elapsed + 's');
+
         // Clear the timeout since we got a response
         clearTimeout(timeoutId);
-        
+
         // Call back to C++ with response and request ID as separate parameters
         if (window.llmResponseCallback) {
           window.llmResponseCallback(responseText, requestId);
         }
       })
       .catch(function(error) {
-        console.error('LLM Request error:', error);
-        
+        var elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.error('=== LLM Request ERROR (ID ' + requestId + ') ===');
+        console.error('Error type:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Elapsed time:', elapsed + 's');
+        console.error('Is timeout?', error.name === 'AbortError');
+
         // Clear the timeout since we got an error
         clearTimeout(timeoutId);
-        
+
         var errorResponse = JSON.stringify({
           error: {
             message: 'HTTP request failed: ' + error.message,
-            type: error.name === 'AbortError' ? 'timeout_error' : 'network_error'
+            type: error.name === 'AbortError' ? 'timeout_error' : 'network_error',
+            elapsed_seconds: parseFloat(elapsed),
+            request_id: requestId
           }
         });
         if (window.llmResponseCallback) {
@@ -1116,7 +1217,11 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     }//if( !convo )
     
     // Check for errors first
+    cout << "--- about to parse response to json --- " << endl;
     json responseJson = json::parse(response);
+    cout << "--- done parsing response to json --- " << endl;
+
+
     if( responseJson.contains("error") && !responseJson["error"].is_null() )
     {
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )

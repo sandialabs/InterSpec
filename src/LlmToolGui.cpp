@@ -44,7 +44,15 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
   
   wApp->useStyleSheet( "InterSpec_resources/LlmToolGui.css" );
   
-  std::shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
+  std::shared_ptr<const LlmConfig> config;
+  
+  try
+  {
+    config = InterSpecServer::llm_config();
+  }catch( std::exception &e )
+  {
+    cerr << "LLM config reading in failed: " << e.what() << endl;
+  }
   
   if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint.empty() )
     throw std::runtime_error("LLM API not enabled");
@@ -78,8 +86,16 @@ LlmToolGui::~LlmToolGui()
 
 bool LlmToolGui::llmToolIsConfigured()
 {
-  shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
-  return (config && config->llmApi.enabled && !config->llmApi.apiEndpoint.empty());
+  try
+  {
+    shared_ptr<const LlmConfig> config = InterSpecServer::llm_config();
+    return (config && config->llmApi.enabled && !config->llmApi.apiEndpoint.empty());
+  }catch( std::exception &e )
+  {
+    cerr << "LLM config invalid: " << e.what() << endl;
+  }
+  
+  return false;
 }
 
 

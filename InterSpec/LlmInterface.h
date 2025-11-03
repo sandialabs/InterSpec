@@ -95,6 +95,12 @@ public:
   /** Destructor - implementation in .cpp to handle incomplete types */
   ~LlmInterface();
   
+  /** Returns the tool registry.
+   
+   Will be a valid pointer.
+   */
+  std::shared_ptr<const LlmTools::ToolRegistry> toolRegistry();
+  
   /** Send a user message to the LLM.
    @param message The user's message/question
    */

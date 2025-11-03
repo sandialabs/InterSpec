@@ -79,6 +79,12 @@ namespace {
       {AnalystChecks::EditPeakAction::MergeWithRight, "MergeWithRight"},
   })
 
+  // JSON conversion for AnalystChecks::EscapePeakType enum
+  NLOHMANN_JSON_SERIALIZE_ENUM(AnalystChecks::EscapePeakType, {
+      {AnalystChecks::EscapePeakType::SingleEscape, "SingleEscape"},
+      {AnalystChecks::EscapePeakType::DoubleEscape, "DoubleEscape"},
+  })
+
   double rount_to_hundredth(double val){ return 0.01*std::round(100.0*val); }
 
   /** Some LLMs will give number values as strings, so this function will check types and return the correct answer.
@@ -452,6 +458,57 @@ namespace {
     }
   }//void to_json( json &j, const AnalystChecks::EditAnalysisPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas )
 
+  void from_json( const json &j, AnalystChecks::EscapePeakCheckOptions &p )
+  {
+    p.energy = get_number( j, "energy" );
+
+    // Parse spectrum type (default to Foreground)
+    std::string specTypeStr = j.value("specType", std::string());
+    if( specTypeStr.empty() || specTypeStr == "Foreground" )
+    {
+      p.specType = SpecUtils::SpectrumType::Foreground;
+    }else if( specTypeStr == "Background" )
+    {
+      p.specType = SpecUtils::SpectrumType::Background;
+    }else if( specTypeStr == "Secondary" )
+    {
+      p.specType = SpecUtils::SpectrumType::SecondForeground;
+    }else
+    {
+      throw std::runtime_error( "Invalid spectrum type: " + specTypeStr );
+    }
+  }//void from_json( const json &j, AnalystChecks::EscapePeakCheckOptions &p )
+
+  void to_json( json &j, const AnalystChecks::EscapePeakCheckStatus &p )
+  {
+    j = json{
+      {"potentialSingleEscapePeakEnergy", rount_to_hundredth(p.potentialSingleEscapePeakEnergy)},
+      {"potentialDoubleEscapePeakEnergy", rount_to_hundredth(p.potentialDoubleEscapePeakEnergy)},
+      {"potentialParentPeakSingleEscape", rount_to_hundredth(p.potentialParentPeakSingleEscape)},
+      {"potentialParentPeakDoubleEscape", rount_to_hundredth(p.potentialParentPeakDoubleEscape)},
+      //{"singleEscapeSearchWindow", rount_to_hundredth(p.singleEscapeSearchWindow)},
+      //{"doubleEscapeSearchWindow", rount_to_hundredth(p.doubleEscapeSearchWindow)},
+      //{"singleEscapeParentSearchWindow", rount_to_hundredth(p.singleEscapeParentSearchWindow)},
+      //{"doubleEscapeParentSearchWindow", rount_to_hundredth(p.doubleEscapeParentSearchWindow)}
+    };
+
+    if( p.parentPeak.has_value() )
+    {
+      json parent_info = json{
+        {"parentPeakEnergy", rount_to_hundredth(p.parentPeak->parentPeakEnergy)},
+        {"escapeType", AnalystChecks::to_string(p.parentPeak->escapeType) }
+      };
+
+      if( p.parentPeak->sourceLabel.has_value() )
+        parent_info["sourceLabel"] = *p.parentPeak->sourceLabel;
+
+      if( p.parentPeak->userLabel.has_value() )
+        parent_info["userLabel"] = *p.parentPeak->userLabel;
+
+      j["parentPeak"] = parent_info;
+    }
+  }//void to_json( json &j, const AnalystChecks::EscapePeakCheckStatus &p )
+
   void to_json(json& j, const AnalystChecks::SpectrumCountsInEnergyRange::CountsWithComparisonToForeground& c) {
     j = json{
       {"counts", c.counts},
@@ -594,6 +651,11 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeEditAnalysisPeak(params, interspec);
+      };
+    }else if( toolName == "escape_peak_check" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeEscapePeakCheck(params, interspec);
       };
     }else if( toolName == "get_analysis_peaks" )
     {
@@ -857,6 +919,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "detected_peaks",
     "add_analysis_peak",
     "edit_analysis_peak",
+    "escape_peak_check",
     "get_analysis_peaks",
     "get_spectrum_info",
     "primary_gammas_for_source",
@@ -1122,6 +1185,26 @@ nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &para
 
   return result_json;
 }//nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &params, InterSpec *interspec )
+
+
+nlohmann::json ToolRegistry::executeEscapePeakCheck( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  // Parse parameters
+  AnalystChecks::EscapePeakCheckOptions options;
+  from_json( params, options );
+
+  // Execute the escape peak check
+  const AnalystChecks::EscapePeakCheckStatus result = AnalystChecks::escape_peak_check( options, interspec );
+
+  // Convert the result to JSON and return
+  json result_json;
+  to_json( result_json, result );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeEscapePeakCheck( const nlohmann::json &params, InterSpec *interspec )
 
 
 json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* interspec) {

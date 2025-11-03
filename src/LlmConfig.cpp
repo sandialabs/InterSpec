@@ -66,25 +66,52 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   const string toolsPath = get_config_file_path( "llm_tools_config.xml" );
   
   // If we have config file, try to load it
+  std::shared_ptr<LlmConfig> config = make_shared<LlmConfig>();
+  
   try
   {
-    std::shared_ptr<LlmConfig> config = make_shared<LlmConfig>();
-
     std::pair<LlmApi, McpServer> apiAndMcp = loadApiAndMcpConfigs(configPath);
     config->llmApi = std::move(apiAndMcp.first);
     config->mcpServer = std::move(apiAndMcp.second);
-
-    config->agents = loadAgentsFromFile(agentsPath);
-    config->tools = loadToolConfigsFromFile(toolsPath);
-
-    return config;
   }catch( const std::exception &e )
   {
     // If user provided any override file and it failed to parse, return nullptr
-    cerr << "Failed to load user LLM config: " << e.what() << endl;
+    cerr << "Failed to load LLM config from '" << configPath << "': " << e.what() << endl;
     throw; // rethrow
   }
-  return nullptr; //avoid compiler warning
+  
+  try
+  {
+    config->agents = loadAgentsFromFile(agentsPath);
+  }catch( const std::exception &e )
+  {
+    // If user provided any override file and it failed to parse, return nullptr
+    cerr << "Failed to load LLM agent config from '" << agentsPath << "': " << e.what() << endl;
+    throw; // rethrow
+  }
+   
+  try
+  {
+    config->tools = loadToolConfigsFromFile(toolsPath);
+  }catch( const std::exception &e )
+  {
+    // If user provided any override file and it failed to parse, return nullptr
+    cerr << "Failed to load LLM tool config from '" << toolsPath << "': " << e.what() << endl;
+    throw; // rethrow
+  }
+  
+#if( BUILD_AS_UNIT_TEST_SUITE )
+  // We dont have any unit-tests that call out to a LLM, but we do have some tests that require a valid LLM config,
+  //  so we will stub a dummy one in here.
+  config->llmApi.enabled = true;
+  config->llmApi.apiEndpoint = "http://localhost:1234556787";
+  config->llmApi.bearerToken = "AnInvalidBearerToken...";
+  config->llmApi.model = "AnInvalidMdoel";
+  config->llmApi.maxTokens = 4000;
+  config->llmApi.contextLengthLimit = 128000;
+#endif
+  
+  return config;
 }//LlmConfig LlmConfig::load()
 
 
