@@ -322,6 +322,7 @@ void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requ
   // Serialize request with consistent field ordering for LLM provider caching
   const std::string requestStr = serializeRequestForCaching( requestJson );
 
+  /*
 #if( PERFORM_DEVELOPER_CHECKS )
   // Developer check: Compare this request with the previous one to verify caching optimization
   {
@@ -377,6 +378,7 @@ void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requ
     s_previous_request_str = requestStr;
   }
 #endif // PERFORM_DEVELOPER_CHECKS
+   */
 
   // Use Wt::WWebWidget::jsStringLiteral to properly escape the JSON string for JavaScript
   const std::string jsLiteralRequestStr = Wt::WWebWidget::jsStringLiteral( requestStr );
