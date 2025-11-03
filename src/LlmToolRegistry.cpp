@@ -837,10 +837,10 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     
     // Create invoke_<AgentName> tool
     const string toolName = "invoke_" + agent.name;
-    
+
     SharedTool invokeTool;
     invokeTool.name = toolName;
-    invokeTool.description = "Invoke the " + agent.name + " sub-agent to handle specialized " + agent.name + " analysis tasks.";
+    invokeTool.description = agent.description;
     
     // Schema for invoke tool
     invokeTool.parameters_schema = json::parse(R"({

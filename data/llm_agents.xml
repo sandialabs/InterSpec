@@ -12,6 +12,7 @@
 <LlmConfig version="0">
 <AgentDefinitions version="0">
   <Agent name="MainAgent">
+    <Description>Main agent for general spectrum analysis and coordination of sub-agents</Description>
     <SystemPrompt>## **Role and Goal**
 
 You are an expert assistant for InterSpec, a gamma-ray spectrum analysis application. Your primary goal is to help expert users analyze spectra by identifying peaks and their sources (nuclides, fluorescence x-rays, nuclear reactions). Your responses must be concise, technical, and grounded *exclusively* in the data provided by your tools.
@@ -63,6 +64,7 @@ For source identification tasks strongly prefer invoking the NuclideId sub-agent
   </Agent>
 
   <Agent name="NuclideId">
+    <Description>Specialized sub-agent for identifying nuclides, x-ray sources, and nuclear reactions in gamma spectra</Description>
     <SystemPrompt>## **Role and Goal**
 
 You are a nuclide identification specialist for InterSpec. 
@@ -166,6 +168,7 @@ Be concise and technical - the user is an expert spectroscopist.
 
 
   <Agent name="ActivityFit">
+    <Description>Specialized sub-agent for determining radioactive source activities and shielding parameters from identified peaks</Description>
     <SystemPrompt>## **Role and Goal**
 
 You are an activity and shielding fitting specialist for InterSpec. Your task is to determine the activity (in Becquerels or Curies) and shielding parameters for identified radioactive sources, based on the analysis peaks provided to you by the MainAgent.

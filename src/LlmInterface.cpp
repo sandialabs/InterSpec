@@ -26,11 +26,17 @@
 #include <regex>
 #include <chrono>
 #include <memory>
+#include <iomanip>
 #include <iostream>
 #include <stdexcept>
 
+#if( PERFORM_DEVELOPER_CHECKS )
+#include <mutex>
+#endif
+
 #include <Wt/WApplication>
 #include <Wt/WResource>
+#include <Wt/WWebWidget>
 #include <Wt/Http/Request>
 #include <Wt/Http/Response>
 
@@ -196,11 +202,76 @@ bool LlmInterface::isRequestPending(int requestId) const {
 }
 
 
+/** Manually serialize JSON request with specific field ordering for LLM provider caching.
+
+ Some LLM providers cache parts of requests between calls to reduce costs, but only if
+ the beginning of the request string exactly matches previous requests. This function
+ ensures that cacheable fields (tools, tool_choice, model, max_completion_tokens, max_tokens)
+ appear first and in a reliable order.
+
+ @param requestJson The JSON object to serialize
+ @return JSON string with fields in cache-friendly order
+ */
+static std::string serializeRequestForCaching( const nlohmann::json &requestJson )
+{
+  std::string result = "{";
+  bool first = true;
+
+  // Helper lambda to add a field if it exists
+  auto addField = [&]( const std::string &key )
+  {
+    if( !requestJson.contains(key) )
+      return;
+
+    if( !first )
+      result += ",";
+    first = false;
+
+    result += "\"" + key + "\":";
+    result += requestJson[key].dump();
+  };
+
+  // Add fields in priority order for caching (these should stay stable across requests)
+  addField( "model" );
+  addField( "max_completion_tokens" );
+  addField( "max_tokens" );
+  addField( "tools" );
+  addField( "tool_choice" );
+
+  // Add remaining fields (messages, etc.)
+  for( auto it = requestJson.begin(); it != requestJson.end(); ++it )
+  {
+    const std::string &key = it.key();
+
+    // Skip fields we already added
+    if( key == "model" || key == "max_completion_tokens" || key == "max_tokens" ||
+        key == "tools" || key == "tool_choice" )
+      continue;
+
+    if( !first )
+      result += ",";
+    first = false;
+
+    result += "\"" + key + "\":";
+    result += it.value().dump();
+  }
+
+  result += "}";
+  return result;
+}//serializeRequestForCaching(...)
+
+
 void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requestId)
 {
   if( !m_config || !m_config->llmApi.enabled )
     throw std::logic_error( "LlmInterface: not configured" );
-  
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Track request string prefix matching for cache verification
+  static std::mutex s_cache_check_mutex;
+  static std::string s_previous_request_str;
+#endif
+
   cout << "=== Making LLM API Call with ID " << requestId << " ===" << endl;
   cout << "Endpoint: " << m_config->llmApi.apiEndpoint << endl;
   cout << "Request JSON:" << endl;
@@ -246,21 +317,80 @@ void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requ
   }
   cout << debugJson.dump(2) << endl;
   cout << "=========================" << endl;
-  
+
 #ifdef USE_JS_BRIDGE_FOR_LLM
-  // Use JavaScript bridge to make the HTTP request with request ID
-  string requestStr = requestJson.dump();
-  
-  string jsCall = 
-    "var llmRequestData = " + requestStr + ";\n"
-    "window.llmHttpRequest('" + m_config->llmApi.apiEndpoint + "', JSON.stringify(llmRequestData), '" + 
+  // Serialize request with consistent field ordering for LLM provider caching
+  const std::string requestStr = serializeRequestForCaching( requestJson );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Developer check: Compare this request with the previous one to verify caching optimization
+  {
+    std::lock_guard<std::mutex> lock( s_cache_check_mutex );
+
+    if( !s_previous_request_str.empty() )
+    {
+      // Find how many characters match from the beginning
+      const size_t min_len = std::min( requestStr.length(), s_previous_request_str.length() );
+      size_t matching_chars = 0;
+      for( size_t i = 0; i < min_len; ++i )
+      {
+        if( requestStr[i] != s_previous_request_str[i] )
+          break;
+        ++matching_chars;
+      }
+
+      const double match_percent = (matching_chars * 100.0) / std::max( requestStr.length(), s_previous_request_str.length() );
+
+      cout << "=== LLM Request Cache Analysis ===" << endl;
+      cout << "Current request length: " << requestStr.length() << " chars" << endl;
+      cout << "Previous request length: " << s_previous_request_str.length() << " chars" << endl;
+      cout << "Matching prefix: " << matching_chars << " chars (" << std::fixed << std::setprecision(1) << match_percent << "%)" << endl;
+
+      if( matching_chars > 0 )
+      {
+        // Show the matching prefix (truncated for readability)
+        const size_t preview_len = std::min( matching_chars, size_t(150) );
+        cout << "Matching prefix: \"" << requestStr.substr(0, preview_len);
+        if( preview_len < matching_chars )
+          cout << "...\" (+" << (matching_chars - preview_len) << " more chars)";
+        else
+          cout << "\"";
+        cout << endl;
+      }
+
+      // Show where the difference starts
+      if( matching_chars < min_len )
+      {
+        const size_t diff_preview_len = std::min( size_t(50), min_len - matching_chars );
+        cout << "First difference at position " << matching_chars << ":" << endl;
+        cout << "  Current:  \"" << requestStr.substr(matching_chars, diff_preview_len) << "...\"" << endl;
+        cout << "  Previous: \"" << s_previous_request_str.substr(matching_chars, diff_preview_len) << "...\"" << endl;
+      }
+
+      cout << "===================================" << endl;
+    }else
+    {
+      cout << "=== First LLM request in session (no cache comparison) ===" << endl;
+    }
+
+    // Store current request for next comparison
+    s_previous_request_str = requestStr;
+  }
+#endif // PERFORM_DEVELOPER_CHECKS
+
+  // Use Wt::WWebWidget::jsStringLiteral to properly escape the JSON string for JavaScript
+  const std::string jsLiteralRequestStr = Wt::WWebWidget::jsStringLiteral( requestStr );
+
+  string jsCall =
+    "var llmRequestData = " + jsLiteralRequestStr + ";\n"
+    "window.llmHttpRequest('" + m_config->llmApi.apiEndpoint + "', llmRequestData, '" +
     m_config->llmApi.bearerToken + "', " + std::to_string(requestId) + ");";
-  
+
   // Execute JavaScript to make the HTTP request
   auto app = Wt::WApplication::instance();
   if( !app )
     throw runtime_error( "Error: No WApplication instance available for JavaScript bridge" );
-    
+
   app->doJavaScript(jsCall);
   cout << "JavaScript HTTP request with ID " << requestId << " initiated..." << endl;
 
@@ -269,39 +399,39 @@ void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requ
 #ifdef USE_WT_HTTP_FOR_LLM
   // Use Wt HTTP client to make the request
   cout << "Using Wt HTTP client with ID " << requestId << "..." << endl;
-  
+
   try {
     // Create HTTP message with JSON body
     Wt::Http::Message request;
-    
+
     // Set Content-Type header
     request.setHeader("Content-Type", "application/json");
-    
+
     // Add Authorization header if bearer token is provided
     if (!m_config->llmApi.bearerToken.empty()) {
       request.setHeader("Authorization", "Bearer " + m_config->llmApi.bearerToken);
     }
-    
-    // Set request body to JSON
-    string requestBody = requestJson.dump();
+
+    // Set request body to JSON with consistent field ordering for caching
+    const std::string requestBody = serializeRequestForCaching( requestJson );
     request.addBodyText(requestBody);
-    
+
     cout << "Request body length: " << requestBody.length() << " bytes" << endl;
-    
+
     // Store request ID for response correlation (we'll use member variable for now)
     // TODO: Better approach would be to store this in a map with client instance
     m_currentRequestId = requestId;
-    
+
     // Make the HTTP POST request
     bool success = m_httpClient->post(m_config->llmApi.apiEndpoint, request);
-    
+
     if (success) {
       cout << "Wt HTTP POST request with ID " << requestId << " initiated successfully" << endl;
     } else {
       cout << "Failed to initiate Wt HTTP request" << endl;
       handleWtHttpError(requestId, "Failed to initiate HTTP request");
     }
-    
+
   } catch (const std::exception& e) {
     cout << "Exception in Wt HTTP request: " << e.what() << endl;
     handleWtHttpError(requestId, std::string("Exception: ") + e.what());

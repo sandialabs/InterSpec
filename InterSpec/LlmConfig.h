@@ -67,6 +67,7 @@ public:
 
     AgentType type;           // Agent type enum
     std::string name;         // Agent name string (e.g., "MainAgent", "NuclideId")
+    std::string description;  // Description of what this agent does (used for tool invocation description)
     std::string systemPrompt; // System prompt for this agent
   };//struct AgentConfig
 

@@ -429,6 +429,10 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
         throw std::runtime_error( "Unknown agent type '" + agent.name + "' in agent config" );
       }
 
+      // Load Description
+      const rapidxml::xml_node<char> * const descNode = XmlUtils::get_required_node( agentNode, "Description" );
+      agent.description = SpecUtils::xml_value_str( descNode );
+
       // Load SystemPrompt
       const rapidxml::xml_node<char> * const promptNode = XmlUtils::get_required_node( agentNode, "SystemPrompt" );
       agent.systemPrompt = SpecUtils::xml_value_str( promptNode );
