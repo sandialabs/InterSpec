@@ -268,7 +268,6 @@ namespace AnalystChecks
 
 
     DetectedPeakStatus result;
-    result.userSession = user_session;
     result.peaks = std::move(all_peaks);
 
     return result;
@@ -457,11 +456,10 @@ namespace AnalystChecks
     
     
     FitPeakStatus result;
-    
-    result.userSession = user_session;
+
     result.fitPeak = fit_peak;
     result.peaksInRoi = peaks_to_add_in;
-    
+
     return result;
   }//FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec );
   
@@ -498,7 +496,6 @@ namespace AnalystChecks
 
 
     GetUserPeakStatus status;
-    status.userSession = user_session;
 
     if( meas_peaks )
     {
@@ -1334,7 +1331,6 @@ namespace AnalystChecks
     if( !peak )
     {
       return EditAnalysisPeakStatus{
-        user_session,
         false,
         "No peak found near " + std::to_string(options.energy) + " keV",
         std::nullopt,
@@ -1348,7 +1344,6 @@ namespace AnalystChecks
     if( energy_diff > fwhm )
     {
       return EditAnalysisPeakStatus{
-        user_session,
         false,
         "Nearest peak at " + std::to_string(peak->mean()) + " keV is more than 1 FWHM ("
           + std::to_string(fwhm) + " keV) away from requested " + std::to_string(options.energy) + " keV",
@@ -1362,7 +1357,6 @@ namespace AnalystChecks
     {
       peakModel->removePeak( peak );
       return EditAnalysisPeakStatus{
-        user_session,
         true,
         "Deleted peak at " + std::to_string(peak->mean()) + " keV",
         std::nullopt,
@@ -1630,7 +1624,6 @@ namespace AnalystChecks
         updated_peak = make_shared<const PeakDef>(modifiedPeak);
 
       return EditAnalysisPeakStatus{
-        user_session,
         true,
         "Successfully performed " + string(to_string(options.editAction)) + " on peak at " + std::to_string(modifiedPeak.mean()) + " keV",
         updated_peak,
@@ -1640,7 +1633,6 @@ namespace AnalystChecks
     catch( const exception &e )
     {
       return EditAnalysisPeakStatus{
-        user_session,
         false,
         string("Error performing ") + to_string(options.editAction) + ": " + e.what(),
         std::nullopt,

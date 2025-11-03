@@ -56,7 +56,6 @@ namespace AnalystChecks
   
   /** Results of peak detection analysis. */
   struct DetectedPeakStatus {
-    std::string userSession;
     std::vector<std::shared_ptr<const PeakDef>> peaks;
   };
   
@@ -82,7 +81,6 @@ namespace AnalystChecks
   };
   
   struct FitPeakStatus {
-    std::string userSession;
     std::shared_ptr<const PeakDef> fitPeak;
     std::vector<std::shared_ptr<const PeakDef>> peaksInRoi;
   };
@@ -97,7 +95,6 @@ namespace AnalystChecks
   };
   
   struct GetUserPeakStatus {
-    std::string userSession;
     std::vector<std::shared_ptr<const PeakDef>> peaks;
   };
   
@@ -238,7 +235,6 @@ namespace AnalystChecks
   /** Results of peak edit operation. */
   struct EditAnalysisPeakStatus
   {
-    std::string userSession;
     bool success;
     std::string message;
     std::optional<std::shared_ptr<const PeakDef>> modifiedPeak;

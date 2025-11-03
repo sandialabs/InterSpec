@@ -314,26 +314,25 @@ namespace {
                const shared_ptr<const SpecUtils::Measurement> &meas ) {
     json peak_rois;
     to_json( peak_rois, p.peaks, meas );
-    
-    j = json{{"userSession", p.userSession},
-      {"rois", peak_rois}};
+
+    j = json{{"rois", peak_rois}};
   }//void to_json(json& j, const AnalystChecks::DetectedPeakStatus& p) {
   
   void to_json(json& j, const AnalystChecks::FitPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
-    
+
     const std::shared_ptr<const PeakDef> &fitPeak = p.fitPeak;
     const std::vector<std::shared_ptr<const PeakDef>> &peaksInRoi = p.peaksInRoi;
-    
-    j = json{{"userSession", p.userSession}};
-    
+
+    j = json::object();
+
     if( fitPeak )
     {
       json roi_json;
-      
+
       to_json( roi_json, fitPeak->continuum(), peaksInRoi, meas );
-      
+
       j["roi"] = roi_json;
-      
+
       //json peak_json;
       //to_json( peak_json, fitPeak );
       j["fitPeakEnergy"] = rount_to_hundredth(fitPeak->mean());
@@ -433,7 +432,6 @@ namespace {
   void to_json( json &j, const AnalystChecks::EditAnalysisPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas )
   {
     j = json{
-      {"userSession", p.userSession},
       {"success", p.success},
       {"message", p.message}
     };
@@ -568,9 +566,8 @@ namespace {
   void to_json(json& j, const AnalystChecks::GetUserPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
     json peak_rois;
     to_json( peak_rois, p.peaks, meas );
-    
-    j = json{{"userSession", p.userSession},
-      {"rois", peak_rois}};
+
+    j = json{{"rois", peak_rois}};
   }
 
   void to_json(json& j, const AnalystChecks::FitPeaksForNuclideStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {

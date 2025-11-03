@@ -98,7 +98,8 @@ private:
     void handle_call_tool(const Wt::Http::Request& request, Wt::Http::Response& response);
     
     // Find InterSpec instance by session ID for session-agnostic tool execution
-    InterSpec* findInterSpecBySessionId(const std::string& sessionId);
+    // If actualSessionId is not nullptr, it will be set to the actual session ID found
+    InterSpec* findInterSpecBySessionId(const std::string& sessionId, std::string* actualSessionId = nullptr);
 
   const std::shared_ptr<const LlmConfig> llm_config_;
   const std::unique_ptr<const LlmTools::ToolRegistry> tool_registry_;
