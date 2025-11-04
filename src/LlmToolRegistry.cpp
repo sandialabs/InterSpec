@@ -233,6 +233,44 @@ namespace {
     return get_double( val );
   }//double get_double( const json& val, const double default_value )
 
+
+  /** Some LLMs will give complex values (arrays, objects) as JSON strings instead of native types.
+   This function normalizes a field by parsing stringified JSON if needed.
+
+   @param params The parent JSON object (non-const reference, will be modified if field is a string).
+   @param field_name The name of the field to normalize.
+
+   If the field is a string, it will attempt to parse it as JSON and replace the field value.
+   If parsing fails, the original string value remains.
+   */
+  void normalize_json_field( json& params, const string& field_name )
+  {
+    if( !params.contains(field_name) )
+      return;
+
+    if( !params[field_name].is_string() )
+      return; // Already a native type, no normalization needed
+
+    const string str_value = params[field_name].get<string>();
+
+    // Trim whitespace
+    string trimmed = str_value;
+    trimmed.erase( 0, trimmed.find_first_not_of(" \t\n\r") );
+    trimmed.erase( trimmed.find_last_not_of(" \t\n\r") + 1 );
+
+    // Try to parse as JSON
+    try
+    {
+      json parsed = json::parse( trimmed );
+      params[field_name] = parsed;
+    }
+    catch( const json::parse_error& )
+    {
+      // If parsing fails, leave as string (might be intended as a string value)
+      // Let the downstream code handle validation
+    }
+  }//void normalize_json_field( json& params, const string& field_name )
+
   void from_json(const json& j, AnalystChecks::DetectedPeaksOptions& p) {
     std::string specTypeStr = j.at("specType").get<std::string>();
     if (specTypeStr == "Foreground") {
@@ -2263,9 +2301,13 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
 
 
 
-nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( const nlohmann::json& params, InterSpec* interspec )
+nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( nlohmann::json params, InterSpec* interspec )
 {
   using namespace PhysicalUnits;
+
+  // Normalize fields in case they're stringified JSON
+  normalize_json_field( params, "Energies" );
+  normalize_json_field( params, "Shielding" );
 
   // Parse the energies array
   if( !params.contains("Energies") || !params["Energies"].is_array() )
@@ -2547,12 +2589,16 @@ nlohmann::json ToolRegistry::executeGetMaterialInfo( const nlohmann::json& param
   "required": ["Energies"]
   ```
 */
-nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec)
+nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params, InterSpec* interspec)
 {
   using namespace std;
   using namespace nlohmann;
 
   // Step 1: Parse and normalize inputs
+
+  // Normalize fields in case they're stringified JSON
+  normalize_json_field( params, "Energies" );
+  normalize_json_field( params, "Shielding" );
 
   // Parse Energies - allow single number or array
   vector<double> energies;
@@ -3540,10 +3586,13 @@ nlohmann::json ToolRegistry::executeGetDetectorInfo(const nlohmann::json& params
 }//nlohmann::json executeGetDetectorInfo(InterSpec* interspec)
 
 
-nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(const nlohmann::json& params, InterSpec* interspec)
+nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params, InterSpec* interspec)
 {
   if( !interspec )
     throw std::runtime_error( "No InterSpec session available." );
+
+  // Normalize energies field in case it's a stringified JSON array
+  normalize_json_field( params, "energies" );
 
   // Parse energies array (required)
   if( !params.contains("energies") || !params["energies"].is_array() || params["energies"].empty() )
