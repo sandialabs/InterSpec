@@ -76,12 +76,6 @@ namespace AnalystChecks
         throw std::runtime_error("nonBackgroundPeaksOnly may only be specified when a Background spectrum is loaded");
     }
 
-    // Get session ID from InterSpec (using Wt application)
-    string user_session = "direct_call";
-    if (Wt::WApplication* app = Wt::WApplication::instance()) {
-      user_session = app->sessionId();
-    }
-
     std::shared_ptr<SpecMeas> meas = interspec->measurment(options.specType);
     if (!meas) {
       throw std::runtime_error("No measurement loaded for "
@@ -283,12 +277,6 @@ namespace AnalystChecks
     if (!interspec)
       throw std::runtime_error("No InterSpec session available");
     
-    // Get session ID from InterSpec (using Wt application)
-    string user_session = "direct_call";
-    if (Wt::WApplication* app = Wt::WApplication::instance()) {
-      user_session = app->sessionId();
-    }
-    
     std::shared_ptr<SpecMeas> meas = interspec->measurment(options.specType);
     if (!meas) {
       throw std::runtime_error("No measurement loaded for "
@@ -472,12 +460,6 @@ namespace AnalystChecks
   {
     if (!interspec)
       throw std::runtime_error("No InterSpec session available");
-    
-    // Get session ID from InterSpec (using Wt application)
-    string user_session = "direct_call";
-    if (Wt::WApplication* app = Wt::WApplication::instance()) {
-      user_session = app->sessionId();
-    }
     
     std::shared_ptr<SpecMeas> meas = interspec->measurment(options.specType);
     if (!meas) {
@@ -770,12 +752,6 @@ namespace AnalystChecks
     // TODO: Should split range up - e.g. above and below 120 keV, if nuclide has peaks on both sides
     if (!interspec)
       throw std::runtime_error("No InterSpec session available");
-    
-    // Get session ID from InterSpec (using Wt application)
-    string user_session = "direct_call";
-    if (Wt::WApplication* app = Wt::WApplication::instance()) {
-      user_session = app->sessionId();
-    }
     
     FitPeaksForNuclideStatus result;
     
@@ -1329,15 +1305,6 @@ namespace AnalystChecks
   {
     if( !interspec )
       throw runtime_error( "edit_analysis_peak: No InterSpec session available" );
-
-    // Get session ID
-    string user_session = "direct_call";
-    if( Wt::WApplication *app = Wt::WApplication::instance() )
-      user_session = app->sessionId();
-
-    // Override with provided session if available
-    if( options.userSession )
-      user_session = *options.userSession;
 
     // Get the PeakModel for the specified spectrum type
     PeakModel *peakModel = interspec->peakModel();

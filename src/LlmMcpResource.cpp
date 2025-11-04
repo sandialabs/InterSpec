@@ -606,7 +606,15 @@ void LlmMcpResource::register_default_tools()
 
       // Inject the userSession field into the result
       if( result.is_object() )
+      {
         result["userSession"] = actualSessionId;
+      }else
+      {
+        nlohmann::json tmp_result = nlohmann::json::object();
+        tmp_result["result"] = result;
+        tmp_result["userSession"] = actualSessionId;
+        result = std::move(tmp_result);
+      }
 
       return result;
     };

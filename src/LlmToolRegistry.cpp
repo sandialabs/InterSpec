@@ -183,6 +183,56 @@ namespace {
     throw runtime_error( "Value must be a number." );
   }//double get_double( const json& val )
 
+
+  /** Overload of get_number that returns a default value if the field is not present.
+
+   @param parent The parent JSON object.
+   @param name The field name of the number to parse.
+   @param default_value The value to return if the field is not present.
+
+   An exception will be thrown if the field exists but cant be converted to a number.
+   */
+  double get_number( const json& parent, const string &name, const double default_value )
+  {
+    if( !parent.contains(name) )
+      return default_value;
+
+    return get_number( parent, name );
+  }//double get_number( const json& parent, const string &name, const double default_value )
+
+
+  /** Overload of get_boolean that returns a default value if the field is not present.
+
+   @param parent The parent JSON object.
+   @param name The field name of the boolean to parse.
+   @param default_value The value to return if the field is not present.
+
+   An exception will be thrown if the field exists but cant be converted to a boolean.
+   */
+  bool get_boolean( const json& parent, const string &name, const bool default_value )
+  {
+    if( !parent.contains(name) )
+      return default_value;
+
+    return get_boolean( parent, name );
+  }//bool get_boolean( const json& parent, const string &name, const bool default_value )
+
+
+  /** Overload of get_double that returns a default value if the value is null or missing.
+
+   @param val The JSON value to parse as a double.
+   @param default_value The value to return if val is null.
+
+   An exception will be thrown if the value exists but cant be converted to a double.
+   */
+  double get_double( const json& val, const double default_value )
+  {
+    if( val.is_null() )
+      return default_value;
+
+    return get_double( val );
+  }//double get_double( const json& val, const double default_value )
+
   void from_json(const json& j, AnalystChecks::DetectedPeaksOptions& p) {
     std::string specTypeStr = j.at("specType").get<std::string>();
     if (specTypeStr == "Foreground") {
@@ -194,15 +244,14 @@ namespace {
     } else {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
-    p.userSession = j.value("userSession", std::optional<std::string>{});
-    p.nonBackgroundPeaksOnly = j.value("NonBackgroundPeaksOnly", false);
+    p.nonBackgroundPeaksOnly = get_boolean( j, "NonBackgroundPeaksOnly", false );
   }
 
   void from_json(const json& j, AnalystChecks::FitPeakOptions& p) {
 
     p.energy = get_number( j, "energy" );
 
-    p.doNotAddToAnalysisPeaks = j.value("DoNotAddToAnalysisPeaks", false);
+    p.doNotAddToAnalysisPeaks = get_boolean( j, "DoNotAddToAnalysisPeaks", false );
 
     std::string specTypeStr = j.value("specType", std::string());
     if (specTypeStr.empty() || specTypeStr == "Foreground") {
@@ -215,7 +264,6 @@ namespace {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
 
-    p.userSession = j.value("userSession", std::optional<std::string>{});
     p.source = j.value("source", std::optional<std::string>{});
   }
   
@@ -413,8 +461,6 @@ namespace {
   
   
   void from_json(const json& j, AnalystChecks::GetUserPeakOptions& p) {
-    p.userSession = j.value("userSession", std::optional<std::string>{});
-
     std::string specTypeStr = j.value("specType", std::string());
     if (specTypeStr.empty() || specTypeStr == "Foreground") {
       p.specType = SpecUtils::SpectrumType::Foreground;
@@ -444,7 +490,7 @@ namespace {
       throw std::runtime_error("Invalid nuclide parameter: must be string or array of strings");
     }
 
-    p.doNotAddPeaksToUserSession = j.value("doNotAddPeaksToUserSession", false);
+    p.doNotAddPeaksToUserSession = get_boolean( j, "doNotAddPeaksToUserSession", false );
   }
 
   void from_json( const json &j, AnalystChecks::EditAnalysisPeakOptions &p )
@@ -483,8 +529,6 @@ namespace {
 
     if( j.contains("uncertainty") )
       p.uncertainty = get_number( j, "uncertainty" );
-
-    p.userSession = j.value("userSession", std::optional<std::string>{});
   }//void from_json( const json &j, AnalystChecks::EditAnalysisPeakOptions &p )
 
   void to_json( json &j, const AnalystChecks::EditAnalysisPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas )
@@ -1957,8 +2001,8 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
 
   // Parse only the selected parameters
   const double energy = get_number( params, "energy" );
-  const double detection_probability = params.value("detectionProbability", 0.95);
-  const float additional_uncertainty = params.value("additionalUncertainty", 0.0f);
+  const double detection_probability = get_number( params, "detectionProbability", 0.95 );
+  const float additional_uncertainty = static_cast<float>( get_number( params, "additionalUncertainty", 0.0 ) );
 
   // Get expected FWHM for the energy to determine ROI width
   float fwhm = -1.0;
@@ -2068,12 +2112,12 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
     age_in_seconds = PeakDef::defaultDecayTime( nuc, nullptr ) / PhysicalUnits::second;
   }
 
-  const int max_results = params.value("MaxResults", 125);
+  const int max_results = static_cast<int>( get_number( params, "MaxResults", 125.0 ) );
   if( max_results < 1 )
     throw runtime_error( "'MaxResults' must be 1 or larger." );
 
-  
-  const bool cascade = params.value("IncludeCascadeSumEnergies", false);
+
+  const bool cascade = get_boolean( params, "IncludeCascadeSumEnergies", false );
   if( !nuc && cascade )
     throw runtime_error( "You can only request cascade decay information for nuclides" );
   
@@ -2578,7 +2622,7 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(const nlohmann::json&
   }
 
   // Parse IncludeAirAttenuation (optional, default false)
-  const bool include_air = params.value("IncludeAirAttenuation", false);
+  const bool include_air = get_boolean( params, "IncludeAirAttenuation", false );
 
   // Step 2: Validate parameters
 
