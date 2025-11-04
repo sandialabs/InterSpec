@@ -114,6 +114,75 @@ namespace {
     throw runtime_error( "'" + name + "' parameter must be a number." );
   }//double get_number( const json& parent, const string &name )
 
+
+  /** Some LLMs will give boolean values as strings, so this function will check types and return the correct answer.
+
+   @param parent The parent JSON object.
+   @param name The field name of the boolean to parse.
+
+   An exception will be thrown if cant be converted to boolean.
+   */
+  bool get_boolean( const json& parent, const string &name )
+  {
+    if( !parent.contains(name) )
+      throw runtime_error( "'" + name + "' parameter must be specified." );
+
+    if( parent[name].is_boolean() )
+      return parent.at(name).get<bool>();
+
+    if( parent[name].is_string() )
+    {
+      string strval = parent.at(name).get<string>();
+
+      // Convert to lowercase for case-insensitive comparison
+      for( char &c : strval )
+        c = std::tolower( static_cast<unsigned char>(c) );
+
+      if( strval == "true" || strval == "1" || strval == "yes" )
+        return true;
+
+      if( strval == "false" || strval == "0" || strval == "no" )
+        return false;
+
+      throw runtime_error( "'" + name + "' parameter must be a boolean (received '" + strval + "')." );
+    }//if( parent[name].is_string() )
+
+    // Handle numeric values as booleans (0 = false, non-zero = true)
+    if( parent[name].is_number() )
+    {
+      const double val = parent.at(name).get<double>();
+      return (val != 0.0);
+    }
+
+    throw runtime_error( "'" + name + "' parameter must be a boolean." );
+  }//bool get_boolean( const json& parent, const string &name )
+
+
+  /** Some LLMs will give number values as strings, so this function will check types and return the correct answer.
+
+   This is similar to get_number, but works on a JSON value directly rather than a named field.
+
+   @param val The JSON value to parse as a double.
+
+   An exception will be thrown if cant be converted to double.
+   */
+  double get_double( const json& val )
+  {
+    if( val.is_number() )
+      return val.get<double>();
+
+    if( val.is_string() )
+    {
+      const string strval = val.get<string>();
+      double result;
+      if( !(stringstream(strval) >> result) )
+        throw runtime_error( "Value must be a number (received '" + strval + "')." );
+      return result;
+    }//if( val.is_string() )
+
+    throw runtime_error( "Value must be a number." );
+  }//double get_double( const json& val )
+
   void from_json(const json& j, AnalystChecks::DetectedPeaksOptions& p) {
     std::string specTypeStr = j.at("specType").get<std::string>();
     if (specTypeStr == "Foreground") {
@@ -404,24 +473,13 @@ namespace {
 
     // Get optional values
     if( j.contains("doubleValue") )
-    {
-      if( j["doubleValue"].is_number() )
-        p.doubleValue = j["doubleValue"].get<double>();
-      else if( j["doubleValue"].is_string() )
-      {
-        const string str_val = j["doubleValue"].get<string>();
-        double val;
-        if( !(stringstream(str_val) >> val) )
-          throw runtime_error( "doubleValue parameter must be a number" );
-        p.doubleValue = val;
-      }
-    }
+      p.doubleValue = get_double( j["doubleValue"] );
 
     if( j.contains("stringValue") )
       p.stringValue = j["stringValue"].get<std::string>();
 
     if( j.contains("boolValue") )
-      p.boolValue = j["boolValue"].get<bool>();
+      p.boolValue = get_boolean( j, "boolValue" );
 
     if( j.contains("uncertainty") )
       p.uncertainty = get_number( j, "uncertainty" );
@@ -2180,10 +2238,7 @@ nlohmann::json ToolRegistry::executeGetAttenuationOfShielding( const nlohmann::j
   vector<double> energies;
   for( const auto& energy_val : energies_json )
   {
-    if( energy_val.is_number() )
-      energies.push_back( energy_val.get<double>() * keV );
-    else
-      throw runtime_error( "Each energy must be a number in keV." );
+    energies.push_back( get_double( energy_val ) * keV );
   }
 
   if( energies.empty() )
@@ -2466,13 +2521,14 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(const nlohmann::json&
   vector<double> energies;
   if( params.contains("Energies") )
   {
-    if( params["Energies"].is_number() )
+    if( params["Energies"].is_number() || params["Energies"].is_string() )
     {
-      energies.push_back( params["Energies"].get<double>() );
+      energies.push_back( get_double( params["Energies"] ) );
     }
     else if( params["Energies"].is_array() )
     {
-      energies = params["Energies"].get<vector<double>>();
+      for( const auto& energy_val : params["Energies"] )
+        energies.push_back( get_double( energy_val ) );
     }
     else
     {
@@ -2580,8 +2636,8 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(const nlohmann::json&
     {
       // Generic shielding (AD/AN format)
       info.is_generic = true;
-      info.areal_density = shield_json["AD"].get<double>();
-      info.atomic_number = shield_json["AN"].get<double>();
+      info.areal_density = get_double( shield_json["AD"] );
+      info.atomic_number = get_double( shield_json["AN"] );
       info.thickness = 0.0;  // Generic shielding has no physical thickness
 
       if( info.areal_density < 0.0 )
