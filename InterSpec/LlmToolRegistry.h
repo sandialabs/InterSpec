@@ -155,14 +155,14 @@ private:
   static nlohmann::json executeCurrieMdaCalc(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetMaterials(InterSpec* interspec);
   static nlohmann::json executeGetMaterialInfo(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeGetAttenuationOfShielding(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executeGetAttenuationOfShielding(nlohmann::json params, InterSpec* interspec);
   static nlohmann::json executeGetSourcePhotons(const nlohmann::json& params);
-  
+
   static nlohmann::json executeAvailableDetectors(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeLoadDetectorEfficiency(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeGetDetectorInfo(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executePhotopeakDetectionCalc(const nlohmann::json& params, InterSpec* interspec);
-  static nlohmann::json executeSearchSourcesByEnergy(const nlohmann::json& params, InterSpec* interspec);
+  static nlohmann::json executePhotopeakDetectionCalc(nlohmann::json params, InterSpec* interspec);
+  static nlohmann::json executeSearchSourcesByEnergy(nlohmann::json params, InterSpec* interspec);
   static nlohmann::json executeEditAnalysisPeak(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeEscapePeakCheck(const nlohmann::json& params, InterSpec* interspec);
   static nlohmann::json executeSumPeakCheck(const nlohmann::json& params, InterSpec* interspec);
