@@ -1192,8 +1192,15 @@ json ToolRegistry::executePeakDetection(const json& params, InterSpec* interspec
   
   // Parse parameters into DetectedPeaksOptions
   AnalystChecks::DetectedPeaksOptions options;
-  from_json(params, options);
-  
+  try
+  {
+    from_json(params, options);
+  }catch( std::exception &e )
+  {
+    cerr << "executePeakDetection: Failed to parse params: " << params.dump() << endl;
+    throw;
+  }
+
   shared_ptr<const SpecUtils::Measurement> meas;
   if( interspec )
     meas = interspec->displayedHistogram( options.specType );

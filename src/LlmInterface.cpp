@@ -780,10 +780,11 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
       }
     }catch( const std::exception &e )
     {
-      cout << "Tool execution error: " << e.what() << endl;
+      const string msg = e.what();
+      cout << "Tool execution error: " << msg << endl;
 
       json result;
-      result["error"] = "Tool call failed: " + string(e.what());
+      result["error"] = "Tool call failed: " + msg;
       m_history->addToolResult( callId, result, convo );
     }//try / catch
 
