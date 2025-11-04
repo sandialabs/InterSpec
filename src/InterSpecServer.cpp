@@ -436,14 +436,7 @@ void startWebServer( string name,
       
   try
   {
-    shared_ptr<const LlmConfig> config;
-      
-    {// Begin lock on ns_llm_config_mutex
-      std::lock_guard<std::mutex> llm_config_lock( ns_llm_config_mutex );
-      if( !ns_llm_config.get() )
-        ns_llm_config = LlmConfig::load(); //Throws exception if invalid config file, returns null if no config file
-      config = ns_llm_config;
-    }// end lock on ns_llm_config_mutex
+    shared_ptr<const LlmConfig> config = llm_config();
       
     if( config && config->mcpServer.enabled )
     {
@@ -1204,6 +1197,8 @@ void clear_file_to_open_on_load( const std::string &session_token )
 std::shared_ptr<const LlmConfig> llm_config()
 {
   std::lock_guard<std::mutex> llm_config_lock( ns_llm_config_mutex );
+  if( !ns_llm_config.get() )
+    ns_llm_config = LlmConfig::load(); //Throws exception if invalid config file, returns null if no config file
   return ns_llm_config;
 }
 #endif

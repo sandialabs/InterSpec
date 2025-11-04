@@ -1200,6 +1200,7 @@ public:
   //  which will call setHintPeaks(...) when done.
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                            const std::set<int> &samples,
+                          const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
                           const bool isHPGe );
   
   //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and

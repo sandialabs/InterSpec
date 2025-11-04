@@ -79,6 +79,12 @@ namespace {
       {AnalystChecks::EditPeakAction::MergeWithRight, "MergeWithRight"},
   })
 
+  // JSON conversion for AnalystChecks::EscapePeakType enum
+  NLOHMANN_JSON_SERIALIZE_ENUM(AnalystChecks::EscapePeakType, {
+      {AnalystChecks::EscapePeakType::SingleEscape, "SingleEscape"},
+      {AnalystChecks::EscapePeakType::DoubleEscape, "DoubleEscape"},
+  })
+
   double rount_to_hundredth(double val){ return 0.01*std::round(100.0*val); }
 
   /** Some LLMs will give number values as strings, so this function will check types and return the correct answer.
@@ -120,16 +126,15 @@ namespace {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
     p.userSession = j.value("userSession", std::optional<std::string>{});
+    p.nonBackgroundPeaksOnly = j.value("NonBackgroundPeaksOnly", false);
   }
 
   void from_json(const json& j, AnalystChecks::FitPeakOptions& p) {
 
     p.energy = get_number( j, "energy" );
-    
-    p.addToUsersPeaks = true;
-    if( j.contains("addToUsersPeaks") )
-      p.addToUsersPeaks = j.at("addToUsersPeaks").get<bool>();
-    
+
+    p.doNotAddToAnalysisPeaks = j.value("DoNotAddToAnalysisPeaks", false);
+
     std::string specTypeStr = j.value("specType", std::string());
     if (specTypeStr.empty() || specTypeStr == "Foreground") {
       p.specType = SpecUtils::SpectrumType::Foreground;
@@ -140,7 +145,7 @@ namespace {
     } else {
       throw std::runtime_error("Invalid spectrum type: " + specTypeStr);
     }
-    
+
     p.userSession = j.value("userSession", std::optional<std::string>{});
     p.source = j.value("source", std::optional<std::string>{});
   }
@@ -309,26 +314,25 @@ namespace {
                const shared_ptr<const SpecUtils::Measurement> &meas ) {
     json peak_rois;
     to_json( peak_rois, p.peaks, meas );
-    
-    j = json{{"userSession", p.userSession},
-      {"rois", peak_rois}};
+
+    j = json{{"rois", peak_rois}};
   }//void to_json(json& j, const AnalystChecks::DetectedPeakStatus& p) {
   
   void to_json(json& j, const AnalystChecks::FitPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
-    
+
     const std::shared_ptr<const PeakDef> &fitPeak = p.fitPeak;
     const std::vector<std::shared_ptr<const PeakDef>> &peaksInRoi = p.peaksInRoi;
-    
-    j = json{{"userSession", p.userSession}};
-    
+
+    j = json::object();
+
     if( fitPeak )
     {
       json roi_json;
-      
+
       to_json( roi_json, fitPeak->continuum(), peaksInRoi, meas );
-      
+
       j["roi"] = roi_json;
-      
+
       //json peak_json;
       //to_json( peak_json, fitPeak );
       j["fitPeakEnergy"] = rount_to_hundredth(fitPeak->mean());
@@ -428,7 +432,6 @@ namespace {
   void to_json( json &j, const AnalystChecks::EditAnalysisPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas )
   {
     j = json{
-      {"userSession", p.userSession},
       {"success", p.success},
       {"message", p.message}
     };
@@ -452,6 +455,57 @@ namespace {
       j["peaksInRoi"] = roi_peaks;
     }
   }//void to_json( json &j, const AnalystChecks::EditAnalysisPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas )
+
+  void from_json( const json &j, AnalystChecks::EscapePeakCheckOptions &p )
+  {
+    p.energy = get_number( j, "energy" );
+
+    // Parse spectrum type (default to Foreground)
+    std::string specTypeStr = j.value("specType", std::string());
+    if( specTypeStr.empty() || specTypeStr == "Foreground" )
+    {
+      p.specType = SpecUtils::SpectrumType::Foreground;
+    }else if( specTypeStr == "Background" )
+    {
+      p.specType = SpecUtils::SpectrumType::Background;
+    }else if( specTypeStr == "Secondary" )
+    {
+      p.specType = SpecUtils::SpectrumType::SecondForeground;
+    }else
+    {
+      throw std::runtime_error( "Invalid spectrum type: " + specTypeStr );
+    }
+  }//void from_json( const json &j, AnalystChecks::EscapePeakCheckOptions &p )
+
+  void to_json( json &j, const AnalystChecks::EscapePeakCheckStatus &p )
+  {
+    j = json{
+      {"potentialSingleEscapePeakEnergy", rount_to_hundredth(p.potentialSingleEscapePeakEnergy)},
+      {"potentialDoubleEscapePeakEnergy", rount_to_hundredth(p.potentialDoubleEscapePeakEnergy)},
+      {"potentialParentPeakSingleEscape", rount_to_hundredth(p.potentialParentPeakSingleEscape)},
+      {"potentialParentPeakDoubleEscape", rount_to_hundredth(p.potentialParentPeakDoubleEscape)},
+      //{"singleEscapeSearchWindow", rount_to_hundredth(p.singleEscapeSearchWindow)},
+      //{"doubleEscapeSearchWindow", rount_to_hundredth(p.doubleEscapeSearchWindow)},
+      //{"singleEscapeParentSearchWindow", rount_to_hundredth(p.singleEscapeParentSearchWindow)},
+      //{"doubleEscapeParentSearchWindow", rount_to_hundredth(p.doubleEscapeParentSearchWindow)}
+    };
+
+    if( p.parentPeak.has_value() )
+    {
+      json parent_info = json{
+        {"parentPeakEnergy", rount_to_hundredth(p.parentPeak->parentPeakEnergy)},
+        {"escapeType", AnalystChecks::to_string(p.parentPeak->escapeType) }
+      };
+
+      if( p.parentPeak->sourceLabel.has_value() )
+        parent_info["sourceLabel"] = *p.parentPeak->sourceLabel;
+
+      if( p.parentPeak->userLabel.has_value() )
+        parent_info["userLabel"] = *p.parentPeak->userLabel;
+
+      j["parentPeak"] = parent_info;
+    }
+  }//void to_json( json &j, const AnalystChecks::EscapePeakCheckStatus &p )
 
   void to_json(json& j, const AnalystChecks::SpectrumCountsInEnergyRange::CountsWithComparisonToForeground& c) {
     j = json{
@@ -512,9 +566,8 @@ namespace {
   void to_json(json& j, const AnalystChecks::GetUserPeakStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
     json peak_rois;
     to_json( peak_rois, p.peaks, meas );
-    
-    j = json{{"userSession", p.userSession},
-      {"rois", peak_rois}};
+
+    j = json{{"rois", peak_rois}};
   }
 
   void to_json(json& j, const AnalystChecks::FitPeaksForNuclideStatus &p, const shared_ptr<const SpecUtils::Measurement> &meas ) {
@@ -586,7 +639,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     tool.executor = [](const json& params, InterSpec* interspec) -> json {
       return executePeakDetection(params, interspec);
       };
-    }else if( toolName == "fit_peak" )
+    }else if( toolName == "add_analysis_peak" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executePeakFit(params, interspec);
@@ -595,6 +648,11 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeEditAnalysisPeak(params, interspec);
+      };
+    }else if( toolName == "escape_peak_check" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeEscapePeakCheck(params, interspec);
       };
     }else if( toolName == "get_analysis_peaks" )
     {
@@ -621,7 +679,9 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetNuclidesWithCharacteristicsInEnergyRange(params, interspec);
       };
-    }else if( toolName == "sources_associated_with_source" )
+    }
+#if( !INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
+    else if( toolName == "sources_associated_with_source" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetAssociatedSources(params);
@@ -631,7 +691,9 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetSourceAnalystNotes(params);
       };
-    }else if( toolName == "source_info" )
+    }
+#endif
+    else if( toolName == "source_info" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetSourceInfo(params, interspec);
@@ -641,7 +703,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetNuclideDecayChain(params);
       };
-    }else if( toolName == "automated_isotope_id_results" )
+    }else if( toolName == "automated_source_id_results" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetAutomatedRiidId(params, interspec);
@@ -651,12 +713,17 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetLoadedSpectra(params, interspec);
       };
-    }else if( toolName == "fit_peaks_for_nuclide" )
+    }
+  /*
+   // Not using `add_analysis_peaks_for_source` until we get it working properly...
+    else if( toolName == "add_analysis_peaks_for_source" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeFitPeaksForNuclide(params, interspec);
       };
-    }else if( toolName == "get_counts_in_energy_range" )
+    }
+    */
+    else if( toolName == "get_counts_in_energy_range" )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeGetCountsInEnergyRange(params, interspec);
@@ -770,10 +837,10 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     
     // Create invoke_<AgentName> tool
     const string toolName = "invoke_" + agent.name;
-    
+
     SharedTool invokeTool;
     invokeTool.name = toolName;
-    invokeTool.description = "Invoke the " + agent.name + " sub-agent to handle specialized " + agent.name + " analysis tasks.";
+    invokeTool.description = agent.description;
     
     // Schema for invoke tool
     invokeTool.parameters_schema = json::parse(R"({
@@ -847,8 +914,9 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
   // Runtime validation: Check that all expected tools are registered
   const std::vector<std::string> expectedTools = {
     "detected_peaks",
-    "fit_peak",
+    "add_analysis_peak",
     "edit_analysis_peak",
+    "escape_peak_check",
     "get_analysis_peaks",
     "get_spectrum_info",
     "primary_gammas_for_source",
@@ -860,9 +928,9 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
 #endif
     "source_info",
     "nuclide_decay_chain",
-    "automated_isotope_id_results",
+    "automated_source_id_results",
     "loaded_spectra",
-    "fit_peaks_for_nuclide",
+    //"add_analysis_peaks_for_source",
     "get_counts_in_energy_range",
     "get_expected_fwhm",
     "currie_mda_calc",
@@ -1116,6 +1184,26 @@ nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &para
 }//nlohmann::json ToolRegistry::executeEditAnalysisPeak( const nlohmann::json &params, InterSpec *interspec )
 
 
+nlohmann::json ToolRegistry::executeEscapePeakCheck( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  // Parse parameters
+  AnalystChecks::EscapePeakCheckOptions options;
+  from_json( params, options );
+
+  // Execute the escape peak check
+  const AnalystChecks::EscapePeakCheckStatus result = AnalystChecks::escape_peak_check( options, interspec );
+
+  // Convert the result to JSON and return
+  json result_json;
+  to_json( result_json, result );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeEscapePeakCheck( const nlohmann::json &params, InterSpec *interspec )
+
+
 json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* interspec) {
   if (!interspec) {
     throw std::runtime_error("No InterSpec session available");
@@ -1144,8 +1232,21 @@ json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* intersp
   result["specType"] = specTypeStr;
   result["detectorName"] = spectrum->detector_name();
   result["fileName"] = meas->filename();
-  result["liveTime"] = spectrum->live_time();
-  result["realTime"] = spectrum->real_time();
+  if( spectrum->live_time() > 0 )
+    result["liveTime"] = spectrum->live_time();
+  else
+    result["liveTime"] = "N/A";
+  
+  if( spectrum->real_time() > 0.0 )
+    result["realTime"] = spectrum->real_time();
+  else
+    result["realTime"] = "N/A";
+  
+  if( (spectrum->live_time() > 0.0) && (spectrum->real_time() > 0.0) )
+    result["deadTimeFraction"] = (spectrum->real_time() - spectrum->live_time()) / spectrum->real_time();
+  else
+    result["deadTimeFraction"] = "N/A";
+  
   result["startTime"] = SpecUtils::to_iso_string( spectrum->start_time() );
   result["numChannels"] = spectrum->num_gamma_channels();
   //result["energyCalibration"] = spectrum->calibration_coeffs();
@@ -1156,6 +1257,7 @@ json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* intersp
     result["neutronCounts"] = spectrum->neutron_counts_sum();
     result["neutronLiveTime"] = spectrum->neutron_live_time();
     result["neutronCPS"] = spectrum->neutron_counts_sum() / spectrum->neutron_live_time();
+    result["neutronCPS_uncertainty"] = sqrt( std::max(2.0, spectrum->neutron_counts_sum()) ) / spectrum->neutron_live_time();
   }
   if( !spectrum->title().empty() )
     result["title"] = spectrum->title();
@@ -1760,7 +1862,7 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   const bool has_age = params.contains("Age");
   if( !nuc && has_age )
     throw runtime_error( "You can only specify 'Age' for a nuclide source" );
-
+  
   if( params.contains("Age") )
   {
     const string &age_str = params["Age"];
@@ -1783,17 +1885,77 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   if( max_results < 1 )
     throw runtime_error( "'MaxResults' must be 1 or larger." );
 
+  
+  const bool cascade = params.value("IncludeCascadeSumEnergies", false);
+  if( !nuc && cascade )
+    throw runtime_error( "You can only request cascade decay information for nuclides" );
+  
+  
   vector<pair<double,double>> result;
+  
+  //transition, first gamma BR, first gamma energy, second gamma energy, coincidence fraction
+  typedef tuple<const SandiaDecay::Transition *, double, float, float, float> coincidence_info_t;
+  vector<coincidence_info_t> nuc_gamma_coincidences;
+  
+  
   if( nuc )
   {
     SandiaDecay::NuclideMixture mix;
 
     // We will add the nuclide as aged, so this way the gammas will be for 1 bq parent activity
-    mix.addAgedNuclideByActivity( nuc, 1.0*SandiaDecay::Bq, age_in_seconds * SandiaDecay::second );
+    const double parent_activity = 1.0*SandiaDecay::Bq;
+    mix.addAgedNuclideByActivity( nuc, parent_activity, age_in_seconds * SandiaDecay::second );
     const vector<SandiaDecay::EnergyRatePair> energy_rate = mix.photons(0.0);
     result.reserve( energy_rate.size() );
     for( const SandiaDecay::EnergyRatePair &erp : energy_rate )
       result.emplace_back( erp.energy, erp.numPerSecond );
+    
+    if( cascade )
+    {
+      const vector<SandiaDecay::NuclideActivityPair> activities = mix.activity( 0.0 );
+      
+      for( const SandiaDecay::NuclideActivityPair &nap : activities )
+      {
+        const SandiaDecay::Nuclide *nuclide = nap.nuclide;
+        const double activity = nap.activity;
+        
+        for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
+        {
+          for( const SandiaDecay::RadParticle &particle : transition->products )
+          {
+            if( (particle.type != SandiaDecay::GammaParticle) )
+              continue;
+            
+            const double br = activity * particle.intensity * transition->branchRatio / parent_activity;
+            
+            for( size_t coinc_index = 0; coinc_index < particle.coincidences.size(); ++coinc_index )
+            {
+              const unsigned short int part_ind = particle.coincidences[coinc_index].first;
+              const float fraction = particle.coincidences[coinc_index].second;
+              assert( part_ind < transition->products.size() );
+              if( part_ind < transition->products.size() )
+              {
+                const SandiaDecay::RadParticle &coinc_part = transition->products[part_ind];
+                
+                // The BR of second gamma is just for debugging
+                const double second_br = activity * coinc_part.intensity * transition->branchRatio / parent_activity;
+                
+                if( coinc_part.type == SandiaDecay::ProductType::GammaParticle )
+                  nuc_gamma_coincidences.emplace_back( transition, br, particle.energy, coinc_part.energy, fraction );
+              }//if (part_ind < transition->products.size())
+            }//for( loop over coincidences )
+          }//for( const SandiaDecay::RadParticle &particle : transition->products )
+        }//for( const SandiaDecay::Transition *transition : nuclide->decaysToChildren )
+      }//for( const SandiaDecay::NuclideActivityPair &nap : activities )
+      
+      // Sort by max intensity
+      std::sort( begin(nuc_gamma_coincidences), end(nuc_gamma_coincidences), []( const coincidence_info_t &lhs, const coincidence_info_t &rhs ) {
+        return ( (std::get<1>(lhs)*std::get<4>(lhs)) > (std::get<1>(rhs)*std::get<4>(rhs)) );
+      });
+      
+      if( static_cast<int>(nuc_gamma_coincidences.size()) > max_results )
+        nuc_gamma_coincidences.resize( static_cast<size_t>(max_results) );
+    }//if( cascade )
   }else if( el )
   {
     result.reserve( el->xrays.size() );
@@ -1834,6 +1996,43 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
 
   for( const pair<double,double> &val : result )
     json_array.push_back({val.first, val.second});
+  
+  
+  if( nuc && cascade )
+  {
+    nlohmann::json answer = nlohmann::json::object();
+    answer["photons"] = std::move(json_array);
+    answer["photonsDescription"] = "Photons emmitted per Bq of parent activity.";
+    
+    nlohmann::json cascades_array = nlohmann::json::array();
+    
+    //double max_coinc_amp = 1.0;
+    //if( !nuc_gamma_coincidences.empty() )
+    //  max_coinc_amp = std::get<1>(nuc_gamma_coincidences.front()) * std::get<4>(nuc_gamma_coincidences.front());
+    //assert( !IsNan(max_coinc_amp) && !IsInf(max_coinc_amp) && (max_coinc_amp > 0.0) );
+    
+    for( const coincidence_info_t &coinc : nuc_gamma_coincidences )
+    {
+      const double coinc_amp = std::get<1>(coinc) * std::get<4>(coinc);// / max_coinc_amp;
+      const SandiaDecay::Transition * const trans = std::get<0>(coinc);
+      string transition;
+      if( trans && trans->parent )
+        transition = trans->parent->symbol + " -> " + (trans->child ? trans->child->symbol : "various"s);
+      
+      cascades_array.emplace_back( nlohmann::json{
+        {"Intensity", coinc_amp},
+        {"Energies", {std::get<2>(coinc), std::get<3>(coinc)}},
+        {"Transition", std::move(transition) }
+      } );
+    }//for( const coincidence_info_t &coinc : nuc_gamma_coincidences )
+    
+    
+    answer["cascadeSums"] = std::move(cascades_array);
+    answer["cascadeSumsDescription"] = "Photons emitted at the same time during nuclear decay and may be detected together.  The Intensity gives how often the photons are emitted together - not an actual rate, detection probability, or anything comparible to the photons rate. If you applying attenuation or detection probability to the results, first apply to each photon individually, then multiple those results by intensity to get overall relative probabbility.";
+    
+    return answer;
+  }//if( nuc && cascade )
+  
 
   return json_array;
 }//nlohmann::json executeGetSourcePhotons(const nlohmann::json& params, InterSpec* interspec)

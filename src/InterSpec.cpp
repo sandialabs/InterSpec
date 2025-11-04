@@ -669,6 +669,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
+  // Check that the reaction database initialized, before we use it in RefLineDynamic
+  if( !ReactionGammaServer::database() && ReactionGammaServer::init_error() )
+    throw runtime_error( ReactionGammaServer::init_error() );
+  
   m_refLineDynamic = new RefLineDynamic( m_spectrum, this );
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
@@ -11116,14 +11120,15 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     case SpecUtils::SpectrumType::Foreground:
     case SpecUtils::SpectrumType::Background:
     {
-      const shared_ptr<SpecMeas> &meas = (type == SpecUtils::SpectrumType::Foreground) ? m_dataMeasurement
-                                                                                       : m_backgroundMeasurement;
-      if( meas && !meas->automatedSearchPeaks(samples) )
+      const bool is_fore = (type == SpecUtils::SpectrumType::Foreground);
+      const shared_ptr<SpecMeas> &meas = is_fore ? m_dataMeasurement : m_backgroundMeasurement;
+      shared_ptr<const SpecUtils::Measurement> spectrum = is_fore ? m_spectrum->data() : m_spectrum->background();
+      if( meas && spectrum && !meas->automatedSearchPeaks(samples) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
 #if( !BUILD_AS_UNIT_TEST_SUITE )
         // We wont search for hint peaks if we are running unit tests - so it wont take forever
-        searchForHintPeaks( meas, samples, isHPGe );
+        searchForHintPeaks( meas, samples, spectrum, isHPGe );
 #endif
       }else if( meas )
       {
@@ -11908,15 +11913,17 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     case SpecUtils::SpectrumType::Foreground:
     case SpecUtils::SpectrumType::Background:
     {
-      const shared_ptr<SpecMeas> &meas = (spec_type == SpecUtils::SpectrumType::Foreground)
-                                          ? m_dataMeasurement : m_backgroundMeasurement;
+      const bool is_fore = (spec_type == SpecUtils::SpectrumType::Foreground);
+      const shared_ptr<SpecMeas> &meas = is_fore ? m_dataMeasurement : m_backgroundMeasurement;
+      shared_ptr<const SpecUtils::Measurement> spectrum = is_fore ? m_spectrum->data() : m_spectrum->background();
+      
       if( meas && !meas->automatedSearchPeaks(sample_numbers) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
         
         // We wont search for hint peaks if we are running unit tests - so it wont take forever
 #if( !BUILD_AS_UNIT_TEST_SUITE )
-        searchForHintPeaks( meas, sample_numbers, isHPGe );
+        searchForHintPeaks( meas, sample_numbers, spectrum, isHPGe );
 #endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
       }else if( meas )
       {
@@ -12860,6 +12867,7 @@ bool InterSpec::colorPeaksBasedOnReferenceLines() const
 
 void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    const std::set<int> &samples,
+                                   const std::shared_ptr<const SpecUtils::Measurement> &spectrum_meas,
                                    const bool isHPGe )
 {
   assert( data );
@@ -12875,7 +12883,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
   shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
   
   const string sessionId = wApp->sessionId();
-  weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
+  weak_ptr<const SpecUtils::Measurement> weakdata = spectrum_meas;
   
   // Grab the detector
   shared_ptr<DetectorPeakResponse> drf = data->detector();

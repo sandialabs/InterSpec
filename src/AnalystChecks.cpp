@@ -23,11 +23,12 @@
 
 #include "InterSpec_config.h"
 
-#include <string>
-#include <deque>
 #include <set>
-#include <algorithm>
+#include <cmath>
+#include <deque>
+#include <string>
 #include <limits>
+#include <algorithm>
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -54,27 +55,33 @@ using namespace std;
 
 namespace AnalystChecks
 {
-  std::string hello_world()
-  {
-    return "Hello World from AnalystChecks namespace!";
-  }
-  
   DetectedPeakStatus detected_peaks(const DetectedPeaksOptions& options, InterSpec* interspec)
   {
     if (!interspec) {
       throw std::runtime_error("No InterSpec session available");
     }
-    
+
+    // Validate nonBackgroundPeaksOnly option
+    if( options.nonBackgroundPeaksOnly )
+    {
+      if( options.specType != SpecUtils::SpectrumType::Foreground )
+        throw std::runtime_error("nonBackgroundPeaksOnly may only be specified for Foreground spectrum");
+
+      std::shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+      if( !background )
+        throw std::runtime_error("nonBackgroundPeaksOnly may only be specified when a Background spectrum is loaded");
+    }
+
     // Get session ID from InterSpec (using Wt application)
     string user_session = "direct_call";
     if (Wt::WApplication* app = Wt::WApplication::instance()) {
       user_session = app->sessionId();
     }
-    
+
     std::shared_ptr<SpecMeas> meas = interspec->measurment(options.specType);
     if (!meas) {
-      throw std::runtime_error("No measurement loaded for " 
-          + std::string(SpecUtils::descriptionText(options.specType)) 
+      throw std::runtime_error("No measurement loaded for "
+          + std::string(SpecUtils::descriptionText(options.specType))
           + " spectrum");
     }
 
@@ -141,11 +148,128 @@ namespace AnalystChecks
     }
     
     std::sort(begin(all_peaks), end(all_peaks), &PeakDef::lessThanByMeanShrdPtr);
-    
+
+    // Apply nonBackgroundPeaksOnly filtering if requested
+    if( options.nonBackgroundPeaksOnly )
+    {
+      // Get background spectrum and its peaks
+      std::shared_ptr<SpecMeas> background_meas = interspec->measurment(SpecUtils::SpectrumType::Background);
+      std::shared_ptr<const SpecUtils::Measurement> background_spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+      
+      assert( background_spectrum );
+      if( !background_spectrum )
+        throw std::logic_error( "Somehow lost background spectrum being loaded?" );
+      const set<int> background_sample_nums = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
+
+      // Get or search for background auto peaks
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> background_auto_peaks = background_meas->automatedSearchPeaks(background_sample_nums);
+
+      if( !background_auto_peaks && background_spectrum )
+      {
+        const bool singleThreaded = false;
+        const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+        const auto det = background_meas->detector();
+        
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> background_user_peaks;
+        if( background_meas->sampleNumsWithPeaks().count(background_sample_nums) )
+          background_user_peaks = background_meas->peaks(background_sample_nums);
+        
+        const vector<shared_ptr<const PeakDef>> found_background_auto_peaks
+                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, isHPGe);
+
+        auto background_autopeaksdeque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(found_background_auto_peaks), end(found_background_auto_peaks));
+        background_auto_peaks = background_autopeaksdeque;
+        background_meas->setAutomatedSearchPeaks(background_sample_nums, background_autopeaksdeque);
+      }
+
+      // Filter foreground peaks based on background
+      vector<shared_ptr<const PeakDef>> filtered_peaks;
+      const double foreground_live_time = (spectrum->live_time() > 0.0f) ? spectrum->live_time() : 1.0f;
+      const double background_live_time = (background_spectrum->live_time() > 0.0f ? background_spectrum->live_time() : 1.0f);
+
+      for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
+      {
+        bool include_peak = true;
+
+        // Check if there is a corresponding background peak
+        if( background_auto_peaks )
+        {
+          // Find the closest matching background peak
+          shared_ptr<const PeakDef> closest_bg_peak;
+          double smallest_energy_diff = std::numeric_limits<double>::infinity();
+
+          for( const shared_ptr<const PeakDef> &bg_peak : *background_auto_peaks )
+          {
+            assert( fg_peak != bg_peak );
+            
+            // Check if peaks are at roughly the same energy (within their widths)
+            const double energy_diff = fabs(fg_peak->mean() - bg_peak->mean());
+            const double avg_fwhm = 0.75 * (fg_peak->fwhm() + bg_peak->fwhm()) / 2.0;
+
+            if( (energy_diff < avg_fwhm) && (energy_diff < smallest_energy_diff) )
+            {
+              closest_bg_peak = bg_peak;
+              smallest_energy_diff = energy_diff;
+            }
+          }
+
+          // If we found a matching background peak, compare CPS
+          if( closest_bg_peak )
+          {
+            const double fg_cps = (fg_peak->amplitude() / foreground_live_time);
+            const double bg_cps = (closest_bg_peak->amplitude() / background_live_time);
+
+            // Check if foreground peak is elevated by at least 20% relative to background
+            const double elevation_threshold = 1.20;
+            if( fg_cps > (bg_cps * elevation_threshold) )
+            {
+              include_peak = true;
+
+              // Foreground is elevated by >20%, now check statistical significance if uncertainties are available
+              const double fg_amp_uncert = fg_peak->amplitudeUncert();
+              const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
+
+              if( (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0) )
+              {
+                // Calculate CPS uncertainties
+                const double fg_cps_uncert = fg_amp_uncert / foreground_live_time;
+                const double bg_cps_uncert = bg_amp_uncert / background_live_time;
+
+                // Calculate combined uncertainty
+                const double combined_uncert = sqrt(fg_cps_uncert*fg_cps_uncert + bg_cps_uncert*bg_cps_uncert);
+
+                // Check if foreground is elevated by at least 2.25 sigma
+                const double min_sigma = 2.25;
+                const double sigma_elevation = ((fg_cps - bg_cps) / combined_uncert);
+                include_peak = (sigma_elevation > min_sigma);
+              }
+            }else
+            {
+              // Foreground peak is not elevated by 20% - exclude it
+              include_peak = false;
+            }//if( fg_cps > (bg_cps * elevation_threshold) ) / else
+          }else
+          {
+            // If we didnt detect the peak in the background, but this is a pretty insignificant peak that
+            //  could be a background peak, then dont include it
+            if( (fg_peak->amplitude() < 100) && (fg_peak->amplitudeUncert() > 0.0) )
+            {
+              // TODO: check if peak potentually lines up with a background peak, and if so, estimate the amplitude we would expect for it in the background spectrum, and if we wouldnt totally expect to detect it in the background spectrum, and the foreground peak significance isnt that high or its amplitude is consistent with what is expected from other confirmed background peaks of the same series, then dont include it.
+            }
+          }//if( closest_bg_peak )
+        }//if( background_auto_peaks )
+
+        if( include_peak )
+          filtered_peaks.push_back(fg_peak);
+      }//for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
+
+      all_peaks = std::move(filtered_peaks);
+    }//if( options.nonBackgroundPeaksOnly )
+
+
     DetectedPeakStatus result;
-    result.userSession = user_session;
     result.peaks = std::move(all_peaks);
-    
+
     return result;
   }
   
@@ -301,7 +425,7 @@ namespace AnalystChecks
     
     PeakModel *pmodel = interspec->peakModel();
     assert( pmodel );
-    if( options.addToUsersPeaks && pmodel )
+    if( !options.doNotAddToAnalysisPeaks && pmodel )
     {
       if( options.specType == SpecUtils::SpectrumType::Foreground )
       {
@@ -312,7 +436,7 @@ namespace AnalystChecks
         // It would also be valid to handle the Foreground in this logic block, I think
         shared_ptr<deque<shared_ptr<const PeakDef>>> new_deque = make_shared<deque<shared_ptr<const PeakDef>>>(*meas_peaks);
         deque<shared_ptr<const PeakDef>> &peak_deque = *new_deque;
-        
+
         for( shared_ptr<const PeakDef> old : peaks_to_remove )
         {
           auto pos = std::find( begin(peak_deque), end(peak_deque), old );
@@ -320,23 +444,22 @@ namespace AnalystChecks
           if( pos != end(peak_deque) )
             peak_deque.erase( pos );
         }
-        
+
         for( shared_ptr<const PeakDef> new_peak : peaks_to_add_in )
           peak_deque.push_back( new_peak );
         std::sort( begin(peak_deque), end(peak_deque), &PeakDef::lessThanByMeanShrdPtr );
-        
+
         pmodel->setPeaks( peak_deque, options.specType );
       }
-    }//if( options.addToUsersPeaks )
+    }//if( !options.doNotAddToAnalysisPeaks )
     
     
     
     FitPeakStatus result;
-    
-    result.userSession = user_session;
+
     result.fitPeak = fit_peak;
     result.peaksInRoi = peaks_to_add_in;
-    
+
     return result;
   }//FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec );
   
@@ -373,7 +496,6 @@ namespace AnalystChecks
 
 
     GetUserPeakStatus status;
-    status.userSession = user_session;
 
     if( meas_peaks )
     {
@@ -437,8 +559,22 @@ namespace AnalystChecks
     if( !nuc )
     {
       // See if its a element for nuclide fluorescence
-      const SandiaDecay::Element * const el = db->element( nuclide );
-      if( !el )
+      string el_str = nuclide;
+      const bool contained_xray = (SpecUtils::icontains(el_str, "x-ray")
+                                   || SpecUtils::icontains(el_str, "x ray")
+                                   || SpecUtils::icontains(el_str, "xray")
+                                   || SpecUtils::icontains(el_str, "element"));
+      if( contained_xray )
+      {
+        SpecUtils::ireplace_all( el_str, "x-ray", "");
+        SpecUtils::ireplace_all( el_str, "x ray", "");
+        SpecUtils::ireplace_all( el_str, "xray", "");
+        SpecUtils::ireplace_all( el_str, "element", "");
+      }
+      SpecUtils::trim( el_str );
+      
+      const SandiaDecay::Element * const el = db->element( el_str );
+      if( !el && !contained_xray )
       {
         if( SpecUtils::istarts_with( nuclide, "Neut" ) )
           return {478.0f, 847.0f, 2223.3f, 2235.3f};
@@ -482,7 +618,7 @@ namespace AnalystChecks
         {
           throw std::runtime_error("No nuclide, element, or reaction found for name '" + nuclide + "'");
         }//try / catch
-      }//if( !el )
+      }//if( !el && !contained_xray )
 
       // For uranium and lead we'll just hard-code the result
       if( el->atomicNumber == 92 ) //Uranium
@@ -1102,6 +1238,18 @@ namespace AnalystChecks
   }//SpectrumCountsInEnergyRange get_counts_in_energy_range( const double lower_energy, const double upper_energy, InterSpec *interspec )
 
 
+  const char* to_string( EscapePeakType type )
+  {
+    switch( type )
+    {
+      case EscapePeakType::SingleEscape: return "SingleEscape";
+      case EscapePeakType::DoubleEscape: return "DoubleEscape";
+    }//switch( type )
+
+    throw runtime_error( "Invalid EscapePeakType value" );
+  }//const char* to_string( EscapePeakType type )
+
+
   const char* to_string( EditPeakAction action )
   {
     switch( action )
@@ -1183,7 +1331,6 @@ namespace AnalystChecks
     if( !peak )
     {
       return EditAnalysisPeakStatus{
-        user_session,
         false,
         "No peak found near " + std::to_string(options.energy) + " keV",
         std::nullopt,
@@ -1197,7 +1344,6 @@ namespace AnalystChecks
     if( energy_diff > fwhm )
     {
       return EditAnalysisPeakStatus{
-        user_session,
         false,
         "Nearest peak at " + std::to_string(peak->mean()) + " keV is more than 1 FWHM ("
           + std::to_string(fwhm) + " keV) away from requested " + std::to_string(options.energy) + " keV",
@@ -1211,7 +1357,6 @@ namespace AnalystChecks
     {
       peakModel->removePeak( peak );
       return EditAnalysisPeakStatus{
-        user_session,
         true,
         "Deleted peak at " + std::to_string(peak->mean()) + " keV",
         std::nullopt,
@@ -1479,7 +1624,6 @@ namespace AnalystChecks
         updated_peak = make_shared<const PeakDef>(modifiedPeak);
 
       return EditAnalysisPeakStatus{
-        user_session,
         true,
         "Successfully performed " + string(to_string(options.editAction)) + " on peak at " + std::to_string(modifiedPeak.mean()) + " keV",
         updated_peak,
@@ -1489,7 +1633,6 @@ namespace AnalystChecks
     catch( const exception &e )
     {
       return EditAnalysisPeakStatus{
-        user_session,
         false,
         string("Error performing ") + to_string(options.editAction) + ": " + e.what(),
         std::nullopt,
@@ -1497,5 +1640,303 @@ namespace AnalystChecks
       };
     }//try / catch
   }//EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec )
+
+
+  EscapePeakCheckStatus escape_peak_check( const EscapePeakCheckOptions &options, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw runtime_error( "escape_peak_check: No InterSpec session available" );
+
+    const double input_energy = options.energy;
+
+    // Constants for escape peak calculations
+    const double electron_rest_mass = 510.9989; // keV
+    const double single_escape_offset = electron_rest_mass;
+    const double double_escape_offset = 2.0 * electron_rest_mass;
+
+    // Get the spectrum
+    shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+    if( !meas )
+    {
+      throw runtime_error( "No measurement loaded for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+    }
+
+    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram( options.specType );
+    if( !spectrum )
+    {
+      throw runtime_error( "No spectrum displayed for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+    }
+
+    // Determine detector type for pair production threshold
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
+    const double pair_prod_thresh = isHPGe ? 1255.0 : 2585.0;
+
+    // Initialize result
+    EscapePeakCheckStatus result;
+
+    // Calculate potential energies (independent of actual peaks)
+    result.potentialSingleEscapePeakEnergy = input_energy - single_escape_offset;
+    result.potentialDoubleEscapePeakEnergy = input_energy - double_escape_offset;
+    result.potentialParentPeakSingleEscape = input_energy + single_escape_offset;
+    result.potentialParentPeakDoubleEscape = input_energy + double_escape_offset;
+
+    // Calculate search windows for each potential energy
+    // Window = max(1.0, min(0.5*fwhm, 15.0)) - fairly arbitrary and untested
+    const auto calc_window = [&]( const double energy ) -> double {
+      if( energy < 0.0 )
+        return 1.0; // If energy is negative, just use minimum window
+
+      const double fwhm = get_expected_fwhm( energy, interspec );
+      return std::max( 1.0, std::min( 0.5 * fwhm, 15.0 ) );
+    };
+
+    // Calculate windows for potential escape peaks of the input energy
+    if( result.potentialSingleEscapePeakEnergy > 0.0 )
+      result.singleEscapeSearchWindow = calc_window( result.potentialSingleEscapePeakEnergy );
+    else
+      result.singleEscapeSearchWindow = 1.0;
+
+    if( result.potentialDoubleEscapePeakEnergy > 0.0 )
+      result.doubleEscapeSearchWindow = calc_window( result.potentialDoubleEscapePeakEnergy );
+    else
+      result.doubleEscapeSearchWindow = 1.0;
+
+    // Calculate windows for potential parent peaks (if input is an escape peak)
+    result.singleEscapeParentSearchWindow = calc_window( result.potentialParentPeakSingleEscape );
+    result.doubleEscapeParentSearchWindow = calc_window( result.potentialParentPeakDoubleEscape );
+
+    // Get all peaks in the spectrum (user + auto-search)
+    DetectedPeaksOptions peak_options;
+    peak_options.specType = options.specType;
+    peak_options.nonBackgroundPeaksOnly = false;
+    const DetectedPeakStatus peak_status = detected_peaks( peak_options, interspec );
+    const vector<shared_ptr<const PeakDef>> &all_peaks = peak_status.peaks;
+
+    // Helper lambda to find a peak near a given energy
+    const auto find_peak_near_energy = [&all_peaks]( const double target_energy, const double window )
+        -> shared_ptr<const PeakDef> {
+      for( const shared_ptr<const PeakDef> &peak : all_peaks )
+      {
+        if( !peak )
+          continue;
+
+        const double peak_energy = peak->mean();
+        if( fabs(peak_energy - target_energy) <= window )
+          return peak;
+      }
+      return nullptr;
+    };
+
+    // Helper lambda to create label for an escape peak
+    const auto create_escape_label = []( const shared_ptr<const PeakDef> &parent_peak,
+                                          const EscapePeakType escape_type,
+                                          ParentPeakInfo &parent_info ) {
+      const char *escape_prefix = (escape_type == EscapePeakType::SingleEscape) ? "S.E." : "D.E.";
+      char buffer[256];
+
+      // If the parent peak has a source (nuclide, reaction, or x-ray), use it
+      if( parent_peak->parentNuclide() )
+      {
+        snprintf( buffer, sizeof(buffer), "%s %s %.2f keV",
+                 parent_peak->parentNuclide()->symbol.c_str(),
+                 escape_prefix,
+                 parent_peak->mean() );
+        parent_info.sourceLabel = buffer;
+      }
+      else if( parent_peak->reaction() )
+      {
+        snprintf( buffer, sizeof(buffer), "%s %s %.2f keV",
+                 parent_peak->reaction()->name().c_str(),
+                 escape_prefix,
+                 parent_peak->mean() );
+        parent_info.sourceLabel = buffer;
+      }
+      else if( parent_peak->xrayElement() )
+      {
+        snprintf( buffer, sizeof(buffer), "%s %s %.2f keV",
+                 parent_peak->xrayElement()->symbol.c_str(),
+                 escape_prefix,
+                 parent_peak->mean() );
+        parent_info.sourceLabel = buffer;
+      }
+      else
+      {
+        // No source - create user label
+        snprintf( buffer, sizeof(buffer), "%.2f %s", parent_peak->mean(), escape_prefix );
+        parent_info.userLabel = buffer;
+      }
+    };
+
+    // Check if the input energy is an escape peak of another peak
+    // IMPORTANT: Check double escape (1022 keV) FIRST to avoid misidentifying
+    // a double escape peak as a single escape peak
+
+    // Check for double escape parent (input + 1022 keV)
+    const double potential_de_parent = result.potentialParentPeakDoubleEscape;
+    if( potential_de_parent > pair_prod_thresh )
+    {
+      shared_ptr<const PeakDef> parent_peak = find_peak_near_energy(
+        potential_de_parent,
+        result.doubleEscapeParentSearchWindow
+      );
+
+      if( parent_peak )
+      {
+        ParentPeakInfo parent_info;
+        parent_info.parentPeakEnergy = parent_peak->mean();
+        parent_info.escapeType = EscapePeakType::DoubleEscape;
+        create_escape_label( parent_peak, EscapePeakType::DoubleEscape, parent_info );
+        result.parentPeak = parent_info;
+      }
+    }//if( potential_de_parent > pair_prod_thresh )
+
+    // Check for single escape parent (input + 511 keV) - only if we haven't found a D.E. parent
+    if( !result.parentPeak.has_value() )
+    {
+      const double potential_se_parent = result.potentialParentPeakSingleEscape;
+      if( potential_se_parent > pair_prod_thresh )
+      {
+        shared_ptr<const PeakDef> parent_peak = find_peak_near_energy(
+          potential_se_parent,
+          result.singleEscapeParentSearchWindow
+        );
+
+        if( parent_peak )
+        {
+          ParentPeakInfo parent_info;
+          parent_info.parentPeakEnergy = parent_peak->mean();
+          parent_info.escapeType = EscapePeakType::SingleEscape;
+          create_escape_label( parent_peak, EscapePeakType::SingleEscape, parent_info );
+          result.parentPeak = parent_info;
+        }
+      }//if( potential_se_parent > pair_prod_thresh )
+    }//if( !result.parentPeak.has_value() )
+
+    // Edge case: Check if parent peak would be above detector range
+    // This happens when the parent gamma is too high energy to be detected, but its
+    // escape peaks are within the detector range
+    if( !result.parentPeak.has_value() )
+    {
+      const double detector_max_energy = spectrum->gamma_energy_max();
+
+      // Collect all unique nuclides and reactions from existing peaks
+      set<const SandiaDecay::Nuclide *> nuclides_in_spectrum;
+      set<const ReactionGamma::Reaction *> reactions_in_spectrum;
+
+      for( const shared_ptr<const PeakDef> &peak : all_peaks )
+      {
+        if( !peak )
+          continue;
+
+        if( peak->parentNuclide() )
+          nuclides_in_spectrum.insert( peak->parentNuclide() );
+
+        if( peak->reaction() )
+          reactions_in_spectrum.insert( peak->reaction() );
+      }
+
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      if( !db )
+        throw runtime_error( "No decay database available" );
+
+      // Helper lambda to check if an above-range gamma matches our input as an escape peak
+      const auto check_above_range_gamma = [&]( const double gamma_energy,
+                                                 const EscapePeakType escape_type,
+                                                 const string &source_name ) -> bool {
+        if( gamma_energy <= detector_max_energy )
+          return false; // Gamma is in range, not an edge case
+
+        if( gamma_energy < pair_prod_thresh )
+          return false; // Can't produce escape peaks
+
+        const double expected_escape_energy = (escape_type == EscapePeakType::SingleEscape)
+                                               ? (gamma_energy - single_escape_offset)
+                                               : (gamma_energy - double_escape_offset);
+
+        const double window = (escape_type == EscapePeakType::SingleEscape)
+                              ? result.singleEscapeParentSearchWindow
+                              : result.doubleEscapeParentSearchWindow;
+
+        if( fabs(expected_escape_energy - input_energy) <= window )
+        {
+          // Found a match!
+          ParentPeakInfo parent_info;
+          parent_info.parentPeakEnergy = gamma_energy;
+          parent_info.escapeType = escape_type;
+
+          const char *escape_prefix = (escape_type == EscapePeakType::SingleEscape) ? "S.E." : "D.E.";
+          char buffer[256];
+          snprintf( buffer, sizeof(buffer), "%s %s %.2f keV",
+                   source_name.c_str(), escape_prefix, gamma_energy );
+          parent_info.sourceLabel = buffer;
+
+          result.parentPeak = parent_info;
+          return true;
+        }
+
+        return false;
+      };
+
+      // Check nuclides for gammas above detector range
+      for( const SandiaDecay::Nuclide *nuc : nuclides_in_spectrum )
+      {
+        if( !nuc )
+          continue;
+
+        const double age = PeakDef::defaultDecayTime( nuc );
+        SandiaDecay::NuclideMixture mixture;
+        mixture.addNuclide( SandiaDecay::NuclideActivityPair(nuc, 1.0) );
+        const vector<SandiaDecay::EnergyRatePair> photons = mixture.photons(
+          age,
+          SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy
+        );
+
+        // Check double escape first, then single escape
+        for( const auto &photon : photons )
+        {
+          const float gamma_energy = photon.energy;
+
+          if( check_above_range_gamma(gamma_energy, EscapePeakType::DoubleEscape, nuc->symbol) )
+            break; // Found a match
+
+          if( check_above_range_gamma(gamma_energy, EscapePeakType::SingleEscape, nuc->symbol) )
+            break; // Found a match
+        }
+
+        if( result.parentPeak.has_value() )
+          break; // Found a match, stop searching
+      }//for( const SandiaDecay::Nuclide *nuc : nuclides_in_spectrum )
+
+      // Check reactions for gammas above detector range
+      if( !result.parentPeak.has_value() )
+      {
+        for( const ReactionGamma::Reaction *rxn : reactions_in_spectrum )
+        {
+          if( !rxn )
+            continue;
+
+          for( const auto &gamma : rxn->gammas )
+          {
+            const float gamma_energy = gamma.energy;
+
+            if( check_above_range_gamma(gamma_energy, EscapePeakType::DoubleEscape, rxn->name()) )
+              break; // Found a match
+
+            if( check_above_range_gamma(gamma_energy, EscapePeakType::SingleEscape, rxn->name()) )
+              break; // Found a match
+          }
+
+          if( result.parentPeak.has_value() )
+            break; // Found a match, stop searching
+        }//for( const ReactionGamma::Reaction *rxn : reactions_in_spectrum )
+      }//if( !result.parentPeak.has_value() )
+    }//if( !result.parentPeak.has_value() ) - edge case check
+
+    return result;
+  }//EscapePeakCheckStatus escape_peak_check( const EscapePeakCheckOptions &options, InterSpec *interspec )
 
 } // namespace AnalystChecks

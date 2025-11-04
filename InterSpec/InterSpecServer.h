@@ -361,6 +361,7 @@ namespace InterSpecServer
 #endif
 
 #if( USE_LLM_INTERFACE )
+  /** Returns LLM config - will throw exception if configuration is invalid. */
   std::shared_ptr<const LlmConfig> llm_config();
 #endif
 }//namespace InterSpecServer

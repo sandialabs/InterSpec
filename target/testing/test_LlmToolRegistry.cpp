@@ -43,9 +43,11 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
-#include "InterSpec/InterSpec.h"
 #include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/LlmToolGui.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmToolRegistry.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -56,7 +58,7 @@ using namespace std;
 using namespace boost::unit_test;
 using json = nlohmann::json;
 
-// TODO: as of 20251013, need to add tests for: `currie_mda_calc`, `fit_peaks_for_nuclide`, `automated_isotope_id_results`, and `nuclides_with_primary_gammas_in_energy_range` 
+// TODO: as of 20251013, need to add tests for: `currie_mda_calc`, `add_analysis_peaks_for_source`, `automated_source_id_results`, and `nuclides_with_primary_gammas_in_energy_range` 
 
 
 std::string g_test_file_dir;
@@ -152,7 +154,9 @@ public:
 
     // Load LLM configuration and register default LLM tools
     std::shared_ptr<const LlmConfig> llmConfig = LlmConfig::load();
-    LlmTools::ToolRegistry::instance().registerDefaultTools( llmConfig );
+    m_interspec->createLlmTool();
+    LlmToolGui *llm_gui = m_interspec->currentLlmTool();
+    BOOST_REQUIRE( llm_gui );
 
     // Load a test spectrum file for detector-related tests
     try
@@ -210,6 +214,21 @@ public:
     m_interspec = nullptr;
     m_app = nullptr; //deleted when m_env is deleted
   }
+  
+  
+  const LlmTools::ToolRegistry &llmToolRegistry()
+  {
+    LlmToolGui *llm_gui = m_interspec->currentLlmTool();
+    BOOST_REQUIRE( llm_gui );
+    LlmInterface *llm_interface = llm_gui->llmInterface();
+    BOOST_REQUIRE( llm_interface );
+    
+    shared_ptr<const LlmTools::ToolRegistry> registry_ptr = llm_interface->toolRegistry();
+    BOOST_REQUIRE( !!registry_ptr );
+    
+    return *registry_ptr;
+  }
+  
 };
 
 
@@ -217,7 +236,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetMaterials )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // Get materials - no parameters needed
   json result;
@@ -255,7 +274,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetMaterialInfo )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // Test with valid material
   json params;
@@ -290,7 +309,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourcePhotons )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // Test with a nuclide
   json params;
@@ -355,7 +374,7 @@ BOOST_AUTO_TEST_CASE( test_executeAvailableDetectors )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json params = json::object();
 
@@ -424,7 +443,7 @@ BOOST_AUTO_TEST_CASE( test_executeLoadDetectorEfficiency )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // First get available detectors (note: tool name has typo - "avaiable" not "available")
   json available_result;
@@ -462,7 +481,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetDetectorInfo )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // First load a detector
   json available_result;
@@ -528,7 +547,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // First load a detector
   json available_result;
@@ -670,7 +689,7 @@ BOOST_AUTO_TEST_CASE( test_executePhotopeakDetectionCalc )
 BOOST_AUTO_TEST_CASE( test_executeGetLoadedSpectra )
 {
   InterSpecTestFixture fixture;
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json result;
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("loaded_spectra", {}, fixture.m_interspec) );
@@ -687,7 +706,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetSpectrumInfo )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json params = json::object();
   params["specType"] = "Foreground";
@@ -730,7 +749,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetCountsInEnergyRange )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json params;
   params["lowerEnergy"] = 600.0;
@@ -768,12 +787,16 @@ BOOST_AUTO_TEST_CASE( test_executePeakDetection )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // We have to manually run hint seard
   InterSpec * const viewer = fixture.m_interspec;
-  viewer->searchForHintPeaks( viewer->measurment(SpecUtils::SpectrumType::Foreground),
-                             viewer->displayedSamples(SpecUtils::SpectrumType::Foreground), true );
+  
+  const std::set<int> &foreground_samples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<SpecMeas> foreground_meas = viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<const SpecUtils::Measurement> foreground_spectrum = viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  
+  viewer->searchForHintPeaks( foreground_meas, foreground_samples, foreground_spectrum, true );
   
   
   json params = json::object();
@@ -846,7 +869,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // Get user peaks when there are none initially
   json params = json::object();
@@ -871,13 +894,13 @@ BOOST_AUTO_TEST_CASE( test_executeGetUserPeaks )
   json fit_params_776;
   fit_params_776["energy"] = 776.52;
   fit_params_776["specType"] = "Foreground";
-  BOOST_REQUIRE_NO_THROW( registry.executeTool("fit_peak", fit_params_776, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( registry.executeTool("add_analysis_peak", fit_params_776, fixture.m_interspec) );
 
   // Fit peak at 554.35 keV
   json fit_params_554;
   fit_params_554["energy"] = 554.35;
   fit_params_554["specType"] = "Foreground";
-  BOOST_REQUIRE_NO_THROW( registry.executeTool("fit_peak", fit_params_554, fixture.m_interspec) );
+  BOOST_REQUIRE_NO_THROW( registry.executeTool("add_analysis_peak", fit_params_554, fixture.m_interspec) );
 
   //std::cout << "Fitted peaks at 776.52 keV and 554.35 keV\n";
 
@@ -1030,7 +1053,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetCharacteristicLines )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // Test nuclide: U235 - should have 185.7 keV
   json params;
@@ -1126,20 +1149,19 @@ BOOST_AUTO_TEST_CASE( test_executeGetAssociatedSources )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // Get associated nuclides
   json params = json::object();
   params["source"] = "Br82";
 
   json result;
-#if( INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
+//#if( INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_info", params, fixture.m_interspec) );
-#else
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("sources_associated_with_source", params, fixture.m_interspec) );
-
-  BOOST_CHECK( result.contains("status") && (result["status"] == "success") );
-#endif
+//#else
+//  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("sources_associated_with_source", params, fixture.m_interspec) );
+//  BOOST_CHECK( result.contains("status") && (result["status"] == "success") );
+//#endif
   BOOST_CHECK( result.contains("source") && (result["source"] == "Br82") );
   BOOST_REQUIRE( result.contains("associatedSources") );
   BOOST_REQUIRE( result["associatedSources"].is_array() );
@@ -1171,17 +1193,17 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourceAnalystNotes )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json params;
   params["source"] = "U235";
 
   json result;
-#if( INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
+//#if( INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_info", params, fixture.m_interspec) );
-#else
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("analyst_notes_for_source", params, fixture.m_interspec) );
-#endif
+//#else
+//  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("analyst_notes_for_source", params, fixture.m_interspec) );
+//#endif
 
   // Should return an object
   BOOST_CHECK( result.is_object() );
@@ -1198,20 +1220,20 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourceAnalystNotes )
 
   // Test with Cs137
   params["source"] = "Cs137";
-#if( INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
+//#if( INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
   BOOST_REQUIRE_NO_THROW( result = registry.executeTool("source_info", params, fixture.m_interspec) );
-#else
-  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("analyst_notes_for_source", params, fixture.m_interspec) );
-#endif
+//#else
+//  BOOST_REQUIRE_NO_THROW( result = registry.executeTool("analyst_notes_for_source", params, fixture.m_interspec) );
+//#endif
   BOOST_CHECK( result.contains("analystNotes") );
 
   // Test error handling - invalid nuclide
   params["source"] = "InvalidNuclide12345";
-#if( INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
+//#if( INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO )
   BOOST_CHECK_THROW( registry.executeTool("source_info", params, fixture.m_interspec), std::runtime_error );
-#else
-  BOOST_CHECK_THROW( registry.executeTool("analyst_notes_for_source", params, fixture.m_interspec), std::runtime_error );
-#endif
+//#else
+//  BOOST_CHECK_THROW( registry.executeTool("analyst_notes_for_source", params, fixture.m_interspec), std::runtime_error );
+//#endif
 }
 
 
@@ -1219,7 +1241,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetSourceInfo )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json params;
   params["source"] = "Cs137";
@@ -1314,7 +1336,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetNuclideDecayChain )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json params;
   params["nuclide"] = "U238";
@@ -1368,7 +1390,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetExpectedFwhm )
 {
   InterSpecTestFixture fixture;
 
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // First load a detector
   json available_result;
@@ -1441,7 +1463,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetExpectedFwhm )
 BOOST_AUTO_TEST_CASE( test_executeSearchSourcesByEnergy )
 {
   InterSpecTestFixture fixture;
-  LlmTools::ToolRegistry &registry = LlmTools::ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // Test basic search with Co-60 energies (1173 and 1332 keV)
   json params;
@@ -1595,7 +1617,7 @@ BOOST_AUTO_TEST_CASE( test_executeSearchSourcesByEnergy )
 BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
 {
   InterSpecTestFixture fixture;
-  auto& registry = LlmTools::ToolRegistry::instance();
+  const const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   json params, result;
 
@@ -1613,7 +1635,7 @@ BOOST_AUTO_TEST_CASE( test_executeEditAnalysisPeak )
     params["energy"] = energy;
     params["specType"] = "Foreground";
     params["addToUsersPeaks"] = true;
-    BOOST_REQUIRE_NO_THROW( result = registry.executeTool("fit_peak", params, fixture.m_interspec) );
+    BOOST_REQUIRE_NO_THROW( result = registry.executeTool("add_analysis_peak", params, fixture.m_interspec) );
     // Store the actual fitted energy for use in tests
     if( result.contains("fitPeakEnergy") )
     {
@@ -1987,7 +2009,7 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
   InterSpecTestFixture fixture;
 
   // Get the registry (tools should already be registered by fixture)
-  ToolRegistry& registry = ToolRegistry::instance();
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
 
   // Get all registered tools
   const std::map<std::string, SharedTool>& tools = registry.getTools();
@@ -1998,7 +2020,7 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
   // Define the expected tools (same list as in the validation code)
   const std::vector<std::string> expectedTools = {
     "detected_peaks",
-    "fit_peak",
+    "add_analysis_peak",
     "edit_analysis_peak",
     "get_analysis_peaks",
     "get_spectrum_info",
@@ -2006,13 +2028,13 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
     "sources_with_primary_gammas_in_energy_range",
     "sources_with_primary_gammas_near_energy",
     // These are always included, regardless of INCLUDE_NOTES_AND_ASSOCIATED_SRCS_WITH_SRC_INFO
-    "sources_associated_with_source",
-    "analyst_notes_for_source",
+    //"sources_associated_with_source", //This info now included in "source_info" call
+    //"analyst_notes_for_source",       //This info now included in "source_info" call
     "source_info",
     "nuclide_decay_chain",
-    "automated_isotope_id_results",
+    "automated_source_id_results",
     "loaded_spectra",
-    "fit_peaks_for_nuclide",
+    //"add_analysis_peaks_for_source", // Temporarily commenting out until we get this implementation right
     "get_counts_in_energy_range",
     "get_expected_fwhm",
     "currie_mda_calc",

@@ -47,23 +47,15 @@ namespace SandiaDecay
 
 namespace AnalystChecks
 {
-  /** A simple "hello world" type function for testing purposes.
-   
-   Returns a greeting message indicating the AnalystChecks module is working.
-   
-   @return A string containing a hello world message.
-   */
-  InterSpec_API std::string hello_world();
-  
   /** Options for peak detection analysis. */
   struct DetectedPeaksOptions {
     SpecUtils::SpectrumType specType;
     std::optional<std::string> userSession;
+    bool nonBackgroundPeaksOnly;
   };
   
   /** Results of peak detection analysis. */
   struct DetectedPeakStatus {
-    std::string userSession;
     std::vector<std::shared_ptr<const PeakDef>> peaks;
   };
   
@@ -81,7 +73,7 @@ namespace AnalystChecks
   
   
   struct FitPeakOptions {
-    bool addToUsersPeaks;
+    bool doNotAddToAnalysisPeaks;
     double energy;
     SpecUtils::SpectrumType specType;
     std::optional<std::string> source;
@@ -89,7 +81,6 @@ namespace AnalystChecks
   };
   
   struct FitPeakStatus {
-    std::string userSession;
     std::shared_ptr<const PeakDef> fitPeak;
     std::vector<std::shared_ptr<const PeakDef>> peaksInRoi;
   };
@@ -104,7 +95,6 @@ namespace AnalystChecks
   };
   
   struct GetUserPeakStatus {
-    std::string userSession;
     std::vector<std::shared_ptr<const PeakDef>> peaks;
   };
   
@@ -245,7 +235,6 @@ namespace AnalystChecks
   /** Results of peak edit operation. */
   struct EditAnalysisPeakStatus
   {
-    std::string userSession;
     bool success;
     std::string message;
     std::optional<std::shared_ptr<const PeakDef>> modifiedPeak;
@@ -264,6 +253,74 @@ namespace AnalystChecks
    @throws std::runtime_error if InterSpec is null or other errors occur
    */
   InterSpec_API EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec );
+
+  /** Enum specifying the type of escape peak. */
+  enum class EscapePeakType
+  {
+    SingleEscape,  // Parent energy minus 511 keV (one positron escapes)
+    DoubleEscape   // Parent energy minus 1022 keV (both positrons escape)
+  };//enum class EscapePeakType
+
+  /** Converts EscapePeakType enum to string representation.
+
+   @param type The escape peak type to convert
+   @return String representation of the type
+   */
+  const char* to_string( EscapePeakType type );
+
+  /** Information about the parent peak if the queried energy is an escape peak. */
+  struct ParentPeakInfo
+  {
+    double parentPeakEnergy;
+    EscapePeakType escapeType;
+    std::optional<std::string> sourceLabel;  // e.g., "Th232 S.E. 2614.52 keV" or "Co56 D.E. 3451.15 keV"
+    std::optional<std::string> userLabel;    // e.g., "2614.53 S.E." if no source assigned
+  };//struct ParentPeakInfo
+
+  /** Options for checking if a peak is an escape peak. */
+  struct EscapePeakCheckOptions
+  {
+    double energy;
+    SpecUtils::SpectrumType specType;  // defaults to Foreground if not specified
+  };//struct EscapePeakCheckOptions
+
+  /** Results of escape peak analysis. */
+  struct EscapePeakCheckStatus
+  {
+    // If the specified peak IS an escape peak of another peak in the spectrum
+    std::optional<ParentPeakInfo> parentPeak;
+
+    // Energies where escape peaks COULD be found (calculated independent of actual peaks)
+    double potentialSingleEscapePeakEnergy;     // input - 511 keV
+    double potentialDoubleEscapePeakEnergy;     // input - 1022 keV
+    double potentialParentPeakSingleEscape;     // input + 511 keV
+    double potentialParentPeakDoubleEscape;     // input + 1022 keV
+
+    // Search windows (±keV) for finding peaks at those energies
+    // Calculated as max(1.0, min(0.5*fwhm, 15.0)) - fairly arbitrary and untested
+    double singleEscapeSearchWindow;            // window for finding S.E. peak of input energy
+    double doubleEscapeSearchWindow;            // window for finding D.E. peak of input energy
+    double singleEscapeParentSearchWindow;      // window for finding parent if input is S.E.
+    double doubleEscapeParentSearchWindow;      // window for finding parent if input is D.E.
+  };//struct EscapePeakCheckStatus
+
+  /** Check if a peak at a specified energy is a single or double escape peak.
+
+   This function analyzes whether the peak at the given energy is an escape peak of another
+   peak in the spectrum. It checks for parent peaks at energy+511 keV (single escape) and
+   energy+1022 keV (double escape), verifying that parent peaks are above the pair production
+   threshold (~1255 keV for HPGe). The function also handles the edge case where the parent
+   peak is above the detector's energy range by checking nuclide photon energies.
+
+   Note: The function checks for double escape parents (1022 keV above) BEFORE single escape
+   parents (511 keV above) to avoid misidentifying a double escape peak as a single escape.
+
+   @param options Specifies the energy to check and which spectrum to use
+   @param interspec Pointer to the InterSpec session containing the spectrum
+   @return EscapePeakCheckStatus containing parent peak info (if found) and calculated potential energies
+   @throws std::runtime_error if InterSpec is null, no spectrum loaded, or other errors occur
+   */
+  InterSpec_API EscapePeakCheckStatus escape_peak_check( const EscapePeakCheckOptions &options, InterSpec *interspec );
 
 } // namespace AnalystChecks
 

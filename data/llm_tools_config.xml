@@ -21,13 +21,17 @@
             "type": "string",
             "description": "Which displayed spectrum to search for peaks in; the user is almost always interested in the Foreground, except to check if a peak is in both the foreground and background.",
             "enum": ["Foreground", "Background", "Secondary"]
+          },
+          "NonBackgroundPeaksOnly": {
+            "type": "boolean",
+            "description": "Optional: If specified true, only peaks without a cooresponding background spectrum peak, or peaks notably elevated over the background, will be returned. May only be specified true for the 'Foreground' spectrum, and only if a background spectrum is loaded.  If not specified, all peaks for the spectrum are returned."
           }
       },
       "required": ["specType"]
     }</ParametersSchema>
   </Tool>
 
-  <Tool name="fit_peak">
+  <Tool name="add_analysis_peak">
     <Description>Fit and add a peak to the users peaks, at approximately the specified energy, optionally associating a source with it.  Returns Region Of Interest that was either created, or the peak was added to.  If fit failed, reason will be described in 'error' field.</Description>
     <ParametersSchema>{
       "type": "object",
@@ -45,9 +49,9 @@
             "description": "Optional: Which displayed spectrum to search for peaks in; if not specified will use foreground (which is what user usually wants).",
             "enum": ["Foreground", "Background", "Secondary"]
           },
-          "addToUsersPeaks": {
+          "DoNotAddToAnalysisPeaks": {
             "type": "boolean",
-            "description": "Optional: if fit peak should be added to users peaks; defaults to true."
+            "description": "Optional: if true, the fit peak will not be added to the users analysis peaks, and instead the fit values will just be returned; defaults to false (i.e., peaks are added by default)."
           }
       },
       "required": ["energy"]
@@ -90,8 +94,27 @@
     }</ParametersSchema>
   </Tool>
 
+  <Tool name="escape_peak_check">
+    <Description>Check if a peak at a specified energy is a single or double escape peak of another peak in the spectrum. Returns the parent peak information if found, plus calculated energies where potential escape peaks or parent peaks could exist.  If the parent peak is found, and it has an assigned source, a "sourceLabel" will be returned that can be used to set the peaks source, or if the parent peak does not have a source, a "userLabel" will be returned that should be used to set the peaks user-label.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+          "energy": {
+            "type": "number",
+            "description": "Energy (in keV) of the peak to check for being an escape peak, or to calculate potential escape peak energies for."
+          },
+          "specType": {
+            "type": "string",
+            "enum": ["Foreground", "Background", "Secondary"],
+            "description": "Optional: Which displayed spectrum to check (default: Foreground)."
+          }
+      },
+      "required": ["energy"]
+    }</ParametersSchema>
+  </Tool>
+
   <Tool name="get_analysis_peaks">
-    <Description>Gets the peaks to use for further analysis that have either been manually fit by the user, or by the 'fit_peak' tool call, or similar.  These peaks tracked by an internal state.</Description>
+    <Description>Gets the peaks to use for further analysis that have either been manually fit by the user, or by the 'add_analysis_peak' tool call, or similar.  These peaks tracked by an internal state.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -112,7 +135,8 @@
     }</ParametersSchema>
   </Tool>
 
-  <Tool name="fit_peaks_for_nuclide">
+<!--
+  <Tool name="add_analysis_peaks_for_source">
     <Description>Fits peaks for the one or more specified nuclide(s). Returns the peaks that were fit.</Description>
     <ParametersSchema>{
       "type": "object",
@@ -132,6 +156,7 @@
       "required": ["nuclide"]
     }</ParametersSchema>
   </Tool>
+ -->
 
   <!-- Spectrum Information Tools -->
 
@@ -160,7 +185,7 @@
   </Tool>
 
   <Tool name="get_counts_in_energy_range">
-    <Description>Get the counts in the spectra for the specified energy range as well as compares statistical significance of differences between foreground and background and/or secondary count-rates, if those spectra are loaded.  This function can be used to check if the count rate of an energy range is elevated in the foreground relative to the background, especially above the 2614 keV peak.</Description>
+    <Description>Get the photon counts in the spectra for the specified energy range, as well as compares statistical significance of differences between foreground and background and/or secondary count-rates, if those spectra are loaded.  This function can be used to check if the count rate of an energy range is elevated in the foreground relative to the background, especially above the 2614 keV peak.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -191,8 +216,8 @@
     }</ParametersSchema>
   </Tool>
 
-  <Tool name="automated_isotope_id_results">
-    <Description>Get the isotope ID from the avaiable automated ID algorithms. Will return the detection systems on-board nuclide ID results, if present, as well as the GADRAS Full Spectrum Isotope ID results if the app is configured to get.</Description>
+  <Tool name="automated_source_id_results">
+    <Description>Get the source (isotope, flourescent x-ray, or nuclear reaction) ID from the avaiable automated ID algorithms. Will return the detection systems on-board nuclide ID results, if present, as well as the GADRAS Full Spectrum Isotope ID results if the app is configured to get.  These automated results can be wrong or incomplete, so should used at most as a starting point, or something to check.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -203,7 +228,7 @@
   <!-- Nuclear Data Tools -->
 
   <Tool name="primary_gammas_for_source">
-    <Description>Get the most likely energies a peak will be detected at for a source (nuclide, x-ray element, or nuclear reaction). Returns one to a few energies (in keV).  This is only a rough guess at the most prominent or unique peaks for the source; not detecting a peak at these energies does not rule out a source, but it makes the source a candidate.</Description>
+    <Description>Get the most likely energies a peak will be detected at for a source (nuclide, flourescent x-ray, or nuclear reaction). Returns one to a few energies (in keV).  This is only a rough guess at the most prominent or unique peaks for the source; not detecting a peak at these energies does not rule out a source, but it makes the source a candidate.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
@@ -247,7 +272,7 @@
       "required": ["energy"]
     }</ParametersSchema>
   </Tool>
-
+<!--
   <Tool name="sources_associated_with_source">
     <Description>Gets other sources (nuclides, reactions, x-rays) that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source.  You you should check for these associated sources being present or not when the specified source is observed.</Description>
     <ParametersSchema>{
@@ -275,6 +300,7 @@
       "required": ["source"]
     }</ParametersSchema>
   </Tool>
+-->
 
   <Tool name="source_info">
     <Description>Gets relevant information about the specified source (nuclide, x-ray element, reaction), such as half-life, decay modes, analyst notes (such as when the source is used/seen, typical activity ranges of nuclides, etc.), associated sources (i.e. sources that are commonly detected along with the specified source, or sources that might be mis-identified as the specified source - you should check for these associated sources being present or not when the specified source is observed), source catagories (medical, NORM, industrial, etc), and other nuclear data.</Description>
@@ -304,6 +330,7 @@
     }</ParametersSchema>
   </Tool>
 
+  <!-- TODO: consider adding escape peak option to "source_photons" -->
   <Tool name="source_photons">
     <Description>Returns a list of energy/intensity pairs associated with a nuclide, elemental fluorescence x-rays, or reaction.  The energies are expressed in keV, and intensities are given as photons per source Becquerel for nuclides, or normalized to 1 for flourescence or reactions.  Results will be sorted by energy.</Description>
     <ParametersSchema>{
@@ -321,6 +348,10 @@
           "type": "integer",
           "minimum": 1,
           "description": "The maximum number of energy/intensity pairs to return; if the source has more than this number of photons, then information for this number of the largest intensity photons will be returned.  If not specified, a value of 125 will be assumed."
+        },
+        "IncludeCascadeSumEnergies": {
+          "type": "boolean",
+          "description": "Optional: default false. If true, results will also include a list of top gamma pairs that may sum (gammas emitted at the same time that may be detected together), and is only relevant for nuclide sources and measurements less than ~15 cm from the source. The 'MaxResults' argument also limits the max possible length of these results."
         }
       },
       "required": ["Source"]
@@ -432,8 +463,41 @@ Further investigation of top returned candidates is required to make sure they m
           "description": "Optional: Distance from source to detector face (e.g., '10 cm', '1 m')"
         },
         "Shielding": {
-          "type": "object",
-          "description": "Optional shielding definition"
+          "type": "array",
+          "items": {
+            "type": "object",
+            "description": "Optional: Defines the shielding used to attenuate gammas and x-rays. Shielding must be specified in one of two formats.",
+            "oneOf": [{
+              "type": "object",
+              "properties": {
+                "AD": {
+                  "type": "number",
+                  "description": "Areal density of the shielding material in g/cm²."
+                },
+                "AN": {
+                  "type": "number",
+                  "description": "Effective atomic number of the shielding material."
+                }
+              },
+              "required": ["AD", "AN"],
+              "additionalProperties": false
+            },{
+              "type": "object",
+              "properties": {
+                "Material": {
+                  "type": "string",
+                  "description": "The shielding material, specified as an element symbol or material name. Available material names are returned by the `get_materials` tool. Example: 'Fe', which is equivalent to 'Iron', or 'glass_plate', which is returned from `get_materials`."
+                },
+                "Thickness": {
+                  "type": "string",
+                  "description": "The thickness of the shielding material, specified as a string with units. Example: '1.25cm'."
+                }
+              },
+              "required": ["Material", "Thickness"],
+              "additionalProperties": false
+            }]
+          },
+          "description": "An array of shielding objects, applied in order from source to detector. Each shielding layer attenuates the photons that pass through it."
         }
       },
       "required": ["Energies"]
