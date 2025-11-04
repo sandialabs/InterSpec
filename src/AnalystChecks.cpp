@@ -39,15 +39,19 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakModel.h"
-#include "InterSpec/ReferencePhotopeakDisplay.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/IsotopeSearchByEnergy.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/RelActCalcAuto.h"
+
 #include "SpecUtils/SpecUtilsAsync.h"
+
+#include "SandiaDecay/SandiaDecay.h"
 
 #include <Wt/WApplication>
 
@@ -1250,6 +1254,20 @@ namespace AnalystChecks
   }//const char* to_string( EscapePeakType type )
 
 
+  const char* to_string( SumPeakType type )
+  {
+    switch( type )
+    {
+      case SumPeakType::NotASumPeak: return "NotASumPeak";
+      case SumPeakType::RandomSum:   return "RandomSum";
+      case SumPeakType::CascadeSum:  return "CascadeSum";
+      case SumPeakType::Unknown:     return "Unknown";
+    }//switch( type )
+
+    throw runtime_error( "Invalid SumPeakType value" );
+  }//const char* to_string( SumPeakType type )
+
+
   const char* to_string( EditPeakAction action )
   {
     switch( action )
@@ -1938,5 +1956,380 @@ namespace AnalystChecks
 
     return result;
   }//EscapePeakCheckStatus escape_peak_check( const EscapePeakCheckOptions &options, InterSpec *interspec )
+
+
+  SumPeakCheckStatus sum_peak_check( const SumPeakCheckOptions &options, InterSpec *interspec )
+  {
+    if( !interspec )
+      throw runtime_error( "sum_peak_check: No InterSpec session available" );
+
+    const double target_energy = options.energy;
+
+    // Get the spectrum
+    shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+    if( !meas )
+    {
+      throw runtime_error( "No measurement loaded for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+    }
+
+    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram( options.specType );
+    if( !spectrum )
+    {
+      throw runtime_error( "No spectrum displayed for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+    }
+
+    // Determine detector type for dead time threshold
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
+    const double dead_time_threshold = isHPGe ? 0.20 : 0.10;
+
+    // Calculate dead time fraction
+    double dead_time_fraction = 0.0;
+    const bool has_valid_timing = (spectrum->live_time() > 0.0) && (spectrum->real_time() > 0.0);
+    if( has_valid_timing )
+      dead_time_fraction = (spectrum->real_time() - spectrum->live_time()) / spectrum->real_time();
+
+    // Check if cascade-sum detection should be disabled based on distance
+    // Cascade sums typically only occur at distances < 15 cm
+    const double cascade_distance_threshold = 15.0 * PhysicalUnits::cm;
+    const bool check_cascade_sums = !options.distance.has_value() || (*options.distance <= cascade_distance_threshold);
+
+    // Initialize result
+    SumPeakCheckStatus result;
+
+    // Calculate search window for finding contributing peaks
+    const double fwhm = get_expected_fwhm( target_energy, interspec );
+    result.searchWindow = std::max( 1.0, std::min( 0.5 * fwhm, 15.0 ) );
+
+    // Get all peaks in the spectrum
+    DetectedPeaksOptions peak_options;
+    peak_options.specType = options.specType;
+    peak_options.nonBackgroundPeaksOnly = false;
+    const DetectedPeakStatus peak_status = detected_peaks( peak_options, interspec );
+    const vector<shared_ptr<const PeakDef>> &all_peaks = peak_status.peaks;
+
+    // Structure to hold candidate sum peak pairs
+    struct CandidatePair
+    {
+      shared_ptr<const PeakDef> peak1;
+      shared_ptr<const PeakDef> peak2;
+      double sum_energy;
+      double energy_error;  // How far from target energy
+      SumPeakType sum_type;
+      double coincidence_fraction;  // For cascade sums
+      double selection_metric;      // For ranking candidates
+    };
+
+    vector<CandidatePair> candidates;
+
+    // Search for all pairs of peaks that sum to the target energy
+    for( size_t i = 0; i < all_peaks.size(); ++i )
+    {
+      const shared_ptr<const PeakDef> &peak1 = all_peaks[i];
+      if( !peak1 )
+        continue;
+
+      const double energy1 = peak1->mean();
+
+      // Peak can sum with itself (for random summing)
+      for( size_t j = i; j < all_peaks.size(); ++j )
+      {
+        const shared_ptr<const PeakDef> &peak2 = all_peaks[j];
+        if( !peak2 )
+          continue;
+
+        const double energy2 = peak2->mean();
+        const double sum_energy = energy1 + energy2;
+        const double energy_error = fabs( sum_energy - target_energy );
+
+        // Check if this pair sums to the target energy within the search window
+        if( energy_error <= result.searchWindow )
+        {
+          // Check if there's a peak at the target energy, and if so, validate that
+          // the sum peak is smaller in amplitude than both contributing peaks
+          // (A sum peak should always be smaller than the peaks creating it)
+          shared_ptr<const PeakDef> target_peak;
+          for( const shared_ptr<const PeakDef> &peak : all_peaks )
+          {
+            if( !peak )
+              continue;
+            if( fabs(peak->mean() - target_energy) <= result.searchWindow )
+            {
+              target_peak = peak;
+              break;
+            }
+          }
+
+          // If we found a peak at the target energy, check amplitudes
+          if( target_peak )
+          {
+            const double target_area = target_peak->peakArea();
+            const double area1 = peak1->peakArea();
+            const double area2 = peak2->peakArea();
+
+            // Sum peak should be smaller than both contributing peaks
+            // Skip this candidate if the target peak is larger than either contributor
+            if( target_area >= area1 || target_area >= area2 )
+              continue;
+          }
+
+          CandidatePair candidate;
+          candidate.peak1 = peak1;
+          candidate.peak2 = peak2;
+          candidate.sum_energy = sum_energy;
+          candidate.energy_error = energy_error;
+          candidate.sum_type = SumPeakType::Unknown;
+          candidate.coincidence_fraction = 1.0;
+          candidate.selection_metric = 0.0;
+
+          // Check if this could be a cascade-sum peak
+          // Only check if cascade detection is enabled (distance <= 15 cm or not specified)
+          const SandiaDecay::Nuclide * const nuc1 = peak1->parentNuclide();
+          const SandiaDecay::Nuclide * const nuc2 = peak2->parentNuclide();
+
+          if( check_cascade_sums && nuc1 && nuc2 && (nuc1 == nuc2) )
+          {
+            // Both peaks have the same nuclide source - check for cascade coincidence
+            // Get cascade information directly from SandiaDecay
+            try
+            {
+              const double age_in_seconds = PeakDef::defaultDecayTime( nuc1, nullptr ) / PhysicalUnits::second;
+
+              SandiaDecay::NuclideMixture mix;
+              const double parent_activity = 1.0 * SandiaDecay::Bq;
+              mix.addAgedNuclideByActivity( nuc1, parent_activity, age_in_seconds * SandiaDecay::second );
+
+              const vector<SandiaDecay::NuclideActivityPair> activities = mix.activity( 0.0 );
+
+              // Search for cascade coincidences
+              for( const SandiaDecay::NuclideActivityPair &nap : activities )
+              {
+                const SandiaDecay::Nuclide * const nuclide = nap.nuclide;
+                const double activity = nap.activity;
+
+                for( const SandiaDecay::Transition * const transition : nuclide->decaysToChildren )
+                {
+                  for( const SandiaDecay::RadParticle &particle : transition->products )
+                  {
+                    if( particle.type != SandiaDecay::GammaParticle )
+                      continue;
+
+                    const double br = activity * particle.intensity * transition->branchRatio / parent_activity;
+
+                    for( size_t coinc_index = 0; coinc_index < particle.coincidences.size(); ++coinc_index )
+                    {
+                      const unsigned short int part_ind = particle.coincidences[coinc_index].first;
+                      const float fraction = particle.coincidences[coinc_index].second;
+
+                      if( part_ind < transition->products.size() )
+                      {
+                        const SandiaDecay::RadParticle &coinc_part = transition->products[part_ind];
+
+                        if( coinc_part.type == SandiaDecay::ProductType::GammaParticle )
+                        {
+                          const float e1 = particle.energy;
+                          const float e2 = coinc_part.energy;
+
+                          // Check if this cascade matches our peak pair (allowing for 1 keV tolerance)
+                          const bool match1 = (fabs(e1 - energy1) < 1.0 && fabs(e2 - energy2) < 1.0);
+                          const bool match2 = (fabs(e1 - energy2) < 1.0 && fabs(e2 - energy1) < 1.0);
+
+                          if( match1 || match2 )
+                          {
+                            candidate.sum_type = SumPeakType::CascadeSum;
+                            candidate.coincidence_fraction = br * fraction;
+                            break;
+                          }
+                        }//if( coinc_part is gamma )
+                      }//if( part_ind valid )
+
+                      if( candidate.sum_type == SumPeakType::CascadeSum )
+                        break;
+                    }//for( coincidences )
+
+                    if( candidate.sum_type == SumPeakType::CascadeSum )
+                      break;
+                  }//for( particles )
+
+                  if( candidate.sum_type == SumPeakType::CascadeSum )
+                    break;
+                }//for( transitions )
+
+                if( candidate.sum_type == SumPeakType::CascadeSum )
+                  break;
+              }//for( activities )
+            }
+            catch( const std::exception &e )
+            {
+              // If we can't get cascade information, just continue
+              // The peak pair will remain as Unknown type
+            }
+          }//if( both peaks have same nuclide source )
+
+          // Check if this could be a random-sum peak
+          if( (candidate.sum_type != SumPeakType::CascadeSum) && has_valid_timing )
+          {
+            if( dead_time_fraction > dead_time_threshold )
+            {
+              // High dead time - could be random summing
+              // We'll mark it as such, but further validation would check if the
+              // highest amplitude peaks produce expected sum peaks
+              candidate.sum_type = SumPeakType::RandomSum;
+            }
+          }
+
+          // Calculate selection metric
+          // For cascade sums: area1 * area2 * coincidence_fraction
+          // For others: area1 * area2
+          const double area1 = peak1->peakArea();
+          const double area2 = peak2->peakArea();
+          candidate.selection_metric = area1 * area2 * candidate.coincidence_fraction;
+
+          candidates.push_back( candidate );
+        }//if( energy matches within window )
+      }//for( j : all_peaks )
+    }//for( i : all_peaks )
+
+    // If we found candidates, select the best one
+    if( !candidates.empty() )
+    {
+      // First, sort by energy error (closest match first)
+      std::sort( candidates.begin(), candidates.end(),
+                []( const CandidatePair &lhs, const CandidatePair &rhs ) {
+                  return lhs.energy_error < rhs.energy_error;
+                } );
+
+      // If we have multiple candidates with similar energies (within 0.5 keV),
+      // select the one with the largest selection metric
+      const double best_energy_error = candidates[0].energy_error;
+      const double energy_similarity_threshold = 0.5; // keV
+
+      // Find all candidates within the similarity threshold
+      vector<CandidatePair> similar_candidates;
+      for( const CandidatePair &candidate : candidates )
+      {
+        if( fabs(candidate.energy_error - best_energy_error) <= energy_similarity_threshold )
+          similar_candidates.push_back( candidate );
+        else
+          break; // Candidates are sorted by energy error
+      }
+
+      // Among similar candidates, select the one with the largest metric
+      const CandidatePair *best_candidate = &similar_candidates[0];
+      for( const CandidatePair &candidate : similar_candidates )
+      {
+        if( candidate.selection_metric > best_candidate->selection_metric )
+          best_candidate = &candidate;
+      }
+
+      // Additional validation for random-sum peaks
+      if( best_candidate->sum_type == SumPeakType::RandomSum )
+      {
+        // Find the highest amplitude peak
+        double max_area = 0.0;
+        double max_area_energy = 0.0;
+        for( const shared_ptr<const PeakDef> &peak : all_peaks )
+        {
+          if( !peak )
+            continue;
+          if( peak->peakArea() > max_area )
+          {
+            max_area = peak->peakArea();
+            max_area_energy = peak->mean();
+          }
+        }
+
+        // Check if we should expect to see the largest peak summing with itself
+        const double expected_self_sum_energy = 2.0 * max_area_energy;
+        const bool self_sum_in_range = (expected_self_sum_energy <= spectrum->gamma_energy_max());
+        const bool checking_self_sum = (fabs(target_energy - expected_self_sum_energy) <= result.searchWindow);
+
+        // If the largest peak should sum with itself but we're not seeing that,
+        // and we're not currently checking for the self-sum peak, then this is probably
+        // not a random-sum peak
+        if( self_sum_in_range && !checking_self_sum )
+        {
+          // Check if a peak exists at twice the highest energy
+          bool found_self_sum = false;
+          for( const shared_ptr<const PeakDef> &peak : all_peaks )
+          {
+            if( !peak )
+              continue;
+            if( fabs(peak->mean() - expected_self_sum_energy) <= result.searchWindow )
+            {
+              found_self_sum = true;
+              break;
+            }
+          }
+
+          if( !found_self_sum )
+          {
+            // The highest peak doesn't sum with itself, so random summing is unlikely
+            // Downgrade to Unknown
+            const_cast<CandidatePair*>(best_candidate)->sum_type = SumPeakType::Unknown;
+          }
+        }
+      }//if( random sum validation )
+
+      // Create the result
+      SumPeakInfo sum_info;
+      sum_info.sumType = best_candidate->sum_type;
+      sum_info.firstPeak = best_candidate->peak1;
+      sum_info.secondPeak = best_candidate->peak2;
+
+      if( best_candidate->sum_type == SumPeakType::CascadeSum )
+        sum_info.coincidenceFraction = best_candidate->coincidence_fraction;
+
+      // Generate labels
+      char buffer[512];
+      const double e1 = best_candidate->peak1->mean();
+      const double e2 = best_candidate->peak2->mean();
+
+      // Try to create a source label if both peaks have sources
+      const SandiaDecay::Nuclide * const nuc1 = best_candidate->peak1->parentNuclide();
+      const SandiaDecay::Nuclide * const nuc2 = best_candidate->peak2->parentNuclide();
+      const ReactionGamma::Reaction * const rxn1 = best_candidate->peak1->reaction();
+      const ReactionGamma::Reaction * const rxn2 = best_candidate->peak2->reaction();
+      const SandiaDecay::Element * const xray1 = best_candidate->peak1->xrayElement();
+      const SandiaDecay::Element * const xray2 = best_candidate->peak2->xrayElement();
+
+      if( nuc1 && nuc2 && (nuc1 == nuc2) && (best_candidate->sum_type == SumPeakType::CascadeSum) )
+      {
+        snprintf( buffer, sizeof(buffer), "%s cascade-sum %.2f + %.2f keV",
+                 nuc1->symbol.c_str(), e1, e2 );
+        sum_info.userLabel = buffer;
+      }
+      else if( (nuc1 || rxn1 || xray1) && (nuc2 || rxn2 || xray2) )
+      {
+        // Both peaks have sources - include in label
+        string src1, src2;
+        if( nuc1 ) src1 = nuc1->symbol;
+        else if( rxn1 ) src1 = rxn1->name();
+        else if( xray1 ) src1 = xray1->symbol;
+
+        if( nuc2 ) src2 = nuc2->symbol;
+        else if( rxn2 ) src2 = rxn2->name();
+        else if( xray2 ) src2 = xray2->symbol;
+
+        const char *sum_type_str = (best_candidate->sum_type == SumPeakType::RandomSum) ? "random-sum" : "sum";
+        snprintf( buffer, sizeof(buffer), "%s + %s %s %.2f + %.2f keV",
+                 src1.c_str(), src2.c_str(), sum_type_str, e1, e2 );
+        sum_info.userLabel = buffer;
+      }
+      else
+      {
+        // Create user label
+        snprintf( buffer, sizeof(buffer), "Sum %.2f + %.2f keV", e1, e2 );
+        sum_info.userLabel = buffer;
+      }
+
+      result.sumPeakInfo = sum_info;
+    }//if( we have candidates )
+
+    return result;
+  }//SumPeakCheckStatus sum_peak_check( const SumPeakCheckOptions &options, InterSpec *interspec )
 
 } // namespace AnalystChecks

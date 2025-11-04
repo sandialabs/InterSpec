@@ -48,6 +48,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/AnalystChecks.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -333,4 +334,241 @@ BOOST_FIXTURE_TEST_CASE( test_escape_peak_potential_energies, InterSpecTestFixtu
   BOOST_CHECK_CLOSE( result.potentialDoubleEscapePeakEnergy, test_energy - 2*electron_rest_mass, 0.01 );
   BOOST_CHECK_CLOSE( result.potentialParentPeakSingleEscape, test_energy + electron_rest_mass, 0.01 );
   BOOST_CHECK_CLOSE( result.potentialParentPeakDoubleEscape, test_energy + 2*electron_rest_mass, 0.01 );
+}
+
+
+BOOST_FIXTURE_TEST_CASE( test_sum_peak_check, InterSpecTestFixture )
+{
+  // Load spectrum with summing peaks - not that this spectrum was incorrectly simulated and only has random-summing
+  //  NOT cascade summing - however, we'll use it for the moment.
+  const string test_file = SpecUtils::append_path( g_test_file_dir, "AnalystTests/Ba133_Cs137_RandomSummingOnly.n42" );
+
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(test_file),
+                        "Test file not found: " << test_file );
+
+  m_interspec->userOpenFileFromFilesystem( test_file, test_file );
+
+  // Give the app a moment to load the file
+  BOOST_REQUIRE( m_interspec->measurment(SpecUtils::SpectrumType::Foreground) );
+
+  // Helper lambda to check sum peak results
+  auto check_sum_peak = []( const double energy,
+                            const AnalystChecks::SumPeakType expected_type,
+                            const double expected_peak1_energy,
+                            const double expected_peak2_energy,
+                            InterSpec *interspec,
+                            const string &description ) {
+    AnalystChecks::SumPeakCheckOptions options;
+    options.energy = energy;
+    options.specType = SpecUtils::SpectrumType::Foreground;
+
+    AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, interspec );
+
+    BOOST_CHECK_MESSAGE( result.sumPeakInfo.has_value(),
+                        description << ": Peak at " << energy << " keV should be identified as a sum peak" );
+
+    if( result.sumPeakInfo.has_value() )
+    {
+      const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
+
+      BOOST_CHECK_MESSAGE( info.sumType == expected_type,
+                          description << ": Expected sum type " << AnalystChecks::to_string(expected_type)
+                          << " but got " << AnalystChecks::to_string(info.sumType) );
+
+      BOOST_REQUIRE_MESSAGE( info.firstPeak && info.secondPeak,
+                            description << ": Contributing peaks should be present" );
+
+      if( info.firstPeak && info.secondPeak )
+      {
+        const double e1 = info.firstPeak->mean();
+        const double e2 = info.secondPeak->mean();
+
+        // Check if the energies match (in either order)
+        const bool match1 = (fabs(e1 - expected_peak1_energy) < 2.0) && (fabs(e2 - expected_peak2_energy) < 2.0);
+        const bool match2 = (fabs(e1 - expected_peak2_energy) < 2.0) && (fabs(e2 - expected_peak1_energy) < 2.0);
+
+        BOOST_CHECK_MESSAGE( match1 || match2,
+                            description << ": Expected peaks at " << expected_peak1_energy
+                            << " and " << expected_peak2_energy << " keV, but got "
+                            << e1 << " and " << e2 << " keV" );
+
+        // Check that the sum is close to the target energy
+        BOOST_CHECK_MESSAGE( fabs((e1 + e2) - energy) < 3.0,
+                            description << ": Sum of contributing peaks (" << (e1 + e2)
+                            << " keV) should match target energy (" << energy << " keV)" );
+      }
+
+      // Check that appropriate labels are generated
+      const bool has_label = info.userLabel.has_value();
+      BOOST_CHECK_MESSAGE( has_label,
+                          description << ": Should have either userLabel" );
+    }
+  };
+
+  // Test 1: 1323.2 keV peak should be random sum of 661.6 + 661.6 keV (Cs-137 self-sum)
+  check_sum_peak( 1323.2, AnalystChecks::SumPeakType::RandomSum, 661.6, 661.6, m_interspec,
+                  "Test 1: Cs-137 self-sum" );
+
+  // Test 2: 712 keV peak is random sum of 356 + 356 keV (Ba-133 self-sum)
+  check_sum_peak( 712.0, AnalystChecks::SumPeakType::RandomSum, 356.0, 356.0, m_interspec,
+                  "Test 2: Ba-133 356 keV self-sum" );
+
+  // Test 3: 1017 keV peak is random sum of 661.6 + 356 keV
+  check_sum_peak( 1017.0, AnalystChecks::SumPeakType::RandomSum, 661.6, 356.0, m_interspec,
+                  "Test 3: Cs-137 + Ba-133 sum" );
+
+  // Test 4: 964 keV peak is random sum of 302.8 + 661.6 keV
+  check_sum_peak( 964.0, AnalystChecks::SumPeakType::RandomSum, 302.8, 661.6, m_interspec,
+                  "Test 4: Ba-133 302.8 + Cs-137 sum" );
+
+  // Test 5: 437.1 keV peak is cascade-sum or unknown of 356 + 81 keV
+  // Test with different distances to verify cascade detection is disabled at large distances
+  // Note: This might be cascade-sum if Ba-133 has these as coincident gammas, or unknown
+  {
+    // Test 5a: No distance specified - cascade detection enabled
+    {
+      AnalystChecks::SumPeakCheckOptions options;
+      options.energy = 437.1;
+      options.specType = SpecUtils::SpectrumType::Foreground;
+      // distance not specified
+
+      AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, m_interspec );
+
+      BOOST_CHECK_MESSAGE( result.sumPeakInfo.has_value(),
+                          "Test 5a: Peak at 437.1 keV should be identified as a sum peak (no distance)" );
+
+      if( result.sumPeakInfo.has_value() )
+      {
+        const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
+
+        // Could be CascadeSum or Unknown depending on Ba-133 coincidence data
+        const bool valid_type = (info.sumType == AnalystChecks::SumPeakType::CascadeSum) ||
+                               (info.sumType == AnalystChecks::SumPeakType::Unknown);
+        BOOST_CHECK_MESSAGE( valid_type,
+                            "Test 5a: Expected CascadeSum or Unknown (no distance), got "
+                            << AnalystChecks::to_string(info.sumType) );
+
+        if( info.firstPeak && info.secondPeak )
+        {
+          const double e1 = info.firstPeak->mean();
+          const double e2 = info.secondPeak->mean();
+
+          const bool match1 = (fabs(e1 - 356.0) < 2.0) && (fabs(e2 - 81.0) < 2.0);
+          const bool match2 = (fabs(e1 - 81.0) < 2.0) && (fabs(e2 - 356.0) < 2.0);
+
+          BOOST_CHECK_MESSAGE( match1 || match2,
+                              "Test 5a: Expected peaks at 356 and 81 keV, got "
+                              << e1 << " and " << e2 << " keV" );
+        }
+      }
+    }
+
+    // Test 5b: Small distance (5 cm) - cascade detection enabled
+    {
+      AnalystChecks::SumPeakCheckOptions options;
+      options.energy = 437.1;
+      options.specType = SpecUtils::SpectrumType::Foreground;
+      options.distance = 5.0 * PhysicalUnits::cm;
+
+      AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, m_interspec );
+
+      BOOST_CHECK_MESSAGE( result.sumPeakInfo.has_value(),
+                          "Test 5b: Peak at 437.1 keV should be identified as a sum peak (5 cm)" );
+
+      if( result.sumPeakInfo.has_value() )
+      {
+        const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
+
+        // Should get same result as no distance - CascadeSum or Unknown
+        const bool valid_type = (info.sumType == AnalystChecks::SumPeakType::CascadeSum) ||
+                               (info.sumType == AnalystChecks::SumPeakType::Unknown);
+        BOOST_CHECK_MESSAGE( valid_type,
+                            "Test 5b: Expected CascadeSum or Unknown (5 cm), got "
+                            << AnalystChecks::to_string(info.sumType) );
+
+        if( info.firstPeak && info.secondPeak )
+        {
+          const double e1 = info.firstPeak->mean();
+          const double e2 = info.secondPeak->mean();
+
+          const bool match1 = (fabs(e1 - 356.0) < 2.0) && (fabs(e2 - 81.0) < 2.0);
+          const bool match2 = (fabs(e1 - 81.0) < 2.0) && (fabs(e2 - 356.0) < 2.0);
+
+          BOOST_CHECK_MESSAGE( match1 || match2,
+                              "Test 5b: Expected peaks at 356 and 81 keV, got "
+                              << e1 << " and " << e2 << " keV" );
+        }
+      }
+    }
+
+    // Test 5c: Large distance (100 cm) - cascade detection disabled, should be RandomSum if detected
+    {
+      AnalystChecks::SumPeakCheckOptions options;
+      options.energy = 437.1;
+      options.specType = SpecUtils::SpectrumType::Foreground;
+      options.distance = 100.0 * PhysicalUnits::cm;
+
+      AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, m_interspec );
+
+      // At 100 cm, cascade detection is disabled
+      // The peak might still be detected as a sum, but should be RandomSum (not CascadeSum)
+      if( result.sumPeakInfo.has_value() )
+      {
+        const AnalystChecks::SumPeakInfo &info = *result.sumPeakInfo;
+
+        // Should NOT be CascadeSum at this distance
+        BOOST_CHECK_MESSAGE( info.sumType != AnalystChecks::SumPeakType::CascadeSum,
+                            "Test 5c: At 100 cm, should NOT be CascadeSum, got "
+                            << AnalystChecks::to_string(info.sumType) );
+
+        // If detected as a sum peak, should be RandomSum or Unknown
+        const bool valid_type = (info.sumType == AnalystChecks::SumPeakType::RandomSum) ||
+                               (info.sumType == AnalystChecks::SumPeakType::Unknown);
+        BOOST_CHECK_MESSAGE( valid_type,
+                            "Test 5c: At 100 cm, expected RandomSum or Unknown, got "
+                            << AnalystChecks::to_string(info.sumType) );
+      }
+    }
+  }
+
+  // Test 6: 658.15 keV peak is random sum of 302.85 + 356.02 keV
+  check_sum_peak( 658.15, AnalystChecks::SumPeakType::RandomSum, 302.85, 356.02, m_interspec,
+                  "Test 6: Ba-133 302.85 + 356.02 sum" );
+
+  // Test 7: 302.8 keV is NOT a sum peak
+  {
+    AnalystChecks::SumPeakCheckOptions options;
+    options.energy = 302.8;
+    options.specType = SpecUtils::SpectrumType::Foreground;
+
+    AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, m_interspec );
+
+    BOOST_CHECK_MESSAGE( !result.sumPeakInfo.has_value(),
+                        "Test 7: Peak at 302.8 keV should NOT be identified as a sum peak" );
+  }
+
+  // Test 8: 661.64 keV is NOT a sum peak (Cs-137 full-energy peak)
+  {
+    AnalystChecks::SumPeakCheckOptions options;
+    options.energy = 661.64;
+    options.specType = SpecUtils::SpectrumType::Foreground;
+
+    AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, m_interspec );
+
+    BOOST_CHECK_MESSAGE( !result.sumPeakInfo.has_value(),
+                        "Test 8: Peak at 661.64 keV (Cs-137 full-energy) should NOT be identified as a sum peak" );
+  }
+
+  // Test 9: Check search window is reasonable
+  {
+    AnalystChecks::SumPeakCheckOptions options;
+    options.energy = 1000.0;
+    options.specType = SpecUtils::SpectrumType::Foreground;
+
+    AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, m_interspec );
+
+    // Search window should be max(1.0, min(0.5*fwhm, 15.0))
+    BOOST_CHECK_GE( result.searchWindow, 1.0 );
+    BOOST_CHECK_LE( result.searchWindow, 15.0 );
+  }
 }

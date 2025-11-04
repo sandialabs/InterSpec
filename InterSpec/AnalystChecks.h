@@ -322,6 +322,79 @@ namespace AnalystChecks
    */
   InterSpec_API EscapePeakCheckStatus escape_peak_check( const EscapePeakCheckOptions &options, InterSpec *interspec );
 
+  /** Enum specifying the type of sum peak. */
+  enum class SumPeakType
+  {
+    NotASumPeak,   // Not identified as a sum peak
+    RandomSum,     // Sum from random coincidence (pile-up) due to high dead time
+    CascadeSum,    // Sum from cascade decay photons emitted nearly simultaneously
+    Unknown        // Could be a sum peak but type cannot be determined
+  };//enum class SumPeakType
+
+  /** Converts SumPeakType enum to string representation.
+
+   @param type The sum peak type to convert
+   @return String representation of the type
+   */
+  const char* to_string( SumPeakType type );
+
+  /** Information about a sum peak if the queried energy is identified as one. */
+  struct SumPeakInfo
+  {
+    SumPeakType sumType;
+    std::shared_ptr<const PeakDef> firstPeak;   // First contributing peak
+    std::shared_ptr<const PeakDef> secondPeak;  // Second contributing peak
+    std::optional<std::string> userLabel;       // e.g., "Sum 661.66 + 661.66 keV" or "Co60 cascade-sum 1173.23+1332.49 keV"
+    std::optional<double> coincidenceFraction;  // For cascade sums: fraction of time photons are emitted together
+  };//struct SumPeakInfo
+
+  /** Options for checking if a peak is a sum peak. */
+  struct SumPeakCheckOptions
+  {
+    double energy;
+    SpecUtils::SpectrumType specType;  // defaults to Foreground if not specified
+    std::optional<double> distance;     // Optional: source-to-detector distance (in PhysicalUnits, e.g., PhysicalUnits::cm). If > 15 cm, cascade-sums are not considered
+  };//struct SumPeakCheckOptions
+
+  /** Results of sum peak analysis. */
+  struct SumPeakCheckStatus
+  {
+    // If the specified peak IS a sum peak
+    std::optional<SumPeakInfo> sumPeakInfo;
+
+    // Energy windows used for searching for contributing peaks
+    double searchWindow;  // calculated as max(1.0, min(0.5*fwhm, 15.0))
+  };//struct SumPeakCheckStatus
+
+  /** Check if a peak at a specified energy is a sum peak (random-sum or cascade-sum).
+
+   This function analyzes whether the peak at the given energy is the result of summing
+   two lower-energy photons. There are two types of sum peaks:
+
+   1. Random-sum peaks: Occur when unrelated photons arrive at the detector nearly
+      simultaneously, typically when dead time is high (>20% for HPGe, >10% for low-res).
+      The function validates by checking if the highest-amplitude peaks produce expected
+      sum peaks.
+
+   2. Cascade-sum peaks: Occur when a nuclide emits two photons in quick succession and
+      the detector is close enough (<~15 cm) to detect both. Both contributing peaks must
+      have the same nuclide source assigned, and the nuclide's decay scheme must list
+      those gammas as cascade coincidences. If a distance parameter is specified and is
+      greater than 15 cm, cascade-sum detection is disabled.
+
+   When multiple candidate peak pairs are found, the function selects the best match by:
+   - First prioritizing the closest energy match to the target
+   - If multiple pairs have similar energies (within ~0.5 keV), selecting the pair with
+     the largest combined area (for cascade sums: area1 × area2 × coincidenceFraction)
+
+   @param options Specifies the energy to check, which spectrum to use, and optionally
+                  the source-to-detector distance (in PhysicalUnits)
+   @param interspec Pointer to the InterSpec session containing the spectrum
+   @return SumPeakCheckStatus containing sum peak info (if identified) and search parameters
+   @throws std::runtime_error if InterSpec is null, no spectrum loaded, or other errors occur
+   */
+  InterSpec_API SumPeakCheckStatus sum_peak_check( const SumPeakCheckOptions &options, InterSpec *interspec );
+
 } // namespace AnalystChecks
 
 #endif // AnalystChecks_h 

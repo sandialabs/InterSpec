@@ -83,7 +83,8 @@ Unless specifically asked, you can ignore peaks present in both the foreground a
 ## **Identification Workflow**
 
 You are primarily identifying the source for non-background peaks in the foreground spectrum.
-Use the "detected_peaks" tool call, with "specType" set to "Foreground" and "NonBackgroundPeaksOnly" specified to true, to get the relevant foreground peaks - you will try your best to identify sources for any peaks that dont already have a source.
+Use the "detected_peaks" tool call, with "specType" set to "Foreground" and "NonBackgroundPeaksOnly" specified to true, to get the relevant foreground peaks (peaks in foreground consistent with background levels will not be returned) - you will try your best to identify sources for any peaks that dont already have a source.
+If a background spectrum is not loaded, then set the "NonBackgroundPeaksOnly" to false, and start by adding peaks to the internal analysis peak state for expected background nuclides (Ra226, Th232, U238, and K40).
 
 For each unexplained peak energy:
 
@@ -102,15 +103,19 @@ For each unexplained peak energy:
    * Expected intensity patterns don't match observed amplitudes
    * Missing major gammas that should be visible
 
-5. **Other sources:** If a peak is not confidently identified as from a source, check if it is an escape peak (use the 'escape_peak_check' tool call), or a random-sum or cascade-sum peak.  It is best to perform this check after adding all identified peaks to the internal analysis peaks state, or settings other peaks sources.
+5. **Other sources:** If a peak is not confidently identified as from a source, check if it is an escape peak (use the 'escape_peak_check' tool call), or a sum peak (use the 'sum_peak_check' tool).  It is best to perform this check after adding all identified peaks to the internal analysis peaks state, or settings other peaks sources.
 
 6. **Unless you were only asked to ID specific peak(s):** 
    * If there are other detected peaks that are explained by the source, add those other peaks to the internal store of analysis peaks (e.g., using the 'add_analysis_peak' tool call, and specifying the "source" argument) if they arent already present (making sure to assign the source to those peaks)
    * Use the 'source_info' tool to see if there are any associated sources you should check for the presence of, or perhaps are a better match than the identified source.  
    * For the associated sources, you can check for the presence of detected peaks of the associated sources; if no expected energies match detected peaks, you can use the 'currie_mda_calc' tool to see if a specific energy peak might be present (in which case you can use the 'add_analysis_peak' tool to fit it).
-   * If associated sources are present, fit those peaks and associate the relevant sources to them.  You can also check for associated sources of the new idetification.
-   * Try to identify all peaks in the foreground spectrum, that are not in the background spectrum, or are elevated relative to foregorund (i.e., CPS is ~20% or more)
+   * If associated sources are present, add those peaks to the intenal analysis peak state, with associate the relevant sources to them.  You can also check for associated sources of the new idetification.
+   * You will try to identify all peaks in the foreground spectrum, that are returned by the 'detected_peaks' tool.
 
+
+## **Things to double check to make sure you did**
+   * Are all non-background detected peaks identified?  If not, did you check the peaks without a source or user-label as possibly either sum peaks, or escape peaks?  
+   * Did you check for associated sources (i.e., from the 'source_info' tool) for the nuclide IDs you found, to see if these other sources are also present?
 
 ## **Other sources of source inspiration**
 
@@ -130,11 +135,12 @@ Returned candidates from the 'search_sources_by_energy' tool, will have to match
 
 ## **Additional peak origins to consider**
 
-It is best to check these potential sources of a peak AFTER adding identified analysis peaks.
+It is best to check these potential sources of a peak AFTER adding identified analysis peaks - and after an ID can not be found using other methods.
 
 * **Escape peaks**: Use the 'escape_peak_check' tool-call to check if a peak is an escape peak (i.e., a single escape peak, denoted "S.E.", or double escape, denoted "D.E.", may form peaks at 511 or 1022 keV, respectively, below a gammas energy in the case of pair-production with one or both 511 keV photons escaping the detector.  The 'escape_peak_check' tool call, in the case it is an escape peak, will provide the "sourceLabel" or "userLabel" strings that should be assigned to the peak as the source or user label. 
-* **Random sum peaks**: two randomly emitted photons can be detected at the same time, giving a peak at their sum energy.  This random summing only happens when the spectrums 'deadTimeFraction' (provided by the 'get_spectrum_info' tool call) is greater than about 0.2, with larger numbers increasing odds of observing sum-peaks.  The largest amplitude peaks in a spectrum are most succeptable to producing sum peaks (i.e., if random summing is not observed for the largest peak, then you know it wont happen for any smaller peaks).  When you ID a sum peak, use the 'edit_analysis_peak' tool call, with the "SetUserLabel" editAction, to set the user label of the peak to something like "Random sum 1173.2 keV + 1332 keV".
-* **Cascade sum peaks**: Some nuclides emit multiple gammas at nearly the same time, that may be detected together, resulting in cascade-sum peaks.  The probability of this happening depends on the source nuclide and distance from the detector to source (the dependence is 1/r^4); this is only seen for distances less than 15 cm.  You can retrieve which photons may cascade sum for a nuclide using the 'source_photons' tool call, with the "IncludeCascadeSumEnergies" set to true.
+* **Sum peaks**: Use the 'sum_peak_check' tool-call to see if a peak is potentially a random-sum peak, or a cascade-sum peak.  If a sum peak is identified, after adding the peak to the internal analysis peak state, use the 'edit_analysis_peak' tool with the 'SetUserLabel' argument to set the user label to the 'userLabel' string provided by the 'sum_peak_check' tool.
+
+Note, setting the user-label of a peak is a bit of a work-around to for these peak explanations that the InterSpec app doesnt explicitly track - but the user might need to know the peaks source/reason.
 
 ## **Storing results for future analysis**
 

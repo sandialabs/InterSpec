@@ -507,6 +507,103 @@ namespace {
     }
   }//void to_json( json &j, const AnalystChecks::EscapePeakCheckStatus &p )
 
+  void from_json( const json &j, AnalystChecks::SumPeakCheckOptions &p )
+  {
+    p.energy = get_number( j, "energy" );
+
+    // Parse spectrum type (default to Foreground)
+    std::string specTypeStr = j.value("specType", std::string());
+    if( specTypeStr.empty() || specTypeStr == "Foreground" )
+    {
+      p.specType = SpecUtils::SpectrumType::Foreground;
+    }else if( specTypeStr == "Background" )
+    {
+      p.specType = SpecUtils::SpectrumType::Background;
+    }else if( specTypeStr == "Secondary" )
+    {
+      p.specType = SpecUtils::SpectrumType::SecondForeground;
+    }else
+    {
+      throw std::runtime_error( "Invalid spectrum type: " + specTypeStr );
+    }
+
+    // Parse optional distance parameter
+    if( j.contains("distance") )
+    {
+      const std::string distanceStr = j["distance"].get<std::string>();
+      try
+      {
+        p.distance = PhysicalUnits::stringToDistance( distanceStr );
+      }
+      catch( const std::exception &e )
+      {
+        throw std::runtime_error( "Invalid distance value '" + distanceStr + "': " + e.what() );
+      }
+    }
+  }//void from_json( const json &j, AnalystChecks::SumPeakCheckOptions &p )
+
+  void to_json( json &j, const AnalystChecks::SumPeakCheckStatus &p )
+  {
+    j = json{
+      {"searchWindow", rount_to_hundredth(p.searchWindow)}
+    };
+
+    if( p.sumPeakInfo.has_value() )
+    {
+      json sum_info = json{
+        {"sumType", AnalystChecks::to_string(p.sumPeakInfo->sumType) }
+      };
+
+      // Serialize first peak information
+      if( p.sumPeakInfo->firstPeak )
+      {
+        json first_peak = json{
+          {"energy", rount_to_hundredth(p.sumPeakInfo->firstPeak->mean())},
+          {"area", rount_to_hundredth(p.sumPeakInfo->firstPeak->peakArea())}
+        };
+
+        // Add source information if available
+        if( p.sumPeakInfo->firstPeak->parentNuclide() )
+          first_peak["source"] = p.sumPeakInfo->firstPeak->parentNuclide()->symbol;
+        else if( p.sumPeakInfo->firstPeak->reaction() )
+          first_peak["source"] = p.sumPeakInfo->firstPeak->reaction()->name();
+        else if( p.sumPeakInfo->firstPeak->xrayElement() )
+          first_peak["source"] = p.sumPeakInfo->firstPeak->xrayElement()->symbol;
+
+        sum_info["firstPeak"] = first_peak;
+      }
+
+      // Serialize second peak information
+      if( p.sumPeakInfo->secondPeak )
+      {
+        json second_peak = json{
+          {"energy", rount_to_hundredth(p.sumPeakInfo->secondPeak->mean())},
+          {"area", rount_to_hundredth(p.sumPeakInfo->secondPeak->peakArea())}
+        };
+
+        // Add source information if available
+        if( p.sumPeakInfo->secondPeak->parentNuclide() )
+          second_peak["source"] = p.sumPeakInfo->secondPeak->parentNuclide()->symbol;
+        else if( p.sumPeakInfo->secondPeak->reaction() )
+          second_peak["source"] = p.sumPeakInfo->secondPeak->reaction()->name();
+        else if( p.sumPeakInfo->secondPeak->xrayElement() )
+          second_peak["source"] = p.sumPeakInfo->secondPeak->xrayElement()->symbol;
+
+        sum_info["secondPeak"] = second_peak;
+      }
+
+      // Add labels if available
+      if( p.sumPeakInfo->userLabel.has_value() )
+        sum_info["userLabel"] = *p.sumPeakInfo->userLabel;
+
+      // Add coincidence fraction for cascade sums
+      if( p.sumPeakInfo->coincidenceFraction.has_value() )
+        sum_info["coincidenceFraction"] = *p.sumPeakInfo->coincidenceFraction;
+
+      j["sumPeakInfo"] = sum_info;
+    }
+  }//void to_json( json &j, const AnalystChecks::SumPeakCheckStatus &p )
+
   void to_json(json& j, const AnalystChecks::SpectrumCountsInEnergyRange::CountsWithComparisonToForeground& c) {
     j = json{
       {"counts", c.counts},
@@ -653,6 +750,11 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
     {
       tool.executor = [](const json& params, InterSpec* interspec) -> json {
         return executeEscapePeakCheck(params, interspec);
+      };
+    }else if( toolName == "sum_peak_check" )
+    {
+      tool.executor = [](const json& params, InterSpec* interspec) -> json {
+        return executeSumPeakCheck(params, interspec);
       };
     }else if( toolName == "get_analysis_peaks" )
     {
@@ -1202,6 +1304,26 @@ nlohmann::json ToolRegistry::executeEscapePeakCheck( const nlohmann::json &param
 
   return result_json;
 }//nlohmann::json ToolRegistry::executeEscapePeakCheck( const nlohmann::json &params, InterSpec *interspec )
+
+
+nlohmann::json ToolRegistry::executeSumPeakCheck( const nlohmann::json &params, InterSpec *interspec )
+{
+  if( !interspec )
+    throw std::runtime_error("No InterSpec session available.");
+
+  // Parse parameters
+  AnalystChecks::SumPeakCheckOptions options;
+  from_json( params, options );
+
+  // Execute the sum peak check
+  const AnalystChecks::SumPeakCheckStatus result = AnalystChecks::sum_peak_check( options, interspec );
+
+  // Convert the result to JSON and return
+  json result_json;
+  to_json( result_json, result );
+
+  return result_json;
+}//nlohmann::json ToolRegistry::executeSumPeakCheck( const nlohmann::json &params, InterSpec *interspec )
 
 
 json ToolRegistry::executeGetSpectrumInfo(const json& params, InterSpec* interspec) {

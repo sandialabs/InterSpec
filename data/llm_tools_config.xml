@@ -113,6 +113,29 @@
     }</ParametersSchema>
   </Tool>
 
+  <Tool name="sum_peak_check">
+    <Description>Check if a peak at a specified energy is a sum peak, where two lower-energy photons are detected simultaneously and their energies add together. There are two types: (1) Cascade-sum peaks occur when a nuclide emits two photons nearly simultaneously during decay and the detector is close enough to detect both (typically &lt;15 cm). Both contributing peaks must have the same nuclide source assigned. (2) Random-sum peaks (pile-up) occur when unrelated photons arrive simultaneously, typically when dead time is high (&gt;20% for HPGe, &gt;10% for low-resolution detectors). The function returns the sum type (CascadeSum, RandomSum, Unknown, or NotASumPeak), information about the two contributing peaks (energy, area, source), and appropriate labels (sourceLabel or userLabel) that can be used to identify the peak. When multiple candidate peak pairs are found, the best match is selected based on closest energy match, or if energies are similar, the pair with largest combined areas. An optional distance parameter can be provided to disable cascade-sum detection if the source is far from the detector (&gt;15 cm).</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+          "energy": {
+            "type": "number",
+            "description": "Energy (in keV) of the peak to check for being a sum peak."
+          },
+          "specType": {
+            "type": "string",
+            "enum": ["Foreground", "Background", "Secondary"],
+            "description": "Optional: Which displayed spectrum to check (default: Foreground)."
+          },
+          "distance": {
+            "type": "string",
+            "description": "Optional: Source-to-detector distance (e.g., '10 cm', '1 m', '50 mm'). If greater than 15 cm, cascade-sum detection is disabled and only random-sum peaks are considered. If not specified, both types are checked."
+          }
+      },
+      "required": ["energy"]
+    }</ParametersSchema>
+  </Tool>
+
   <Tool name="get_analysis_peaks">
     <Description>Gets the peaks to use for further analysis that have either been manually fit by the user, or by the 'add_analysis_peak' tool call, or similar.  These peaks tracked by an internal state.</Description>
     <ParametersSchema>{
