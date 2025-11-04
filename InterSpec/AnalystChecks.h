@@ -50,7 +50,6 @@ namespace AnalystChecks
   /** Options for peak detection analysis. */
   struct DetectedPeaksOptions {
     SpecUtils::SpectrumType specType;
-    std::optional<std::string> userSession;
     bool nonBackgroundPeaksOnly;
   };
   
@@ -77,7 +76,6 @@ namespace AnalystChecks
     double energy;
     SpecUtils::SpectrumType specType;
     std::optional<std::string> source;
-    std::optional<std::string> userSession;
   };
   
   struct FitPeakStatus {
@@ -89,7 +87,6 @@ namespace AnalystChecks
   
   struct GetUserPeakOptions {
     SpecUtils::SpectrumType specType;
-    std::optional<std::string> userSession;
     std::optional<double> lowerEnergy;
     std::optional<double> upperEnergy;
   };
@@ -229,7 +226,6 @@ namespace AnalystChecks
     std::optional<std::string> stringValue;
     std::optional<bool> boolValue;
     std::optional<double> uncertainty;
-    std::optional<std::string> userSession;
   };//struct EditAnalysisPeakOptions
 
   /** Results of peak edit operation. */
