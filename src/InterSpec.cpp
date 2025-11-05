@@ -7962,8 +7962,19 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
   }//end add "AskPropagatePeaks" to menu
-  
-  
+
+
+  {//begin add "AskPropagatePeaks" to menu
+    WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-preserve-ene-cal") );
+    UserPreferences::associateWidget( "AskPreserveEnergyCal", checkbox, this );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-preserve-ene-cal"),
+                                 true, HelpSystem::ToolTipPosition::Right );
+    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
+    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
+  }//end add "AskPropagatePeaks" to menu
+
+
   {//begin add "DisplayBecquerel"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-disp-bq") );
     UserPreferences::associateWidget( "DisplayBecquerel", checkbox, this );
@@ -11572,12 +11583,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( prev spec had peaks and new one doesnt )
   }//if( should propogate peaks )
   
-  
-  
+
   deleteEnergyCalPreserveWindow();
-  
+
   if( options.testFlag(SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
-      && !sameSpecFile && m_energyCalTool && !!meas && !!m_dataMeasurement )
+      && !sameSpecFile && m_energyCalTool && !!meas && !!m_dataMeasurement
+      && UserPreferences::preferenceValue<bool>("AskPreserveEnergyCal", this)
+     )
   {
     switch( spec_type )
     {
