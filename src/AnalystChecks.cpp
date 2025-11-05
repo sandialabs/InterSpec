@@ -410,6 +410,14 @@ namespace AnalystChecks
             src_name = new_fit_peak->reaction()->name();
           
           Wt::WColor c = ref_lines->suggestColorForSource( src_name );
+          
+          if( c.isDefault() && !src_name.empty() )
+          {
+            c = ref_lines->nextGenericSourceColor();
+            if( !c.isDefault() )
+              ref_lines->updateColorCacheForSource( src_name, c );
+          }
+          
           new_fit_peak->setLineColor( c );
         }
       }
