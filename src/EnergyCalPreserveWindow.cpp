@@ -419,10 +419,13 @@ void EnergyCalPreserveWindow::propogateCalibrations()
   const auto dispMeas = viewer->measurment(m_newtype);
   
   map<set<int>,std::deque< std::shared_ptr<const PeakDef>>> new_peaks;
-  
+  map<set<int>,std::deque< std::shared_ptr<const PeakDef>>> new_auto_search_peaks;
+
   const vector<string> gammaDetNames = m_newmeas->gamma_detector_names();
   const set<set<int>> samplesWithPeak = m_newmeas->sampleNumsWithPeaks();
-  
+
+  const set<set<int>> samplesWithAutoSearchPeak = m_newmeas->sampleNumsWithAutomatedSearchPeaks();
+
   try
   {
     for( const set<int> &samples : samplesWithPeak )
@@ -492,8 +495,78 @@ void EnergyCalPreserveWindow::propogateCalibrations()
     return;
   }//try / catch translate peaks
   
-  
-  
+
+  // Now translate auto-search peaks
+  for( const set<int> &samples : samplesWithAutoSearchPeak )
+  {
+    try
+    {
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> oldPeaks = m_newmeas->automatedSearchPeaks( samples );
+      if( !oldPeaks || oldPeaks->empty() )
+        continue;
+
+      auto peak_cal = m_newmeas->suggested_sum_energy_calibration( samples, gammaDetNames );
+
+      //We dont expect to ever actually not get a valid calibration, but JIC
+      if( !peak_cal || !peak_cal->valid() )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, "Unexpectedly didnt get suggested energy cal for"
+                            " samples/detectectso" );
+#endif
+        continue;
+      }//if( no previous calibration )
+
+      //Figure out what detector 'peak_cal' belongs too
+      string detname;
+      bool foundname = false;
+      for( auto siter = begin(samples); !foundname && (siter != end(samples)); ++siter )
+      {
+        for( size_t i = 0; !foundname && (i < gammaDetNames.size()); ++i )
+        {
+          auto m = m_newmeas->measurement( *siter, gammaDetNames[i] );
+          if( m && (m->energy_calibration() == peak_cal) )
+          {
+            foundname = true;
+            detname = gammaDetNames[i];
+          }//if( m && (m->energy_calibration() == peak_cal) )
+        }//for( loop over names )
+      }//for( loop over sample numbers )
+
+      if( !foundname )  //probably shouldnt ever not find the calibration
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, "Unexpectedly couldnt find suggested energy cal" );
+#endif
+        continue;
+      }//if( !foundname )
+
+      auto old_cal_pos = old_cals.find( detname );
+      if( old_cal_pos == end(old_cals) )  //shouldnt ever really happen
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        log_developer_error( __func__, "Unexpectedly couldnt old calibration for detector" );
+#endif
+        continue;
+      }//if( couldnt find old calibration )
+
+      const auto newPeakCal = old_cal_pos->second;
+      new_auto_search_peaks[samples] = translatePeaksForCalibrationChange( *oldPeaks, peak_cal, newPeakCal );
+    }catch( std::exception &e )
+    {
+      string msg = "Propagating old energy calibration for auto-search peaks in new file caused an error;"
+      " continuuing on though.  Error: " + string(e.what());
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, msg.c_str() );
+#endif
+
+      viewer->logMessage( msg, 2 );
+      //finished().emit(WDialog::Accepted);
+      //return;
+    }//try / catch translate peaks
+  }//for( const set<int> &samples : samplesWithPeak )
+
+
   try
   {
     // First loop over and make sure we can actually apply all the calibrations appropriately.
@@ -550,6 +623,13 @@ void EnergyCalPreserveWindow::propogateCalibrations()
         viewer->peakModel()->setPeakFromSpecMeas( m_newmeas, dispSamples );
       }
     }//for( loop over new peaks mape )
+
+
+    for( const auto &peakiter : new_auto_search_peaks )
+    {
+      auto peaks = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(peakiter.second);
+      m_newmeas->setAutomatedSearchPeaks( peakiter.first, peaks );
+    }
   }catch( std::exception &e )
   {
     viewer->logMessage( e.what(), 2 );
