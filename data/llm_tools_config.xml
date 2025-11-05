@@ -418,7 +418,8 @@ Further investigation of top returned candidates is required to make sure they m
         },
         "source_category": {
           "type": "string",
-          "description": "Category filter for source types to search. Can use either the display name (e.g., 'Nuclides + X-rays') or the i18n key (e.g., 'isbe-category-nuc-xray'). Default is 'Nuclides + X-rays'. Common values: 'Nuclides + X-rays', 'Nuclides, X-rays, Reactions', 'Fluorescence x-rays', 'Reactions', 'Medical Nuclides', 'Industrial Nuclides', 'SNM', 'NORM', 'Field Encountered Sources', 'Field Encountered Nuclides', 'Fission Products', 'Alphas', 'Beta Endpoint', 'Un-aged Nuclides'."
+          "enum": ["Nuclides + X-rays", "Nuclides, X-rays, Reactions", "Fluorescence x-rays", "Reactions", "Medical Nuclides", "Industrial Nuclides", "SNM", "NORM", "Field Encountered Sources", "Field Encountered Nuclides", "Nuclear Reactions", "Fission Products", "Alphas", "Beta Endpoint", "Un-aged Nuclides"],
+          "description": "Category filter for source types to search. Default is 'Nuclides + X-rays'."
         },
         "min_half_life": {
           "type": "string",
