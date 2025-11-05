@@ -83,6 +83,20 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   try
   {
     config->agents = loadAgentsFromFile(agentsPath);
+
+    // Verify that all required agents have been loaded
+    auto requireAgent = []( const AgentType type, const LlmConfig &config ) {
+      for( const AgentConfig &agent : config.agents )
+      {
+        if( agent.type == type )
+          return;
+      }
+      throw std::runtime_error( "Required agent '" + agentTypeToString(type) + "' not found in agent configuration" );
+    };
+
+    requireAgent( AgentType::MainAgent, *config );
+    requireAgent( AgentType::NuclideId, *config );
+    requireAgent( AgentType::ActivityFit, *config );
   }catch( const std::exception &e )
   {
     // If user provided any override file and it failed to parse, return nullptr
@@ -410,8 +424,7 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
     std::vector<LlmConfig::AgentConfig> agents;
 
     // Parse each Agent node
-    for( const rapidxml::xml_node<char> *agentNode = root->first_node("Agent");
-        agentNode; agentNode = agentNode->next_sibling("Agent") )
+    XML_FOREACH_CHILD( agentNode, root, "Agent" )
     {
       LlmConfig::AgentConfig agent;
 
