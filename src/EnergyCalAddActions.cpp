@@ -56,9 +56,6 @@
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalAddActions.h"
 
-// Forward declarations
-class ConvertCalTypeTool;
-
 using namespace std;
 using namespace Wt;
 
@@ -440,7 +437,8 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
   set<shared_ptr<SpecMeas>> shiftedPeaksFor;
   map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
   map<pair<shared_ptr<SpecMeas>,set<int>>, deque<shared_ptr<const PeakDef>>> updated_peaks;
-  
+  map<pair<shared_ptr<SpecMeas>,set<int>>, deque<shared_ptr<const PeakDef>>> updated_auto_search_peaks;
+
   for( const auto &toapplyto : *m_measToChange )
   {
     for( const auto &detname : toapplyto.detectors )
@@ -554,6 +552,51 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
                                + string(e.what()) );
         }//try / catch translate peaks
       }//for( const set<int> &samples : samplesWithPeak )
+
+
+
+      //updated_auto_search_peaks
+      const set<set<int>> samplesWithAutoSearchPeak = toapplyto.meas->sampleNumsWithAutomatedSearchPeaks();
+      for( const set<int> &samples : samplesWithAutoSearchPeak )
+      {
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> oldPeaks = toapplyto.meas->automatedSearchPeaks(samples);
+        if( !oldPeaks || oldPeaks->empty() )
+            continue;
+
+        auto peak_cal = toapplyto.meas->suggested_sum_energy_calibration( samples, gammaDetNames );
+
+        //We dont expect to ever actually not get a valid calibration, but JIC
+        if( !peak_cal || !peak_cal->valid() )
+        {
+#if( PERFORM_DEVELOPER_CHECKS )
+          log_developer_error( __func__, "Unexpectedly didnt get suggested energy cal for"
+                                         " samples/detectector" );
+#endif
+          continue;
+        }//if( no previous calibration )
+
+        auto pos = updated_cals.find(peak_cal);
+        if( pos == end(updated_cals) )  //shouldnt ever really happen
+        {
+#if( PERFORM_DEVELOPER_CHECKS )
+          log_developer_error( __func__, "Unexpectedly couldnt find cal for auto-search peaks" );
+#endif
+          continue;
+        }//if( couldnt find old calibration )
+
+        const auto newPeakCal = pos->second;
+        try
+        {
+          updated_auto_search_peaks[{toapplyto.meas,samples}]
+                 = EnergyCal::translatePeaksForCalibrationChange( *oldPeaks, peak_cal, newPeakCal );
+        }catch( std::exception &e )
+        {
+          cerr << "Error translating auto-search peaks for calibration change: " << e.what() << endl;
+          assert( 0 );
+        }//try / catch translate peaks
+      }//for( const set<int> &samples : samplesWithAutoSearchPeak )
+
+
     }//if( !shiftedPeaksFor.count( toapplyto.meas) )
   }//for( const auto &toapplyto : applicables )
   
@@ -588,8 +631,16 @@ void ConvertCalTypeTool::convertLowerChannelEnegies( const size_t ncoeffs,
     else if( (spec == secondary) && (samples == secoSamples) )
       peakmodel->setPeakFromSpecMeas( spec, samples, SpecUtils::SpectrumType::SecondForeground );
   }//for( const auto &mp : updated_peaks )
-  
-  
+
+  for( const auto &mp : updated_auto_search_peaks )
+  {
+    const auto &spec = mp.first.first;
+    const auto &samples = mp.first.second;
+    const deque<shared_ptr<const PeakDef>> &newpeaks = mp.second;
+    auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( newpeaks );
+    spec->setAutomatedSearchPeaks(samples, peaks );
+  }//for( const auto &mp : updated_peaks )
+
   for( const auto &toapplyto : *m_measToChange )
   {
     for( const auto &detname : toapplyto.detectors )
