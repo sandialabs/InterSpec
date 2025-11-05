@@ -346,6 +346,7 @@
   <message id="app-mi-help-pref-check-prev">前の作業を確認</message>
   <message id="app-mi-help-pref-show-tt">ツールチップ表示</message>
   <message id="app-mi-help-pref-prop-peak">ピーク伝播を確認</message>
+  <message id="app-mi-help-pref-preserve-ene-cal">エネルギー校正保持を確認。</message>
   <message id="app-mi-help-pref-disp-bq">ベクレル単位で表示</message>
   <message id="app-mi-help-pref-def-drfs">デフォルトDRF使用</message>
   <message id="app-mi-help-pref-desktop">デスクトップインターフェース</message>
@@ -364,6 +365,10 @@
   <message id="app-mi-tt-help-pref-show-tt">要素上でホバーしてから0.5秒後にツールチップを表示。</message>
   <message id="app-mi-tt-help-pref-prop-peak">同じ検出器からのスペクトルを読み込むときに、
     新しいスペクトルで同じピークを再フィットするか確認。新しいスペクトルにピークがないが、以前のフォアグラウンドにはある場合のみ適用。
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">同じ検出器からのスペクトルを読み込むときに、新しいファイルのエネルギー校正が
+    古いファイルと異なる場合、古いファイルのエネルギー校正を
+    新しいファイルに適用するか確認。
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">放射能をキュリーではなくベクレル単位で表示。</message>
   <message id="app-mi-tt-help-def-drfs">スペクトルが読み込まれ、スペクトルの検出器モデルに検出器応答関数を以前に関連付けていない場合、デフォルトのDRFを自動的に見つけて読み込むかどうか。

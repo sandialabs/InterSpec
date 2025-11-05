@@ -353,6 +353,7 @@
   <message id="app-mi-help-pref-check-prev"> Vérifier le travail précédent</message>
   <message id="app-mi-help-pref-show-tt"> Afficher les infobulles</message>
   <message id="app-mi-help-pref-prop-peak"> Demander de propager les pics</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> Demander de conserver l'étal. d'énergie.</message>
   <message id="app-mi-help-pref-disp-bq"> Afficher en becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Utiliser DRF par défaut</message>
   <message id="app-mi-help-pref-desktop"> Interface bureau</message>
@@ -376,6 +377,10 @@
   <message id="app-mi-tt-help-pref-prop-peak">Lors du chargement de spectres du même détecteur,
     demander s'il faut re-ajuster les mêmes pics pour le nouveau spectre. S'applique seulement si le nouveau spectre n'a aucun pic, mais le
     premier plan précédent en avait.
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">Lors du chargement de spectres du même détecteur, et l'étalonnage d'énergie
+    du nouveau fichier est différent de l'ancien fichier, demander si l'étalonnage d'énergie de l'ancien fichier doit
+    être appliqué au nouveau fichier.
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">Afficher l'activité en unités de becquerel, plutôt qu'en curie.</message>
   <message id="app-mi-tt-help-def-drfs">Quand un spectre est chargé, et vous n'avez pas précédemment

@@ -346,6 +346,7 @@
   <message id="app-mi-help-pref-check-prev">检查先前工作</message>
   <message id="app-mi-help-pref-show-tt">显示工具提示</message>
   <message id="app-mi-help-pref-prop-peak">询问传播峰</message>
+  <message id="app-mi-help-pref-preserve-ene-cal">询问保留能量校准。</message>
   <message id="app-mi-help-pref-disp-bq">以贝克勒尔显示</message>
   <message id="app-mi-help-pref-def-drfs">使用默认DRF</message>
   <message id="app-mi-help-pref-desktop">桌面界面</message>
@@ -370,6 +371,10 @@
   <message id="app-mi-tt-help-pref-prop-peak">从同一探测器加载谱时，
     询问是否应为新谱重新拟合相同的峰。仅在新谱没有任何峰但先前
     前景有峰时适用。
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">从同一探测器加载谱时，且新文件的能量
+    校准与旧文件不同时，询问是否应将旧文件的能量校准
+    应用于新文件。
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">以贝克勒尔而不是居里显示活度。</message>
   <message id="app-mi-tt-help-def-drfs">加载谱时，如果您先前没有

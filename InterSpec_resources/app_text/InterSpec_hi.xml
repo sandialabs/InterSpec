@@ -350,6 +350,7 @@
   <message id="app-mi-help-pref-check-prev"> पिछले काम की जांच करें</message>
   <message id="app-mi-help-pref-show-tt"> टूलटिप्स दिखाएं</message>
   <message id="app-mi-help-pref-prop-peak"> पीक प्रचार के लिए पूछें</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> ऊर्जा कैल. रखने के लिए पूछें।</message>
   <message id="app-mi-help-pref-disp-bq"> बेकेरेल में प्रदर्शित करें</message>
   <message id="app-mi-help-pref-def-drfs"> डिफ़ॉल्ट DRF का उपयोग करें</message>
   <message id="app-mi-help-pref-desktop"> डेस्कटॉप इंटरफ़ेस</message>
@@ -374,6 +375,10 @@
   <message id="app-mi-tt-help-pref-prop-peak">उसी डिटेक्टर से स्पेक्ट्रा लोड करते समय,
     पूछें कि क्या नए स्पेक्ट्रम के लिए समान पीक को फिर से फिट करना चाहिए। केवल तभी लागू होता है जब नए स्पेक्ट्रम में कोई पीक नहीं है, लेकिन पिछली
     अग्रभूमि में था।
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">उसी डिटेक्टर से स्पेक्ट्रा लोड करते समय, और नई फ़ाइल का ऊर्जा
+    अंशांकन पुरानी फ़ाइल से अलग है, पूछें कि क्या पुरानी फ़ाइल के ऊर्जा अंशांकन को
+    नई फ़ाइल पर लागू किया जाना चाहिए।
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">क्यूरी के बजाय बेकेरेल की इकाइयों में गतिविधि प्रदर्शित करें।</message>
   <message id="app-mi-tt-help-def-drfs">जब स्पेक्ट्रम लोड होता है, और आपने पहले

@@ -351,6 +351,7 @@
   <message id="app-mi-help-pref-check-prev"> Verificar trabalho anterior</message>
   <message id="app-mi-help-pref-show-tt"> Mostrar dicas</message>
   <message id="app-mi-help-pref-prop-peak"> Perguntar para Propagar Picos</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> Perguntar para manter cal. de energia.</message>
   <message id="app-mi-help-pref-disp-bq"> Exibir em Becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Usar DRFs padrão</message>
   <message id="app-mi-help-pref-desktop"> Interface de Desktop</message>
@@ -374,6 +375,10 @@
   <message id="app-mi-tt-help-pref-prop-peak">Ao carregar espectros do mesmo detector,
     perguntar se deve reajustar os mesmos picos para o novo espectro. Aplica-se apenas se o novo espectro não tiver picos, mas o
     primeiro plano anterior tinha.
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">Ao carregar espectros do mesmo detector, e a calibração de energia
+    do novo arquivo é diferente do arquivo antigo, perguntar se a calibração de energia do arquivo antigo deve
+    ser aplicada ao novo arquivo.
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">Exibir atividade em unidades de becquerel, em vez de curie.</message>
   <message id="app-mi-tt-help-def-drfs">Quando um espectro é carregado e você não associou anteriormente

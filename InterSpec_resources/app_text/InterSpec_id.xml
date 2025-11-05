@@ -351,6 +351,7 @@
   <message id="app-mi-help-pref-check-prev"> Periksa pekerjaan sebelumnya</message>
   <message id="app-mi-help-pref-show-tt"> Tampilkan tooltip</message>
   <message id="app-mi-help-pref-prop-peak"> Tanya untuk Propagasi Puncak</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> Tanya untuk mempertahankan kal. energi.</message>
   <message id="app-mi-help-pref-disp-bq"> Tampilkan dalam Becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Gunakan DRF default</message>
   <message id="app-mi-help-pref-desktop"> Antarmuka Desktop</message>
@@ -374,6 +375,10 @@
   <message id="app-mi-tt-help-pref-prop-peak">Ketika memuat spektrum dari detektor yang sama,
     tanya apakah harus menyesuaikan ulang puncak yang sama untuk spektrum baru. Hanya berlaku jika spektrum baru tidak memiliki puncak, tetapi latar depan
     sebelumnya memiliki.
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">Ketika memuat spektrum dari detektor yang sama, dan kalibrasi energi
+    dari berkas baru berbeda dari berkas lama, tanya apakah kalibrasi energi dari berkas lama harus
+    diterapkan ke berkas baru.
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">Tampilkan aktivitas dalam satuan becquerel, bukan curie.</message>
   <message id="app-mi-tt-help-def-drfs">Ketika spektrum dimuat, dan Anda belum sebelumnya
