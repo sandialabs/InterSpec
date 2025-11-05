@@ -448,8 +448,6 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
 
     conversations.push_back(conv);
   }//XML_FOREACH_CHILD(convNode, node, "Conversation")
-  
-  cout << "fromXml: Found " << convCount << " conversation nodes, loaded " << conversations.size() << " conversations from XML" << endl;
 }
 
 std::string LlmConversationHistory::conversationTypeToString(LlmConversationStart::Type type) {

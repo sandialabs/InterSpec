@@ -1842,7 +1842,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   m_llmConversationHistory.clear();
   
   // Look for all LlmConversationHistory nodes
-  for( node = interspecnode->first_node( "LlmConversationHistory", 21 ); node; node = node->next_sibling( "LlmConversationHistory", 21 ) )
+  XML_FOREACH_CHILD(node, interspecnode, "LlmConversationHistory")
   {
     try
     {

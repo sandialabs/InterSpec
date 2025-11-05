@@ -3105,7 +3105,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
       {
         shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( *addswap->first );
         PeakModel::SetGammaSource status = PeakModel::setNuclideXrayReaction( *new_peak, addswap->second, 4.0 );
-        if( status != PeakModel::SetGammaSource::NoSourceChange )
+        if( status != PeakModel::SetGammaSource::FailedSourceChange )
         {
           // Replace the previous peak with the new peak
           auto pos = std::find(begin(*peaks), end(*peaks), addswap->first);

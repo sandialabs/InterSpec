@@ -1628,10 +1628,11 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "s.e.", "" );
-  }else if( SpecUtils::icontains( txt, "single escape" ) )
+  }else if( SpecUtils::icontains( txt, "single escape" ) || SpecUtils::icontains( txt, "single-escape" ) )
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "single escape", "" );
+    SpecUtils::ireplace_all( txt, "single-escape", "" );
   }else if( SpecUtils::iequals_ascii( txt, "s.e." )
      || SpecUtils::iequals_ascii( txt, "se" )
      || SpecUtils::iequals_ascii( txt, "escape" ) )
@@ -1650,10 +1651,11 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "d.e.", "" );
-  }else if( SpecUtils::icontains( txt, "double escape" ) )
+  }else if( SpecUtils::icontains( txt, "double escape" ) || SpecUtils::icontains( txt, "double-escape" ) )
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "double escape", "" );
+    SpecUtils::ireplace_all( txt, "double-escape", "" );
   }else if( SpecUtils::icontains( txt, "de " ) && txt.size() > 5 )
   {
     type = PeakDef::DoubleEscapeGamma;
@@ -1676,6 +1678,8 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
     SpecUtils::ireplace_all( txt, "x-ray", "" );
     SpecUtils::ireplace_all( txt, "x ray", "" );
   }
+  
+  SpecUtils::trim( txt );
 }//PeakDef::SourceGammaType gammaType( std::string txt )
 
 

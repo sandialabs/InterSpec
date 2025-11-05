@@ -1446,6 +1446,13 @@ public:
       case PeakModel::SetGammaSource::NoSourceChange:
         //Shouldnt ever happen, but JIC...
         passMessage( "Trouble making change to nuclide - not applying, sorry!<br />"
+                    "Please report error, including selected nuclides to interspec@sandia.gov", 2 );
+        populateNuclideSelects();
+        break;
+        
+      case PeakModel::SetGammaSource::FailedSourceChange:
+        //Shouldnt ever happen, but JIC...
+        passMessage( "Failed changing to nuclide - not applying, sorry!<br />"
                      "Please report error, including selected nuclides to interspec@sandia.gov", 2 );
         populateNuclideSelects();
         break;
@@ -2906,7 +2913,7 @@ vector<shared_ptr<const PeakDef>> assign_srcs_from_ref_lines( const std::shared_
         
         PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *moddedOldPeak, addswap->second, 1.0 );
         oldpeak = moddedOldPeak;
-        if( res == PeakModel::NoSourceChange )
+        if( (res == PeakModel::SetGammaSource::NoSourceChange) || (res == PeakModel::SetGammaSource::FailedSourceChange) )
         {
 #if( PERFORM_DEVELOPER_CHECKS )
           log_developer_error( __func__, "A suggested change to a peak did not result in a change - prob shouldnt have happened." );

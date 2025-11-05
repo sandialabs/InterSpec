@@ -1110,7 +1110,6 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     invokeTool.availableForAgents = {AgentType::MainAgent};
     
     registerTool(invokeTool);
-    cout << "  Registered sub-agent invoke tool: " << toolName << endl;
   }//for( loop over agents in config )
   
 
@@ -1139,7 +1138,6 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       tool.availableForAgents = toolConfig.availableForAgents;
 
       registerTool(tool);
-      cout << "  Registered tool: " << tool.name << endl;
     }catch( const std::exception &e )
     {
       cerr << "Warning: Failed to create tool '" << toolConfig.name << "': " << e.what() << endl;
@@ -1159,6 +1157,7 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     "add_analysis_peak",
     "edit_analysis_peak",
     "escape_peak_check",
+    "sum_peak_check",
     "get_analysis_peaks",
     "get_spectrum_info",
     "primary_gammas_for_source",
@@ -1317,7 +1316,8 @@ nlohmann::json ToolRegistry::executeTool(const std::string& toolName,
     return result;
   }catch( const std::exception &e )
   {
-    throw std::runtime_error("Tool execution failed for " + toolName + ": " + e.what());
+    const string err_msg = e.what();
+    throw std::runtime_error("Tool execution failed for " + toolName + ": " + err_msg);
   }
 }
 
@@ -1742,8 +1742,14 @@ nlohmann::json ToolRegistry::executeGetSourceInfo(const nlohmann::json& params, 
     if( rctn_db )
       rctn_db->gammas( nuclide, possible_rctns );
     
-    if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
-      rctn = possible_rctns[0].reaction;
+    try
+    {
+      if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
+        rctn = possible_rctns[0].reaction;
+    }catch( std::exception & )
+    {
+      // Happens for example when there isnt an opening and closing paranthesis in the string
+    }
     
     if( rctn )
     {
@@ -2090,7 +2096,7 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
 
   // The nuclide, element, or reaction for which to retrieve decay product data.
   //   Examples: 'U238' (nuclide), 'Pb' (element), 'H(n,g)' (reaction).
-  const string &src = params["Source"];
+  string src = params["Source"];
 
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   if( !db )
@@ -2103,18 +2109,41 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   nuc = db->nuclide(src);
 
   if( !nuc )
+  {
+    const bool contained_xray = (SpecUtils::icontains(src, "x-ray")
+                                 || SpecUtils::icontains(src, "x ray")
+                                 || SpecUtils::icontains(src, "xray")
+                                 || SpecUtils::icontains(src, "element")
+                                 || SpecUtils::icontains(src, "fluorescence") );
+    if( contained_xray )
+    {
+      SpecUtils::ireplace_all( src, "x-ray", "");
+      SpecUtils::ireplace_all( src, "x ray", "");
+      SpecUtils::ireplace_all( src, "xray", "");
+      SpecUtils::ireplace_all( src, "element", "");
+      SpecUtils::ireplace_all( src, "fluorescence", "");
+    }
+    SpecUtils::trim( src );
+    
     el = db->element(src);
+  }
 
   if( !nuc && !el )
   {
     const ReactionGamma * const rctn_db = ReactionGammaServer::database();
 
-    std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
-    if( rctn_db )
-      rctn_db->gammas( src, possible_rctns );
-
-    if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
-      rctn = possible_rctns[0].reaction;
+    try
+    {
+      std::vector<ReactionGamma::ReactionPhotopeak> possible_rctns;
+      if( rctn_db )
+        rctn_db->gammas( src, possible_rctns );
+      
+      if( !possible_rctns.empty() && possible_rctns[0].reaction ) // Take the first reaction found
+        rctn = possible_rctns[0].reaction;
+    }catch( std::exception & )
+    {
+      // Happens for example when there isnt an opening and closing parenthesis
+    }
   }//if( !nuc && !el )
 
   if( !nuc && !el && !rctn )
