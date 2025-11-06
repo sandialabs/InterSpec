@@ -314,7 +314,20 @@ public:
                         int role = Wt::EditRole );
 
   
-  enum SetGammaSource{ NoSourceChange, SourceChange, SourceAndUseChanged };
+  enum class SetGammaSource
+  {
+    /** New source matched old source. */
+    NoSourceChange,
+    
+    /** Source changes, but its use for shielding/source fit didnt. */
+    SourceChange,
+    
+    /** Source changes and use shielding/source fit changed. */
+    SourceAndUseChanged,
+    
+    /** Faield to set the source - invalid specification. */
+    FailedSourceChange
+  };//enum class SetGammaSource
   
   /** Sets the nuclide for the given peak.
    \param peak Peak to set nuclide for
