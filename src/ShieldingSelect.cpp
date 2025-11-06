@@ -3432,6 +3432,25 @@ void ShieldingSelect::setFitRectangularWidthEnabled( const bool allow )
 }//void setFitRectangularWidthEnabled( const bool allow )
 
 
+void ShieldingSelect::setFitRectangularDepthEnabled( const bool allow )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  WCheckBox *cb = m_fitRectDepthCB;
+  const bool previous = cb->isVisible();
+  if( previous == allow )
+    return;
+  
+  cb->setChecked( false );
+  cb->setHidden( !allow );
+  
+  assert( allow || !fitRectangularDepthThickness() );
+}//void setFitRectangularDepthEnabled( const bool allow )
+
+
 bool ShieldingSelect::fitAtomicNumber() const
 {
   if( !isGenericMaterial() || !m_forFitting )

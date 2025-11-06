@@ -5320,15 +5320,18 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
         
       case GammaInteractionCalc::GeometryType::CylinderEndOn:
         shieldings[i]->setFitCylindricalRadiusEnabled( enable );
+        shieldings[i]->setFitCylindricalLengthEnabled( true );
         break;
         
       case GammaInteractionCalc::GeometryType::CylinderSideOn:
         shieldings[i]->setFitCylindricalLengthEnabled( enable );
+        shieldings[i]->setFitCylindricalRadiusEnabled( true );
         break;
         
       case GammaInteractionCalc::GeometryType::Rectangular:
         shieldings[i]->setFitRectangularWidthEnabled( enable );
         shieldings[i]->setFitRectangularHeightEnabled( enable );
+        shieldings[i]->setFitRectangularDepthEnabled( true );
         break;
         
       case GammaInteractionCalc::GeometryType::NumGeometryType:
