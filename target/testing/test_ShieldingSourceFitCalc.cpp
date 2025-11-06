@@ -516,7 +516,8 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
 
 
 
-std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingSourceFitCalc::ModelFitResults &results )
+std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingSourceFitCalc::ModelFitResults &results,
+                                                               const string &filename )
 {
   bool successful = true;
   int numCorrect = 0, numTested = 0;
@@ -698,7 +699,7 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
         }
         
         const auto geom = shield.m_geometry;
-        auto checkDimension = [shield, geom, mat, &successful, &textInfoLines, &numTested, &numCorrect]( const int dim ){
+        auto checkDimension = [shield, geom, mat, &filename, &successful, &textInfoLines, &numTested, &numCorrect]( const int dim ){
           
           if( !shield.m_fitDimensions[dim] )
             return;
@@ -752,6 +753,15 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
           }
           
           const bool closeEnough = (fabs((*thicknessVal) - fitValue) < (*toleranceVal));
+          if( !closeEnough )
+          {
+            cerr << "Failing for " << labeltxt << " '" << filename << "'." << endl;
+            cerr << "shield.m_dimensions[] = [" << PhysicalUnits::printToBestLengthUnits(shield.m_dimensions[0],4)
+            << ", " << PhysicalUnits::printToBestLengthUnits(shield.m_dimensions[1],4)
+            << ", " << PhysicalUnits::printToBestLengthUnits(shield.m_dimensions[2],4)
+            << "]" << endl;
+            cerr <<endl;
+          }
           
           numTested += 1;
           numCorrect += closeEnough;
@@ -1112,7 +1122,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   
   BOOST_REQUIRE( results->fit_src_info.size() >= 1 );
   
-  tuple<bool,int,int,vector<string>> test_results = test_fit_against_truth( *results );
+  tuple<bool,int,int,vector<string>> test_results = test_fit_against_truth( *results, test_n42_file );
   const bool successful = get<0>(test_results);
   const int numCorrect = get<1>(test_results);
   const int numTested = get<2>(test_results);
@@ -1448,7 +1458,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     BOOST_CHECK_MESSAGE( results->fit_src_info.size() == src_definitions.size(),
                         "Analyst file '" << n42_filename << "': Fit sources size not equal to input." );
     
-    tuple<bool,int,int,vector<string>> test_results = test_fit_against_truth( *results );
+    tuple<bool,int,int,vector<string>> test_results = test_fit_against_truth( *results, n42_filename );
     const bool successful = get<0>(test_results);
     const int numCorrect = get<1>(test_results);
     const int numTested = get<2>(test_results);

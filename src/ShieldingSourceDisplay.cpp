@@ -3699,6 +3699,11 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
       case ShieldingSourceFitCalc::ModelSourceType::Trace:
       {
         // Go through shieldings and get display activity, so we can fit for that.
+        //  Note: this isnt necassary as `ShieldingSourceChi2Fcn::create(...)` (or really implemented in
+        //        `ShieldingSourceChi2Fcn::setInitialSourceDefinitions(...)`) will use the activity from the actual
+        //        trace-source definition to set the parameter value.  So in some sense, to remain consistent
+        // TODO: right now when fitting from the GUI, we set this activity to the trace source type activity, but when fitting from file, we may have it in total activity - need to rectify this ambigutity, or over-specification that leads to inconsistencies
+        
         int numShieldingsTraceSrcFor = 0;
         for( const ShieldingSourceFitCalc::ShieldingInfo &shield : initial_shieldings )
         {
@@ -3717,7 +3722,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
             if( srcdef.fitActivity != m_sourceModel->fitActivity(static_cast<int>(ison)) )
             {
               cerr << "\n\n\n\nTemporarily disabling assert 'fitAct=" << srcdef.fitActivity << "'- reaenable\n\n\n" << endl;
-  //           assert( fitAct == m_sourceModel->fitActivity(nucn) );
+  //           assert( srcdef.fitActivity == m_sourceModel->fitActivity(static_cast<int>(ison)) );
             }
           }//if( this shielding has the nuclide as a trace source )
         }//for( WWidget *w : m_shieldingSelects->children() )
