@@ -32,20 +32,6 @@
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/chi_squared.hpp>
 
-//Roots Minuit2 includes
-#include "Minuit2/FCNBase.h"
-#include "Minuit2/FunctionMinimum.h"
-#include "Minuit2/MnMigrad.h"
-#include "Minuit2/MnScan.h"
-#include "Minuit2/MnMinos.h"
-#include "Minuit2/MnSimplex.h"
-#include "Minuit2/MinosError.h"
-#include "Minuit2/MnUserParameters.h"
-#include "Minuit2/MnUserParameterState.h"
-#include "Minuit2/CombinedMinimizer.h"
-#include "Minuit2/SimplexMinimizer.h"
-
-
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/SpecUtilsAsync.h"
@@ -54,6 +40,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/PeakFit_imp.hpp"
 #include "InterSpec/PeakFitChi2Fcn.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -1093,13 +1080,13 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     
   const bool fixed_geom = input.drf->isFixedGeometry();
   
-  // We should be good to go,
+  double total_chi2 = 0.0, total_DOF = 0.0;
   vector<PeakDef> inputPeaks, fittedPeaks;
   
   for( const DeconRoiInfo &roi : input.roi_info )
   {
-    const float  &roi_start = roi.roi_start; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
-    const float  &roi_end = roi.roi_end; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
+    const float &roi_start = roi.roi_start; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
+    const float &roi_end = roi.roi_end; //This _should_ already be rounded to nearest bin edge; TODO: check that this is rounded
     
     const DeconContinuumNorm &cont_norm_method = roi.cont_norm_method;
     PeakContinuum::OffsetType continuum_type = roi.continuum_type;
@@ -1120,7 +1107,7 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     
     
     shared_ptr<PeakContinuum> peak_continuum;
-    std::shared_ptr<const SpecUtils::Measurement> computed_global_cont;
+    shared_ptr<const SpecUtils::Measurement> computed_global_cont;
     
     // Find the largest peak in the ROIs, energy to use as the continuum "reference energy"
     float reference_energy = 0.0f;
@@ -1128,7 +1115,9 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
       reference_energy = std::max( reference_energy, peak_info.energy );
     
     assert( reference_energy != 0.0f );
-    
+
+    vector<PeakDef> roi_peaks, roi_peaks_to_use_for_fitting_continuum;
+
     for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
     {
       const float &energy = peak_info.energy;
@@ -1161,76 +1150,9 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
         peak_continuum = peak.continuum();
         peak_continuum->setType( continuum_type );
         peak_continuum->setRange( roi_start, roi_end );
-        
-        size_t nlowerside = num_lower_side_channels;
-        size_t nupperside = num_upper_side_channels;
-        if( roi.cont_norm_method != DeconContinuumNorm::FixedByEdges )
-        {
-          //if no value provided, use 4 channels
-          if( !nlowerside )
-            nlowerside = 4;
-          if( !nupperside )
-            nupperside = 4;
-          
-          // Clamp between 2 and 16 channels
-          nupperside = ((nupperside < 2) ? size_t(2) : ((nupperside > 16) ? size_t(16) : nupperside)); //std::clamp(...), C++17
-          nlowerside = ((nlowerside < 2) ? size_t(2) : ((nlowerside > 16) ? size_t(16) : nlowerside)); //std::clamp(...), C++17
-        }else
-        {
-          assert( num_lower_side_channels > 0 );
-          assert( num_upper_side_channels > 0 );
-        }
-        
-        // First, we'll find a linear continuum as the starting point, and then go through
-        //  and modify it how we need
-        peak_continuum->calc_linear_continuum_eqn( input.measurement, reference_energy,
-                                                  roi_start, roi_end, nlowerside, nupperside );
-        
         peak_continuum->setType( continuum_type );
-        
-        
-        if( cont_norm_method == DeconContinuumNorm::FixedByFullRange )
-        {
-          // We'll set a peaks amplitude for zero
-          for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
-            peak_continuum->setPolynomialCoefFitFor( order, true );
-          
-          const double mean = 0.5*(roi_start + roi_end);
-          PeakDef worker_peak( 0.5*(roi_start + roi_end), sigma, 0.0 );
-          worker_peak.setContinuum( peak_continuum );
-          worker_peak.setFitFor( PeakDef::CoefficientType::Mean, false );
-          worker_peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
-          worker_peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
-          
-          // Use peak sigma to determine if its a high or low resolution detector, but I dont think
-          //  it matters much since the range is defined for the peak, and that is the only place
-          //  `isHPGe` is used, I think.
-          const double hpge_fwhm = PeakFitUtils::hpge_fwhm_fcn(mean);
-          const double nai_fwhm = PeakFitUtils::nai_fwhm_fcn(mean);
-          const bool isHPGe = (fabs(fwhm - hpge_fwhm) < fabs(fwhm - nai_fwhm));
-          
-          std::vector<PeakDef> fit_peak;
-          Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
-          fitPeaks( {worker_peak}, -1.0, -1.0, input.measurement, fit_peak, fit_options, isHPGe );
-          
-          assert( fit_peak.size() == 1 );
-          if( fit_peak.size() == 1 )
-          {
-            peak_continuum = fit_peak[0].continuum();
-            peak.setContinuum( peak_continuum );
-          }else
-          {
-            string msg = "Error fitting DeconContinuumNorm::FixedByFullRange continuum - failed to"
-                        " get a peak out - expected 1, got " + std::to_string(fit_peak.size());
-            cerr << msg << endl;
-#if( PERFORM_DEVELOPER_CHECKS )
-            log_developer_error( __func__, msg.c_str() );
-            throw runtime_error( msg );
-#endif
-          }//if( fit_peak.size() == 1 ) / else
-        }//if( cont_norm_method == DeconContinuumNorm::FixedByFullRange )
-        
-        
+
+        // This next loop could be skipped
         for( size_t order = 0; order < peak_continuum->parameters().size(); ++order )
         {
           switch( cont_norm_method )
@@ -1269,113 +1191,111 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
             break;
         }//switch( assign continuum )
       }//if( peak_continuum ) / else
-      
-      inputPeaks.push_back( std::move(peak) );
-    }//for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
-  }//for( size_t i = 0; i < energies.size(); ++i )
-  
-  if( inputPeaks.empty() )
-    throw runtime_error( "decon_compute_peaks: No peaks given in ROI(s)" );
 
-  // `isHPGe` is only used to define ROI, I think, so it doesnt matter much
-  const bool isHPGe = ([=]() -> bool {
-    vector<shared_ptr<const PeakDef>> peakv;
-    for( const auto &p : inputPeaks )
-      peakv.push_back( make_shared<const PeakDef>(p) );
-    const auto m = PeakFitUtils::coarse_resolution_from_peaks(peakv);
-    return (m == PeakFitUtils::CoarseResolutionType::High);
-  })();
-  
-  
-  ROOT::Minuit2::MnUserParameters inputFitPars;
-  PeakFitChi2Fcn::addPeaksToFitter( inputFitPars, inputPeaks, input.measurement, PeakFitChi2Fcn::kFitForPeakParameters, isHPGe );
-  
-  const int npeaks = static_cast<int>( inputPeaks.size() );
-  PeakFitChi2Fcn chi2Fcn( npeaks, input.measurement, nullptr );
-  chi2Fcn.useReducedChi2( false );
-  
-  if( inputFitPars.VariableParameters() == 0 )
-  {
-    // If we choose to "Fix continuum" we can get here
-    result.chi2 = chi2Fcn.chi2( inputFitPars.Params().data() );
-    result.num_degree_of_freedom = 0;
-    
-    for( auto &peak : inputPeaks )
+
+      switch( cont_norm_method )
+      {
+        case DeconContinuumNorm::Floating:
+        {
+          roi_peaks_to_use_for_fitting_continuum.push_back( peak );
+          break;
+        }//case DeconContinuumNorm::Floating:
+
+        case DeconContinuumNorm::FixedByEdges:
+          peak_continuum->calc_linear_continuum_eqn( input.measurement, reference_energy,
+                                            roi_start, roi_end, num_lower_side_channels, num_upper_side_channels );
+          break;
+
+        case DeconContinuumNorm::FixedByFullRange:
+        {
+          if( roi_peaks_to_use_for_fitting_continuum.empty() )
+          {
+            const double mean = 0.5*(roi_start + roi_end);
+            PeakDef worker_peak( 0.5*(roi_start + roi_end), sigma, 0.0 );
+            worker_peak.setContinuum( peak_continuum );
+            worker_peak.setFitFor( PeakDef::CoefficientType::Mean, false );
+            worker_peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
+            worker_peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
+
+            roi_peaks_to_use_for_fitting_continuum.push_back( worker_peak );
+          }//if( roi_peaks_to_use_for_fitting_continuum.empty() )
+
+          break;
+        }//case DeconContinuumNorm::FixedByFullRange:
+      }//switch( cont_norm_method )
+
+      roi_peaks.push_back( peak );
+    }//for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
+
+    const size_t lower_channel = input.measurement->find_gamma_channel( roi_start );
+    const size_t upper_channel = input.measurement->find_gamma_channel( roi_end );
+    assert( upper_channel >= lower_channel );
+
+    if( peak_continuum && !roi_peaks_to_use_for_fitting_continuum.empty() )
     {
-      peak.setFitFor( PeakDef::CoefficientType::Mean, false );
-      peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
+      const shared_ptr<const vector<float>> &channel_counts = input.measurement->gamma_counts();
+      const shared_ptr<const vector<float>> &channel_energies = input.measurement->channel_energies();
+      assert( channel_counts && channel_energies );
+      const float * const x = &(channel_energies->at(lower_channel));
+      const float * const data = &(channel_counts->at(lower_channel));
+
+      const size_t nbin = (1 + upper_channel - lower_channel);
+      const float * const data_uncert = nullptr;  //Just use data
+      const bool step_continuum = PeakContinuum::is_step_continuum(continuum_type);
+      const size_t num_poly_terms = PeakContinuum::num_parameters(continuum_type);
+
+      // We can use either `PeakFit::fit_continuum`, or `PeakFit::fit_amp_and_offset_imp` - and I dont think it matters
+      //  so we'll just do the latter
+      //vector<double> continuum_coeffs( num_polynomial_terms, 0.0 );
+      //vector<double> peak_channel_counts( nbin, 0.0 );
+      //PeakFit::fit_continuum( x, data, data_uncert, nbin, static_cast<int>(num_poly_terms), step_continuum,
+      //                       reference_energy, roi_peaks_to_use_for_fitting_continuum, false,
+      //                       &(continuum_coeffs[0]), &(peak_channel_counts[0]) );
+
+
+      vector<double> dummy_means, dummy_sigmas;
+      vector<double> dummy_fit_amps, dummy_amplitudes_uncerts;
+      vector<double> continuum_coeffs, continuum_coeffs_uncerts;
+      double * const peak_counts = nullptr;
+      PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
+      const double * const skew_parameters = nullptr;
+      PeakFit::fit_amp_and_offset_imp( x, data, nbin, static_cast<int>(num_poly_terms),
+                                      step_continuum, static_cast<double>(reference_energy),
+                                      dummy_means, dummy_sigmas, roi_peaks_to_use_for_fitting_continuum,
+                                      skew_type, skew_parameters, dummy_fit_amps, continuum_coeffs,
+                                      dummy_amplitudes_uncerts, continuum_coeffs_uncerts, peak_counts );
+
+      peak_continuum->setType( continuum_type );
+      peak_continuum->setParameters( reference_energy, continuum_coeffs, continuum_coeffs_uncerts );
+    }//if( peak_continuum && !roi_peaks_to_use_for_fitting_continuum.empty() )
+
+
+    vector<PeakDef *> peakptrs;
+    for( PeakDef &p : roi_peaks )
+    {
+      // Set that we arent/didnt fit for Mean, Sigma, or Amplitude so we'll get DOF correct.
+      p.setFitFor( PeakDef::CoefficientType::Mean, false );
+      p.setFitFor( PeakDef::CoefficientType::Sigma, false );
+      p.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
+
+      peakptrs.push_back( &p );
     }
-    
-    result.fit_peaks = inputPeaks;
-    
-    return result;
-  }//if( inputFitPars.VariableParameters() == 0 )
-  
-  assert( inputFitPars.VariableParameters() != 0 );
-  
-  ROOT::Minuit2::MnUserParameterState inputParamState( inputFitPars );
-  ROOT::Minuit2::MnStrategy strategy( 2 ); //0 low, 1 medium, >=2 high
-  ROOT::Minuit2::MnMinimize fitter( chi2Fcn, inputParamState, strategy );
-  
-  unsigned int maxFcnCall = 5000;
-  double tolerance = 2.5;
-  tolerance = 0.5;
-  ROOT::Minuit2::FunctionMinimum minimum = fitter( maxFcnCall, tolerance );
-  const ROOT::Minuit2::MnUserParameters &fitParams = fitter.Parameters();
-  //  minimum.IsValid()
-  //      ROOT::Minuit2::MinimumState minState = minimum.State();
-  //      ROOT::Minuit2::MinimumParameters minParams = minState.Parameters();
-  
-  //    cerr << endl << endl << "EDM=" << minimum.Edm() << endl;
-  //    cerr << "MinValue=" <<  minimum.Fval() << endl << endl;
-  
-  if( !minimum.IsValid() )
-    minimum = fitter( maxFcnCall, tolerance );
-  
-  if( !minimum.IsValid() )
-  {
-    //XXX - should we try to re-fit here? Or do something to handle the
-    //      faliure in some reasonable way?
-    cerr << endl << endl << "status is not valid"
-    << "\n\tHasMadePosDefCovar: " << minimum.HasMadePosDefCovar()
-    << "\n\tHasAccurateCovar: " << minimum.HasAccurateCovar()
-    << "\n\tHasReachedCallLimit: " << minimum.HasReachedCallLimit()
-    << "\n\tHasValidCovariance: " << minimum.HasValidCovariance()
-    << "\n\tHasValidParameters: " << minimum.HasValidParameters()
-    << "\n\tIsAboveMaxEdm: " << minimum.IsAboveMaxEdm()
-    << endl;
-    if( minimum.IsAboveMaxEdm() )
-      cout << "\t\tEDM=" << minimum.Edm() << endl;
-  }//if( !minimum.IsValid() )
-  
-  
-  vector<double> fitpars = fitParams.Params();
-  vector<double> fiterrors = fitParams.Errors();
-  chi2Fcn.parametersToPeaks( fittedPeaks, &fitpars[0], &fiterrors[0] );
-  
-  double initialChi2 = chi2Fcn.chi2( &fitpars[0] );
-  
-  //Lets try to keep whether or not to fit parameters should be the same for
-  //  the output peaks as the input peaks.
-  //Note that this doesnt account for peaks swapping with each other in the fit
-  assert( fittedPeaks.size() == inputPeaks.size() );
-  
-  //for( size_t i = 0; i < near_peaks.size(); ++i )
-  //  fittedPeaks[i].inheritUserSelectedOptions( near_peaks[i], true );
-  //for( size_t i = 0; i < fixedpeaks.size(); ++i )
-  //  fittedPeaks[i+near_peaks.size()].inheritUserSelectedOptions( fixedpeaks[i], true );
-  
-  const double totalNDF = set_chi2_dof( input.measurement, fittedPeaks, 0, fittedPeaks.size() );
-  
-  result.chi2 = initialChi2;
-  result.num_degree_of_freedom = static_cast<int>( std::round(totalNDF) );
-  
-  for( auto &peak : fittedPeaks )
-  {
-    peak.setFitFor( PeakDef::CoefficientType::Mean, false );
-    peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
-  }
-  
+
+    double chi2, dof;
+    get_chi2_and_dof_for_roi( chi2, dof, input.measurement, peakptrs );
+
+    total_chi2 += chi2;
+    total_DOF += dof;
+
+    const double chi2_dof = total_chi2 / ((total_DOF > 0.0) ? total_DOF : 1.0);
+    for( PeakDef &p : roi_peaks )
+      p.set_coefficient(chi2_dof, PeakDef::CoefficientType::Chi2DOF );
+
+    fittedPeaks.insert( end(fittedPeaks), begin(roi_peaks), end(roi_peaks) );
+  }//for( const DeconRoiInfo &roi : input.roi_info )
+
+  result.chi2 = total_chi2;
+  result.num_degree_of_freedom = static_cast<int>( std::round(total_DOF) );
   result.fit_peaks = fittedPeaks;
   
   return result;

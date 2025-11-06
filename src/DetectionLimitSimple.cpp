@@ -2248,8 +2248,8 @@ void DetectionLimitSimple::updateResult()
         //  to definitely cover the entire possible activity range, so we will exaggerate the
         //  expected range from Currie-style limit
         //  The value of 5 is totally arbitrary, and I dont know what is actually a good range yet
-        const double diff_multiple = 5.0;
-        
+        const double diff_multiple = 50.0;
+
         if( currie_result.source_counts > currie_result.decision_threshold )
         {
           // There is enough excess counts to reliably detect this activity
