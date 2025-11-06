@@ -3432,6 +3432,25 @@ void ShieldingSelect::setFitRectangularWidthEnabled( const bool allow )
 }//void setFitRectangularWidthEnabled( const bool allow )
 
 
+void ShieldingSelect::setFitRectangularDepthEnabled( const bool allow )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  WCheckBox *cb = m_fitRectDepthCB;
+  const bool previous = cb->isVisible();
+  if( previous == allow )
+    return;
+  
+  cb->setChecked( false );
+  cb->setHidden( !allow );
+  
+  assert( allow || !fitRectangularDepthThickness() );
+}//void setFitRectangularDepthEnabled( const bool allow )
+
+
 bool ShieldingSelect::fitAtomicNumber() const
 {
   if( !isGenericMaterial() || !m_forFitting )
@@ -5667,6 +5686,14 @@ std::string ShieldingSelect::encodeStateToUrl() const
     std::string material_name = m_materialEdit->text().toUTF8();
     SpecUtils::ireplace_all(material_name, "#", "%23" );
     SpecUtils::ireplace_all(material_name, "&", "%26" );
+    const string::size_type open_pos = material_name.find('(');
+    if( open_pos != string::npos )
+    {
+      const string::size_type close_pos = material_name.find(')', open_pos);
+      if( close_pos != string::npos )
+        material_name.erase(open_pos, close_pos - open_pos + 1);
+    }
+    SpecUtils::trim( material_name );
     
     if( !m_currentMaterial )
       material_name = "";

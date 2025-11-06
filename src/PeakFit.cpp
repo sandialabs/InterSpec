@@ -4942,7 +4942,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
 #else
 
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
   PeakShrdVec mnInitialfitpeaks;
   const auto t1 = std::chrono::high_resolution_clock::now();
   fit_peak_for_user_click( mnInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
@@ -4954,15 +4954,15 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     << " keV, FWHM=" << std::setw(10) << mnInitialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
     << mnInitialfitpeaks[i]->amplitude() << endl;
   }
+  const auto t3 = std::chrono::high_resolution_clock::now();
 #endif
 
   PeakShrdVec lmInitialfitpeaks;
-  const auto t3 = std::chrono::high_resolution_clock::now();
   PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, dataH, coFitPeaks,
                              mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
-  const auto t4 = std::chrono::high_resolution_clock::now();
   
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
+  const auto t4 = std::chrono::high_resolution_clock::now();
   cout << "Old way fit " << mnInitialfitpeaks.size() << " peaks - LM way fit " << lmInitialfitpeaks.size() << endl;
   const size_t npeaks = std::min( lmInitialfitpeaks.size(), mnInitialfitpeaks.size() );
   
@@ -5070,7 +5070,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 
       
 #if( USE_LM_PEAK_FIT )
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
@@ -5084,7 +5084,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       initialfitpeaks.clear();
       PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, dataH, coFitPeaks,
                                  mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
         cout << "LM  Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()

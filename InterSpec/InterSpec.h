@@ -898,8 +898,11 @@ public:
   void deleteFwhmFromForegroundWindow();
 
 #if( USE_LLM_INTERFACE )
-  /** Create and show the LLM tool widget in the tools tab. */
+  /** Create and show the LLM tool widget in the tools tab, if its not already created. */
   void createLlmTool();
+  
+  /** Returns current LLM tool, or nullptr if one does not currently exist. */
+  LlmToolGui *currentLlmTool();
   
   /** Handle cleanup when LLM tool is closed. */
   void handleLlmToolClose();
@@ -1197,6 +1200,7 @@ public:
   //  which will call setHintPeaks(...) when done.
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                            const std::set<int> &samples,
+                          const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
                           const bool isHPGe );
   
   //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and

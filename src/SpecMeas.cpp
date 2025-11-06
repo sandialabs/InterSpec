@@ -1112,19 +1112,19 @@ void SpecMeas::setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<cha
 
 
 #if( USE_LLM_INTERFACE )
-std::shared_ptr<std::vector<LlmConversationStart>> SpecMeas::llmConversationHistory( const std::set<int> &samplenums ) const
+std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> SpecMeas::llmConversationHistory( const std::set<int> &samplenums ) const
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
-  
+
   auto pos = m_llmConversationHistory.find( samplenums );
   if( pos != m_llmConversationHistory.end() )
     return pos->second;
-  
+
   return nullptr;
 }
 
 
-void SpecMeas::setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<LlmConversationStart>> history )
+void SpecMeas::setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> history )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
@@ -1453,8 +1453,6 @@ bool SpecMeas::load_from_iaea( std::istream &istr )
 
 void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
 {
-  cout << "SpecMeas::load_cnf_using_reader" << endl;
-
   SpecUtils::SpecFile::load_cnf_using_reader( reader );
 
   if( measurements_.empty() )
@@ -1844,7 +1842,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   m_llmConversationHistory.clear();
   
   // Look for all LlmConversationHistory nodes
-  for( node = interspecnode->first_node( "LlmConversationHistory", 21 ); node; node = node->next_sibling( "LlmConversationHistory", 21 ) )
+  XML_FOREACH_CHILD(node, interspecnode, "LlmConversationHistory")
   {
     try
     {
@@ -1867,14 +1865,14 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
       }
       
       // Parse conversations for this sample set
-      std::vector<LlmConversationStart> conversations;
-      
+      std::vector<std::shared_ptr<LlmConversationStart>> conversations;
+
       // Use the static fromXml function from LlmConversationHistory
       LlmConversationHistory::fromXml( node, conversations );
-      
+
       if( !conversations.empty() )
       {
-        m_llmConversationHistory[samplenums] = std::make_shared<std::vector<LlmConversationStart>>( conversations );
+        m_llmConversationHistory[samplenums] = std::make_shared<std::vector<std::shared_ptr<LlmConversationStart>>>( conversations );
       }
     }
     catch( std::exception &e )
@@ -2024,15 +2022,15 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     for( const auto &entry : m_llmConversationHistory )
     {
       const std::set<int> &samplenums = entry.first;
-      const std::shared_ptr<std::vector<LlmConversationStart>> &conversations = entry.second;
-      
+      const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> &conversations = entry.second;
+
       if( conversations->empty() )
         continue;
-      
+
       // Create a container node for this sample set's history
       auto sampleHistoryNode = doc->allocate_node( node_element, "LlmConversationHistory" );
       interspec_node->append_node( sampleHistoryNode );
-      
+
       // Add sample numbers as an attribute
       stringstream samplesStream;
       bool first = true;
@@ -2046,7 +2044,7 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
       const char *samplesAttr = doc->allocate_string( samplesStr.c_str() );
       auto samplesAttribute = doc->allocate_attribute( "samples", samplesAttr );
       sampleHistoryNode->append_attribute( samplesAttribute );
-      
+
       // Use the static toXml function from LlmConversationHistory
       LlmConversationHistory::toXml( *conversations, sampleHistoryNode, doc );
     }

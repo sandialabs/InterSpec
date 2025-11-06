@@ -24,6 +24,7 @@
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/LlmToolRegistry.h"
@@ -216,20 +217,21 @@ EnrichmentStatus get_enrichment(const EnrichOptions& options) {
 
 // --- LlmMcpResource Implementation ---
 
-#if( MCP_ENABLE_AUTH )
-LlmMcpResource::LlmMcpResource(std::string secret_token)
+
+LlmMcpResource::LlmMcpResource( const std::shared_ptr<const LlmConfig> &config )
 : Wt::WResource(),
-  secret_token_(std::move(secret_token))
+  llm_config_( config ),
+  tool_registry_( config ? make_unique<LlmTools::ToolRegistry>(*config) : unique_ptr<LlmTools::ToolRegistry>() )  //This can throw
 {
+  if( !llm_config_ )
+    throw std::logic_error( "LlmMcpResource must be initialized with a valid config" );
+  
+  if( !config->mcpServer.enabled )
+    throw std::logic_error( "Cannot initialize LlmMcpResource if MCP isnt enabled in the config" );
+  
   register_default_tools();
 }
-#else
-LlmMcpResource::LlmMcpResource()
- : Wt::WResource()
-{
-  register_default_tools();
-}
-#endif
+
 
 LlmMcpResource::~LlmMcpResource() = default;
 
@@ -543,11 +545,17 @@ void LlmMcpResource::handle_call_tool(const Wt::Http::Request& request, Wt::Http
 
 void LlmMcpResource::register_default_tools()
 {
-  // Use shared tool registry to get the tool definitions
-  LlmTools::ToolRegistry::instance().registerDefaultTools();
+  assert( tool_registry_ && llm_config_ );
+  
+  if( !tool_registry_ )
+    throw std::logic_error( "LlmMcpResource: should not have null tool registry" );
+  
+  if( !llm_config_ )
+    throw std::logic_error( "LlmMcpResource: should not have null llm config" );
   
   // Create MCP-compatible tools by adapting the shared tools
-  for (const auto& toolPair : LlmTools::ToolRegistry::instance().getTools()) {
+  for( const auto &toolPair : tool_registry_->getTools() )
+  {
     const std::string& name = toolPair.first;
     const LlmTools::SharedTool& sharedTool = toolPair.second;
     
@@ -556,23 +564,59 @@ void LlmMcpResource::register_default_tools()
     mcpTool.description = sharedTool.description;
     mcpTool.parameters_schema = sharedTool.parameters_schema;
     
+    // Add userSession parameter to schema if not already present
+    if( mcpTool.parameters_schema.is_object() )
+    {
+      // Ensure "properties" object exists
+      if( !mcpTool.parameters_schema.contains("properties") )
+        mcpTool.parameters_schema["properties"] = nlohmann::json::object();
+
+      // Add userSession to properties if not already there
+      if( !mcpTool.parameters_schema["properties"].contains("userSession") )
+      {
+        mcpTool.parameters_schema["properties"]["userSession"] = {
+          {"type", "string"},
+          {"description", "Optional: the user session identifier.  If not specified, will use most recent session."}
+        };
+      }
+    }
+    
+    
     // Create an adapter that finds the InterSpec session and calls the shared tool
-    mcpTool.executor = [this, name](const json& params) -> json {
+    mcpTool.executor = [this, name]( json params ) -> json {
       // Extract session ID from params if available
-      string sessionId;
+      string userProvidedSessionId;
       if (params.contains("userSession") && params["userSession"].is_string()) {
-        sessionId = params["userSession"];
+        userProvidedSessionId = params["userSession"];
       }
-      
-      // Find the appropriate InterSpec instance
-      InterSpec* interspec = findInterSpecBySessionId(sessionId);
+
+      if( params.contains("userSession") )
+        params.erase( "userSession" ); //Tool registry doesnt need to know that this parameter exists
+
+      // Find the appropriate InterSpec instance and get the actual session ID used
+      string actualSessionId;
+      InterSpec* interspec = findInterSpecBySessionId(userProvidedSessionId, &actualSessionId);
       if (!interspec) {
-        throw std::runtime_error("No active InterSpec session found for session: " + 
-                                (sessionId.empty() ? "(no session ID provided)" : sessionId));
+        throw std::runtime_error("No active InterSpec session found for session: " +
+                                (userProvidedSessionId.empty() ? "(no session ID provided)" : userProvidedSessionId));
       }
-      
+
       // Use the shared tool registry to execute the tool
-      return LlmTools::ToolRegistry::instance().executeTool(name, params, interspec);
+      json result = tool_registry_->executeTool(name, params, interspec);
+
+      // Inject the userSession field into the result
+      if( result.is_object() )
+      {
+        result["userSession"] = actualSessionId;
+      }else
+      {
+        nlohmann::json tmp_result = nlohmann::json::object();
+        tmp_result["result"] = result;
+        tmp_result["userSession"] = actualSessionId;
+        result = std::move(tmp_result);
+      }
+
+      return result;
     };
     
     register_tool(mcpTool);
@@ -581,14 +625,14 @@ void LlmMcpResource::register_default_tools()
   cout << "MCP Resource registered " << registered_tools_.size() << " tools from shared registry" << endl;
 }//void LlmMcpResource::register_default_tools()
 
-InterSpec* LlmMcpResource::findInterSpecBySessionId(const std::string& sessionId) {
+InterSpec* LlmMcpResource::findInterSpecBySessionId(const std::string& sessionId, std::string* actualSessionId) {
   set<InterSpecApp *> instances = InterSpecApp::runningInstances();
-  
+
   if (sessionId.empty()) {
     // If no session ID provided, find the most recently started instance
     InterSpecApp *mostRecentApp = nullptr;
     std::chrono::steady_clock::time_point earliestStartTime{};
-    
+
     for (InterSpecApp *app_instance : instances) {
       Wt::WApplication::UpdateLock lock(app_instance);
       if (lock && (!mostRecentApp || (earliestStartTime > app_instance->startTime()))) {
@@ -596,10 +640,13 @@ InterSpec* LlmMcpResource::findInterSpecBySessionId(const std::string& sessionId
         earliestStartTime = app_instance->startTime();
       }
     }
-    
+
     if (mostRecentApp) {
       Wt::WApplication::UpdateLock lock(mostRecentApp);
       if (lock) {
+        if (actualSessionId) {
+          *actualSessionId = mostRecentApp->sessionId();
+        }
         return mostRecentApp->viewer();
       }
     }
@@ -607,13 +654,16 @@ InterSpec* LlmMcpResource::findInterSpecBySessionId(const std::string& sessionId
     // Look for specific session ID
     for (InterSpecApp *app_instance : instances) {
       Wt::WApplication::UpdateLock lock(app_instance);
-      if (lock && 
-          ((app_instance->sessionId() == sessionId) || 
+      if (lock &&
+          ((app_instance->sessionId() == sessionId) ||
            (app_instance->externalToken() == sessionId))) {
+        if (actualSessionId) {
+          *actualSessionId = app_instance->sessionId();
+        }
         return app_instance->viewer();
       }
     }
   }
-  
+
   return nullptr;
 }

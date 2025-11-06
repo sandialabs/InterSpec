@@ -811,7 +811,7 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
 #endif
       }else
       {
-        Wt::log("error") << "Could not load previously saved state.";
+        Wt::log("info") << "No previous state to load.";
       }
     }//if(  saveState )
   }catch( std::exception &e )
@@ -1310,6 +1310,10 @@ void InterSpecApp::prepareForEndOfSession()
   if( !m_viewer || !m_viewer->user() )
     return;
 
+#if( BUILD_AS_UNIT_TEST_SUITE )
+  return;
+#endif
+  
   updateUsageTimeToDb();
   
   const chrono::milliseconds nmilli = chrono::duration_cast<chrono::milliseconds>(m_activeTimeInSession);
@@ -1668,9 +1672,11 @@ void InterSpecApp::finalize()
 {
   prepareForEndOfSession();
   
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   if( m_viewer && m_viewer->user() )
     Wt::log("info") << "Have finalized session " << sessionId() << " for user "
          << m_viewer->user()->userName();
+#endif
 }//void InterSpecApp::finalize()
 
 

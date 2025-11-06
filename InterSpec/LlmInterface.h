@@ -58,7 +58,14 @@ static_assert( USE_LLM_INTERFACE, "You should not include this library unless US
 // Forward declarations
 class InterSpec;
 class LlmConfig;
+struct LlmConversationStart;
 class LlmConversationHistory;
+
+enum class AgentType : int;
+
+namespace LlmTools {
+  class ToolRegistry;
+}
 
 namespace Wt {
   class WResource;
@@ -77,7 +84,8 @@ namespace Wt {
  - Conversation history management  
  - Integration with InterSpec session
  */
-class LlmInterface {
+class LlmInterface
+{
 public:
   /** Construct LLM interface for the given InterSpec instance.
    @param interspec The InterSpec instance this interface belongs to
@@ -86,6 +94,12 @@ public:
   
   /** Destructor - implementation in .cpp to handle incomplete types */
   ~LlmInterface();
+  
+  /** Returns the tool registry.
+   
+   Will be a valid pointer.
+   */
+  std::shared_ptr<const LlmTools::ToolRegistry> toolRegistry();
   
   /** Send a user message to the LLM.
    @param message The user's message/question
@@ -100,12 +114,6 @@ public:
    @param message The system-generated query
    */
   void sendSystemMessage(const std::string& message);
-  
-  /** Test the LLM connection with a simple request.
-   
-   This will print request/response to stdout for debugging.
-   */
-  void testConnection();
   
   /** Test chat history recording and reconstruction without calling an actual LLM.
    
@@ -124,10 +132,16 @@ public:
   
   /** Signal emitted when a new response is received from the LLM */
   Wt::Signal<>& responseReceived();
-  
+
   /** Check if a specific request ID is still pending */
   bool isRequestPending(int requestId) const;
-  
+
+  /** Invoke a sub-agent to handle a specific task (async).
+   @param sub_agent_convo The conversation to send to the LLM to start the sub-agent
+   @return Request ID for the sub-agent invocation
+   */
+  int invokeSubAgent( std::shared_ptr<LlmConversationStart> sub_agent_convo );
+
 #ifdef USE_JS_BRIDGE_FOR_LLM
   /** JavaScript callback to handle LLM response */
   void handleJavaScriptResponse(std::string response, int requestId);
@@ -135,7 +149,8 @@ public:
 
 private:
   InterSpec* m_interspec;
-  std::shared_ptr<const LlmConfig> m_config;
+  const std::shared_ptr<const LlmConfig> m_config;
+  const std::shared_ptr<const LlmTools::ToolRegistry> m_tool_registry;
   std::shared_ptr<LlmConversationHistory> m_history;
   
   Wt::Signal<> m_responseReceived; // Signal emitted when new responses are received
@@ -151,48 +166,80 @@ private:
   
   // Request tracking
   int m_nextRequestId;
-  std::string m_currentConversationId; // Track the current conversation ID for message association
-  struct PendingRequest {
+
+  struct PendingRequest
+  {
     int requestId;
-    std::string originalUserMessage;
-    bool isToolResultFollowup;
-    std::vector<std::string> toolCallIds; // For tracking which tool calls this request contains
+    std::weak_ptr<LlmConversationStart> conversation;
+
+    // Sub-agent support
+    bool isSubAgentRequest = false;       // True if this request is from a sub-agent (we can probably get rid of this variable)
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
     nlohmann::json requestJson;
 #endif
-  };
-  std::map<int, PendingRequest> m_pendingRequests;
+  };//struct PendingRequest
   
-  /** Make an API call to the LLM endpoint */
-  void makeApiCall(const nlohmann::json& requestJson);
+  std::map<int, PendingRequest> m_pendingRequests;
+
+  // Deferred tool results (for sub-agent invocations that need to pause main agent)
+  struct DeferredToolResult {
+    std::string conversationId;
+    std::vector<std::string> toolCallIds;  // Tool call IDs to send back when sub-agent completes (does not include sub-agent calls)
+    std::vector<int> subAgentToolCallIds;  // The invoke_sub_agent tool call ID to update with summary
+  };
+  std::map<int, DeferredToolResult> m_deferredToolResults; // Key is sub-agent requestId
   
   /** Make an API call with request ID tracking */
   void makeApiCallWithId(const nlohmann::json& requestJson, int requestId);
   
   /** Make an API call with request tracking */
-  int makeTrackedApiCall(const nlohmann::json& requestJson, const std::string& originalMessage = "", bool isToolFollowup = false);
+  int makeTrackedApiCall( const nlohmann::json& requestJson,
+                         std::shared_ptr<LlmConversationStart> convo );
   
-  /** Send tool results back to LLM for processing */
-  void sendToolResultsToLLM(const std::vector<std::string>& toolCallIds);
+  /** Send tool results back to LLM for processing.
+   
+   @returns The request ID.
+   */
+  int sendToolResultsToLLM( std::shared_ptr<LlmConversationStart> convo );
   
   /** Handle response from LLM API */
-  void handleApiResponse(const std::string& response);
+  void handleApiResponse( const std::string &response, const std::shared_ptr<LlmConversationStart> &convo, const int requestId );
   
-  /** Execute tool calls requested by the LLM */
-  void executeToolCalls(const nlohmann::json& toolCalls);
+  /** Execute tool calls requested by the LLM, and sends the LLM back a response with the results.
+   
+   Returns the number of tool calls processed.
+   */
+  size_t executeToolCallsAndSendResults( const nlohmann::json& toolCalls, const std::shared_ptr<LlmConversationStart> &convo, const int requestId );
   
-  /** Parse text content for tool call requests (for models that don't support structured tool calls) */
-  void parseContentForToolCalls(const std::string& content);
+  /** Parse text content for tool call requests (for models that don't support structured tool calls)
+   
+   Returns the number of tool calls processed.
+   */
+  size_t parseContentForToolCallsAndSendResults( const std::string &content, const std::shared_ptr<LlmConversationStart> &convo, const int requestId );
   
   /** Strip <think>...</think> content from LLM responses */
-  std::string stripThinkingContent(const std::string& content);
+  static std::string stripThinkingContent(const std::string& content);
   
   /** Extract thinking content and clean content from LLM responses */
-  std::pair<std::string, std::string> extractThinkingAndContent(const std::string& content);
+  static std::pair<std::string, std::string> extractThinkingAndContent(const std::string& content);
   
-  /** Build the messages array for the API request including history and system prompt */
-  nlohmann::json buildMessagesArray(const std::string& userMessage, bool isSystemGenerated = false);
+  /** Build the messages array for the API request including history and system prompt.
+   
+   Note: If you are starting a conversation with a user message - this would be `convo->content`.  If you are continuing a conversation, you should
+   have put the tool results into `convo->responses`.
+   
+   If you call this function for for a sub-agent (i.e., not MainAgent), then it will include only the history of `convo` and use the agent system prompt.
+   
+   If this function is being called for the MainAgent, will include entire chat history, up until and including `convo` (but nothing after it) in the returned JSON.
+   
+   @return JSON messages array for the API request
+   */
+  nlohmann::json buildMessagesArray( const std::shared_ptr<LlmConversationStart> &convo );
+
+  /** Get the system prompt for a specific agent from config
+   */
+  std::string getSystemPromptForAgent( const AgentType agentType ) const;
   
 #ifdef USE_JS_BRIDGE_FOR_LLM
   /** Set up the JavaScript bridge for making HTTPS requests */

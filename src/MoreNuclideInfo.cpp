@@ -342,8 +342,8 @@ namespace MoreNuclideInfo
     const auto finish_time = std::chrono::steady_clock::now();
     const auto total_time = chrono::duration_cast<chrono::microseconds>(finish_time - start_time);
 
-    cout << "Took " << total_time.count() << " micro-seconds to initualize MoreNucInfoDb, and it takes up "
-      << (memsize()/1024.0) << " kb memory." << endl;
+    //cout << "Took " << total_time.count() << " micro-seconds to initualize MoreNucInfoDb, and it takes up "
+    //  << (memsize()/1024.0) << " kb memory." << endl;
   }//void init()
 
   

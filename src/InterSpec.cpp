@@ -669,6 +669,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
 
   initMaterialDbAndSuggestions();
   
+  // Check that the reaction database initialized, before we use it in RefLineDynamic
+  if( !ReactionGammaServer::database() && ReactionGammaServer::init_error() )
+    throw runtime_error( ReactionGammaServer::init_error() );
+  
   m_refLineDynamic = new RefLineDynamic( m_spectrum, this );
   
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
@@ -1253,8 +1257,10 @@ InterSpec::~InterSpec() noexcept(true)
   //  some manual cleanup here (as of 20220917 when AuxWindow and SimpleDialog where explicitly
   //  parented by the current InterSpec instance, we are doing much more cleanup than necessary).
 
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
-
+#endif
+  
   // Get rid of undo/redo, so we dont insert anything into them
   del_ptr_set_null( m_undo );
   del_ptr_set_null( m_licenseWindow );
@@ -3099,7 +3105,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
       {
         shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( *addswap->first );
         PeakModel::SetGammaSource status = PeakModel::setNuclideXrayReaction( *new_peak, addswap->second, 4.0 );
-        if( status != PeakModel::SetGammaSource::NoSourceChange )
+        if( status != PeakModel::SetGammaSource::FailedSourceChange )
         {
           // Replace the previous peak with the new peak
           auto pos = std::find(begin(*peaks), end(*peaks), addswap->first);
@@ -11125,12 +11131,16 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     case SpecUtils::SpectrumType::Foreground:
     case SpecUtils::SpectrumType::Background:
     {
-      const shared_ptr<SpecMeas> &meas = (type == SpecUtils::SpectrumType::Foreground) ? m_dataMeasurement
-                                                                                       : m_backgroundMeasurement;
-      if( meas && !meas->automatedSearchPeaks(samples) )
+      const bool is_fore = (type == SpecUtils::SpectrumType::Foreground);
+      const shared_ptr<SpecMeas> &meas = is_fore ? m_dataMeasurement : m_backgroundMeasurement;
+      shared_ptr<const SpecUtils::Measurement> spectrum = is_fore ? m_spectrum->data() : m_spectrum->background();
+      if( meas && spectrum && !meas->automatedSearchPeaks(samples) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-        searchForHintPeaks( meas, samples, isHPGe );
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+        // We wont search for hint peaks if we are running unit tests - so it wont take forever
+        searchForHintPeaks( meas, samples, spectrum, isHPGe );
+#endif
       }else if( meas )
       {
         m_hintPeaksSet.emit(type);
@@ -11915,12 +11925,18 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     case SpecUtils::SpectrumType::Foreground:
     case SpecUtils::SpectrumType::Background:
     {
-      const shared_ptr<SpecMeas> &meas = (spec_type == SpecUtils::SpectrumType::Foreground)
-                                          ? m_dataMeasurement : m_backgroundMeasurement;
+      const bool is_fore = (spec_type == SpecUtils::SpectrumType::Foreground);
+      const shared_ptr<SpecMeas> &meas = is_fore ? m_dataMeasurement : m_backgroundMeasurement;
+      shared_ptr<const SpecUtils::Measurement> spectrum = is_fore ? m_spectrum->data() : m_spectrum->background();
+      
       if( meas && !meas->automatedSearchPeaks(sample_numbers) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-        searchForHintPeaks( meas, sample_numbers, isHPGe );
+        
+        // We wont search for hint peaks if we are running unit tests - so it wont take forever
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+        searchForHintPeaks( meas, sample_numbers, spectrum, isHPGe );
+#endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
       }else if( meas )
       {
         m_hintPeaksSet.emit(spec_type);
@@ -12863,6 +12879,7 @@ bool InterSpec::colorPeaksBasedOnReferenceLines() const
 
 void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    const std::set<int> &samples,
+                                   const std::shared_ptr<const SpecUtils::Measurement> &spectrum_meas,
                                    const bool isHPGe )
 {
   assert( data );
@@ -12878,7 +12895,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
   shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
   
   const string sessionId = wApp->sessionId();
-  weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
+  weak_ptr<const SpecUtils::Measurement> weakdata = spectrum_meas;
   
   // Grab the detector
   shared_ptr<DetectorPeakResponse> drf = data->detector();
@@ -13713,7 +13730,12 @@ void InterSpec::createLlmTool()
       m_llmTool = nullptr;
     }//if( m_llmTool )
   }//try / catch
-}//void InterSpec::createLlmTool()
+}//void createLlmTool()
+
+LlmToolGui *InterSpec::currentLlmTool()
+{
+  return m_llmTool;
+}//LlmToolGui *currentLlmTool();
 
 void InterSpec::handleLlmToolClose()
 {

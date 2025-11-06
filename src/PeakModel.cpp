@@ -71,218 +71,6 @@
 using namespace std;
 using namespace Wt;
 
-#if( PERFORM_DEVELOPER_CHECKS )
-namespace
-{
-void testSetNuclideXrayRctn()
-{
-  auto check_extract_energy = []( std::string testval, const double expected_energy, const std::string expected_str ) {
-    const double energy = PeakDef::extract_energy_from_peak_source_string(testval);
-    assert( energy == expected_energy );
-    assert( testval == expected_str );
-  };
-  
-  check_extract_energy( "fe xray 98.2 kev", 98.2, "fe xray" );
-  check_extract_energy( "5.34e+2 kev", 534, "" );
-  check_extract_energy( "hf178m 5.34e-3 Mev", 5.34, "hf178m" );
-  check_extract_energy( "8.0e+02 kev hf178m", 800, "hf178m" );
-  check_extract_energy( "8.0E+02 kev hf178m", 800, "hf178m" );
-  check_extract_energy( "hf178m2 574. KEV", 574, "hf178m2" );
-  check_extract_energy( "hf178m2 574.", 574, "hf178m2" );
-  check_extract_energy( "u232 xray 98.", 98, "u232 xray" );
-  check_extract_energy( "u232 xray 98", 98, "u232 xray" );
-  check_extract_energy( "u232 98", 98, "u232" );
-  check_extract_energy( "98 u232", -1, "98 u232" );
-  check_extract_energy( "u-232", -1.0, "u-232" );
-  check_extract_energy( "321 u-232", -1.0, "321 u-232" );
-  check_extract_energy( "321 keV u-232", 321, "u-232" );
-  check_extract_energy( "3.3mev be(a,n)", 3300, "be(a,n)" );
-  check_extract_energy( "co60 1173.23", 1173.23, "co60" );
-  check_extract_energy( "co60 1173.23 kev", 1173.23, "co60" );
-  check_extract_energy( "1173.23 kev co60", 1173.23, "co60" );
-  check_extract_energy( "CO60 1173.23", 1173.23, "CO60" );
-  check_extract_energy( "CO60 1173", 1173, "CO60" );
-  check_extract_energy( "1173 CO60", -1, "1173 CO60" );
-  check_extract_energy( "1173.0 CO60", -1, "1173.0 CO60" );
-  check_extract_energy( "Pb 98", -1, "Pb 98" );
-  check_extract_energy( "Pb 98.2", 98.2, "Pb" );
-  
-  
-  const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
-  assert( db );
-  
-  PeakModel::SetGammaSource result;
-  
-  PeakDef peak;
-  const SandiaDecay::Nuclide *nuc = nullptr;
-  
-  
-  peak = PeakDef( 1001, 1, 1.8E6 );
-  nuc = db->nuclide( "U238" );
-  result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::NormalGamma, nuc, 1001, 4.0 );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
-  assert( peak.parentNuclide() == nuc );
-  assert( fabs(peak.gammaParticleEnergy() - 1001) < 1.0 );
-  
-  nuc = db->nuclide( "Th232" );
-  peak = PeakDef( 2614-511, 5, 1.8E6 );
-  assert( !peak.useForShieldingSourceFit() );
-  assert( !peak.useForManualRelEff() );
-  result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::SingleEscapeGamma, nuc, 2614, 4.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( !peak.useForShieldingSourceFit() );
-  assert( !peak.useForManualRelEff() );
-  assert( peak.parentNuclide() == nuc );
-  assert( fabs(peak.gammaParticleEnergy() - (2614-511)) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::SingleEscapeGamma );
-  
-  
-  nuc = db->nuclide( "Th232" );
-  peak = PeakDef( 2614-511-511, 5, 1.8E6 );
-  result = PeakModel::setNuclide( peak, PeakDef::SourceGammaType::DoubleEscapeGamma, nuc, 2614, -1 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.parentNuclide() == nuc );
-  assert( !peak.useForShieldingSourceFit() );
-  assert( !peak.useForManualRelEff() );
-  assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
-  
-  peak = PeakDef( 2614-511, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "Th232 S.E.", -1.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.parentNuclide() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - (2614-511)) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::SingleEscapeGamma );
-  
-  
-  peak = PeakDef( 2614 - 511 - 511, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "Th232 D.E.", -1.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.parentNuclide() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
-  
-  peak = PeakDef( 2614 - 511 - 100, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "Th232 2614 keV D.E.", -1.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.parentNuclide() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - (2614 - 511 - 511)) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
-  
-  peak = PeakDef( 2223.248, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g) 2223.248 keV", -1.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.reaction() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - 2223.248) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 100.0, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g) 2223.248", -1.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.reaction() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - 2223.248) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 2223.248, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g)", 4.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.reaction() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - 2223.248) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 2223.248, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g) 2223.248 keV S.E.", 4.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.reaction() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - (2223.248-511)) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::SingleEscapeGamma );
-  
-  peak = PeakDef( 2223.248, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "H(n,g) 2223.248 keV D.E.", 4.0 );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.reaction() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - (2223.248-2*511)) < 2.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::DoubleEscapeGamma );
-  
-  peak = PeakDef( 100, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "U xray 98.4340 kev", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.xrayElement() != nullptr );
-  assert( fabs(peak.gammaParticleEnergy() - 98.4340) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 574, 5, 1.8E6 );
-  nuc = db->nuclide( "hf178m2" );
-  assert( nuc );
-  result = PeakModel::setNuclideXrayReaction( peak, "hf178m2 574.219971 kev", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
-  assert( peak.parentNuclide() == nuc );
-  assert( fabs(peak.gammaParticleEnergy() - 574.219971) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 574, 5, 1.8E6 );
-  nuc = db->nuclide( "hf178m2" );
-  assert( nuc );
-  result = PeakModel::setNuclideXrayReaction( peak, "hf178m2", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
-  assert( peak.parentNuclide() == nuc );
-  assert( fabs(peak.gammaParticleEnergy() - 574.219971) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 100, 5, 1.8E6 );
-  nuc = db->nuclide( "hf178m2" );
-  assert( nuc );
-  result = PeakModel::setNuclideXrayReaction( peak, "hf178m2 574.219971", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceAndUseChanged );
-  assert( peak.parentNuclide() == nuc );
-  assert( fabs(peak.gammaParticleEnergy() - 574.219971) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 84.9, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "Pb xray 84.9 kev", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.xrayElement() );
-  assert( fabs(peak.gammaParticleEnergy() - 84.9) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 84.9, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "Pb 84.9 kev", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.xrayElement() );
-  assert( fabs(peak.gammaParticleEnergy() - 84.9) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::NormalGamma );
-  
-  peak = PeakDef( 84.9, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "Pb212 84.9 kev", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.parentNuclide() );
-  assert( peak.parentNuclide()->symbol == "Pb212" );
-  assert( fabs(peak.gammaParticleEnergy() - 84.865) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::XrayGamma );
-
-  peak = PeakDef( 511, 5, 1.8E6 );
-  assert( !peak.hasSourceGammaAssigned() );
-  result = PeakModel::setNuclideXrayReaction( peak, "Na22 511 kev", -1. );
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.parentNuclide() );
-  assert( peak.parentNuclide()->symbol == "Na22" );
-  assert( fabs( peak.gammaParticleEnergy() - 511 ) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma );
-  assert( peak.hasSourceGammaAssigned() );
-
-  peak = PeakDef( 511, 5, 1.8E6 );
-  result = PeakModel::setNuclideXrayReaction( peak, "Na22 511 kev, I=1.8E+02%", -1. ); //e.g., from "Search for Peaks" dialog
-  assert( result == PeakModel::SetGammaSource::SourceChange );
-  assert( peak.parentNuclide() );
-  assert( peak.parentNuclide()->symbol == "Na22" );
-  assert( fabs( peak.gammaParticleEnergy() - 511 ) < 1.0 );
-  assert( peak.sourceGammaType() == PeakDef::SourceGammaType::AnnihilationGamma );
-  assert( peak.hasSourceGammaAssigned() );
-}//void testSetNuclideXrayRctn()
-
-}//namespace
-#endif
-
 
 bool PeakModel::recommendUseForFit( const SandiaDecay::Nuclide *nuc,
                                    const float energy )
@@ -784,7 +572,7 @@ std::vector<PeakDef> PeakModel::csv_to_candidate_fit_peaks(
       {
         const string nuctxt = fields[nuc_index] + " " + fields[nuc_energy_index] + " keV";
         const SetGammaSource result = setNuclideXrayReaction( peak, nuctxt, 4.0 );
-        if( result == SetGammaSource::NoSourceChange )
+        if( result == SetGammaSource::FailedSourceChange )
           cerr << "csv_to_candidate_fit_peaks: could not assign src txt '"
           << nuctxt << "' as a nuc/xray/rctn" << endl;
       }//if( nuc_index >= 0 || nuc_energy_index >= 0 )
@@ -1187,12 +975,8 @@ PeakModel::PeakModel( Wt::WObject *parent )
   auto app = dynamic_cast<InterSpecApp *>( WApplication::instance() );
   if( app )
     app->useMessageResourceBundle( "PeakModel" );
-  
+
   m_csvResource = new PeakCsvResource( this );
-  
-#if( PERFORM_DEVELOPER_CHECKS )
-  testSetNuclideXrayRctn();
-#endif
 }//PeakModel constructor
 
 PeakModel::~PeakModel()
@@ -2512,6 +2296,12 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   const bool hadSource = (peak.parentNuclide() || peak.xrayElement() || peak.reaction() );
   assert( !nuclide || (ref_energy > 1.0) );
   
+  if( !nuclide )
+  {
+    peak.clearSources();
+    return (hadSource ? SetGammaSource::SourceChange : SetGammaSource::NoSourceChange);
+  }
+  
   size_t transition_index = 0;
   const SandiaDecay::Transition *transition = nullptr;
   
@@ -2550,7 +2340,7 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   {
     peak.clearSources();
     
-    return (hadSource ? SourceChange : NoSourceChange);
+    return SetGammaSource::FailedSourceChange;
   }
   
   
@@ -2585,7 +2375,7 @@ PeakModel::SetGammaSource PeakModel::setNuclide( PeakDef &peak,
   peak.useForManualRelEff( shouldUseForRe );
   peak.setNuclearTransition( nuclide, transition, int(transition_index), sourceGammaType );
   
-  return (changedFit ? SourceAndUseChanged : SourceChange);
+  return (changedFit ? SetGammaSource::SourceAndUseChanged : SetGammaSource::SourceChange);
 }//setNuclide(...)
 
 
@@ -2600,30 +2390,33 @@ PeakModel::SetGammaSource PeakModel::setXray( PeakDef &peak,
   if( !el )
   {
     peak.clearSources();
-    return (hadSource ? SourceChange : NoSourceChange);
+    return (hadSource ? SetGammaSource::SourceChange : SetGammaSource::NoSourceChange);
   }//if( !el )
   
   double xray_energy = ref_energy;
   const SandiaDecay::EnergyIntensityPair *nearXray = PeakDef::findNearestXray( el, ref_energy );
   xray_energy = (nearXray ? nearXray->energy : 0.0);
   
+  if( el && !nearXray )
+    return SetGammaSource::FailedSourceChange;
+  
   const bool isSame = ((prevEl == el) && (fabs(peak.xrayEnergy() - xray_energy) < 0.0001));
   if( isSame )
-    return NoSourceChange;
+    return SetGammaSource::NoSourceChange;
   
   peak.setXray( el, xray_energy );
   
   if( !nearXray && !hadSource )
-    return NoSourceChange;
+    return SetGammaSource::NoSourceChange;
   
   if( peak.useForShieldingSourceFit() || peak.useForManualRelEff() )
   {
     peak.useForShieldingSourceFit( false );
     peak.useForManualRelEff( false );
-    return SourceAndUseChanged;
+    return SetGammaSource::SourceAndUseChanged;
   }
   
-  return SourceChange;
+  return SetGammaSource::SourceChange;
 }//setXray(...)
 
 
@@ -2636,6 +2429,12 @@ PeakModel::SetGammaSource PeakModel::setReaction( PeakDef &peak,
   const bool hadSource = (peak.parentNuclide() || peak.xrayElement() || peak.reaction() );
   assert( label.empty() || (ref_energy > 1.0) );
   
+  if( label.empty() || SpecUtils::iequals_ascii(label, "none") )
+  {
+    peak.clearSources();
+    return (hadSource ? SetGammaSource::SourceChange : SetGammaSource::NoSourceChange);
+  }
+  
   const ReactionGamma *rctndb = ReactionGammaServer::database();
   string rctstr = label;
   size_t pos = label.find_first_of( ')' );
@@ -2647,24 +2446,18 @@ PeakModel::SetGammaSource PeakModel::setReaction( PeakDef &peak,
   {
     rctndb->gammas( rctstr, possible_rctns );
     if( possible_rctns.empty() )
-    {
-      peak.clearSources();
-      return (hadSource ? SourceChange : NoSourceChange);
-    }
+      return SetGammaSource::FailedSourceChange;
   }catch(...)
   {
-    peak.clearSources();
-    return (hadSource ? SourceChange : NoSourceChange);
+    return SetGammaSource::FailedSourceChange;
   }
   
   // TODO: just taking first reaction, however there may be multiple
   const ReactionGamma::Reaction *rctn = possible_rctns[0].reaction;
   
+  assert( rctn );
   if( !rctn )
-  {
-    peak.clearSources();
-    return (hadSource ? SourceChange : NoSourceChange);
-  }
+    return SetGammaSource::FailedSourceChange;
   
   double best_delta_e = std::numeric_limits<double>::max(), nearestE = 0.0;
   for( const ReactionGamma::Reaction::EnergyYield &eip : rctn->gammas )
@@ -2685,14 +2478,15 @@ PeakModel::SetGammaSource PeakModel::setReaction( PeakDef &peak,
   }//for( const ReactionGamma::EnergyAbundance &eip : rctn->gammas )
   
   if( nearestE == 0.0 )
-  {
-    peak.clearSources();
-    return (hadSource ? SourceChange : NoSourceChange);
-  }
+    return SetGammaSource::FailedSourceChange;
+  
+  const bool same_rctn = ((rctn == peak.reaction())
+                          && (src_type == peak.sourceGammaType())
+                          && (fabs(peak.reactionEnergy() - nearestE) < 0.1));
   
   peak.setReaction( rctn, static_cast<float>(nearestE), src_type );
   
-  return (rctn ? SourceChange : NoSourceChange);
+  return (same_rctn ? SetGammaSource::NoSourceChange : SetGammaSource::SourceChange);
 }//setReaction
 
 
@@ -2703,7 +2497,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
   
   if( !db )
-    return NoSourceChange;
+    return SetGammaSource::FailedSourceChange;
   
   SpecUtils::to_lower_ascii( label );
   
@@ -2718,12 +2512,12 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
     peak.clearSources();
     
     if( !hadSource )
-      return NoSourceChange;
+      return SetGammaSource::NoSourceChange;
     
     if( use )
-      return SourceAndUseChanged;
+      return SetGammaSource::SourceAndUseChanged;
     
-    return SourceChange;
+    return SetGammaSource::SourceChange;
   }//if( getting rid of source )
   
   
@@ -2836,6 +2630,11 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   
   if( isXray )
   {
+    assert( !SpecUtils::icontains(label, "x-ray")  );
+    assert( !SpecUtils::icontains(label, "xray")  );
+    assert( !SpecUtils::icontains(label, "x ray")  );
+    assert( !SpecUtils::icontains(label, "element")  );
+    
     //Example input that might get here is "Pb xray 84.9 kev", which will have been transformed
     //  to "pb 98.2 kev" by PeakDef::gammaTypeFromUserInput, and
     //  PeakDef::extract_energy_from_peak_source_string would have transformed into
@@ -2851,8 +2650,7 @@ PeakModel::SetGammaSource PeakModel::setNuclideXrayReaction( PeakDef &peak,
   }//if( srcType == PeakDef::SourceGammaType::XrayGamma )
   
   
-  peak.clearSources();
-  return (hadSource ? SourceChange : NoSourceChange);
+  return SetGammaSource::FailedSourceChange;
 }//bool PeakModel::setNuclideXrayReaction( PeakDef &peak, std::string )
 
 
@@ -3059,9 +2857,8 @@ bool PeakModel::setData( const WModelIndex &index,
       case kIsotope:
       {
         const std::string srctxt = txt_val.toUTF8();
-        const SetGammaSource result
-                   = setNuclideXrayReaction( new_peak, srctxt, 4.0 );
-        changedFit |= (result==SourceAndUseChanged);
+        const SetGammaSource result = setNuclideXrayReaction( new_peak, srctxt, 4.0 );
+        changedFit |= (result==SetGammaSource::SourceAndUseChanged);
         
         //Lambda to see if any peaks, other than the ignorePeak, that has the
         //  same nuc/xray/rctn assigned as srcPeak has a color, and if so
@@ -3091,12 +2888,15 @@ bool PeakModel::setData( const WModelIndex &index,
         };//sameSrcColor lambda
         
         
-        if( !new_peak.hasSourceGammaAssigned() && old_peak->hasSourceGammaAssigned()
-            && (result != NoSourceChange)  )
+        if( !new_peak.hasSourceGammaAssigned()
+           && old_peak->hasSourceGammaAssigned()
+           && (result != SetGammaSource::NoSourceChange)
+           && (result != SetGammaSource::FailedSourceChange) )
         {
           if( old_peak->lineColor() == sameSrcColor(*old_peak,old_peak) )
             new_peak.setLineColor( WColor() );
-        }else if( (result != NoSourceChange) )
+        }else if( (result != SetGammaSource::NoSourceChange)
+                 && (result != SetGammaSource::FailedSourceChange) )
         {
           const auto oldsrccolor = sameSrcColor(*old_peak,old_peak);
           const auto newcolor = sameSrcColor(new_peak,old_peak);

@@ -1628,10 +1628,11 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "s.e.", "" );
-  }else if( SpecUtils::icontains( txt, "single escape" ) )
+  }else if( SpecUtils::icontains( txt, "single escape" ) || SpecUtils::icontains( txt, "single-escape" ) )
   {
     type = PeakDef::SingleEscapeGamma;
     SpecUtils::ireplace_all( txt, "single escape", "" );
+    SpecUtils::ireplace_all( txt, "single-escape", "" );
   }else if( SpecUtils::iequals_ascii( txt, "s.e." )
      || SpecUtils::iequals_ascii( txt, "se" )
      || SpecUtils::iequals_ascii( txt, "escape" ) )
@@ -1650,10 +1651,11 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "d.e.", "" );
-  }else if( SpecUtils::icontains( txt, "double escape" ) )
+  }else if( SpecUtils::icontains( txt, "double escape" ) || SpecUtils::icontains( txt, "double-escape" ) )
   {
     type = PeakDef::DoubleEscapeGamma;
     SpecUtils::ireplace_all( txt, "double escape", "" );
+    SpecUtils::ireplace_all( txt, "double-escape", "" );
   }else if( SpecUtils::icontains( txt, "de " ) && txt.size() > 5 )
   {
     type = PeakDef::DoubleEscapeGamma;
@@ -1676,6 +1678,8 @@ void PeakDef::gammaTypeFromUserInput( std::string &txt,
     SpecUtils::ireplace_all( txt, "x-ray", "" );
     SpecUtils::ireplace_all( txt, "x ray", "" );
   }
+  
+  SpecUtils::trim( txt );
 }//PeakDef::SourceGammaType gammaType( std::string txt )
 
 
@@ -2775,9 +2779,11 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
         firstbin = (firstbin > 0) ? (firstbin - 1) : firstbin;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
-        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : nchannel;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
+        lastbin = (lastbin < (nchannel - 1)) ? (lastbin + 1) : lastbin;
         
+        assert( firstbin <= lastbin );
+        assert( lastbin <= (nchannel - 1) );
         
         // When the JSON of the spectrum chart is defined, D3SpectrumExport.cpp/write_spectrum_data_js(...)
         //  will send the energy calibration as coefficients sometimes, and lower channel energies other
@@ -2826,16 +2832,41 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           answer << "]," << q << "continuumCounts" << q << ":[";
         }
          */
-#ifndef _WIN32        
-#warning "Can make computing continuumCounts for FlatStep/LinearStep/BiLinearStep so much more efficient"
-#endif        
-        for (size_t i = firstbin; i <= lastbin; ++i)
-        {
-          const float lower_x = foreground->gamma_channel_lower( i );
-          const float upper_x = foreground->gamma_channel_upper( i );
-          const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
-          answer << ((i!=firstbin) ? "," : "") << cont_counts;
-        }
+        
+        //Slow implementation pre 20251105
+        //for (size_t i = firstbin; i <= lastbin; ++i)
+        //{
+        //  const float lower_x = foreground->gamma_channel_lower( i );
+        //  const float upper_x = foreground->gamma_channel_upper( i );
+        //  const float cont_counts = continuum->offset_integral( lower_x, upper_x, foreground );
+        //  answer << ((i!=firstbin) ? "," : "") << cont_counts;
+        //}
+        
+        {// Begin write continuum counts for each channel
+          const shared_ptr<const vector<float>> &channel_energies_ptr = foreground->channel_energies();
+          assert( channel_energies_ptr && (lastbin < channel_energies_ptr->size()) && (firstbin <= lastbin) );
+          const size_t num_roi_channels = (lastbin > firstbin) ? (1 + lastbin - firstbin) : size_t(1);
+          assert( num_roi_channels > 0 );
+          
+          const float * const energies = &(channel_energies_ptr->at(firstbin));
+          vector<double> continuum_counts( nchannel, 0.0 );
+          continuum->offset_integral( energies, &(continuum_counts[0]), num_roi_channels, foreground );
+          
+          for( size_t i = 0; i < num_roi_channels; ++i )
+          {
+            answer << (i ? "," : "") << continuum_counts[i];
+#if( PERFORM_DEVELOPER_CHECKS )
+            {
+              const size_t channel = i + firstbin;
+              const float lower_x = foreground->gamma_channel_lower( channel );
+              const float upper_x = foreground->gamma_channel_upper( channel );
+              const double cont_counts_test = continuum->offset_integral( lower_x, upper_x, foreground );
+              assert( fabs(continuum_counts[i] - cont_counts_test) < std::max( 0.0001*std::max( fabs(continuum_counts[i]), fabs(cont_counts_test) ), 1.0E-6) );
+            }
+#endif
+          }
+        }// End write continuum counts for each channel
+        
         answer << "]";
         
         answer << std::setprecision(9);
@@ -2938,7 +2969,6 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
           // The WColor could have been created with string like "rgba(12,1,99,0.1)", so we will override the alpha
           Wt::WColor c( orig_color.red(), orig_color.green(), orig_color.blue(), override_alpha );
           color_str = c.cssText(true);
-          cout << "using color str '" << color_str << endl;
         }else
         {
           Wt::WColor c;

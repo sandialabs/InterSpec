@@ -64,8 +64,12 @@ namespace rapidxml
 class InterSpec_API ReactionGammaServer
 {
 public:
+  /** Returns the initialized `ReactionGamma` database - performing the initialization if needed, or nullptr if couldnt be initialized. */
   static const ReactionGamma *database();
 
+  /** If there was an error initializing the database, returns that - otherwise nullptr. */
+  static const char *init_error();
+  
   /** Sets the XML file name to use; intended to be called near start of program
       execution.  Must be called before ReactionGammaServer::database() is ever
       called, or else an exception will be thrown.
@@ -79,6 +83,7 @@ private:
   static std::string sm_xmlFileLocation; //defaults to data/sandia.reactiongamma.xml
   static std::mutex sm_dataBaseMutex;
   static std::unique_ptr<ReactionGamma> sm_dataBase;
+  static std::unique_ptr<std::string> sm_init_error;
 };
 
 

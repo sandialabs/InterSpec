@@ -73,7 +73,7 @@ public:
 
 #if( USE_LLM_INTERFACE )
   // Forward declaration for LLM conversation history
-  typedef std::map<std::set<int>, std::shared_ptr<std::vector<LlmConversationStart>>> SampleNumsToLlmHistoryMap;
+  typedef std::map<std::set<int>, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>> SampleNumsToLlmHistoryMap;
 #endif
   
   //
@@ -366,10 +366,10 @@ public:
 
 #if( USE_LLM_INTERFACE )
   /** Gets the LLM conversation history for the specified sample numbers. */
-  std::shared_ptr<std::vector<LlmConversationStart>> llmConversationHistory( const std::set<int> &samplenums ) const;
-  
+  std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> llmConversationHistory( const std::set<int> &samplenums ) const;
+
   /** Sets the LLM conversation history for the specified sample numbers. */
-  void setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<LlmConversationStart>> history );
+  void setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> history );
   
   /** Removes LLM conversation history for the specified sample numbers. */
   void removeLlmConversationHistory( const std::set<int> &samplenums );

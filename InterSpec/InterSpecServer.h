@@ -40,6 +40,13 @@ class LlmConfig;
 
 namespace InterSpecServer
 {
+  InterSpec_API bool changeToBaseDir( int argc, char *argv[] );
+  
+  InterSpec_API std::string getWtConfigXml( int argc, char *argv[] );
+  
+  
+  
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   /** Used by iOS target to start the web-server.
    
    Only real difference from #startWebServer is that it allows specifying two arguments like:
@@ -123,10 +130,7 @@ namespace InterSpecServer
    get nullptr back, so instead we need to call this function 
    */
   InterSpec_API Wt::WServer *get_wt_server();
-  
-  InterSpec_API bool changeToBaseDir( int argc, char *argv[] );
-  
-  InterSpec_API std::string getWtConfigXml( int argc, char *argv[] );
+#endif //if( BUILD_AS_UNIT_TEST_SUITE )
   
   enum class InterSpec_API SessionType
   {
@@ -264,6 +268,7 @@ namespace InterSpecServer
   InterSpec_API void clear_file_to_open_on_load( const std::string &session_token );
 #endif //#if( !BUILD_FOR_WEB_DEPLOYMENT )
 
+  
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_OSX_APP || BUILD_AS_WX_WIDGETS_APP )
   struct InterSpec_API DesktopAppConfig
   {
@@ -356,6 +361,7 @@ namespace InterSpecServer
 #endif
 
 #if( USE_LLM_INTERFACE )
+  /** Returns LLM config - will throw exception if configuration is invalid. */
   std::shared_ptr<const LlmConfig> llm_config();
 #endif
 }//namespace InterSpecServer
