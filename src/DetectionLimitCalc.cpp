@@ -1259,7 +1259,7 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
       double * const peak_counts = nullptr;
       PeakDef::SkewType skew_type = PeakDef::SkewType::NoSkew;
       const double * const skew_parameters = nullptr;
-      PeakFit::fit_amp_and_offset_imp( x, data, nbin, static_cast<int>(num_poly_terms),
+      PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, static_cast<int>(num_poly_terms),
                                       step_continuum, static_cast<double>(reference_energy),
                                       dummy_means, dummy_sigmas, roi_peaks_to_use_for_fitting_continuum,
                                       skew_type, skew_parameters, dummy_fit_amps, continuum_coeffs,
