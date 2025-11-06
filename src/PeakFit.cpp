@@ -6417,14 +6417,14 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
 #define COMPARE_TO_OLD_FIT_WAY 0
   double * const dummy_channel_counts = nullptr;
 #if( !COMPARE_TO_OLD_FIT_WAY )
-  return PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
+  return PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, num_polynomial_terms, step_continuum,
                   ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          amplitudes, continuum_coeffs,
                                          amplitudes_uncerts, continuum_coeffs_uncerts,
                                          dummy_channel_counts );
 #else
   std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
-  const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
+  const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, num_polynomial_terms, step_continuum,
                           ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          dummy_amplitudes, dummy_continuum_coeffs,
                               dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts,
