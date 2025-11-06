@@ -3782,13 +3782,6 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
       const ShieldingSourceFitCalc::ModelSourceType sourceType = m_sourceModel->sourceType( i );
       const bool selfAttNuc = (sourceType == ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
       
-//      if( selfAttNuc )
-//        throw runtime_error( "Model is not candidate for truth-level info<br />"
-//                             "Self-attuating sources not implemented yet" );
-//      if( ageNuc && (ageNuc != nuc) )
-//        throw runtime_error( "Model is not candidate for truth-level info<br />"
-//                             "Shared-age nuclides not allowed" );
-      
       // For self-attenuating shieldings, we'll just test the shielding thickness
       // For nuclides whose age is controlled by another nuclide, we dont need to test age.
       if( selfAttNuc || (ageNuc && (ageNuc != nuc)) )
@@ -4144,7 +4137,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           value->setAttributeValue( "autocorrect", "off" );
           value->setAttributeValue( "spellcheck", "off" );
 #endif
-          WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, value );
+          WRegExpValidator *validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, value );
           validator->setFlags( Wt::MatchCaseInsensitive );
           value->setValidator( validator );
           label->setBuddy( value );
@@ -4169,6 +4162,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
                 value->setText( PhysicalUnits::printToBestLengthUnits( **thicknessVal, 4) );
               else
                 value->setText( "" );
+              
+              passMessage( "Invalid distance: '" + txt + "'", WarningWidget::WarningMsgHigh );
             }//try / catch
           };//updateVal(...)
           
@@ -4184,7 +4179,7 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           tolerance->setAttributeValue( "spellcheck", "off" );
 #endif
           
-          validator = new WRegExpValidator( PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex, tolerance );
+          validator = new WRegExpValidator( PhysicalUnits::sm_distanceRegex, tolerance );
           validator->setFlags( Wt::MatchCaseInsensitive );
           tolerance->setValidator( validator );
           
@@ -4205,6 +4200,8 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
                 tolerance->setText( PhysicalUnits::printToBestLengthUnits( **toleranceVal,4) );
               else
                 tolerance->setText( "" );
+              
+              passMessage( "Invalid tolerance distance: '" + txt + "'", WarningWidget::WarningMsgHigh );
             }//try / catch
           };//updateVal(...)
           
@@ -4246,39 +4243,40 @@ void ShieldingSourceDisplay::showInputTruthValuesWindow()
           
           // Get rid of any truth mass-fractions, that are no longer self-attenuating sources
           set<const SandiaDecay::Nuclide *> nonexistent_nucs;
-          for( const auto &el_nucfracs : el_currentMassFractions )
+          
+          for( const auto &prev_el_to_nuc_fracs : select->truthFitMassFractions )
           {
-            const vector<ShieldingSelect::NucMasFrac> &currentMassFractions = el_nucfracs.second;
+            const SandiaDecay::Element * const el = prev_el_to_nuc_fracs.first;
+            const map<const SandiaDecay::Nuclide *,pair<double,double>> &prev_nuc_fracs = prev_el_to_nuc_fracs.second;
             
-            for( const auto &prev_el_to_nuc_fracs : select->truthFitMassFractions )
+            const auto current_pos = el_currentMassFractions.find(el);
+            if( current_pos == end(el_currentMassFractions) )
             {
-              const map<const SandiaDecay::Nuclide *,std::pair<double,double>> &prevTruthMassFrac 
-                                                                  = prev_el_to_nuc_fracs.second;
-              
-              for( const auto &prev_nuc_frac : prevTruthMassFrac )
+              // The material no longer has this element, so we'll remove all its nuclides.
+              const map<const SandiaDecay::Nuclide *,pair<double,double>> &prev_nucs = prev_el_to_nuc_fracs.second;
+              for( const auto &prev_nuc_frac : prev_nucs )
+                nonexistent_nucs.insert( prev_nuc_frac.first );
+            }else
+            {
+              const vector<ShieldingSelect::NucMasFrac> &current_mass_fracs = current_pos->second;
+              for( const auto &prev_nuc_frac : prev_nuc_fracs )
               {
-                bool is_current = false;
-                for( size_t i = 0; !is_current && (i < currentMassFractions.size()); ++i )
-                  is_current = (get<0>(currentMassFractions[i]) == prev_nuc_frac.first);
-                if( !is_current
-                   || !prev_nuc_frac.first
-                   || (prev_nuc_frac.second.first < 0.0)
-                   || (prev_nuc_frac.second.first > 1.0)
-                   || (prev_nuc_frac.second.second < 0.0)
-                   || (prev_nuc_frac.second.second > 1.0) )
-                {
-                  nonexistent_nucs.insert( prev_nuc_frac.first );
-                }
-              }//for( const auto &prev_nuc_frac : select->truthFitMassFractions )
-            }//for( const auto &prev_el_to_nuc_fracs : select->truthFitMassFractions )
-          }//for( const auto &el_nucfracs : el_currentMassFractions )
+                const SandiaDecay::Nuclide * const prev_nuc = prev_nuc_frac.first;
+                const auto current_nuc_pos = std::find_if( begin(current_mass_fracs), end(current_mass_fracs),
+                  [prev_nuc]( const ShieldingSelect::NucMasFrac &val ){
+                    return prev_nuc == std::get<0>(val);
+                });
+                if( current_nuc_pos == end(current_mass_fracs) )
+                  nonexistent_nucs.insert( prev_nuc );
+              }
+            }
+          }//for( const auto &prev_el_to_nuc_fracs : select->truthFitMassFractions )
+          
           
           for( const auto nuc : nonexistent_nucs )
           {
             for( auto &el_vals : select->truthFitMassFractions )
-            {
               el_vals.second.erase( nuc ); //a little wasteful to cal for every element, but whatever
-            }
           }
           
           for( const auto &el_nucfracs : el_currentMassFractions )
