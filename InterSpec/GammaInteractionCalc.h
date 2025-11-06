@@ -849,6 +849,7 @@ public:
    Returns number of fitting parameters added.
    */
   size_t setInitialSourceDefinitions( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
+                                     const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                      ROOT::Minuit2::MnUserParameters &inputPrams );
   
   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &initialSourceDefinitions() const;
@@ -994,13 +995,22 @@ public:
   //nuclide(...) throws std::runtime_error if an invalid number is passed in
   const SandiaDecay::Nuclide *nuclide( const size_t nuclide_index ) const;
 
-  //activity(...) and age(...) will throw runtime_exception if params is wrong
-  //  size or invalid nuclide passed in
+  /** Returns activity for a given nuclide.
+   
+   If a self-atten source, will be calculated using `activityOfSelfAttenSource(...)`.
+   If a trace source, will return activity in the units the trace source is defined (so total act, or per cm3, or m2, or per gram).
+   
+   Will throw `runtime_exception` if params is wrong size or invalid nuclide passed in.
+   */
   double activity( const SandiaDecay::Nuclide *nuclide,
                    const std::vector<double> &params ) const;
   double activityUncertainty( const SandiaDecay::Nuclide *nuclide,
                   const std::vector<double> &params,
                   const std::vector<double> &errors ) const;
+  /**
+   
+   Will throw `runtime_exception` if params is wrong size or invalid nuclide passed in.
+   */
   double age( const SandiaDecay::Nuclide *nuclide,
                    const std::vector<double> &params ) const;
   size_t nuclideIndex( const SandiaDecay::Nuclide *nuclide ) const;
