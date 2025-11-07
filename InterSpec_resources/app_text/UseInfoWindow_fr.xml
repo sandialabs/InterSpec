@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+  
+  <!-- Button text -->
+  <message id="uiw-load-btn">Charger</message>
+  
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Fichier trop volumineux.</span>]]></message>
+  
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">Feuille de Triche (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">Imprimez cette feuille de triche (format PDF) pour référencer rapidement les actions, raccourcis clavier et dépannage.</message>
+  
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">afficher au démarrage quand pas de spectres</message>
+  
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">Retour en haut</message>
+  
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">Erreur chargement sujets FAQ: {1}</message>
+  
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[Commencez en ouvrant spectres exemple ci-dessous, ou utilisez l'onglet <em>Importer Spectres</em>.<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>Vos spectres sauvés sont montrés ci-dessous. Utilisez autres onglets pour ouvrir spectres exemple ou importer fichiers externes.<br />Vous pouvez aussi ouvrir spectres joints à email ou apps stockage cloud.</p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>Sélectionnez fichier spectre exemple ci-dessous, ou utilisez onglet import pour ouvrir depuis iCloud, Dropbox, Google Drive, etc.<br /></p>]]></message>
+  
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center">Bienvenue dans <code>InterSpec</code></h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>Utilisez références à gauche pour vous familiariser avec <code>InterSpec</code>, ou continuez depuis session précédente ci-dessous.]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[ Alternativement, glissez-déposez votre fichier spectre sur <code>InterSpec</code>.</p>]]></message>
+  
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>Appuyez icône conseils pour interagir avec graphique. Appuyez icône aide pour info détaillée sur <code>InterSpec</code>.</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>Appuyez <b>Infos Usage</b> à gauche pour interagir avec graphique. Appuyez icône aide pour info détaillée.</p>]]></message>
+  
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p>Appuyez <em>Choisir Fichier</em> pour parcourir le fichier à ouvrir.</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>Vous pouvez aussi ouvrir fichiers spectres en sélectionnant <em>Ouvrir Fichier</em> dans sous-menu <code>InterSpec</code> après avoir quitté cet écran.<br />Pour pièces jointes email, ou fichiers dans apps comme <code>Files</code>, <code>Dropbox</code>, <code>Google Drive</code>, etc., vous pouvez ouvrir fichiers spectres dans <code>InterSpec</code> en sélectionnant "Copier vers InterSpec"</p>]]></message>
+  
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">États Sauvegardés</message>
+  <message id="uiw-tab-example-spectra">Spectres Exemple</message>
+  <message id="uiw-tab-import-spectra">Importer Spectres</message>
+  
+  <!-- Welcome section -->
+  <message id="uiw-welcome">Bienvenue</message>
+  <message id="uiw-controls">Contrôles</message>
+  
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">Licence et Conditions</message>
+  <message id="uiw-more-info">Informations plus détaillées</message>
+</messages>

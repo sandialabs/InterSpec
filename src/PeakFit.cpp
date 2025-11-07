@@ -37,6 +37,7 @@
 #include <boost/numeric/ublas/matrix.hpp>
 #include <boost/numeric/ublas/triangular.hpp>
 #include <boost/math/distributions/poisson.hpp>
+#include "Eigen/Dense"
 
 
 //Roots Minuit2 includes
@@ -4986,7 +4987,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
 #else
 
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
   PeakShrdVec mnInitialfitpeaks;
   const auto t1 = std::chrono::high_resolution_clock::now();
   fit_peak_for_user_click( mnInitialfitpeaks, chi2Dof, dataH, coFitPeaks,
@@ -4998,15 +4999,15 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
     << " keV, FWHM=" << std::setw(10) << mnInitialfitpeaks[i]->fwhm() << ", amp=" << std::setw(10)
     << mnInitialfitpeaks[i]->amplitude() << endl;
   }
+  const auto t3 = std::chrono::high_resolution_clock::now();
 #endif
 
   PeakShrdVec lmInitialfitpeaks;
-  const auto t3 = std::chrono::high_resolution_clock::now();
   PeakFitLM::fit_peak_for_user_click_LM( lmInitialfitpeaks, dataH, coFitPeaks,
                              mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
-  const auto t4 = std::chrono::high_resolution_clock::now();
   
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
+  const auto t4 = std::chrono::high_resolution_clock::now();
   cout << "Old way fit " << mnInitialfitpeaks.size() << " peaks - LM way fit " << lmInitialfitpeaks.size() << endl;
   const size_t npeaks = std::min( lmInitialfitpeaks.size(), mnInitialfitpeaks.size() );
   
@@ -5114,7 +5115,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
 
       
 #if( USE_LM_PEAK_FIT )
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       fit_peak_for_user_click( initialfitpeaks, chi2Dof, dataH, coFitPeaks,
                           mean0, sigma0, area0, lowerEnergies, upperEnergies, isHPGe );
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
@@ -5128,7 +5129,7 @@ pair< PeakShrdVec, PeakShrdVec > searchForPeakFromUser( const double x,
       initialfitpeaks.clear();
       PeakFitLM::fit_peak_for_user_click_LM( initialfitpeaks, dataH, coFitPeaks,
                                  mean0, sigma0, area0, lowerEnergies[0], upperEnergies[0], isHPGe );
-#ifndef NDEBUG
+#if( !defined(NDEBUG) && !BUILD_AS_UNIT_TEST_SUITE )
       for( size_t i = 0; i < initialfitpeaks.size(); ++i )
       {
         cout << "LM  Peak " << std::setw(2) << i << ": mean=" << std::setw(10) << initialfitpeaks[i]->mean()
@@ -6395,11 +6396,10 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
                                  std::vector<double> &coeff_uncerts )
 {
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient
-  using namespace boost::numeric;
+  //Implementation using Eigen SVD for numerical stability
   const int poly_terms = polynomial_order + 1;
-  ublas::matrix<double> A( nbin, poly_terms );
-  ublas::vector<double> b( nbin );
+  Eigen::MatrixX<double> A( nbin, poly_terms );
+  Eigen::VectorX<double> b( nbin );
   
   for( size_t row = 0; row < nbin; ++row )
   {
@@ -6409,15 +6409,17 @@ double fit_to_polynomial( const float *x, const float *data, const size_t nbin,
       A(row,col) = std::pow( double(x[row]), double(col)) / uncert;
   }//for( int col = 0; col < poly_terms; ++col )
   
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "fit_to_polynomial(...): trouble inverting matrix" );
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
   
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  const Eigen::MatrixX<double> A_transpose = A.transpose();
+  const Eigen::MatrixX<double> alpha = A_transpose * A;
+  const Eigen::MatrixX<double> C = alpha.inverse();
   
   poly_coeffs.resize( poly_terms );
   coeff_uncerts.resize( poly_terms );
@@ -6460,14 +6462,14 @@ double fit_amp_and_offset( const float *x, const float *data, const size_t nbin,
 #define COMPARE_TO_OLD_FIT_WAY 0
   double * const dummy_channel_counts = nullptr;
 #if( !COMPARE_TO_OLD_FIT_WAY )
-  return PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
+  return PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, num_polynomial_terms, step_continuum,
                   ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          amplitudes, continuum_coeffs,
                                          amplitudes_uncerts, continuum_coeffs_uncerts,
                                          dummy_channel_counts );
 #else
   std::vector<double> dummy_amplitudes, dummy_continuum_coeffs, dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts;
-  const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nbin, num_polynomial_terms, step_continuum,
+  const double dummy_chi2 = PeakFit::fit_amp_and_offset_imp( x, data, nullptr, nbin, num_polynomial_terms, step_continuum,
                           ref_energy, means, sigmas, fixedAmpPeaks, skew_type, skew_parameters,
                                          dummy_amplitudes, dummy_continuum_coeffs,
                               dummy_amplitudes_uncerts, dummy_continuum_coeffs_uncerts,

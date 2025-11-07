@@ -412,7 +412,7 @@ nlohmann::json solution_to_json(const RelActCalcAuto::RelActAutoSolution& soluti
         for( const auto &peak : peaks )
           peaks_deque.push_back( std::make_shared<const PeakDef>(peak) );
         
-        const string peaks_json = PeakDef::peak_json( peaks_deque, solution.m_spectrum ); //will [{},{},...]
+        const string peaks_json = PeakDef::peak_json( peaks_deque, solution.m_spectrum, Wt::WColor(0,51,255), 255 ); //will [{},{},...]
         return nlohmann::json::parse( peaks_json );
       };
 

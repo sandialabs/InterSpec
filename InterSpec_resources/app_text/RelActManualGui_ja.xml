@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">相対放射能解が利用できません</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">現在表示されているスペクトルファイル取得エラー: {1}</message>
+  
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">比放射能</message>
+  <message id="mrend-X(a,n)">{1}上のアルファによる中性子生成</message>
+  <message id="mrend-X(n,a)">{1}上の中性子によるアルファ生成</message>
+  <message id="mrend-X(a,p)">{1}上のアルファによる陽子生成</message>
+  <message id="mrend-X(n,g)">{1}上の低速中性子の捕獲</message>
+  <message id="mrend-X(n,n)">{1}からの高速中性子非弾性散乱</message>
+  <message id="mrend-X(a,a)">{1}からの非弾性アルファ散乱</message>
+  <message id="mrend-annih">消滅ガンマ</message>
+  <message id="mrend-unknown-rxctn">未知の反応</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">測定中の崩壊</message>
+  <message id="mrend-tt-decay-during-meas">チェックすると、測定中の核種崩壊が考慮され、引用される相対放射能は測定開始時の放射能になります。</message>
+  
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">方程式形式</message>
+  <message id="ramg-options-label">オプション</message>
+  <message id="ramg-tt-eqn-form">相対効率曲線に使用する関数形式。</message>
+</messages>

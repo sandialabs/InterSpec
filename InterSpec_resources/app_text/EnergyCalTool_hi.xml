@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ect- is short for EnergyCalTool -->
+  <message id="ect-no-spec">कोई स्पेक्ट्रम लोड नहीं किया गया</message>
+  <message id="ect-more-act">अधिक क्रियाएं</message>
+  <message id="ect-linearize">रैखिक करें...</message>
+  <message id="ect-tt-linearize">स्पेक्ट्रम को रैखिक करता है ताकि प्रत्येक ऊर्जा चैनल की समान चौड़ाई हो।</message>
+  <message id="ect-truncate">ऊर्जा काटें...</message>
+  <message id="ect-tt-truncate">डेटा चैनलों को त्यागकर स्पेक्ट्रम की ऊर्जा सीमा को काटता है।</message>
+  <message id="ect-combine">चैनल संयोजित करें...</message>
+  <message id="ect-tt-combine">ऊर्जा चैनलों को एक साथ जोड़ता है ताकि स्पेक्ट्रम में कम डेटा चैनल हों</message>
+  <message id="ect-to-frf">FRF में...</message>
+  <message id="ect-tt-to-frf">ऊर्जा अंशांकन प्रकार को पूर्ण सीमा अंश में परिवर्तित करता है</message>
+  <message id="ect-to-poly">बहुपद में...</message>
+  <message id="ect-tt-to-poly">ऊर्जा अंशांकन प्रकार को बहुपद में परिवर्तित करता है।</message>
+  <message id="ect-multi-file">बहु फ़ाइल अंशांकन...</message>
+  <message id="ect-tt-multi-file">
+    एक या अधिक स्पेक्ट्रम फ़ाइलों से, फिट की गई पीक के साथ कई स्पेक्ट्रम का उपयोग करने की अनुमति देता है,
+    ऊर्जा अंशांकन करने के लिए। विशेष रूप से
+    निम्न-संकल्प डिटेक्टरों के लिए उपयोगी हो सकता है जहां प्रत्येक स्पेक्ट्रम में एक अलग परीक्षण स्रोत होता है
+  </message>
+  <message id="ect-tt-CALp">एक .CALp फ़ाइल डाउनलोड करें जिसमें वर्तमान ऊर्जा अंशांकन शामिल है।
+    इस ऊर्जा अंशांकन का पुनः उपयोग करने के लिए आप बाद में इस फ़ाइल को InterSpec पर ड्रैग-एन-ड्रॉप कर सकते हैं।
+    यह विशेष रूप से उपयोगी है यदि आप अक्सर एक डिटेक्टर से डेटा का उपयोग करते हैं जिसके अंशांकन को
+    लगातार समायोजित करने की आवश्यकता होती है।
+  </message>
+  <message id="ect-export-CALp-msg">आप बाद में इस CALp फ़ाइल को InterSpec पर CALp फ़ाइल को ड्रैग और ड्रॉप करके एक अलग स्पेक्ट्रम पर लागू कर सकते हैं।</message>
+  <message id="ect-fit-coeff-btn">गुणांक फिट करें</message>
+  <message id="ect-tt-fit-coeff-btn">
+    ऊर्जा गुणांकों के लिए फिट करने के लिए फिट पीक से जुड़ी photopeak की अपेक्षित ऊर्जा का उपयोग करता है।
+    यदि कोई गुणांक फिट करने के लिए चयनित नहीं है, या गुणांकों से कम पीक चयनित हैं, तो यह बटन अक्षम है।
+  </message>
+  <message id="ect-apply-changes-to">परिवर्तन लागू करें</message>
+  <message id="ect-disp-dets">प्रदर्शित डिटेक्टर</message>
+  <message id="ect-all-dets">सभी डिटेक्टर</message>
+  <message id="ect-disp-samples">प्रदर्शित नमूने</message>
+  <message id="ect-all-samples">सभी नमूने</message>
+  <message id="ect-calib-coeffs">अंशांकन गुणांक</message>
+  <message id="ect-cal-peaks">अंशांकन पीक</message>
+  <message id="ect-CALp-no-meas">{1} के लिए कोई माप प्रदर्शित नहीं</message>
+  <message id="ect-CALp-not-applic-det">अंशांकन परिवर्तन {1} के किसी भी डिटेक्टर पर लागू नहीं</message>
+  <message id="ect-CALp-not-applic-sample">अंशांकन परिवर्तन {1} के किसी भी नमूने पर लागू नहीं</message>
+  <message id="ect-CALp-invalid-input">अमान्य इनपुट ऊर्जा अंशांकन</message>
+  <message id="ect-CALp-num-channel-mismatch">नए अंशांकन चैनलों की संख्या ({1}) पुराने अंशांकन ({2}) से मेल नहीं खाती।</message>
+  <message id="ect-CALp-missing-det">CALp फ़ाइल में डिटेक्टरों के लिए अंशांकन गायब है: {1}.{2}</message>
+  <message id="ect-CALp-extra-det">  गैर-मौजूद डिटेक्टरों के लिए अतिरिक्त अंशांकन थे: {1}।</message>
+  <message id="ect-CALp-named-vs-unamed">CALp फ़ाइल में सभी अंशांकन डिटेक्टर नाम निर्दिष्ट करते हैं, लेकिन वर्तमान स्पेक्ट्रम डिटेक्टर अनाम है।</message>
+  <message id="ect-CALp-no-cal-for-det">"डिटेक्टर '{1}' के लिए कोई अंशांकन उपलब्ध नहीं"</message>
+  <message id="ect-CALp-no-prev-for-det">डिटेक्टर '{1}' के लिए उपयोग करने के लिए पिछला अंशांकन पहचान नहीं सका।</message>
+  <message id="ect-CALp-nchannel-mismatch-det">नए अंशांकन चैनलों की संख्या ({1}) डिटेक्टर '{3}' के लिए पुराने अंशांकन ({2}) से मेल नहीं खाती।</message>
+  <message id="ect-import-CALp">CALp फ़ाइल आयात करें</message>
+  <message id="ect-select-CALp"><p>उपयोग करने के लिए CALp फ़ाइल चुनें</p></message>
+  <message id="ect-upload-CALp-to-large">अपलोड करने के लिए फ़ाइल बहुत बड़ी है</message>
+  <message id="ect-invalid-CALp">मान्य CALp फ़ाइल नहीं</message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">नोट: आप CALp फ़ाइलों को InterSpec पर ड्रैग-एन-ड्रॉप भी कर सकते हैं<br /></p></message>
+  <message id="ect-change-made-invalid">अंशांकन परिवर्तन ने ऊर्जा अंशांकन को अमान्य बना दिया{1}। त्रुटि: {2}</message>
+  <message id="ect-for-the-fore"> अग्रभूमि के लिए</message>
+  <message id="ect-for-the-back"> पृष्ठभूमि के लिए</message>
+  <message id="ect-for-the-sec"> द्वितीयक स्पेक्ट्रम के लिए</message>
+  <message id="ect-set-cal-invalid-nchan">नमूना {1}, डिटेक्टर '{2}' में {3} चैनल हैं लेकिन सेट किया जा रहा अंशांकन में {4} हैं।</message>
+  <message id="ect-error-setting-cal">नया ऊर्जा अंशांकन सेट करने में त्रुटि: {1}</message>
+  <message id="ect-add-dev-pair-made-invalid">विचलन जोड़ी जोड़ने से ऊर्जा अंशांकन अमान्य हो गया{1}। त्रुटि: {2}</message>
+  <message id="ect-unexpected-error-prev-coefs">पिछले अंशांकन गुणांक पुनर्प्राप्त करने में अप्रत्याशित त्रुटि - परिवर्तन लागू नहीं कर रहे</message>
+  <message id="ect-changed-cal-not-selected">ऐसा लगता है कि आपने जो ऊर्जा अंशांकन बदला है वह परिवर्तन लागू करने के लिए चिह्नित नहीं है; कृपया इसे ठीक करें।</message>
+  <message id="ect-dev-pair-change-invalid">विचलन जोड़ी बदलने से ऊर्जा अंशांकन अमान्य हो गया। त्रुटि: {1}</message>
+  <message id="ect-set-dev-pair-err">इस डिटेक्टर के लिए विचलन जोड़ी सेट करने में त्रुटि थी।</message>
+  <message id="ect-dev-applied-dets-samples">विचलन जोड़ी केवल '{1}' डिटेक्टर पर लागू की गई, लेकिन सभी नमूना संख्याओं पर{2}।</message>
+  <message id="ect-dev-applied-to-samples">विचलन जोड़ी सभी नमूना संख्याओं पर लागू की गई{1}।</message>
+  <message id="ect-of-the-fore"> अग्रभूमि के।</message>
+  <message id="ect-of-the-sec"> द्वितीयक के।</message>
+  <message id="ect-of-the-back"> पृष्ठभूमि के।</message>
+  <message id="ect-err-not-enough-peaks">अभी अंशांकन गुणांक फिट नहीं कर सकते। आपको फिटिंग के लिए कम से कम उतनी ही पीक चुननी होंगी जितने गुणांक आपने फिट करने के लिए चुने हैं।</message>
+  <message id="ect-no-peaks">कोई पीक उपलब्ध नहीं।</message>
+  <message id="ect-select-cal-of-disp-det">कृपया एक प्रदर्शित डिटेक्टर का अंशांकन चुनें</message>
+  <message id="ect-not-enough-channel">डेटा में पर्याप्त चैनल नहीं।</message>
+  <message id="ect-no-coeff-selected">आपको फिट करने के लिए कम से कम एक गुणांक चुनना होगा।</message>
+  <message id="ect-fail-min">त्रुटि संदेश मैट्रिक्स और पुनरावृत्त दोनों दृष्टिकोणों का उपयोग करके ऊर्जा अंशांकन फिट करने में विफल</message>
+  <message id="ect-fit-successful">फिटिंग से ऊर्जा अंशांकन अपडेट किया गया है।</message>
+  <message id="ect-fail-fit">पीक माध्य को फिट करके अंशांकन विफल। {1}</message>
+  <message id="ect-del-graphical-msg">यदि आप स्पेक्ट्रम के किसी अन्य भाग पर ALT+CTRL+DRAG द्वारा फिर से अंशांकित करते हैं, तो आपको इस अंशांकन के प्रभावों को भी संरक्षित करने का विकल्प दिया जाएगा।</message>
+  <message id="ect-lc-disp-dets">प्रदर्शित डिटेक्टर</message>
+  <message id="ect-lc-all-dets">सभी डिटेक्टर</message>
+  <message id="ect-lc-all-samples">सभी नमूने</message>
+  <message id="ect-lc-disp-samples">प्रदर्शित नमूने</message>
+  <message id="ect-short-fore">अग्र.</message>
+  <message id="ect-short-back">पृष्ठ</message>
+  <message id="ect-short-secondary">द्वि.</message>
+
+  <message id="ect-offset-label">ऑफसेट</message>
+  <message id="ect-linear-label">रैखिक</message>
+  <message id="ect-quad-label">द्विघात</message>
+  <message id="ect-cubic-label">घन</message>
+  <message id="ect-nth-label">{1} वां क्रम</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">निचली चैनल ऊर्जा</message>
+  <message id="ect-cal-type-not-defined">परिभाषित नहीं</message>
+  <message id="ect-cal-type-polynomial">बहुपद</message>
+  <message id="ect-cal-type-default-poly">डिफ़ॉल्ट बहुपद</message>
+  <message id="ect-cal-type-frf">पूर्ण श्रेणी अंश</message>
+  <message id="ect-convert-to-poly-msg">कृपया संपादित करने के लिए बहुपद अंशांकन में परिवर्तित करें</message>
+  <message id="ect-deviation-pairs">विचलन युग्म</message>
+</messages>

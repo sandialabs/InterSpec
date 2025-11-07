@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">Folytatás Előtt</message>
+  <message id="lrm-pre-warn-content">
+    Térkép csempék lesznek kérve a <a href="https://arcgis.com" target="_blank">https://arcgis.com</a> oldalról.
+    Radiációs adatok nem hagyják el az eszközét, de a méréseket magukba foglaló
+    térkép csempék kérése történik ehhez a szolgáltatáshoz.
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>Az egyéni arcgis kulcsa '{1}'-el kezdődően lesz használva a térkép csempék kéréséhez.</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>Érvénytelen arcgis kulcs lett megadva az arcgis_key.txt fájlban, így a beépített kulcs lesz használva.</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">Ne kérdezze meg újra</message>
+  <message id="lrm-pre-warn-proceed-btn">Folytatás</message>
+  <message id="lrm-window-title">Térkép Eszköz</message>
+  <message id="lrm-will-use-user-key">Felhasználó által megadott arcgis kulcs lesz használva, '{1}'-el kezdődően a térképek kéréséhez.</message>
+  <message id="lrm-user-key-invalid">Volt egy arcgis_key.txt fájl, de nem tartalmazott érvényes kulcsot</message>
+  <message id="lrm-err-loading-samples">Hiba a térkép-kiválasztott minták betöltésekor: {1}</message>
+  <message id="lrm-displayed-as">Megjelenítve mint</message>
+  <message id="lrm-measurements-as">mérések mint</message>
+  <message id="lrm-load-meas-as-short">Betöltés mint</message>
+
+  <message id="lrm-filter-label">Szűrő</message>
+  <message id="lrm-filter-none">Nincs</message>
+  <message id="lrm-filter-energy-range">Energia tartomány</message>
+  <message id="lrm-filter-peaks-in-range">Csúcsok tartományban</message>
+  <message id="lrm-lower-energy">Alsó energia</message>
+  <message id="lrm-upper-energy">Felső energia</message>
+  <message id="lrm-energy-filter-help">Energia tartomány szűrő alkalmazása megváltoztatja, hogy a térképen hogyan és esetleg milyen adatok jelennek meg.
+<ul>
+<li><b>Nincs</b>: Nincs szűrés alkalmazva - a színek és CPS szöveg a teljes spektrum számlálási arányon alapul.</li>
+<li><b>Energia tartomány</b>: Gamma számlálások szűrése a megadott energia tartományon belül.</li>
+<li><b>Csúcsok tartományban</b>: Csak azokat a mintaszámokat mutassa, amelyeknek csúcsai vannak az energia tartományban, a jelölő színek és CPS a csúcsok számlálási arányán alapul.</li>
+</ul></message>
+</messages>

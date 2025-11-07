@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raager- is short for RelActAutoGuiEnergyRange -->
+
+  <!-- Labels -->
+  <message id="raager-lower-energy">Energia Inferior</message>
+  <message id="raager-upper-energy">Energia Superior</message>
+  <message id="raager-continuum-type">Tipo de Contínuo:</message>
+
+  <!-- Checkboxes -->
+  <message id="raager-force-full-range">Forçar faixa completa</message>
+
+  <!-- Tooltips -->
+  <message id="raager-split-to-individual-rois-tt">Converte esta faixa de energia em ROIs individuais, baseado em quais gamas devem ser agrupados juntos vs separados (por exemplo, deixa gamas com picos sobrepostos em uma única ROI, enquanto se dois gamas estão distantes, eles serão divididos em ROIs separadas.</message>
+
+</messages>

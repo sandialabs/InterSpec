@@ -415,7 +415,6 @@ void RefSpectraWidget::setupUI()
   // Set up the spectrum display, making it compact, and match current color theme and log y setting
   const bool wasLogY = UserPreferences::preferenceValue<bool>( "LogY", interspec );
   m_spectrum->setCompactAxis( true );
-  m_spectrum->applyColorTheme( interspec->getColorTheme() );
   m_spectrum->setXAxisTitle( "" );
   m_spectrum->setYAxisTitle( "", "" );
   m_spectrum->disableLegend();
@@ -423,7 +422,6 @@ void RefSpectraWidget::setupUI()
   //m_spectrum->showYAxisScalers( true );
   //m_spectrum->setShowPeakLabel( 0, true ); //SpectrumChart::PeakLabels::kShowPeakUserLabel
   //m_spectrum->setReferncePhotoPeakLines( ReferenceLineInfo() );
-  interspec->colorThemeChanged().connect( boost::bind( &D3SpectrumDisplayDiv::applyColorTheme, m_spectrum, boost::placeholders::_1 ) );
 
   m_stack->addWidget( m_spectrum );
   
@@ -464,13 +462,12 @@ void RefSpectraWidget::setupUI()
   HelpSystem::attachToolTipOn( m_deleteDirButton, WString::tr("rs-tt-delete-dir-btn"), showToolTips );
 #endif // !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT
 
-
-  m_showCurrentForeground = new Wt::WCheckBox( WString::tr("rs-show-foreground"), stackOptions );
+  m_showCurrentForeground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-foreground-portrait" : "rs-show-foreground"), stackOptions );
   m_showCurrentForeground->addStyleClass( "CbNoLineBreak" );
   m_showCurrentForeground->changed().connect( this, &RefSpectraWidget::updatePreview );
   
 
-  m_refBackground = new Wt::WCheckBox( WString::tr("rs-show-background"), stackOptions );
+  m_refBackground = new Wt::WCheckBox( WString::tr(portrait ? "rs-show-background-portrait" : "rs-show-background"), stackOptions );
   m_refBackground->addStyleClass( "CbNoLineBreak" );
   m_refBackground->changed().connect( this, &RefSpectraWidget::updatePreview );
   m_refBackground->setHiddenKeepsGeometry( true );
@@ -478,8 +475,9 @@ void RefSpectraWidget::setupUI()
   
   if( portrait )
   {
-    mainLayout->setRowStretch( 0, 1 );
-    mainLayout->setRowStretch( 1, 1 );
+    //mainLayout->setRowStretch( 0, 1 );
+    //mainLayout->setRowStretch( 1, 1 );
+    mainLayout->setRowResizable( 0, true, WLength(50,WLength::Percentage) ); //This is just to make the tree-view and chart-area split the heiht 50/50
   }else
   {
     mainLayout->setRowStretch( 0, 1 );

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">FWHM অনিশ্চয়তা</message>
+  <message id="fpm-peak-source">পিক উৎস</message>
+  <message id="fpm-user">ব্যবহারকারী</message>
+  <message id="fpm-auto-fit">স্বয়ং-ফিট</message>
+
+
+  <message id="mffdw-use-fwhm-btn">FWHM ব্যবহার করুন</message>
+
+  <message id="mffd-eqn-type-label">সমীকরণ টাইপ:</message>
+  <message id="mffd-num-terms-label">পদ সংখ্যা:</message>
+  <message id="mffd-par-vals-label">প্যারামিটার মান:</message>
+  <message id="mffd-err-no-foreground">পিকের জন্য অনুসন্ধান করার জন্য কোনো ডেটা নেই।</message>
+  <message id="mffd-tt-par">অনিশ্চয়তা সহ: {1}</message>
+  <message id="mffd-err-fail-fit">FWHM সমীকরণ ফিট করতে ব্যর্থ: {1}</message>
+  <message id="mffd-err-waiting-for-search">বর্তমানে পিকের জন্য অনুসন্ধান করছে - অনুগ্রহ করে ধৈর্য ধরুন</message>
+</messages>

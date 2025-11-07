@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+    <message id="dcw-tt-nuc-edit">mis. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (keadaan meta stabil), <b>Cs137</b>, dll.</message>
+    <message id="dcw-tt-age-edit">
+      <div>
+        Usia dapat ditentukan menggunakan kombinasi satuan waktu,
+        serupa dengan '<b>5.3y 8d 22m</b>' atau dalam waktu paruh seperti 
+        '<b>2.5 HL</b>'.
+      </div>
+      <br />
+      <div>
+        Usia tidak mempengaruhi aktivitas nuklida yang dimasukkan, itu hanya mempengaruhi jumlah
+        pertumbuhan keturunan (yaitu hanya mengubah aktivitas keturunan, bukan aktivitas nuklida induk)
+        - aktivitas yang Anda masukkan akan selalu digunakan untuk nuklida induk yang Anda masukkan, tidak
+        peduli usianya.
+      </div>
+      <br />
+      <div>
+        Satuan waktu yang dapat diterima: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>, 
+        <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, atau
+        Anda dapat menentukan periode waktu dengan <b>hh:mm:ss</b>.
+      </div>
+      <div>Satuan waktu paruh atau periode waktu tidak dapat dicampur dengan satuan lain.</div>
+      <div>
+        Ketika beberapa periode waktu ditentukan, mereka dijumlahkan, mis. '1y6months 3m' diinterpretasikan sebagai 
+        18 bulan dan 3 menit.
+      </div>
+    </message>
+    <message id="dcw-age-to-big">{1} terlalu banyak waktu paruh untuk meluruhkan {2}</message>
+    <message id="dcw-nuc-is-stable">{1} stabil</message>
+    <message id="dcw-made-age-reasonable">Mengubah usia ke nilai yang lebih wajar untuk {1} dari '{2}' ke '{3}'</message>
+</messages>
+

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rs- is short for Reference Spectra -->
+  <message id="rs-dialog-title">الأطياف المرجعية</message>
+  <message id="rs-show-foreground">إظهار المقدمة</message>
+  <message id="rs-show-background">الخلفية</message>
+  <message id="rs-tt-add-dir-btn">إضافة دليل لفتح الأطياف المرجعية منه.</message>
+  <message id="rs-tt-delete-dir-btn">يزيل الدليل المختار حاليًا من قائمة الأماكن لإظهار الأطياف المرجعية منها.</message>
+  <message id="rs-no-dir-selected-desktop">
+    اختر طيف مرجعي لتحميله. <br />
+    <br />
+    أضف أدلة الأطياف المرجعية باستخدام أيقونة
+    <img src="InterSpec_resources/images/plus_min_black.svg" style="width: 12px; height: 12px; display: inline-block; vertical-align: middle;"/>.
+    </message>
+  <message id="rs-no-dir-selected-mobile">
+    اختر طيف مرجعي لتحميله. <br /> 
+    <div style="font-size: smaller;">
+      (يمكنك أيضًا إضافة دليل الأطياف المرجعية الخاص بك بإنشاء دليل "reference_spectra" 
+      في دليل بيانات <em>InterSpec</em> (باستخدام تطبيق الملفات)، ثم إضافة أدلة فرعية أخرى
+      مع أطيافك فيها)
+    </div>
+  </message>
+  <message id="rs-some-dirs-removed">{1} أدلة لم تعد متاحة، وتم إزالتها.</message>
+  <message id="rs-dir-added-successfully">تم إضافة المسار '{1}'.</message>
+  <message id="rs-show-as">تحميل كـ</message>
+  <message id="rs-add-dir-dialog-title">إضافة دليل الأطياف المرجعية</message>
+  <message id="rs-duplicate-dir-path">الدليل موجود بالفعل في المختار: '{1}'</message>
+  <message id="rs-dir-not-found">الدليل غير موجود، لذا لم يتم إزالته من التفضيلات: '{1}'</message>
+  <message id="rs-dir-info-only-spectra">الدليل يحتوي على {1} ملف طيف<br /></message>
+  <message id="rs-dir-info-only-subdir">الدليل يحتوي على {1} دليل فرعي<br /></message>
+  <message id="rs-dir-info-with-subdir-spectra">الدليل يحتوي على {1} ملف طيف و {2} دليل فرعي<br /></message>
+  <message id="rs-error-loading-file">خطأ في تحميل الملف: '{1}'</message>
+  <message id="rs-show-in-explorer">إظهار في المستكشف</message>
+  <message id="rs-show-in-finder">إظهار في الباحث</message>
+  <message id="rs-show-in-linux-file-manager">إظهار في مدير الملفات</message>
+  <message id="rs-error-invalid-file">ملف طيف غير صالح: '{1}'.</message>
+  <message id="rs-error-invalid-type-selected">تم اختيار نوع طيف غير صالح.</message>
+  </messages>
+
+

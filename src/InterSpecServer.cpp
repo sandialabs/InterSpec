@@ -68,6 +68,11 @@
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmMcpResource.h"
+#endif
+
 using namespace std;
 
 // Namespace to track allowed sessions and not
@@ -124,8 +129,18 @@ namespace InterSpecServer
   std::string sm_urlServedOn = "";
   std::mutex sm_servedOnMutex;
   
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::WServer *ns_server = nullptr;
   std::mutex ns_servermutex;
+#endif
+  
+#if( USE_LLM_INTERFACE )
+  std::mutex ns_llm_config_mutex;
+  std::shared_ptr<const LlmConfig> ns_llm_config;
+  
+  std::mutex ns_mcp_mutex;
+  std::unique_ptr<LlmMcpResource> ns_mcp_resource;
+#endif
   
   
   int portBeingServedOn()
@@ -140,12 +155,13 @@ namespace InterSpecServer
     return sm_urlServedOn;
   }
 
-  
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::WServer *get_wt_server()
   {
     std::lock_guard<std::mutex> serverlock( ns_servermutex );
     return ns_server;
   }
+#endif
   
   
   std::string getWtConfigXml( int argc, char *argv[] )
@@ -222,7 +238,7 @@ namespace InterSpecServer
     return app;
   }//WApplication *createAppForServer(...)
   
-  
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   void startServer( int argc, char *argv[],
                                 Wt::WApplication::ApplicationCreator createApplication )
   {
@@ -316,107 +332,156 @@ namespace InterSpecServer
       throw std::runtime_error( "Failed to start Wt server" );
     }//if( server.start() )
   }//void startServer()
-  
+#endif //if( BUILD_AS_UNIT_TEST_SUITE )
 
-  
-  void startWebServer( string name,
-                             std::string basedir,
-                             const std::string xml_config_path,
-                             unsigned short int server_port_num
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+void startWebServer( string name,
+                     std::string basedir,
+                     const std::string xml_config_path,
+                     unsigned short int server_port_num
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-                             , string http_address
+                     , string http_address
 #endif
                              )
+{
+  std::lock_guard<std::mutex> serverlock( ns_servermutex );
+  if( ns_server )
   {
-    std::lock_guard<std::mutex> serverlock( ns_servermutex );
-    if( ns_server )
-    {
-      std::cerr << "experimental_startServer: already running" << std::endl;
-      return;
-    }
+    std::cerr << "experimental_startServer: already running" << std::endl;
+    return;
+  }
     
-    if( name.empty() )
-      name = "\0";
-    if( basedir.empty() )
-      basedir = ".";
+  if( name.empty() )
+    name = "\0";
+  if( basedir.empty() )
+    basedir = ".";
     
-    Wt::WString::setDefaultEncoding( Wt::UTF8 );
+  Wt::WString::setDefaultEncoding( Wt::UTF8 );
     
     
-    ns_server = new Wt::WServer( name, xml_config_path );
-    char *exe_param_name  = &(name[0]);
-    char httpaddr_param_name[]  = "--http-addr";
-    
+  ns_server = new Wt::WServer( name, xml_config_path );
+  char *exe_param_name  = &(name[0]);
+  char httpaddr_param_name[]  = "--http-addr";
+  
 #if( BUILD_FOR_WEB_DEPLOYMENT )
-    char *httpaddr_param_value  = &(http_address[0]);
+  char *httpaddr_param_value  = &(http_address[0]);
 #else
-    char httpaddr_param_value[] = "127.0.0.1";
+  char httpaddr_param_value[] = "127.0.0.1";
 #endif
     
     
-    char httpport_param_name[]  = "--http-port";
-    string port_str = std::to_string( static_cast<int>(server_port_num) );
-    assert( !port_str.empty() );
-    if( port_str.empty() )
-      port_str = "0";
-    char *httpport_param_value = &(port_str[0]);
-    //char httpport_param_value[] = "0";         //Assign port automatically
-    char docroot_param_name[]   = "--docroot";   // docroot is the base-path to files that can be served over html; e.g., CSS, JS, etc
-    char *docroot_param_value  = &(basedir[0]);
-    char approot_param_name[]   = "--approot";   // approot is base-path to resources the application needs, like data, databases, etc.  Currently for InterSpec, this is same as docroot.
-    char *approot_param_value  = &(basedir[0]);
-    char accesslog_param_value[]  = "--accesslog=-";  //quite down printing all the GET and POST and such
+  char httpport_param_name[]  = "--http-port";
+  string port_str = std::to_string( static_cast<int>(server_port_num) );
+  assert( !port_str.empty() );
+  if( port_str.empty() )
+    port_str = "0";
+  char *httpport_param_value = &(port_str[0]);
+  //char httpport_param_value[] = "0";         //Assign port automatically
+  char docroot_param_name[]   = "--docroot";   // docroot is the base-path to files that can be served over html; e.g., CSS, JS, etc
+  char *docroot_param_value  = &(basedir[0]);
+  char approot_param_name[]   = "--approot";   // approot is base-path to resources the application needs, like data, databases, etc.  Currently for InterSpec, this is same as docroot.
+  char *approot_param_value  = &(basedir[0]);
+  char accesslog_param_value[]  = "--accesslog=-";  //quite down printing all the GET and POST and such
 
     
-    char *argv_wthttp[] = { exe_param_name,
-      httpaddr_param_name, httpaddr_param_value,
-      httpport_param_name, httpport_param_value,
-      docroot_param_name, docroot_param_value,
-      approot_param_name, approot_param_value,
-      accesslog_param_value
-    };
-    const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
+  char *argv_wthttp[] = { exe_param_name,
+    httpaddr_param_name, httpaddr_param_value,
+    httpport_param_name, httpport_param_value,
+    docroot_param_name, docroot_param_value,
+    approot_param_name, approot_param_value,
+    accesslog_param_value
+  };
+  const int argc_wthttp = sizeof(argv_wthttp)/sizeof(argv_wthttp[0]);
     
-    ns_server->setServerConfiguration( argc_wthttp, argv_wthttp, WTHTTP_CONFIGURATION );
+  ns_server->setServerConfiguration( argc_wthttp, argv_wthttp, WTHTTP_CONFIGURATION );
     
-    ns_server->addEntryPoint( Wt::Application, boost::bind( &createAppForServer, _1, create_application ) );
+  ns_server->addEntryPoint( Wt::Application, boost::bind( &createAppForServer, _1, create_application ) );
     
-    if( ns_server->start() )
+  if( !ns_server->start() )
+    throw std::runtime_error( "Failed to start Wt server" );
+      
+    
+  // See remarks in startServer() on performance and reason for this next call
+  ns_server->ioService().boost::asio::io_service::post( [](){
+    DecayDataBaseServer::initialize();
+
+    // Load the reaction gammas into memory
+    //  When built for web deployment, using a ALpine container (musl libc), there
+    //  is a segfault if we load the infor from XML during an initial request
+    //  (I'm not totally sure what this is about, but I assume its related to musl
+    //  having a much smaller default thread stack size)
+    ReactionGammaServer::database();
+
+    ReferenceLineInfo::load_nuclide_mixtures();
+  } );
+
+  // Checking for available languages probably doesnt take too long, but lets do it now anyway.
+  ns_server->ioService().boost::asio::io_service::post( [](){
+    InterSpecApp::languagesAvailable();
+  } );
+      
+  const int port = ns_server->httpPort();
+  assert( !server_port_num || (server_port_num == port) );
+  std::string this_url = "http://" + string(httpaddr_param_value) + ":" + std::to_string(port);
+      
+  {
+    std::lock_guard<std::mutex> lock( sm_servedOnMutex );
+    sm_portServedOn = port;
+    sm_urlServedOn = this_url;
+  }
+      
+      
+#if( USE_LLM_INTERFACE )
+  static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
+      
+  try
+  {
+    shared_ptr<const LlmConfig> config = llm_config();
+      
+    if( config && config->mcpServer.enabled )
     {
-      // See remarks in startServer() on performance and reason for this next call
-      ns_server->ioService().boost::asio::io_service::post( [](){
-        DecayDataBaseServer::initialize();
-
-        // Load the reaction gammas into memory
-        //  When built for web deployment, using a ALpine container (musl libc), there
-        //  is a segfault if we load the infor from XML during an initial request
-        //  (I'm not totally sure what this is about, but I assume its related to musl
-        //  having a much smaller default thread stack size)
-        ReactionGammaServer::database();
-
-        ReferenceLineInfo::load_nuclide_mixtures();
-      } );
-
-      // Checking for available languages probably doesnt take too long, but lets do it now anyway.
-      ns_server->ioService().boost::asio::io_service::post( [](){
-        InterSpecApp::languagesAvailable();
-      } );
-      
-      const int port = ns_server->httpPort();
-      assert( !server_port_num || (server_port_num == port) );
-      std::string this_url = "http://" + string(httpaddr_param_value) + ":" + std::to_string(port);
-      
+      std::lock_guard<std::mutex> mcp_lock( ns_mcp_mutex );
+        
+      if( !ns_mcp_resource )
       {
-        std::lock_guard<std::mutex> lock( sm_servedOnMutex );
-        sm_portServedOn = port;
-        sm_urlServedOn = this_url;
-      }
-    }else
-    {
-      throw std::runtime_error( "Failed to start Wt server" );
-    }//if( server.start() )
-  }//startWebServer(...)
-  
+#if( MCP_ENABLE_AUTH )
+        assert( config->mcpServer.bearerToken != LlmConfig::McpServer::sm_invalid_bearer_token );
+        if( config->mcpServer.bearerToken == LlmConfig::McpServer::sm_invalid_bearer_token )
+          throw runtime_error( "MCP bearer token is invalid" );
+        if( config->mcpServer.bearerToken.empty() )
+          std::cerr << "WARNING: MCP bearer token not specified - not requiring authentication!" << std::endl;
+#endif
+        
+        ns_mcp_resource = std::make_unique<LlmMcpResource>( config ); //Throws exception if there is trouble setting up the tool calls
+          
+        // Add the resource to the existing server at /mcp-api
+        ns_server->addResource( ns_mcp_resource.get(), "/mcp-api");
+      }//if( !ns_mcp_resource )
+        
+      std::cout << "\n=== MCP Interface Enabled ===" << std::endl;
+      std::cout << "MCP Server URL: " << InterSpecServer::urlBeingServedOn() << "/mcp-api" << std::endl;
+      std::cout << "In your tool, set MCP Host to: http://127.0.0.1:" << port << "/mcp-api" << std::endl;
+#if( MCP_ENABLE_AUTH )
+      if( !config->mcpServer.bearerToken.empty() )
+        std::cout << "Bearer Token Required: " << config->mcpServer.bearerToken << std::endl;
+      else
+        std::cout << "Authentication: None required" << std::endl;
+      
+#else
+      std::cout << "Authentication: Disabled" << std::endl;
+#endif
+      std::cout << "=============================" << std::endl << std::endl;
+    }//if( config.mcpServer.enabled )
+  }catch( std::exception& e )
+  {
+    std::cerr << "Exception setting up LLM/MCP interface: " << e.what() << std::endl;
+#if( BUILD_AS_LOCAL_SERVER )
+    // TODO: maybe should shutdown server, etc?
+#endif
+  }//try / catch
+#endif //USE_LLM_INTERFACE
+}//startWebServer(...)
+
 
 int start_server( const char *process_name,
                   const char *userdatadir,
@@ -628,7 +693,7 @@ void killServer()
     
     return Wt::WServer::waitForShutdown();
   }//int wait_for_shutdown()
-
+#endif //if( !BUILD_AS_UNIT_TEST_SUITE )
   
   int add_allowed_session_token( const char *session_id, const SessionType session_type )
   {
@@ -1128,5 +1193,14 @@ void clear_file_to_open_on_load( const std::string &session_token )
   }//
 #endif
 
+#if( USE_LLM_INTERFACE )
+std::shared_ptr<const LlmConfig> llm_config()
+{
+  std::lock_guard<std::mutex> llm_config_lock( ns_llm_config_mutex );
+  if( !ns_llm_config.get() )
+    ns_llm_config = LlmConfig::load(); //Throws exception if invalid config file, returns null if no config file
+  return ns_llm_config;
+}
+#endif
 }//namespace InterSpecServer
 

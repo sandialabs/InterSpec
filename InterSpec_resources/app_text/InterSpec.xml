@@ -5,6 +5,7 @@
   <message id="Yes">Yes</message>
   <message id="No">No</message>
   <message id="Close">Close</message>
+  <message id="Continue">Continue</message>
   <message id="Save">Save</message>
   <message id="Name">Name</message>
   <message id="Desc.">Desc.</message>
@@ -23,6 +24,7 @@
   <message id="background" comment="For use in middle of sentence">background</message>
   <message id="secondary" comment="For use in middle of sentence">secondary</message>
   <message id="Exit">Exit</message>
+  <message id="Enter">Enter</message>
   <message id="show-lines">Show Lines</message>
   <message id="Default">Default</message>
   <message id="Error">Error</message>
@@ -43,7 +45,6 @@
   <message id="Title">Title</message>
   <message id="Fit">Fit</message>
   <message id="Use">Use</message>
-  <message id="Energy">Energy</message>
   <message id="Mean">Mean</message>
   <message id="FWHM">FWHM</message>
   <message id="Amp.">Amp.</message>
@@ -73,19 +74,20 @@
   <message id="Geometry">Geometry</message>
   <message id="Load">Load</message>
   <message id="Mass">Mass</message>
+  <message id="Material">Material</message>
   <message id="NA">NA</message>
   <message id="n/a">n/a</message>
   <message id="N/A">N/A</message>
   <message id="Min.">Min.</message>
   <message id="Max.">Max.</message>
   <message id="QR Code">QR Code</message>
-  <message id="Accept">Accept</message>
   <message id="Dose">Dose</message>
   <message id="Shielding">Shielding</message>
   <message id="app-qr-err">Error creating QR code: {1}</message>
   <message id="intrinsic-activity">Intrinsic Activity</message>
   <message id="Calibration">Calibration</message>
   <message id="Unknown">Unknown</message>
+  <message id="keV">keV</message>
   <message id="Energy (keV)">Energy (keV)</message>
   <message id="Efficiency">Efficiency</message>
   <message id="stable">stable</message>
@@ -398,6 +400,7 @@
   <message id="app-mi-tt-help-pref-load-prev">At application start, automatically load previous state, if not set to be prompted.</message>
   <message id="warn-desktop-disp-switch">Changes will not take effect until app is restarted or refreshed.</message>
   <message id="warn-desktop-disp-switch-refresh">Refresh Session</message>
+  <message id="warn-language-restart">Not all fields will be updated with the new language - restart the application for total update.</message>
 
 
 
@@ -584,6 +587,8 @@
   <message id="lang-de">Deutsch</message>
   <message id="lang-ja">日本語</message>
   <message id="lang-zh">中文</message>
+  <message id="lang-hi">हिन्दी</message>
+  <message id="lang-bn">বাংলা</message>
   <message id="lang-pt">Português</message>
   <message id="lang-ru">Русский</message>
   <message id="lang-it">Italiano</message>
@@ -591,6 +596,8 @@
   <message id="lang-vi">Tiếng Việt</message>
   <message id="lang-tr">Türkçe</message>
   <message id="lang-ar">العربية</message>
+  <message id="lang-hu">Magyar</message>
+  <message id="lang-id">Bahasa Indonesia</message>
 
 
   <!-- An incomplete list of possible countries - mapping the two letter code we receive as part of
@@ -607,6 +614,9 @@
   <message id="country-JP">日本</message>
   <message id="country-CN">中国</message>
   <message id="country-TW">台灣</message>
+  <message id="country-IN">भारत</message>
+  <message id="country-BD">বাংলাদেশ</message>
+  <message id="country-ID">Indonesia</message>
   <message id="country-BR">Brasil</message>
   <message id="country-PT">Portugal</message>
   <message id="country-RU">Россия</message>

@@ -31,6 +31,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpecApp.h"
@@ -108,6 +109,8 @@ UndoRedoManager::UndoRedoManager( InterSpec *parent )
   m_redoMenuToolTipUpdate( this ),
   m_PeakModelChange_counter( 0 ),
   m_PeakModelChange_starting_peaks{},
+  m_PeakModelChange_starting_background_peaks{},
+  m_PeakModelChange_starting_secondary_peaks{},
   m_BlockUndoRedoInserts_counter( 0 ),
   m_BlockGuiUndoRedo_counter( 0 )
 {
@@ -147,18 +150,53 @@ void UndoRedoManager::PeakModelChange::setToCurrentPeaks()
   if( !manager || !manager->m_interspec )
     return;
   
+  InterSpec *interspec = manager->m_interspec;
+  
+  // Clear all starting peaks
   auto &start_peaks = manager->m_PeakModelChange_starting_peaks;
+  auto &start_background_peaks = manager->m_PeakModelChange_starting_background_peaks;
+  auto &start_secondary_peaks = manager->m_PeakModelChange_starting_secondary_peaks;
+  
   //assert( start_peaks.empty() );
   start_peaks.clear();
+  start_background_peaks.clear();
+  start_secondary_peaks.clear();
   
-  PeakModel *pmodel = manager->m_interspec->peakModel();
+  // Get foreground peaks from PeakModel
+  PeakModel *pmodel = interspec->peakModel();
   assert( pmodel );
-  if( !pmodel )
-    return;
+  if( pmodel )
+  {
+    shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = pmodel->peaks();
+    if( peaks )
+      start_peaks.insert( end(start_peaks), begin(*peaks), end(*peaks) );
+  }
   
-  shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = pmodel->peaks();
-  if( peaks )
-    start_peaks.insert( end(start_peaks), begin(*peaks), end(*peaks) );
+  // Get background peaks
+  shared_ptr<SpecMeas> background_meas = interspec->measurment( SpecUtils::SpectrumType::Background );
+  if( background_meas )
+  {
+    const set<int> &background_samples = interspec->displayedSamples( SpecUtils::SpectrumType::Background );
+    if( !background_samples.empty() )
+    {
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> bg_peaks = background_meas->peaks( background_samples );
+      if( bg_peaks )
+        start_background_peaks.insert( end(start_background_peaks), begin(*bg_peaks), end(*bg_peaks) );
+    }
+  }
+  
+  // Get secondary peaks
+  shared_ptr<SpecMeas> secondary_meas = interspec->measurment( SpecUtils::SpectrumType::SecondForeground );
+  if( secondary_meas )
+  {
+    const set<int> &secondary_samples = interspec->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
+    if( !secondary_samples.empty() && secondary_meas->sampleNumsWithPeaks().count(secondary_samples) )
+    {
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> sec_peaks = secondary_meas->peaks( secondary_samples );
+      if( sec_peaks )
+        start_secondary_peaks.insert( end(start_secondary_peaks), begin(*sec_peaks), end(*sec_peaks) );
+    }
+  }
 }//void UndoRedoManager::PeakModelChange::setToCurrentPeaks()
 
 
@@ -191,43 +229,166 @@ UndoRedoManager::PeakModelChange::~PeakModelChange()
   if( manager->m_PeakModelChange_counter != 0 )
     return;
   
-  const vector<shared_ptr<const PeakDef>> starting_peaks = manager->m_PeakModelChange_starting_peaks;
+  // Copy starting peaks
+  vector<shared_ptr<const PeakDef>> starting_peaks = manager->m_PeakModelChange_starting_peaks;
+  vector<shared_ptr<const PeakDef>> starting_background_peaks = manager->m_PeakModelChange_starting_background_peaks;
+  vector<shared_ptr<const PeakDef>> starting_secondary_peaks = manager->m_PeakModelChange_starting_secondary_peaks;
+  
+  // Clear the member variables
   manager->m_PeakModelChange_starting_peaks.clear();
+  manager->m_PeakModelChange_starting_background_peaks.clear();
+  manager->m_PeakModelChange_starting_secondary_peaks.clear();
   
-  PeakModel *pmodel = manager->m_interspec->peakModel();
-  assert( pmodel );
-  if( !pmodel )
-    return;
+  InterSpec *interspec = manager->m_interspec;
   
-  shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks_now = pmodel->peaks();
+  // Get final foreground peaks
   vector<shared_ptr<const PeakDef>> final_peaks;
-  if( peaks_now )
-    final_peaks.insert( end(final_peaks), begin(*peaks_now), end(*peaks_now) );
+  PeakModel *pmodel = interspec->peakModel();
+  assert( pmodel );
+  if( pmodel )
+  {
+    shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks_now = pmodel->peaks();
+    if( peaks_now )
+      final_peaks.insert( end(final_peaks), begin(*peaks_now), end(*peaks_now) );
+  }
   
-  if( starting_peaks == final_peaks )
+  // Get final background peaks
+  vector<shared_ptr<const PeakDef>> final_background_peaks;
+  shared_ptr<SpecMeas> background_meas = interspec->measurment( SpecUtils::SpectrumType::Background );
+  if( background_meas )
+  {
+    const set<int> &background_samples = interspec->displayedSamples( SpecUtils::SpectrumType::Background );
+    if( !background_samples.empty() && background_meas->sampleNumsWithPeaks().count(background_samples) )
+    {
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> bg_peaks = background_meas->peaks( background_samples );
+      if( bg_peaks )
+        final_background_peaks.insert( end(final_background_peaks), begin(*bg_peaks), end(*bg_peaks) );
+    }
+  }
+  
+  // Get final secondary peaks
+  vector<shared_ptr<const PeakDef>> final_secondary_peaks;
+  shared_ptr<SpecMeas> secondary_meas = interspec->measurment( SpecUtils::SpectrumType::SecondForeground );
+  if( secondary_meas )
+  {
+    const set<int> &secondary_samples = interspec->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
+    if( !secondary_samples.empty() && secondary_meas->sampleNumsWithPeaks().count(secondary_samples) )
+    {
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> sec_peaks = secondary_meas->peaks( secondary_samples );
+      if( sec_peaks )
+        final_secondary_peaks.insert( end(final_secondary_peaks), begin(*sec_peaks), end(*sec_peaks) );
+    }
+  }
+  
+  // Check if anything changed
+  const bool foreground_changed = (starting_peaks != final_peaks);
+  const bool background_changed = (starting_background_peaks != final_background_peaks);
+  const bool secondary_changed = (starting_secondary_peaks != final_secondary_peaks);
+  
+  if( !foreground_changed && !background_changed && !secondary_changed )
     return;
   
-  function<void(bool)> undo_redo = [starting_peaks,final_peaks]( const bool is_undo ){
+  if( !foreground_changed )
+  {
+    starting_peaks.clear();
+    final_peaks.clear();
+  }
+  
+  if( !background_changed )
+  {
+    starting_background_peaks.clear();
+    final_background_peaks.clear();
+  }
+
+  if( !secondary_changed )
+  {
+    starting_secondary_peaks.clear();
+    final_secondary_peaks.clear();
+  }
+  
+  // Create undo/redo functions
+  function<void(bool)> undo_redo = [starting_peaks, final_peaks,
+                                     starting_background_peaks, final_background_peaks,
+                                     starting_secondary_peaks, final_secondary_peaks,
+                                     foreground_changed, background_changed, secondary_changed]( const bool is_undo ){
     InterSpec *viewer = InterSpec::instance();
     assert( viewer );
     if( !viewer )
       return;
     
-    PeakModel *pmodel = viewer->peakModel();
-    assert( pmodel );
-    if( !pmodel )
-      return;
+    // Restore foreground peaks
+    if( foreground_changed )
+    {
+      PeakModel *pmodel = viewer->peakModel();
+      assert( pmodel );
+      if( pmodel )
+        pmodel->setPeaks( is_undo ? starting_peaks : final_peaks );
+    }
     
-    pmodel->setPeaks( is_undo ? starting_peaks : final_peaks );
+    // Restore background peaks
+    if( background_changed )
+    {
+      try
+      {
+        const vector<shared_ptr<const PeakDef>> &peaks_to_set = is_undo ? starting_background_peaks : final_background_peaks;
+        auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(peaks_to_set), end(peaks_to_set) );
+        viewer->setPeaks( SpecUtils::SpectrumType::Background, peaks_deque );
+      }catch( std::exception &e )
+      {
+        Wt::log("error") << "Error restoring background peaks: " << e.what();
+      }
+    }
+    
+    // Restore secondary peaks
+    if( secondary_changed )
+    {
+      try
+      {
+        const vector<shared_ptr<const PeakDef>> &peaks_to_set = is_undo ? starting_secondary_peaks : final_secondary_peaks;
+        auto peaks_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(peaks_to_set), end(peaks_to_set) );
+        viewer->setPeaks( SpecUtils::SpectrumType::SecondForeground, peaks_deque );
+      }catch( std::exception &e )
+      {
+        Wt::log("error") << "Error restoring secondary peaks: " << e.what();
+      }
+    }
   };//undo_redo
   
   function<void()> undo = [undo_redo](){ undo_redo(true); };
   function<void()> redo = [undo_redo](){ undo_redo(false); };
   
+  // Create description
   const int dpeaks = static_cast<int>(final_peaks.size()) - static_cast<int>(starting_peaks.size());
-  string desc = (dpeaks == 0) ? "edit peak" : ((dpeaks < 0) ? "remove peak" : "add peak");
-  if( abs(dpeaks) > 1 )
-    desc += "s";
+  const int dbackground = static_cast<int>(final_background_peaks.size()) - static_cast<int>(starting_background_peaks.size());
+  const int dsecondary = static_cast<int>(final_secondary_peaks.size()) - static_cast<int>(starting_secondary_peaks.size());
+  
+  string desc;
+  if( foreground_changed )
+  {
+    desc = (dpeaks == 0) ? "edit peak" : ((dpeaks < 0) ? "remove peak" : "add peak");
+    if( abs(dpeaks) > 1 )
+      desc += "s";
+  }
+  
+  if( background_changed )
+  {
+    if( !desc.empty() )
+      desc += " & ";
+    string bg_desc = (dbackground == 0) ? "edit background peak" : ((dbackground < 0) ? "remove background peak" : "add background peak");
+    if( abs(dbackground) > 1 )
+      bg_desc += "s";
+    desc += bg_desc;
+  }
+  
+  if( secondary_changed )
+  {
+    if( !desc.empty() )
+      desc += " & ";
+    string sec_desc = (dsecondary == 0) ? "edit secondary peak" : ((dsecondary < 0) ? "remove secondary peak" : "add secondary peak");
+    if( abs(dsecondary) > 1 )
+      sec_desc += "s";
+    desc += sec_desc;
+  }
   
   manager->addUndoRedoStep( undo, redo, desc );
 }//~PeakModelChange()

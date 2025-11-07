@@ -1489,7 +1489,10 @@ class CsvDownloadGui : public AuxWindow
 public:
   
   CsvDownloadGui( DecayActivityDiv *parent )
-  : AuxWindow( "CSV Export", (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal) | AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse | AuxWindowProperties::SetCloseable) ),
+  : AuxWindow( "CSV Export", (AuxWindowProperties::IsModal
+                              | AuxWindowProperties::TabletNotFullScreen
+                              | AuxWindowProperties::DisableCollapse
+                              | AuxWindowProperties::SetCloseable) ),
   m_parent( parent ),
   m_csvResouce( nullptr ),
   m_ageEdit( nullptr )
@@ -1760,7 +1763,7 @@ void DecayActivityDiv::init()
   m_createNewNuclideButton         = new WPushButton( WString::tr("dad-add-nucs") );
   m_clearNuclidesButton            = new WPushButton( WString::tr(isPhone ? "Clear" : "dad-remove-all")  );
   m_nuclideSelectDialog            = new AuxWindow( WString::tr("dad-sel-nuc-window-title"),
-                                      (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen) | AuxWindowProperties::DisableCollapse) );
+                                    (AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::DisableCollapse) );
   
   m_nuclideSelect                  = new DecaySelectNuclide( isPhone, nullptr, m_nuclideSelectDialog );
   m_decayLegend                    = new WContainerWidget();
@@ -2205,6 +2208,7 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   {
     displOptLower = new WContainerWidget( displayOptionsDiv );
     displOptLower->setMargin( 5, Wt::Top );
+    displOptLower->addStyleClass( "LowerOptions" );
   }
   
   
@@ -2225,6 +2229,9 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
   
   if( !m_viewer->isPhone() )
   {
+    WContainerWidget *spacer = new WContainerWidget( displOptLower );
+    spacer->addStyleClass( "LowerOptionsSpacer" );
+    
     WPushButton *csvButton = new WPushButton( displOptLower );
     csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
     csvButton->setText( WString("{1}...").arg( WString::tr("CSV") ) );

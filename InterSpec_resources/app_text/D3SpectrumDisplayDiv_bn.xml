@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- d3sdd- is short for D3SpectrumDisplayDiv
+
+    The part of the id coming after "d3sdd-", directly corresponds to the javascript variable name, the element value gets put into.
+
+    The JS 'xAxisTitle' variable is localized using the "Energy (keV)" key
+    The JS 'fwhm' variable is localized using the "FWHM" key
+  -->
+  <message id="d3sdd-yAxisTitle">গণনা</message>
+  <message id="d3sdd-yAxisTitleMulti">প্রতি {1} চ্যানেলে গণনা</message>
+  <message id="d3sdd-realTime">প্রকৃত সময়</message>
+  <message id="d3sdd-liveTime">লাইভ টাইম</message>
+  <message id="d3sdd-deadTime">ডেড টাইম</message>
+  <message id="d3sdd-scaledBy">স্কেল করা</message>
+  <message id="d3sdd-zoomIn">জুম ইন</message>
+  <message id="d3sdd-neutrons">নিউট্রন</message>
+  <message id="d3sdd-Neutrons">নিউট্রন</message>
+  <message id="d3sdd-cps">cps</message>
+  <message id="d3sdd-roiCounts">ROI গণনা</message>
+  <message id="d3sdd-gammaCounts">গামা গণনা</message>
+  <message id="d3sdd-contArea">ধারাবাহিক ক্ষেত্র</message>
+  <message id="d3sdd-peakCps">পিক cps</message>
+  <message id="d3sdd-peakArea">পিক এরিয়া</message>
+  <message id="d3sdd-mean">গড়</message>
+  <message id="d3sdd-spectrum">স্পেকট্রাম</message>
+  <message id="d3sdd-comptonEdge">কম্পটন এজ</message>
+  <message id="d3sdd-sumPeak">সাম পিক</message>
+  <message id="d3sdd-firstEnergyClick">সাম পিক প্রথম শক্তি সেট করতে ক্লিক করুন।</message>
+  <message id="d3sdd-singleEscape">একক এস্কেপ</message>
+  <message id="d3sdd-doubleEscape">দ্বৈত এস্কেপ</message>
+  <message id="d3sdd-eraseInRange">রেঞ্জে পিক মুছে ফেলা হবে</message>
+  <message id="d3sdd-zoomInY">Y-অক্ষে জুম-ইন</message>
+  <message id="d3sdd-zoomOutY">Y-অক্ষে জুম-আউট</message>
+  <message id="d3sdd-touchDefineRoi">ROI নির্ধারণ করতে ২টি আঙুল ডানে সরান</message>
+  <message id="d3sdd-foreNSigmaBelowBack">ফোরগ্রাউন্ড ব্যাকগ্রাউন্ডের {1} σ নিচে।</message>
+  <message id="d3sdd-foreNSigmaAboveBack">ফোরগ্রাউন্ড ব্যাকগ্রাউন্ডের {1} σ উপরে।</message>
+  <message id="d3sdd-backSubCounts">গণনা (BG বিয়োগ)</message>
+  <message id="d3sdd-afterScalingBy">স্কেলিংয়ের পরে </message>
+  <message id="d3sdd-clickedPeak">ক্লিক করা পিক</message>
+  <message id="d3sdd-recalFromTo">{1} থেকে {2} keV পুনঃক্যালিব্রেট করুন</message>
+  <message id="d3sdd-sumFromTo">{1} থেকে {2} keV</message>
+  <message id="d3sdd-comptonPeakAngle">{1}° কম্পটন পিক</message>
+  <message id="d3sdd-yaxis-lower-upper-equal">নিম্ন এবং উচ্চ গণনা সমান।</message>
+  <message id="d3sdd-yaxis-no-spectrum">কোনো স্পেকট্রাম প্রদর্শিত হয়নি।</message>
+  <message id="d3sdd-yaxis-upper-counts-below-zero">উচ্চ রেঞ্জ শূন্যের সমান বা নিচে।</message>
+  <message id="d3sdd-yaxis-lower-counts-below-zero">নিম্ন রেঞ্জ শূন্যের সমান বা নিচে।</message>
+  <message id="d3sdd-yaxis-below-min-non-zero">উচ্চ রেঞ্জ সর্বনিম্ন প্রদর্শিত মানের চেয়ে কম, অ-শূন্য মান।</message>
+  <message id="d3sdd-candidates">প্রার্থী:</message>
+  <message id="d3sdd-use-arrows-to-select">(নির্বাচন করতে ↑ এবং ↓ ব্যবহার করুন)</message>
+</messages>

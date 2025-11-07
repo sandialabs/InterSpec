@@ -623,7 +623,7 @@ SimpleActivityCalcWindow::SimpleActivityCalcWindow( MaterialDB *materialDB,
                                                   Wt::WSuggestionPopup *materialSuggestion,
                                                   InterSpec* viewer )
 : AuxWindow( WString::tr("simple-activity-calc-title"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+            (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse) ),
   m_tool( nullptr )

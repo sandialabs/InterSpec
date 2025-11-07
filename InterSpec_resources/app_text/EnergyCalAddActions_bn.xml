@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ecaa- is short for EnergyCalAddActions -->
+  <message id="ecaa-linearize-title">স্পেকট্রাম রৈখিক করুন</message>
+  <message id="ecaa-truncate-title">গামা চ্যানেল কাটছাঁট করুন</message>
+  <message id="ecaa-combine-title">গামা চ্যানেল মিলিত করুন</message>
+  <message id="ecaa-convert-frf-title">সম্পূর্ণ পরিসর ভগ্নাংশ ক্যালিব্রেশনে রূপান্তর করুন</message>
+  <message id="ecaa-convert-poly-title">পলিনমিয়াল ক্যালিব্রেশনে রূপান্তর করুন</message>
+  <message id="ecaa-multi-file-title">একাধিক-ফাইল ক্যালিব্রেশন</message>
+
+  <!-- Conversion messages -->
+  <message id="ecaa-conversion-no-effect">রূপান্তর কোনো স্পেকট্রাকে প্রভাবিত করবে না; আরও "পরিবর্তন প্রয়োগ করুন" মানদণ্ড নির্বাচন করার চেষ্টা করুন।</message>
+  <message id="ecaa-already-polynomial">এটি যে সমস্ত স্পেকট্রায় প্রযোজ্য হবে সেগুলি ইতিমধ্যে পলিনমিয়াল।</message>
+  <message id="ecaa-already-frf">এটি যে সমস্ত স্পেকট্রায় প্রযোজ্য হবে সেগুলি ইতিমধ্যে সম্পূর্ণ পরিসর ভগ্নাংশ।</message>
+  <message id="ecaa-multiple-cal-types">নির্বাচিত উৎস স্পেকট্রার একাধিক ক্যালিব্রেশন টাইপ রয়েছে; "পরিবর্তন প্রয়োগ করুন" মানদণ্ড সীমাবদ্ধ করার চেষ্টা করুন।</message>
+  <message id="ecaa-changes-applied-to">পরিবর্তনগুলি এতে প্রযোজ্য হবে: {1}</message>
+  <message id="ecaa-terms-lost">চতুর্থ পদের পরের পদগুলি হারিয়ে যাবে কারণ কোনো অনুরূপ পদ নেই।</message>
+  <message id="ecaa-no-info-lost">আপনি চালিয়ে গেলে কোনো তথ্য হারিয়ে যাবে না।</message>
+  <message id="ecaa-conversion-question">আপনি রূপান্তরটি কীভাবে সম্পাদন করতে চান?</message>
+
+  <!-- Tool-specific messages -->
+  <message id="ecaa-for-n-channel-spectra">{1} চ্যানেল স্পেকট্রার জন্য:</message>
+  <message id="ecaa-lower-energy">নিম্ন শক্তি</message>
+  <message id="ecaa-upper-energy">উচ্চ শক্তি</message>
+  <message id="ecaa-num-channels">চ্যানেল সংখ্যা</message>
+  <message id="ecaa-no-undo-note">এই ক্রিয়াটি পূর্বাবস্থায় ফিরিয়ে আনা যাবে না।</message>
+  <message id="ecaa-combine-channels-desc">এটি পরবর্তী ক্রমিক চ্যানেলগুলি একসাথে মিলিত করবে</message>
+  <message id="ecaa-num-channels-to-combine">মিলিত করার জন্য চ্যানেল সংখ্যা:</message>
+  <message id="ecaa-first-channel-to-keep">রাখার জন্য প্রথম চ্যানেল</message>
+  <message id="ecaa-last-channel-to-keep">রাখার জন্য শেষ চ্যানেল</message>
+  <message id="ecaa-keep-overflow">ওভারফ্লো কাউন্ট রাখুন</message>
+  <message id="ecaa-tt-keep-overflow">নির্বাচিত থাকলে, বর্জিত চ্যানেলগুলি থেকে সমস্ত কাউন্ট নতুন প্রথম বা শেষ চ্যানেলে যোগ করা হবে।</message>
+  <message id="ecaa-first-channel-note">মনে রাখবেন যে প্রথম চ্যানেল হল চ্যানেল 0।</message>
+
+  <!-- ConvertCalTypeTool radio button options -->
+  <message id="ecaa-linearize-rebin-counts">রৈখিক করুন, নতুন প্রস্থের সাথে মেলাতে কাউন্ট রিবিন করুন</message>
+  <message id="ecaa-linearize-same-counts">রৈখিক করুন, চ্যানেলে কাউন্ট একই রেখে</message>
+  <message id="ecaa-fit-quadratic">চ্যানেল শক্তিগুলি দ্বিঘাত সমীকরণে ফিট করুন।</message>
+  <message id="ecaa-fit-cubic">চ্যানেল শক্তিগুলি ঘন সমীকরণে ফিট করুন।</message>
+
+  <!-- ConvertCalTypeTool tooltips -->
+  <message id="ecaa-tt-linearize-rebin">ফলস্বরূপ স্পেকট্রায় চ্যানেলগুলির সবার একই প্রস্থ থাকবে, কিন্তু প্রতিটি চ্যানেলে কাউন্ট পূর্ণসংখ্যা হবে না; এই বিকল্পটি বর্ণালী আকৃতি (প্রতি keV কাউন্ট) সংরক্ষণ করে।</message>
+  <message id="ecaa-tt-linearize-same">চ্যানেল শক্তিগুলি পুনরায় বরাদ্দ করা হবে যাতে প্রতিটি চ্যানেলের একই প্রস্থ থাকে, চ্যানেলের মূল প্রস্থ বিবেচনা না করে; অর্থাৎ, প্রতিটি চ্যানেলে কাউন্ট একই থাকবে, কিন্তু বর্ণালী আকৃতি (প্রতি keV কাউন্ট) পরিবর্তিত হবে।</message>
+</messages>

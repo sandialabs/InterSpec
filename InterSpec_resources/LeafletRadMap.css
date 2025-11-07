@@ -1,4 +1,7 @@
 
+div.LeafletRadMapWidget {
+}
+
 div.LeafletRadMap{
   display: grid;
   grid-template-columns: 1fr min-content;
@@ -172,4 +175,34 @@ we could do something like below, as well as specifying the border
   padding-right: 5px;
   background-color: #fff;
   color: #000 !important;
+}
+
+
+div.LeafletRadMapWidget .EnergyRangeRow {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 20px;
+  padding-top: 8px;
+  padding-bottom: 3px;
+  padding-left: 10px;
+}
+
+
+div.LeafletRadMapWidget .EnergyRangeRow .EnergyRangeGrp {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 5px;
+}
+
+
+.LeafletRadMapWidget .EnergyRangeRow .EnergyFilterSpacer {
+  flex: 1;
+}
+
+.LeafletRadMapWidget .EnergyRangeRow .EnergyFilterHelp {
+  
 }

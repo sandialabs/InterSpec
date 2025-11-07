@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- hw- is short for HelpWindow
+  -->
+  <message id="hw-welcome-link">স্বাগতম...</message>
+  <message id="hw-tutorials-link">টিউটোরিয়াল এবং ব্যবহারের ইঙ্গিত</message>
+  <message id="hw-err-opening-xml">সাহায্য পৃষ্ঠা পাওয়া যায়নি</message>
+  <message id="hw-err-opening-json">'{1}'-এ সাহায্য JSON ফাইল খুলতে পারেনি।</message>
+  <message id="hw-search-empty-text">অনুসন্ধান</message>
+</messages>

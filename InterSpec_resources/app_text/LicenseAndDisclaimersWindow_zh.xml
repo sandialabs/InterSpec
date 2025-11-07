@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">免责声明</message>
+  <message id="ladw-mi-credits">致谢</message>
+  <message id="ladw-mi-contact">联系</message>
+  <message id="ladw-mi-license">许可</message>
+  <message id="ladw-mi-data">数据</message>
+  <message id="ladw-data-location-user">
+    用户数据存储在
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    InterSpec附带的数据（如核衰变信息、截面和类似信息）存储在
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">在资源管理器中打开</message>
+  <message id="ladw-show-data-location-macOS">在Finder中打开</message>
+  <message id="ladw-show-data-location-win">显示</message>
+  <message id="ladw-data-location-network">
+    您还可以从浏览器使用InterSpec（重新启动InterSpec时端口号会改变）：
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      您已积极使用InterSpec约{1}，自{4}以来在{3}个会话中打开了{2}个文件。
+  </message>
+  <message id="ladw-external-none">InterSpec不会向您的设备外部发送或接收数据。</message>
+  <message id="ladw-external-only-remote-rid">InterSpec不会向您的设备外部发送或接收数据，除非使用外部RID功能。</message>
+  <message id="ladw-external-only-map">InterSpec不会向您的设备外部发送或接收数据，除非使用地图功能。</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec不会向您的设备外部发送或接收数据，除非使用地图或外部RID功能。</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpec在本地存储首选项、您加载的谱、保存的应用状态和使用统计信息。
+    此信息不会离开您的设备，可以通过删除上面显示的用户数据目录来删除。
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    使用Google地图功能时，谱文件位置信息会发送给Google以接收相关位置的地图。
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    使用地图工具时，从<a href="https://arcgis.com">https://arcgis.com</a>
+    请求包含辐射测量GPS坐标区域的地图瓦片，但在地图上标记/显示辐射数据是在您的设备上完成的。
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    对于外部RID工具，请查阅隐私政策
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    对于外部RID工具，请查阅您输入的URL的隐私政策。
+  </message>
+</messages>
+

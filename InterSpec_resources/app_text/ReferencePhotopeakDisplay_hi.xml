@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rpd- is short for ReferencePhotopeakDisplay -->
+  <message id="rpd-add-another-btn">एक और जोड़ें</message>
+  <message id="rpd-add-another-btn-narrow">जोड़ें</message>
+  <message id="rpd-tt-add-another-btn">वर्तमान में प्रदर्शित रेखाओं को रखें और प्रदर्शित करने के लिए नया न्यूक्लाइड/स्रोत जोड़ें।</message>
+  <message id="rpd-tt-nuc-edit">उदा. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (केवल x-rays), <b>Uranium</b> (x-rays), <b>U-235m</b> (मेटा स्थिर अवस्था), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, आदि।</message>
+  <message id="rpd-tt-age">
+    <div>
+      आयु को समय इकाइयों के संयोजन का उपयोग करके निर्दिष्ट किया जा सकता है, '<b>5.3y 8d 22m</b>' या आधे जीवन में '<b>2.5 HL</b>' जैसे।
+    </div>
+    <div>
+      स्वीकार्य समय इकाइयाँ: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, या
+      आप <b>hh:mm:ss</b> द्वारा समय अवधि निर्दिष्ट कर सकते हैं। आधा जीवन इकाइयों को
+      <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, या <b>half life</b> का उपयोग करके निर्दिष्ट किया जा सकता है।
+    </div>
+    <div>
+      आधा जीवन इकाइयों या समय अवधियों को अन्य इकाइयों के साथ मिश्रित नहीं किया जा सकता। जब एकाधिक समय अवधियाँ
+      निर्दिष्ट की जाती हैं, तो उन्हें जोड़ा जाता है, जैसे '1y6months 3m' को 18 महीने और 3 मिनट के रूप में व्याख्या किया जाता है।
+    </div>
+  </message>
+  <message id="rpd-tt-clear">सभी संग्रहीत रेखाओं के साथ-साथ वर्तमान गैर-संग्रहीत रेखाओं को साफ़ करता है।</message>
+  <message id="rpd-more-info">अधिक जानकारी</message>
+  <message id="rpd-shield-mat">परिरक्षण सामग्री</message>
+  <message id="rpd-options">विकल्प</message>
+  <message id="rpd-opt-prompt">केवल त्वरित</message>
+  <message id="rpd-opt-tt-prompt">
+    केवल मूल न्यूक्लाइड से गामा, और वंशजों से तब तक जब तक उनमें से किसी एक का
+    आधा जीवन मूल न्यूक्लाइड से लंबा न हो जाए; क्षय श्रृंखला उस बिंदु तक संतुलन में है।
+  </message>
+  <message id="rpd-opt-gamma">गामा दिखाएं</message>
+  <message id="rpd-opt-xray">X-rays दिखाएं</message>
+  <message id="rpd-opt-alphas">अल्फा दिखाएं</message>
+  <message id="rpd-opt-betas">बीटा दिखाएं</message>
+  <message id="rpd-opt-cascade">कैस्केड योग</message>
+  <message id="rpd-opt-escapes">एस्केप शिखर</message>
+  <message id="rpd-prev-nucs">पिछला न्यूक्लाइड</message>
+  <message id="rpd-det-nucs">डिटेक्टर RID न्यूक्लाइड</message>
+  <message id="rpd-assoc-nucs">संबद्ध न्यूक्लाइड</message>
+  <message id="rpd-suggestions">सुझाव</message>
+  <message id="rpd-feature-markers">फ़ीचर मार्कर</message>
+
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">संकीर्ण रेखाएं</message>
+  <message id="rpd-line-thick-normal">मानक मोटाई</message>
+  <message id="rpd-line-thick-thick">मोटी रेखाएं</message>
+  <message id="rpd-line-thick-thicker">अधिक मोटी रेखाएं</message>
+
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">न्यूनतम रेखाएं</message>
+  <message id="rpd-line-verb-hover">मार्गदर्शक संदर्भ रेखा</message>
+  <message id="rpd-line-verb-major">पूर्ण प्रमुख रेखाएं</message>
+
+  <message id="rpd-csv-export-msg">'न्यूक्लाइड क्षय जानकारी' उपकरण CSV फ़ाइलों में न्यूक्लाइड, क्षय उत्पादों और क्षय जानकारी निर्यात करने के लिए अतिरिक्त क्षमताएं प्रदान करता है।</message>
+  <message id="rpd-changed-age">{1} के लिए आयु को '{2}' से '{3}' में अधिक उचित मूल्य में बदल दिया</message>
+  <message id="rpd-changed-age-fission">आयु को {1} में बदल दिया, मान्य होने के लिए।</message>
+  <message id="rpd-det-id">डिटेक्टर ID</message>
+  <message id="rpd-ext-rid">बाहरी RID</message>
+  <message id="rpd-prev">पिछला</message>
+  <message id="rpd-warn-cascade-xrays">x-rays कैस्केड में शामिल नहीं हैं</message>
+
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">e.c.</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">प्रोटॉन</message>
+  <message id="rpd-tbl-spont-fis">s.f.</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">xray</message>
+  <message id="rpd-tbl-reaction">प्रतिक्रिया</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">कैस्केड योग</message>
+
+  <message id="rpd-tbl-hdr-energy">ऊर्जा (keV)</message>
+  <message id="rpd-tbl-hdr-br">B.R.</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">जनक</message>
+  <message id="rpd-tbl-hdr-mode">मोड</message>
+  <message id="rpd-tbl-hdr-particle">कण</message>
+  <message id="rpd-tbl-hdr-tt-energy">उत्पादित कण की ऊर्जा</message>
+  <message id="rpd-tbl-hdr-tt-br">जनक न्यूक्लाइड के प्रति Bq, प्रति सेकंड कण की संख्या।</message>
+  <message id="rpd-tbl-hdr-tt-trans">वास्तविक न्यूक्लाइड जो इस कण को देने के लिए क्षय हुआ।</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">जनक न्यूक्लाइड का क्षय मोड, जिसने यह कण उत्पादित किया।</message>
+  <message id="rpd-tbl-hdr-tt-type">उत्पादित कण का प्रकार</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
+
+
+</messages>

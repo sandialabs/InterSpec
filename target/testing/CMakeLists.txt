@@ -176,6 +176,50 @@ add_test( NAME TSimpleActivityCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_BersteinPolynomial test_BersteinPolynomial.cpp )
+target_link_libraries( test_BersteinPolynomial PRIVATE InterSpecLib )
+add_test( NAME TBersteinPolynomial
+  COMMAND $<TARGET_FILE:test_BersteinPolynomial> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_MakeDrfFit test_MakeDrfFit.cpp )
+target_link_libraries( test_MakeDrfFit PRIVATE InterSpecLib )
+add_test( NAME TMakeDrfFit
+  COMMAND $<TARGET_FILE:test_MakeDrfFit> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_EnergyCal test_EnergyCal.cpp )
+target_link_libraries( test_EnergyCal PRIVATE InterSpecLib )
+add_test( NAME TEnergyCal
+  COMMAND $<TARGET_FILE:test_EnergyCal> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_PeakModel test_PeakModel.cpp )
+target_link_libraries( test_PeakModel PRIVATE InterSpecLib )
+add_test( NAME TPeakModel
+  COMMAND $<TARGET_FILE:test_PeakModel> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+if( USE_LLM_INTERFACE )
+  add_executable( test_LlmToolRegistry test_LlmToolRegistry.cpp )
+  target_link_libraries( test_LlmToolRegistry PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmToolRegistry
+    COMMAND $<TARGET_FILE:test_LlmToolRegistry> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_AnalystChecks test_AnalystChecks.cpp )
+  target_link_libraries( test_AnalystChecks PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TAnalystChecks
+    COMMAND $<TARGET_FILE:test_AnalystChecks> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+endif( USE_LLM_INTERFACE )
+
 
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 

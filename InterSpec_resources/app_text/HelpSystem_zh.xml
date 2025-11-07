@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- hw- is short for HelpWindow
+  -->
+  <message id="hw-welcome-link">欢迎...</message>
+  <message id="hw-tutorials-link">教程和使用提示</message>
+  <message id="hw-err-opening-xml">未找到帮助页面</message>
+  <message id="hw-err-opening-json">无法在'{1}'打开帮助JSON文件。</message>
+  <message id="hw-search-empty-text">搜索</message>
+</messages>
+

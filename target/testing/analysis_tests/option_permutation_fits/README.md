@@ -1,0 +1,2 @@
+The files in this directory do not include "truth" values, but rather effective values that should be fit.
+The primary purpose of all these tests is to excersize the different option of act/shield fitting, and keep regressions from popping up.

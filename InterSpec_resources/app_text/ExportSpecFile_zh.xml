@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+  
+  <!-- Window title -->
+  <message id="esf-window-title">谱文件导出</message>
+  
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">要导出的文件</message>
+  <message id="esf-file-format">文件格式</message>
+  <message id="esf-samples-to-include">要包括的样本</message>
+  
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">文件</message>
+  <message id="esf-format-tab">格式</message>
+  <message id="esf-options-tab">选项</message>
+  
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + 本底</message>
+  <message id="esf-plus-secondary"> + 次要</message>
+  <message id="esf-fore-plus-back-tt">将前景和本底和/或次要谱一起导出到同一文件中。</message>
+  
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">显示前景</message>
+  <message id="esf-disp-background">显示本底</message>
+  <message id="esf-disp-secondary">显示次要</message>
+  <message id="esf-all-samples">所有样本</message>
+  <message id="esf-custom-samples">自定义样本</message>
+  <message id="esf-custom-samples-tt">在此处输入您想显示的样本编号。您可以输入类似'33-39'或'33 to 39'的样本编号范围，或类似'34,39,84'的CSV样本编号</message>
+  <message id="esf-filter-detectors">过滤探测器</message>
+  
+  <!-- Options section -->
+  <message id="esf-options">选项</message>
+  <message id="esf-sum-to-single-record">求和为单个记录</message>
+  <message id="esf-sum-to-single-record-tt">所有选定的样本和/或探测器将被求和到单个谱中。<br />注意：如果您同时选择了前景和本底，它们将被求和在一起。</message>
+  
+  <message id="esf-sum-fore-to-single-record">将前景求和为单个记录</message>
+  <message id="esf-sum-fore-to-single-record-tt">有多个样本编号或多个探测器构成显示的前景；选中此选项将把所有这些求和为输出文件中的单个谱。</message>
+  
+  <message id="esf-sum-back-to-single-record">将本底求和为单个记录</message>
+  <message id="esf-sum-back-to-single-record-tt">有多个样本编号或多个探测器构成显示的本底；选中此选项将把所有这些求和为输出文件中的单个谱。</message>
+  
+  <message id="esf-sum-sec-to-single-record">将次要求和为单个记录</message>
+  
+  <message id="esf-background-subtract">本底减除</message>
+  <message id="esf-background-subtract-tt">输出谱将是前景减去本底。</message>
+  
+  <message id="esf-sum-det-per-sample">每样本求和探测器</message>
+  <message id="esf-sum-det-per-sample-tt">对于每个样本编号，将该样本编号的所有探测器求和在一起。<br />例如，如果您的谱文件中有8个探测器，每个探测器有120个样本，则结果将有120个谱，每个谱是相应样本的8个探测器的总和。</message>
+  
+  <message id="esf-sum-samples-per-det">每探测器求和样本</message>
+  <message id="esf-sum-samples-per-det-tt">对于每个探测器，将所有样本编号求和在一起。<br />例如，如果您的谱文件中有8个探测器，每个探测器有120个样本，则结果将有8个谱，每个谱是其各自探测器的120个样本的总和。</message>
+  
+  <message id="esf-remove-interspec-info">删除InterSpec信息</message>
+  <message id="esf-remove-interspec-info-tt">删除您可能在InterSpec中添加的探测器响应、峰和其他分析结果。</message>
+  
+  <message id="esf-remove-gps">删除GPS</message>
+  
+  <!-- Status text -->
+  <message id="esf-not-applicable">不适用</message>
+  <message id="esf-none-available">无可用</message>
+  
+  <!-- Buttons -->
+  <message id="esf-export">导出</message>
+  <message id="esf-show-qr-code">显示QR码</message>
+  
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">显示为</message>
+  <message id="esf-fore-abbrev">前景</message>
+  <message id="esf-back-abbrev">本底</message>
+  <message id="esf-sec-abbrev">次要</message>
+  
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">下一个QR码</message>
+  <message id="esf-url-link">URL链接</message>
+  <message id="esf-email-link">电子邮件链接</message>
+  
+  <!-- Error dialogs -->
+  <message id="esf-error-title">错误</message>
+  <message id="esf-qr-encode-failed">将谱显示为QR码失败：{1}</message>
+  
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">显示&#160;样本</plural>
+    <plural case="1">显示&#160;样本</plural>
+  </message>
+  
+  <!-- Table headers -->
+  <message id="esf-start-time">开始时间</message>
+  <message id="esf-end-time">结束时间</message>
+  <message id="esf-first-sample">第一个样本</message>
+  <message id="esf-last-sample">最后一个样本</message>
+  <message id="esf-num-samples">样本数</message>
+  <message id="esf-neut-dets">中子探测器</message>
+  <message id="esf-gamma-dets">伽马探测器</message>
+  <message id="esf-num-dets">探测器数</message>
+  <message id="esf-latitude">纬度</message>
+  <message id="esf-longitude">经度</message>
+  <message id="esf-total-time">总时间</message>
+  <message id="esf-sum-gamma">伽马总计</message>
+  <message id="esf-sum-neut">中子总计</message>
+  <message id="esf-manufacturer">制造商</message>
+  <message id="esf-model">型号</message>
+  <message id="esf-serial">序列号</message>
+</messages>

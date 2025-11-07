@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagfp- is short for RelActAutoGuiFreePeak -->
+
+  <!-- Checkboxes -->
+  <message id="raagfp-constrain-fwhm">Restringir FWHM</message>
+  <message id="raagfp-true-energy">Energia Verdadeira</message>
+
+  <!-- Messages -->
+  <message id="raagfp-not-in-roi">Não em uma ROI.</message>
+
+  <!-- Tooltips -->
+  <message id="raagfp-constrain-fwhm-tt">Quando marcado, este pico será restringido à forma funcional FWHM a que picos gama e raio-x normalmente são restritos.&lt;br /&gt;Quando desmarcado, o FWHM para este pico será ajustado dos dados, independente de todas as outras larguras de pico.&lt;br /&gt;Desmarcar esta opção é útil para fotopicos de aniquilação e reação.</message>
+  <message id="raagfp-true-energy-tt">Marque esta opção se o pico é para um gama de energia conhecida.&lt;br /&gt;Desmarque esta opção se este pico é um pico observado no espectro com energia verdadeira desconhecida.</message>
+
+</messages>

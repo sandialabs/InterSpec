@@ -68,7 +68,7 @@ using namespace std;
 
 LicenseAndDisclaimersWindow::LicenseAndDisclaimersWindow( InterSpec *interspec )
 : AuxWindow( WString::tr("window-title-license-credit"),
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+            (AuxWindowProperties::IsModal
              | AuxWindowProperties::DisableCollapse
              | AuxWindowProperties::EnableResize
              | AuxWindowProperties::SetCloseable) ),
@@ -562,7 +562,7 @@ SideMenuItem *LicenseAndDisclaimersWindow::makeDataStorageItem()
   WWidget *w = deferCreate( f );
   w->addStyleClass( "UseInfoItem" );
   
-  SideMenuItem *item = new SideMenuItem( "Data", w );
+  SideMenuItem *item = new SideMenuItem( WString::tr("ladw-mi-data"), w );
   
   item->clicked().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );
   item->mouseWentDown().connect( boost::bind( &LicenseAndDisclaimersWindow::right_select_item, this, item) );

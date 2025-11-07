@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagn- is short for RelActAutoGuiNuclide -->
+  
+  <!-- Labels -->
+  <message id="raagn-nuclide">核素：</message>
+  <message id="raagn-age">年龄：</message>
+  <message id="raagn-min-age">最小年龄：</message>
+  <message id="raagn-max-age">最大年龄：</message>
+  
+  <!-- Constraint labels -->
+  <message id="raagn-select-constraint-type">选择约束类型。</message>
+  <message id="raagn-min">最小：</message>
+  <message id="raagn-max">最大：</message>
+  <message id="raagn-src">源：</message>
+  <message id="raagn-val">值：</message>
+  
+  <!-- Constraint types -->
+  <message id="raagn-constraint-none">无</message>
+  <message id="raagn-constraint-rel-act">相对活度</message>
+  <message id="raagn-constraint-act-ratio">活度比</message>
+  <message id="raagn-constraint-mass-frac">质量分数</message>
+  
+  <!-- Checkboxes -->
+  <message id="raagn-fit-age">拟合年龄</message>
+  
+  <!-- Buttons -->
+  <message id="raagn-add-constraint">添加约束</message>
+  
+  <!-- Tooltips -->
+  <message id="raagn-nuclide-tt">例如<b>U235</b>、<b>235 Uranium</b>、<b>U-235m</b>（亚稳态）、<b>Cs137</b>、Pb、Fe(n,n)等。</message>
+  <message id="raagn-remove-constraint-tt">删除此约束</message>
+  <message id="raagn-add-constraint-tt">向此核素添加约束</message>
+  
+  <!-- User messages -->
+  <message id="raagn-invalid-nuclide">{1}不是有效的核素、X射线或反应。</message>
+  <message id="raagn-stable-nuclide">{1}是稳定核素。</message>
+  
+</messages>
+

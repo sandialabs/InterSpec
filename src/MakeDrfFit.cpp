@@ -25,11 +25,6 @@
 
 #include <vector>
 
-#define BOOST_UBLAS_TYPE_CHECK 0
-#include <boost/numeric/ublas/lu.hpp>
-#include <boost/numeric/ublas/matrix.hpp>
-#include <boost/numeric/ublas/triangular.hpp>
-
 #include "Eigen/Dense"
 
 //Roots Minuit2 includes
@@ -617,21 +612,6 @@ double performResolutionFit( std::shared_ptr<const std::deque< std::shared_ptr<c
   return final_chi2;
 }//std::vector<float> performResolutionFit(...)
 
-
-template<class T>
-bool matrix_invert( const boost::numeric::ublas::matrix<T>& input,
-                     boost::numeric::ublas::matrix<T> &inverse )
-{
-  using namespace boost::numeric;
-  ublas::matrix<T> A( input );
-  ublas::permutation_matrix<std::size_t> pm( A.size1() );
-  const size_t res = lu_factorize(A, pm);
-  if( res != 0 )
-    return false;
-  inverse.assign( ublas::identity_matrix<T>( A.size1() ) );
-  lu_substitute(A, pm, inverse);
-  return true;
-}//matrix_invert
   
   
 double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> > &peaks,
@@ -674,11 +654,10 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
   
   //General Linear Least Squares fit
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient.
-  using namespace boost::numeric;
+  //Implementation using Eigen SVD for numerical stability
   
-  ublas::matrix<double> A( nbin, num_fit_coefficients );
-  ublas::vector<double> b( nbin );
+  Eigen::MatrixX<double> A( nbin, num_fit_coefficients );
+  Eigen::VectorX<double> b( nbin );
   
   
   for( size_t row = 0; row < nbin; ++row )
@@ -714,22 +693,24 @@ double fit_sqrt_poly_fwhm_lls( const std::deque< std::shared_ptr<const PeakDef> 
     }
   }//for( int col = 0; col < num_fit_coefficients; ++col )
   
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "fit_sqrt_poly_fwhm_lls(...): trouble inverting matrix" );
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
   
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  const Eigen::MatrixX<double> A_transpose = A.transpose();
+  const Eigen::MatrixX<double> alpha = A_transpose * A;
+  const Eigen::MatrixX<double> C = alpha.inverse();
   
   coeffs.resize( num_fit_coefficients );
   coeff_uncerts.resize( num_fit_coefficients );
   for( int coef = 0; coef < num_fit_coefficients; ++coef )
   {
     coeffs[coef] = static_cast<float>( a(coef) );
-    coeff_uncerts[coef] = static_cast<float>( C(coef,coef) );
+    coeff_uncerts[coef] = static_cast<float>( std::sqrt( C(coef,coef) ) );
   }//for( int coef = 0; coef < num_fit_coefficients; ++coef )
   
   double chi2 = 0;
@@ -797,12 +778,11 @@ double fit_constant_plus_sqrt_fwhm_lls( const std::deque< std::shared_ptr<const 
   
   //General Linear Least Squares fit
   //Using variable names of section 15.4 of Numerical Recipes, 3rd edition
-  //Implementation is quite inneficient.
-  using namespace boost::numeric;
+  //Implementation using Eigen SVD for numerical stability
   
   const size_t num_fit_coefficients = 2;
-  ublas::matrix<double> A( nbin, num_fit_coefficients );
-  ublas::vector<double> b( nbin );
+  Eigen::MatrixX<double> A( nbin, num_fit_coefficients );
+  Eigen::VectorX<double> b( nbin );
   
   
   for( size_t row = 0; row < nbin; ++row )
@@ -816,22 +796,24 @@ double fit_constant_plus_sqrt_fwhm_lls( const std::deque< std::shared_ptr<const 
     A(row,1) = std::sqrt( x[row] ) / data_y_uncert;
   }//for( int col = 0; col < num_fit_coefficients; ++col )
   
-  const ublas::matrix<double> A_transpose = ublas::trans( A );
-  const ublas::matrix<double> alpha = prod( A_transpose, A );
-  ublas::matrix<double> C( alpha.size1(), alpha.size2() );
-  const bool success = matrix_invert( alpha, C );
-  if( !success )
-    throw runtime_error( "fit_constant_plus_sqrt_fwhm_lls(...): trouble inverting matrix" );
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
   
-  const ublas::vector<double> beta = prod( A_transpose, b );
-  const ublas::vector<double> a = prod( C, beta );
+  const Eigen::VectorXd a = svd.solve(b);
+  
+  const Eigen::MatrixX<double> A_transpose = A.transpose();
+  const Eigen::MatrixX<double> alpha = A_transpose * A;
+  const Eigen::MatrixX<double> C = alpha.inverse();
   
   coeffs.resize( num_fit_coefficients );
   coeff_uncerts.resize( num_fit_coefficients );
   for( int coef = 0; coef < num_fit_coefficients; ++coef )
   {
     coeffs[coef] = static_cast<float>( a(coef) );
-    coeff_uncerts[coef] = static_cast<float>( C(coef,coef) );
+    coeff_uncerts[coef] = static_cast<float>( std::sqrt( C(coef,coef) ) );
   }//for( int coef = 0; coef < num_fit_coefficients; ++coef )
   
   double chi2 = 0;

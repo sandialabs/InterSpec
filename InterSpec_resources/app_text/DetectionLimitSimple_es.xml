@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dls- is short for DetectionLimitSimple
+  -->
+  <message id="dls-fit-fwhm-btn">Ajustar FWHM...</message>
+  <message id="dls-select-drf-btn">Seleccionar detector...</message>
+  <message id="dls-further-details-link">más detalles...</message>
+  <message id="dls-conf-level-label">Nivel de confianza:</message>
+  <message id="dls-roi-lower-label">ROI inferior:</message>
+  <message id="dls-roi-upper-label">ROI superior:</message>
+  <message id="dls-num-side-channel-label">Núm. canales lat.:</message>
+  <message id="dls-fwhm-label">FWHM:</message>
+  <message id="dls-decon-cont-norm-label">Norm. cont.:</message>
+  <message id="dls-is-background-spectrum-cb">Espectro de fondo</message>
+  <message id="dls-is-background-spectrum-tt">
+    Marcar esta opción afirma que no hay señal presente en este espectro.
+    <p>
+      La región del pico misma se usará para estimar el fondo esperado.
+      La opción de elegir canales laterales adyacentes a la región del pico ya no es relevante, así que se ocultará.
+    </p>
+  </message>
+  <message id="dls-cont-norm-unknown">Flotante</message>
+  <message id="dls-cont-norm-not-present">Como sin señal</message>
+  <message id="dls-cont-norm-fixed-by-sides">De los lados</message>
+  <message id="dls-roi-changed-no-gamma">Cambiar la ROI excluyó el gamma primario - no se cambia</message>
+  <message id="dls-suggest-fwhm">FWHM del detector: {1} keV</message>
+  <message id="dls-rough-est-fwhm">Est. aprox. FWHM: {1} keV</message>
+  <message id="dls-calc-method">Método calc.:</message>
+  <message id="dls-currie-tab-title">Currie</message>
+  <message id="dls-decon-tab-title">Deconvolución</message>
+  <message id="dls-err-no-input">No se ingresó entrada - por favor ingrese nucleído, seleccione energía gamma e ingrese distancia.</message>
+  <message id="dls-err-calculating">Error calculando respuesta: {1}</message>
+  <message id="dls-currie-desc">El método Currie compara cuentas brutas con predicción de canales circundantes</message>
+  <message id="dls-decon-desc">La deconvolución considera la forma del pico y distribución de datos</message>
+  <message id="dls-qr-tool-state-title">Estado de herramienta MDA simple</message>
+  <message id="dls-qr-tool-state-txt">Estado actual de la herramienta MDA simple.</message>
+
+  <message id="dls-det-act-with-range">Detectado: {1}, rango [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-no-result">Lo siento, sin resultado</message>
+  <message id="dls-det-counts-with-range">Cuentas exceso: {1}, rango [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-act-less-zero">Actividad &lt; 0 {1} (se observaron significativamente menos cuentas de las esperadas).</message>
+  <message id="dls-det-counts-less-zero">Cuentas exceso &lt; 0 {2} (se observaron significativamente menos cuentas de las esperadas).</message>
+  <message id="dls-det-upper-bound">Menos de {1} presente @{2} CL.</message>
+  <message id="dls-min-detectable-act">Actividad mínima detectable confiablemente: {1}.</message>
+  <message id="dls-min-detectable-counts">Cuentas exceso mínimas detectables confiablemente: {1}</message>
+  <message id="dls-error-computing-results">Error calculando resultado</message>
+  <message id="dls-chart-title-estimated-counts">Cuentas estimadas de {1}.</message>
+  <message id="dls-results-txt-estimated-counts">
+    Cuentas detectadas de {1}.
+    <br/>
+    Rango: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-estimated-act">Actividad estimada de {1}.</message>
+  <message id="dls-results-txt-estimated-act">
+    Actividad detectada de {1}.
+    <br/>
+    Rango: [{2}, {3}] @{4} CL
+  </message>
+  <message id="dls-chart-title-upper-bound-act">Pico para límite superior de {1} @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-act">Menos de {1} @{2} CL</message>
+  <message id="dls-chart-title-upper-bound-counts">Pico para límite superior de {1} cuentas @{2} CL</message>
+  <message id="dls-results-txt-upper-bound-counts">Menos de {1} cuentas de señal presentes @{2} CL</message>
+  <message id="dls-err-no-meas">Sin medición disponible</message>
+  
+  <message id="dls-Info">Info</message>
+  <message id="dls-assumed-br=1">(la actividad asume BR=1.0)</message>
+  <message id="dls-Limit">Límite</message>
+  <message id="dls-continuum-area">Área cont.</message>
+  <message id="dls-DOF" remark="Degrees of freedom abbreviation">GDL</message>
+  <message id="dls-Upper">Superior</message>
+  <message id="dls-Lower">Inferior</message>
+  <message id="dls-Best">Mejor</message>
+  <message id="dls-ROI-range-label">Rango ROI (keV)</message>
+  <message id="dls-ROI-Channels-label">Canales ROI</message>
+  <message id="dls-ROI-Width">Ancho ROI</message>
+  <message id="dls-det-intrinsic-eff">Ef. intrínseca det.</message>
+  <message id="dls-solid-angle-frac">Frac. ángulo sólido</message>
+  <message id="dls-air-trans">Transmisión aire</message>
+  <message id="dls-gamma-intensity">Intensidad gamma</message>
+  <message id="dls-err-more-info-title">Error calculando límite...</message>
+  <message id="dls-err-more-info-content">Error calculando información de límite: {1}</message>
+  <message id="dls-err-select-det">Por favor seleccione una función de eficiencia del detector.</message>
+  <message id="dls-err-neg-distance">La distancia no puede ser negativa.</message>
+  <message id="dls-err-no-fwhm-info">La función de eficiencia del detector no tiene información FWHM - por favor ajuste para FWHM, o cambie detector.</message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+  <message id="dls-"></message>
+</messages>
+
+

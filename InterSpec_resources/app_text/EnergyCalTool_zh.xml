@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ect- is short for EnergyCalTool -->
+  <message id="ect-no-spec">未加载谱</message>
+  <message id="ect-more-act">更多操作</message>
+  <message id="ect-linearize">线性化...</message>
+  <message id="ect-tt-linearize">线性化谱，使每个能量道具有相同的宽度。</message>
+  <message id="ect-truncate">截断能量...</message>
+  <message id="ect-tt-truncate">通过丢弃数据道来截断谱的能量范围。</message>
+  <message id="ect-combine">合并道...</message>
+  <message id="ect-tt-combine">将能量道合并在一起，使谱具有更少的数据道</message>
+  <message id="ect-to-frf">转为FRF...</message>
+  <message id="ect-tt-to-frf">将能量刻度类型转换为全范围分数</message>
+  <message id="ect-to-poly">转为多项式...</message>
+  <message id="ect-tt-to-poly">将能量刻度类型转换为多项式。</message>
+  <message id="ect-multi-file">多文件刻度...</message>
+  <message id="ect-tt-multi-file">
+    允许使用来自一个或多个谱文件的带有拟合峰的多个谱
+    来执行能量刻度。对于
+    每个谱有不同测试源的低分辨率探测器特别有用
+  </message>
+  <message id="ect-tt-CALp">下载包含当前能量刻度的.CALp文件。
+    您以后可以将此文件拖放回InterSpec以重新使用此能量刻度。
+    如果您经常使用来自需要
+    一致调整刻度的探测器的数据，这特别有用。
+  </message>
+  <message id="ect-export-CALp-msg">您以后可以通过将CALp文件拖放到InterSpec上，将此CALp文件应用于不同的谱。</message>
+  <message id="ect-fit-coeff-btn">拟合系数</message>
+  <message id="ect-tt-fit-coeff-btn">
+    使用与拟合峰相关联的光峰的预期能量来拟合能量系数。
+    如果未选择要拟合的系数，或者选择的峰少于系数，则此按钮被禁用。
+  </message>
+  <message id="ect-apply-changes-to">应用更改到</message>
+  <message id="ect-disp-dets">显示的探测器</message>
+  <message id="ect-all-dets">所有探测器</message>
+  <message id="ect-disp-samples">显示的样本</message>
+  <message id="ect-all-samples">所有样本</message>
+  <message id="ect-calib-coeffs">刻度系数</message>
+  <message id="ect-cal-peaks">刻度峰</message>
+  <message id="ect-CALp-no-meas">{1}未显示测量</message>
+  <message id="ect-CALp-not-applic-det">刻度更改不适用于{1}的任何探测器</message>
+  <message id="ect-CALp-not-applic-sample">刻度更改不适用于{1}的任何样本</message>
+  <message id="ect-CALp-invalid-input">输入能量刻度无效</message>
+  <message id="ect-CALp-num-channel-mismatch">新刻度道数（{1}）与旧刻度（{2}）不匹配。</message>
+  <message id="ect-CALp-missing-det">CALp文件缺少探测器的刻度：{1}。{2}</message>
+  <message id="ect-CALp-extra-det">  存在不存在的探测器的额外刻度：{1}。</message>
+  <message id="ect-CALp-named-vs-unamed">CALp文件中的所有刻度都指定了探测器名称，但当前谱探测器未命名。</message>
+  <message id="ect-CALp-no-cal-for-det">"探测器'{1}'无可用刻度"</message>
+  <message id="ect-CALp-no-prev-for-det">无法确定用于探测器'{1}'的先前刻度。</message>
+  <message id="ect-CALp-nchannel-mismatch-det">探测器'{3}'的新刻度道数（{1}）与旧刻度（{2}）不匹配。</message>
+  <message id="ect-import-CALp">导入CALp文件</message>
+  <message id="ect-select-CALp"><p>选择要使用的CALp文件</p></message>
+  <message id="ect-upload-CALp-to-large">文件太大无法上传</message>
+  <message id="ect-invalid-CALp">不是有效的CALp文件</message>
+  <message id="ect-CALp-drag-n-drop-note"><p style="font-size: small;">注意：您还可以将CALp文件拖放到InterSpec上<br /></p></message>
+  <message id="ect-change-made-invalid">刻度更改使能量刻度变为无效{1}。错误：{2}</message>
+  <message id="ect-for-the-fore">对于前景</message>
+  <message id="ect-for-the-back">对于本底</message>
+  <message id="ect-for-the-sec">对于次要谱</message>
+  <message id="ect-set-cal-invalid-nchan">样本{1}，探测器'{2}'有{3}道，但正在设置的刻度有{4}道。</message>
+  <message id="ect-error-setting-cal">设置新能量刻度时出错：{1}</message>
+  <message id="ect-add-dev-pair-made-invalid">添加偏差对使能量刻度变为无效{1}。错误：{2}</message>
+  <message id="ect-unexpected-error-prev-coefs">检索先前刻度系数时出现意外错误 - 不应用更改</message>
+  <message id="ect-changed-cal-not-selected">看起来您更改的能量刻度未标记为应用更改；请更正。</message>
+  <message id="ect-dev-pair-change-invalid">更改偏差对使能量刻度变为无效。错误：{1}</message>
+  <message id="ect-set-dev-pair-err">为此探测器设置偏差对时出错。</message>
+  <message id="ect-dev-applied-dets-samples">偏差对仅应用于'{1}'探测器，但应用于所有样本编号{2}。</message>
+  <message id="ect-dev-applied-to-samples">偏差对应用于所有样本编号{1}。</message>
+  <message id="ect-of-the-fore">的前景。</message>
+  <message id="ect-of-the-sec">的次要。</message>
+  <message id="ect-of-the-back">的本底。</message>
+  <message id="ect-err-not-enough-peaks">现在无法拟合刻度系数。您必须选择至少与您选择要拟合的系数一样多的峰进行拟合。</message>
+  <message id="ect-no-peaks">无可用峰。</message>
+  <message id="ect-select-cal-of-disp-det">请选择显示的探测器的刻度</message>
+  <message id="ect-not-enough-channel">数据中的道不足。</message>
+  <message id="ect-no-coeff-selected">您必须至少选择一个系数进行拟合。</message>
+  <message id="ect-fail-min">ErrorMsg 使用矩阵和迭代方法拟合能量刻度失败</message>
+  <message id="ect-fit-successful">能量刻度已从拟合中更新。</message>
+  <message id="ect-fail-fit">通过拟合峰均值进行刻度失败。{1}</message>
+  <message id="ect-del-graphical-msg">如果您通过在谱的另一部分上ALT+CTRL+拖动再次重新刻度，您将可以选择保留此刻度的效果。</message>
+  <message id="ect-lc-disp-dets">显示的探测器</message>
+  <message id="ect-lc-all-dets">所有探测器</message>
+  <message id="ect-lc-all-samples">所有样本</message>
+  <message id="ect-lc-disp-samples">显示的样本</message>
+  <message id="ect-short-fore">前景</message>
+  <message id="ect-short-back">本底</message>
+  <message id="ect-short-secondary">次要</message>
+  
+  <message id="ect-offset-label">偏移</message>
+  <message id="ect-linear-label">线性</message>
+  <message id="ect-quad-label">二次</message>
+  <message id="ect-cubic-label">三次</message>
+  <message id="ect-nth-label">{1}阶</message>
+  
+  <!-- Energy calibration types -->
+  <message id="ect-cal-type-lower-channel">通道下限能量</message>
+  <message id="ect-cal-type-not-defined">未定义</message>
+  <message id="ect-cal-type-polynomial">多项式</message>
+  <message id="ect-cal-type-default-poly">默认多项式</message>
+  <message id="ect-cal-type-frf">全范围分数</message>
+  <message id="ect-convert-to-poly-msg">请转换为多项式刻度以进行编辑</message>
+  <message id="ect-deviation-pairs">偏差对</message>
+</messages>
+

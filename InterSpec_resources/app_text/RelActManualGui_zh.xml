@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ramrr- short for RelActManualReportResource
+       mrend- short for ManRelEffNucDisp
+       ramg-  short for RelActManualGui
+  -->
+
+  <!-- Messages when creating HTML report -->
+  <message id="ramrr-no-solution-title">无相对活度解决方案可用</message>
+  <message id="ramrr-no-solution-text"></message>
+  <message id="ramrr-err-report">获取当前显示的谱文件时出错：{1}</message>
+  
+  <!-- Messages in the nuclide component of the GUI -->
+  <message id="mrend-spec-act">比活度</message>
+  <message id="mrend-X(a,n)">{1}上的阿尔法产生中子</message>
+  <message id="mrend-X(n,a)">{1}上的中子产生阿尔法</message>
+  <message id="mrend-X(a,p)">{1}上的阿尔法产生质子</message>
+  <message id="mrend-X(n,g)">{1}上的慢中子被捕获</message>
+  <message id="mrend-X(n,n)">{1}上的快中子非弹性散射</message>
+  <message id="mrend-X(a,a)">{1}上的非弹性阿尔法散射</message>
+  <message id="mrend-annih">湮没伽马</message>
+  <message id="mrend-unknown-rxctn">未知反应</message>
+  <message id="mrend-X(,)"></message>
+  <message id="mrend-cb-decay-during-meas">测量期间衰变</message>
+  <message id="mrend-tt-decay-during-meas">选中时，将考虑核素在测量期间的衰变，引用的相对活度为测量开始时的活度。</message>
+  
+  <!-- Message on the general GUI interface -->
+  <message id="ramg-eqn-form-label">方程形式</message>
+  <message id="ramg-options-label">选项</message>
+  <message id="ramg-tt-eqn-form">
+    用于相对效率曲线的功能形式。
+    <br />
+    选项有：
+    <table style="margin-left: 10px;">
+      <tr><th>Log(能量)：</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr>
+      <tr><th>Log(相对效率)：</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr>
+      <tr><th>Log(能量)Log(相对效率)：</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr>
+      <tr><th>FRAM经验：</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr>
+      <tr><th>FRAM物理：</th>             <th>
+        y = <span style="display: inline-block; vertical-align: middle;">
+              <span style="display: block; text-align: center;">
+               (1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))
+              </span>
+              <span style="display: block; border-top: 1px solid black; text-align: center;">
+                (AD<sub>0</sub>*μ<sub>0</sub>)
+              </span>
+            </span>
+             * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...]
+             * [探测器效率]
+             * [E<sup>b</sup> * C<sup>1/E</sup>]
+        </th></tr>
+    </table>
+  </message>
+  <message id="ramg-eqn-order-label">方程阶数</message>
+  <message id="ramg-tt-eqn-order">使用的相对效率方程的阶数（有多少个能量相关项）。</message>
+  <message id="ramg-phys-model-use-hoerl">使用校正函数</message>
+  <message id="ramg-tt-phys-model-use-hoerl">选中时，修改的Hoerl校正因子（即E<sup>b</sup> * C<sup>1/E</sup>）用于解释物理模型和/或探测器效率与观察数据之间的差异。</message>
+  <message id="ramg-yield-info-label">产额信息</message>
+  <message id="ramg-tt-data-src">伽马分支比的核数据源。</message>
+  <message id="ramg-match-tol-label">匹配容差</message>
+  <message id="ramg-tt-match-tol">
+    从峰均值开始，要包括作为峰面积贡献的源伽马的FWHM数量。
+    <br />
+    对于某些核素的某些光峰，能量接近的多个伽马可能有助于
+    产生检测到的峰面积。此匹配容差指定从
+    观察到的峰均值开始应求和多少FWHM的源伽马以确定要使用的分支比。
+    <br />
+    指定零值将导致仅使用分配给峰的伽马能量，
+    即使有非常接近的其他伽马。
+  </message>
+  <message id="ramg-add-uncert-label">附加不确定度</message>
+  <message id="ramg-tt-add-uncert">
+    为每个拟合光峰添加到相对效率线的附加不确定度。
+    <br />
+    一个或几个高统计峰的探测效率的小偏差可能会导致
+    效率曲线明显偏离其他点，如果仅使用统计不确定度；
+    当添加附加不确定度时，相对效率将更好地
+    明显地通过所有数据点，并从有限的测试中产生更准确的
+    结果。您可以将此视为向每个检测到的光峰添加系统不确定度，
+    峰之间不相关。从有限的测试来看，使用的值并不是非常
+    重要，只要有东西就可以。您还可以选择使用未加权拟合，
+    其中每个峰将平等地贡献拟合，无论其统计不确定度如何。
+  </message>
+  <message id="ramg-unweighted-label">未加权</message>
+  <message id="ramg-stat-only-label">仅统计</message>
+  <message id="ramg-back-sub-cb">本底减除</message>
+  <message id="ramg-html-export-label">HTML报告</message>
+  <message id="ramg-nucs-label">核素</message>
+  <message id="ramg-nucs-shield-label">屏蔽/核素</message>
+  <message id="ramg-peaks-to-use-label">要使用的峰</message>
+  <message id="ramg-results-label">结果</message>
+  <message id="ramg-mi-results">表格</message>
+  <message id="ramg-mi-chart">图表</message>
+  <message id="ramg-back-sub-neg">本底减除后，{1} keV处的峰具有负计数，因此未使用。</message>
+  <message id="ramg-warn-reaction">使用反应光峰可能无效，除非伽马是从单个对象均匀发射的。</message>
+  <message id="ramg-warn-no-bkg-sub-used">选择了本底峰减除，但没有本底峰与所选前景峰匹配。</message>
+  <message id="ramg-warn-rel-eff-u/pu-xray">相对效率曲线不考虑X射线吸收边 - 不建议使用120 keV以下的峰来解决U或Pu问题。</message>
+  <message id="ramg-warn-rel-eff-other-xray">相对效率曲线不考虑任何潜在屏蔽的X射线吸收边 - 请确保使用的峰不跨越任何屏蔽的吸收边。</message>
+  <message id="ramg-warn-match-outside-tol">{2} keV的分配伽马{1}在匹配容差之外，峰{1}为{3}；请注意，分配的伽马能量用于补偿附近的伽马，而不是拟合峰均值。</message>
+  <message id="ramg-warn-failed-match">无法将核素{1}与任何峰匹配：{2}</message>
+  <message id="ramg-err-setting-up-calc">设置相对效率计算时出错：{1}</message>
+  <message id="ramg-err-performing-calc">执行相对效率计算时出错：{1}</message>
+  <message id="ramg-no-results-available">无可用结果。</message>
+  <message id="ramg-result-error-msg">错误：{1}</message>
+  <message id="ramg-result-warn-msg">警告：{1}</message>
+  <message id="ramg-and-there-were">并且有</message>
+  <message id="ramg-dof">DOF</message> <!-- Degrees of freedom -->
+  <message id="ramg-fit-unweighted-txt">拟合未加权；不确定度可能没有意义。</message>
+  <message id="ramg-fit-stat-only">不确定度仅为统计。</message>
+  <message id="ramg-fit-uncert-increased">不确定度由"附加不确定度"人为增加。</message>
+  <message id="ramg-consider-add-uncert-u">对于铀问题，您可能需要考虑添加"附加不确定度"。</message>
+  <message id="ramg-you-using-add-uncert-u">您正在添加"附加不确定度" - 请小心解释计算的不确定度。</message>
+  <message id="ramg-you-using-add-uncert-non-u">您当前正在添加"附加不确定度"，这将导致计算的不确定度不正确。</message>
+  <message id="ramg-chart-info-title">χ²/dof = {1}/{2}{3}{4}</message>
+  <message id="ramg-pval"> (pval={1})</message>
+  <message id="ramg-1-pval"> (1-pval={1})</message>
+</messages>
+

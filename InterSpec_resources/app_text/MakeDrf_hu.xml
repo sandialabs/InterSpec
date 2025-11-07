@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">kivon {1} cps háttérhez</message>
+  <message id="dp-no-peak-preview">Nem lehet előnézetet generálni</message>
+
+  <message id="dsfs-sample">Minta</message>
+  <message id="dsfs-samples">Minták</message>
+  <message id="dsfs-using-num-peaks"> ({2} csúcsból {1}-t használ)</message>
+  <message id="dsfs-back-peak-txt">Ezek a csúcsok kivonásra kerülnek más mintákból</message>
+  <message id="dsfs-is-background-cb">Háttér?</message>
+  <message id="dsfs-all-peaks-cb">Összes Csúcs</message>
+  
+  <message id="md-det-diam">Det. Átmérő</message>
+  <message id="md-eff-type">Hatékonyság Típus</message>
+  <message id="md-eqn-in-kev">Egyenlet keV-ben</message>
+  <message id="md-eqn-in-mev">Egyenlet MeV-ben</message>
+  <message id="md-geom-intrinsic-eff">Belső Hat.</message>
+  <message id="md-geom-fixed-geom">Fix Geometria</message>
+  <message id="md-geom-fixed-cm2">Fix: per cm2</message>
+  <message id="md-geom-fixed-m2">Fix: per m2</message>
+  <message id="md-geom-fixed-gram">Fix: per gramm</message>
+  <message id="md-tt-eff-interpret">
+    Hogyan kell értelmezni ezt a hatékonyságot.<br />
+    <br />
+    Távoli Mező: Pontforrások, vagy a detektor távolságához képest kis források; lehetővé teszi
+    a detektálási távolság megváltoztatását 1/r2 skálázáshoz.<br />
+    <br />
+    Fix Geometria: Amikor a karakterizációs adatok geometriája és távolsága megegyezik a mérésekkel,
+    és ki akarja számítani a forrás teljes aktivitását (pl. Marinelli pohár).\n
+    <br />
+    Fix per cm2: hasonló a teljes aktivitáshoz, de amikor a kalibrációs adatok és mérések
+    felületi szennyezésre vonatkoznak, négyzetcentiméterenként megadott értékekkel.<br />
+    <br />
+    Fix per m2: hasonló a per cm2-hez, de négyzetméterenként.<br />
+    <br />
+    Fix per gramm: hasonló a per cm2-hez, de a forrás grammjára vonatkozóan.
+  </message>
+  <message id="md-fwhm-eqn-form-label">FWHM Egyenlet</message>
+  <message id="md-fwhm-gadras">Gadras Egyenlet</message>
+  <message id="md-sqrt-series">Sqrt Hatványsor</message>
+  <message id="md-atten-for-air-cb">Levegő csillapítás</message>
+  <message id="md-tt-atten-for-air">
+    A forrás és detektor közötti levegő csillapítása figyelembe lesz véve, 
+    hogy pontosabban lehessen skálázni a távolságot (a hatékonyság függvényt különböző távolságokon használva).
+    <br />
+    Ez nagyobb hatás alacsonyabb energiákon vagy nagyobb kalibrációs távolságokon.
+  </message>
+  <message id="md-show-fwhm-markers">FWHM pontok mutatása</message>
+  <message id="md-display-energy-lower-label">Megjelenített Energia, Alsó:</message>
+  <message id="md-display-energy-upper-label">Felső:</message>
+  <message id="md-mi-chart-phone">Diagram/Opciók</message>
+  <message id="md-mi-peaks-phone">Használandó Csúcsok</message>
+  <message id="md-export-btn">Tárolás/Export...</message>
+  <message id="md-export-window-title">DRF Tárolás/Export</message>
+  <message id="md-tt-name">
+    A detektor válasz függvény neve, amelyet az <em>InterSpec</em>
+    belső adatbázisába ment, hogy később használhassa a válasz függvényt.
+    A névnek érvényes fájlnévnek kell lennie (pl. nincs \, /, :, stb. karakter).
+  </message>
+  <message id="md-tt-desc">A DRF opcionális leírása, hogy emlékezzen a részletekre, amikor a jövőben használja a DRF-et.</message>
+  <message id="md-make-default-for-serial-cb">Alapértelmezett DRF a '{1}' sorozatszámhoz</message>
+  <message id="md-tt-make-default-serial">
+    Úgy állítja be, hogy amikor egy megfelelő sorozatszámú
+    detektorból származó spektrumot tölt be az InterSpec-be, ez a detektor válasz függvény
+    automatikusan betöltődik és használatra kerül.
+  </message>
+  <message id="md-make-default-for-model-cb">Alapértelmezett DRF a '{1}' modellhez</message>
+  <message id="md-tt-make-default-model">
+    Úgy állítja be, hogy amikor ebből a modell detektorból származó spektrumot tölt be
+    az InterSpec-be, ez a detektor válasz függvény
+    automatikusan betöltődik és használatra kerül.
+  </message>
+  <message id="md-tt-export-n42">
+    N42 fájl exportálása, amely tartalmazza az összes spektrumot és csúcsot, amelyet a DRF létrehozásához használtak.
+    Forrás és árnyékolási információk is általában tárolásra kerülnek a fájlban is,
+    elvileg, a detektor átmérő és egyenlet rendek kivételével,
+    minden bemeneti információt biztosítva, amit a DRF létrehozásához használtak.
+  </message>
+  <message id="md-export-as-csv">DRF exportálása CSV-ként.</message>
+  <message id="md-tt-export-as-csv">
+    A DRF-et CSV fájlba exportálja, amely tartalmazza a DRF összes információját.
+    Különösen hasznos más eszközökkel való használathoz.
+  </message>
+  <message id="md-export-quick-ref">Gyors referencia kártya exportálása</message>
+  <message id="md-tt-export-quick-ref">3x5 stílusú kártyát exportál, amely rövid összefoglalót tartalmaz a detektor teljesítményéről.</message>
+  <message id="md-det-name-not-valid">A detektor neve nem érvényes.</message>
+  <message id="md-eqn-not-valid">A Belső Hatékonyság Egyenlet nem érvényes.</message>
+  <message id="md-err-creating-drf">Hiba a DRF létrehozásakor: {1}</message>
+  <message id="md-err-saving-to-db">Hiba a DetectorPeakResponse adatbázisba mentésekor: {1}</message>
+  <message id="md-saved-to-db">'{1}' elmentve a belső adatbázisba.</message>
+  <message id="md-peak-counts">{1} {2} keV, Csúcs {3} impulzus</message>
+  <message id="md-peak-no-nuc">Nincs társított nuklid, {1} keV, Csúcs {2} impulzus</message>
+  <message id="md-err-det-diam-invalid">A detektor átmérő érvénytelen - 2.54 cm-t feltételez.</message>
+  <message id="md-err-some-src">Néhány forrásnál hibák voltak.</message>
+  <message id="md-n-fit-pars">{1} Illesztési Paraméter</message>
+  <message id="md-html-eff-table-caption">Teljes-Energia Detektálási Hatékonyság (% összes gamma)</message>
+  <message id="md-html-Intrinsic">Belső</message>
+  <message id="md-chart-data-intrinsic-eff-label">Adat Belső Hat.</message>
+  <message id="md-chart-data-fwhm-label">Adat FWHM</message>
+  <message id="md-chart-fit-intrinsic-eff-label">Illesztett Belső Hat.</message>
+  <message id="md-chart-intrinsic-eff-plus-label">Belső Hat. +2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">Illesztett Belső Hat. -2σ</message>
+  <message id="md-chart-fit-fwhm-label">Illesztett FWHM</message>
+</messages>

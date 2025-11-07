@@ -80,7 +80,7 @@ public:
   
   Wt::Signal<double/*keV*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &chartClicked();
   Wt::Signal<double/*kev*/,double/*counts*/,int/*pageX*/,int/*pageY*/,std::string/*ref-line name*/> &rightClicked();
-  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line name*/> &doubleLeftClick();
+  Wt::Signal<double/*keV*/,double/*counts*/,std::string/*ref-line name*/,Wt::WFlags<Wt::KeyboardModifier>> &doubleLeftClick();
   Wt::Signal<double/*keV start*/,double/*keV end*/> &shiftKeyDragged();
   
   /** When a previously existing ROI gets dragged by its edge, this signal will be emitted as it
@@ -93,9 +93,9 @@ public:
    */
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
-             double /*new roi lower px*/,
-             double /*new roi upper px*/,
+             double /*new roi px (upper edge minus lower edge)*/,
              double /*original roi lower energy*/,
+             std::string /*Spectrum type ROI belongs to {"FOREGROUND","BACKGROUND","SECONDARY"}*/,
              bool /*isFinalRange*/> &existingRoiEdgeDragUpdate();
   
   /** When a ROI is being created by holding the ctrl-key and dragging, this signal is emitted as
@@ -130,8 +130,9 @@ public:
    need to hook this function up to the #existingRoiEdgeDragUpdate() signal.
    */
   void performExistingRoiEdgeDragWork( double new_lower_energy, double new_upper_energy,
-                                      double new_lower_px, double new_upper_px,
+                                      double new_roi_px,
                                       double original_lower_energy,
+                                      std::string spectrum_type,
                                       bool isfinal );
   
   /** Does the the work for the primary spectrum display in InterSpec that lets you ctrl-drag
@@ -159,23 +160,32 @@ public:
   void scheduleUpdateSecondData();
   
   
-  /** Schedules the foreground peaks to be re-loaded to the client during the
+  /** Schedules the peaks to be re-loaded to the client, for the specified spectrum, during the
    next call to #render (which Wt takes care of calling).
    */
-  void scheduleForegroundPeakRedraw();
+  void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type );
   
-  /** Applies the current color theme.
-   if nullptr, then sets to default colors.
+  /** Applies the color theme globally to all D3SpectrumDisplayDiv instances in the current app.
+      Should be called once when the color theme changes, typically from InterSpec::applyColorTheme().
+      If nullptr, then sets to default colors.
+
+      Uses InterSpecApp::setGlobalD3SpectrumCssRule() to track the global CSS rules per app instance.
    */
-  void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
+  static void applyColorTheme( std::shared_ptr<const ColorTheme> theme );
+
+  /** Updates the default peak color for this specific instance based on the color theme.
+      This is needed because peak color is passed in JSON, not via CSS variables.
+      Also updates peak label size/rotation and log Y-axis min from theme.
+   */
+  void updateDefaultPeakColorForColorTheme( std::shared_ptr<const ColorTheme> theme );
   
-  void setForegroundSpectrumColor( const Wt::WColor &color );
-  void setBackgroundSpectrumColor( const Wt::WColor &color );
-  void setSecondarySpectrumColor( const Wt::WColor &color );
-  void setTextColor( const Wt::WColor &color );
-  void setAxisLineColor( const Wt::WColor &color );
-  void setChartMarginColor( const Wt::WColor &color );
-  void setChartBackgroundColor( const Wt::WColor &color );
+  void overrideForegroundSpectrumColor( const Wt::WColor &color );
+  void overrideBackgroundSpectrumColor( const Wt::WColor &color );
+  void overrideSecondarySpectrumColor( const Wt::WColor &color );
+  void overrideTextColor( const Wt::WColor &color );
+  void overrideAxisLineColor( const Wt::WColor &color );
+  void overrideChartMarginColor( const Wt::WColor &color );
+  void overrideChartBackgroundColor( const Wt::WColor &color );
   void setDefaultPeakColor( const Wt::WColor &color );
   
   /** Sets the charts font size.
@@ -460,9 +470,11 @@ protected:
   /** Sets the highlight regions to client - currently unimplemented. */
   void setHighlightRegionsToClient();
   
-  void setForegroundPeaksToClient();
-  
   void setReferenceLinesToClient();
+
+protected:
+  /** Helper function to set peaks for secondary or background spectra to client. */
+  void setPeaksToClient( const SpecUtils::SpectrumType spectrum_type );
   
   void setDynamicRefLinesToClient();
   
@@ -471,19 +483,22 @@ protected:
   /** Flags */
   enum D3RenderActions
   {
-    UpdateForegroundPeaks = 0x01,
+    UpdateForegroundPeaks = 0x0001,
     
-    UpdateForegroundSpectrum = 0x02,
-    UpdateBackgroundSpectrum = 0x04,
-    UpdateSecondarySpectrum = 0x08,
+    UpdateForegroundSpectrum = 0x0002,
+    UpdateBackgroundSpectrum = 0x0004,
+    UpdateSecondarySpectrum = 0x0008,
     
-    ResetXDomain = 0x10,
+    ResetXDomain = 0x0010,
     
-    UpdateHighlightRegions = 0x20,
+    UpdateHighlightRegions = 0x0020,
     
-    UpdateRefLines = 0x40,
+    UpdateRefLines = 0x0040,
     
-    UpdateDynamicRefLines = 0x80
+    UpdateDynamicRefLines = 0x80,
+
+    UpdateBackgroundPeaks = 0x0100,
+    UpdateSecondaryPeaks  = 0x0200,
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   
@@ -550,8 +565,10 @@ protected:
    
    The name of the reference lines (e.g., "U238", "H(n,g)") _may_ be followed by a semicolon, then information about the specific line.
    E.x. "Th232;S.E. of 2614.5 keV"
+   
+   The `unsigned int` is modifier keys pressed
    */
-  std::unique_ptr<Wt::JSignal<double, double, std::string> > m_doubleLeftClickJS;
+  std::unique_ptr<Wt::JSignal<double, double, std::string, unsigned int> > m_doubleLeftClickJS;
   std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/,std::string /*ref-line name*/> > m_leftClickJS;
   std::unique_ptr<Wt::JSignal<double,double,double/*pageX*/,double/*pageY*/,std::string /*ref-line name*/> > m_rightClickJS;
   /** Currently including chart area in pixels in xRange changed from JS; this
@@ -560,7 +577,7 @@ protected:
    ToDo: Should create dedicated signals for chart size in pixel, and also Y-range.
    */
   std::unique_ptr<Wt::JSignal<double,double,double,double,bool> > m_xRangeChangedJS;
-  std::unique_ptr<Wt::JSignal<double,double,double,double,double,bool> > m_existingRoiEdgeDragJS;
+  std::unique_ptr<Wt::JSignal<double,double,double,double,std::string,bool> > m_existingRoiEdgeDragJS;
   std::unique_ptr<Wt::JSignal<double,double,int,bool,double,double> > m_dragCreateRoiJS;
   std::unique_ptr<Wt::JSignal<double,std::string> > m_yAxisDraggedJS;
   
@@ -580,14 +597,14 @@ protected:
   Wt::Signal<double,double> m_shiftAltKeyDragg;
   Wt::Signal<double,double> m_rightMouseDragg;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_leftClick;
-  Wt::Signal<double,double,std::string /*ref-line name*/> m_doubleLeftClick;
+  Wt::Signal<double,double,std::string /*ref-line name*/,Wt::WFlags<Wt::KeyboardModifier>> m_doubleLeftClick;
   Wt::Signal<double,double,int/*pageX*/,int/*pageY*/,std::string /*ref-line name*/> m_rightClick;
   
   Wt::Signal<double /*new roi lower energy*/,
              double /*new roi upper energy*/,
-             double /*new roi lower px*/,
-             double /*new roi upper px*/,
+             double /*new roi width in px (upper px minus lower px) */,
              double /*original roi lower energy*/,
+             std::string /* spectrum type - maye change to ID in the future */,
              bool /*isFinalRange*/> m_existingRoiEdgeDrag;
   
   Wt::Signal<double /*lower energy*/,
@@ -609,13 +626,14 @@ protected:
   void chartShiftAltKeyDragCallback( double x0, double x1 );
   void chartRightMouseDragCallback( double x0, double x1 );
   void chartLeftClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
-  void chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name );
+  void chartDoubleLeftClickCallback( double x, double y, const std::string &ref_line_name, unsigned int modifiers );
   void chartRightClickCallback( double x, double y, double pageX, double pageY, const std::string &ref_line_name );
   
   void existingRoiEdgeDragCallback( double new_lower_energy, double new_upper_energy,
-                                           double new_lower_px, double new_upper_px,
-                                           double original_lower_energy,
-                                           bool isfinal );
+                                   double new_roi_px,
+                                   double original_lower_energy,
+                                   const std::string &spectrum_type,
+                                   bool isfinal );
   
   void dragCreateRoiCallback( double lower_energy, double upper_energy,
                                 int npeaks, bool isfinal,
@@ -672,13 +690,17 @@ protected:
    */
   int m_comptonPeakAngle;
   
-  Wt::WColor m_foregroundLineColor;
-  Wt::WColor m_backgroundLineColor;
-  Wt::WColor m_secondaryLineColor;
-  Wt::WColor m_textColor;
-  Wt::WColor m_axisColor;
-  Wt::WColor m_chartMarginColor;
-  Wt::WColor m_chartBackgroundColor;
+  // Member variables for instance-specific color overrides
+  // When default (isDefault() == true), the global CSS variable from the theme is used
+  Wt::WColor m_foregroundLineColorOverride;
+  Wt::WColor m_backgroundLineColorOverride;
+  Wt::WColor m_secondaryLineColorOverride;
+  Wt::WColor m_textColorOverride;
+  Wt::WColor m_axisColorOverride;
+  Wt::WColor m_chartMarginColorOverride;
+  Wt::WColor m_chartBackgroundColorOverride;
+
+  // Default peak color - used directly in JSON, not via CSS
   Wt::WColor m_defaultPeakColor;
   
   std::string m_peakLabelFontSize;

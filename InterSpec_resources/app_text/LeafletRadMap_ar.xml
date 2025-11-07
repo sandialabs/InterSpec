@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lrm- is short for LeafletRadMap
+  -->
+  <message id="lrm-pre-warn-title">قبل المتابعة</message>
+  <message id="lrm-pre-warn-content">
+    سيتم طلب بلاطات الخريطة من <a href="https://arcgis.com" target="_blank">https://arcgis.com</a>.
+    لن تغادر أي بيانات إشعاعية جهازك، لكن سيتم إجراء طلبات لبلاطات
+    الخريطة التي تشمل القياسات إلى هذه الخدمة.
+    {1}
+  </message>
+  <message id="lrm-pre-warn-user-key">
+    <p>سيتم استخدام مفتاح arcgis المخصص الذي يبدأ بـ '{1}' لطلب بلاطات الخريطة.</p>
+  </message>
+  <message id="lrm-pre-warn-invalid-user-key">
+    <p>تم تحديد مفتاح arcgis غير صالح في arcgis_key.txt، لذا سيتم استخدام المفتاح المدمج.</p>
+  </message>
+  <message id="lrm-pre-warn-dont-ask">لا تسأل مرة أخرى</message>
+  <message id="lrm-pre-warn-proceed-btn">المتابعة</message>
+  <message id="lrm-window-title">أداة الخريطة</message>
+  <message id="lrm-will-use-user-key">سيتم استخدام مفتاح arcgis المحدد من قبل المستخدم، الذي يبدأ بـ '{1}' لطلب الخرائط.</message>
+  <message id="lrm-user-key-invalid">كان هناك ملف arcgis_key.txt، لكنه لم يحتو على مفتاح صالح</message>
+  <message id="lrm-err-loading-samples">خطأ في تحميل العينات المختارة من الخريطة: {1}</message>
+  <message id="lrm-displayed-as">معروض كـ</message>
+  <message id="lrm-measurements-as">القياسات كـ</message>
+  <message id="lrm-load-meas-as-short">تحميل كـ</message>
+
+  <message id="lrm-filter-label">مرشح</message>
+  <message id="lrm-filter-none">لا شيء</message>
+  <message id="lrm-filter-energy-range">نطاق الطاقة</message>
+  <message id="lrm-filter-peaks-in-range">الذروات في النطاق</message>
+  <message id="lrm-lower-energy">الطاقة السفلى</message>
+  <message id="lrm-upper-energy">الطاقة العليا</message>
+  <message id="lrm-energy-filter-help">تطبيق مرشح نطاق الطاقة سيغير كيفية وربما ما يتم عرضه من البيانات على الخريطة.
+<ul>
+<li><b>لا شيء</b>: لا يتم تطبيق أي ترشيح - الألوان ونص CPS مبنية على معدل العد للطيف الكامل.</li>
+<li><b>نطاق الطاقة</b>: ترشيح عدادات جاما ضمن نطاق الطاقة المحدد.</li>
+<li><b>الذروات في النطاق</b>: عرض أرقام العينات التي تحتوي على ذروات ضمن نطاق الطاقة فقط مع ألوان العلامات وCPS مبنية على معدل عد الذروات.</li>
+</ul></message>
+</messages>

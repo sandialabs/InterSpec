@@ -52,6 +52,7 @@ namespace IsotopeId
 {
   void setDataDirectory( const std::string &dir );
   
+  const std::vector<std::tuple<std::string, const SandiaDecay::Nuclide *, float>> &characteristicGammas();
   
 struct NuclideStatWeightPair
 {

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dcw- is short for DoseCalcWidget -->
+  <message id="dcw-err-failed-fit-AD">Gagal konvergen pada jumlah perisai.</message>
+  <message id="dcw-qr-tool-state-title">Status Alat Dosis</message>
+  <message id="dcw-qr-tool-state-txt">Status saat ini alat dosis.</message>
+  <message id="dcw-inputs">Input</message>
+  <message id="dcw-answer">Jawaban</message>
+  <message id="dcw-intro-instructions">Pilih kuantitas yang ingin Anda hitung di sebelah kiri</message>
+  <message id="dcw-intro-instructions-vert-phone">Pilih kuantitas yang ingin Anda hitung di atas</message>
+  <message id="dcw-intro-calc-desc">Nilai dosis dihitung menggunakan ANSI/ANS-6.1.1-1991 kasus paling
+    konservatif: orientasi Anterior-Posterior.
+    Perhitungan dosis adalah panduan kasar, paling-paling, dan
+    tunduk pada banyak ketidakpastian atau kesalahan.
+  </message>
+  <message id="dcw-source-label">Sumber:</message>
+  <message id="dcw-neutron">Neutron</message>
+  <message id="dcw-tt-neut-not-imp">Kalkulasi dosis neutron belum diimplementasikan.</message>
+  <message id="dcw-tt-distance">Jarak dari pusat sumber ke muka detektor. Angka harus"
+    " diikuti dengan satuan; satuan yang valid adalah: meters, m, cm, mm, km, feet,"
+    " ft, ', in, inches, atau \".  Anda juga dapat menambahkan beberapa jarak,"
+    " seperti '3ft 4in', atau '3.6E-2 m 12 cm' yang setara dengan "
+    " 40inches dan 15.6cm.</message>
+  <message id="dcw-shield-empty-text">Material Perisai</message>
+  <message id="dcw-runtime-checks-failed">Pemeriksaan kewarasan runtime gagal!</message>
+  <message id="dcw-runtime-check-msg">
+    <div>Jangan percaya hasil utilitas kalkulator ini</div>
+    Silakan email <a href="mailto:interspec@sandia.gov">interspec@sandia.gov</a>
+    pesan kesalahan ini dan sertakan tipe dan model perangkat Anda (mis., iPad pro,
+    Windows 10 Dell laptop, dll.)
+  </message>
+  <message id="dcw-runtime-check-err-div">Hasil Diragukan - Jangan Percaya</message>
+  <message id="dcw-err-no-nuc">Nuklida sumber kosong atau tidak valid</message>
+  <message id="dcw-act-invalid">Aktivitas tidak valid</message>
+  <message id="dcw-shield-invalid">Perisai tidak valid</message>
+  <message id="dcw-generic-shield-invalid">Kesalahan menghitung dosis, perisai tidak valid, maaf :{</message>
+  <message id="dcw-dist-invalid">Jarak tidak valid.</message>
+  <message id="dcw-err-other">Kesalahan menghitung dosis dari sumber, maaf :{</message>
+  <message id="dcw-invalid-src-dose">Dosis sumber tidak valid.</message>
+  <message id="dcw-invalid-src-act">Aktivitas sumber tidak valid.</message>
+  <message id="dcw-invalid-src-dose">Dosis sumber tidak valid.</message>
+  <message id="dcw-failed-find-lower-dist">Gagal menemukan jarak pembatas bawah, pada {1} cm.</message>
+  <message id="dcw-failed-find-upper-dist">Gagal menemukan jarak pembatas atas, pada {1} cm.</message>
+  <message id="dcw-failed-find-dist">Tidak dapat menemukan jarak; melebihi iterasi maksimum.</message>
+  <message id="dcw-got-neg-dist">Mendapat jarak negatif: {1}</message>
+  <message id="dcw-err-calc-dose-for-dist">Kesalahan menghitung dosis saat mencari jarak, maaf :{</message>
+  <message id="dcw-material-not-valid">Material tidak valid</message>
+  <message id="dcw-no-an-entered">Anda harus memasukkan nomor atom material perisai.</message>
+  <message id="dcw-no-shield-name">Anda harus memasukkan tipe material perisai.</message>
+  <message id="dcw-brehm-warning">Peringatan: Bremsstrahlung dari peluruhan beta tidak diperhitungkan, hasil mungkin tidak dapat dipercaya.</message>
+  <message id="dcw-no-dose-entered">Tidak ada nilai numerik yang dimasukkan untuk dosis</message>
+  <message id="dcw-stay-time">Waktu Tinggal</message>
+  <message id="dcw-dental-xray">Sinar-X Gigi</message>
+  <message id="dcw-annual-background">Latar Belakang Tahunan Umum</message>
+  <message id="dcw-annual-occ-limit">Batas Okupasi Tahunan</message>
+  <message id="dcw-save-property">Selamatkan Properti Berharga</message>
+  <message id="dcw-life-saving">Penyelamatan Jiwa</message>
+  <message id="dcw-radiation-sickness">Penyakit Radiasi</message>
+  <message id="dcw-units-label">satuan:</message>
+</messages>
+

@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ds- is short for DrfSelect
+       ref- is short for RelEffFile
+       reds- is short for RelEffDetSelect
+  -->
+  <message id="ds-default-manual-det-name">Detector definido por usuario</message>
+
+  <message id="ref-tt-remove-drf-file">Quitar archivo de la lista de archivos en los que InterSpec buscará funciones de respuesta del detector.</message>
+  <message id="ref-remove-drf-window-title">¿Quitar respuestas del detector?</message>
+  <message id="ref-remove-drf-window-txt">¿Le gustaría quitar estos DRF del uso futuro también?</message>
+  <message id="ref-file-removed-toast">Archivo '{1}' quitado del uso futuro.</message>
+  <message id="ref-file-saved-for-later">Se guardó '{1}' para uso posterior, y estará disponible en la porción "<em>Ef. rel.</em>" de la herramienta "<em>Selección de función de respuesta del detector</em>".</message>
+  <message id="ref-err-saving-drf-file">Error guardando archivo DRF para uso posterior; lo siento.</message>
+  <message id="ref-err-invalid-csv-drf">No es un archivo DRF de eficiencia relativa TSV o CSV válido.</message>
+  <message id="ref-save-drf-window-title">¿Guardar respuestas del detector?</message>
+  <message id="ref-save-drf-window-txt">¿Le gustaría guardar estas respuestas del detector para uso posterior?</message>
+  <message id="ref-upload-csv-file">Subir un archivo TSV/CSV.</message>
+  <message id="ref-dont-use-drf-in-file">sin respuestas en archivo</message>
+  <message id="ref-select-det-from-file">seleccionar detector</message>
+  <message id="ref-no-drfs-in-file">Sin DRF válidos en archivo.</message>
+  <message id="ref-couldnt-open-drf-file">No se pudo abrir archivo DRF.</message>
+  <message id="ref-no-rel-eff-drfs-in-file">Sin DRF de ef. rel. disponibles.</message>
+  <message id="ref-no-drfs-available">sin respuestas disponibles</message>
+  <message id="ref-file-has-no-drfs">El archivo no contiene ningún DRF</message>
+  <message id="reds-tt-add-drf-btn">Hacer clic en el botón más para añadir un archivo adicional de función de respuesta del detector de eficiencia relativa.</message>
+  <message id="reds-tt-add-dir">Hacer clic en el botón más para añadir un directorio adicional para buscar recursivamente funciones de respuesta del detector.</message>
+  <message id="reds-gadras-drf-info-ios">Puede colocar funciones de respuesta del detector importadas de GADRAS-DRF en el directorio de <code>InterSpec</code> dentro de la aplicación <b>Archivos</b>.</message>
+  <message id="reds-gadras-drf-info">Estas son funciones de respuesta del detector importadas de GADRAS-DRF. Actualmente solo se usan las dimensiones del detector, eficiencias absolutas y resoluciones FWHM.</message>
+  <message id="reds-failed-parse-gadras-det">Error al analizar un detector GADRAS: {1}</message>
+  <message id="reds-err-saving-gad-path">Error guardando ruta GADRAS en preferencias de usuario: {1}</message>
+  <message id="reds-tt-remove-gad-dir">Quitar directorio de la lista de directorios en los que InterSpec buscará funciones de respuesta del detector.</message>
+  <message id="reds-tt-gad-set-dir">Establecer directorio ingresado para buscar recursivamente funciones de respuesta del detector.</message>
+  <message id="reds-err-not-valid-dir">No es un directorio válido.</message>
+  <message id="reds-invalid-dir">directorio inválido</message>
+  <message id="reds-no-drf-in-dir">sin respuestas en directorio</message>
+  <message id="reds-recursive-no-drfs-in-dir">Sin DRF válidos en directorio, o sus subdirectorios.</message>
+  <message id="ds-csv-upload-desc">
+    <div style="white-space:nowrap;">
+      Archivo CSV de eficiencia intrínseca:
+    </div>
+    <div>
+      La primera columna es energía en keV.
+      La segunda columna es el % eficiente (0 a 100) para rayos gamma a esa
+      energía, incidentes en el detector, para ser registrados en el fotopico.
+    </div>
+    <div>
+      También necesitará subir un archivo GADRAS Detector.dat, o ingresar el
+      diámetro del detector, después de subir el archivo de eficiencia.
+    </div>
+    <div>
+      También puede subir CSV exportado de la herramienta <em>Crear respuesta del detector</em>.
+    </div>
+  </message>
+  <message id="ds-enter-gad-det-diam">Ingresar diámetro del detector o subir archivo Detector.dat:</message>
+  <message id="ds-det-diam">Diámetro del detector:</message>
+  <message id="ds-fixed-geom">Geometría fija</message>
+  <message id="ds-gad-det-file-label">Archivo GADRAS Detector.Dat:</message>
+  <message id="ds-manual-det-empty-fcn">Ejemplo: exp(-9.8 - 8.1*log(x) + 4.62E-02*log(x)^2 + ...)\n
+    O equivalentemente: -9.8 -8.1 4.62E-02 ...</message>
+  <message id="ds-manual-det-desc">Eficiencia del detector definida por una fórmula matemática, dada la energía x;
+     o puede ingresar los coeficientes para la forma de ecuación estándar. Hacer clic en el ícono de signo de interrogación para más información.
+  </message>
+  <message id="ds-manual-det-name-label">Nombre del detector </message>
+  <message id="ds-manual-det-name-empty-txt">Nombre único del detector</message>
+  <message id="ds-manual-function-label">Eficiencia f(x) = </message>
+  <message id="ds-tt-manual-energy-unit">Unidad de energía para fórmula de eficiencia</message>
+  <message id="ds-tt-manual-desc">Descripción de esta respuesta del detector</message>
+  <message id="ds-manual-det-diam-label">Diám. detector</message>
+  <message id="ds-energy-range">Rango de energía</message>
+  <message id="ds-(optional)">(opcional)</message>
+  <message id="ds-min.">Mín.</message>
+  <message id="ds-max.">Máx.</message>
+  <message id="ds-intrinsic-eff">Eficiencia intrínseca</message>
+  <message id="ds-abs-eff">Eficiencia absoluta</message>
+  <message id="ds-fixed-geom-total">Geometría fija - actividad total</message>
+  <message id="ds-fixed-geom-cm2">Geometría fija - actividad por cm²</message>
+  <message id="ds-fixed-geom-m2">Geometría fija - actividad por m²</message>
+  <message id="ds-fixed-geom-gram">Geometría fija - actividad por gramo</message>
+
+  <message id="ds-tt-manual-drf-type">Cómo debe interpretarse esta eficiencia.<br />
+    <br />
+    Eficiencia intrínseca: la probabilidad de que un rayo X o gamma que golpea la
+    cara del detector, registre un evento de detección de energía completa.<br />
+    <br />
+    Eficiencia absoluta: la probabilidad de que un rayo X o gamma de la fuente
+    registre un evento de detección de energía completa, siendo apropiado
+    permitir escalar esta eficiencia por 1/r2 a otras distancias (es decir, es para una fuente puntual).<br />
+    <br />
+    Geometría fija - actividad total: la probabilidad de que un rayo X o gamma de la fuente
+    registre un evento de detección de energía completa, y no es apropiado permitir escalar esta
+    eficiencia a otras distancias (ej., para una fuente cercana o grande extendida).<br />
+    <br />
+    Geometría fija - actividad por cm2: similar a actividad total, pero la curva de eficiencia
+    representa eficiencia por desintegración, por centímetro cuadrado (es decir, contaminación superficial).<br />
+    <br />
+    Geometría fija - actividad por m2: similar a por cm2, pero para por metro cuadrado.<br />
+    <br />
+    Geometría fija - actividad por g: similar a por cm2, pero para por gramo de fuente.
+  </message>
+  <message id="ds-dist-label">Dist.:</message>
+  <message id="ds-set-btn">Establecer</message>
+  <message id="ds-last-used">Último usado</message>
+  <message id="ds-det-type-filter-all">Todo</message>
+  <message id="ds-det-type-filter-uploaded">Subido</message>
+  <message id="ds-det-type-filter-formula">Fórmula ingresada</message>
+  <message id="ds-det-type-filter-data">Hecho de datos</message>
+  <message id="ds-det-type-filter-N42">Incluido en archivo N42</message>
+  <message id="ds-show-label">Mostrar:</message>
+  <message id="ds-mi-gadras">GADRAS</message>
+  <message id="ds-mi-rel-eff">Ef. rel.</message>
+  <message id="ds-mi-import">Importar</message>
+  <message id="ds-mi-formula">Fórmula</message>
+  <message id="ds-mi-previous">Anterior</message>
+  <message id="ds-use-for-serialnum-cb">Usar como DRF por defecto para SN '{1}'</message>
+  <message id="ds-use-for-model-cb">Usar como DRF por defecto para modelo '{1}'</message>
+  <message id="ds-no-drf-loaded">Sin DRF cargado</message>
+  <message id="ds-no-det-btn">Sin detector</message>
+  <message id="ds-fit-fwhm-btn">Ajustar FWHM...</message>
+  <message id="ds-tt-cancel">Quitar todos los cambios o selecciones hechas por este diálogo, y cerrar el diálogo.</message>
+  <message id="ds-tt-accept">Aceptar todos los cambios/selecciones hechas y cerrar diálogo.</message>
+  <message id="ds-use-det-btn">Usar detector</message>
+  <message id="ds-use-drf">¿Usar DRF?</message>
+  <message id="ds-select-drf">Seleccionar DRF a usar</message>
+  <message id="ds-drf-desc">Desc. DRF</message>
+  <message id="ds-save-for-later-cb">¿Guardar para uso posterior?</message>
+  <message id="ds-err-drf-uri-invalid">La URL de función de respuesta del detector era inválida.</message>
+  <message id="ds-err-det-diam-pos">Los diámetros del detector deben ser positivos</message>
+  <message id="ds-err-det-dist-pos">La distancia debe ser positiva para eficiencias absolutas</message>
+  <message id="ds-warn-min-max-energy-swapped">La energía mín. del detector era mayor que la energía máx.; ignorando rango de energía.</message>
+  <message id="ds-need-det-diam">Se necesita el diámetro del detector</message>
+</messages>
+
+

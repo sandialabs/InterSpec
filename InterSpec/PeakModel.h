@@ -40,7 +40,11 @@
 
 class SpecMeas;
 
-namespace SpecUtils{ class Measurement; }
+namespace SpecUtils
+{
+  class Measurement;
+  enum class SpectrumType : int;
+}
 
 namespace SandiaDecay
 {
@@ -59,6 +63,9 @@ class PeakModel: public Wt::WAbstractItemModel
    Each 'row' is a peak whose parent index is always the default index.
    That is, the row specifies the peak, and the column represents
    various peak values, as specified by the 'Columns' enum.
+   
+   All functions refer to the foreground, except `peaks(SpectrumType)` and `measurement(SpectrumType)` - which just returns what
+   `setPeakFromSpecMeas(...)` was last called for the type (currently only the main InterSpec class do anything other than for foreground).
    
    Incomplete TODO list:
    - add a `replacePeaks(orig,newer)` function to allow updating peak quanitites in one step
@@ -98,7 +105,8 @@ public:
   //  or the displayed sample numbers), then this function should be called to
   //  update the m_peaks pointer to be from the appropriate SpecMeas object.
   void setPeakFromSpecMeas( std::shared_ptr<SpecMeas> meas,
-                            const std::set<int> &samplenums );
+                            const std::set<int> &samplenums,
+                            const SpecUtils::SpectrumType specType );
 
   /** Normally we keep the peaks added/removed up to date with the #SpecMeas passed into
    #setPeakFromSpecMeas (i.e., the #SpecMeas "owns" the peaks), but if you dont want to do
@@ -141,6 +149,26 @@ public:
   
   const std::deque<std::shared_ptr<const PeakDef>> &sortedPeaks() const;
 
+  /** Get the currently set peaks - this requires that `setPeakFromSpecMeas(spec, samples, type)`
+   has been called to set these - currently the only place that does this for anything besides the foreground is the main InterSpec class.
+   
+   All other functions in this class refer to foreground peaks, except `peaks(SpectrumType)` and `measurement(SpectrumType)`.
+   */
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks( const SpecUtils::SpectrumType type ) const;
+  
+  std::weak_ptr<SpecMeas> measurement( const SpecUtils::SpectrumType type );
+  
+  Wt::Signal<> &backgroundPeaksChanged();
+  Wt::Signal<> &secondaryPeaksChanged();
+  
+  
+  /** Get the currently set secondary peaks - this requires that `setPeakFromSpecMeas(back, backSamples, SpectrumType::SecondaryForeground)`
+   has been called to set these - currently the only place that does this is the main InterSpec class.
+   
+   All other functions in this class refer to foregorund peaks, except `backgroundPeaks()` and `secondaryPeaks()`.
+   */
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> secondaryPeaks() const;
+  
   //definePeakXRangeAndChi2(...): Inorder to save cpu (and mostly memorry access
   //  time) later on, this function will define the lower and upper energy range
   //  of peaks that have a polynomial continum defined, and have not already had
@@ -175,6 +203,9 @@ public:
    be made, and energy range defined.
    */
   void setPeaks( std::vector<std::shared_ptr<const PeakDef>> peaks );
+  
+  
+  void setPeaks( const std::deque<std::shared_ptr<const PeakDef>> &peakdeque, const SpecUtils::SpectrumType type );
   
   //removePeak( size_t ):  removes the specified `peakn`, where the peakn refers
   //  to the peak at position `peakn` when sorted by peak means (similar
@@ -283,7 +314,20 @@ public:
                         int role = Wt::EditRole );
 
   
-  enum SetGammaSource{ NoSourceChange, SourceChange, SourceAndUseChanged };
+  enum class SetGammaSource
+  {
+    /** New source matched old source. */
+    NoSourceChange,
+    
+    /** Source changes, but its use for shielding/source fit didnt. */
+    SourceChange,
+    
+    /** Source changes and use shielding/source fit changed. */
+    SourceAndUseChanged,
+    
+    /** Faield to set the source - invalid specification. */
+    FailedSourceChange
+  };//enum class SetGammaSource
   
   /** Sets the nuclide for the given peak.
    \param peak Peak to set nuclide for
@@ -439,8 +483,16 @@ protected:
 
   //Peaks are stored sorted according to peak.mean, since some of the algorithms
   //  that work on the peaks need them to be sorted by mean
-  std::shared_ptr< std::deque< PeakShrdPtr > > m_peaks;
-  std::weak_ptr<SpecMeas> m_measurment;
+  std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > > m_peaks;
+  std::weak_ptr<SpecMeas> m_measurment; //Foreground
+  
+  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> m_background_peaks;
+  std::weak_ptr<SpecMeas> m_background;
+  Wt::Signal<> m_backgroundPeaksChanged;
+  
+  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> m_secondary_peaks;
+  std::weak_ptr<SpecMeas> m_secondary;
+  Wt::Signal<> m_secondaryPeaksChanged;
   
   Columns m_sortColumn;
   Wt::SortOrder m_sortOrder;

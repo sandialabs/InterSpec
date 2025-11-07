@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">Use duas medições em diferentes locais para encontrar distância a uma fonte não vista. Por exemplo, quando a fonte está atrás de uma parede.</message>
+  <message id="oor2c-near-meas-label">Intensidade da Medição Próxima:</message>
+  <message id="oor2c-far-meas-label">Intensidade da Medição Distante:</message>
+  <message id="oor2c-background-intensity">Intensidade de Fundo (opcional):</message>
+  <message id="oor2c-dist-label">Distância entre medições:</message>
+  <message id="oor2c-power-law-label">Lei de Potência</message>
+  <message id="oor2c-low-scatter">Baixo Espalhamento ou usando Área do Pico, 1/r^2</message>
+  <message id="oor2c-mid-scatter">Taxa de Dose Espalhamento Médio, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">Taxa de Dose Alto Espalhamento, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">Dist. da medição próxima à fonte:</message>
+  <message id="oor2c-bottom-message">Use as mesmas unidades para medições próxima, fundo e distante.
+    Os resultados estão nas mesmas unidades usadas para
+    distância entre medições.
+  </message>
+  <message id="oor2c-qr-state-title">Estado da Calculadora 1/r2</message>
+  <message id="oor2c-qr-state-txt">Estado atual da ferramenta calculadora 1/r<sup>2</sup>.</message>
+  <message id="oor2c-invalid-near">Medição próxima inválida</message>
+  <message id="oor2c-invalid-far">Medição distante inválida</message>
+  <message id="oor2c-invalid-dist">Distância inválida</message>
+  <message id="oor2c-far-larger-than-near">Medição distante deve ser menor que a próxima</message>
+  <message id="oor2c-back-larger-than-far">O fundo deve ser menor que a distante</message>
+  <message id="oor2c-near-is-zero">A medição próxima deve ser não-zero</message>
+  <message id="oor2c-far-is-zero">A medição distante deve ser não-zero</message>
+  <message id="oor2c-dist-is-zero">Distância entre medições deve ser não-zero</message>
+</messages>

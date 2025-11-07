@@ -1,0 +1,1434 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RadInstrumentData n42DocUUID="64a160a5-4a31-4bd8-aa16-f1e924b31ce1" xmlns="http://physics.nist.gov/N42/2011/N42" n42DocDateTime="2025-11-06T18:07:53.981751Z">
+	<Remark>EnergyCalibration-1 calibrated 2020-01-01T00:00:00Z</Remark>
+	<RadInstrumentDataCreatorName>InterSpec. Original file by . Original file by ORTEC</RadInstrumentDataCreatorName>
+	<RadInstrumentInformation id="InstInfo1">
+		<RadInstrumentManufacturerName>ORTEC</RadInstrumentManufacturerName>
+		<RadInstrumentIdentifier>123456789</RadInstrumentIdentifier>
+		<RadInstrumentModelName>Detective X</RadInstrumentModelName>
+		<RadInstrumentClassCode>Radionuclide Identifier</RadInstrumentClassCode>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Firmware</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>DETO-018</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Original Software</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>3.1.0.5</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>AnalysisEngine</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>9.3.5</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Original Software</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>InterSpec</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>InterSpecN42Serialization</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>5</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>Software</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>InterSpec</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+		<RadInstrumentVersion>
+			<RadInstrumentComponentName>InterSpecN42Serialization</RadInstrumentComponentName>
+			<RadInstrumentComponentVersion>5</RadInstrumentComponentVersion>
+		</RadInstrumentVersion>
+	</RadInstrumentInformation>
+	<RadDetectorInformation id="HPGeDetector">
+		<RadDetectorName>HPGeDetector</RadDetectorName>
+		<RadDetectorCategoryCode>Gamma</RadDetectorCategoryCode>
+		<RadDetectorKindCode>HPGe</RadDetectorKindCode>
+	</RadDetectorInformation>
+	<EnergyCalibration id="EnergyCal0">
+		<CoefficientValues>-1.4167794 0.490866929 -7.51320002e-08</CoefficientValues>
+	</EnergyCalibration>
+	<RadMeasurement id="Sample1">
+		<MeasurementClassCode>Foreground</MeasurementClassCode>
+		<RealTimeDuration>PT300.859985S</RealTimeDuration>
+		<Spectrum energyCalibrationReference="EnergyCal0" radDetectorInformationReference="HPGeDetector" id="Sample1Det0Spectrum">
+			<Remark>No Sample Description Was Entered</Remark>
+			<LiveTimeDuration>PT280.459991S</LiveTimeDuration>
+			<ChannelData compressionCode="CountedZeroes">0 28 1 0 2 1 1 0 2 1 3 2 3 41 398 748 760 756 716 710 751 746 730 729 747 727 651 687 722 627 715 640 706 645 683 664 637 622 630 658 645 656 613 580 613 620 601 590 590 614 571 561 579 551 567 578 579 577 538 545 578 545 512 534 584 520 551 519 554 558 540 543 547 571 573 535 529 560 550 590 529 561 578 588 565 597 585 566 581 653 572 563 586 610 621 591 617 614 605 581 605 664 668 651 668 638 685 695 682 714 704 752 802 758 792 838 771 765 689 743 777 791 733 693 820 759 736 813 766 802 810 866 881 889 823 860 824 827 793 817 853 839 771 817 787 811 815 812 803 818 857 811 822 874 848 811 891 824 841 901 839 864 823 917 884 821 852 875 879 834 834 893 934 858 891 925 915 909 864 892 865 917 825 892 851 847 878 886 889 891 845 856 876 817 883 859 937 915 836 931 899 881 879 901 800 859 887 916 927 843 857 912 859 864 837 850 876 915 907 862 879 892 877 890 876 846 887 886 868 893 917 829 826 862 817 808 793 844 841 860 779 846 808 833 833 807 892 828 796 805 797 789 795 775 768 764 780 821 787 780 770 750 696 807 761 726 763 746 704 792 715 749 706 798 701 751 695 692 692 727 695 721 706 654 723 677 682 739 654 670 700 739 731 680 643 651 683 667 655 686 669 663 669 661 693 655 709 668 661 702 654 627 639 645 660 658 605 614 614 623 665 654 626 620 659 635 615 624 583 621 713 638 657 677 662 680 669 655 636 618 638 672 650 627 660 649 650 627 632 626 649 646 620 645 616 658 614 629 658 621 606 605 624 631 653 597 648 616 633 635 657 634 643 667 574 593 658 620 594 598 608 641 586 594 586 599 578 565 583 571 580 552 553 545 549 579 549 549 531 533 542 553 576 518 575 525 532 504 538 531 538 504 502 512 472 505 486 486 500 478 545 514 468 461 508 533 652 662 586 545 482 468 476 474 462 488 501 429 453 483 484 455 448 428 465 401 386 456 416 429 432 445 443 424 445 449 448 452 448 403 437 443 461 476 425 389 429 413 418 398 449 389 376 377 417 382 384 386 413 363 390 366 387 376 330 343 376 373 349 368 359 369 392 369 387 355 369 341 372 349 346 320 367 343 367 332 340 363 352 361 357 313 376 341 343 382 310 359 353 320 353 349 361 361 332 359 334 326 349 348 334 331 354 379 375 332 354 316 340 326 329 320 313 307 296 329 302 322 332 319 335 294 326 320 278 307 314 300 288 306 323 315 313 289 294 318 314 320 286 304 332 322 309 327 289 323 305 311 353 305 297 276 287 328 276 260 288 311 298 278 311 279 277 275 291 298 245 278 283 295 265 299 274 313 307 286 291 286 264 272 268 276 288 307 275 308 261 300 263 267 237 282 270 307 296 281 264 256 253 268 271 285 269 290 289 226 246 273 278 264 278 281 262 274 271 245 270 244 291 250 258 249 246 263 272 262 277 258 270 281 281 246 240 245 243 291 280 270 300 240 257 256 281 241 291 237 292 257 275 264 247 260 263 265 258 277 262 258 259 274 247 258 321 263 301 272 281 238 255 239 236 239 259 255 248 253 236 273 267 225 253 234 269 245 248 249 269 255 261 263 278 234 277 241 242 260 242 258 260 244 263 258 274 260 218 233 247 232 244 289 256 257 258 246 232 274 257 235 242 258 230 256 232 211 249 232 246 203 240 211 246 218 191 243 220 224 202 197 212 208 239 246 208 213 244 259 209 205 207 225 210 226 238 216 208 211 219 231 220 227 230 208 232 173 239 206 233 201 207 220 227 207 217 202 181 188 227 207 209 206 191 202 236 197 222 204 200 215 187 197 194 202 189 214 210 206 210 248 203 241 191 183 224 210 182 191 197 197 197 194 173 187 209 182 214 213 200 211 215 216 223 204 198 185 187 189 180 190 208 196 188 181 172 187 170 214 182 170 193 177 189 209 174 187 172 167 167 186 183 182 164 178 200 186 186 182 179 164 176 167 162 179 206 174 182 181 168 176 166 205 187 152 158 178 181 170 169 155 179 200 150 166 156 177 153 182 167 152 196 150 161 154 169 185 173 150 160 154 179 174 156 152 142 168 168 158 169 165 174 150 178 163 155 159 162 195 164 182 164 163 159 172 165 161 176 166 151 153 153 174 177 163 148 167 165 149 154 140 173 155 153 180 143 164 179 174 156 168 144 169 169 174 174 167 160 159 155 143 158 184 150 159 152 181 138 149 139 180 164 170 165 155 171 151 175 152 193 171 171 149 157 164 158 167 151 161 175 160 180 182 156 194 158 162 162 153 145 163 131 164 154 138 147 150 157 157 144 151 160 147 150 156 161 148 164 140 163 151 174 143 153 157 152 151 137 159 152 160 167 165 159 135 123 146 151 156 181 146 154 141 128 151 142 143 145 140 141 152 154 129 163 136 131 152 135 170 156 161 154 143 162 143 145 149 165 139 153 154 153 149 134 164 204 310 700 1624 2734 3324 2920 1648 743 288 182 142 145 132 133 116 117 150 122 116 134 110 130 135 122 147 113 140 121 130 112 105 122 140 148 134 124 141 133 133 133 126 126 113 126 146 127 130 126 137 137 123 119 145 141 128 129 134 129 129 125 130 123 126 148 136 151 124 120 106 106 103 106 112 121 118 121 98 115 108 116 110 125 105 106 104 106 134 95 93 111 103 115 105 91 106 123 94 102 105 121 85 113 102 102 105 86 108 120 119 129 142 139 121 117 145 118 128 149 122 121 105 118 102 101 91 108 91 102 104 95 104 125 258 633 1213 1816 1899 1450 775 347 142 85 84 84 86 69 86 99 81 76 79 88 90 77 89 71 73 77 78 82 81 83 70 86 66 99 82 65 64 87 80 64 71 56 77 61 83 76 74 79 72 57 58 57 75 79 83 79 60 76 74 53 70 66 80 61 55 75 67 69 69 63 94 88 73 63 66 72 59 57 53 56 65 66 63 66 74 59 58 71 69 63 71 54 96 67 56 75 64 74 65 63 60 59 73 67 71 39 68 55 53 57 73 61 62 57 68 53 63 57 70 52 65 57 70 56 63 55 64 54 70 57 58 64 58 73 56 52 60 58 53 71 63 53 50 54 60 56 75 62 61 70 74 69 58 66 51 52 50 56 65 73 81 181 407 706 1134 1157 862 511 233 105 57 46 63 46 49 45 59 49 54 46 57 56 53 51 45 44 51 51 55 42 59 51 72 48 61 42 46 56 59 50 51 41 56 42 47 37 54 38 48 64 43 55 50 54 48 52 47 52 45 41 51 46 58 52 41 58 56 54 40 54 51 49 59 53 40 49 51 69 57 45 52 46 57 51 42 64 60 40 44 56 47 46 53 54 50 61 48 71 52 54 55 53 57 55 46 36 46 56 52 56 52 51 54 46 47 38 32 56 39 51 53 66 45 47 56 50 50 54 53 56 66 57 46 56 42 40 39 55 56 54 46 49 49 56 59 64 57 50 49 55 52 53 53 71 50 61 49 55 86 150 444 1120 2183 3055 3066 2255 1121 425 134 43 48 39 35 32 35 44 33 44 41 25 53 31 34 41 44 34 37 35 43 35 40 36 39 46 31 47 42 46 37 40 42 35 45 40 36 32 50 35 42 41 34 44 45 31 32 34 33 38 36 42 23 34 32 36 29 32 35 32 30 34 32 37 33 33 33 40 34 36 47 34 29 29 39 41 47 33 40 40 38 38 35 41 50 45 44 28 38 33 38 43 41 41 41 55 116 262 511 813 910 736 425 205 76 39 28 30 35 38 36 29 38 45 27 36 36 32 37 37 50 31 28 30 35 28 30 37 21 26 27 23 26 23 28 21 31 22 32 33 23 27 30 32 23 30 28 37 35 27 29 28 28 26 33 24 25 24 36 28 32 19 25 22 22 22 39 27 24 23 21 28 27 20 15 26 21 30 23 26 29 29 23 30 25 36 21 24 20 26 31 20 28 20 24 37 31 23 25 29 21 24 19 19 21 25 28 20 16 18 28 30 30 28 27 19 37 28 23 21 20 24 36 23 33 22 32 23 25 20 19 23 30 17 16 24 20 17 19 21 27 16 12 22 27 23 21 27 24 27 20 21 22 29 37 24 23 27 26 25 19 25 21 21 28 24 27 26 39 35 48 35 35 24 28 24 24 24 27 27 17 22 22 24 33 25 28 24 17 29 27 15 19 16 17 16 27 23 27 19 30 28 28 20 18 26 19 25 19 18 20 25 25 23 30 25 34 26 25 17 25 20 32 25 21 21 17 15 22 19 21 15 23 26 17 28 20 19 15 29 21 16 26 21 17 27 15 18 32 23 21 27 35 29 23 24 22 31 15 18 18 17 24 30 19 20 23 17 18 26 15 15 19 18 24 24 25 31 33 20 21 22 25 23 20 24 30 25 26 30 30 16 18 15 21 23 14 19 26 28 32 22 19 22 24 25 27 19 21 25 18 19 22 23 30 18 22 20 20 15 24 17 21 19 28 23 17 18 18 27 19 24 20 27 25 22 22 24 24 24 24 25 29 19 33 25 27 23 21 17 21 22 18 22 17 23 20 12 27 19 26 17 25 34 41 69 73 59 32 33 23 17 30 21 28 23 30 16 28 23 24 24 30 25 29 17 22 31 18 27 25 24 25 33 24 23 21 20 26 25 23 27 17 26 19 19 20 22 23 25 14 13 28 18 16 19 20 31 18 34 24 24 17 21 22 31 23 21 18 19 22 18 22 21 28 36 111 230 435 753 937 734 499 270 125 39 29 23 28 14 15 25 20 23 19 21 18 21 19 19 26 16 25 18 18 25 12 23 22 28 29 19 11 23 18 24 14 17 20 21 23 26 23 26 22 19 21 16 26 14 23 25 14 27 20 23 23 22 26 15 15 16 23 28 19 23 13 15 26 23 16 17 27 27 34 34 40 38 32 25 20 17 20 24 23 16 21 22 18 12 22 15 25 19 22 18 16 21 16 18 21 28 20 17 30 21 30 23 24 16 21 19 22 21 23 12 17 12 16 19 32 22 21 26 17 17 21 15 16 19 16 13 11 15 24 12 11 15 17 21 20 13 22 15 17 21 25 17 13 21 11 13 14 10 30 30 31 20 20 22 13 16 11 23 10 19 17 13 14 16 11 11 14 19 13 18 15 14 14 18 10 17 17 19 15 15 16 15 20 7 24 15 17 14 19 21 11 14 18 20 13 15 13 19 12 18 17 10 20 11 19 25 22 16 13 22 17 14 14 13 14 22 7 13 14 13 12 13 19 7 19 23 14 14 16 16 12 8 15 12 16 18 13 16 17 15 15 10 13 13 13 13 13 13 11 14 16 19 10 12 18 15 14 11 14 14 16 15 15 18 11 10 11 22 14 17 20 16 16 12 16 19 19 18 11 13 15 15 8 16 9 12 11 12 6 11 14 13 9 17 14 17 17 16 16 20 19 19 9 13 17 15 10 11 8 17 12 20 26 9 7 12 15 15 14 11 15 18 9 12 11 8 9 15 12 11 16 14 8 16 9 12 16 10 13 17 11 13 9 11 8 20 10 16 10 10 14 10 16 11 9 9 17 12 9 13 15 10 11 11 6 17 9 21 9 18 13 13 13 14 16 10 15 13 15 13 17 12 13 15 15 19 12 16 15 16 26 16 16 15 21 8 11 10 14 12 11 9 18 13 13 12 17 16 14 12 12 14 7 9 14 18 17 14 11 7 7 13 15 18 19 14 7 8 9 14 3 10 15 9 14 11 8 12 18 13 8 9 13 14 9 13 15 9 7 10 7 13 7 9 6 11 11 11 12 9 7 11 8 12 11 12 13 11 7 9 10 11 13 7 5 8 6 11 12 11 10 7 8 7 11 11 5 4 10 11 16 9 6 9 2 12 11 7 8 10 10 9 10 13 10 6 8 7 7 11 7 9 9 2 10 8 12 13 5 6 8 6 11 10 7 8 11 12 7 6 6 4 12 11 5 8 6 8 4 9 7 7 14 18 11 5 9 25 84 168 415 631 695 634 440 251 107 38 16 8 6 7 3 6 4 2 4 11 4 5 7 4 4 6 3 7 6 4 5 2 5 4 4 4 4 3 5 3 7 2 3 7 1 4 3 6 3 3 3 2 5 3 3 5 3 4 5 4 5 6 5 3 7 4 3 1 3 5 0 1 2 8 4 2 4 4 5 3 2 7 3 4 5 5 6 1 2 2 3 6 6 4 2 2 4 5 5 1 3 2 5 3 7 3 2 4 4 5 1 3 3 3 4 2 4 2 1 3 0 1 3 2 6 4 5 4 6 4 5 7 5 4 4 1 0 1 2 3 2 2 4 3 7 2 0 1 4 5 2 7 2 5 6 6 6 3 0 1 2 0 1 4 2 6 2 4 2 3 3 4 6 2 3 4 4 4 4 3 1 3 2 9 3 3 3 7 3 2 5 1 3 0 1 3 2 3 3 3 0 1 2 1 1 2 3 0 1 1 4 5 5 2 5 0 1 2 0 1 3 4 4 1 3 4 4 3 3 3 5 1 2 3 3 3 1 4 1 2 2 3 2 3 1 4 2 0 1 3 2 2 1 2 2 2 4 3 4 3 6 1 1 1 2 0 1 4 1 1 5 1 4 4 2 2 2 1 3 3 3 6 4 1 1 2 1 3 4 2 0 1 3 4 4 4 3 3 2 3 0 2 2 3 2 8 4 15 25 53 63 81 62 45 25 14 5 3 3 0 1 1 5 4 3 4 2 3 2 1 1 2 4 4 3 10 20 69 144 281 389 387 299 218 102 49 18 4 1 2 0 4 1 0 1 1 1 2 0 3 1 0 1 2 2 0 1 2 1 0 2 2 3 0 2 1 1 1 1 0 1 2 0 1 1 4 1 0 1 1 0 4 1 2 0 1 2 0 2 1 1 0 2 1 1 1 0 1 2 0 1 1 2 0 1 2 3 0 1 1 0 1 1 3 2 0 2 3 1 2 0 5 3 1 5 3 0 1 2 1 1 1 0 1 1 1 4 4 10 3 9 1 4 1 0 2 2 1 1 0 1 1 2 3 0 3 1 0 1 1 0 1 2 1 1 0 2 2 4 4 0 1 1 1 0 1 1 0 3 1 1 1 0 1 2 0 2 1 0 1 1 0 1 1 0 1 1 5 0 1 1 0 1 1 0 2 1 2 1 0 2 2 1 1 2 1 1 0 2 3 2 2 1 1 1 2 0 1 1 3 3 0 1 1 0 1 2 1 0 1 2 0 3 2 3 0 1 3 2 0 2 1 0 2 1 1 2 1 1 0 2 3 0 2 3 3 0 1 1 3 2 2 0 1 2 1 1 0 4 3 1 4 1 3 0 1 1 2 2 1 4 3 2 2 0 3 1 0 1 2 1 0 1 1 0 2 2 1 0 1 1 0 2 1 1 1 0 1 1 0 1 2 0 1 2 1 2 0 4 1 2 1 1 0 5 1 0 3 2 0 3 1 2 2 2 2 2 0 4 1 0 4 1 1 1 0 2 1 2 0 2 1 2 1 1 3 2 3 0 2 1 0 2 2 1 1 1 1 1 1 1 1 0 3 1 1 1 0 3 1 0 4 1 0 1 3 3 10 19 14 22 14 7 5 4 1 0 4 1 0 4 1 2 1 1 0 2 2 1 1 0 3 1 0 5 2 1 0 5 2 0 3 1 0 2 1 0 2 1 0 1 2 0 1 1 1 0 2 1 1 1 0 1 1 0 3 1 0 8 3 0 1 1 0 8 1 1 0 1 3 0 2 1 1 2 0 6 1 0 1 1 2 0 4 1 0 1 1 0 4 1 1 0 2 1 0 1 1 0 2 2 1 0 2 2 0 2 2 1 1 0 7 1 0 2 1 0 2 1 0 7 2 1 1 3 2 3 2 2 0 1 1 2 2 0 6 2 0 8 1 1 0 1 1 1 1 2 0 1 1 0 7 1 0 1 1 1 2 0 1 1 0 2 2 0 12 1 0 3 1 1 0 1 1 3 6 12 12 10 7 2 3 2 0 5 1 0 2 1 0 6 2 1 0 2 1 1 0 1 1 2 2 0 1 5 1 3 0 1 1 1 0 4 2 0 1 1 0 3 1 0 3 1 0 4 1 1 0 5 1 1 1 0 2 1 1 1 1 2 0 4 1 0 8 1 0 9 1 0 1 1 0 3 1 0 2 1 0 1 1 0 4 1 1 0 2 1 0 1 1 1 1 2 0 1 1 2 0 4 1 1 0 3 1 0 2 1 1 0 1 2 0 9 4 1 1 2 0 2 2 0 6 1 1 1 0 3 3 0 5 1 0 6 1 0 1 1 0 2 1 0 2 1 0 2 1 0 3 1 0 9 1 0 1 1 0 3 1 1 0 2 1 1 1 1 0 2 1 1 0 2 2 0 1 2 0 1 1 0 11 1 1 0 1 1 2 0 8 1 0 1 1 1 0 5 1 0 6 2 0 3 1 0 4 2 0 7 1 0 1 1 0 1 1 0 3 2 0 2 2 0 2 1 0 1 1 0 2 1 1 1 0 2 1 0 1 1 1 0 3 1 0 3 1 0 1 1 0 2 1 0 6 1 1 0 22 1 0 6 1 0 1 1 0 3 1 0 1 1 1 1 0 2 1 0 8 1 1 0 3 2 0 4 1 0 8 1 0 2 1 0 1 1 1 0 3 1 0 1 1 0 5 2 0 9 1 1 0 4 1 1 0 6 1 0 5 2 1 0 3 1 0 4 1 0 2 1 0 2 1 0 2 1 0 3 1 0 3 1 0 1 1 0 7 1 0 5 1 0 1 1 0 4 1 0 3 1 0 1 1 0 1 1 0 6 1 1 0 3 1 0 11 1 0 17 1 1 0 3 1 0 2 1 0 3 1 0 4 1 0 8 2 0 1 1 1 0 4 1 0 8 1 0 4 1 1 0 2 1 1 0 2 1 0 2 1 0 2 2 1 0 1 2 0 2 2 0 5 1 1 0 1 1 1 0 1 1 0 6 1 1 0 1 2 0 12 1 1 0 2 1 0 2 1 0 6 1 0 7 1 0 1 4 2 0 3 2 2 4 1 0 1 2 1 1 1 0 3 1 0 1 1 0 7 1 0 6 2 0 5 3 1 0 2 1 1 0 1 1 0 9 1 0 4 1 1 0 2 1 0 14 1 0 2 1 0 13 1 0 10 2 0 3 1 0 2 1 0 3 1 1 0 1 1 0 7 1 0 5 2 0 10 1 1 0 2 1 0 1 1 2 0 10 1 0 1 1 0 4 1 2 1 0 5 1 0 6 2 1 1 0 7 1 1 1 0 2 1 0 1 1 0 2 1 1 1 2 1 2 3 1 0 1 1 1 0 5 1 0 13 1 0 2 1 0 5 2 2 1 1 0 6 1 0 5 1 0 3 1 0 3 1 0 4 1 1 0 7 2 0 3 1 0 3 1 0 2 1 0 3 1 1 0 3 1 0 12 2 2 0 2 1 0 5 2 1 0 6 2 0 5 1 1 0 3 1 0 2 1 1 1 0 7 1 0 10 1 0 6 1 1 0 8 1 1 0 1 1 1 0 3 1 1 1 1 0 2 1 0 9 1 0 2 1 0 1 2 0 2 1 0 9 1 1 0 3 1 0 1 2 1 0 6 1 0 4 1 0 13 1 0 2 1 0 2 1 1 0 2 1 0 4 1 0 1 2 0 3 1 1 2 0 2 1 0 6 2 1 0 3 2 1 1 1 0 3 1 0 1 1 0 1 1 2 2 0 3 1 1 0 5 1 1 1 0 1 2 0 8 1 0 12 1 0 2 1 0 1 1 1 1 1 0 1 1 1 0 1 1 0 3 1 0 2 1 0 17 2 0 4 1 0 1 1 0 1 4 0 2 1 0 7 1 1 0 8 1 1 0 3 1 0 3 1 1 0 1 1 0 3 1 0 2 1 0 12 1 0 4 1 0 3 1 2 0 4 1 1 0 3 1 0 12 1 1 0 12 1 0 5 1 0 1 1 1 2 0 4 1 2 1 0 5 1 1 0 2 1 0 3 1 0 1 1 0 7 2 1 0 8 1 0 1 1 1 0 1 2 0 10 1 1 0 10 1 1 1 0 4 1 0 5 1 0 8 1 0 21 1 0 1 1 0 10 1 0 2 1 0 1 1 0 1 1 0 2 1 0 1 1 0 2 1 0 4 1 0 2 1 0 4 1 0 2 1 0 1 1 0 2 1 0 20 1 1 0 25 2 0 14 2 0 5 1 1 1 0 7 1 0 1 1 0 10 1 1 0 29 1 0 14 1 0 2 1 0 5 1 0 1 1 0 1 1 0 5 1 0 4 1 1 0 12 4 9 9 10 10 14 5 4 6 3 1 0 31 1 0 44 1 0 18 1 0 14 1 0 81 1 0 74 1 0 5 1 0 1 1 1 2 1 0 1 2 0 32 1 0 53 1 0 8 1 0 168 1 0 16 1 0 18 1 0 40 1 0 26 1 0 9 1 0 36 1 0 1 1 0 35 1 0 23 2 0 11 1 0 110 1 0 14 1 0 4 1 0 39 1 0 9 1 0 12 1 0 42 1 0 51 1 0 49 1 0 149 1 0 121 1 0 25 1 0 39 1 0 47 1 0 41 1 0 75 1 0 68 1 0 68 1 0 107 1 0 32 1 0 142 1 0 10 2 0 8 1 0 117 1 0 18 1 0 44 1 0 156 1 0 34 1 0 7 1 0 196 1 0 179 1 0 4 1 0 15 1 0 49 1 0 6 1 0 5 1 0 88 1 0 4 1 0 45 1 0 102 1 0 144 1 0 55 1 0 3 1 0 14 1 0 16 1 0 88 1 0 12 1 0 61 1 0 122 1 0 211 1 0 200 1 0 15 1 0 123 1 0 80 1 0 201 1 0 49 1 0 95 1 0 44 1 0 56 1 0 49 1 0 94 1 0 220 1 0 139 1 0 235 1 0 50 1 0 11 1 0 86 1 0 25 1 0 180 1 0 64 1 0 303 1 0 225 1 0 31 1 0 11 1 0 98 1 0 224 1 0 88 1 0 55 1 0 75 1 0 60 1 0 52 1 0 103 1 0 15 1 0 173 1 0 18 1 0 76 1 0 164 1 0 24 1 0 11 1 0 61 1 0 46 1 1 0 27 1 0 147 1 0 10 1 0 208 1 0 39 1 0 9 1 0 341 1 0 28 1 0 154 1 0 38 1 0 158 1 0 1 1 0 29 1 0 93 1 0 10 1 0 116 1 0 112 1 0 114 1 0 553 1 0 67 1 0 61 1 0 225 1 0 164 1 0 82 1 0 2 1 0 100 1 0 95 1 0 107 1 0 76</ChannelData>
+		</Spectrum>
+	</RadMeasurement>
+	<DHS:InterSpec version="1">
+		<DisplayedSampleNumbers>1</DisplayedSampleNumbers>
+		<DisplayedDetectors>
+			<DetectorName>&quot;HPGeDetector&quot;</DetectorName>
+		</DisplayedDetectors>
+		<DisplayType>Foreground</DisplayType>
+		<Peaks version="2">
+			<PeakContinuum version="0" id="1">
+				<Type>Linear</Type>
+				<LowerEnergy>2.14059341e+02</LowerEnergy>
+				<UpperEnergy>2.28292496e+02</UpperEnergy>
+				<ReferenceEnergy>2.14059341e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.01873102e+03 -5.55354357e+00</Values>
+					<Uncertainties>1.69734783e+01 1.91879153e+00</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="1" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="1">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">2.21090775e+02 5.32445684e-03</Centroid>
+				<Width fit="true">6.06296539e-01 7.95605034e-02</Width>
+				<Amplitude fit="true">5.94799377e+02 5.70620003e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">8.68751168e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>2.21460007e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="2">
+				<Type>Linear</Type>
+				<LowerEnergy>5.47769287e+02</LowerEnergy>
+				<UpperEnergy>5.61999451e+02</UpperEnergy>
+				<ReferenceEnergy>5.47769287e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>3.20612366e+02 -4.50215006e+00</Values>
+					<Uncertainties>9.70471096e+00 1.04726660e+00</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="2" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="2">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">5.54899170e+02 5.52301353e-04</Centroid>
+				<Width fit="true">7.86315918e-01 6.66006748e-03</Width>
+				<Amplitude fit="true">1.30861768e+04 1.21439896e+02</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.61296558e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>5.54348022e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="3">
+				<Type>Linear</Type>
+				<LowerEnergy>6.12540222e+02</LowerEnergy>
+				<UpperEnergy>6.26769836e+02</UpperEnergy>
+				<ReferenceEnergy>6.12540222e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>2.05279465e+02 -3.14479136e+00</Values>
+					<Uncertainties>7.89419317e+00 8.46746683e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="3" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="3">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">6.19486511e+02 7.41875148e-04</Centroid>
+				<Width fit="true">8.05099487e-01 8.98672547e-03</Width>
+				<Amplitude fit="true">7.77764453e+03 9.41573257e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">5.29615760e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>6.19106018e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="4">
+				<Type>Linear</Type>
+				<LowerEnergy>6.91537598e+02</LowerEnergy>
+				<UpperEnergy>7.05766479e+02</UpperEnergy>
+				<ReferenceEnergy>6.91537598e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.20870239e+02 -1.44766736e+00</Values>
+					<Uncertainties>6.11470079e+00 6.60179853e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="4" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="4">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">6.98491455e+02 9.77922580e-04</Centroid>
+				<Width fit="true">8.39446962e-01 1.19727962e-02</Width>
+				<Amplitude fit="true">4.84289795e+03 7.43850174e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">8.43529582e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>6.98374023e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="5">
+				<Type>Linear</Type>
+				<LowerEnergy>7.68568542e+02</LowerEnergy>
+				<UpperEnergy>7.84759277e+02</UpperEnergy>
+				<ReferenceEnergy>7.68568542e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.16972374e+02 -3.10815287e+00</Values>
+					<Uncertainties>5.47179985e+00 4.94859397e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="5" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="5">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">7.76418518e+02 4.69837338e-04</Centroid>
+				<Width fit="true">8.24615479e-01 6.03080681e-03</Width>
+				<Amplitude fit="true">1.35334883e+04 1.19095131e+02</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.21623313e+00 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>7.76517029e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="6">
+				<Type>Linear</Type>
+				<LowerEnergy>8.20574585e+02</LowerEnergy>
+				<UpperEnergy>8.34802368e+02</UpperEnergy>
+				<ReferenceEnergy>8.20574585e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>7.68553238e+01 -7.16167748e-01</Values>
+					<Uncertainties>4.86664915e+00 5.29459536e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="6" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="6">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">8.27608459e+02 1.08429336e-03</Centroid>
+				<Width fit="true">8.31893921e-01 1.30725121e-02</Width>
+				<Amplitude fit="true">3.76457617e+03 6.49618073e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">6.96614623e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>8.27828003e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="7">
+				<Type>Linear</Type>
+				<LowerEnergy>1.00012970e+03</LowerEnergy>
+				<UpperEnergy>1.01435590e+03</UpperEnergy>
+				<ReferenceEnergy>1.00012970e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>3.74982452e+01 8.22750092e-01</Values>
+					<Uncertainties>3.42607307e+00 4.04228210e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="7" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="7">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.00711163e+03 5.73753519e-03</Centroid>
+				<Width fit="true">7.00013638e-01 8.14658552e-02</Width>
+				<Amplitude fit="true">1.88547546e+02 1.86207619e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.07559514e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.00759003e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="8">
+				<Type>Linear</Type>
+				<LowerEnergy>1.03643079e+03</LowerEnergy>
+				<UpperEnergy>1.05065662e+03</UpperEnergy>
+				<ReferenceEnergy>1.03643079e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>4.19823303e+01 -8.77605528e-02</Values>
+					<Uncertainties>3.66842246e+00 4.03483838e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="8" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="8">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.04358362e+03 1.10047928e-03</Centroid>
+				<Width fit="true">8.96820128e-01 1.30281290e-02</Width>
+				<Amplitude fit="true">3.94276440e+03 6.52494125e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.96596754e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.04407996e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="9">
+				<Type>Linear</Type>
+				<LowerEnergy>1.07371204e+03</LowerEnergy>
+				<UpperEnergy>1.08793762e+03</UpperEnergy>
+				<ReferenceEnergy>1.07371204e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>4.09540749e+01 -3.73463213e-01</Values>
+					<Uncertainties>3.47933722e+00 3.81068468e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="9" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="9">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.08077881e+03 1.39654856e-02</Centroid>
+				<Width fit="true">9.94375706e-01 2.02762783e-01</Width>
+				<Amplitude fit="true">1.06344803e+02 1.75456676e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">7.93018281e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.08129004e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="10">
+				<Type>Linear</Type>
+				<LowerEnergy>1.31013379e+03</LowerEnergy>
+				<UpperEnergy>1.32435718e+03</UpperEnergy>
+				<ReferenceEnergy>1.31013379e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.54093180e+01 -4.99164343e-01</Values>
+					<Uncertainties>2.18165946e+00 2.14318782e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="10" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="10">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.31732129e+03 1.18700287e-03</Centroid>
+				<Width fit="true">9.40032959e-01 1.31890532e-02</Width>
+				<Amplitude fit="true">3.42941528e+03 5.95493126e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.36626041e+00 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.31747302e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="11">
+				<Type>Linear</Type>
+				<LowerEnergy>1.46364209e+03</LowerEnergy>
+				<UpperEnergy>1.48325867e+03</UpperEnergy>
+				<ReferenceEnergy>1.46364209e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>4.26706076e+00 -1.70081079e-01</Values>
+					<Uncertainties>9.11399901e-01 6.87921792e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="11" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="11">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.47505005e+03 1.15493883e-03</Centroid>
+				<Width fit="true">9.74609375e-01 1.71163715e-02</Width>
+				<Amplitude fit="true">1.96866968e+03 4.46494331e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">7.44227648e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.47488000e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="12">
+				<Type>Linear</Type>
+				<LowerEnergy>1.51920325e+03</LowerEnergy>
+				<UpperEnergy>1.52849500e+03</UpperEnergy>
+				<ReferenceEnergy>1.52230151e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.66761339e+00 -7.55243674e-02</Values>
+					<Uncertainties>6.48290634e-01 1.89551383e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="12" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="12">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.52474854e+03 2.43467465e-02</Centroid>
+				<Width fit="true">7.50068188e-01 2.12529704e-01</Width>
+				<Amplitude fit="true">1.98998680e+01 5.46609545e+00</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.38514054e-01 -1.00000000e+00</Chi2>
+				<LineColor>#cc3333</LineColor>
+				<Nuclide>
+					<Name>K42</Name>
+					<DecayParent>K42</DecayParent>
+					<DecayChild>Ca42</DecayChild>
+					<DecayGammaEnergy>1.52459998e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="13">
+				<Type>Linear</Type>
+				<LowerEnergy>1.64214441e+03</LowerEnergy>
+				<UpperEnergy>1.66470093e+03</UpperEnergy>
+				<ReferenceEnergy>1.64214441e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>6.00904942e-01 1.26134316e-02</Values>
+					<Uncertainties>6.60744071e-01 4.66099158e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="13" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="13">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.65049133e+03 5.00491029e-03</Centroid>
+				<Width fit="true">9.86114442e-01 9.73587483e-02</Width>
+				<Amplitude fit="true">9.22791061e+01 1.00270004e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">3.77934158e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.65037000e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="14">
+				<Type>Linear</Type>
+				<LowerEnergy>2.74606885e+03</LowerEnergy>
+				<UpperEnergy>2.76840552e+03</UpperEnergy>
+				<ReferenceEnergy>2.74606885e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>2.01665908e-01 -1.12305572e-02</Values>
+					<Uncertainties>6.53884888e-01 4.74522039e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="14" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="14">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">2.75402148e+03 2.96018422e-02</Centroid>
+				<Width fit="true">1.00195312e+00 7.45512187e-01</Width>
+				<Amplitude fit="true">6.11167574e+00 3.24526525e+00</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.13442224e-02 -1.00000000e+00</Chi2>
+				<LineColor>#00b9ff</LineColor>
+				<Nuclide>
+					<Name>Na24</Name>
+					<DecayParent>Na24</DecayParent>
+					<DecayChild>Mg24</DecayChild>
+					<DecayGammaEnergy>2.75402808e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakSet source="UserPeaks">
+				<SampleNumbers>1</SampleNumbers>
+				<PeakIds>1 2 3 4 5 6 7 8 9 10 11 12 13 14</PeakIds>
+			</PeakSet>
+			<PeakContinuum version="0" id="15">
+				<Type>Linear</Type>
+				<LowerEnergy>1.64214441e+03</LowerEnergy>
+				<UpperEnergy>1.66470093e+03</UpperEnergy>
+				<ReferenceEnergy>1.64214441e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>6.00897908e-01 1.26143750e-02</Values>
+					<Uncertainties>6.60746157e-01 4.66101021e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="15" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="15">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.65049133e+03 5.01912599e-03</Centroid>
+				<Width fit="true">9.86114562e-01 9.73631293e-02</Width>
+				<Amplitude fit="true">9.22756119e+01 1.00268297e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">3.78013790e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="16">
+				<Type>Linear</Type>
+				<LowerEnergy>2.14059341e+02</LowerEnergy>
+				<UpperEnergy>2.28292496e+02</UpperEnergy>
+				<ReferenceEnergy>2.14059341e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.01873438e+03 -5.55396795e+00</Values>
+					<Uncertainties>1.69734268e+01 1.91878545e+00</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="16" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="16">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">2.21090744e+02 5.33897988e-03</Centroid>
+				<Width fit="true">6.06243134e-01 7.95538351e-02</Width>
+				<Amplitude fit="true">5.94776001e+02 5.70595398e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">8.68769288e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="17">
+				<Type>Linear</Type>
+				<LowerEnergy>2.59806763e+03</LowerEnergy>
+				<UpperEnergy>2.62404126e+03</UpperEnergy>
+				<ReferenceEnergy>2.59806763e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>6.19368196e-01 -2.96499934e-02</Values>
+					<Uncertainties>5.56766927e-01 3.75764370e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="17" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="17">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">2.61497974e+03 6.43617706e-03</Centroid>
+				<Width fit="true">1.17993152e+00 1.49256825e-01</Width>
+				<Amplitude fit="true">6.63795624e+01 8.58644390e+00</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">2.91671216e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="18">
+				<Type>Linear</Type>
+				<LowerEnergy>1.03643079e+03</LowerEnergy>
+				<UpperEnergy>1.05065662e+03</UpperEnergy>
+				<ReferenceEnergy>1.03643079e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>4.19812698e+01 -8.77098739e-02</Values>
+					<Uncertainties>3.66842532e+00 4.03489500e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="18" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="18">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.04358362e+03 1.10360049e-03</Centroid>
+				<Width fit="true">8.96850646e-01 1.30281281e-02</Width>
+				<Amplitude fit="true">3.94283350e+03 6.52500458e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.94555056e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="19">
+				<Type>Linear</Type>
+				<LowerEnergy>1.03643079e+03</LowerEnergy>
+				<UpperEnergy>1.05065662e+03</UpperEnergy>
+				<ReferenceEnergy>1.03643079e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>4.19823303e+01 -8.77605528e-02</Values>
+					<Uncertainties>3.66842246e+00 4.03483838e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="19" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="19">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.04358362e+03 1.10047928e-03</Centroid>
+				<Width fit="true">8.96820128e-01 1.30281290e-02</Width>
+				<Amplitude fit="true">3.94276440e+03 6.52494125e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.96596754e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.04407996e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<Peak version="0.2" continuumID="9" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="20">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.08077881e+03 1.39654856e-02</Centroid>
+				<Width fit="true">9.94375706e-01 2.02762783e-01</Width>
+				<Amplitude fit="true">1.06344803e+02 1.75456676e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">7.93018281e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.08129004e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="20">
+				<Type>Linear</Type>
+				<LowerEnergy>1.45383362e+03</LowerEnergy>
+				<UpperEnergy>1.46805579e+03</UpperEnergy>
+				<ReferenceEnergy>1.45383362e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>2.37686563e+00 1.36078790e-01</Values>
+					<Uncertainties>1.12650156e+00 1.30814046e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="20" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="21">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.46091370e+03 3.97651037e-03</Centroid>
+				<Width fit="true">1.00143433e+00 4.64729927e-02</Width>
+				<Amplitude fit="true">3.75102814e+02 2.01794853e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">8.41854632e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="21">
+				<Type>Linear</Type>
+				<LowerEnergy>6.91537598e+02</LowerEnergy>
+				<UpperEnergy>7.05766479e+02</UpperEnergy>
+				<ReferenceEnergy>6.91537598e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.20869652e+02 -1.44767487e+00</Values>
+					<Uncertainties>6.11469841e+00 6.60181284e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="21" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="22">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">6.98491455e+02 9.80694429e-04</Centroid>
+				<Width fit="true">8.39462280e-01 1.19729405e-02</Width>
+				<Amplitude fit="true">4.84289746e+03 7.43850021e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">8.43995869e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="22">
+				<Type>Linear</Type>
+				<LowerEnergy>1.11540723e+03</LowerEnergy>
+				<UpperEnergy>1.12619873e+03</UpperEnergy>
+				<ReferenceEnergy>1.11540723e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>2.81390114e+01 2.08984837e-01</Values>
+					<Uncertainties>3.45266747e+00 5.06268501e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="22" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="23">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.11978259e+03 1.31614823e-02</Centroid>
+				<Width fit="true">5.09704590e-01 1.40897200e-01</Width>
+				<Amplitude fit="true">5.19948692e+01 1.13032045e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.06198442e+00 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="23">
+				<Type>Linear</Type>
+				<LowerEnergy>7.68568604e+02</LowerEnergy>
+				<UpperEnergy>7.84759277e+02</UpperEnergy>
+				<ReferenceEnergy>7.68568604e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.16972702e+02 -3.10818124e+00</Values>
+					<Uncertainties>5.47184706e+00 4.94866401e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="23" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="24">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">7.76418457e+02 4.71169682e-04</Centroid>
+				<Width fit="true">8.24630678e-01 6.03085803e-03</Width>
+				<Amplitude fit="true">1.35334697e+04 1.19095100e+02</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.21698046e+00 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="24">
+				<Type>Linear</Type>
+				<LowerEnergy>1.51268311e+03</LowerEnergy>
+				<UpperEnergy>1.53229919e+03</UpperEnergy>
+				<ReferenceEnergy>1.51268311e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.24044645e+00 1.71393454e-02</Values>
+					<Uncertainties>7.07499027e-01 6.10495172e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="24" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="25">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.52472595e+03 1.12542473e-02</Centroid>
+				<Width fit="true">7.52624512e-01 1.97159410e-01</Width>
+				<Amplitude fit="true">2.00684700e+01 5.20877981e+00</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">8.44945014e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="25">
+				<Type>Linear</Type>
+				<LowerEnergy>6.12540222e+02</LowerEnergy>
+				<UpperEnergy>6.26769836e+02</UpperEnergy>
+				<ReferenceEnergy>6.12540222e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>2.05278351e+02 -3.14463234e+00</Values>
+					<Uncertainties>7.89415026e+00 8.46746147e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="25" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="26">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">6.19486572e+02 7.43947865e-04</Centroid>
+				<Width fit="true">8.05084229e-01 8.98657925e-03</Width>
+				<Amplitude fit="true">7.77764111e+03 9.41572113e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">5.29877245e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="26">
+				<Type>Linear</Type>
+				<LowerEnergy>1.46364209e+03</LowerEnergy>
+				<UpperEnergy>1.48325867e+03</UpperEnergy>
+				<ReferenceEnergy>1.46364209e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>4.26706076e+00 -1.70081079e-01</Values>
+					<Uncertainties>9.11399901e-01 6.87921792e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="26" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="27">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.47505005e+03 1.15493883e-03</Centroid>
+				<Width fit="true">9.74609375e-01 1.71163715e-02</Width>
+				<Amplitude fit="true">1.96866968e+03 4.46494331e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">7.44227648e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="27">
+				<Type>Linear</Type>
+				<LowerEnergy>5.47769287e+02</LowerEnergy>
+				<UpperEnergy>5.61999451e+02</UpperEnergy>
+				<ReferenceEnergy>5.47769287e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>3.20611450e+02 -4.50221252e+00</Values>
+					<Uncertainties>9.70467281e+00 1.04725981e+00</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="27" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="28">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">5.54899231e+02 5.53833146e-04</Centroid>
+				<Width fit="true">7.86285400e-01 6.65972894e-03</Width>
+				<Amplitude fit="true">1.30862051e+04 1.21439957e+02</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.60672617e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<Peak version="0.2" continuumID="7" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="29">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.00711163e+03 5.73753519e-03</Centroid>
+				<Width fit="true">7.00013638e-01 8.14658552e-02</Width>
+				<Amplitude fit="true">1.88547546e+02 1.86207619e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.07559514e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.00759003e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="28">
+				<Type>Linear</Type>
+				<LowerEnergy>1.75198206e+03</LowerEnergy>
+				<UpperEnergy>1.77698865e+03</UpperEnergy>
+				<ReferenceEnergy>1.75198206e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.90624908e-01 2.67740153e-02</Values>
+					<Uncertainties>5.91457546e-01 3.93683985e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="28" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="30">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.76447620e+03 5.05374745e-03</Centroid>
+				<Width fit="true">8.35174561e-01 1.08248904e-01</Width>
+				<Amplitude fit="true">5.21901741e+01 7.51861143e+00</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">2.52824038e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="29">
+				<Type>Linear</Type>
+				<LowerEnergy>8.20574585e+02</LowerEnergy>
+				<UpperEnergy>8.34802368e+02</UpperEnergy>
+				<ReferenceEnergy>8.20574585e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>7.68544922e+01 -7.16085374e-01</Values>
+					<Uncertainties>4.86664724e+00 5.29462218e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="29" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="31">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">8.27608459e+02 1.08736823e-03</Centroid>
+				<Width fit="true">8.31909180e-01 1.30728250e-02</Width>
+				<Amplitude fit="true">3.76457861e+03 6.49619064e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">6.96708500e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="30">
+				<Type>Linear</Type>
+				<LowerEnergy>1.07371204e+03</LowerEnergy>
+				<UpperEnergy>1.08793762e+03</UpperEnergy>
+				<ReferenceEnergy>1.07371204e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>4.09557724e+01 -3.73693258e-01</Values>
+					<Uncertainties>3.47936630e+00 3.81066084e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="30" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="32">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.08077893e+03 1.40125193e-02</Centroid>
+				<Width fit="true">9.94384706e-01 2.02769727e-01</Width>
+				<Amplitude fit="true">1.06344284e+02 1.75458088e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">7.92962015e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="31">
+				<Type>Linear</Type>
+				<LowerEnergy>1.31013379e+03</LowerEnergy>
+				<UpperEnergy>1.32435718e+03</UpperEnergy>
+				<ReferenceEnergy>1.31013379e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.54103632e+01 -4.99250263e-01</Values>
+					<Uncertainties>2.18169594e+00 2.14318678e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="31" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="33">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.31732117e+03 1.19031698e-03</Centroid>
+				<Width fit="true">9.40002501e-01 1.31886676e-02</Width>
+				<Amplitude fit="true">3.42939819e+03 5.95491409e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.36661386e+00 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="32">
+				<Type>Linear</Type>
+				<LowerEnergy>6.14129601e+01</LowerEnergy>
+				<UpperEnergy>8.44826355e+01</UpperEnergy>
+				<ReferenceEnergy>6.82848129e+01</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.45343652e+03 1.45895615e+01</Values>
+					<Uncertainties>1.19811573e+01 1.29822075e+00</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="32" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="34">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">6.74485092e+01 1.00484286e-02</Centroid>
+				<Width fit="true">1.13589478e+00 2.59765625e-01</Width>
+				<Amplitude fit="true">5.60518433e+02 9.57689285e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.10298800e+00 -1.00000000e+00</Chi2>
+			</Peak>
+			<Peak version="0.2" continuumID="32" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="35">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">7.66164856e+01 1.12571875e-02</Centroid>
+				<Width fit="true">1.36307335e+00 9.08935592e-02</Width>
+				<Amplitude fit="true">6.83252258e+02 1.07206406e+02</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.10298800e+00 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="33">
+				<Type>Linear</Type>
+				<LowerEnergy>1.00012970e+03</LowerEnergy>
+				<UpperEnergy>1.01435590e+03</UpperEnergy>
+				<ReferenceEnergy>1.00012970e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>3.74981384e+01 8.22682738e-01</Values>
+					<Uncertainties>3.42606521e+00 4.04226363e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="33" forCalibration="true" useForEnergyCalibration="true" source="false" useForManualRelEff="true" id="36">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.00711169e+03 5.75677445e-03</Centroid>
+				<Width fit="true">7.00027466e-01 8.14667642e-02</Width>
+				<Amplitude fit="true">1.88552719e+02 1.86210499e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">9.07717526e-01 -1.00000000e+00</Chi2>
+			</Peak>
+			<PeakContinuum version="0" id="34">
+				<Type>Linear</Type>
+				<LowerEnergy>8.20574585e+02</LowerEnergy>
+				<UpperEnergy>8.34802368e+02</UpperEnergy>
+				<ReferenceEnergy>8.20574585e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>7.68553238e+01 -7.16167748e-01</Values>
+					<Uncertainties>4.86664915e+00 5.29459536e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="34" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="37">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">8.27608459e+02 1.08429336e-03</Centroid>
+				<Width fit="true">8.31893921e-01 1.30725121e-02</Width>
+				<Amplitude fit="true">3.76457617e+03 6.49618073e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">6.96614623e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>8.27828003e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="35">
+				<Type>Linear</Type>
+				<LowerEnergy>2.14059341e+02</LowerEnergy>
+				<UpperEnergy>2.28292496e+02</UpperEnergy>
+				<ReferenceEnergy>2.14059341e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.01873102e+03 -5.55354357e+00</Values>
+					<Uncertainties>1.69734783e+01 1.91879153e+00</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="35" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="38">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">2.21090775e+02 5.32445684e-03</Centroid>
+				<Width fit="true">6.06296539e-01 7.95605034e-02</Width>
+				<Amplitude fit="true">5.94799377e+02 5.70620003e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">8.68751168e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>2.21460007e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="36">
+				<Type>Linear</Type>
+				<LowerEnergy>6.12540222e+02</LowerEnergy>
+				<UpperEnergy>6.26769836e+02</UpperEnergy>
+				<ReferenceEnergy>6.12540222e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>2.05279465e+02 -3.14479136e+00</Values>
+					<Uncertainties>7.89419317e+00 8.46746683e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="36" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="39">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">6.19486511e+02 7.41875148e-04</Centroid>
+				<Width fit="true">8.05099487e-01 8.98672547e-03</Width>
+				<Amplitude fit="true">7.77764453e+03 9.41573257e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">5.29615760e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>6.19106018e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="37">
+				<Type>Linear</Type>
+				<LowerEnergy>1.31013379e+03</LowerEnergy>
+				<UpperEnergy>1.32435718e+03</UpperEnergy>
+				<ReferenceEnergy>1.31013379e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.54093180e+01 -4.99164343e-01</Values>
+					<Uncertainties>2.18165946e+00 2.14318782e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="37" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="40">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.31732129e+03 1.18700287e-03</Centroid>
+				<Width fit="true">9.40032959e-01 1.31890532e-02</Width>
+				<Amplitude fit="true">3.42941528e+03 5.95493126e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.36626041e+00 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.31747302e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="38">
+				<Type>Linear</Type>
+				<LowerEnergy>1.64214441e+03</LowerEnergy>
+				<UpperEnergy>1.66470093e+03</UpperEnergy>
+				<ReferenceEnergy>1.64214441e+03</ReferenceEnergy>
+				<Coefficients>
+					<Values>6.00904942e-01 1.26134316e-02</Values>
+					<Uncertainties>6.60744071e-01 4.66099158e-02</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="38" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="41">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">1.65049133e+03 5.00491029e-03</Centroid>
+				<Width fit="true">9.86114442e-01 9.73587483e-02</Width>
+				<Amplitude fit="true">9.22791061e+01 1.00270004e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">3.77934158e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>1.65037000e+03</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="39">
+				<Type>Linear</Type>
+				<LowerEnergy>7.68568542e+02</LowerEnergy>
+				<UpperEnergy>7.84759277e+02</UpperEnergy>
+				<ReferenceEnergy>7.68568542e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.16972374e+02 -3.10815287e+00</Values>
+					<Uncertainties>5.47179985e+00 4.94859397e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="39" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="42">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">7.76418518e+02 4.69837338e-04</Centroid>
+				<Width fit="true">8.24615479e-01 6.03080681e-03</Width>
+				<Amplitude fit="true">1.35334883e+04 1.19095131e+02</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">1.21623313e+00 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>7.76517029e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakContinuum version="0" id="40">
+				<Type>Linear</Type>
+				<LowerEnergy>6.91537598e+02</LowerEnergy>
+				<UpperEnergy>7.05766479e+02</UpperEnergy>
+				<ReferenceEnergy>6.91537598e+02</ReferenceEnergy>
+				<Coefficients>
+					<Values>1.20870239e+02 -1.44766736e+00</Values>
+					<Uncertainties>6.11470079e+00 6.60179853e-01</Uncertainties>
+					<Fittable>1 1</Fittable>
+				</Coefficients>
+			</PeakContinuum>
+			<Peak version="0.2" continuumID="40" forCalibration="true" useForEnergyCalibration="true" source="true" useForManualRelEff="true" id="43">
+				<Type>GaussianDefined</Type>
+				<Skew>NoSkew</Skew>
+				<Centroid fit="true">6.98491455e+02 9.77922580e-04</Centroid>
+				<Width fit="true">8.39446962e-01 1.19727962e-02</Width>
+				<Amplitude fit="true">4.84289795e+03 7.43850174e+01</Amplitude>
+				<LandauAmplitude fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauAmplitude>
+				<LandauMode fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauMode>
+				<LandauSigma fit="false" remark="Deprecated element">0.00000000e+00 0.00000000e+00</LandauSigma>
+				<Chi2 fit="false">8.43529582e-01 -1.00000000e+00</Chi2>
+				<LineColor>#006600</LineColor>
+				<Nuclide>
+					<Name>Br82</Name>
+					<DecayParent>Br82</DecayParent>
+					<DecayChild>Kr82</DecayChild>
+					<DecayGammaEnergy>6.98374023e+02</DecayGammaEnergy>
+					<DecayGammaType>NormalGamma</DecayGammaType>
+				</Nuclide>
+			</Peak>
+			<PeakSet source="AutomatedSearchPeaks">
+				<SampleNumbers>1</SampleNumbers>
+				<PeakIds>15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43</PeakIds>
+			</PeakSet>
+		</Peaks>
+		<DetectorPeakResponse version="1">
+			<Name>DETX_123456789 - Detective-X_in-situ.gis</Name>
+			<Description>DETECTIVEX. 200M_CIRCLE_@1M. Src area: 7.85398e+7 cm2. Src mass: 7.85398e+4 g</Description>
+			<EfficiencySource>ISOCS</EfficiencySource>
+			<EfficiencyEnergyUnits>1</EfficiencyEnergyUnits>
+			<ResolutionForm>Undefined</ResolutionForm>
+			<EfficiencyForm>EnergyEfficiencyPairs</EfficiencyForm>
+			<EnergyEfficiencies>45 0.000172207 50 0.000361567 60 0.000977546 70 0.00158634 80 0.00217491 90 0.00259359 100 0.00293224 125 0.00334671 150 0.00340946 175 0.00335684 200 0.00319348 250 0.00283082 300 0.00254003 400 0.0020547 500 0.00175554 661 0.00143906 700 0.00138229 800 0.00125961 1000 0.00108256 1400 0.000864849 1500 0.000822594 2000 0.000663221</EnergyEfficiencies>
+			<Hash>2085070850469517242</Hash>
+			<ParentHash>0</ParentHash>
+			<Flags>0</Flags>
+			<LowerEnergy>4.50000000E+01</LowerEnergy>
+			<UpperEnergy>2.00000000E+03</UpperEnergy>
+			<Geometry>FIXED-PER-M2</Geometry>
+			<CreationTimeUtc>1762452025</CreationTimeUtc>
+			<LastUsedTimeUtc>1762452025</LastUsedTimeUtc>
+		</DetectorPeakResponse>
+		<ShieldingSourceFit version="0.1">
+			<Geometry>Spherical</Geometry>
+			<MultipleIsotopesPerPeak>1</MultipleIsotopesPerPeak>
+			<AttenuateForAir>0</AttenuateForAir>
+			<DecayCorrect>1</DecayCorrect>
+			<MultithreadComputation>1</MultithreadComputation>
+			<BackgroundPeakSubtraction>0</BackgroundPeakSubtraction>
+			<SameAgeIsotopes>0</SameAgeIsotopes>
+			<PhotopeakClusterSigma>1.25</PhotopeakClusterSigma>
+			<ShowChiOnChart>1</ShowChiOnChart>
+			<Distance>100 cm</Distance>
+			<Shieldings>
+				<Shielding version="0.2">
+					<ForFitting>1</ForFitting>
+					<Geometry>Spherical</Geometry>
+					<Material>
+						<Name>Soil</Name>
+						<Thickness Fit="1" Remark="SphericalThickness">4.84 (±0.29) cm</Thickness>
+						<SphericalThickness Fit="1">4.84 (±0.29) cm</SphericalThickness>
+						<TruthThickness>4.840000 cm</TruthThickness>
+						<TruthThicknessTolerance>4.840000 mm</TruthThicknessTolerance>
+					</Material>
+				</Shielding>
+			</Shieldings>
+			<Peaks>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>221.460007</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>554.348022</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>619.106018</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>698.374023</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>776.517029</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>827.828003</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>1007.590027</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>1044.079956</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>1081.290039</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>1317.473022</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>1474.880005</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>K42</Nuclide>
+					<Energy>1524.599976</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Br82</Nuclide>
+					<Energy>1650.369995</Energy>
+				</Peak>
+				<Peak Use="1">
+					<Nuclide>Na24</Nuclide>
+					<Energy>2754.028076</Energy>
+				</Peak>
+			</Peaks>
+			<Nuclides>
+				<Nuclide>
+					<Name>Br82</Name>
+					<ShieldingDeterminedActivity>0</ShieldingDeterminedActivity>
+					<SourceType>Point</SourceType>
+					<Activity>
+						<Value Fit="1">78509.741354</Value>
+						<Uncertainty>2719.020970</Uncertainty>
+					</Activity>
+					<Age>
+						<Value Fit="0">0.000000</Value>
+						<Uncertainty>-1.000000</Uncertainty>
+					</Age>
+					<TruthActivity>2.122000 uCi</TruthActivity>
+					<TruthActivityTolerance>210.000000 nCi</TruthActivityTolerance>
+					<NumProgenyPeaksSelected>1</NumProgenyPeaksSelected>
+				</Nuclide>
+				<Nuclide>
+					<Name>K42</Name>
+					<ShieldingDeterminedActivity>0</ShieldingDeterminedActivity>
+					<SourceType>Point</SourceType>
+					<Activity>
+						<Value Fit="1">694.945409</Value>
+						<Uncertainty>191.618977</Uncertainty>
+					</Activity>
+					<Age>
+						<Value Fit="0">0.000000</Value>
+						<Uncertainty>-1.000000</Uncertainty>
+					</Age>
+					<TruthActivity>18.780000 nCi</TruthActivity>
+					<TruthActivityTolerance>1.878000 nCi</TruthActivityTolerance>
+					<NumProgenyPeaksSelected>1</NumProgenyPeaksSelected>
+				</Nuclide>
+				<Nuclide>
+					<Name>Na24</Name>
+					<ShieldingDeterminedActivity>0</ShieldingDeterminedActivity>
+					<SourceType>Point</SourceType>
+					<Activity>
+						<Value Fit="1">44.324519</Value>
+						<Uncertainty>23.549158</Uncertainty>
+					</Activity>
+					<Age>
+						<Value Fit="0">0.000000</Value>
+						<Uncertainty>-1.000000</Uncertainty>
+					</Age>
+					<TruthActivity>1.198000 nCi</TruthActivity>
+					<TruthActivityTolerance>119.800000 pCi</TruthActivityTolerance>
+					<NumProgenyPeaksSelected>1</NumProgenyPeaksSelected>
+				</Nuclide>
+			</Nuclides>
+			<Chi2Elements>
+				<Chi2>8.990223</Chi2>
+				<NumParamFit>4</NumParamFit>
+				<EvaluatedEnergies>
+					<EvalPoint>
+						<Energy>221.460007</Energy>
+						<Chi>-0.014469</Chi>
+						<Scale>0.998614</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.095802</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>554.348022</Energy>
+						<Chi>-1.599275</Chi>
+						<Scale>0.985376</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.009144</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>619.106018</Energy>
+						<Chi>1.141836</Chi>
+						<Scale>1.014017</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.012276</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>698.374023</Energy>
+						<Chi>1.183836</Chi>
+						<Scale>1.018520</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.015644</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>776.517029</Energy>
+						<Chi>0.591261</Chi>
+						<Scale>1.005230</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.008846</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>827.828003</Energy>
+						<Chi>0.053987</Chi>
+						<Scale>1.000932</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.017272</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>1007.590027</Energy>
+						<Chi>-0.012667</Chi>
+						<Scale>0.998751</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.098636</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>1044.079956</Energy>
+						<Chi>0.661565</Chi>
+						<Scale>1.011070</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.016732</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>1081.290039</Energy>
+						<Chi>1.097387</Chi>
+						<Scale>1.221085</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.201465</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>1317.473022</Energy>
+						<Chi>-0.539461</Chi>
+						<Scale>0.990720</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.017203</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>1474.880005</Energy>
+						<Chi>-1.197403</Chi>
+						<Scale>0.973561</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.022080</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>1524.599976</Energy>
+						<Chi>0.001257</Chi>
+						<Scale>1.000345</Scale>
+						<Color>#cc3333</Color>
+						<ScaleUncert>0.274775</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>1650.369995</Energy>
+						<Chi>0.087705</Chi>
+						<Scale>1.009622</Scale>
+						<Color>#006600</Color>
+						<ScaleUncert>0.109705</ScaleUncert>
+					</EvalPoint>
+					<EvalPoint>
+						<Energy>2754.028076</Energy>
+						<Chi>0.000479</Chi>
+						<Scale>1.000254</Scale>
+						<Color>#00b9ff</Color>
+						<ScaleUncert>0.531129</ScaleUncert>
+					</EvalPoint>
+				</EvaluatedEnergies>
+			</Chi2Elements>
+		</ShieldingSourceFit>
+		<FileName>location2.n42</FileName>
+	</DHS:InterSpec>
+</RadInstrumentData>
+

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fmw- is short for FeatureMarkerWidget
+  -->
+  <message id="fmw-escape-peaks">Picos de Escape</message>
+  <message id="fmw-compton-peak">Pico Compton</message>
+  <message id="fmw-angle">Ângulo</message>
+  <message id="fmw-compton-edge">Borda Compton</message>
+  <message id="fmw-sum-peak">Pico Soma</message>
+</messages>

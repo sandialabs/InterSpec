@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Currently, this file is loaded before the users language preference is loaded, 
+    meaning the version of this file will correspond to the OS-reported language.
+
+    Therefore, its probably not worth customizing this file to each language.
+  -->
+  <message id="interspec">InterSpec</message>
+  <message id="app-deep-link-error">Error manejando enlace profundo: {1}</message>
+</messages>
+
+

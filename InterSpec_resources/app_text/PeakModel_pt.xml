@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Strings from PeakModel - e.g., tables that display peak info.
+  pm- is short for PeakModel
+  -->
+  <message id="pm-tt-use-for-cal">Se este pico deve ser usado para ajudar a calibrar energia.
+    Você deve ter um nuclídeo, reação ou raio x atribuído ao pico, e você não deve ter fixado o valor de energia média usando o Editor de Picos.</message>
+  <message id="pm-gaussian">Gaussiano</message>
+  <message id="pm-region">Região</message>
+  <message id="pm-err-use-fit-no-nuc">Você deve associar um nuclídeo com o pico antes de usá-lo para ajuste de blindagem/fonte.</message>
+  <message id="pm-err-use-cal-no-nuc">Você deve associar um nuclídeo, raio x ou reação com o pico antes de usá-lo para calibração.</message>
+  <message id="pm-err-use-rel-act-no-nuc">Apenas picos associados com um gama de nuclídeo podem ser usados para análise de atividade relativa.</message>
+  <message id="pm-warn-use-xray-fit">Aviso: usar raios x para ajustar nuclídeos de fonte geralmente não é uma ótima ideia, então use com cautela.</message>
+
+  <message id="pm-hdr-diff">Diferença</message>
+  <message id="pm-hdr-cal-peak">Pico Calib.</message>
+  <message id="pm-hdr-rel-act">Ativ. Rel.</message>
+  <message id="pm-hdr-label">Rótulo</message>
+  <message id="pm-hdr-color">Cor</message>
+  <message id="pm-hdr-skew-amp">Amp. Assim.</message>
+  <message id="pm-hdr-peak-type">Tipo de Pico</message>
+  <message id="pm-hdr-low-energy">Energia Inferior</message>
+  <message id="pm-hdr-up-energy">Energia Superior</message>
+  <message id="pm-hdr-roi-counts">Contagens ROI</message>
+
+
+  <message id="pm-hdr-tt-mean">Energia Média</message>
+  <message id="pm-hdr-tt-fwhm">Largura Total à Meia Altura</message>
+  <message id="pm-hdr-tt-amp">Área do Pico</message>
+  <message id="pm-hdr-tt-cps">Contagens do pico por segundo</message>
+  <message id="pm-hdr-tt-photopeak-energy">Energia do Fotopico</message>
+  <message id="pm-hdr-tt-diff">Diferença entre fotopico e energia média</message>
+  <message id="pm-hdr-tt-man-rel-eff">Usar para análise "Isotópicos de picos".</message>
+  <message id="pm-hdr-tt-color">Cor do pico</message>
+  <message id="pm-hdr-tt-label">Rótulo especificado pelo usuário</message>
+  <message id="pm-hdr-tt-roi-counts">Integral das contagens gama sobre a região de interesse</message>
+  <message id="pm-hdr-tt-"></message>
+
+</messages>

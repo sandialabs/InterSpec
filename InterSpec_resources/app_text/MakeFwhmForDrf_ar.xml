@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">عدم يقين FWHM</message>
+  <message id="fpm-peak-source">مصدر القمة</message>
+  <message id="fpm-user">المستخدم</message>
+  <message id="fpm-auto-fit">ملائمة تلقائية</message>
+  
+  
+  <message id="mffdw-use-fwhm-btn">استخدام FWHM</message>
+  
+  <message id="mffd-eqn-type-label">نوع المعادلة:</message>
+  <message id="mffd-num-terms-label">عدد الحدود:</message>
+  <message id="mffd-par-vals-label">قيم المعاملات:</message>
+  <message id="mffd-err-no-foreground">لا توجد بيانات للبحث عن القمم عليها.</message>
+  <message id="mffd-tt-par">مع عدم اليقين: {1}</message>
+  <message id="mffd-err-fail-fit">فشل في ملائمة معادلة FWHM: {1}</message>
+  <message id="mffd-err-waiting-for-search">يتم البحث عن القمم حاليًا - يرجى الصبر</message>
+</messages>

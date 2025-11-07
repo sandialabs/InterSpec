@@ -274,9 +274,9 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   
   AuxWindow::addHelpInFooter( buttonDiv, "multi-file-calibration-dialog" );
   
-  m_cancel = new WPushButton( "Cancel", buttonDiv );
-  m_fit    = new WPushButton( "Fit", buttonDiv );
-  m_use    = new WPushButton( "Use", buttonDiv );
+  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
+  m_fit    = new WPushButton( WString::tr("Fit"), buttonDiv );
+  m_use    = new WPushButton( WString::tr("Use"), buttonDiv );
   
   m_use->disable();
   m_cancel->clicked().connect( boost::bind( &EnergyCalMultiFile::handleFinish, this, WDialog::Rejected ) );
@@ -532,8 +532,14 @@ void EnergyCalMultiFile::applyCurrentFit()
   }
   
   vector<pair<string,string>> error_msgs;
-  const auto foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
-  const auto dispsamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  const shared_ptr<SpecMeas> foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
+  const set<int> &foreSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
+  
+  const shared_ptr<SpecMeas> background = viewer->measurment(SpecUtils::SpectrumType::Background);
+  const set<int> &backSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
+  
+  const shared_ptr<SpecMeas> secondary = viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
+  const set<int> &secoSamples = viewer->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
   
   for( size_t filenum = 0; filenum < m_model->m_data.size(); ++filenum )
   {
@@ -765,8 +771,12 @@ void EnergyCalMultiFile::applyCurrentFit()
 
       assert( foreground );
       //Trigger an update of peak views if we are on the foreground SpecFile
-      if( (spec == foreground) && foreground->peaks(dispsamples) )
-        viewer->peakModel()->setPeakFromSpecMeas(foreground,dispsamples);
+      if( (spec == foreground) && foreground->peaks(foreSamples) )
+        viewer->peakModel()->setPeakFromSpecMeas( foreground, foreSamples, SpecUtils::SpectrumType::Foreground );
+      else if( (spec == background) && background->peaks(backSamples) )
+        viewer->peakModel()->setPeakFromSpecMeas( background, backSamples, SpecUtils::SpectrumType::Background );
+      else if( (spec == secondary) && secondary->peaks(secoSamples) )
+        viewer->peakModel()->setPeakFromSpecMeas( secondary, secoSamples, SpecUtils::SpectrumType::SecondForeground );
     }catch( std::exception &e )
     {
       const string filename = header ? header->displayName().toUTF8() : std::string("unknown");

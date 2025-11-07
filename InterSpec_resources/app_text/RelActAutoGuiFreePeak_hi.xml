@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raagfp- is short for RelActAutoGuiFreePeak -->
+
+  <!-- Checkboxes -->
+  <message id="raagfp-constrain-fwhm">FWHM प्रतिबंधित करें</message>
+  <message id="raagfp-true-energy">सही ऊर्जा</message>
+
+  <!-- Messages -->
+  <message id="raagfp-not-in-roi">ROI में नहीं।</message>
+
+  <!-- Tooltips -->
+  <message id="raagfp-constrain-fwhm-tt">जब चेक किया जाता है, तो यह पीक FWHM कार्यात्मक रूप में प्रतिबंधित की जाएगी जिसमें gamma और x-ray पीक सामान्य रूप से प्रतिबंधित होती हैं।&lt;br /&gt;जब अनचेक किया जाता है, तो इस पीक के लिए FWHM डेटा से फिट किया जाएगा, सभी अन्य पीक चौड़ाई से स्वतंत्र।&lt;br /&gt;इस विकल्प को अनचेक करना विनाश और प्रतिक्रिया फोटोपीक के लिए उपयोगी है।</message>
+  <message id="raagfp-true-energy-tt">यदि पीक ज्ञात ऊर्जा के gamma के लिए है तो इस विकल्प को चेक करें।&lt;br /&gt;यदि यह पीक अज्ञात सही ऊर्जा वाले स्पेक्ट्रम में एक देखी गई पीक है तो इस विकल्प को अनचेक करें।</message>
+
+</messages>

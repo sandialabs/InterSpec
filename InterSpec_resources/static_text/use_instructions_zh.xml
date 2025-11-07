@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+
+  <!--When you add a video to the content, you should use a template placeholder
+      in the content (e.x. ${myvideobinding}) to allow the C++ to bind this
+      video to a video playing widget in the WTemplate widget.  However since we
+      dont want to have to hard code the bind placeholder name, and which video
+      it points to in the C++, this next videoinfo message section encodes what
+      placeholder names the C++ templating code should look for, as well as
+      the actual video files and titles the placeholder name cooresponds to.
+      The below JSON object is indexed by keys that have the same value
+      as the 'id' for the message they coorespond to; the key cooresponds to an
+      array of objects that each have at least a "key" and "file" member, but
+      may also have an optional "title" member.
+  -->
+  <message id="videoinfo">
+  {
+    "1intro-video":
+      [
+        {   "key":"video1",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpecMouseIntro.ogv",
+            "title":"鼠标介绍"
+        }
+      ],
+    "3gamma-lines-video":
+       [
+        {   "key":"video2",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_GammaLines.ogv",
+            "title":"伽马射线谱线"
+        }
+       ],
+    "4calibration-video":
+       [
+        {   "key":"video3",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_calibration.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_calibration.ogv",
+            "title":"校准"
+        }
+       ],
+    "2nuclide-peak-association-video":
+       [
+        {   "key":"video4",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_AssociatePeaksWithNuclides.ogv",
+            "title":"峰值识别"
+        }
+       ],
+    "5activity-shielding-fit-video":
+       [
+        {   "key":"video5",
+            "fileMP4":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.mp4",
+            "fileOGV":"InterSpec_resources/static_text/videos/InterSpec_activityShieldingFit.ogv",
+            "title":"活度和屏蔽"
+        }
+       ]
+  }
+  </message>
+
+  <message id='mobile-mouse-interactions'>
+	   <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">放大</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_in.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         要放大能谱的特定部分,
+         将两个手指<u>向外推开</u>。
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">缩小</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_zoom_out.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         要缩小,
+         将两个手指<u>向内捏合</u>。
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+       <div class="UseInstructionHeader">更改能量范围</div>
+    <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/touch_energy_pan.png" style="width:70%" />
+	  </div>
+      <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+         要沿图表的 x 轴(能量)移动,
+         将手指放在图表上并向左或向右移动以更改显示的能量。
+      </div>
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">拟合峰值</div>
+	  <div style="border:1px solid black">
+	  <div style="padding-top: 10px" align="center"><h3><b>方法 1</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_fit_peak.png" style="width:70%" />
+	  </div>
+    <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      在您想要拟合峰值的位置<u>双击</u>能谱。
+    </div>
+	   <div align="center">
+	  <img src="InterSpec_resources/static_text/images/touch_multipeak_fit.png" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+        在现有峰值附近再次<u>双击</u>将拟合更多峰值。
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>方法 2</b></h3></div>
+	  <div style="padding-top: 10px" align="center">
+	    <img src="InterSpec_resources/static_text/images/mobile_multipeak.jpg" style="width:70%" />
+	  </div>
+	  <div align="center" style="padding-top: 10px; padding-bottom: 10px">
+      如果您想在感兴趣区域中强制指定数量的峰值:
+      在感兴趣区域上<u>拖动</u>两个水平对齐的手指。
+      <u>移开</u>手指并<u>选择</u>您想要识别的峰值数量。
+    </div>
+	  <div style="padding-top: 10px" align="center"><h3><b>其他方法</b></h3>
+      在<em>菜单</em>&rarr;<em>工具</em>&rarr;<em>峰值管理器</em>中,您可以使用
+      <img src="InterSpec_resources/static_text/images/mobil_search_for_peaks.png" style="height:1.25em;" /> 按钮
+      自动拟合能谱中的所有峰值。
+      建议在使用此自动峰值搜索之前显示核素参考谱线,
+      以便峰值将自动与负责创建峰值的核素相关联。
+	  </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">启动峰值编辑器</div>
+         如果您想重新拟合或手动调整峰值,请使用<em>峰值编辑器</em>,
+         按住手指在峰值上约一秒钟,菜单将弹出,
+         让您选择要执行的操作。
+         <div style="padding-top: 1px" align="center">
+           <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+         </div>
+	    </div>
+    </div>
+	  <div class="UseInstructionSection">
+      <div class="UseInstructionHeader">删除峰值</div>
+      <p>
+        删除峰值的最简单方法是按住手指在其上约一秒钟,
+        菜单将弹出,您可以在其中选择删除峰值。
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_right_click.png"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        您还可以将两个手指放在屏幕上,跨越要删除的峰值的能量范围,然后向上移动它们。
+        手指之间具有质心的任何峰值将被完全删除;您也可以使用相同的手势
+        减少峰值的能量范围,只要峰值的质心不落在您的手指之间。
+        <div style="padding-top: 1px" align="center">
+          <img src="InterSpec_resources/static_text/images/mobile_delete_peaks.jpg"  class="imageBorder" style="width:75%;" />
+        </div>
+      </p>
+
+      <p>
+        <em>峰值管理器</em>(<b>菜单</b>&rarr;<b>工具</b>&rarr;<b>峰值管理器</b>)和
+        <em>峰值编辑器</em>(按住手指在峰值上一秒钟,选择<b>峰值编辑器</b>)也可以删除峰值。
+      </p>
+    </div>
+  </message>
+
+
+<!--
+For the desktop-mouse-interactions-info each JSON object should have a 'title',
+a 'img' and a optional 'desc_message_id' field.  If 'desc_message_id' is
+specified then this field refers to the id of a <message> element that contains
+the XHTML message for that entry.
+-->
+<message id='desktop-mouse-interactions-info'>
+{
+  "01desktop-mouse-interactions-zoominout": {
+    "title": "放大/缩小",
+    "img": "InterSpec_resources/images/ZoomInOut.gif",
+    "desc_message_id": "01desktop-mouse-interactions-zoominout-desc"
+  },
+  "02desktop-mouse-interactions-shiftenergyrange": {
+    "title": "平移能量",
+    "img": "InterSpec_resources/images/ERShift.gif",
+    "desc_message_id": "02desktop-mouse-interactions-shiftenergyrange-desc"
+  },
+  "03desktop-mouse-interactions-energyslider": {
+    "title": "能量滑块",
+    "img": "InterSpec_resources/images/energy_slider.gif",
+    "desc_message_id": "03desktop-mouse-interactions-energyslider-desc"
+  },
+  "04desktop-mouse-interactions-identifypeaks": {
+    "title": "峰值拟合",
+    "img": "InterSpec_resources/images/PeakFit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-identifypeaks-desc"
+  },
+  "04desktop-mouse-interactions-multipeaks": {
+    "title": "ROI 拟合",
+    "img": "InterSpec_resources/images/multi_peak_fit.gif",
+    "desc_message_id": "04desktop-mouse-interactions-multipeaks-desc"
+  },
+  "07desktop-mouse-interactions-deletepeaks": {
+    "title": "删除峰值",
+    "img": "InterSpec_resources/images/DeletePeaks.gif",
+    "desc_message_id": "07desktop-mouse-interactions-deletepeaks-desc"
+  },
+  "06desktop-mouse-interactions-visualcalibration": {
+    "title": "能量校准",
+    "img": "InterSpec_resources/images/VisRecalib.gif",
+    "desc_message_id": "06desktop-mouse-interactions-visualcalibration-desc"
+  },
+  "05desktop-mouse-interactions-peakeditor": {
+    "title": "峰值编辑器",
+    "img": "InterSpec_resources/images/PeakEdit.gif",
+    "message-id": "05desktop-mouse-interactions-peakeditor-desc"
+  },
+  "08desktop-mouse-interactions-adjustROI": {
+    "title": "调整 ROI",
+    "img": "InterSpec_resources/images/roi_range_adjust.gif",
+    "desc_message_id": "08desktop-mouse-interactions-adjustROI-desc"
+  },
+  "08desktop-mouse-interactions-scale-y": {
+    "title": "缩放 Y 轴",
+    "img": "InterSpec_resources/images/yscale.gif",
+    "desc_message_id": "08desktop-mouse-interactions-scale-y-desc"
+  },
+  "09desktop-mouse-interactions-countgamma": {
+    "title": "计数伽马",
+    "img": "InterSpec_resources/images/ERCount.gif",
+    "desc_message_id": "09desktop-mouse-interactions-countgamma-desc"
+  },
+  "10desktop-shortcuts" : {
+    "title": "键盘快捷键",
+    "desc_message_id": "10desktop-shortcuts-desc"
+  }
+}
+</message>
+
+<message id='01desktop-mouse-interactions-zoominout-desc'>
+<div><center>左键单击向<b>右</b>拖动以放大。</center></div>
+<div><center>左键单击向<b>左</b>拖动以缩小。</center></div>
+</message>
+
+<message id='02desktop-mouse-interactions-shiftenergyrange-desc'>
+<center>右键单击拖动</center>
+</message>
+
+
+<message id='03desktop-mouse-interactions-energyslider-desc'>
+<center> 从<b>视图</b>菜单中选择&quot;<b>显示能量滑块</b>&quot;。</center>
+<div>这是调整能谱能量范围的简便方法。</div>
+<div><b>InterSpec</b> 将记住您是否希望显示能量滑块图表。</div>
+</message>
+
+<message id='04desktop-mouse-interactions-identifypeaks-desc'>
+<center>
+<p style="font-size: 14px">有多种拟合峰值的方法,包括: </p>
+</center>
+<ol>
+  <li>双击左键。您可以再次在同一峰值附近双击以添加另一个峰值。</li>
+  <li><b><kbd>CTRL</kbd></b> + 左键单击拖动 &rarr; 左键单击(参见&quot;ROI 拟合&quot;) </li>
+  <li>从&quot;<b>峰值管理器</b>&quot;选项卡单击&quot;<b>添加</b>&quot; &rarr;。然后您可以将表中的参数调整为所需的值。</li>
+  <li>从&quot;<b>峰值管理器</b>&quot;选项卡单击&quot;<b>搜索峰值</b>&quot;以拟合能谱中的所有峰值。</li>
+<li>右键单击现有峰值并选择&quot;<b>添加峰值</b>&quot;以将峰值添加到同一 ROI。</li>
+</ol>
+
+<p>提示:在拟合峰值之前,显示负责它的核素的参考谱线很有用,
+这样当拟合峰值时,它将与该核素相关联。
+此信息用于拟合能量校准、探测器响应、活度和屏蔽量。
+</p>
+</message>
+
+
+<message id='04desktop-mouse-interactions-multipeaks-desc'>
+<div>要在感兴趣区域 (ROI) 中拟合确定数量的峰值:</div>
+<center>
+<b><kbd>CTRL</kbd></b> + 左键单击拖动 &rarr; 然后选择多少个峰值。
+</center>
+</message>
+
+<message id='07desktop-mouse-interactions-deletepeaks-desc'>
+<ol>
+<li>右键单击 &rarr; &quot;<b>删除峰值</b>&quot;</li>
+<li>右键单击 &rarr; &quot;<b>峰值编辑器</b>&quot; &rarr; &quot;<b>删除</b>&quot;</li>
+<li><b><kbd>SHIFT</kbd></b> + 左键单击拖动</li>
+<li>左键单击&quot;<b>清除所有峰值</b>&quot; &rarr; 左键单击&quot;<b>是</b>&quot;</li>
+<li>将 ROI 的一侧拖过另一侧。</li>
+</ol>
+</message>
+
+<message id='06desktop-mouse-interactions-visualcalibration-desc'>
+<div>要以图形方式调整能量校准:</div>
+<center> <kbd>CTRL</kbd> + <kbd>ALT</kbd> + 左键单击拖动 &rarr; <u>可选</u>:调整数量 &rarr; &quot;<b>接受</b>&quot;</center>
+<div>注意:如果您再次执行此操作,例如首先在高能峰值上,然后在低能峰值上(或反之亦然),弹出的对话框将
+为您提供通过调整偏移量和增益来保留这两个操作的选项,以便两个峰值将保持在您拖动它们的能量上。
+</div>
+<p>&quot;能量校准&quot;选项卡还允许您手动调整
+能量校准系数,或使用与峰值关联的核素进行拟合。
+</p>
+</message>
+
+<message id='05desktop-mouse-interactions-peakeditor-desc'>
+<div><center>右键单击 &rarr; &quot;峰值编辑器&quot;</center></div>
+</message>
+
+
+
+<message id='08desktop-mouse-interactions-adjustROI-desc'>
+<center><div>将鼠标放在感兴趣区域 (ROI) 边缘附近并拖动。</div></center>
+<div>鼠标必须在峰值的 y 范围内,并且在 ROI 边缘的 10 像素内。</div>
+</message>
+
+
+<message id='08desktop-mouse-interactions-scale-y-desc'>
+<center>通过选择<b>视图</b> &rarr; &quot;<b>显示 Y 轴缩放器</b>&quot;,
+相对于前景缩放背景和/或次级能谱的幅度。
+</center>
+<p>要将背景或次级能谱恢复为活时间归一化,请单击&quot;能谱文件&quot;选项卡上的&quot;归一化&quot;按钮。</p>
+<p><b>InterSpec</b> 将记住当有背景或次级能谱时您是否希望显示这些滑块,
+但如果未加载背景或次级能谱,菜单项将被禁用。</p>
+</message>
+
+
+<message id='09desktop-mouse-interactions-countgamma-desc'>
+  <center>
+    <ol>
+      <li><b><kbd>SHIFT</kbd></b> + <b><kbd>ALT</kbd></b> + 左键单击拖动 &rarr; <u>可选</u>:调整数量</li>
+      <li><b>工具</b> &rarr; <b>能量范围总和</b></li>
+    </ol>
+  </center>
+</message>
+
+<message id='10desktop-shortcuts-desc'>
+
+  <ul>
+    <li>
+      <b><code>Ctrl-s</code></b>:切换到&quot;<em>能谱文件</em>&quot;选项卡,或
+      如果<em>工具选项卡</em>被隐藏,则显示<em>能谱文件</em>工具。
+    </li>
+    <li>
+      <b><code>Ctrl-p</code></b>:切换到&quot;<em>峰值管理器</em>&quot;选项卡,或
+      显示工具。
+    </li>
+    <li>
+      <b><code>Ctrl-r</code></b>:切换到&quot;<em>参考光电峰</em>&quot;选项卡,或显示工具。
+    </li>
+    <li>
+      <b><code>Ctrl-e</code></b>:切换到&quot;<em>能量校准</em>&quot;选项卡,或显示工具。
+    </li>
+    <li>
+      <b><code>Ctrl-n</code></b>:切换到&quot;<em>核素搜索</em>&quot;选项卡,或显示工具。
+    </li>
+    <li>
+      <b><code>Ctrl-h</code></b>:显示应用内<em>帮助</em>。
+    </li>
+    <li>
+      <b><code>Ctrl-i</code></b>:显示<em>欢迎信息</em>屏幕。
+    </li>
+    <li>
+      <b><code>Ctrl-l</code></b>:在对数和线性之间切换能谱 y 轴。
+    </li>
+    <li>
+      <b><code>Ctrl-c</code></b>:清除所有显示的参考谱线。
+    </li>
+  </ul>
+</message>
+
+
+  <message id='1intro-video'>
+     <center>${video1}</center>
+  </message>
+
+  <message id='3gamma-lines-video'>
+     <center>${video2}</center>
+  </message>
+
+  <message id='4calibration-video'>
+     <center>${video3}</center>
+  </message>
+
+  <message id='2nuclide-peak-association-video'>
+     <center>${video4}</center>
+  </message>
+
+  <message id='5activity-shielding-fit-video'>
+     <center>${video5}</center>
+  </message>
+
+
+  <message id="known-issues">
+    当前已知问题:
+    <ul>
+<li><b>全部:</b> (峰值管理器) &quot;ID 核素&quot;在极少数情况下不起作用 </li>
+        <li><b>全部:</b> &quot;退出时保存状态&quot;在极少数情况下不起作用</li>
+    </ul>
+  </message>
+</messages>

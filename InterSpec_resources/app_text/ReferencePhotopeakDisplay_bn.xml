@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rpd- is short for ReferencePhotopeakDisplay -->
+  <message id="rpd-add-another-btn">আরেকটি যোগ করুন</message>
+  <message id="rpd-add-another-btn-narrow">যোগ করুন</message>
+  <message id="rpd-tt-add-another-btn">বর্তমানে প্রদর্শিত লাইন রাখুন এবং প্রদর্শন করার জন্য একটি নতুন নিউক্লাইড/উৎস যোগ করুন।</message>
+  <message id="rpd-tt-nuc-edit">উদাহরণ <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (শুধুমাত্র এক্স-রে), <b>Uranium</b> (এক্স-রে), <b>U-235m</b> (মেটা স্থিতিশীল অবস্থা), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, ইত্যাদি।</message>
+  <message id="rpd-tt-age">
+    <div>
+      বয়স সময় একক সমন্বয় ব্যবহার করে নির্দিষ্ট করা যেতে পারে, যেমন '<b>5.3y 8d 22m</b>' অথবা অর্ধায়ুতে '<b>2.5 HL</b>'।
+    </div>
+    <div>
+      গ্রহণযোগ্য সময় একক: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, অথবা
+      আপনি <b>hh:mm:ss</b> দ্বারা সময় নির্দিষ্ট করতে পারেন। অর্ধায়ু একক
+      নির্দিষ্ট করা যেতে পারে <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, অথবা <b>half life</b> ব্যবহার করে।
+    </div>
+    <div>
+      অর্ধায়ু একক বা সময়কাল অন্যান্য একক সাথে মিশ্রিত করা যায় না। যখন একাধিক সময়কাল
+      নির্দিষ্ট করা হয়, তারা যোগ করা হয়, যেমন '1y6months 3m' কে 18 মাস এবং 3 মিনিট হিসাবে ব্যাখ্যা করা হয়।
+    </div>
+  </message>
+  <message id="rpd-tt-clear">সমস্ত স্থায়ী লাইন, সেইসাথে বর্তমান অ-স্থায়ী লাইন পরিষ্কার করে।</message>
+  <message id="rpd-more-info">আরো তথ্য</message>
+  <message id="rpd-shield-mat">শিল্ডিং উপাদান</message>
+  <message id="rpd-options">বিকল্প</message>
+  <message id="rpd-opt-prompt">শুধুমাত্র তাৎক্ষণিক</message>
+  <message id="rpd-opt-tt-prompt">
+    শুধুমাত্র মূল নিউক্লাইড থেকে গামা, এবং বংশধর যতক্ষণ না তাদের একজনের মূল নিউক্লাইডের চেয়ে দীর্ঘ অর্ধায়ু থাকে; সেই পর্যন্ত ক্ষয় শৃঙ্খল সাম্যাবস্থায় রয়েছে।
+  </message>
+  <message id="rpd-opt-gamma">গামা দেখান</message>
+  <message id="rpd-opt-xray">এক্স-রে দেখান</message>
+  <message id="rpd-opt-alphas">আলফা দেখান</message>
+  <message id="rpd-opt-betas">বিটা দেখান</message>
+  <message id="rpd-opt-cascade">ক্যাসকেড যোগফল</message>
+  <message id="rpd-opt-escapes">এস্কেপ পিক</message>
+  <message id="rpd-prev-nucs">পূর্ববর্তী নিউক</message>
+  <message id="rpd-det-nucs">ডিট RID নিউক</message>
+  <message id="rpd-assoc-nucs">সংশ্লিষ্ট নিউক।</message>
+  <message id="rpd-suggestions">পরামর্শ</message>
+  <message id="rpd-feature-markers">বৈশিষ্ট্য মার্কার</message>
+
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">সরু লাইন</message>
+  <message id="rpd-line-thick-normal">স্ট্যান্ডার্ড পুরু।</message>
+  <message id="rpd-line-thick-thick">পুরু লাইন</message>
+  <message id="rpd-line-thick-thicker">আরো পুরু লাইন</message>
+
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">ন্যূনতম লাইন</message>
+  <message id="rpd-line-verb-hover">গাইড রেফ. লাইন</message>
+  <message id="rpd-line-verb-major">সম্পূর্ণ প্রধান লাইন</message>
+
+  <message id="rpd-csv-export-msg">'নিউক্লাইড ক্ষয় তথ্য' টুল CSV ফাইলে নিউক্লাইড, ক্ষয় পণ্য এবং ক্ষয় তথ্য এক্সপোর্ট করার জন্য অতিরিক্ত ক্ষমতা প্রদান করে।</message>
+  <message id="rpd-changed-age">{1} এর জন্য বয়স '{2}' থেকে '{3}' তে আরো যুক্তিসঙ্গত মানে পরিবর্তন করা হয়েছে</message>
+  <message id="rpd-changed-age-fission">বৈধ হতে, বয়স {1} তে পরিবর্তন করা হয়েছে।</message>
+  <message id="rpd-det-id">ডিটেক্টর ID</message>
+  <message id="rpd-ext-rid">বহিরাগত RID</message>
+  <message id="rpd-prev">পূর্ববর্তী</message>
+  <message id="rpd-warn-cascade-xrays">এক্স-রে ক্যাসকেডে অন্তর্ভুক্ত নয়</message>
+
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">আইসো</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">e.c.</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">প্রোটন</message>
+  <message id="rpd-tbl-spont-fis">s.f.</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">এক্সরে</message>
+  <message id="rpd-tbl-reaction">বিক্রিয়া</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">ক্যাসকেড যোগফল</message>
+
+  <message id="rpd-tbl-hdr-energy">শক্তি (keV)</message>
+  <message id="rpd-tbl-hdr-br">B.R.</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">মূল</message>
+  <message id="rpd-tbl-hdr-mode">মোড</message>
+  <message id="rpd-tbl-hdr-particle">কণা</message>
+  <message id="rpd-tbl-hdr-tt-energy">উৎপন্ন কণার শক্তি</message>
+  <message id="rpd-tbl-hdr-tt-br">মূল নিউক্লাইডের প্রতি Bq এ প্রতি সেকেন্ডে কণার সংখ্যা।</message>
+  <message id="rpd-tbl-hdr-tt-trans">প্রকৃত নিউক্লাইড যা এই কণা দিতে ক্ষয় হয়েছে।</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">মূল নিউক্লাইডের ক্ষয় মোড, যা এই কণা উৎপন্ন করেছে।</message>
+  <message id="rpd-tbl-hdr-tt-type">উৎপন্ন কণার ধরন</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
+
+
+</messages>

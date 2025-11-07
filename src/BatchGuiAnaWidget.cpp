@@ -312,6 +312,10 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_create_json_output->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_create_json_output, WString::tr( "bgw-create-json-output-tt" ), showToolTips );
 
+  m_concatenate_to_n42 = new Wt::WCheckBox( WString::tr( "bgw-concatenate-to-n42" ), boolOptions );
+  m_concatenate_to_n42->addStyleClass( "CbNoLineBreak" );
+  HelpSystem::attachToolTipOn( m_concatenate_to_n42, WString::tr( "bgw-concatenate-to-n42-tt" ), showToolTips );
+
   m_use_existing_background_peaks =
     new Wt::WCheckBox( WString::tr( "bgw-use-existing-background-peaks" ), boolOptions );
   m_use_existing_background_peaks->addStyleClass( "CbNoLineBreak" );
@@ -489,9 +493,10 @@ void BatchGuiPeakFitWidget::handleFileUpload( WContainerWidget *dropArea, FileDr
   const string &display_name = std::get<0>( first_file );
   const string &path_to_file = std::get<1>( first_file );
   const bool should_delete = std::get<2>( first_file );
+  const BatchGuiInputSpectrumFile::ShowPreviewOption show_preview = BatchGuiInputSpectrumFile::ShowPreviewOption::Show;
 
   BatchGuiInputSpectrumFile *input =
-    new BatchGuiInputSpectrumFile( display_name, path_to_file, should_delete, dropArea );
+    new BatchGuiInputSpectrumFile( display_name, path_to_file, should_delete, show_preview, dropArea );
   dropArea->removeStyleClass( "EmptyExemplarUpload" );
   input->remove_self_request().connect(
     boost::bind( &BatchGuiPeakFitWidget::handle_remove_exemplar_upload, this, boost::placeholders::_1 ) );
@@ -864,6 +869,7 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
   answer.overwrite_output_files = m_overwrite_output_files->isChecked();
   answer.create_csv_output = m_create_csv_output->isChecked();
   answer.create_json_output = m_create_json_output->isChecked();
+  answer.concatenate_to_n42 = m_concatenate_to_n42->isChecked();
 
   if( m_no_background->isChecked() )
   {
@@ -911,7 +917,15 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
       if( !input_file )
         continue;
 
-      answer.report_templates.push_back( input_file->path_to_file() );
+      string tmplt_name = input_file->path_to_file();
+      if( !input_file->display_name().empty()
+         && (SpecUtils::filename(input_file->display_name()) != SpecUtils::filename(input_file->path_to_file())) )
+      {
+        tmplt_name += BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker;
+        tmplt_name += SpecUtils::filename(input_file->display_name());
+      }
+
+      answer.report_templates.push_back( tmplt_name );
     }
   }
 
@@ -924,7 +938,16 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
       if( !input_file )
         continue;
 
-      answer.summary_report_templates.push_back( input_file->path_to_file() );
+
+      string tmplt_name = input_file->path_to_file();
+      if( !input_file->display_name().empty()
+         && (SpecUtils::filename(input_file->display_name()) != SpecUtils::filename(input_file->path_to_file())) )
+      {
+        tmplt_name += BatchPeak::BatchPeakFitOptions::sm_report_display_name_marker;
+        tmplt_name += SpecUtils::filename(input_file->display_name());
+      }
+
+      answer.summary_report_templates.push_back( tmplt_name );
     }
   }// if( m_summary_custom_report->isChecked() )
 
@@ -1728,7 +1751,7 @@ FileConvertOpts::FileConvertOpts( Wt::WContainerWidget *parent )
   if( !isMobile )
   {
     const string docroot = wApp->docRoot();
-    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/static_text/spectrum_file_format_descriptions" );
+    const string bundle_file = SpecUtils::append_path(docroot, "InterSpec_resources/app_text/spectrum_file_format_descriptions" );
     descrip_bundle.use(bundle_file,true);
   }//if( !isMobile )
   

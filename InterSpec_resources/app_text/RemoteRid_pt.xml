@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rr- is short for RemoteRid
+  -->
+  <message id="rr-mi-url">URL</message>
+  <message id="rr-mi-executable-path">Caminho Exec</message>
+  <message id="rr-url-empty-text">URL do Serviço FullSpectrum</message>
+  <message id="rr-exe-path-empty-text">Caminho para executável FullSpectrum</message>
+  <message id="rr-get-detectors">Recuperar DRFs</message>
+  <message id="rr-detectors-label">DRF:</message>
+  <message id="rr-url-instructions">Após inserir URL do serviço web, por favor (opcionalmente) recupere DRFs, e então pressione "<em>Enviar</em>"</message>
+  <message id="rr-only-disp-samples-cb">Apenas Amostras Exibidas</message>
+  <message id="rr-tt-only-disp-samples">Normalmente dados de modo de busca e portal são analisados em sua totalidade, mas selecionar esta opção fará com que apenas o primeiro plano/fundo exibido seja analisado.</message>
+  <message id="rr-submit-ana-btn">Enviar Análise</message>
+  <message id="rr-show-dialog-cb">Mostrar diálogo</message>
+  <message id="rr-always-call-cb">Sempre chamar ao carregar espectro</message>
+  <message id="rr-tt-show-dialog">Se marcado, um diálogo que deve ser dispensado pelo usuário será mostrado com resultados RID. Se não marcado, apenas uma notificação que desaparecerá após um curto tempo, será mostrada com resultados RID.</message>
+  <message id="rr-gadras-rid-error">Erro GADRAS RID: {1}</message>
+  <message id="rr-gadras-rid-error-code">Código de erro GADRAS RID {1}</message>
+  <message id="rr-gadras-rid-no-id">GADRAS RID: nada identificado</message>
+  <message id="rr-gadras-result">GADRAS RID: {1}</message>
+  <message id="rr-gadras-fail-parse">Falha ao analisar resultados GADRAS RID.</message>
+  <message id="rr-rid-results-window-title">Resultados RID Externos</message>
+  <message id="rr-rid-tool-btn">Ferramenta RID</message>
+  <message id="rr-err-incorrect-url">Erro ao chamar análise: URL incorreta ou sem internet.</message>
+  <message id="rr-err-locating-exe">Erro ao localizar executável: '{1}'</message>
+  <message id="rr-err-creating-tmp-file">Erro ao criar nome de arquivo temporário.</message>
+  <message id="rr-err-opening-tmp-file">Erro ao abrir arquivo temporário.</message>
+  <message id="rr-requesting-ana">Solicitando análise</message>
+  <message id="rr-err-no-spec">Nenhum espectro exibido</message>
+  <message id="rr-requesting-service-info">Solicitando informações de serviço.</message>
+  <message id="rr-error-parsing-service-info">Erro ao analisar resultados de informações de serviço: <code></code></message>
+  <message id="rr-incorrect-url">URL incorreta ou sem internet.</message>
+  <message id="rr-err-requesting-service-info">Erro ao recuperar informações de serviço: <code>{1}</code></message>
+</messages>

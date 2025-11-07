@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- ladw- is short for LicenseAndDisclaimersWindow
+  -->
+  <message id="ladw-mi-disclaimer">Penafian</message>
+  <message id="ladw-mi-credits">Kredit</message>
+  <message id="ladw-mi-contact">Kontak</message>
+  <message id="ladw-mi-license">Lisensi</message>
+  <message id="ladw-mi-data">Data</message>
+  <message id="ladw-data-location-user">
+    Data pengguna disimpan di
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-data-location-static">
+    Data yang disertakan dengan InterSpec, seperti info peluruhan nuklir, penampang lintang, dan sejenisnya disimpan di
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-show-data-location">Buka di Explorer</message>
+  <message id="ladw-show-data-location-macOS">Buka di Finder</message>
+  <message id="ladw-show-data-location-win">tampilkan</message>
+  <message id="ladw-data-location-network">
+    Anda juga dapat menggunakan InterSpec dari browser Anda di (nomor port akan berubah saat Anda me-restart InterSpec):
+    <div class="DataLocation">http://127.0.0.1:{1}</div>
+  </message>
+  <message id="ladw-user-stats">
+      Anda telah secara aktif menggunakan InterSpec selama kurang lebih {1}, untuk membuka {2} file, selama {3} sesi sejak {4}.
+  </message>
+  <message id="ladw-external-none">InterSpec tidak mengirim atau menerima data eksternal ke perangkat Anda.</message>
+  <message id="ladw-external-only-remote-rid">InterSpec tidak mengirim atau menerima data eksternal ke perangkat Anda, kecuali saat fitur RID Eksternal digunakan.</message>
+  <message id="ladw-external-only-map">InterSpec tidak mengirim atau menerima data eksternal ke perangkat Anda, kecuali saat fitur Peta digunakan.</message>
+  <message id="ladw-external-remote-rid-and-map">InterSpec tidak mengirim atau menerima data eksternal ke perangkat Anda, kecuali saat fitur Peta atau RID Eksternal digunakan.</message>
+  <message id="ladw-local-store-info">
+    <br />
+    InterSpec menyimpan preferensi secara lokal, spektrum yang Anda muat, status aplikasi yang disimpan, dan statistik penggunaan.
+    Informasi ini tidak meninggalkan perangkat Anda, dan dapat dihapus dengan menghapus direktori data pengguna yang ditampilkan di atas.
+  </message>
+  <message id="ladw-google-map">
+    <br />
+    Ketika fitur Google Maps digunakan, informasi lokasi file spektrum dikirim ke Google untuk menerima peta lokasi yang relevan.
+  </message>
+  <message id="ladw-leaflet-map">
+    <br />
+    Ketika alat Maps digunakan, ubin peta diminta dari <a href="https://arcgis.com">https://arcgis.com</a>
+    untuk area yang mencakup koordinat GPS dari pengukuran radiasi, tetapi penandaan/penampilan data radiasi pada peta dilakukan di perangkat Anda.
+  </message>
+  <message id="ladw-remote-rid">
+    <br />
+    Untuk alat RID Eksternal, silakan konsultasikan kebijakan privasi dari
+    <div class="DataLocation">{1}</div>
+  </message>
+  <message id="ladw-remote-rid-none">
+    Untuk alat RID Eksternal, silakan konsultasikan kebijakan privasi untuk URL yang Anda masukkan.
+  </message>
+</messages>
+

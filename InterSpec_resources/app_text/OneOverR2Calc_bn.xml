@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- oor2c- short for OneOverR2Calc
+  -->
+  <message id="oor2c-instructions">একটি অদৃশ্য উৎসের দূরত্ব খুঁজে পেতে বিভিন্ন স্থানে দুটি পরিমাপ ব্যবহার করুন। যেমন যখন উৎস একটি প্রাচীরের পিছনে থাকে।</message>
+  <message id="oor2c-near-meas-label">নিকট পরিমাপ তীব্রতা:</message>
+  <message id="oor2c-far-meas-label">দূর পরিমাপ তীব্রতা:</message>
+  <message id="oor2c-background-intensity">ব্যাকগ্রাউন্ড তীব্রতা (ঐচ্ছিক):</message>
+  <message id="oor2c-dist-label">পরিমাপের মধ্যে দূরত্ব:</message>
+  <message id="oor2c-power-law-label">পাওয়ার আইন</message>
+  <message id="oor2c-low-scatter">নিম্ন স্ক্যাটার বা পিক এলাকা ব্যবহার করে, 1/r^2</message>
+  <message id="oor2c-mid-scatter">মধ্য স্ক্যাটার ডোজ রেট, 1/r^1.85</message>
+  <message id="oor2c-high-scatter">উচ্চ স্ক্যাটার ডোজ রেট, 1/r^1.65</message>
+  <message id="oor2c-dist-to-near-label">নিকট পরিমাপ থেকে উৎসের দূরত্ব:</message>
+  <message id="oor2c-bottom-message">নিকট, ব্যাকগ্রাউন্ড, এবং দূর
+    পরিমাপের জন্য একই ইউনিট ব্যবহার করুন। ফলাফল
+    পরিমাপের মধ্যে দূরত্বের জন্য ব্যবহৃত একই ইউনিটে।
+  </message>
+  <message id="oor2c-qr-state-title">1/r2 ক্যালকুলেটর স্টেট</message>
+  <message id="oor2c-qr-state-txt">1/r<sup>2</sup> ক্যালকুলেটর টুলের বর্তমান স্টেট।</message>
+  <message id="oor2c-invalid-near">অবৈধ নিকট পরিমাপ</message>
+  <message id="oor2c-invalid-far">অবৈধ দূর পরিমাপ</message>
+  <message id="oor2c-invalid-dist">অবৈধ দূরত্ব</message>
+  <message id="oor2c-far-larger-than-near">দূর পরিমাপ নিকট পরিমাপের চেয়ে কম হতে হবে</message>
+  <message id="oor2c-back-larger-than-far">ব্যাকগ্রাউন্ড দূর পরিমাপের চেয়ে কম হতে হবে</message>
+  <message id="oor2c-near-is-zero">নিকট পরিমাপ শূন্য-নয় হতে হবে</message>
+  <message id="oor2c-far-is-zero">দূর পরিমাপ শূন্য-নয় হতে হবে</message>
+  <message id="oor2c-dist-is-zero">পরিমাপের মধ্যে দূরত্ব শূন্য-নয় হতে হবে</message>
+</messages>

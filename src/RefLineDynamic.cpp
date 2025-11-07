@@ -221,8 +221,17 @@ void RefLineDynamic::start_init_always_sources()
     m_has_inited = true;
     
 #if( BUILD_AS_ELECTRON_APP || IOS || ANDROID || BUILD_AS_OSX_APP || BUILD_AS_LOCAL_SERVER || BUILD_AS_WX_WIDGETS_APP || BUILD_AS_UNIT_TEST_SUITE )
-    string always_defs_file = SpecUtils::append_path(InterSpec::writableDataDirectory(), "dynamic_ref_lines.xml");
-    if( !SpecUtils::is_file(always_defs_file) )
+    string always_defs_file;
+    
+    try
+    {
+      always_defs_file = SpecUtils::append_path(InterSpec::writableDataDirectory(), "dynamic_ref_lines.xml");
+    }catch( std::exception &e )
+    {
+      //writableDataDirectory not set
+    }
+    
+    if( always_defs_file.empty() || !SpecUtils::is_file(always_defs_file) )
       always_defs_file = SpecUtils::append_path(InterSpec::staticDataDirectory(), "dynamic_ref_lines.xml");
 #else
     const string always_defs_file = SpecUtils::append_path(InterSpec::staticDataDirectory(), "dynamic_ref_lines.xml");

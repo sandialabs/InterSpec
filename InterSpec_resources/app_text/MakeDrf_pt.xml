@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dp- is short for DrfPeak
+      dsfs- is short for DrfSpecFileSample
+      md- is short for MakeDrf
+  -->
+  <message id="dp-back-sub-txt">subtrairá {1} cps para fundo</message>
+  <message id="dp-no-peak-preview">Incapaz de gerar visualização</message>
+
+  <message id="dsfs-sample">Amostra</message>
+  <message id="dsfs-samples">Amostras</message>
+  <message id="dsfs-using-num-peaks"> (usando {1} de {2} picos)</message>
+  <message id="dsfs-back-peak-txt">Esses picos serão subtraídos de outras amostras</message>
+  <message id="dsfs-is-background-cb">É Fundo?</message>
+  <message id="dsfs-all-peaks-cb">Todos os Picos</message>
+
+  <message id="md-det-diam">Diâmetro Det.</message>
+  <message id="md-eff-type">Tipo de Eficiência</message>
+  <message id="md-eqn-in-kev">Eqn. em keV</message>
+  <message id="md-eqn-in-mev">Eqn. em MeV</message>
+  <message id="md-geom-intrinsic-eff">Efic. Intrínseca</message>
+  <message id="md-geom-fixed-geom">Geometria Fixa</message>
+  <message id="md-geom-fixed-cm2">Fixa: por cm2</message>
+  <message id="md-geom-fixed-m2">Fixa: por m2</message>
+  <message id="md-geom-fixed-gram">Fixa: por grama</message>
+  <message id="md-tt-eff-interpret">
+    Como esta eficiência deve ser interpretada.<br />
+    <br />
+    Campo Distante: Fontes pontuais, ou fontes pequenas comparadas à distância ao detector; permitirá
+    alterar distância de detecção para escalar por 1/r2.<br />
+    <br />
+    Geometria Fixa: Para quando geometria e distância de dados de caracterização correspondem às medições,
+    e você desejará calcular atividade total da fonte (ex. béquer Marinelli).\n
+    <br />
+    Fixa por cm2: similar à atividade total, mas quando dados de calibração e medições são
+    para contaminação de superfície, com valores dados por centímetro quadrado.<br />
+    <br />
+    Fixa por m2: similar a total por cm2, mas por metro quadrado.<br />
+    <br />
+    Fixa por grama: similar a por cm2, mas por grama de fonte.
+  </message>
+  <message id="md-fwhm-eqn-form-label">Eqn. FWHM</message>
+  <message id="md-fwhm-gadras">Equação Gadras</message>
+  <message id="md-sqrt-series">Série de Potência Sqrt</message>
+  <message id="md-atten-for-air-cb">Aten. para ar</message>
+  <message id="md-tt-atten-for-air">
+    A atenuação pelo ar, entre a fonte e o detector será contabilizada,
+    para permitir escalonamento de distância (usando a função de eficiência em diferentes distâncias) mais precisamente.
+    <br />
+    Este é um efeito maior em energias mais baixas, ou distâncias de calibração maiores.
+  </message>
+  <message id="md-show-fwhm-markers">Mostrar pontos FWHM</message>
+  <message id="md-display-energy-lower-label">Energia de Exibição, Inferior:</message>
+  <message id="md-display-energy-upper-label">Superior:</message>
+  <message id="md-mi-chart-phone">Gráfico/Opções</message>
+  <message id="md-mi-peaks-phone">Picos a Usar</message>
+  <message id="md-export-btn">Armazenar/Exportar...</message>
+  <message id="md-export-window-title">Armazenar/Exportar DRF</message>
+  <message id="md-tt-name">
+    Nome da função de resposta do detector para salvar no banco de dados
+    interno do <em>InterSpec</em> para que você possa usar a função de resposta mais tarde.
+    O nome deve ser um nome de arquivo válido (por exemplo, sem caracteres \, /, :, etc.).
+  </message>
+  <message id="md-tt-desc">Descrição opcional da DRF para ajudar a lembrar detalhes quando você usar a DRF no futuro.</message>
+  <message id="md-make-default-for-serial-cb">Tornar DRF padrão para número de série '{1}'</message>
+  <message id="md-tt-make-default-serial">
+    Faça com que quando espectros de um detector com número de série
+    correspondente forem carregados no InterSpec, esta função de resposta do detector
+    seja automaticamente carregada e usada.
+  </message>
+  <message id="md-make-default-for-model-cb">Tornar DRF padrão para modelo '{1}'</message>
+  <message id="md-tt-make-default-model">
+    Faça com que quando espectros deste modelo de detector forem carregados
+    no InterSpec, esta função de resposta do detector seja
+    automaticamente carregada e usada.
+  </message>
+  <message id="md-tt-export-n42">
+    Exportar um arquivo N42 contendo todos os espectros e picos usados para criar esta DRF.
+    Informações de fonte e blindagem também são geralmente armazenadas no arquivo, para,
+    em princípio, exceto diâmetro do detector e ordens de equação,
+    fornecer todas as informações de entrada usadas para criar a DRF.
+  </message>
+  <message id="md-export-as-csv">Exportar DRF como CSV.</message>
+  <message id="md-tt-export-as-csv">
+    Exporta a DRF em um arquivo CSV que contém todas as informações da DRF.
+    Especialmente útil para usar com outras ferramentas.
+  </message>
+  <message id="md-export-quick-ref">Exportar cartão de ref. rápida</message>
+  <message id="md-tt-export-quick-ref">Exporta um cartão estilo 3x5 que tem um breve resumo do desempenho do detector.</message>
+  <message id="md-det-name-not-valid">Nome do detector não válido.</message>
+  <message id="md-eqn-not-valid">Equação de Eficiência Intrínseca não é válida.</message>
+  <message id="md-err-creating-drf">Erro ao criar DRF: {1}</message>
+  <message id="md-err-saving-to-db">Erro ao salvar DetectorPeakResponse no banco de dados: {1}</message>
+  <message id="md-saved-to-db">Salvo '{1}' no banco de dados interno.</message>
+  <message id="md-peak-counts">{1} {2} keV, Pico {3} contagens</message>
+  <message id="md-peak-no-nuc">Sem nuclídeo assoc., {1} keV, Pico {2} contagens</message>
+  <message id="md-err-det-diam-invalid">Diâmetro do detector é inválido - assumindo 2.54 cm.</message>
+  <message id="md-err-some-src">Algumas fontes tiveram erros.</message>
+  <message id="md-n-fit-pars">{1} Parâmetros de Ajuste</message>
+  <message id="md-html-eff-table-caption">Eficiência de Detecção de Energia Total (% total de gamas)</message>
+  <message id="md-html-Intrinsic">Intrínseco</message>
+  <message id="md-chart-data-intrinsic-eff-label">Efic. Intrínseca de Dados</message>
+  <message id="md-chart-data-fwhm-label">FWHM de Dados</message>
+  <message id="md-chart-fit-intrinsic-eff-label">Efic. Intrínseca Ajustada</message>
+  <message id="md-chart-intrinsic-eff-plus-label">Efic. Intrínseca +2σ</message>
+  <message id="md-chart-intrinsic-eff-minus-label">Efic. Intrínseca Ajustada -2σ</message>
+  <message id="md-chart-fit-fwhm-label">FWHM Ajustado</message>
+</messages>

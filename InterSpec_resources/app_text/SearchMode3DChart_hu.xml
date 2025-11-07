@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- sm3dc- is short for SearchMode3DChart -->
+  <message id="sm3dc-loading">Betöltés...</message>
+  <message id="sm3dc-min-energy">Min Energia</message>
+  <message id="sm3dc-max-energy">Max Energia</message>
+  <message id="sm3dc-min-time">Min Idő (s)</message>
+  <message id="sm3dc-max-time">Max Idő (s)</message>
+  <message id="sm3dc-time-bins">Idő megjelenítési rekeszek</message>
+  <message id="sm3dc-tt-time-bins">
+    Az időosztások maximális száma a grafikonon; ha az adatai több idő-mintával rendelkeznek
+    a megjelenített tartományban, mint ez, az idő-minták kombinálásra kerülnek, amíg ez kisebb nem lesz ennél az értéknél.
+    <br />
+    <br />
+    Például, ha ez az érték 60, de a mérésnek 208 mintája van, akkor minden 4
+    minta összegzésre kerül egyetlen rekeszbe az idő tengelyen,
+    összesen 52 rekesszell az idő tengelyen.
+    <br />
+    Ha az idő csatornák száma szorozva az energia csatornák számával
+    túl nagy, teljesítményproblémák léphetnek fel.
+  </message>
+  <message id="sm3dc-energy-bins">Energia megjelenítési rekeszek</message>
+  <message id="sm3dc-tt-energy-bins">
+    Az energia osztások maximális száma a grafikonon; ha az adatai több energia-csatornával rendelkeznek
+    a megjelenített tartományban, mint ez, a csatornák kombinálásra kerülnek, amíg ez kisebb nem lesz ennél az értéknél.
+    <br />
+    <br />
+    Ha az idő csatornák száma szorozva az energia csatornák számával
+    túl nagy, teljesítményproblémák léphetnek fel.
+  </message>
+  <message id="sm3dc-time-axis-label">Idő (másodperc)</message>
+  <message id="sm3dc-counts-axis-label">Impulzusok Csatornánként</message>
+</messages>

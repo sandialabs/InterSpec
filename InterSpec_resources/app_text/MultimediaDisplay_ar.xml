@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- smmd- is short for ShowMultiMediaDisplay -->
+  <message id="smmd-prev-btn">السابق</message>
+  <message id="smmd-next-btn">التالي</message>
+  <message id="smmd-auto-show-images-cb">إظهار الصور تلقائيًا</message>
+  <message id="smmd-tt-auto-show-images">إظهار الصور تلقائيًا عندما يتم تحميل ملفات الطيف التي تحتويها.</message>
+  <message id="smmd-tt-export-image-file">تصدير الصورة المعروضة حاليًا إلى ملف.</message>
+  <message id="smmd-err-no-content">لا يوجد محتوى وسائط متعددة للعرض</message>
+  <message id="smmd-err-file-is-uri">البيانات مرمزة كملف في URI='{1}'</message>
+  <message id="smmd-err-no-multimedia-src">مصدر الوسائط المتعددة لم يحتو على أي بيانات.</message>
+  <message id="smmd-err-encoding-not-supported">ترميز محتوى الوسائط المتعددة للبيانات غير مدعوم.</message>
+  <message id="smmd-err-not-image">نوع محتوى الوسائط المتعددة لم يكن من نوع الصورة، أو لم يتمكن من تحديده.</message>
+  <message id="smmd-image-index">الصورة {1} من {2}</message>
+  <message id="smmd-Time">الوقت</message>
+  <message id="smmd-window-title-single">صورة في ملف الطيف</message>
+  <message id="smmd-window-title-multiple">صور في ملف الطيف</message>
+</messages>

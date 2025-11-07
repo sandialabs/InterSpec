@@ -128,7 +128,7 @@ set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
-
+option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
 
 
@@ -348,6 +348,7 @@ set(sources
     src/RefSpectraModel.cpp
     src/SimpleActivityCalc.cpp
     src/RefLineDynamic.cpp
+    src/AnalystChecks.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -450,6 +451,7 @@ set(headers
     InterSpec/MoreNuclideInfoDisplay.h
     InterSpec/UndoRedoManager.h
     InterSpec/AppUtils.h
+    InterSpec/BersteinPolynomial.hpp
     InterSpec/ExportSpecFile.h
     InterSpec/ExternalRidResult.h
     InterSpec/EnterAppUrlWindow.h
@@ -461,6 +463,7 @@ set(headers
     InterSpec/RefSpectraModel.h
     InterSpec/SimpleActivityCalc.h
     InterSpec/RefLineDynamic.h
+    InterSpec/AnalystChecks.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -610,6 +613,14 @@ if( BUILD_AS_OSX_APP )
   list( APPEND headers target/osx/macOsUtils.h target/osx/NativeMenu.h )
 endif( BUILD_AS_OSX_APP )
 
+if( USE_LLM_INTERFACE )
+  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmToolRegistry.cpp src/LlmConfig.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp )
+list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmToolRegistry.h InterSpec/LlmConfig.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h )
+  
+  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
+  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+endif( USE_LLM_INTERFACE )
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
@@ -776,20 +787,27 @@ target_include_directories( InterSpecLib PUBLIC SYSTEM ${Wt_INCLUDE_DIR} )
 
 if(WIN32)
     if( NOT InterSpec_FETCH_DEPENDENCIES )
-        target_link_libraries(InterSpecLib PUBLIC 
-            debug "${Wt_DEBUG_LIBRARIES}"
-            optimized "${Wt_LIBRARIES}"
-        )
+      if( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_TEST_DEBUG_LIBRARY}" optimized "${Wt_TEST_LIBRARY}" )
+      else( BUILD_AS_UNIT_TEST_SUITE )
+        target_link_libraries(InterSpecLib PUBLIC  debug "${Wt_HTTP_DEBUG_LIBRARY}" optimized "${Wt_HTTP_LIBRARY}" )
+      endif( BUILD_AS_UNIT_TEST_SUITE )
+      
+      target_link_libraries(InterSpecLib PUBLIC
+        debug ${Wt_DEBUG_LIBRARY} ${Wt_DBO_DEBUG_LIBRARY} ${Wt_DBOSQLITE3_DEBUG_LIBRARY}
+        optimized ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY}
+      )
     endif( NOT InterSpec_FETCH_DEPENDENCIES )
     
     target_link_directories(InterSpecLib PUBLIC ${Boost_LIBRARY_DIR})
 else(WIN32)
-    target_link_libraries(InterSpecLib PUBLIC
-        ${Wt_LIBRARIES}
-        ${Wt_HTTP_LIBRARY}
-        ${Wt_DBO_LIBRARY}
-        ${Wt_DBOSQLITE3_LIBRARY}
-    )
+  if( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_TEST_LIBRARY})
+  else( BUILD_AS_UNIT_TEST_SUITE )
+    target_link_libraries(InterSpecLib PUBLIC ${Wt_HTTP_LIBRARY})
+  endif( BUILD_AS_UNIT_TEST_SUITE )
+  
+  target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
 endif(WIN32)
 
 

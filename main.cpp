@@ -47,9 +47,9 @@
 #include "InterSpec/BatchCommandLine.h"
 #endif
 
-static_assert( USE_REL_ACT_TOOL, "This branch of InterSpec requires USE_REL_ACT_TOOL enabled" );
-#include "InterSpec/RelActAutoDev.h"
-
+//#if( USE_REL_ACT_TOOL )
+//#include "InterSpec/RelActAutoDev.h"
+//#endif
 
 int main( int argc, char **argv )
 {
@@ -72,6 +72,10 @@ int main( int argc, char **argv )
   
 #if( USE_BATCH_TOOLS )
   bool batch_peak_fit = false, batch_act_fit = false;
+#endif
+  
+#if( USE_LLM_INTERFACE )
+  static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
 #endif
   
 #if( BUILD_FOR_WEB_DEPLOYMENT )
@@ -304,14 +308,16 @@ int main( int argc, char **argv )
     InterSpec::setStaticDataDirectory( datadir );
   }//if( cl_vm.count("static-data-dir") ) / else
 #endif
-  
+
+#if( USE_REL_ACT_TOOL )
   //return RelActAutoDev::dev_code();
-  
+#endif
+
 #if( USE_BATCH_TOOLS )
   if( is_batch )
     return BatchCommandLine::run_batch_command( argc, argv );
 #endif
-  
+    
   
   // Start the InterSpec server
   const int rval = InterSpecServer::start_server( argv[0], user_data_dir.c_str(),

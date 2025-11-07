@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- pid is short for PeakInfoDisplay -->
+
+  <message id="pid-dialog-peak-erase">全ピークを削除？</message>
+
+  <message id="pid-err-no-foreground">ピークを追加するにはフォアグラウンドスペクトルを読み込む必要があります。</message>
+
+  <message id="pid-search-peaks-btn">ピーク検索</message>
+  <message id="pid-tt-search-peaks-btn">自動ピーク検出アルゴリズムを使用してピークを検索。</message>
+  <message id="pid-clear-peaks-btn">全ピーククリア</message>
+  <message id="pid-tt-clear-peaks-btn">既存の<b>すべて</b>のピークを削除。</message>
+  <message id="pid-nuc-from-ref-btn">参照から核種</message>
+  <message id="pid-tt-nuc-from-ref-btn">
+    表示されている参照線からピーク核種を割り当て。まだ核種が
+    関連付けられていないピークにのみ適用されます。
+  </message>
+
+  <message id="pid-add-peak-btn">追加...</message>
+  <message id="pid-tt-add-peak-btn">手動で新しいピークを追加。</message>
+  <message id="pid-tt-del-peaks">現在編集中のピークを削除。</message>
+  <message id="pid-better-editor-hint">より良いエディタはピークを右クリック</message>
+  <message id="pid-better-editor-hint-mobile">より良いエディタはピークをタップ&amp;ホールド</message>
+  <message id="pid-tt-csv-export">識別されたピークの情報をカンマ区切り形式でエクスポート。</message>
+  <message id="pid-tt-csv-copy">ピークCSV情報をクリップボードにコピー。
+    <p>ピークデータはフォーマット版とプレーンテキスト版の両方で
+      クリップボードにコピーされるため、データの形式は貼り付け先のアプリケーションに依存します。
+    </p>
+  </message>
+
+  <message id="pid-csv-copy-full">完全ピークCSVコピー</message>
+  <message id="pid-csv-copy-no-hdr">ヘッダーなしコピー</message>
+  <message id="pid-csv-copy-compact">フィットピーク情報コピー</message>
+</messages>

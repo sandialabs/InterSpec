@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages nplurals="2" plural="n==1 ? 0 : 1">
+  <!-- esf- is short for ExportSpecFile -->
+
+  <!-- Window title -->
+  <message id="esf-window-title">Exportação de Arquivo de Espectro</message>
+
+  <!-- Main UI sections -->
+  <message id="esf-file-to-export">Arquivo a Exportar</message>
+  <message id="esf-file-format">Formato de Arquivo</message>
+  <message id="esf-samples-to-include">Amostras a Incluir</message>
+
+  <!-- Mobile tab titles -->
+  <message id="esf-file-tab">Arquivo</message>
+  <message id="esf-format-tab">Formato</message>
+  <message id="esf-options-tab">Opções</message>
+
+  <!-- Checkbox labels for foreground/background combination -->
+  <message id="esf-plus-back"> + Fundo</message>
+  <message id="esf-plus-secondary"> + Secund.</message>
+  <message id="esf-fore-plus-back-tt">Exportar o primeiro plano e fundo e/ou espectros secundários juntos no mesmo arquivo.</message>
+
+  <!-- Sample selection checkboxes -->
+  <message id="esf-disp-foreground">Prim. Plano Exib.</message>
+  <message id="esf-disp-background">Fundo Exib.</message>
+  <message id="esf-disp-secondary">Secundário Exib.</message>
+  <message id="esf-all-samples">Todas Amostras</message>
+  <message id="esf-custom-samples">Amostras Personalizadas</message>
+  <message id="esf-custom-samples-tt">Insira o número da amostra que você gostaria de exibir aqui. Você pode inserir uma faixa de números de amostra semelhante a '33-39' ou '33 to 39', ou números de amostra CSV como '34,39,84'</message>
+  <message id="esf-filter-detectors">Filtrar Detectores</message>
+
+  <!-- Options section -->
+  <message id="esf-options">Opções</message>
+  <message id="esf-sum-to-single-record">Somar em registro único</message>
+  <message id="esf-sum-to-single-record-tt">Todas as amostras e/ou detectores selecionados serão somados juntos em um único espectro.<br />Cuidado: se você tiver primeiro plano e fundo selecionados, eles serão somados juntos.</message>
+
+  <message id="esf-sum-fore-to-single-record">Somar Prim. Plano em registro único</message>
+  <message id="esf-sum-fore-to-single-record-tt">Há múltiplos números de amostra, ou múltiplos detectores que compõem o primeiro plano exibido; marcar esta opção somará todos esses em um único espectro no arquivo de saída.</message>
+
+  <message id="esf-sum-back-to-single-record">Somar Fundo em registro único</message>
+  <message id="esf-sum-back-to-single-record-tt">Há múltiplos números de amostra, ou múltiplos detectores que compõem o fundo exibido; marcar esta opção somará todos esses em um único espectro no arquivo de saída.</message>
+
+  <message id="esf-sum-sec-to-single-record">Somar Secund. em registro único</message>
+
+  <message id="esf-background-subtract">Subtrair fundo</message>
+  <message id="esf-background-subtract-tt">O espectro de saída será o primeiro plano, menos o fundo.</message>
+
+  <message id="esf-sum-det-per-sample">Somar det. por amostra</message>
+  <message id="esf-sum-det-per-sample-tt">Para cada número de amostra, somar todos os detectores para esse número de amostra juntos.<br />Por exemplo, se você tiver 8 detectores em seu arquivo de espectro, cada um com 120 amostras, os resultados terão 120 espectros, cada um dos quais é a soma dos 8 detectores das respectivas amostras.</message>
+
+  <message id="esf-sum-samples-per-det">Somar amostras por det.</message>
+  <message id="esf-sum-samples-per-det-tt">Para cada detector, soma todos os números de amostra juntos.<br />Por exemplo, se você tiver 8 detectores em seu arquivo de espectro, cada um com 120 amostras, os resultados terão 8 espectros, cada um dos quais é a soma das 120 amostras de seus respectivos detectores.</message>
+
+  <message id="esf-remove-interspec-info">Remover info InterSpec</message>
+  <message id="esf-remove-interspec-info-tt">Remove resposta do detector, picos e outros resultados de análise que você pode ter adicionado no InterSpec.</message>
+
+  <message id="esf-remove-gps">Remover GPS</message>
+
+  <!-- Status text -->
+  <message id="esf-not-applicable">Não Aplicável</message>
+  <message id="esf-none-available">Nenhum Disponível</message>
+
+  <!-- Buttons -->
+  <message id="esf-export">Exportar</message>
+  <message id="esf-show-qr-code">Mostrar QR-code</message>
+
+  <!-- File info table headers -->
+  <message id="esf-displayed-as">Exibido Como</message>
+  <message id="esf-fore-abbrev">Prim.</message>
+  <message id="esf-back-abbrev">Fundo</message>
+  <message id="esf-sec-abbrev">Sec</message>
+
+  <!-- QR Code dialog -->
+  <message id="esf-next-qr-code">Próximo QR code</message>
+  <message id="esf-url-link">Link URL</message>
+  <message id="esf-email-link">Link Email</message>
+
+  <!-- Error dialogs -->
+  <message id="esf-error-title">Erro</message>
+  <message id="esf-qr-encode-failed">Falha ao exibir espectro como QR code: {1}</message>
+
+  <!-- Pluralized messages -->
+  <message id="esf-disp-sample">
+    <plural case="0">Amostra&nbsp;Exib.</plural>
+    <plural case="1">Amostras&nbsp;Exib.</plural>
+  </message>
+
+  <!-- Table headers -->
+  <message id="esf-start-time">Hora Início</message>
+  <message id="esf-end-time">Hora Fim</message>
+  <message id="esf-first-sample">Primeira Amostra</message>
+  <message id="esf-last-sample">Última Amostra</message>
+  <message id="esf-num-samples">Núm. Amostras</message>
+  <message id="esf-neut-dets">Dets Nêut.</message>
+  <message id="esf-gamma-dets">Dets Gama</message>
+  <message id="esf-num-dets">Núm Dets</message>
+  <message id="esf-latitude">Latitude</message>
+  <message id="esf-longitude">Longitude</message>
+  <message id="esf-total-time">Tempo Total</message>
+  <message id="esf-sum-gamma">Soma Gama</message>
+  <message id="esf-sum-neut">Soma Nêut.</message>
+  <message id="esf-manufacturer">Fabricante</message>
+  <message id="esf-model">Modelo</message>
+  <message id="esf-serial">Serial</message>
+</messages>

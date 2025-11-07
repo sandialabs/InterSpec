@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+  
+  <!-- Button text -->
+  <message id="uiw-load-btn">加载</message>
+  
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">文件太大。</span>]]></message>
+  
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">速查表（PDF）</message>
+  <message id="uiw-cheat-sheet-desc">打印此速查表（PDF格式）以快速参考操作、快捷键和故障排除。</message>
+  
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">无谱时在启动时显示</message>
+  
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">返回顶部</message>
+  
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">加载FAQ主题时出错：{1}</message>
+  
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[您可以从下面打开示例谱开始，或者使用<em>导入谱</em>选项卡加载外部文件。<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>您以前保存的谱如下所示。您可以使用其他选项卡打开示例谱或导入外部谱文件。<br />您还可以打开附加到电子邮件或云存储应用的谱。</p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>您可以从下面选择示例谱文件，或使用导入选项卡从iCloud、Dropbox、Google Drive等打开一个。<br />您还可以打开附加到电子邮件的谱文件。</p>]]></message>
+  
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center">欢迎使用<code>InterSpec</code></h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>您可以使用左侧的参考资料更熟悉<code>InterSpec</code>，或者从下面的先前会话或谱继续。]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[或者，您还可以将自己的谱文件拖放到<code>InterSpec</code>上。</p>]]></message>
+  
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>点击左侧的<img src="InterSpec_resources/images/phone_tips.png" width=12 height=12 alt="information icon" class="WhiteIcon" />图标了解与图表交互和拟合峰的基础知识。点击<img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" />图标获取有关<code>InterSpec</code>工具和功能的详细信息。</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>点击左侧的<b>使用信息</b>按钮了解与图表交互和拟合峰的基础知识。点击<img src="InterSpec_resources/images/help_mobile.svg" width=12 height=12 alt="help icon" class="WhiteIcon" />图标获取有关<code>InterSpec</code>工具和功能的详细信息。</p>]]></message>
+  
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p>点击<em>选择文件</em>浏览您要打开的文件。</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>退出此屏幕后，您还可以通过在<code>InterSpec</code>子菜单中选择<em>打开文件</em>来打开谱文件。<br />对于电子邮件附件或<code>文件</code>、<code>Dropbox</code>、<code>Google Drive</code>等应用中的文件，您可以通过选择"复制到InterSpec"在<code>InterSpec</code>中打开谱文件</p>]]></message>
+  
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">已保存状态</message>
+  <message id="uiw-tab-example-spectra">示例谱</message>
+  <message id="uiw-tab-import-spectra">导入谱</message>
+  
+  <!-- Welcome section -->
+  <message id="uiw-welcome">欢迎</message>
+  <message id="uiw-controls">控件</message>
+  
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">许可证和条款</message>
+  <message id="uiw-more-info">更深入的信息</message>
+</messages>
+

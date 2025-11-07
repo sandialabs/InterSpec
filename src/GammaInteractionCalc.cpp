@@ -2021,7 +2021,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   //  to check here...
   
   //Setup the parameters from the sources
-  num_fit_params += answer->setInitialSourceDefinitions( src_definitions, inputPrams );
+  num_fit_params += answer->setInitialSourceDefinitions( src_definitions, shieldings, inputPrams );
   
   
   //setup the parameters for the shieldings
@@ -2519,6 +2519,7 @@ void ShieldingSourceChi2Fcn::setSelfAttMultiThread( const bool do_multithread )
   
 size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
                         const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
+                        const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                         ROOT::Minuit2::MnUserParameters &inputPrams )
 {
   assert( m_initialSrcDefinitions.empty() );
@@ -2588,13 +2589,72 @@ size_t ShieldingSourceChi2Fcn::setInitialSourceDefinitions(
     assert( !srcdef->fitActivity
            || (srcdef->sourceType != ShieldingSourceFitCalc::ModelSourceType::Intrinsic) );
     
-    const bool fitAct = srcdef->fitActivity && (srcdef->sourceType != ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
+    bool fitAct = srcdef->fitActivity && (srcdef->sourceType != ShieldingSourceFitCalc::ModelSourceType::Intrinsic);
     const bool fitAge = srcdef->fitAge;
     
     const SandiaDecay::Nuclide *ageDefiningNuc = srcdef->ageDefiningNuc;
     const bool hasOwnAge = (!ageDefiningNuc || (ageDefiningNuc == nuclide));
     
     num_fit_params += fitAct + (fitAge && hasOwnAge);
+    
+    
+    // For trace sources, we actually fit for the trace sources display activity (so total, OR per cm3 OR per m2
+    //  OR per gram), so we need to grab these values.
+    // TODO: right now when fitting from the GUI, `srcdef->activity` is set to the trace source type activity, but when fitting from file, it is in total activity - need to rectify this ambigutity, or over-specification that leads to inconsistencies
+    if( srcdef->sourceType == ShieldingSourceFitCalc::ModelSourceType::Trace )
+    {
+      // Go through shieldings and get display activity, so we can fit for that.
+      int numShieldingsTraceSrcFor = 0;
+      for( const ShieldingSourceFitCalc::ShieldingInfo &shield : shieldings )
+      {
+        const ShieldingSourceFitCalc::TraceSourceInfo *trace_info = nullptr;
+        for( size_t i = 0; !trace_info && (i < shield.m_traceSources.size()); ++i )
+          trace_info = (shield.m_traceSources[i].m_nuclide == srcdef->nuclide) ? &(shield.m_traceSources[i]) : nullptr;
+        
+        if( trace_info )
+        {
+          numShieldingsTraceSrcFor += 1;
+          
+          /*
+           TODO: check consistency of total activity from the trace source to the activity
+#if( PERFORM_DEVELOPER_CHECKS )
+          double debugTotalActivity = 0.0;
+          switch ( trace_info->m_type )
+          {
+            case TraceActivityType::TotalActivity:
+              debugTotalActivity = trace_info->m_activity;
+              break;
+            case TraceActivityType::ActivityPerCm3:
+              debugTotalActivity = trace_info->m_activity * total volume;
+              break;
+            case TraceActivityType::ExponentialDistribution:
+              debugTotalActivity = trace_info->m_activity * total surface area;
+              break;
+            case TraceActivityType::ActivityPerGram:
+              debugTotalActivity = trace_info->m_activity * total mass;
+              break;
+            case TraceActivityType::NumTraceActivityType:
+              <#code#>
+              break;
+          }//switch ( trace_info->m_type )
+          assert( fabs(debugTotalActivity - activity) < (1.0E-4*activity) );
+#endif
+           */
+          
+          activity = trace_info->m_activity;
+          assert( fitAct == srcdef->fitActivity );
+          assert( trace_info->m_fitActivity == srcdef->fitActivity );
+          fitAct = trace_info->m_fitActivity;
+        }//if( this shielding has the nuclide as a trace source )
+      }//for( WWidget *w : m_shieldingSelects->children() )
+      
+      assert( numShieldingsTraceSrcFor == 1 );
+      
+      if( numShieldingsTraceSrcFor != 1 )
+        throw runtime_error( "Unexpected inconsistent state setting initial source activities"
+                            " - couldnt find unique shielding with trace source for " + nuclide->symbol );
+    }//if( srcdef->sourceType == ShieldingSourceFitCalc::ModelSourceType::Trace )
+    
     
     // Put activity into units of ShieldingSourceChi2Fcn
     activity /= ShieldingSourceChi2Fcn::sm_activityUnits;

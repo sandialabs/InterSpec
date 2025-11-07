@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- uiw- is short for UseInfoWindow -->
+  
+  <!-- Button text -->
+  <message id="uiw-load-btn">Betöltés</message>
+  
+  <!-- File handling -->
+  <message id="uiw-file-too-large"><![CDATA[<span style="color: red;">Túl nagy fájl.</span>]]></message>
+  
+  <!-- Cheat sheet -->
+  <message id="uiw-cheat-sheet">Puska Lap (PDF)</message>
+  <message id="uiw-cheat-sheet-desc">Nyomtasd ki ezt a puska lapot (PDF formátum) hogy gyorsan hivatkozhass műveletekre, billentyű kombinációkra és hibaelhárításra.</message>
+  
+  <!-- Settings -->
+  <message id="uiw-show-at-start-cb">mutatás indításkor amikor nincs spektrum</message>
+  
+  <!-- Tooltips -->
+  <message id="uiw-back-to-top">Vissza tetejére</message>
+  
+  <!-- Error messages -->
+  <message id="uiw-error-loading-faq">Hiba GYIK témák betöltésénél: {1}</message>
+  
+  <!-- Welcome messages - Mobile -->
+  <message id="uiw-mobile-start-example"><![CDATA[Kezdd példa spektrumok megnyitásával alul, vagy használd az <em>Importálás</em> fület.<br />]]></message>
+  <message id="uiw-mobile-saved-spectra"><![CDATA[<p>Mentett spektrumaid alul láthatók. Használd más füleket példa spektrumokhoz vagy külső fájlok importálásához.<br /></p>]]></message>
+  <message id="uiw-mobile-select-example"><![CDATA[<p>Válassz példa spektrum fájlt alul, vagy használd import fület iCloud, Dropbox, stb. megnyitásához.<br /></p>]]></message>
+  
+  <!-- Welcome messages - Desktop -->
+  <message id="uiw-desktop-welcome-title"><![CDATA[<h1 align="center">Üdvözöl az <code>InterSpec</code></h1><div align="left">]]></message>
+  <message id="uiw-desktop-welcome-text"><![CDATA[<p>Használd bal oldali referenciákat <code>InterSpec</code> megismeréséhez, vagy folytasd korábbi munkamenetet alul.]]></message>
+  <message id="uiw-desktop-drag-drop"><![CDATA[ Alternatívaként húzd-ejtsd spektrum fájlodat az <code>InterSpec</code>-ra.</p>]]></message>
+  
+  <!-- Mobile postscript -->
+  <message id="uiw-mobile-phone-postscript"><![CDATA[<p>Érintsd meg tipp ikont diagrammal való interakcióhoz. Érintsd súgó ikont részletes <code>InterSpec</code> infóért.</p>]]></message>
+  <message id="uiw-mobile-tablet-postscript"><![CDATA[<p>Érintsd <b>Használat Info</b> gombot balra diagrammal való interakcióhoz. Érintsd súgó ikont részletekért.</p>]]></message>
+  
+  <!-- File import instructions -->
+  <message id="uiw-tap-choose-file"><![CDATA[<p>Érintsd <em>Fájl Kiválasztása</em> gombot a megnyitni kívánt fájl tallózásához.</p>]]></message>
+  <message id="uiw-open-file-instructions"><![CDATA[<p>Spektrum fájlokat úgy is megnyithatsz, hogy kiválasztod <em>Fájl Megnyitása</em> lehetőséget az <code>InterSpec</code> almenüjében, miután kiléptél erről a képernyőről.<br />Email mellékleteknél, vagy olyan appokban lévő fájloknál mint <code>Files</code>, <code>Dropbox</code>, <code>Google Drive</code>, stb., spektrum fájlokat úgy nyithatsz meg <code>InterSpec</code>-ben, hogy kiválasztod a "Másolás InterSpec-be" opciót</p>]]></message>
+  
+  <!-- Tab titles -->
+  <message id="uiw-tab-saved-states">Mentett Állapotok</message>
+  <message id="uiw-tab-example-spectra">Példa Spektrumok</message>
+  <message id="uiw-tab-import-spectra">Spektrumok Importálása</message>
+  
+  <!-- Welcome section -->
+  <message id="uiw-welcome">Üdvözöl</message>
+  <message id="uiw-controls">Vezérlők</message>
+  
+  <!-- Anchor links -->
+  <message id="uiw-license-and-terms">Licenc és Feltételek</message>
+  <message id="uiw-more-info">Részletesebb információk</message>
+</messages>

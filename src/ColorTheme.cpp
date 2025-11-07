@@ -188,7 +188,7 @@ ColorTheme::ColorTheme()
   timeHistoryBackgroundHighlight = Wt::WColor( 0, 255, 255, 75 );
   timeHistorySecondaryHighlight = Wt::WColor( 0, 128, 0, 75 );
   
-  defaultPeakLine = WColor( 0, 51, 255, 155 );
+  defaultPeakLine = WColor( 0, 51, 255 );
   
   spectrumAxisLines = WColor( GlobalColor::black );
   spectrumChartBackground = WColor();

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- fpm- is short for FwhmPeaksModel
+       mffdw- is short for MakeFwhmForDrfWindow
+       mffd- is short for MakeFwhmForDrf
+  -->
+  <message id="fpm-fwhm-uncert">半値幅不確実性</message>
+  <message id="fpm-peak-source">ピーク線源</message>
+  <message id="fpm-user">ユーザー</message>
+  <message id="fpm-auto-fit">自動フィット</message>
+  
+  
+  <message id="mffdw-use-fwhm-btn">半値幅使用</message>
+  
+  <message id="mffd-eqn-type-label">方程式タイプ:</message>
+  <message id="mffd-num-terms-label">項数:</message>
+  <message id="mffd-par-vals-label">パラメータ値:</message>
+  <message id="mffd-err-no-foreground">ピークを検索するデータがありません。</message>
+  <message id="mffd-tt-par">不確実性あり: {1}</message>
+  <message id="mffd-err-fail-fit">半値幅方程式のフィットに失敗: {1}</message>
+  <message id="mffd-err-waiting-for-search">現在ピークを検索中 - お待ちください</message>
+</messages>

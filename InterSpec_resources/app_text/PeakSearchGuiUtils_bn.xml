@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- psw- is short for PeakSelectorWindow
+  psgu- is short for PeakSearchGuiUtils, and are misc stuff
+  -->
+  <message id="psw-title-confirm-nuc-ass">নিউক্লাইড নির্ধারণ নিশ্চিত করুন</message>
+  <message id="psw-title-check-search">পিক অনুসন্ধান ফলাফল পরীক্ষা করুন</message>
+  <message id="psw-title-prev-spec">পূর্ববর্তী স্পেকট্রাম থেকে রাখার পিক</message>
+  <message id="psw-title-csv-import">CSV থেকে ইমপোর্ট করার পিক</message>
+  <message id="psw-search-instruct-adjust">নিউক্লাইড নির্ধারণ, বা কোন পিক রাখতে হবে তা সামঞ্জস্য করুন।</message>
+  <message id="psw-search-instruct-unselect">আপনি রাখতে চান না এমন কোনো পিক আনসিলেক্ট করুন।</message>
+  <message id="psw-search-instruct-assign">নিউক্লাইড নির্ধারণ পরীক্ষা করুন এবং ঠিক করুন।</message>
+  <message id="psw-search-instruct-keep">আপনি রাখতে চান এমন পিক নির্বাচন করুন।</message>
+  <message id="psw-show-all-peaks">সব পিক দেখান</message>
+  <message id="psw-show-prev-peaks">পূর্ববর্তী পিকও দেখান</message>
+  <message id="psw-show-missing-peaks">অনুপস্থিত পিক দেখান</message>
+  <message id="psw-keep-only-assigned-peaks">শুধুমাত্র {1} এ নির্ধারিত নতুন পিক রাখুন</message>
+  <message id="psw-orig-nuc">মূল নিউক্লাইড</message>
+  <message id="psw-assigned-nuc">নির্ধারিত নিউক্লাইড</message>
+  <message id="psw-peak-preview">পিক প্রিভিউ</message>
+  <message id="psw-not-found">পাওয়া যায়নি</message>
+  <message id="psw-keep-peak">পিক রাখুন</message>
+  <message id="psw-keep-peak-q">পিক রাখবেন?    </message>  <!-- There are four No-Break Space characters at end -->
+  <message id="psw-dont-change">পরিবর্তন করবেন না</message>
+  <message id="psw-no-nuc-changed">কোনো নিউক্লাইড পরিবর্তিত হয়নি</message>
+  <message id="psw-rel-eff-plot-title">আপেক্ষিক দক্ষতা প্লট</message>
+  <message id="psw-rel-eff-plot-y-axis-title">আপেক্ষিক পিক এরিয়া / BR</message>
+
+  <message id="psgu-peaks-not-updated-no-change-msg">পিক আপডেট করা হয়নি, স্পেকট্রাম পরিবর্তিত হয়েছে।</message>
+  <message id="psgu-peaks-updated-msg">পিক আপডেট করা হয়েছে।</message>
+
+  <message id="psgu-search-wait-title">মাত্র কয়েক মুহূর্ত</message>
+  <message id="psgu-search-wait-content">
+    <div style="text-align: left; white-space: nowrap;">
+      <div>পিক অনুসন্ধান হচ্ছে - এটি একটু সময় নিতে পারে।</div>
+      <div>আপনি এই ডায়ালগ বন্ধ করতে পারেন এবং যখন অনুসন্ধান সম্পন্ন হবে,</div>
+      <div>আপনাকে অবহিত করা হবে</div>
+    </div>
+  </message>
+
+
+  <message id="psgu-fwhm-info-needed-title">FWHM তথ্য প্রয়োজন</message>
+  <message id="psgu-fwhm-info-needed-has-det-eff">
+    <div>বর্তমান ডিটেক্টর রেসপন্সে FWHM তথ্য নেই।</div>
+    <div>আপনি কি বর্তমান স্পেকট্রা থেকে FWHM তথ্য ফিট করতে চান?</div>
+  </message>
+  <message id="psgu-fwhm-info-needed-no-det-eff">
+    <div>কোনো ডিটেক্টর রেসপন্স নির্বাচিত নেই।</div>
+    <div>আপনি কি বর্তমান স্পেকট্রা থেকে FWHM তথ্য ফিট করতে চান?</div>
+  </message>
+  <message id="psgu-fwhm-fit-fail">পিক পুনরায় ফিট করতে ব্যর্থ (তুচ্ছ হয়ে গেছে), {1} থেকে {2} পিক</message>
+
+
+  <message id="psgu-no-peak-near-right-click-msg">গামার শক্তিতে সেট করার জন্য কোনো পিক ছিল না</message>
+  <message id="psgu-no-ref-line-near-peak-msg">পিকের গড় সেট করার জন্য কোনো রেফারেন্স গামা শক্তি ছিল না।</message>
+  <message id="psgu-failed-refit-after-fixing-mean">
+    রেফারেন্স ফটোপিকে গড় স্থির করার পরে পিক পুনরায় ফিট করতে ব্যর্থ।
+    একটি পিক তুচ্ছ হয়ে গেছে; {1} থেকে {2} পিক।
+  </message>
+  <message id="psgu-failed-change-cont-type">
+  ধারাবাহিক ধরন {1} তে পরিবর্তন করা {2} পিক তুচ্ছ করে দিয়েছে।<br />
+  এই পরিবর্তন করতে অনুগ্রহ করে <b>পিক এডিটর</b> ব্যবহার করুন।
+  </message>
+  <message id="psgu-failed-change-cont-singular">দ্য</message>  <!-- this or next message will be substituted for {2} of previous message -->
+  <message id="psgu-failed-change-cont-plural">অন্তত একটি</message>
+  <message id="psgu-failed-change-cont-insig-msg">
+  সরলভাবে ধারাবাহিক ধরন {1} তে পরিবর্তন করা পিকটি তুচ্ছ করে দিয়েছে।<br />
+  এই পরিবর্তন করতে অনুগ্রহ করে <b>পিক এডিটর</b> ব্যবহার করুন।
+  </message>
+  <message id="psgu-change-skew-not-gaus">{1} keV এ ROI তে পিক গাউসিয়ান সংজ্ঞায়িত নয় - একটি স্কিউ ধরন সেট করার আগে অনুগ্রহ করে <b>পিক এডিটর</b>-এ এটি পরিবর্তন করুন।</message>
+  <message id="psgu-change-skew-make-insig">
+    স্কিউ ধরন {1} তে পরিবর্তন করা {2} পিক তুচ্ছ করে দিয়েছে।<br />
+    এই পরিবর্তন করতে অনুগ্রহ করে <b>পিক এডিটর</b> ব্যবহার করুন।
+  </message>
+  <message id="psgu-failed-change-skew-insig-msg">
+  সরলভাবে স্কিউ ধরন {1} তে পরিবর্তন করা পিকটি তুচ্ছ করে দিয়েছে।<br />
+  এই পরিবর্তন করতে অনুগ্রহ করে <b>পিক এডিটর</b> ব্যবহার করুন।
+  </message>
+
+</messages>

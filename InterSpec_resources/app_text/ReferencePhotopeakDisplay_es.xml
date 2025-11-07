@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- rpd- is short for ReferencePhotopeakDisplay -->
+  <message id="rpd-add-another-btn">Añadir otro</message>
+  <message id="rpd-add-another-btn-narrow">Añadir</message>
+  <message id="rpd-tt-add-another-btn">Mantener las líneas actualmente mostradas y añadir un nuevo nucleído/fuente para mostrar.</message>
+  <message id="rpd-tt-nuc-edit">ej. <b>U235</b>, <b>235 Uranium</b>, <b>U</b> (solo rayos X), <b>Uranium</b> (rayos X), <b>U-235m</b> (estado meta estable), <b>Cs137</b>, <b>background</b>, <b>H(n,g)</b>, etc.</message>
+  <message id="rpd-tt-age">
+    <div>
+      La edad puede especificarse usando una combinación de unidades de tiempo, similar a '<b>5.3y 8d 22m</b>' o en vidas medias como 
+      '<b>2.5 HL</b>'.
+    </div>
+    <div>
+      Unidades de tiempo aceptables: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>, o
+      puede especificar período de tiempo por <b>hh:mm:ss</b>. Las unidades de vida media pueden
+      especificarse usando <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, o <b>half life</b>.
+    </div>
+    <div>
+      Las unidades de vida media o períodos de tiempo no pueden mezclarse con otras unidades. Cuando se especifican múltiples períodos de tiempo,
+      se suman, ej. '1y6months 3m' se interpreta como 18 meses y 3 minutos.
+    </div>
+  </message>
+  <message id="rpd-tt-clear">Limpia todas las líneas persistidas, así como las líneas no persistidas actuales.</message>
+  <message id="rpd-more-info">más info</message>
+  <message id="rpd-shield-mat">material de blindaje</message>
+  <message id="rpd-options">Opciones</message>
+  <message id="rpd-opt-prompt">Solo inmediato</message>
+  <message id="rpd-opt-tt-prompt">
+    Rayos gamma solo del nucleído original, y los descendientes hasta que uno
+    de ellos tenga una vida media más larga que el nucleído original; la
+    cadena de desintegración está en equilibrio hasta ese punto.
+  </message>
+  <message id="rpd-opt-gamma">Mostrar gammas</message>
+  <message id="rpd-opt-xray">Mostrar rayos X</message>
+  <message id="rpd-opt-alphas">Mostrar alfas</message>
+  <message id="rpd-opt-betas">Mostrar betas</message>
+  <message id="rpd-opt-cascade">Sumas cascada</message>
+  <message id="rpd-opt-escapes">Picos escape</message>
+  <message id="rpd-prev-nucs">Nucs ant.</message>
+  <message id="rpd-det-nucs">Nucs RID det.</message>
+  <message id="rpd-assoc-nucs">Nucs asoc.</message>
+  <message id="rpd-suggestions">Sugerencias</message>
+  <message id="rpd-feature-markers">Marcadores caract.</message>
+
+  <!-- Reference line thickness options -->
+  <message id="rpd-line-thick-light">Líneas estrechas</message>
+  <message id="rpd-line-thick-normal">Grosor estándar</message>
+  <message id="rpd-line-thick-thick">Líneas gruesas</message>
+  <message id="rpd-line-thick-thicker">Líneas más gruesas</message>
+  
+  <!-- Reference lines visual verbosity options. -->
+  <message id="rpd-line-verb-none">Líneas mínimas</message>
+  <message id="rpd-line-verb-hover">Línea ref. guía</message>
+  <message id="rpd-line-verb-major">Líneas principales completas</message>
+  
+  <message id="rpd-csv-export-msg">La herramienta 'Info desintegración nucleído' proporciona capacidades adicionales para exportar nucleído, productos de desintegración e información de desintegración a archivos CSV.</message>
+  <message id="rpd-changed-age">Se cambió la edad a un valor más razonable para {1} de '{2}' a '{3}'</message>
+  <message id="rpd-changed-age-fission">Se cambió la edad a {1}, para ser válida.</message>
+  <message id="rpd-det-id">ID detector</message>
+  <message id="rpd-ext-rid">RID externo</message>
+  <message id="rpd-prev">Anterior</message>
+  <message id="rpd-warn-cascade-xrays">los rayos X no están incluidos en cascadas</message>
+
+  <!-- Values in the table on this tool -->
+  <message id="rpd-tbl-iso">Iso</message>  <!-- a.k.a meta-stable state of nuclide -->
+  <message id="rpd-tbl-el-cap">c.e.</message> <!-- a.k.a electron capture -->
+  <message id="rpd-tbl-proton">protón</message>
+  <message id="rpd-tbl-spont-fis">f.e.</message> <!-- Spontaneous Fission-->
+  <message id="rpd-tbl-xray">rayoX</message>
+  <message id="rpd-tbl-reaction">Reacción</message>
+  <message id="rpd-tbl-norm">NORM</message>
+  <message id="rpd-tbl-cascade-sum">Suma cascada</message>
+
+  <message id="rpd-tbl-hdr-energy">Energía (keV)</message>
+  <message id="rpd-tbl-hdr-br">R.R.</message> <!-- branching ratio -->
+  <message id="rpd-tbl-hdr-parent">Padre</message>
+  <message id="rpd-tbl-hdr-mode">Modo</message>
+  <message id="rpd-tbl-hdr-particle">Partícula</message>
+  <message id="rpd-tbl-hdr-tt-energy">Energía de la partícula producida</message>
+  <message id="rpd-tbl-hdr-tt-br">El número de la partícula por segundo, por Bq del nucleído padre.</message>
+  <message id="rpd-tbl-hdr-tt-trans">Nucleído real que se desintegró para dar esta partícula.</message>
+  <message id="rpd-tbl-hdr-tt-trans-mode">Modo de desintegración del nucleído padre, que produjo esta partícula.</message>
+  <message id="rpd-tbl-hdr-tt-type">El tipo de partícula producida</message>
+  <message id="rpd-tbl-hdr-tt-"></message>
+
+
+</messages>
+
+

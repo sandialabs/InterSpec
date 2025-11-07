@@ -1437,7 +1437,7 @@ MakeDrfWindow::MakeDrfWindow( InterSpec *viewer,
                 MaterialDB *materialDB,
                 Wt::WSuggestionPopup *materialSuggest )
 : AuxWindow( WString::tr("window-title-create-drf"), 
-            (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+            (AuxWindowProperties::TabletNotFullScreen
              | AuxWindowProperties::SetCloseable
              | AuxWindowProperties::DisableCollapse
              | AuxWindowProperties::EnableResize
@@ -1775,10 +1775,10 @@ MakeDrf::~MakeDrf()
 
 void MakeDrf::startSaveAs()
 {
-  Wt::WFlags<AuxWindowProperties> windowprop = Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+  Wt::WFlags<AuxWindowProperties> windowprop = (AuxWindowProperties::IsModal
                                                | AuxWindowProperties::PhoneNotFullScreen
                                                | AuxWindowProperties::SetCloseable
-                                               | AuxWindowProperties::DisableCollapse;
+                                               | AuxWindowProperties::DisableCollapse);
   if( m_effEqnCoefs.empty() )
   {
     AuxWindow *w = new AuxWindow( "Error", windowprop );

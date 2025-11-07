@@ -1255,7 +1255,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     {
       const deque<std::shared_ptr<const PeakDef>> &fore_peaks = *peak_fit;
       const vector<shared_ptr<const PeakDef> > inpeaks( begin(fore_peaks), end(fore_peaks) );
-      spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr );
+      spec_json_options.peaks_json = PeakDef::peak_json( inpeaks, spec_ptr, Wt::WColor(), 255 );
     }//if( fit_results.m_peak_fit_results )
     
     //spec_json_options.line_color = "rgb(0,0,0)"; //black

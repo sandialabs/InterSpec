@@ -165,7 +165,7 @@ TerminalWidget::TerminalWidget( InterSpec *viewer, Wt::WContainerWidget *parent 
   m_commandmenu->itemSelected().connect( this, &TerminalWidget::commandMenuItemSelected );
   m_commandsearch->textInput().connect( this, &TerminalWidget::commandMenuSearchInput );
   
-  WPushButton *button = new WPushButton( "Enter" );
+  WPushButton *button = new WPushButton( WString::tr("Enter") );
   layout->addWidget( button, 1, 2 );
 
   layout->setRowStretch( 0, 1 );

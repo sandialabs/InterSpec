@@ -28,6 +28,9 @@
 #include <fstream>
 #include <iostream>
 #include <exception>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 #include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 
@@ -656,6 +659,85 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   
   if( !options.output_dir.empty() && options.create_json_output )
     BatchInfoLog::write_json( options, warnings, "", summary_json );
+  
+  // Create concatenated N42 file if requested
+  if( options.concatenate_to_n42 && !options.output_dir.empty() && results )
+  {
+    try
+    {
+      auto concatenated_spec = make_shared<SpecMeas>();
+      int current_sample = 0;
+      
+      // Add remarks to indicate when this file was created
+      auto now = chrono::system_clock::now();
+      auto time_t = chrono::system_clock::to_time_t(now);
+      stringstream time_str;
+      time_str << put_time(localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+      concatenated_spec->add_remark("Concatenated N42 file created on " + time_str.str());
+      
+      for( const auto &fit_result : results->file_results )
+      {
+        if( !fit_result.success || !fit_result.spectrum )
+          continue;
+          
+        // Create a copy of the spectrum measurement
+        auto new_meas = make_shared<SpecUtils::Measurement>( *fit_result.spectrum );
+        current_sample += 1;
+        new_meas->set_sample_number( current_sample );
+        
+        // Add source file name to the measurement title
+        string source_filename = SpecUtils::filename( fit_result.file_path );
+        string original_title = new_meas->title();
+        if( original_title.empty() )
+        {
+          new_meas->set_title( source_filename );
+        }
+        else
+        {
+          new_meas->set_title( source_filename + " - " + original_title );
+        }
+        
+        // Add the measurement to the concatenated SpecMeas
+        concatenated_spec->add_measurement( new_meas, false );
+        
+        // Add the peaks for this measurement
+        if( !fit_result.fit_peaks.empty() )
+        {
+          set<int> sample_nums = { current_sample };
+          deque<shared_ptr<const PeakDef>> peaks_copy;
+          for( const auto &peak : fit_result.fit_peaks )
+            peaks_copy.push_back( peak );
+          concatenated_spec->setPeaks( peaks_copy, sample_nums );
+        }
+      }
+
+      // Clean up the SpecMeas after adding all measurements
+      concatenated_spec->cleanup_after_load( SpecUtils::SpecFile::ReorderSamplesByTime ); 
+
+      // Save the concatenated file
+      const string concatenated_file = SpecUtils::append_path( options.output_dir, "concatenated.n42" );
+      
+      if( SpecUtils::is_file( concatenated_file ) && !options.overwrite_output_files )
+      {
+        warnings.push_back( "Not writing '" + concatenated_file + "', as it would overwrite a file."
+                           " See the '--overwrite-output-files' option to force writing." );
+      }
+      else
+      {
+        if( !concatenated_spec->save2012N42File( concatenated_file ) )
+          warnings.push_back( "Failed to write concatenated N42 file '" + concatenated_file + "'." );
+        else
+          cout << "Have written concatenated N42 file '" << concatenated_file << "'" << endl;
+      }
+      
+      // Store the concatenated results
+      results->concatenated_results = concatenated_spec;
+    }
+    catch( const std::exception &e )
+    {
+      warnings.push_back( "Error creating concatenated N42 file: " + string(e.what()) );
+    }
+  }
   
   if( !warnings.empty() )
     cerr << endl << endl;

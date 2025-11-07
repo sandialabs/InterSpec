@@ -46,4 +46,5 @@
   <message id="sfs-err-show-map">Error trying to display coordinates: {1}</message>
   <message id="sfs-err-time-format">Error converting '{1}' to a date/time string</message>
   <message id="sfs-err-lat-lon">Error converting Long/Lat to valid float</message>
+  <message id="sfs-no-spectrum-to-update">No spectrum to update</message>
 </messages>

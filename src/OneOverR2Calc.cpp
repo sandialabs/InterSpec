@@ -61,7 +61,7 @@ using namespace std;
 
 OneOverR2Calc::OneOverR2Calc()
   : AuxWindow( WString::tr("window-title-1/r2-calc"),
-              (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::PhoneNotFullScreen)
+              (AuxWindowProperties::PhoneNotFullScreen
                | AuxWindowProperties::SetCloseable
                | AuxWindowProperties::DisableCollapse) ),
     m_nearMeasurement( NULL ),

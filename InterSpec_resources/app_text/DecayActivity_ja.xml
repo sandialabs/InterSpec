@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dw- short for DecayWindow.cpp, 
+       dad- short for DecayActivityDiv
+       dcc- short for DecayChainChart
+       dcn- DecaySelectNuclide
+  -->
+  <message id="dw-qr-window-title">崩壊ツール状態</message>
+  <message id="dw-qr-window-text">崩壊ツール状態の現在の状態。</message>
+  <message id="dad-units-label">表示単位:</message>
+  <message id="dad-units-label-phone">単位:</message>
+  <message id="dad-logy-cb">対数Y軸</message>
+  <message id="dad-grid-cb">グリッド線</message>
+  <message id="dad-add-nucs">核種を追加...</message>
+  <message id="dad-remove-all">全て削除</message>
+  <message id="dad-sel-nuc-window-title">追加する核種を選択</message>
+  <message id="dad-mi-act-chart">放射能チャート</message>
+  <message id="dad-mi-decay-chain">崩壊連鎖</message>
+  <message id="dad-mi-calc">計算機</message>
+  <message id="dad-arbitrary">任意</message>
+  <message id="dad-time-span-label">時間スパン:</message>
+  <message id="dad-tt-age">
+    <div>
+      年齢は'<b>5.3y 8d 22m</b>'のような時間単位の組み合わせや'<b>2.5 HL</b>'のような半減期で指定できます。
+    </div>
+    <div>
+      使用可能な時間単位: <b>year</b>, <b>yr</b>, <b>y</b>, <b>day</b>, <b>d</b>, <b>hrs</b>, <b>hour</b>, <b>h</b>, <b>minute</b>,
+      <b>min</b>, <b>m</b>, <b>second</b>, <b>s</b>, <b>ms</b>, <b>microseconds</b>, <b>us</b>, <b>nanoseconds</b>, <b>ns</b>、または
+      <b>hh:mm:ss</b>による時間期間指定。半減期単位は
+      <b>hl</b>, <b>halflife</b>, <b>halflives</b>, <b>half-life</b>, <b>half-lives</b>,
+      <b>half lives</b>, または <b>half life</b>で指定できます。
+    </div>
+    <div>
+      半減期単位や時間期間を他の単位と混在させることはできません。複数の核種が指定された場合、最初のものが仮定されます。複数の時間期間が
+      指定された場合、それらは合計されます。例: '1y6months 3m'は
+      18ヶ月と3分と解釈されます
+    </div>
+  </message>
+  <message id="dad-yaxis-label-phone">Y軸:</message>
+  <message id="dad-yaxis-label">Y軸タイプ:</message>
+  <message id="dad-gamma-rate">ガンマ線放出率</message>
+  <message id="dad-beta-rate">ベータ線放出率</message>
+  <message id="dad-alpha-rate">アルファ線放出率</message>
+  <message id="dad-click-for-more-info">詳細情報をクリック</message>
+  <message id="dad-tt-double-click">この線源核種を編集するにはダブルクリック。この核種を表示する崩壊連鎖を作成するにはシングルクリック</message>
+  <message id="dad-summary-at-time">t={1}での要約</message>
+  <message id="dad-hdr-date">日付 ({1})</message>
+  <message id="dad-hdr-total-act">総放射能</message>
+  <message id="dad-hdr-total-gammas">総ガンマ線</message>
+  <message id="dad-yaxis-title-total-gammas">ガンマ線/秒</message>
+  <message id="dad-hdr-total-betas">総ベータ線</message>
+  <message id="dad-yaxis-title-total-betas">ベータ線/秒</message>
+  <message id="dad-hdr-total-alphas">総アルファ線</message>
+  <message id="dad-yaxis-title-total-alphas">アルファ線/秒</message>
+  <message id="dad-chart-click-more-info">詳細情報をクリック - T0後{1} {2}で我々は持っています:</message>
+
+  <message id="dcc-window-title-decay-chain">{1} 崩壊連鎖</message>
+  <message id="dcc-window-title-decay-through">{1}を通る崩壊</message>
+  <message id="dcc-nuc-info-protons">陽子数: {1}</message>
+  <message id="dcc-nuc-info-mass">質量: {1} Da</message>
+  <message id="dcc-nuc-info-hl-stable">半減期: 安定</message>
+  <message id="dcc-nuc-info-hl">半減期: {1}</message>
+  <message id="dcc-nuc-info-br-from">{1}からの分岐比: {2}</message>
+  <message id="dcc-nuc-info-br-through">{1}を通る分岐比: {2}</message>
+  <message id="dcc-nuc-info-specific-act">比放射能: {1}</message>
+  <message id="dcc-nuc-info-decay-mode">{1}は{2}に崩壊、分岐比 {3}</message>
+  <message id="dcc-particle-window-title">崩壊粒子エネルギー</message>
+  <message id="dcc-particles-from">{1}からの粒子</message>
+  <message id="dcc-nuc-has-no-particles">この核種は崩壊による粒子を持ちません</message>
+  <message id="dcc-particle">粒子</message>
+  <message id="dcc-intensity">強度</message>
+  <message id="dcc-decay-through-window-title">{1}を通る崩壊</message>
+
+  <!-- The following variables are for the decay chain chart, and will be passed to the JavScript as part of a string, so cant have any single quote (') characters! -->
+  <message id="dcc-xAxisTitle">原子質量の減少</message>
+  <message id="dcc-yAxisTitle">原子番号の増加</message>
+  <message id="dcc-clickNucTxt">詳細情報は核種をクリック。</message>
+  <message id="dcc-clickNucMoreInfoTxt2">上の異なる線源核種をクリックして</message>
+  <message id="dcc-clickNucMoreInfoTxt3">表示される崩壊連鎖を変更。</message>
+  <message id="dcc-clickNucMblTxt">詳細情報は核種をタップ。</message>
+  <message id="dcc-clickNucMblMoreInfoTxt2">上の異なる線源核種をクリックして</message>
+  <message id="dcc-clickNucMblMoreInfoTxt3">表示される崩壊連鎖を変更。</message>
+  <message id="dcc-show-decay-products">{nuclide}の崩壊生成物を表示</message>
+  <message id="dcc-show-decays-through">{nuclide}を経由する崩壊を表示</message>
+
+
+  <message id="dcn-initial-age">初期年齢: </message>
+
+</messages>

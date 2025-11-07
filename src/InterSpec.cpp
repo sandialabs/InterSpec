@@ -208,6 +208,11 @@
 #include "InterSpec/RelActManualGui.h"
 #endif
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
+#endif
+
 #include "js/InterSpec.js"
 
 #define INLINE_JAVASCRIPT(...) #__VA_ARGS__
@@ -243,6 +248,9 @@ namespace
 #endif
 #if( USE_REL_ACT_TOOL )
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
+#endif
+#if( USE_LLM_INTERFACE )
+static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif
 
   // The Reference Photopeak and/or the Search tab need thier widgets loaded,
@@ -485,6 +493,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_decayInfoWindow( nullptr ),
   m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
+#if( USE_LLM_INTERFACE )
+  m_llmToolMenuItem( nullptr ),
+  m_llmTool( nullptr ),
+#endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
 #endif
@@ -656,6 +668,10 @@ InterSpec::InterSpec( WContainerWidget *parent )
   m_peakInfoDisplay = new PeakInfoDisplay( this, m_spectrum, m_peakModel );
 
   initMaterialDbAndSuggestions();
+  
+  // Check that the reaction database initialized, before we use it in RefLineDynamic
+  if( !ReactionGammaServer::database() && ReactionGammaServer::init_error() )
+    throw runtime_error( ReactionGammaServer::init_error() );
   
   m_refLineDynamic = new RefLineDynamic( m_spectrum, this );
   
@@ -1074,7 +1090,8 @@ InterSpec::InterSpec( WContainerWidget *parent )
                                                      boost::placeholders::_1,
                                                      boost::placeholders::_2 ) );
   m_spectrum->doubleLeftClick().connect( boost::bind( &InterSpec::searchForSinglePeak, this,
-                                                     boost::placeholders::_1, boost::placeholders::_3 ) );
+                                                     boost::placeholders::_1, boost::placeholders::_3,
+                                                     boost::placeholders::_4 ) );
   m_spectrum->xRangeChanged().connect( boost::bind( &InterSpec::handleSpectrumChartXRangeChange, this,
                                                      boost::placeholders::_1,
                                                    boost::placeholders::_2,
@@ -1240,8 +1257,10 @@ InterSpec::~InterSpec() noexcept(true)
   //  some manual cleanup here (as of 20220917 when AuxWindow and SimpleDialog where explicitly
   //  parented by the current InterSpec instance, we are doing much more cleanup than necessary).
 
+#if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::log("info") << "Destructing InterSpec from session '" << (wApp ? wApp->sessionId() : string("")) << "'";
-
+#endif
+  
   // Get rid of undo/redo, so we dont insert anything into them
   del_ptr_set_null( m_undo );
   del_ptr_set_null( m_licenseWindow );
@@ -1651,6 +1670,10 @@ void InterSpec::changeLocale( std::string languageCode )
   }else
   {
     wApp->setLocale( WLocale( languageCode ) );
+    
+    // Validation of distance/activity/whatever will not get updated, and ther are some strings
+    //  like `WString("{1}: ").arg(WString::tr("some-localized-str"))` that wont update.
+    passMessage( WString::tr("warn-language-restart"), WarningWidget::WarningMsgHigh );
   }
 }//void changeLocale( std::string locale );
 
@@ -1933,7 +1956,7 @@ void InterSpec::makePeakFromRightClickHaveOwnContinuum()
   cont->setRange( minx, maxx );
   
   m_peakModel->removePeak( peak );
-  addPeak( newpeak, true );
+  addPeak( newpeak, true, SpecUtils::SpectrumType::Foreground );
   
   refitPeakFromRightClick( PeakSearchGuiUtils::RefitPeakType::Standard );
   
@@ -2076,7 +2099,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
     PeakDef newpeak( *p );
     newpeak.setContinuum( continuum );
     m_peakModel->removePeak( p );
-    addPeak( newpeak, false );
+    addPeak( newpeak, false, SpecUtils::SpectrumType::Foreground );
   }//for( PeakModel::PeakShrdPtr &p : leftpeaks )
   
   for( PeakModel::PeakShrdPtr &p : rightpeaks )
@@ -2084,7 +2107,7 @@ void InterSpec::shareContinuumWithNeighboringPeak( const bool shareWithLeft )
     PeakDef newpeak( *p );
     newpeak.setContinuum( continuum );
     m_peakModel->removePeak( p );
-    addPeak( newpeak, false );
+    addPeak( newpeak, false, SpecUtils::SpectrumType::Foreground );
   }//for( PeakModel::PeakShrdPtr &p : leftpeaks )
 
   
@@ -3023,27 +3046,106 @@ Wt::Signal<std::shared_ptr<const ExternalRidResults>> &InterSpec::externalRidRes
 
 WModelIndex InterSpec::addPeak( PeakDef peak,
                                 const bool associateShowingNuclideXrayRctn,
+                               const SpecUtils::SpectrumType spec_type,
                                const std::string &ref_line_name )
 {
-  if( fabs(peak.mean())<0.1 && fabs(peak.amplitude())<0.1 )
+  if( (fabs(peak.mean()) < 0.1) && (fabs(peak.amplitude()) < 0.1) )
     return WModelIndex();
   
-  if( !associateShowingNuclideXrayRctn || (!m_referencePhotopeakLines && ref_line_name.empty()) )
-    return m_peakModel->addNewPeak( peak );
-  
-  if( peak.hasSourceGammaAssigned() )
-    return m_peakModel->addNewPeak( peak );
-  
+  shared_ptr<SpecMeas> meas = measurment(spec_type);
+  if( !meas )
+    return WModelIndex();
+  const set<int> &sample_nums = displayedSamples(spec_type);
+  shared_ptr<deque<shared_ptr<const PeakDef>>> peaks = meas->peaks(sample_nums);
+  assert( peaks );
+  if( !peaks && (spec_type != SpecUtils::SpectrumType::Foreground) )
+    return WModelIndex();
+
+  if( !associateShowingNuclideXrayRctn || (!m_referencePhotopeakLines && ref_line_name.empty()) || peak.hasSourceGammaAssigned() )
+  {
+    if( spec_type == SpecUtils::SpectrumType::Foreground )
+      return m_peakModel->addNewPeak( peak );
+
+    auto new_peak = make_shared<PeakDef>( peak );
+    // Insert the new peak into peaks, sorted by energy
+    auto insert_pos = lower_bound(begin(*peaks), end(*peaks), new_peak, &PeakDef::lessThanByMeanShrdPtr );
+    peaks->insert(insert_pos, new_peak);
+    m_spectrum->schedulePeakRedraw( spec_type );
+    return WModelIndex();
+  }
+    
   const bool showingEscape = showingFeatureMarker(FeatureMarkerType::EscapePeakMarker);
-  auto foreground = displayedHistogram(SpecUtils::SpectrumType::Foreground);
+  auto spectrum = displayedHistogram(spec_type);
+
+  const bool wasDefaultColor = peak.lineColor().isDefault();
   
+
+  auto assign_from_ref_lines = [&]( const vector<ReferenceLineInfo> &ref_lines, const bool is_dynamic_line ){
+    if( ref_lines.empty() )
+      return;
+
+    const string source_name = ref_lines.front().m_input.m_input_txt;
+    
+    const bool useColor = ((!is_dynamic_line) && m_colorPeaksBasedOnReferenceLines);
+    
+    unique_ptr<pair<shared_ptr<const PeakDef>,string>> addswap
+       = PeakSearchGuiUtils::assign_nuc_from_ref_lines( peak, peaks, spectrum, ref_lines, useColor, showingEscape );
+
+    if( spec_type == SpecUtils::SpectrumType::Foreground )
+    {
+      WModelIndex prevpeakind = addswap ? m_peakModel->indexOfPeak( addswap->first ) : WModelIndex();
+      if( prevpeakind.isValid() )
+      {
+        prevpeakind = m_peakModel->index(prevpeakind.row(), PeakModel::kIsotope);
+        m_peakModel->setData( prevpeakind, WString(addswap->second) );
+      }
+    }else
+    {
+      if( addswap && addswap->first )
+      {
+        shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( *addswap->first );
+        PeakModel::SetGammaSource status = PeakModel::setNuclideXrayReaction( *new_peak, addswap->second, 4.0 );
+        if( status != PeakModel::SetGammaSource::FailedSourceChange )
+        {
+          // Replace the previous peak with the new peak
+          auto pos = std::find(begin(*peaks), end(*peaks), addswap->first);
+          if( pos != end(*peaks) )
+            *pos = new_peak;
+        }
+      }//if( addswap && addswap->first )
+    }//if( spec_type == SpecUtils::SpectrumType::Foreground ) / else
+    
+    if( wasDefaultColor && peak.hasSourceGammaAssigned() && m_referencePhotopeakLines )
+    {
+      Wt::WColor color;
+      
+      // Check in with ReferencePhotopeakLines widget (it will check for other peaks with this source)
+      if( color.isDefault() )
+        color = m_referencePhotopeakLines->suggestColorForSource( source_name );
+      
+      // Check the color theme
+      if( color.isDefault() && m_colorTheme )
+      {
+        const auto pos = m_colorTheme->referenceLineColorForSources.find(source_name);
+        if( pos != end(m_colorTheme->referenceLineColorForSources) )
+          color = pos->second;
+      }//if( color.isDefault() )
+      
+      // Finally, generate a new color
+      if( color.isDefault() )
+      {
+        color = m_referencePhotopeakLines->nextGenericSourceColor();
+        m_referencePhotopeakLines->updateColorCacheForSource( source_name, color );
+      }//if( color.isDefault() )
+      
+      if( !color.isDefault() )
+        peak.setLineColor( color );
+    }//if( we should assign a color )
+  };//assign_from_ref_lines lambda
+
+
   if( !ref_line_name.empty() )
   {
-    const bool wasDefaultColor = peak.lineColor().isDefault();
-    shared_ptr<const deque<shared_ptr<const PeakDef>>> previouspeaks = m_peakModel->peaks();
-    if( previouspeaks )
-      previouspeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
-    
     // First, get just the parent name of the ref lines (for now we will assume ref_line_name could be of
     //  the form "Th232;S.E. of 2614.5 keV".
     string parent = ref_line_name;
@@ -3053,96 +3155,123 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
     SpecUtils::trim(parent);
     
     bool is_dynamic_line = false;
-    vector<ReferenceLineInfo> ref_lines;
-    
+    vector<ReferenceLineInfo> matching_ref_lines;
+  
     // First try to get this reference line from the ReferenceLines
     if( m_referencePhotopeakLines )
     {
       const ReferenceLineInfo &current_ref_lines = m_referencePhotopeakLines->currentlyShowingNuclide();
-      if( SpecUtils::iequals_ascii( parent, current_ref_lines.m_input.m_input_txt ) )
-        ref_lines.push_back( current_ref_lines );
-      
-      const vector<ReferenceLineInfo> &persisted = m_referencePhotopeakLines->persistedNuclides();
-      for( size_t i = 0; ref_lines.empty() && (i < persisted.size()); ++i )
+      if( current_ref_lines.m_validity == ReferenceLineInfo::InputValidity::Valid )
       {
-        if( SpecUtils::iequals_ascii( parent, persisted[i].m_input.m_input_txt ) )
-          ref_lines.push_back( persisted[i] );
+        if( SpecUtils::iequals_ascii( parent, current_ref_lines.m_input.m_input_txt ) )
+          matching_ref_lines.push_back( current_ref_lines );
+      }
+
+      const vector<ReferenceLineInfo> &persisted = m_referencePhotopeakLines->persistedNuclides();
+      for( size_t i = 0; matching_ref_lines.empty() && (i < persisted.size()); ++i )
+      {
+        if( persisted[i].m_validity == ReferenceLineInfo::InputValidity::Valid )
+        {
+          if( SpecUtils::iequals_ascii( parent, persisted[i].m_input.m_input_txt ) )
+            matching_ref_lines.push_back( persisted[i] );
+        }
       }//
     }//if( m_referencePhotopeakLines )
     
-    if( ref_lines.empty() && m_refLineDynamic && m_refLineDynamic->current_lines() )
+    if( matching_ref_lines.empty() && m_refLineDynamic && m_refLineDynamic->current_lines() )
     {
       const shared_ptr<vector<pair<double,ReferenceLineInfo>>> dynamic_ref_lines = m_refLineDynamic->current_lines();
-      for( size_t i = 0; ref_lines.empty() && (i < dynamic_ref_lines->size()); ++i )
+      for( size_t i = 0; matching_ref_lines.empty() && (i < dynamic_ref_lines->size()); ++i )
       {
         const ReferenceLineInfo &info = (*dynamic_ref_lines)[i].second;
+        
         if( SpecUtils::iequals_ascii( parent, info.m_input.m_input_txt ) )
         {
           is_dynamic_line = true;
-          ref_lines.push_back( info );
+          matching_ref_lines.push_back( info );
         }
       }//for( loop over dynamic_ref_lines )
     }//if( ref_lines.empty() && m_refLineDynamic )
     
-    if( !ref_lines.empty() )
-    {
-      const string source_name = ref_lines.front().m_input.m_input_txt;
-      
-      const bool useColor = ((!is_dynamic_line) && m_colorPeaksBasedOnReferenceLines);
-      
-      unique_ptr<pair<shared_ptr<const PeakDef>,string>> addswap
-         = PeakSearchGuiUtils::assign_nuc_from_ref_lines( peak, previouspeaks, foreground, ref_lines, useColor, showingEscape );
-
-      WModelIndex prevpeakind = addswap ? m_peakModel->indexOfPeak( addswap->first ) : WModelIndex();
-      if( prevpeakind.isValid() )
-      {
-        prevpeakind = m_peakModel->index(prevpeakind.row(), PeakModel::kIsotope);
-        m_peakModel->setData( prevpeakind, WString(addswap->second) );
-      }
-      
-      if( wasDefaultColor && peak.hasSourceGammaAssigned() && m_referencePhotopeakLines )
-      {
-        Wt::WColor color;
-        
-        // Check in with ReferencePhotopeakLines widget (it will check for other peaks with this source)
-        if( color.isDefault() )
-          color = m_referencePhotopeakLines->suggestColorForSource( source_name );
-        
-        // Check the color theme
-        if( color.isDefault() && m_colorTheme )
-        {
-          const auto pos = m_colorTheme->referenceLineColorForSources.find(source_name);
-          if( pos != end(m_colorTheme->referenceLineColorForSources) )
-            color = pos->second;
-        }//if( color.isDefault() )
-        
-        // Finally, generate a new color
-        if( color.isDefault() )
-        {
-          color = m_referencePhotopeakLines->nextGenericSourceColor();
-          m_referencePhotopeakLines->updateColorCacheForSource( source_name, color );
-        }//if( color.isDefault() )
-        
-        if( !color.isDefault() )
-          peak.setLineColor( color );
-      }//if( we should assign a color )
-    }//if( !ref_lines.empty() )
+    assign_from_ref_lines( matching_ref_lines, is_dynamic_line );
   }//if( !ref_line_name.empty() )
   
-  if( !peak.hasSourceGammaAssigned() )
+  if( spec_type == SpecUtils::SpectrumType::Foreground )
   {
-    PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
-                                                            foreground, m_referencePhotopeakLines,
-                                                            m_colorPeaksBasedOnReferenceLines, showingEscape );
-  }//if( !peak.hasSourceGammaAssigned() )
+    if( !peak.hasSourceGammaAssigned() )
+    {
+      PeakSearchGuiUtils::assign_nuclide_from_reference_lines( peak, m_peakModel,
+                                                               spectrum, m_referencePhotopeakLines,
+                                                              m_colorPeaksBasedOnReferenceLines, showingEscape );
+    }//if( !peak.hasSourceGammaAssigned() )
   
-  WModelIndex newpeakindex = m_peakModel->addNewPeak( peak );
+    WModelIndex newpeakindex = m_peakModel->addNewPeak( peak );
   
-  PeakModel::PeakShrdPtr newpeak = m_peakModel->peak(newpeakindex);
-  try_update_hint_peak( newpeak, m_dataMeasurement, m_displayedSamples );
+    PeakModel::PeakShrdPtr newpeak = m_peakModel->peak(newpeakindex);
+    try_update_hint_peak( newpeak, m_dataMeasurement, m_displayedSamples );
+
+    return newpeakindex;
+  }else
+  {
+    vector<ReferenceLineInfo> all_ref_lines;
   
-  return newpeakindex;
+    if( m_referencePhotopeakLines )
+    {
+      const ReferenceLineInfo &current_ref_lines = m_referencePhotopeakLines->currentlyShowingNuclide();
+      if( current_ref_lines.m_validity == ReferenceLineInfo::InputValidity::Valid )
+        all_ref_lines.push_back( current_ref_lines );      
+      for( const ReferenceLineInfo &info : m_referencePhotopeakLines->persistedNuclides() )
+        all_ref_lines.push_back( info );
+    }//if( m_referencePhotopeakLines )
+
+    assign_from_ref_lines( all_ref_lines, false );
+
+    shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( peak );
+    auto insert_pos = lower_bound(begin(*peaks), end(*peaks), new_peak, &PeakDef::lessThanByMeanShrdPtr );
+    peaks->insert(insert_pos, new_peak);
+    m_spectrum->schedulePeakRedraw( spec_type );
+    return WModelIndex();
+  }
+
+  return WModelIndex();
 }//WModelIndex addPeak( PeakDef peak )
+
+
+void InterSpec::setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks )
+{
+  if( !peaks )
+    throw runtime_error( "InterSpec::setPeaks: peaks deque may not be null" );
+  
+  std::shared_ptr<SpecMeas> meas = measurment( spectrum );
+  if( !meas )
+    throw runtime_error( "InterSpec::setPeaks: spectrum type requested not loaded" );
+  
+  shared_ptr<const SpecUtils::Measurement> histogram = displayedHistogram( spectrum );
+  if( !histogram )
+    throw runtime_error( "InterSpec::setPeaks: spectrum type requested not displayed" );
+  
+  const set<int> &sample_nums = displayedSamples( spectrum );
+  
+  std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> orig_peaks = meas->peaks(sample_nums);
+  
+  if( orig_peaks.get() == peaks.get() )
+    throw runtime_error( "InterSpec::setPeaks: peaks deque can not be same as current" );
+  
+  auto set_peaks = [this,&peaks,spectrum]( std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> new_peaks ){
+    UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+    m_peakModel->setPeaks( (peaks ? *peaks : deque<std::shared_ptr<const PeakDef>>{}), spectrum );
+  };
+  
+  set_peaks(peaks);
+  
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [set_peaks,peaks,orig_peaks](){ set_peaks(orig_peaks); };
+    auto redo = [set_peaks,peaks,orig_peaks](){ set_peaks(peaks); };
+    m_undo->addUndoRedoStep( undo, redo, "Set peaks." );
+  }//if( m_undo && m_undo->canAddUndoRedoNow() )
+}//void setPeaks( const SpecUtils::SpectrumType spectrum, std::shared_ptr<std::deque<std::shared_ptr<const PeakDef>>> peaks );
+
 
 
 #if( USE_DB_TO_STORE_SPECTRA )
@@ -3196,6 +3325,7 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
         SpectraFileModel *fileModel = m_fileManager->model();
         assert( measurment(type) == file );
         
+        //InterSpec::loadStateFromDb(Dbo::ptr<UserState>) has already called `m_fileManager->removeAllFiles()`
         const WModelIndex index = fileModel->index( file );
         assert( index.isValid() );
         
@@ -3453,6 +3583,11 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     }//if( m_simpleMdaWindow )
 #endif
     
+#if( USE_LLM_INTERFACE )
+    if( m_llmTool )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingLlmAssistant;
+#endif
+    
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3478,6 +3613,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
       else if( txtKey == RelActManualTitleKey )
         entry.modify()->currentTab = UserState::kRelActManualTab;
+#endif
+#if( USE_LLM_INTERFACE )
+      else if( txtKey == LlmAssistantTabTitleKey )
+        entry.modify()->currentTab = UserState::kLlmAssistantTab;
 #endif
     }//if( m_toolsTabs )
     
@@ -3619,7 +3758,14 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   
   try
   {
-    //Essentially reset the state of the app
+    // Store current state to the database (if applicable)
+    saveStateAtForegroundChange( false );
+    
+    // Disconnect ourselves from the state
+    if( m_dataMeasurement )
+      m_dataMeasurement->clearAllDbStateId();
+    
+    // Reset the state of the app (mostly/essentually)
     closeShieldingSourceFit();
 #if( USE_REL_ACT_TOOL )
     if( m_relActAutoGui )
@@ -3638,9 +3784,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     deleteGammaCountDialog();
     closeNuclideSearchWindow();
     
+    setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Foreground, 0 );
     setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
     setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
-
     
     switch( entry->stateType )
     {
@@ -3980,6 +4126,14 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
       showRelActAutoWindow();
 #endif
     
+#if( USE_LLM_INTERFACE )
+    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant)
+       && LlmToolGui::llmToolIsConfigured() )
+    {
+      createLlmTool();
+    }
+#endif
+    
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
@@ -4139,6 +4293,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
         case UserState::kRelActManualTab: titleKey = RelActManualTitleKey;     break;
 #endif
+#if( USE_LLM_INTERFACE )
+        case UserState::kLlmAssistantTab: titleKey = LlmAssistantTabTitleKey;  break;
+#endif
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
@@ -4172,6 +4329,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           case UserState::kRelActManualTab: 
             if( m_relActManualGui )
               m_toolsTabs->setCurrentWidget( m_relActManualGui );
+            break;
+  #endif
+  #if( USE_LLM_INTERFACE )
+          case UserState::kLlmAssistantTab:
+            if( m_llmTool )
+              m_toolsTabs->setCurrentWidget( m_llmTool );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -4492,10 +4655,11 @@ void InterSpec::applyColorTheme( shared_ptr<const ColorTheme> theme )
 
   m_colorPeaksBasedOnReferenceLines = theme->peaksTakeOnReferenceLineColor;
 
-  
-  m_spectrum->applyColorTheme( theme );
+  // Apply global D3 spectrum colors (static call, affects all instances in this app)
+  D3SpectrumDisplayDiv::applyColorTheme( theme );
+
   m_timeSeries->applyColorTheme( theme );
-  
+
   setReferenceLineColors( theme );
   
   string cssfile;
@@ -4878,8 +5042,7 @@ void InterSpec::showFileQueryDialog()
   
   
   m_specFileQueryDialog = new AuxWindow( WString::tr("window-title-spec-file-query"), 
-                                        Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
-                                        | AuxWindowProperties::SetCloseable );
+                                        AuxWindowProperties::TabletNotFullScreen | AuxWindowProperties::SetCloseable );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
   //  size to be the min-size
   m_specFileQueryDialog->setMinimumSize( 640, 480 );
@@ -4982,7 +5145,7 @@ void InterSpec::showWarningsWindow()
   if( !m_warningsWindow )
   {
     m_warningsWindow = new AuxWindow( WString::tr("window-title-notification-log"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                  (AuxWindowProperties::TabletNotFullScreen
                    | AuxWindowProperties::DisableCollapse
                    | AuxWindowProperties::EnableResize
                    | AuxWindowProperties::SetCloseable) );
@@ -5049,8 +5212,7 @@ void InterSpec::showPeakInfoWindow()
   
   if( !m_peakInfoWindow )
   {
-    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"),
-                              Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable) );
+    m_peakInfoWindow = new AuxWindow( WString::tr("window-title-peak-manager"), AuxWindowProperties::SetCloseable );
     m_peakInfoWindow->rejectWhenEscapePressed();
     WGridLayout *layout = m_peakInfoWindow->stretcher();
     layout->setContentsMargins( 0, 0, 0, 0 );
@@ -5544,8 +5706,7 @@ void InterSpec::startN42TestStates()
   }//if( files.empty() )
   
   AuxWindow *window = new AuxWindow( "Test State N42 Files", 
-                                    (WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::DisableCollapse) );
+                                    AuxWindowProperties::SetCloseable | AuxWindowProperties::DisableCollapse );
   window->resizeWindow( 450, 400 );
   
   WGridLayout *layout = window->stretcher();
@@ -5562,11 +5723,11 @@ void InterSpec::startN42TestStates()
   for( const string &name : dispfiles )
     filesbox->addItem( name );
   
-  WPushButton *button = new WPushButton( "Cancel" );
+  WPushButton *button = new WPushButton( WString::tr("Cancel") );
   layout->addWidget( button, 1, 0, AlignCenter );
   button->clicked().connect( boost::bind(&AuxWindow::deleteAuxWindow, window) );
   
-  button = new WPushButton( "Load" );
+  button = new WPushButton( WString::tr("Load") );
   button->disable();
   button->clicked().connect( boost::bind( &doTestStateLoad, filesbox, window, this ) );
   
@@ -5584,7 +5745,7 @@ void InterSpec::startN42TestStates()
 void InterSpec::startStoreTestState()
 {
   AuxWindow *window = new AuxWindow( "Store app test state to N42",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+                                    (AuxWindowProperties::IsModal
                                      | AuxWindowProperties::TabletNotFullScreen
                                      | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
@@ -5686,7 +5847,7 @@ void InterSpec::stateSave()
 void InterSpec::stateSaveAs()
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-store-state-as"),
-    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
+    (AuxWindowProperties::IsModal
       | AuxWindowProperties::TabletNotFullScreen
       | AuxWindowProperties::DisableCollapse) );
   window->rejectWhenEscapePressed();
@@ -5752,8 +5913,7 @@ void InterSpec::stateSaveAs()
 void InterSpec::stateSaveTag()
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-tag-state"),
-                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
-                   | AuxWindowProperties::TabletNotFullScreen) );
+                                    (AuxWindowProperties::IsModal | AuxWindowProperties::TabletNotFullScreen) );
   window->rejectWhenEscapePressed();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   window->setClosable( false );
@@ -7391,8 +7551,7 @@ void InterSpec::showEnergyCalWindow()
   }
     
   m_energyCalWindow = new AuxWindow( WString("window-title-energy-cal"),
-                                WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                    | AuxWindowProperties::TabletNotFullScreen );
+                                    AuxWindowProperties::SetCloseable | AuxWindowProperties::TabletNotFullScreen );
   m_energyCalWindow->rejectWhenEscapePressed();
   m_energyCalWindow->stretcher()->addWidget( m_energyCalTool, 0, 0 );
   m_energyCalTool->setTallLayout();
@@ -8755,7 +8914,7 @@ void InterSpec::handleSimpleMdaWindowClose()
 
 void InterSpec::fitNewPeakNotInRoiFromRightClick()
 {
-  searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint );
+  searchForSinglePeak( m_rightClickEnergy, m_rightClickRefLineHint, 0 );
 }//void fitNewPeakNotInRoiFromRightClick()
 
 
@@ -9080,10 +9239,7 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   
   const set<int> &samples = displayedSamples( spectrum_type );
   
-  AuxWindow *window = new AuxWindow( "Map",
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::EnableResize)
-                                      | AuxWindowProperties::DisableCollapse)
-                                    );
+  AuxWindow *window = new AuxWindow( "Map", AuxWindowProperties::EnableResize | AuxWindowProperties::DisableCollapse );
   
   int w = 0.66*renderedWidth();
   int h = 0.8*renderedHeight();
@@ -9293,7 +9449,7 @@ void InterSpec::create3DSearchModeChart()
     programmaticallyClose3DSearchModeChart();
   
   m_3dViewWindow = new AuxWindow( WString::tr("window-title-3d"),
-                                 (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
+                                 (AuxWindowProperties::SetCloseable
                                   | AuxWindowProperties::EnableResize
                                   | AuxWindowProperties::TabletNotFullScreen) );
   //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
@@ -9477,8 +9633,9 @@ void InterSpec::createTerminalWidget()
   }else
   {
     m_terminalWindow = new AuxWindow( WString::tr(TerminalTabTitleKey),
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+                                     (AuxWindowProperties::SetCloseable
+                                      | AuxWindowProperties::EnableResize
+                                      | AuxWindowProperties::TabletNotFullScreen) );
     
     WPushButton *closeButton = m_terminalWindow->addCloseButtonToFooter();
     closeButton->clicked().connect(m_terminalWindow, &AuxWindow::hide);
@@ -9755,8 +9912,9 @@ RelActManualGui *InterSpec::createRelActManualWidget()
   }else
   {
     m_relActManualWindow = new AuxWindow( WString::tr("window-title-peak-rel-eff"),
-                                     (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                      | AuxWindowProperties::EnableResize | AuxWindowProperties::TabletNotFullScreen) );
+                                         (AuxWindowProperties::SetCloseable
+                                          | AuxWindowProperties::EnableResize
+                                          | AuxWindowProperties::TabletNotFullScreen) );
     
     m_relActManualWindow->rejectWhenEscapePressed();
     m_relActManualWindow->finished().connect( this, &InterSpec::handleRelActManualClose );
@@ -9874,7 +10032,7 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 #endif //#if( USE_REL_ACT_TOOL )
 
 
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
 void InterSpec::handleToolTabClosed( const int tabnum )
 {
   assert( m_toolsTabs );
@@ -9883,6 +10041,16 @@ void InterSpec::handleToolTabClosed( const int tabnum )
   
   WWidget *w = m_toolsTabs->widget( tabnum );
   
+#if( USE_LLM_INTERFACE )
+  if( w == m_llmTool )
+  {
+    handleLlmToolClose();
+  }
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+  else
+#endif
+#endif
+
 #if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
   if( w == m_relActManualGui )
   {
@@ -9895,9 +10063,21 @@ void InterSpec::handleToolTabClosed( const int tabnum )
     assert( 0 );
   }
 #elif( USE_TERMINAL_WIDGET )
-  handleTerminalWindowClose();
+  if( w == m_terminal )
+  {
+    handleTerminalWindowClose();
+  }else
+  {
+    assert( 0 );
+  }
 #elif( USE_REL_ACT_TOOL )
-  handleRelActManualClose();
+  if( w == m_relActManualGui )
+  {
+    handleRelActManualClose();
+  }else
+  {
+    assert( 0 );
+  }
   //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
   
@@ -10015,6 +10195,15 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
   item->triggered().connect( boost::bind( &InterSpec::showGammaCountDialog, this ) );
+
+#if( USE_LLM_INTERFACE )
+  if( LlmToolGui::llmToolIsConfigured() )
+  {
+    m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
+    HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
+    m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
+  }//if( LlmToolGui::llmToolIsConfigured() )
+#endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -10384,8 +10573,7 @@ void InterSpec::showCompactFileManagerWindow()
                                                  boost::placeholders::_3 ) );
   
   AuxWindow *window = new AuxWindow( WString::tr("window-title-compact-file"),
-                                    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::SetCloseable)
-                                     |AuxWindowProperties::TabletNotFullScreen) );
+                                    (AuxWindowProperties::SetCloseable |AuxWindowProperties::TabletNotFullScreen) );
   window->disableCollapse();
   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
   
@@ -10448,7 +10636,7 @@ void InterSpec::showNuclideSearchWindow()
   
   
   m_nuclideSearchWindow = new AuxWindow( WString::tr(NuclideSearchTabTitleKey),
-                                        (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                        (AuxWindowProperties::TabletNotFullScreen
                                          | AuxWindowProperties::EnableResize
                                          | AuxWindowProperties::SetCloseable) );
   m_nuclideSearchWindow->contents()->setOverflow(Wt::WContainerWidget::OverflowHidden);
@@ -10626,7 +10814,7 @@ void InterSpec::showGammaLinesWindow()
   }//if( m_referencePhotopeakLines )
 
   m_referencePhotopeakLinesWindow = new AuxWindow( WString::tr(GammaLinesTabTitleKey),
-                                                  (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::TabletNotFullScreen)
+                                                  (AuxWindowProperties::TabletNotFullScreen
                                                    | AuxWindowProperties::EnableResize
                                                    | AuxWindowProperties::SetCloseable)
                                                   );
@@ -10943,12 +11131,16 @@ void InterSpec::changeDisplayedSampleNums( const std::set<int> &samples,
     case SpecUtils::SpectrumType::Foreground:
     case SpecUtils::SpectrumType::Background:
     {
-      const shared_ptr<SpecMeas> &meas = (type == SpecUtils::SpectrumType::Foreground) ? m_dataMeasurement
-                                                                                       : m_backgroundMeasurement;
-      if( meas && !meas->automatedSearchPeaks(samples) )
+      const bool is_fore = (type == SpecUtils::SpectrumType::Foreground);
+      const shared_ptr<SpecMeas> &meas = is_fore ? m_dataMeasurement : m_backgroundMeasurement;
+      shared_ptr<const SpecUtils::Measurement> spectrum = is_fore ? m_spectrum->data() : m_spectrum->background();
+      if( meas && spectrum && !meas->automatedSearchPeaks(samples) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-        searchForHintPeaks( meas, samples, isHPGe );
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+        // We wont search for hint peaks if we are running unit tests - so it wont take forever
+        searchForHintPeaks( meas, samples, spectrum, isHPGe );
+#endif
       }else if( meas )
       {
         m_hintPeaksSet.emit(type);
@@ -11334,6 +11526,29 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
+    
+#if( USE_LLM_INTERFACE )
+    // Save LLM conversation history to previous SpecMeas before switching foreground
+    if( m_llmTool && previous )
+    {
+      try
+      {
+        auto history = m_llmTool->getConversationHistory();
+        if( history && !history->empty() )
+        {
+          // Get the previous foreground's sample numbers
+          const std::set<int> &prevSamples = prevsamples;
+          
+          // Save the history to the previous SpecMeas using sample numbers
+          previous->setLlmConversationHistory( prevSamples, history );
+        }
+      }
+      catch( const std::exception& e )
+      {
+        std::cerr << "Failed to save LLM conversation history to SpecMeas: " << e.what() << std::endl;
+      }
+    }
+#endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -11710,12 +11925,18 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     case SpecUtils::SpectrumType::Foreground:
     case SpecUtils::SpectrumType::Background:
     {
-      const shared_ptr<SpecMeas> &meas = (spec_type == SpecUtils::SpectrumType::Foreground)
-                                          ? m_dataMeasurement : m_backgroundMeasurement;
+      const bool is_fore = (spec_type == SpecUtils::SpectrumType::Foreground);
+      const shared_ptr<SpecMeas> &meas = is_fore ? m_dataMeasurement : m_backgroundMeasurement;
+      shared_ptr<const SpecUtils::Measurement> spectrum = is_fore ? m_spectrum->data() : m_spectrum->background();
+      
       if( meas && !meas->automatedSearchPeaks(sample_numbers) )
       {
         const bool isHPGe = PeakFitUtils::is_likely_high_res( this );
-        searchForHintPeaks( meas, sample_numbers, isHPGe );
+        
+        // We wont search for hint peaks if we are running unit tests - so it wont take forever
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+        searchForHintPeaks( meas, sample_numbers, spectrum, isHPGe );
+#endif //#if( !BUILD_AS_UNIT_TEST_SUITE )
       }else if( meas )
       {
         m_hintPeaksSet.emit(spec_type);
@@ -11968,6 +12189,28 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( showToolTips )
   }//if( passthrough foreground )
    */
+   
+#if( USE_LLM_INTERFACE )
+  // Load LLM conversation history from the new foreground SpecMeas
+  if( (spec_type == SpecUtils::SpectrumType::Foreground) && meas && m_llmTool )
+  {
+    try
+    {
+      // Get the current sample numbers for the new foreground
+      const std::set<int> &currentSamples = sample_numbers.empty() ? displayedSamples(spec_type) : sample_numbers;
+      
+      // Get the LLM history for these sample numbers
+      auto nativeHistoryPtr = meas->llmConversationHistory( currentSamples );
+      
+      // Set the conversation history in the LLM tool
+      m_llmTool->setConversationHistory( nativeHistoryPtr );
+    }
+    catch( const std::exception& e )
+    {
+      std::cerr << "Failed to load LLM conversation history from SpecMeas: " << e.what() << std::endl;
+    }
+  }
+#endif
 }//void setSpectrum(...)
 
 
@@ -12582,7 +12825,7 @@ void InterSpec::handleSpectrumChartXRangeChange( const double xmin, const double
 }//void handleSpectrumChartXRangeChange(...);
 
 
-void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line_name )
+void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line_name, Wt::WFlags<Wt::KeyboardModifier> mods )
 {
   UndoRedoManager::PeakModelChange peak_undo_creator;
   
@@ -12590,9 +12833,15 @@ void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line
     throw runtime_error( "InterSpec::searchForSinglePeak(...): "
                         "shoudnt be called if peak model isnt set.");
   
-  std::shared_ptr<const SpecUtils::Measurement> data = m_spectrum->data();
+  SpecUtils::SpectrumType spec_type = SpecUtils::SpectrumType::Foreground;
+  if( mods.testFlag(KeyboardModifier::AltModifier) && m_spectrum->background() )
+    spec_type = SpecUtils::SpectrumType::Background;
+  else if( mods.testFlag(KeyboardModifier::ShiftModifier) && m_spectrum->secondData() )
+    spec_type = SpecUtils::SpectrumType::SecondForeground;
+  //mods.testFlag(KeyboardModifier::ControlModifier)
+  //mods.testFlag(KeyboardModifier::MetaModifier)
   
-  if( !m_dataMeasurement || !data )
+  if( !m_dataMeasurement )
     return;
   
   const double xmin = m_spectrum->xAxisMinimum();
@@ -12601,10 +12850,9 @@ void InterSpec::searchForSinglePeak( const double x, const std::string &ref_line
   const double specWidthPx = m_spectrum->chartWidthInPixels();
   const double pixPerKeV = (xmax > xmin && xmax > 0.0 && specWidthPx > 10.0) ? std::max(0.001,(specWidthPx/(xmax - xmin))): 0.001;
   
-  std::shared_ptr<const DetectorPeakResponse> det = m_dataMeasurement->detector();
-  
-  
-  PeakSearchGuiUtils::fit_peak_from_double_click( this, x, pixPerKeV, det, ref_line_name );
+  shared_ptr<const DetectorPeakResponse> det = m_dataMeasurement->detector();
+
+  PeakSearchGuiUtils::fit_peak_from_double_click( this, x, pixPerKeV, det, ref_line_name, spec_type );
 }//void searchForSinglePeak( const double x )
 
 
@@ -12631,6 +12879,7 @@ bool InterSpec::colorPeaksBasedOnReferenceLines() const
 
 void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    const std::set<int> &samples,
+                                   const std::shared_ptr<const SpecUtils::Measurement> &spectrum_meas,
                                    const bool isHPGe )
 {
   assert( data );
@@ -12646,7 +12895,7 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
   shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
   
   const string sessionId = wApp->sessionId();
-  weak_ptr<const SpecUtils::Measurement> weakdata = m_spectrum->data();
+  weak_ptr<const SpecUtils::Measurement> weakdata = spectrum_meas;
   
   // Grab the detector
   shared_ptr<DetectorPeakResponse> drf = data->detector();
@@ -13248,11 +13497,11 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
   const vector<string> detectors = detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
   
   if( meas && !detectors.empty() && sample_nums.empty() )
-   {
-     sample_nums = validForegroundSamples();
-     if( !meas->passthrough() && (sample_nums.size() > 1) )
-       sample_nums = { *begin(sample_nums) };
-   }
+  {
+    sample_nums = validForegroundSamples();
+    if( !meas->passthrough() && (sample_nums.size() > 1) )
+      sample_nums = { *begin(sample_nums) };
+  }
   
   if( !meas || detectors.empty() || sample_nums.empty() )
   {
@@ -13264,14 +13513,14 @@ void InterSpec::displayForegroundData( const bool current_energy_range )
     if( m_spectrum->data() )
     {
       m_spectrum->setData( nullptr, false );
-      m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums );
+      m_peakModel->setPeakFromSpecMeas( nullptr, sample_nums, SpecUtils::SpectrumType::Foreground );
     }
     
     return;
   }//if( !meas )
 
 
-  m_peakModel->setPeakFromSpecMeas( meas, sample_nums );
+  m_peakModel->setPeakFromSpecMeas( meas, sample_nums, SpecUtils::SpectrumType::Foreground );
 
   const auto energy_cal = meas->suggested_sum_energy_calibration(sample_nums, detectors);
   if( !energy_cal )
@@ -13351,6 +13600,8 @@ void InterSpec::displaySecondForegroundData()
   std::set<int> &sample_nums = m_sectondForgroundSampleNumbers;
   const auto disp_dets = detectorsToDisplay( SpecUtils::SpectrumType::SecondForeground );
   
+  m_peakModel->setPeakFromSpecMeas( meas, sample_nums, SpecUtils::SpectrumType::SecondForeground );
+  
   //Note: below will throw exception if 'disp_samples' has any invalid entries
   shared_ptr<const SpecUtils::EnergyCalibration> energy_cal;
   if( meas )
@@ -13388,6 +13639,8 @@ void InterSpec::displayBackgroundData()
   set<int> &disp_samples = m_backgroundSampleNumbers;
   
   const vector<string> disp_dets = detectorsToDisplay( SpecUtils::SpectrumType::Background );
+  
+  m_peakModel->setPeakFromSpecMeas( meas, disp_samples, SpecUtils::SpectrumType::Background );
   
   //Note: below will throw exception if 'disp_samples' has any invalid entries
   shared_ptr<const SpecUtils::EnergyCalibration> energy_cal;
@@ -13438,4 +13691,64 @@ void InterSpec::displayBackgroundData()
   if( m_hardBackgroundSub->isEnabled() != canSub )
     m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
+
+
+
+
+#if( USE_LLM_INTERFACE )
+void InterSpec::createLlmTool()
+{
+  assert( LlmToolGui::llmToolIsConfigured() );
+  
+  if( m_llmTool )
+    return;
+    
+  try
+  {
+    m_llmTool = new LlmToolGui( this );
+    m_llmTool->focusInput();
+    
+    if( m_toolsTabs )
+    {
+      WMenuItem *item = m_toolsTabs->addTab( m_llmTool, WString::fromUTF8("LLM Assistant") );
+      item->setCloseable( true );
+      m_toolsTabs->setCurrentWidget( m_llmTool );
+      const int index = m_toolsTabs->currentIndex();
+      m_toolsTabs->setTabToolTip( index, WString::fromUTF8("Chat with the Large Language Model assistant for spectrum analysis help") );
+      
+      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+    }
+    
+    m_llmToolMenuItem->disable();
+  }catch( const std::exception &e )
+  {
+    std::cout << "Error creating LLM tool: " << e.what() << std::endl;
+    if( m_llmTool )
+    {
+      delete m_llmTool;
+      m_llmTool = nullptr;
+    }//if( m_llmTool )
+  }//try / catch
+}//void createLlmTool()
+
+LlmToolGui *InterSpec::currentLlmTool()
+{
+  return m_llmTool;
+}//LlmToolGui *currentLlmTool();
+
+void InterSpec::handleLlmToolClose()
+{
+  if( !m_llmTool )
+    return;
+ 
+  m_llmToolMenuItem->enable();
+  
+  delete m_llmTool;
+  if( m_toolsTabs )
+    m_toolsTabs->setCurrentIndex( 2 );
+  
+  m_llmTool = nullptr;
+}
+#endif // USE_LLM_INTERFACE
 

@@ -2290,13 +2290,13 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
   cb->addStyleClass( "NoShowAgain" );
   cb->setInline( false );
   
-  Wt::WPushButton *btn = dialog->addButton( "Cancel" );
+  Wt::WPushButton *btn = dialog->addButton( WString::tr("Cancel") );
   btn->clicked().connect( std::bind([callback](){
     if( callback )
       callback( nullptr, nullptr );
   }) );
   
-  btn = dialog->addButton( "Continue" );
+  btn = dialog->addButton( WString::tr("Continue") );
   btn->clicked().connect( std::bind([viewer,callback,cb](){
     if( cb->isChecked() )
       UserPreferences::setPreferenceValue("ExternalRidWarn", false, viewer );
@@ -2313,7 +2313,7 @@ SimpleDialog *RemoteRid::startRemoteRidDialog( InterSpec *viewer,
 pair<AuxWindow *, RemoteRid *> RemoteRid::createDialog( InterSpec *viewer )
 {
   AuxWindow *window = new AuxWindow( WString::tr("window-title-external-rid"),
-                                    (Wt::WFlags<AuxWindowProperties> (AuxWindowProperties::DisableCollapse)
+                                    (AuxWindowProperties::DisableCollapse
                                      | AuxWindowProperties::SetCloseable
                                      | AuxWindowProperties::TabletNotFullScreen)
                                     );

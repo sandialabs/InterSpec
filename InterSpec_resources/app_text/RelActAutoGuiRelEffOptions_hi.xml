@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- raageo- is short for RelActAutoGuiRelEffOptions -->
+
+  <!-- Labels -->
+  <message id="raageo-eqn-type">समीकरण प्रकार</message>
+  <message id="raageo-eqn-order">समीकरण क्रम</message>
+  <message id="raageo-pu242-corr">Pu242 सुधार</message>
+
+  <!-- Checkboxes -->
+  <message id="raageo-use-corr-fcn">सुधार फ़ंक्शन उपयोग करें</message>
+  <message id="raageo-share-corr-fcn">सुधार फ़ंक्शन साझा करें</message>
+  <message id="raageo-share-ext-atten">बाहरी क्षीणन साझा करें</message>
+  <message id="raageo-shielded-by-other-curves">अन्य वक्रों द्वारा परिरक्षित</message>
+
+  <!-- Equation types -->
+  <message id="raageo-eqn-log-x">Log(x)</message>
+  <message id="raageo-eqn-log-y">Log(y)</message>
+  <message id="raageo-eqn-log-x-log-y">Log(x)Log(y)</message>
+  <message id="raageo-eqn-empirical">अनुभवजन्य</message>
+  <message id="raageo-eqn-physical">भौतिक</message>
+
+  <!-- Placeholders -->
+  <message id="raageo-curve-name">वक्र नाम</message>
+
+  <!-- Tooltips -->
+  <message id="raageo-eqn-type-tt">सापेक्ष दक्षता वक्र के लिए उपयोग करने के लिए कार्यात्मक रूप।<br />विकल्प हैं:<table style="margin-left: 10px;"><tr><th>Log(energy):</th>               <th>y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...</th></tr><tr><th>Log(rel. eff.):</th>            <th>y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )</th></tr><tr><th>Log(energy)Log(rel. eff.):</th> <th>y = exp( a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )</th></tr><tr><th>Empirical:</th>            <th>y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )</th></tr><tr><th>Physical:</th>             <th>y = <span style="display: inline-block; vertical-align: middle;"><span style="display: block; text-align: center;">(1 - exp(-AD<sub>0</sub>*μ<sub>0</sub>))</span><span style="display: block; border-top: 1px solid black; text-align: center;">(AD<sub>0</sub>*μ<sub>0</sub>)</span></span> * [exp(-AD<sub>1</sub>*μ<sub>1</sub>) * exp(-AD<sub>2</sub>*μ<sub>2</sub>) + ...] * [Det. Eff.] * [E<sup>b</sup> * C<sup>1/E</sup>]</th></tr></table></message>
+  <message id="raageo-eqn-order-tt">क्रम (कितने ऊर्जा-निर्भर पद) सापेक्ष दक्षता समीकरण का उपयोग करना है।</message>
+  <message id="raageo-pu242-corr-tt">Pu-242 अक्सर गामा स्पेक्ट्रा में सीधे देखने योग्य नहीं होता है। हालांकि, संवर्धन की गणना करते समय इस समस्थानिक के लिए सही करने के लिए, इस समस्थानिक के अपेक्षित योगदान को अन्य Pu समस्थानिकों से अनुमानित किया जा सकता है। यह फॉर्म आपको सुधार विधि चुनने की अनुमति देता है।</message>
+  <message id="raageo-share-corr-fcn-tt">जब चेक किया जाता है, तो सहसंबंध फ़ंक्शन सेटिंग सभी भौतिक मॉडल वक्रों में समन्वयित की जाएगी।</message>
+  <message id="raageo-share-ext-atten-tt">जब चेक किया जाता है, तो बाहरी परिरक्षण कॉन्फ़िगरेशन सभी भौतिक मॉडल वक्रों में समन्वयित की जाएगी।</message>
+  <message id="raageo-shielded-by-other-curves-tt">जब चेक किया जाता है, तो इस वक्र के स्रोत सभी अन्य भौतिक मॉडल वक्रों द्वारा परिरक्षित किए जाएंगे।</message>
+  <message id="raageo-del-rel-eff-curve-tt">यह सापेक्ष दक्षता वक्र हटाता है।</message>
+  <message id="raageo-add-rel-eff-curve-tt">एक और सापेक्ष दक्षता वक्र जोड़ें।</message>
+
+</messages>

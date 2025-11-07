@@ -252,6 +252,7 @@ public:
   
   void setFitRectangularHeightEnabled( const bool allow );
   void setFitRectangularWidthEnabled( const bool allow );
+  void setFitRectangularDepthEnabled( const bool allow );
   
   //material(): returns the currently selected Material.  Note that if the
   //  GenericMaterial is selected, will return NULL.

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- SimpleActivityCalc widget text resources -->
+  <message id="simple-activity-calc-title">Kalkulator Aktivitas Sederhana</message>
+  <message id="simple-activity-calc-menu">Kal. Akt. Sederhana</message>
+  
+  <message id="sac-peak-label">Puncak:</message>
+  <message id="sac-background-subtract-label">pengurangan latar belakang</message>
+  
+  <message id="sac-distance-label">Jarak:</message>
+  <message id="sac-age-label">Usia:</message>
+  <message id="sac-shielding-label">Perisai:</message>
+  <message id="sac-geometry-label">Geometri:</message>
+  <message id="sac-result-label">Aktivitas:</message>
+  <message id="sac-advanced-btn">Fit akt/perisai lanjutan</message>
+  
+  <message id="sac-geometry-point">Sumber Titik</message>
+  <message id="sac-geometry-plane">Bidang Tak Terbatas</message>
+  <message id="sac-geometry-self-atten">Bola Atenuasi-Sendiri</message>
+  <message id="sac-geometry-trace-src">Sumber Jejak</message>
+  
+  <message id="sac-error-no-peak">Tidak ada puncak yang dipilih</message>
+  <message id="sac-error-no-detector">Tidak ada respons detektor yang dimuat</message>
+  <message id="sac-error-invalid-distance">Jarak yang dimasukkan tidak valid</message>
+  
+  <message id="sac-error-no-background-peak">
+    <p>Tampaknya tidak ada puncak dalam latar belakang di lokasi yang sama dengan puncak ini.</p>
+    <p>Jika Anda pikir ada, silakan tukar spektrum latar depan dan latar belakang, fit puncak dalam spektrum latar belakang, lalu tukar kembali.</p>
+  </message>
+  
+  
+  <message id="sac-use-fit-background-peak">Apakah Anda ingin menggunakan puncak latar belakang yang di-fit secara otomatis?</message>
+  
+  <message id="sac-error-fitting-background-peak">
+    <p>Ada kesalahan saat mencoba melakukan fitting puncak ke spektrum latar belakang:</p>
+    <p style="SimpleActPeakFitErrorTxt">{1}</p>
+  </message>
+  
+  
+  <message id="sac-qr-tool-state-title">Status Alat Kal. Aktivitas Sederhana</message>
+  <message id="sac-qr-tool-state-txt">Status saat ini alat kalkulasi aktivitas sederhana.</message>
+</messages>
+
