@@ -185,7 +185,7 @@ public:
    */
   bool fitActivity( int nuc ) const;
   
-  //age(): returns IsoFitStruct::age, which is marked age for this nuclide,
+  //age(): returns SourceFitDef::age, which is marked age for this nuclide,
   //  which if there is a defining age nuclide set for this nuclide, you should
   //  get the age for that nuclide. See ageDefiningNuclide(...) for this case.
   double age( int nuc ) const;
@@ -198,7 +198,7 @@ public:
   boost::optional<double> truthAgeTolerance( int nuc ) const;
 #endif
   
-  //fitAge(): returns IsoFitStruct::fitAge, which is if it is marked to fit age
+  //fitAge(): returns SourceFitDef::fitAge, which is if it is marked to fit age
   //  for this nuclide, not if you should fit for the age of this nuclide since
   //  it may have another defining age nuclide that controlls the age, see
   //  ageDefiningNuclide(...) for this case
@@ -227,6 +227,8 @@ public:
   //  passed in nuclide.  If the passed in nuclide does not have another nuclide
   //  that controls its age, it returns the same nuclide that was passed in.
   const SandiaDecay::Nuclide *ageDefiningNuclide( const SandiaDecay::Nuclide *dependantNuc ) const;
+  size_t numProgenyPeaks( const SandiaDecay::Nuclide *nuclide ) const;
+  bool ageIsFittable( const ShieldingSourceFitCalc::SourceFitDef &iso ) const;
   
   
   /** Sets the source type for a nuclide.
@@ -288,17 +290,17 @@ public:
   virtual void sort( int column, Wt::SortOrder order = Wt::AscendingOrder );
 
 
-  //compare(...): function to compare IsoFitStruct according to relevant Column;
+  //compare(...): function to compare SourceFitDef according to relevant Column;
   //  functions similar to operator<
-  static bool compare( const ShieldingSourceFitCalc::IsoFitStruct &lhs,
-                      const ShieldingSourceFitCalc::IsoFitStruct &rhs,
+  static bool compare( const ShieldingSourceFitCalc::SourceFitDef &lhs,
+                      const ShieldingSourceFitCalc::SourceFitDef &rhs,
                        Columns sortColumn, Wt::SortOrder order );
 
   void displayUnitsChanged( bool displayBq );
   
-  const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &underlyingData() const;
+  const std::vector<ShieldingSourceFitCalc::SourceFitDef> &underlyingData() const;
   
-  void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &data );
+  void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &data );
   
   /** Set the DetectorPeakResponse::EffGeometryType, so correct label for activity can be shown.
    */
@@ -310,14 +312,14 @@ protected:
   Columns m_sortColumn;
   bool m_displayCuries;
   PeakModel *m_peakModel;
-  std::vector<ShieldingSourceFitCalc::IsoFitStruct> m_nuclides;
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> m_nuclides;
   bool m_sameAgeForIsotopes;
   DetectorPeakResponse::EffGeometryType m_det_type;
   
   //m_previousResults: when a isotope gets removed from this model, we'll cache
   //  its current value, since it will often times get added again and be
   //  intended to be the same value
-  std::map<const SandiaDecay::Nuclide *, ShieldingSourceFitCalc::IsoFitStruct> m_previousResults;
+  std::map<const SandiaDecay::Nuclide *, ShieldingSourceFitCalc::SourceFitDef> m_previousResults;
   
   friend class ShieldingSourceDisplay;
 };//class SourceFitModel
@@ -521,8 +523,8 @@ public:
   
   //some helper functions for deserialization:
   void deSerializePeaksToUse( const ::rapidxml::xml_node<char> *peaks );
-  void deSerializeSourcesToFitFor( const ::rapidxml::xml_node<char> *sources );
-  void deSerializeShieldings( const ::rapidxml::xml_node<char> *shiledings );
+  void deSerializeSourcesToFitFor( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources );
+  void deSerializeShieldings( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings );
   
   void startModelUpload();
   void modelUploadError( const ::int64_t size_tried );

@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <memory>
+#include <optional>
 
 #include "rapidxml/rapidxml.hpp"
 #include "rapidxml/rapidxml_utils.hpp"
@@ -126,6 +127,18 @@ bool close_enough( const boost::optional<double> &l, const boost::optional<doubl
   const double diff = fabs((*l) - (*r));
   return (diff < 1.0E-12) || (diff < 1.0E-6*std::max(fabs(*l), fabs(*r)));
 };
+
+bool close_enough( const std::optional<double> &l, const std::optional<double> &r )
+{
+  if( l.has_value() != r.has_value() )
+    return false;
+  
+  if( !l.has_value() )
+    return true;
+  
+  const double diff = fabs((*l) - (*r));
+  return (diff < 1.0E-12) || (diff < 1.0E-6*std::max(fabs(*l), fabs(*r)));
+};
   
   
 void SourceFitDef::equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs )
@@ -136,6 +149,11 @@ void SourceFitDef::equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs
   if( !close_enough(lhs.activity, rhs.activity) )
     throw runtime_error( "SourceFitDef LHS activity (" + std::to_string(lhs.activity) + ") "
                          "!= RHS activity (" + std::to_string(rhs.activity) + ")" );
+  
+  if( lhs.activityUncertainty )
+    assert( lhs.activityUncertainty.value() > 0.0 );
+  if( rhs.activityUncertainty )
+    assert( rhs.activityUncertainty.value() > 0.0 );
   
   if( lhs.fitActivity != rhs.fitActivity )
     throw runtime_error( "SourceFitDef LHS fitActivity != RHS fitActivity" );
@@ -152,6 +170,17 @@ void SourceFitDef::equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs
   if( lhs.sourceType != rhs.sourceType )
     throw runtime_error( "SourceFitDef LHS sourceType != RHS sourceType" );
   
+  if( !close_enough( lhs.activityUncertainty, rhs.activityUncertainty ) )
+    throw runtime_error( "SourceFitDef LHS activityUncertainty != RHS activityUncertainty" );
+  
+  if( lhs.ageUncertainty )
+    assert( lhs.ageUncertainty.value() > 0.0 );
+  if( rhs.ageUncertainty )
+    assert( rhs.ageUncertainty.value() > 0.0 );
+  
+  if( !close_enough( lhs.ageUncertainty, rhs.ageUncertainty ) )
+    throw runtime_error( "SourceFitDef LHS ageUncertainty != RHS ageUncertainty" );
+  
 #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
   if( !close_enough(lhs.truthActivity, rhs.truthActivity) )
     throw runtime_error( "SourceFitDef LHS truthActivity != RHS truthActivity" );
@@ -161,40 +190,11 @@ void SourceFitDef::equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs
     throw runtime_error( "SourceFitDef LHS truthAge != RHS truthAge" );
   if( !close_enough(lhs.truthAgeTolerance, rhs.truthAgeTolerance) )
     throw runtime_error( "SourceFitDef LHS truthAgeTolerance != RHS truthAgeTolerance" );
-#endif
+#endif //#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
 }//void equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs )
 
-  
-void IsoFitStruct::equalEnough( const IsoFitStruct &lhs, const IsoFitStruct &rhs )
-{
-  SourceFitDef::equalEnough( lhs, rhs );
-  
-  if( lhs.numProgenyPeaksSelected != rhs.numProgenyPeaksSelected )
-    throw runtime_error( "IsoFitStruct LHS numProgenyPeaksSelected != RHS numProgenyPeaksSelected" );
-  
-  if( lhs.ageIsFittable != rhs.ageIsFittable )
-    throw runtime_error( "IsoFitStruct LHS ageIsFittable != RHS ageIsFittable" );
-
-  if( lhs.ageIsFittable != rhs.ageIsFittable )
-    throw runtime_error( "IsoFitStruct LHS ageIsFittable != RHS ageIsFittable" );
-  
-  if( !close_enough( lhs.activityUncertainty, rhs.activityUncertainty ) )
-    throw runtime_error( "IsoFitStruct LHS activityUncertainty != RHS activityUncertainty" );
-  
-  if( !close_enough( lhs.ageUncertainty, rhs.ageUncertainty ) )
-    throw runtime_error( "IsoFitStruct LHS ageUncertainty != RHS ageUncertainty" );
-}//void equalEnough( const IsoFitStruct &lhs, const IsoFitStruct &rhs )
 #endif
-    
-IsoFitStruct::IsoFitStruct()
-  : SourceFitDef(),
-      numProgenyPeaksSelected(0),
-      ageIsFittable(true),
-      activityUncertainty(-1.0),
-      ageUncertainty(-1.0)
-{
-}
-  
+
   
 TraceSourceInfo::TraceSourceInfo()
   : m_type( GammaInteractionCalc::TraceActivityType::NumTraceActivityType ),
@@ -316,6 +316,22 @@ void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *src_node )
   getTruth( "TruthAge", false, row.truthAge );
   getTruth( "TruthAgeTolerance", false, row.truthAgeTolerance );
 #endif
+  
+  row.activityUncertainty.reset();
+  if( const rapidxml::xml_node<> *activity_uncert_node = activity_node->first_node( "Uncertainty", 11 ) )
+  {
+    double uncert = 0.0;
+    if( activity_uncert_node->value() && (stringstream(activity_uncert_node->value()) >> uncert) && (uncert > 0.0) )
+      row.activityUncertainty = uncert;
+  }
+  
+  row.ageUncertainty.reset();
+  if( const rapidxml::xml_node<> *age_uncert_node = age_node->first_node( "Uncertainty", 11 ) )
+  {
+    double uncert = 0.0;
+    if( age_uncert_node->value() && (stringstream(age_uncert_node->value()) >> uncert) && (uncert > 0.0) )
+      row.ageUncertainty = uncert;
+  }
 }//void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *parent_node )
   
   
@@ -363,7 +379,7 @@ void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *src_node )
   
   // I dont think we actually need to note the source type here, because the ShieldingSelects
   //  already have this info, but when we deSerialize, we'll note
-  //  SourceFitModel::IsoFitStruct::sourceType - which is maybe not the best because it creates
+  //  SourceFitModel::SourceFitDef::sourceType - which is maybe not the best because it creates
   //  a condition for the XML to become inconsistent with itself
   value = srctype;
   determined_note = doc->allocate_node( rapidxml::node_element, "SourceType", value );
@@ -431,85 +447,40 @@ void SourceFitDef::deSerialize( const ::rapidxml::xml_node<char> *src_node )
   addTruth( "TruthAgeTolerance", false, truthAgeTolerance );
 #endif
   
+  const bool ageIsFittable = !PeakDef::ageFitNotAllowed( nuclide );
+  const char *deprecated_comment = doc->allocate_string( "AgeIsFittable is deprecated; retained for backward compatibility" );
+  nuclide_node->append_node( doc->allocate_node( rapidxml::node_comment, nullptr, deprecated_comment ) );
+
+  const char *fit_value = doc->allocate_string( std::to_string(ageIsFittable ? 1 : 0).c_str() );
+  rapidxml::xml_node<char> *age_fit_node = doc->allocate_node( rapidxml::node_element, "AgeIsFittable", fit_value );
+  nuclide_node->append_node( age_fit_node );
+
+  if( activityUncertainty && (*activityUncertainty > 0.0) )
+  {
+    const double uncert = *activityUncertainty;
+    assert( uncert > 0.0 );
+    rapidxml::xml_node<char> *activity_node = nuclide_node->first_node("Activity");
+    if( !activity_node )
+      throw runtime_error( "SourceFitDef::serialize: missing Activity node" );
+    const char *uncert_str = doc->allocate_string( std::to_string(uncert).c_str() );
+    rapidxml::xml_node<char> *uncert_node = doc->allocate_node( rapidxml::node_element, "Uncertainty", uncert_str );
+    activity_node->append_node( uncert_node );
+  }
+
+  if( ageUncertainty && (*ageUncertainty > 0.0) )
+  {
+    const double uncert = *ageUncertainty;
+    assert( uncert > 0.0 );
+    rapidxml::xml_node<char> *age_node = nuclide_node->first_node("Age");
+    if( !age_node )
+      throw runtime_error( "SourceFitDef::serialize: missing Age node" );
+    const char *uncert_str = doc->allocate_string( std::to_string(uncert).c_str() );
+    rapidxml::xml_node<char> *uncert_node = doc->allocate_node( rapidxml::node_element, "Uncertainty", uncert_str );
+    age_node->append_node( uncert_node );
+  }
+
   return nuclide_node;
 }//::rapidxml::xml_node<char> *SourceFitDef::serialize( rapidxml::xml_node<char> *parent_node )
-  
-  
-  
-void IsoFitStruct::deSerialize( const ::rapidxml::xml_node<char> *src_node )
-{
-  SourceFitDef::deSerialize( src_node );
-  
-  const rapidxml::xml_node<> *age_node = src_node->first_node( "Age", 3 );
-  const rapidxml::xml_node<> *activity_node = src_node->first_node( "Activity", 8 );
-  
-  if( !age_node || !activity_node )
-    throw runtime_error( "Missing necessary age or activity element for sources XML" );
-  
-  const rapidxml::xml_node<> *age_uncert_node = age_node->first_node( "Uncertainty", 11 );
-  const rapidxml::xml_node<> *activity_uncert_node = activity_node->first_node( "Uncertainty", 11 );
-  
-  
-  if( !activity_uncert_node || !activity_uncert_node->value()
-     || !age_uncert_node || !age_uncert_node->value() )
-    throw runtime_error( "Missing/invalid node for sources XML" );
-  
-  IsoFitStruct &row = *this;
-  
-  if( !(stringstream(activity_uncert_node->value()) >> row.activityUncertainty) )
-    throw runtime_error( "Failed to read activity_uncer" );
-  
-  if( !(stringstream(age_uncert_node->value()) >> row.ageUncertainty) )
-    throw runtime_error( "Failed to read age_uncert" );
-  
-  row.ageIsFittable = !PeakDef::ageFitNotAllowed( row.nuclide );
-  
-  const rapidxml::xml_node<> *num_peak_node = src_node->first_node( "NumProgenyPeaksSelected" );
-  if( !num_peak_node || !num_peak_node->value_size() )
-  {
-    row.numProgenyPeaksSelected = 0;
-  }else
-  {
-    if( !(stringstream(num_peak_node->value()) >> row.numProgenyPeaksSelected) )
-      throw runtime_error( "Failed to read NumProgenyPeaksSelected" );
-  }
-}//void IsoFitStruct::deSerialize( const ::rapidxml::xml_node<char> *parent_node )
-  
-  
-::rapidxml::xml_node<char> *IsoFitStruct::serialize( rapidxml::xml_node<char> *isotope_nodes ) const
-{
-  rapidxml::xml_node<char> *nuclide_node = SourceFitDef::serialize( isotope_nodes );
-  if( !nuclide_node )
-    throw runtime_error( "IsoFitStruct::serialize: null nuclide node?" );
-  
-  rapidxml::xml_document<char> *doc = isotope_nodes->document();
-  if( !doc )
-    throw runtime_error( "IsoFitStruct::serialize: couldnt get document" );
-  
-  rapidxml::xml_node<char> *activity_node = nuclide_node->first_node("Activity");
-  assert( activity_node );
-  if( !activity_node )
-    throw runtime_error( "IsoFitStruct::serialize: null Activity node?" );
-  
-  const char *value = doc->allocate_string( std::to_string(activityUncertainty).c_str() );
-  rapidxml::xml_node<char> *node = doc->allocate_node( rapidxml::node_element, "Uncertainty", value );
-  activity_node->append_node( node );
-  
-  rapidxml::xml_node<char> *age_node = nuclide_node->first_node("Age");
-  assert( age_node );
-  if( !age_node )
-    throw runtime_error( "IsoFitStruct::serialize: null Age node?" );
-  
-  value = doc->allocate_string( std::to_string(ageUncertainty).c_str() );
-  node = doc->allocate_node( rapidxml::node_element, "Uncertainty", value );
-  age_node->append_node( node );
-  
-  value = doc->allocate_string( std::to_string(numProgenyPeaksSelected).c_str() );
-  node = doc->allocate_node( rapidxml::node_element, "NumProgenyPeaksSelected", value );
-  nuclide_node->append_node( node );
-  
-  return nuclide_node;
-}//::rapidxml::xml_node<char> *IsoFitStruct::serialize( rapidxml::xml_node<char> *parent_node )
   
   
 void TraceSourceInfo::serialize( rapidxml::xml_node<char> *parent_node ) const
@@ -2325,7 +2296,7 @@ void fit_model( const std::string wtsession,
                               + (nuc ? nuc->symbol : string("null")) );
         
         const ShieldingSourceFitCalc::SourceFitDef &initialdef = initialSources[initial_row];
-        ShieldingSourceFitCalc::IsoFitStruct &row = results->fit_src_info[initial_row];
+        ShieldingSourceFitCalc::SourceFitDef &row = results->fit_src_info[initial_row];
         
         
         const double age = chi2Fcn->age( nuc, params );
@@ -2337,7 +2308,6 @@ void fit_model( const std::string wtsession,
         
         row.age = age;
         row.activity = total_activity;
-        row.ageIsFittable = !PeakDef::ageFitNotAllowed( nuc );
         row.ageDefiningNuc = initialdef.ageDefiningNuc;
         row.sourceType = initialdef.sourceType;
         
@@ -2348,38 +2318,32 @@ void fit_model( const std::string wtsession,
         row.truthAgeTolerance = initialdef.truthAgeTolerance;
 #endif
         
-        row.activityUncertainty = -1.0;
+        row.activityUncertainty.reset();
         if( row.fitActivity || chi2Fcn->isTraceSource(nuc) || chi2Fcn->isSelfAttenSource(nuc) )
         {
           const double activityUncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
-          if( activityUncert >= FLT_EPSILON )
+          if( activityUncert > FLT_EPSILON )
+          {
+            assert( activityUncert > 0.0 );
             row.activityUncertainty = activityUncert;
+          }
         }
         
-        row.ageUncertainty = -1.0;
+        row.ageUncertainty.reset();
         if( row.fitAge )
         {
-          row.ageUncertainty = chi2Fcn->age( nuc, errors );
+          const double ageUncert = chi2Fcn->age( nuc, errors );
+          if( ageUncert > FLT_EPSILON )
+          {
+            assert( ageUncert > 0.0 );
+            row.ageUncertainty = ageUncert;
+          }
         }else
         {
           assert( (max(row.age, initialdef.age) < 1.0E-6)
                  || (fabs(row.age - initialdef.age) < 1.0E-5*max(row.age,initialdef.age)) );
         }
         
-        {// Start calculate numProgenyPeaksSelected
-          set<const SandiaDecay::Nuclide *> progeny;
-          for( const PeakDef &peak : chi2Fcn->peaks() )
-          {
-            if( (peak.parentNuclide() == nuc) && peak.useForShieldingSourceFit() )
-            {
-              const SandiaDecay::Transition * const trans = peak.nuclearTransition();
-              if( trans && trans->parent )
-                progeny.insert( trans->parent );
-            }
-          }//for( loop over peaks)
-          
-          row.numProgenyPeaksSelected = progeny.size();
-        }// End calculate numProgenyPeaksSelected
       }//for( int ison = 0; ison < niso; ++ison )
     }// End set fit source info
     

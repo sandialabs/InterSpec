@@ -47,6 +47,11 @@ class PeakDef;
 struct Material;
 class DetectorPeakResponse;
 
+namespace rapidxml
+{
+  template<typename Ch> class xml_node;
+}
+
 namespace SpecUtils
 {
   class Measurement;
@@ -741,18 +746,45 @@ public:
      */
     std::vector<std::tuple<const SandiaDecay::Nuclide *,TraceActivityType,double>> trace_sources;
   };//struct ShieldLayerInfo
+  
+  
+  /** This is the setup of the problem - distances, shielding, how to calculate. */
+  struct ShieldSourceConfig
+  {
+    /** Distance to the CENTER of the item being measured.
+     
+     Note: If detector is fixed geometry, this value will not be used.
+     */
+    double distance;
+    
+    GammaInteractionCalc::GeometryType geometry;
+    std::vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
+    std::vector<ShieldingSourceFitCalc::SourceFitDef> sources;
+    
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+
+    rapidxml::xml_node<char> *serialize( rapidxml::xml_node<char> *base_node ) const;
+    void deSerialize( const rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+    void setSourceDefinitions( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &defs );
+    void setSourceFits( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &fits );
+    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sourceFits() const;
+    std::vector<ShieldingSourceFitCalc::SourceFitDef> sourceDefinitions() const;
+  };//struct ShieldSourceCalcInput
+  
+  struct ShieldSourceInput
+  {
+    ShieldSourceConfig config;
+    
+    std::shared_ptr<const DetectorPeakResponse> detector;
+    std::deque<std::shared_ptr<const PeakDef>> foreground_peaks;
+    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks;
+    
+    std::shared_ptr<const SpecUtils::Measurement> foreground;
+    std::shared_ptr<const SpecUtils::Measurement> background;
+  };//struct ShieldSourceInput
 
   static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
-                                     const double distance,
-                                     const GammaInteractionCalc::GeometryType geometry,
-                                     const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                                     const std::vector<ShieldingSourceFitCalc::SourceFitDef> &src_definitions,
-                                     std::shared_ptr<const DetectorPeakResponse> detector,
-                                     std::shared_ptr<const SpecUtils::Measurement> foreground,
-                                     std::shared_ptr<const SpecUtils::Measurement> background,
-                                     std::deque<std::shared_ptr<const PeakDef>> foreground_peaks,
-                                     std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks,
-                                     const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options );
+                                     const ShieldSourceInput &input );
   
 protected:
   ShieldingSourceChi2Fcn(
@@ -978,12 +1010,12 @@ public:
 
   void log_shield_info( const std::vector<double> &params,
                         const std::vector<double> &error_params,
-                        const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        const std::vector<ShieldingSourceFitCalc::SourceFitDef> &fit_src_info,
                         std::vector<ShieldingDetails> &info ) const;
   
   void log_source_info( const std::vector<double> &params,
                         const std::vector<double> &error_params,
-                        const std::vector<ShieldingSourceFitCalc::IsoFitStruct> &fit_src_info,
+                        const std::vector<ShieldingSourceFitCalc::SourceFitDef> &fit_src_info,
                         std::vector<SourceDetails> &info ) const;
   
   
