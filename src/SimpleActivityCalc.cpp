@@ -2304,7 +2304,7 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     chi_input.config.distance = input.distance;
     chi_input.config.geometry = geometry;
     chi_input.config.shieldings = shielding;
-    chi_input.config.setSourceDefinitions( src_definitions );
+    chi_input.config.sources = src_definitions;
     chi_input.config.options = fit_options;
     chi_input.detector = input.detector;
     chi_input.foreground = input.foreground;

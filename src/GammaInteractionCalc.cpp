@@ -124,7 +124,7 @@ namespace
   }
 }//unnamed namespace
 
-rapidxml::xml_node<char> *ShieldingSourceChi2Fcn::ShieldSourceConfig::serialize( rapidxml::xml_node<char> *base_node ) const
+rapidxml::xml_node<char> *ShieldSourceConfig::serialize( rapidxml::xml_node<char> *base_node ) const
 {
   if( !base_node )
     throw runtime_error( "ShieldSourceConfig::serialize: invalid parent node" );
@@ -160,7 +160,7 @@ rapidxml::xml_node<char> *ShieldingSourceChi2Fcn::ShieldSourceConfig::serialize(
   return base_node;
 }
 
-void ShieldingSourceChi2Fcn::ShieldSourceConfig::deSerialize( const rapidxml::xml_node<char> *base_node,
+void ShieldSourceConfig::deSerialize( const rapidxml::xml_node<char> *base_node,
                                                           MaterialDB *materialDb )
 {
   if( !base_node )
@@ -217,53 +217,6 @@ void ShieldingSourceChi2Fcn::ShieldSourceConfig::deSerialize( const rapidxml::xm
   }
 }
 
-void ShieldingSourceChi2Fcn::ShieldSourceConfig::setSourceDefinitions( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &defs )
-{
-  sources.clear();
-  sources.reserve( defs.size() );
-  for( const auto &src : defs )
-  {
-    ShieldingSourceFitCalc::SourceFitDef def;
-    copySourceFitBase( def, src );
-    def.activityUncertainty.reset();
-    def.ageUncertainty.reset();
-    sources.push_back( std::move(def) );
-  }
-}
-
-void ShieldingSourceChi2Fcn::ShieldSourceConfig::setSourceFits( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &fits )
-{
-  sources = fits;
-#if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
-  for( const auto &src : sources )
-  {
-    if( src.activityUncertainty )
-      assert( src.activityUncertainty.value() > 0.0 );
-    if( src.ageUncertainty )
-      assert( src.ageUncertainty.value() > 0.0 );
-  }
-#endif
-}
-
-const std::vector<ShieldingSourceFitCalc::SourceFitDef> &ShieldingSourceChi2Fcn::ShieldSourceConfig::sourceFits() const
-{
-  return sources;
-}
-
-std::vector<ShieldingSourceFitCalc::SourceFitDef> ShieldingSourceChi2Fcn::ShieldSourceConfig::sourceDefinitions() const
-{
-  std::vector<ShieldingSourceFitCalc::SourceFitDef> defs;
-  defs.reserve( sources.size() );
-  for( const auto &src : sources )
-  {
-    ShieldingSourceFitCalc::SourceFitDef def;
-    copySourceFitBase( def, src );
-    def.activityUncertainty.reset();
-    def.ageUncertainty.reset();
-    defs.push_back( std::move(def) );
-  }
-  return defs;
-}
 
 const char *to_str( const TraceActivityType type )
 {
@@ -2140,7 +2093,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   const double distance = config.distance;
   const GeometryType geom = config.geometry;
   const auto &shieldings = config.shieldings;
-  std::vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions = config.sourceDefinitions();
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions = config.sources;
   const auto &options = config.options;
   const auto &foreground_peaks = input.foreground_peaks;
   const auto &background_peaks = input.background_peaks;

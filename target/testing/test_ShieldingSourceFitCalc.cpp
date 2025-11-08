@@ -471,7 +471,7 @@ BOOST_AUTO_TEST_CASE( SimpleSourceFit )
   chi_input.config.distance = distance;
   chi_input.config.geometry = geometry;
   chi_input.config.shieldings = shieldings;
-  chi_input.config.setSourceDefinitions( src_definitions );
+  chi_input.config.sources = src_definitions;
   chi_input.config.options = options;
   chi_input.detector = detector;
   chi_input.foreground = foreground;
@@ -1097,13 +1097,13 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   }
   BOOST_REQUIRE( src_definitions.size() == 1 );
 
-  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceConfig parsed_config;
+  GammaInteractionCalc::ShieldSourceConfig parsed_config;
   BOOST_REQUIRE_NO_THROW( parsed_config.deSerialize( base_node, &matdb ) );
 
   BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * std::max(1.0, fabs(distance)) );
   BOOST_CHECK_EQUAL( static_cast<int>(parsed_config.geometry), static_cast<int>(geometry) );
   BOOST_CHECK_EQUAL( parsed_config.shieldings.size(), shield_definitions.size() );
-  std::vector<ShieldingSourceFitCalc::SourceFitDef> parsed_source_defs = parsed_config.sourceDefinitions();
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> parsed_source_defs = parsed_config.sources;
   BOOST_CHECK_EQUAL( parsed_source_defs.size(), src_definitions.size() );
 
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
@@ -1119,13 +1119,13 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   roundtrip_doc.append_node( round_root );
   BOOST_REQUIRE_NO_THROW( parsed_config.serialize( round_root ) );
 
-  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceConfig reparsed_config;
+  GammaInteractionCalc::ShieldSourceConfig reparsed_config;
   BOOST_REQUIRE_NO_THROW( reparsed_config.deSerialize( round_root, &matdb ) );
 
   BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * std::max(1.0, fabs(parsed_config.distance)) );
   BOOST_CHECK_EQUAL( static_cast<int>(reparsed_config.geometry), static_cast<int>(parsed_config.geometry) );
   BOOST_CHECK_EQUAL( reparsed_config.shieldings.size(), parsed_config.shieldings.size() );
-  std::vector<ShieldingSourceFitCalc::SourceFitDef> reparsed_source_defs = reparsed_config.sourceDefinitions();
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> reparsed_source_defs = reparsed_config.sources;
   BOOST_CHECK_EQUAL( reparsed_source_defs.size(), parsed_source_defs.size() );
 
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
@@ -1136,7 +1136,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( reparsed_config.options, parsed_config.options ) );
 #endif
 
-  BOOST_CHECK_EQUAL( reparsed_config.sourceFits().size(), parsed_config.sourceFits().size() );
+  BOOST_CHECK_EQUAL( reparsed_config.sources.size(), parsed_config.sources.size() );
   
   set_fit_quantities_to_default_values( shield_definitions, src_definitions );
   
@@ -1145,7 +1145,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystTraceSource )
   chi_input.config.distance = distance;
   chi_input.config.geometry = geometry;
   chi_input.config.shieldings = shield_definitions;
-  chi_input.config.setSourceDefinitions( src_definitions );
+  chi_input.config.sources = src_definitions;
   chi_input.config.options = options;
   chi_input.detector = detector;
   chi_input.foreground = foreground;
@@ -1484,14 +1484,14 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
                         << peak_fit_nucs.size() << "), vs src_definitions (" << src_definitions.size() << ")" );
     
     
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceConfig parsed_config;
+    GammaInteractionCalc::ShieldSourceConfig parsed_config;
     BOOST_CHECK_NO_THROW( parsed_config.deSerialize( base_node, &matdb ) );
 
     BOOST_CHECK_SMALL( fabs(parsed_config.distance - distance), 1e-9 * std::max(1.0, fabs(distance)) );
     BOOST_CHECK_EQUAL( static_cast<int>(parsed_config.geometry), static_cast<int>(geometry) );
     BOOST_CHECK_EQUAL( parsed_config.shieldings.size(), shield_definitions.size() );
-  std::vector<ShieldingSourceFitCalc::SourceFitDef> parsed_source_defs = parsed_config.sourceDefinitions();
-  BOOST_CHECK_EQUAL( parsed_source_defs.size(), src_definitions.size() );
+    std::vector<ShieldingSourceFitCalc::SourceFitDef> parsed_source_defs = parsed_config.sources;
+    BOOST_CHECK_EQUAL( parsed_source_defs.size(), src_definitions.size() );
 
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     for( size_t i = 0; i < shield_definitions.size(); ++i )
@@ -1506,13 +1506,13 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     roundtrip_doc.append_node( round_root );
     BOOST_CHECK_NO_THROW( parsed_config.serialize( round_root ) );
 
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceConfig reparsed_config;
+    GammaInteractionCalc::ShieldSourceConfig reparsed_config;
     BOOST_CHECK_NO_THROW( reparsed_config.deSerialize( round_root, &matdb ) );
 
     BOOST_CHECK_SMALL( fabs(reparsed_config.distance - parsed_config.distance), 1e-9 * std::max(1.0, fabs(parsed_config.distance)) );
     BOOST_CHECK_EQUAL( static_cast<int>(reparsed_config.geometry), static_cast<int>(parsed_config.geometry) );
     BOOST_CHECK_EQUAL( reparsed_config.shieldings.size(), parsed_config.shieldings.size() );
-  std::vector<ShieldingSourceFitCalc::SourceFitDef> reparsed_source_defs = reparsed_config.sourceDefinitions();
+  std::vector<ShieldingSourceFitCalc::SourceFitDef> reparsed_source_defs = reparsed_config.sources;
   BOOST_CHECK_EQUAL( reparsed_source_defs.size(), parsed_source_defs.size() );
 
 #if( PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
@@ -1530,7 +1530,7 @@ BOOST_AUTO_TEST_CASE( FitAnalystShieldingSourcecases )
     chi_input.config.distance = distance;
     chi_input.config.geometry = geometry;
     chi_input.config.shieldings = shield_definitions;
-    chi_input.config.setSourceDefinitions( src_definitions );
+    chi_input.config.sources = src_definitions;
     chi_input.config.options = options;
     chi_input.detector = detector;
     chi_input.foreground = foreground;

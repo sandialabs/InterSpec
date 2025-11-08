@@ -1344,7 +1344,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
   double distance = 1.0 * PhysicalUnits::meter;
   {
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceConfig config;
+    GammaInteractionCalc::ShieldSourceConfig config;
     try
     {
       config.deSerialize( base_node, &matdb );
@@ -1384,7 +1384,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     distance = config.distance;
     fit_options = config.options;
     shield_definitions = config.shieldings;
-    src_definitions = config.sourceDefinitions();
+    src_definitions = config.sources;
   }
   
   if( specified_dist )
@@ -1462,7 +1462,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     chi_input.config.distance = distance;
     chi_input.config.geometry = geometry;
     chi_input.config.shieldings = shield_definitions;
-  chi_input.config.setSourceDefinitions( src_definitions );
+    chi_input.config.sources = src_definitions;
     chi_input.config.options = fit_options;
     chi_input.detector = detector;
     chi_input.foreground = foreground;

@@ -29,6 +29,9 @@
 #include <tuple>
 #include <mutex>
 #include <utility>
+#include <string>
+#include <vector>
+#include <optional>
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 #include <boost/optional.hpp>
@@ -112,6 +115,7 @@ namespace GammaInteractionCalc
   class ShieldingSourceChi2Fcn;
   struct SourceFitDef;
   struct PeakDetail;
+  struct ShieldSourceConfig;
 }//namespace GammaInteractionCalc
 
 class InterSpec;
@@ -506,11 +510,42 @@ public:
   const ShieldingSelect *innerShielding( const ShieldingSelect * const select ) const;
   
   
-  //testSerialization(): simply tries to round-trip this ShieldingSourceDisplay
-  //  to and then back from XML.  Does not actually check it was correctly done
-  //  but does print the XML to cerr, and will trigger exceptions being thrown
-  //  if XML isnt as expected; intended to be used for development.
-  void testSerialization();
+  struct ShieldingSourceDisplayState
+  {
+    struct Peak
+    {
+      bool use;
+      std::string nuclideSymbol;
+      double energy;
+    };
+    
+    struct Chi2EvalPoint
+    {
+      double energy;
+      double chi;
+      double scale;
+      std::string colorCss;
+      double scaleUncert;
+    };
+    
+    struct Chi2Elements
+    {
+      double chi2;
+      unsigned int numParametersFit;
+      std::vector<Chi2EvalPoint> evalPoints;
+    };
+    
+    int versionMajor;
+    int versionMinor;
+    bool showChiOnChart;
+    std::shared_ptr<const GammaInteractionCalc::ShieldSourceConfig> config;
+    std::vector<Peak> peaks;
+    std::optional<Chi2Elements> chi2Elements;
+    
+    ShieldingSourceDisplayState();
+    ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent_node ) const;
+    void deSerialize( const ::rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+  };
   
   //serialize(): creates (and returns) a node "ShieldingSourceFit" under
   //  'parent' which contains the XML for this object.
@@ -522,7 +557,7 @@ public:
   void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
   
   //some helper functions for deserialization:
-  void deSerializePeaksToUse( const ::rapidxml::xml_node<char> *peaks );
+  void deSerializePeaksToUse( const std::vector<ShieldingSourceDisplayState::Peak> &peaks );
   void deSerializeSourcesToFitFor( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources );
   void deSerializeShieldings( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings );
   

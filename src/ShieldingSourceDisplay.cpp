@@ -26,6 +26,7 @@
 #include <memory>
 #include <vector>
 #include <cstdlib>
+#include <limits>
 #include <sstream>
 #include <iostream>
 
@@ -118,6 +119,287 @@
 
 using namespace Wt;
 using namespace std;
+
+ShieldingSourceDisplay::ShieldingSourceDisplayState::ShieldingSourceDisplayState()
+  : versionMajor( ShieldingSourceDisplay::sm_xmlSerializationMajorVersion ),
+    versionMinor( ShieldingSourceDisplay::sm_xmlSerializationMinorVersion ),
+    showChiOnChart( true ),
+    config(),
+    peaks(),
+    chi2Elements()
+{
+}
+
+
+rapidxml::xml_node<char> *ShieldingSourceDisplay::ShieldingSourceDisplayState::serialize( rapidxml::xml_node<char> *parent_node ) const
+{
+  if( !parent_node )
+    throw runtime_error( "ShieldingSourceDisplayState::serialize: invalid parent node" );
+  
+  rapidxml::xml_document<char> *doc = parent_node->document();
+  if( !doc )
+    throw runtime_error( "ShieldingSourceDisplayState::serialize: parent node missing document" );
+  
+  rapidxml::xml_node<char> *base_node = doc->allocate_node( rapidxml::node_element, "ShieldingSourceFit" );
+  parent_node->append_node( base_node );
+  
+  const std::string version_str = std::to_string( versionMajor ) + "." + std::to_string( versionMinor );
+  char *version_value = doc->allocate_string( version_str.c_str() );
+  rapidxml::xml_attribute<char> *version_attr = doc->allocate_attribute( "version", version_value );
+  base_node->append_attribute( version_attr );
+  
+  assert( config );
+  if( config )
+    config->serialize( base_node );
+  
+  rapidxml::xml_node<char> *distance_node = base_node->first_node( "Distance", 8 );
+  const char *show_name = "ShowChiOnChart";
+  const std::string show_str = showChiOnChart ? "1" : "0";
+  char *show_value = doc->allocate_string( show_str.c_str() );
+  rapidxml::xml_node<char> *show_node = doc->allocate_node( rapidxml::node_element, show_name, show_value );
+  if( distance_node )
+    base_node->insert_node( distance_node, show_node );
+  else
+    base_node->append_node( show_node );
+  
+  rapidxml::xml_node<char> *peaks_node = doc->allocate_node( rapidxml::node_element, "Peaks" );
+  base_node->append_node( peaks_node );
+  for( const Peak &peak : peaks )
+  {
+    rapidxml::xml_node<char> *peak_node = doc->allocate_node( rapidxml::node_element, "Peak" );
+    peaks_node->append_node( peak_node );
+    
+    const std::string use_str = peak.use ? "1" : "0";
+    char *use_value = doc->allocate_string( use_str.c_str() );
+    rapidxml::xml_attribute<char> *use_attr = doc->allocate_attribute( "Use", use_value );
+    peak_node->append_attribute( use_attr );
+    
+    const std::string symbol = peak.nuclideSymbol;
+    char *symbol_value = doc->allocate_string( symbol.c_str() );
+    rapidxml::xml_node<char> *nuc_node = doc->allocate_node( rapidxml::node_element, "Nuclide", symbol_value );
+    peak_node->append_node( nuc_node );
+    
+    const std::string energy_str = std::to_string( peak.energy );
+    char *energy_value = doc->allocate_string( energy_str.c_str() );
+    rapidxml::xml_node<char> *energy_node = doc->allocate_node( rapidxml::node_element, "Energy", energy_value );
+    peak_node->append_node( energy_node );
+  }
+  
+  if( chi2Elements )
+  {
+    rapidxml::xml_node<char> *chi2_node = doc->allocate_node( rapidxml::node_element, "Chi2Elements" );
+    base_node->append_node( chi2_node );
+    
+    const std::string chi2_str = std::to_string( chi2Elements->chi2 );
+    char *chi2_value = doc->allocate_string( chi2_str.c_str() );
+    rapidxml::xml_node<char> *chi2_val_node = doc->allocate_node( rapidxml::node_element, "Chi2", chi2_value );
+    chi2_node->append_node( chi2_val_node );
+    
+    const std::string num_param_str = std::to_string( chi2Elements->numParametersFit );
+    char *num_param_value = doc->allocate_string( num_param_str.c_str() );
+    rapidxml::xml_node<char> *num_param_node = doc->allocate_node( rapidxml::node_element, "NumParamFit", num_param_value );
+    chi2_node->append_node( num_param_node );
+    
+    rapidxml::xml_node<char> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
+    chi2_node->append_node( eval_node );
+    
+    for( const Chi2EvalPoint &point : chi2Elements->evalPoints )
+    {
+      rapidxml::xml_node<char> *point_node = doc->allocate_node( rapidxml::node_element, "EvalPoint" );
+      eval_node->append_node( point_node );
+      
+      const std::string energy_str = std::to_string( point.energy );
+      char *energy_value = doc->allocate_string( energy_str.c_str() );
+      rapidxml::xml_node<char> *energy_node = doc->allocate_node( rapidxml::node_element, "Energy", energy_value );
+      point_node->append_node( energy_node );
+      
+      const std::string chi_str = std::to_string( point.chi );
+      char *chi_value = doc->allocate_string( chi_str.c_str() );
+      rapidxml::xml_node<char> *chi_node = doc->allocate_node( rapidxml::node_element, "Chi", chi_value );
+      point_node->append_node( chi_node );
+      
+      const std::string scale_str = std::to_string( point.scale );
+      char *scale_value = doc->allocate_string( scale_str.c_str() );
+      rapidxml::xml_node<char> *scale_node = doc->allocate_node( rapidxml::node_element, "Scale", scale_value );
+      point_node->append_node( scale_node );
+      
+      char *color_value = doc->allocate_string( point.colorCss.c_str() );
+      rapidxml::xml_node<char> *color_node = doc->allocate_node( rapidxml::node_element, "Color", color_value );
+      point_node->append_node( color_node );
+      
+      const std::string scale_uncert_str = std::to_string( point.scaleUncert );
+      char *scale_uncert_value = doc->allocate_string( scale_uncert_str.c_str() );
+      rapidxml::xml_node<char> *scale_uncert_node = doc->allocate_node( rapidxml::node_element, "ScaleUncert", scale_uncert_value );
+      point_node->append_node( scale_uncert_node );
+    }
+  }
+  
+  return base_node;
+}
+
+
+void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rapidxml::xml_node<char> *base_node,
+                                                                       MaterialDB *materialDb )
+{
+  if( !base_node )
+    throw runtime_error( "No ShieldingSourceFit node" );
+  
+  if( !rapidxml::internal::compare( base_node->name(), base_node->name_size(), "ShieldingSourceFit", 18, true ) )
+    throw runtime_error( "ShieldingSourceDisplay::deSerialize: invalid node name passed in: '"
+                        + std::string( base_node->name(), base_node->name() + base_node->name_size() ) + "'" );
+  
+  const rapidxml::xml_attribute<char> *attr = base_node->first_attribute( "version", 7 );
+  if( !attr || !attr->value() )
+    throw runtime_error( "Deserializing requires a version" );
+  
+  const std::string version_text( attr->value(), attr->value() + attr->value_size() );
+  size_t dot_pos = version_text.find( '.' );
+  try
+  {
+    if( dot_pos == std::string::npos )
+    {
+      versionMajor = std::stoi( version_text );
+      versionMinor = 0;
+    }else
+    {
+      versionMajor = std::stoi( version_text.substr( 0, dot_pos ) );
+      versionMinor = std::stoi( version_text.substr( dot_pos + 1 ) );
+    }
+  }catch( ... )
+  {
+    throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
+  }
+  
+  if( versionMajor != ShieldingSourceDisplay::sm_xmlSerializationMajorVersion )
+    throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
+  
+  showChiOnChart = true;
+  if( const rapidxml::xml_node<char> *chart_node = base_node->first_node( "ShowChiOnChart", 14 ) )
+  {
+    if( chart_node->value() )
+    {
+      std::stringstream ss;
+      ss.write( chart_node->value(), chart_node->value_size() );
+      bool temp = true;
+      if( !(ss >> temp) )
+        throw runtime_error( "Invalid ShowChiOnChart node" );
+      showChiOnChart = temp;
+    }
+  }
+  
+  
+  shared_ptr<GammaInteractionCalc::ShieldSourceConfig> config_ptr = make_shared<GammaInteractionCalc::ShieldSourceConfig>();
+  config_ptr->deSerialize( base_node, materialDb );
+  
+  config = config_ptr;
+  
+  peaks.clear();
+  if( const rapidxml::xml_node<char> *peaks_node = base_node->first_node( "Peaks", 5 ) )
+  {
+    for( const rapidxml::xml_node<char> *peak_node = peaks_node->first_node( "Peak", 4 );
+        peak_node; peak_node = peak_node->next_sibling( "Peak", 4 ) )
+    {
+      Peak peak;
+      peak.use = true;
+      if( const rapidxml::xml_attribute<char> *use_attr = peak_node->first_attribute( "Use", 3 ) )
+      {
+        if( use_attr->value() )
+        {
+          std::stringstream ss;
+          ss.write( use_attr->value(), use_attr->value_size() );
+          if( !(ss >> peak.use) )
+            throw runtime_error( "Invalid 'Use' attribute in Peak XML element" );
+        }
+      }
+      
+      const rapidxml::xml_node<char> *symbol_node = peak_node->first_node( "Nuclide", 7 );
+      const rapidxml::xml_node<char> *energy_node = peak_node->first_node( "Energy", 6 );
+      if( !symbol_node || !symbol_node->value()
+         || !energy_node || !energy_node->value() )
+        throw runtime_error( "Invalid or missing node for Peak XML element" );
+      
+      peak.nuclideSymbol.assign( symbol_node->value(), symbol_node->value() + symbol_node->value_size() );
+      std::stringstream energy_stream;
+      energy_stream.write( energy_node->value(), energy_node->value_size() );
+      if( !(energy_stream >> peak.energy) )
+        throw runtime_error( "Invalid Energy value in Peak XML element" );
+      
+      peaks.push_back( peak );
+    }
+  }
+  
+  chi2Elements.reset();
+  if( const rapidxml::xml_node<char> *chi2_node = base_node->first_node( "Chi2Elements", 12 ) )
+  {
+    Chi2Elements info;
+    
+    const rapidxml::xml_node<char> *chi2_value_node = chi2_node->first_node( "Chi2", 4 );
+    const rapidxml::xml_node<char> *num_param_node = chi2_node->first_node( "NumParamFit", 11 );
+    if( !chi2_value_node || !chi2_value_node->value()
+       || !num_param_node || !num_param_node->value() )
+      throw runtime_error( "Invalid Chi2Elements node" );
+    
+    std::stringstream chi2_stream;
+    chi2_stream.write( chi2_value_node->value(), chi2_value_node->value_size() );
+    if( !(chi2_stream >> info.chi2) )
+      throw runtime_error( "Invalid Chi2 value in Chi2Elements node" );
+    
+    std::stringstream num_param_stream;
+    num_param_stream.write( num_param_node->value(), num_param_node->value_size() );
+    if( !(num_param_stream >> info.numParametersFit) )
+      throw runtime_error( "Invalid NumParamFit value in Chi2Elements node" );
+    
+    info.evalPoints.clear();
+    if( const rapidxml::xml_node<char> *eval_node = chi2_node->first_node( "EvaluatedEnergies", 17 ) )
+    {
+      for( const rapidxml::xml_node<char> *point_node = eval_node->first_node( "EvalPoint", 9 );
+          point_node; point_node = point_node->next_sibling( "EvalPoint", 9 ) )
+      {
+        Chi2EvalPoint point{};
+        
+        const rapidxml::xml_node<char> *energy_node = point_node->first_node( "Energy", 6 );
+        const rapidxml::xml_node<char> *chi_node = point_node->first_node( "Chi", 3 );
+        const rapidxml::xml_node<char> *scale_node = point_node->first_node( "Scale", 5 );
+        const rapidxml::xml_node<char> *color_node = point_node->first_node( "Color", 5 );
+        const rapidxml::xml_node<char> *scale_uncert_node = point_node->first_node( "ScaleUncert", 11 );
+        
+        if( !energy_node || !energy_node->value()
+           || !chi_node || !chi_node->value()
+           || !scale_node || !scale_node->value()
+           || !scale_uncert_node || !scale_uncert_node->value() )
+          throw runtime_error( "Invalid EvalPoint entry in Chi2Elements node" );
+        
+        std::stringstream energy_stream;
+        energy_stream.write( energy_node->value(), energy_node->value_size() );
+        if( !(energy_stream >> point.energy) )
+          throw runtime_error( "Invalid energy in EvalPoint" );
+        
+        std::stringstream chi_stream;
+        chi_stream.write( chi_node->value(), chi_node->value_size() );
+        if( !(chi_stream >> point.chi) )
+          throw runtime_error( "Invalid chi value in EvalPoint" );
+        
+        std::stringstream scale_stream;
+        scale_stream.write( scale_node->value(), scale_node->value_size() );
+        if( !(scale_stream >> point.scale) )
+          throw runtime_error( "Invalid scale value in EvalPoint" );
+        
+        point.colorCss.clear();
+        if( color_node && color_node->value() )
+          point.colorCss.assign( color_node->value(), color_node->value() + color_node->value_size() );
+        
+        std::stringstream scale_uncert_stream;
+        scale_uncert_stream.write( scale_uncert_node->value(), scale_uncert_node->value_size() );
+        if( !(scale_uncert_stream >> point.scaleUncert) )
+          throw runtime_error( "Invalid ScaleUncert value in EvalPoint" );
+        
+        info.evalPoints.push_back( point );
+      }
+    }
+    
+    chi2Elements = std::move( info );
+  }
+}
 
 
 #if( ANDROID )
@@ -3075,8 +3357,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showLog->disable();
 
   PopupDivMenuItem *item = NULL;
-//  PopupDivMenuItem *item = m_addItemMenu->addMenuItem( "Test Serialization" );
-//  item->triggered().connect( this, &ShieldingSourceDisplay::testSerialization );
 
   item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-import-model") );
   item->triggered().connect( this, &ShieldingSourceDisplay::startModelUpload );
@@ -3773,7 +4053,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
   chi_input.config.distance = distance;
   chi_input.config.geometry = geom;
   chi_input.config.shieldings = initial_shieldings;
-  chi_input.config.setSourceDefinitions( src_definitions );
+  chi_input.config.sources = src_definitions;
   chi_input.config.options = options;
   chi_input.detector = detector;
   chi_input.foreground = foreground;
@@ -6957,79 +7237,62 @@ void ShieldingSourceDisplay::saveModelIfAlreadyInDatabase()
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
 
 
-void ShieldingSourceDisplay::testSerialization()
+
+void ShieldingSourceDisplay::deSerializePeaksToUse( const std::vector<ShieldingSourceDisplayState::Peak> &peaks )
 {
-  rapidxml::xml_document<char> doc;
-  
-  cerr << "Staring serialization" << endl;
-  serialize( &doc );
-  std::string s;
-  rapidxml::print(std::back_inserter(s), doc, 0);
-  cerr << "Serialized:\n" << doc << endl;
-  cerr << "\n\nStarting de-serialization" << endl;
-  deSerialize( &doc );
-  cerr << "Done deserializing\n\n" << endl;
-}//testSerialization()
-
-
-
-
-
-void ShieldingSourceDisplay::deSerializePeaksToUse(
-                                    const rapidxml::xml_node<char> *peaks_node )
-{
-  const rapidxml::xml_attribute<char> *attr;
-  const rapidxml::xml_node<char> *symbol_node, *energy_node, *peak_node;
-  
-  for( peak_node = peaks_node->first_node( "Peak", 4 );
-       peak_node; peak_node = peak_node->next_sibling( "Peak", 4 ) )
+  for( const ShieldingSourceDisplayState::Peak &state_peak : peaks )
   {
-    attr = peak_node->first_attribute( "Use", 3 );
-    symbol_node = peak_node->first_node( "Nuclide", 7 );
-    energy_node = peak_node->first_node( "Energy", 6 );
-    
-    bool use = true;
-    double energy;
-    if( attr && attr->value() && !(stringstream(attr->value())>>use) )
-      throw runtime_error( "Invalid 'Use' attribute in Peak XML element" );
-    if( !use )
+    if( !state_peak.use )
       continue;
-    if( !symbol_node || !energy_node
-       || !symbol_node->value() || !energy_node->value()
-       || !(stringstream(energy_node->value()) >> energy) )
-      throw runtime_error( "Invalid or missing node for Peak XML element" );
     
-    //    PeakModel::PeakShrdPtr nearestPeak = m_peakModel->nearestPeak( energy );
+    auto find_peak = [&]( const bool require_symbol, double &nearestE, WModelIndex &nearest_index,
+                          PeakModel::PeakShrdPtr &nearest_peak )->bool
+    {
+      nearestE = std::numeric_limits<double>::max();
+      nearest_peak.reset();
+      for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+      {
+        WModelIndex index = m_peakModel->index( peakn, PeakModel::kUseForShieldingSourceFit );
+        PeakModel::PeakShrdPtr peak = m_peakModel->peak( index );
+        const SandiaDecay::Nuclide *nuclide = peak->parentNuclide();
+        
+        if( !nuclide )
+          continue;
+        
+        if( require_symbol
+           && !state_peak.nuclideSymbol.empty()
+           && !SpecUtils::iequals_ascii( state_peak.nuclideSymbol, nuclide->symbol ) )
+          continue;
+        
+        try
+        {
+          const float gamenergy = peak->gammaParticleEnergy();
+          const double dE = fabs( gamenergy - state_peak.energy );
+          if( dE < nearestE )
+          {
+            nearestE = dE;
+            nearest_peak = peak;
+            nearest_index = index;
+          }
+        }catch( std::exception & )
+        {
+        }
+      }
+      return static_cast<bool>(nearest_peak);
+    };
     
-    double nearestE = DBL_MAX;
+    double nearestE = std::numeric_limits<double>::max();
     WModelIndex nearest_index;
     PeakModel::PeakShrdPtr nearest_peak;
-    for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
-    {
-      WModelIndex index = m_peakModel->index( peakn, PeakModel::kUseForShieldingSourceFit );
-      PeakModel::PeakShrdPtr peak = m_peakModel->peak( index );
-      const SandiaDecay::Nuclide *nuclide = peak->parentNuclide();
-      
-      try
-      {
-        const float gamenergy = peak->gammaParticleEnergy();
-        const double dE = fabs(gamenergy - energy);
-        if( nuclide && (dE < nearestE) )
-        {
-          nearestE = dE;
-          nearest_peak = peak;
-          nearest_index = index;
-        }//if( this is nearest candidate peak )
-      }catch( std::exception & )
-      {
-        
-      }//try / catch
-    }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
     
-    if( nearest_peak && (nearestE < 0.1) )
+    bool found = find_peak( true, nearestE, nearest_index, nearest_peak );
+    if( !found )
+      found = find_peak( false, nearestE, nearest_index, nearest_peak );
+    
+    if( found && (nearestE < 0.1) )
       m_peakModel->setData( nearest_index, true );
-  }//for( node = peaks_node->first_node(); node; node = node->next_sibling() )
-}//void deSerializePeaksToUse( rapidxml::xml_node<char> *peaks_node )
+  }
+}//void deSerializePeaksToUse(...)
 
 
 void ShieldingSourceDisplay::deSerializeSourcesToFitFor( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources )
@@ -7141,26 +7404,14 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     throw runtime_error( "ShieldingSourceDisplay::deSerialize: invalid node name passed in: '"
                         + std::string(base_node->name(),base_node->name()+base_node->name_size()) + "'" );
   
-  const rapidxml::xml_node<char> *chart_disp_node = base_node->first_node( "ShowChiOnChart", 14 );
-  const rapidxml::xml_node<char> *peaks_node      = base_node->first_node( "Peaks", 5 );
   
-  if( !peaks_node )
-    throw runtime_error( "Missing necessary XML node" );
-  
-  int version;
-  bool show_chi_on_chart = true;
-  
-  const rapidxml::xml_attribute<char> *attr = base_node->first_attribute( "version", 7 );
-  if( !attr || !attr->value() || !(stringstream(attr->value())>>version) )
-    throw runtime_error( "Deserializing requires a version" );
-  
-  if( version != sm_xmlSerializationMajorVersion )
-    throw runtime_error( "Invalid version of ShieldingSourceDisplay XML" );
-  
-  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceConfig config;
-  config.deSerialize( base_node, m_materialDB );
+  ShieldingSourceDisplayState state;
+  state.deSerialize( base_node, m_materialDB );
 
-  ShieldingSourceFitCalc::ShieldingSourceFitOptions options = config.options;
+  if( !state.config )
+    throw runtime_error( "ShieldingSourceDisplay::deSerialize: somehow ShieldingSourceDisplayState::config is invalid");
+  
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options = state.config->options;
   
   options.background_peak_subtract = (options.background_peak_subtract
                                  && m_specViewer->measurment(SpecUtils::SpectrumType::Background));
@@ -7168,18 +7419,12 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   m_multithread_computation = options.multithread_self_atten;
   m_photopeak_cluster_sigma = options.photopeak_cluster_sigma;
   
-  if( chart_disp_node && chart_disp_node->value() )
-  {
-    if( !(stringstream(chart_disp_node->value()) >> show_chi_on_chart) )
-      throw runtime_error( "Invalid ShowChiOnChart node" );
-  }
-  
   //clear out the GUI
   reset();
   
   
-  m_prevGeometry = config.geometry;
-  m_geometrySelect->setCurrentIndex( static_cast<int>(config.geometry) );
+  m_prevGeometry = state.config->geometry;
+  m_geometrySelect->setCurrentIndex( static_cast<int>(state.config->geometry) );
   
   m_multiIsoPerPeak->setChecked( options.multiple_nucs_contribute_to_peaks );
   m_clusterWidth->setValue( options.photopeak_cluster_sigma );
@@ -7191,16 +7436,17 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   m_backgroundPeakSub->setChecked( options.background_peak_subtract );
   m_sameIsotopesAge->setChecked( options.same_age_isotopes );
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
-  m_showChiOnChart->setChecked( show_chi_on_chart );
-  m_chi2Graphic->setShowChiOnChart( show_chi_on_chart );
-  string dist_str = PhysicalUnits::printToBestLengthUnits( config.distance, 6 );
+  m_showChiOnChart->setChecked( state.showChiOnChart );
+  m_chi2Graphic->setShowChiOnChart( state.showChiOnChart );
+  string dist_str = PhysicalUnits::printToBestLengthUnits( state.config->distance, 6 );
   m_distanceEdit->setValueText( WString::fromUTF8(dist_str) );
   m_prevDistStr = dist_str;
   
-  deSerializePeaksToUse( peaks_node );
+  if( !state.peaks.empty() )
+    deSerializePeaksToUse( state.peaks );
   m_sourceModel->repopulateIsotopes();
-  deSerializeSourcesToFitFor( config.sourceFits() );
-  deSerializeShieldings( config.shieldings );
+  deSerializeSourcesToFitFor( state.config->sources );
+  deSerializeShieldings( state.config->shieldings );
   
   m_modifiedThisForeground = true;
 
@@ -7214,67 +7460,36 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
 
 ::rapidxml::xml_node<char> *ShieldingSourceDisplay::serialize( rapidxml::xml_node<char> *parent_node )
 {
-  rapidxml::xml_document<char> *doc = parent_node->document();
+  ShieldingSourceDisplayState state;
+  state.versionMajor = ShieldingSourceDisplay::sm_xmlSerializationMajorVersion;
+  state.versionMinor = ShieldingSourceDisplay::sm_xmlSerializationMinorVersion;
+  state.showChiOnChart = m_showChiOnChart->isChecked();
   
-  const char *name, *value;
-  rapidxml::xml_node<> *base_node, *node, *peaks_node;
-  rapidxml::xml_attribute<> *attr;
-  
-  name = "ShieldingSourceFit";
-  base_node = doc->allocate_node( rapidxml::node_element, name );
-  parent_node->append_node( base_node );
-  
-  //If you change the available options or formatting or whatever, increment the
-  //  version field of the XML!
-  const string versionstr = std::to_string(ShieldingSourceDisplay::sm_xmlSerializationMajorVersion)
-                          + "." + std::to_string(ShieldingSourceDisplay::sm_xmlSerializationMinorVersion);
-  value = doc->allocate_string( versionstr.c_str() );
-  attr = doc->allocate_attribute( "version", value );
-  base_node->append_attribute( attr );
-  
-  // TODO: maybe add detector names, and sample numbers being used, for both the foeground
-  //       and background - this will make it easier to extract the model out of the N42 file.
-  //       Or rather, could associate the shield/source model with foreground sample
-  //       numbers/detector, like peaks (but then would still need background info).
-  
-  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceConfig config;
-  config.geometry = geometry();
-  config.options = fitOptions();
+  shared_ptr<GammaInteractionCalc::ShieldSourceConfig> config = make_shared<GammaInteractionCalc::ShieldSourceConfig>();
+  config->geometry = geometry();
+  config->options = fitOptions();
   const std::string dist_text = m_distanceEdit->valueText().toUTF8();
   try
   {
-    config.distance = PhysicalUnits::stringToDistance( dist_text );
+    config->distance = PhysicalUnits::stringToDistance( dist_text );
   }catch( const std::exception & )
   {
-    config.distance = 0.0;
+    config->distance = 0.0;
   }
 
   const vector<WWidget *> shielding_widgets = m_shieldingSelects->children();
-  config.shieldings.reserve( shielding_widgets.size() );
+  config->shieldings.reserve( shielding_widgets.size() );
   for( WWidget *child : shielding_widgets )
   {
     const ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( child );
     if( select )
-      config.shieldings.push_back( select->toShieldingInfo() );
+      config->shieldings.push_back( select->toShieldingInfo() );
   }
 
-  config.setSourceFits( m_sourceModel->underlyingData() );
+  config->sources = m_sourceModel->underlyingData();
+  state.config = config;
 
-  config.serialize( base_node );
-
-  // Insert ShowChiOnChart before Distance to preserve previous ordering
-  rapidxml::xml_node<char> *distance_node = base_node->first_node( "Distance", 8 );
-  name = "ShowChiOnChart";
-  value = m_showChiOnChart->isChecked() ? "1" : "0";
-  node = doc->allocate_node( rapidxml::node_element, name, value );
-  if( distance_node )
-    base_node->insert_node( distance_node, node );
-  else
-    base_node->append_node( node );
-
-  peaks_node = doc->allocate_node( rapidxml::node_element, "Peaks" );
-  base_node->append_node( peaks_node );
-  
+  state.peaks.clear();
   for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
   {
     const PeakDef &peak = m_peakModel->peak( peakn );
@@ -7284,23 +7499,11 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     
     if( peak.useForShieldingSourceFit() && nuclide && (particle || annhilation) )
     {
-      rapidxml::xml_node<> *peak_node, *nuc_node, *energy_node;
-      peak_node = doc->allocate_node( rapidxml::node_element, "Peak" );
-      peaks_node->append_node( peak_node );
-      
-      //meh, lets be explicit about using this peak, although were only writing
-      //  peaks were using for the fit
-      attr = doc->allocate_attribute( "Use", "1" );
-      peak_node->append_attribute( attr );
-      
-      value = doc->allocate_string( nuclide->symbol.c_str() );
-      nuc_node = doc->allocate_node( rapidxml::node_element, "Nuclide", value );
-      peak_node->append_node( nuc_node );
-      
-      const float energy = peak.gammaParticleEnergy();
-      value = doc->allocate_string( std::to_string(energy).c_str() );
-      energy_node = doc->allocate_node( rapidxml::node_element, "Energy", value );
-      peak_node->append_node( energy_node );
+      ShieldingSourceDisplayState::Peak state_peak;
+      state_peak.use = true;
+      state_peak.nuclideSymbol = nuclide->symbol;
+      state_peak.energy = peak.gammaParticleEnergy();
+      state.peaks.push_back( state_peak );
     }//if( peak.useForShieldingSourceFit() )
   }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
   
@@ -7320,76 +7523,24 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     
     if( chis.size() )
     {
-      char buffer[64] = { 0 };
-      
-      //We will write this information - for the record, JIC, but we will not
-      //  read it back in later, as we will re-calculate it from the actual
-      //  data present when this model gets deserialized.
-      rapidxml::xml_node<> *chi2_node = doc->allocate_node( rapidxml::node_element, "Chi2Elements" );
-      base_node->append_node( chi2_node );
-      
+      ShieldingSourceDisplayState::Chi2Elements chi_state;
       double chi2 = 0.0;
-      rapidxml::xml_node<> *node = nullptr;
-      rapidxml::xml_node<> *eval_node = doc->allocate_node( rapidxml::node_element, "EvaluatedEnergies" );
-      
+      chi_state.evalPoints.reserve( chis.size() );
       for( const GammaInteractionCalc::PeakResultPlotInfo &p : chis )
       {
-        rapidxml::xml_node<> *point_node = doc->allocate_node( rapidxml::node_element, "EvalPoint" );
-        eval_node->append_node( point_node );
-        
-        const double energy = p.energy;
-        const double chi = p.numSigmaOff;
-        const double scale = p.observedOverExpected;
-        const WColor &color = p.peakColor;
-        const double scale_uncert = p.observedOverExpectedUncert;
-        
-        if( !IsInf(chi) && !IsNan(chi) )
-          chi2 += chi*chi;
-        
-        node = doc->allocate_node( rapidxml::node_element, "Energy" );
-        snprintf( buffer, sizeof(buffer), "%f", energy );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "Chi" );
-        snprintf( buffer, sizeof(buffer), "%f", chi );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "Scale" );
-        snprintf( buffer, sizeof(buffer), "%f", scale );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "Color" );
-        snprintf( buffer, sizeof(buffer), "%s", (color.isDefault() ? "" : color.cssText().c_str()) );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-        
-        node = doc->allocate_node( rapidxml::node_element, "ScaleUncert" );
-        snprintf( buffer, sizeof(buffer), "%f", scale_uncert );
-        value = doc->allocate_string( buffer );
-        node->value( value );
-        point_node->append_node( node );
-      }//for( const auto &p : chis )
-      
-      node = doc->allocate_node( rapidxml::node_element, "Chi2" );
-      snprintf( buffer, sizeof(buffer), "%f", chi2 );
-      value = doc->allocate_string( buffer );
-      node->value( value );
-      chi2_node->append_node( node );
-      
-      node = doc->allocate_node( rapidxml::node_element, "NumParamFit" );
-      snprintf( buffer, sizeof(buffer), "%u", ndof );
-      value = doc->allocate_string( buffer );
-      node->value( value );
-      chi2_node->append_node( node );
-      
-      chi2_node->append_node( eval_node );
+        ShieldingSourceDisplayState::Chi2EvalPoint point;
+        point.energy = p.energy;
+        point.chi = p.numSigmaOff;
+        point.scale = p.observedOverExpected;
+        point.colorCss = p.peakColor.isDefault() ? "" : p.peakColor.cssText();
+        point.scaleUncert = p.observedOverExpectedUncert;
+        if( !IsInf(point.chi) && !IsNan(point.chi) )
+          chi2 += point.chi * point.chi;
+        chi_state.evalPoints.push_back( point );
+      }
+      chi_state.chi2 = chi2;
+      chi_state.numParametersFit = ndof;
+      state.chi2Elements = chi_state;
     }//if( chis.size() )
   }catch( std::exception &e )
   {
@@ -7397,7 +7548,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
     log_developer_error( __func__, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
 #endif
   }
-  
+
+  state.serialize( parent_node );
   return parent_node;
 }//::rapidxml::xml_node<char> * serialize()
 
