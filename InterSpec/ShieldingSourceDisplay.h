@@ -51,6 +51,7 @@ class PeakDef;
 struct Material;
 class PeakModel;
 class AuxWindow;
+class InjaLogDialog;
 class MaterialDB;
 class ColorTheme;
 class PopupDivMenu;
@@ -707,10 +708,11 @@ protected:
   bool m_multithread_computation;
   
   PopupDivMenuItem *m_showLog;
-  
-  AuxWindow *m_logDiv;
+
+  InjaLogDialog *m_logDiv;
   std::vector<std::string> m_calcLog;
   std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
+  std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> m_lastFitResults;
   
   AuxWindow *m_modelUploadWindow;
 #if( USE_DB_TO_STORE_SPECTRA )

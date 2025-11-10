@@ -266,6 +266,7 @@ set(sources
     src/SpectrumChart.cpp
     src/SpectrumDataModel.cpp
     src/HelpSystem.cpp
+    src/InjaLogDialog.cpp
     src/InterSpec.cpp
     src/InterSpecServer.cpp
     src/PopupDiv.cpp
@@ -379,6 +380,7 @@ set(headers
     InterSpec/SpectrumChart.h
     InterSpec/SpectrumDataModel.h
     InterSpec/HelpSystem.h
+    InterSpec/InjaLogDialog.h
     InterSpec/InterSpec.h
     InterSpec/InterSpecServer.h
     InterSpec/PopupDiv.h

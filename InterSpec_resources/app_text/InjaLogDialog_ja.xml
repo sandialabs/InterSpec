@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- This file applies to InjaLogDialog.cpp - a reusable dialog for displaying inja-rendered content -->
+  <message id="ild-no-templates">テンプレートが提供されていません。</message>
+  <message id="ild-json-parse-error">
+    <p>JSONデータの解析エラー:</p>
+    <code>{1}</code>
+  </message>
+  <message id="ild-inja-error">
+    <p>テンプレートのレンダリングエラー:</p>
+    <code>{1}</code>
+    <br />
+    {2}行、{3}列
+  </message>
+  <message id="ild-misc-error">
+    <p>コンテンツの表示エラー:</p>
+    <code>{1}</code>
+  </message>
+</messages>

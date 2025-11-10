@@ -95,10 +95,8 @@ namespace BatchInfoLog
   }//std::string template_include_dir( const BatchPeak::BatchPeakFitOptions &options )
   
   
-  inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options )
+  inja::Environment get_default_inja_env( const string &tmplt_dir )
   {
-    const string tmplt_dir = BatchInfoLog::template_include_dir( options );
-    
     if( !tmplt_dir.empty() && !SpecUtils::is_directory(tmplt_dir) )
       throw runtime_error( string("Template include directory, '") + tmplt_dir
                           + "', doesnt look to be a valid directory - not performing analysis." );
@@ -185,7 +183,7 @@ namespace BatchInfoLog
     }
     
     return env;
-  }//inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options )
+  }//inja::Environment get_default_inja_env( const string &tmplt_dir )
   
   
   vector<pair<string,string>> load_spectrum_chart_js_and_css()

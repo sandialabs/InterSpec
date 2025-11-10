@@ -86,6 +86,10 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 
+#include <nlohmann/json.hpp>
+
+#include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
+
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PopupDiv.h"
@@ -95,6 +99,8 @@
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/InjaLogDialog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -5804,7 +5810,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
     }
     
-    m_showLog->setDisabled( m_calcLog.empty() );
+    m_showLog->setDisabled( !m_lastFitResults );
 
     vector<GammaInteractionCalc::PeakResultPlotInfo> keeper_points;
 
@@ -5921,103 +5927,176 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
 
 void ShieldingSourceDisplay::showCalcLog()
 {
-  if( !m_logDiv )
+  if( !m_lastFitResults )
   {
-    m_logDiv = new AuxWindow( WString::tr("ssd-calc-log-window-title") );
-    m_logDiv->contents()->addStyleClass( "CalculationLog" );
-    m_logDiv->disableCollapse();
-    m_logDiv->rejectWhenEscapePressed();
-    //set min size so setResizable call before setResizable so Wt/Resizable.js wont cause the initial
-    //  size to be the min-size
-    m_logDiv->setMinimumSize( 640, 480 );
-    m_logDiv->setResizable( true );
-  }//if( !m_logDiv )
-  
-  m_logDiv->contents()->clear();
-  vector<uint8_t> totaldata;
-  for( const string &str : m_calcLog )
-  {
-    auto line = new WText( str, m_logDiv->contents() );
-    line->setInline( false );
-    totaldata.insert( end(totaldata), begin(str), end(str) );
-    totaldata.push_back( static_cast<uint8_t>('\r') );
-    totaldata.push_back( static_cast<uint8_t>('\n') );
+    passMessage( WString::tr("ssd-no-fit-results"), WarningWidget::WarningMsgHigh );
+    return;
   }
-  
-  m_logDiv->show();
-  
-  // Add a link to download this log file
-  m_logDiv->footer()->clear();
-  
-  auto downloadResource = new WMemoryResource( "text/plain", m_logDiv->footer() );
-  downloadResource->setData( totaldata );
-  const int offset = wApp->environment().timeZoneOffset();
-  const auto nowTime = WDateTime::currentDateTime().addSecs( 60 * offset );
-  string filename = "act_shield_fit_" + nowTime.toString( "yyyyMMdd_hhmmss" ).toUTF8() + ".txt";
-  downloadResource->suggestFileName( filename, WResource::DispositionType::Attachment );
 
-#if( BUILD_AS_OSX_APP || IOS )
-  WAnchor *logDownload = new WAnchor( WLink( downloadResource ), m_logDiv->footer() );
-  logDownload->setStyleClass( "LinkBtn" );
-  logDownload->setTarget( AnchorTarget::TargetNewWindow );
-#else
-  WPushButton *logDownload = new WPushButton( m_logDiv->footer() );
-  logDownload->setIcon( "InterSpec_resources/images/download_small.svg" );
-  logDownload->setLink( WLink( downloadResource ) );
-  logDownload->setLinkTarget( Wt::TargetNewWindow );  //Note: we need to set new window after setLink, or else this wont actually get set
-  logDownload->setStyleClass( "LinkBtn DownloadBtn" );
-#endif
-  
-  logDownload->setText( WString::tr("ssd-calc-log-export-txt") );
-  logDownload->setFloatSide( Wt::Side::Left );
-    
-#if( ANDROID )
-  // Using hacked saving to temporary file in Android, instead of via network download of file.
-  logDownload->clicked().connect( std::bind([downloadResource](){
-    android_download_workaround(downloadResource, "fit_log.txt");
-  }) );
-#endif //ANDROID
-  
-  
-  WPushButton *close = m_logDiv->addCloseButtonToFooter();
-  close->clicked().connect( boost::bind( &AuxWindow::hide, m_logDiv ) );
-  m_logDiv->finished().connect( this, &ShieldingSourceDisplay::closeCalcLogWindow );
-  
-  const int wwidth = m_specViewer->renderedWidth();
-  const int wheight = m_specViewer->renderedHeight();
-  m_logDiv->setMaximumSize( 0.8*wwidth, 0.8*wheight );
-  m_logDiv->resizeToFitOnScreen();
-  m_logDiv->centerWindow();
-  
-  UndoRedoManager *undoRedo = UndoRedoManager::instance();
-  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  try
   {
-    auto undo = [](){
-      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
-      if( shieldSourceFit )
-        shieldSourceFit->closeCalcLogWindow();
-    };
-    
-    auto redo = [](){
-      ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
-      if( shieldSourceFit )
-        shieldSourceFit->showCalcLog();
-    };
-    
-    undoRedo->addUndoRedoStep( undo, redo, "Show calculation log." );
-  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    // Get detector response
+    const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+
+    // Get activity units preference
+    const bool useBq = UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
+
+    // Get foreground spectrum
+    shared_ptr<const SpecMeas> foreground_file = m_specViewer->measurment( SpecUtils::SpectrumType::Foreground );
+    shared_ptr<const SpecUtils::Measurement> foreground = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    set<int> foreground_samples = m_specViewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
+
+    // Get background spectrum (if any)
+    shared_ptr<const SpecMeas> background_file = m_specViewer->measurment( SpecUtils::SpectrumType::Background );
+    shared_ptr<const SpecUtils::Measurement> background = m_specViewer->displayedHistogram( SpecUtils::SpectrumType::Background );
+    set<int> background_samples = m_specViewer->displayedSamples( SpecUtils::SpectrumType::Background );
+
+    // Create JSON data
+    nlohmann::json data;
+
+    // Add basic file information
+    const string filename = foreground_file ? foreground_file->filename() : string("Unknown");
+    data["Filepath"] = filename;
+    data["Filename"] = SpecUtils::filename( filename );
+    data["ParentDir"] = SpecUtils::parent_path( filename );
+    data["Success"] = (m_lastFitResults->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final);
+    data["HasFitResults"] = true;
+    data["HasWarnings"] = false;
+    data["Warnings"] = nlohmann::json::array();
+    data["HasErrorMessage"] = !m_lastFitResults->errormsgs.empty();
+    if( !m_lastFitResults->errormsgs.empty() )
+    {
+      string combined_errors;
+      for( const string &err : m_lastFitResults->errormsgs )
+        combined_errors += (combined_errors.empty() ? "" : "; ") + err;
+      data["ErrorMessage"] = combined_errors;
+    }
+
+    // Add spectrum chart JS and CSS
+    const vector<pair<string,string>> spec_chart_js_and_css = BatchInfoLog::load_spectrum_chart_js_and_css();
+    for( const pair<string,string> &key_val : spec_chart_js_and_css )
+      data[key_val.first] = key_val.second;
+
+    // Add foreground spectrum info
+    if( foreground )
+    {
+      auto &spec_obj = data["foreground"];
+      deque<std::shared_ptr<const PeakDef>> fore_peaks_deque;
+      for( const PeakDef &peak : m_lastFitResults->foreground_peaks )
+        fore_peaks_deque.push_back( make_shared<const PeakDef>( peak ) );
+      BatchInfoLog::add_hist_to_json( spec_obj, false, foreground, foreground_file,
+                                       foreground_samples, filename, &fore_peaks_deque );
+    }
+
+    // Add background spectrum info (if any)
+    if( background )
+    {
+      string back_filename = background_file ? background_file->filename() : string();
+      shared_ptr<const SpecMeas> back_file = (background_file != foreground_file) ? background_file : nullptr;
+
+      auto &spec_obj = data["background"];
+      deque<std::shared_ptr<const PeakDef>> back_peaks_deque;
+      for( const PeakDef &peak : m_lastFitResults->background_peaks )
+        back_peaks_deque.push_back( make_shared<const PeakDef>( peak ) );
+      BatchInfoLog::add_hist_to_json( spec_obj, true, background, back_file,
+                                       background_samples, back_filename, &back_peaks_deque );
+
+      data["background"]["Normalization"] = foreground->live_time() / background->live_time();
+    }
+
+    // Add activity fit options
+    BatchInfoLog::add_act_shield_fit_options_to_json( m_lastFitResults->options, m_lastFitResults->distance,
+                                                        m_lastFitResults->geometry, drf, data );
+
+    // Add exe info
+    BatchInfoLog::add_exe_info_to_json( data );
+
+    // Add fit results
+    BatchInfoLog::shield_src_fit_results_to_json( *m_lastFitResults, drf, useBq, data );
+
+    // Create template options vector
+    vector<tuple<WString, string, InjaLogDialog::LogType, function<string(inja::Environment&, const nlohmann::json&)>>> templates;
+
+    // Add HTML template
+    templates.push_back( make_tuple(
+      WString::tr( "ssd-template-html-report" ),
+      "_act_fit.html",
+      InjaLogDialog::LogType::Html,
+      []( inja::Environment &env, const nlohmann::json &data ) -> string {
+        return env.render_file( "act_fit.tmplt.html", data );
+      }
+    ) );
+
+    // Add text template
+    templates.push_back( make_tuple(
+      WString::tr( "ssd-template-text-log" ),
+      "_std_fit_log.txt",
+      InjaLogDialog::LogType::Text,
+      []( inja::Environment &env, const nlohmann::json &data ) -> string {
+        return env.render_file( "std_fit_log.tmplt.txt", data );
+      }
+    ) );
+
+    // Add deprecated text log (captured from m_calcLog)
+    // Copy m_calcLog to avoid capturing 'this'
+    const vector<string> deprecated_log_copy = m_calcLog;
+    templates.push_back( make_tuple(
+      WString::tr( "ssd-template-deprecated-txt" ),
+      "_deprecated_log.txt",
+      InjaLogDialog::LogType::Text,
+      [deprecated_log_copy]( inja::Environment &env, const nlohmann::json &data ) -> string {
+        // env and data are unused - just return the captured log text
+        string result;
+        for( const string &line : deprecated_log_copy )
+        {
+          result += line;
+          result += "\n";
+        }
+        return result;
+      }
+    ) );
+
+    // Create and show the dialog, store in m_logDiv
+    m_logDiv = new InjaLogDialog( WString::tr( "ssd-calc-log-html-title" ), data, templates );
+    m_logDiv->finished().connect( this, &ShieldingSourceDisplay::closeCalcLogWindow );
+    m_logDiv->show();
+
+    // Add undo/redo support
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
+    {
+      auto undo = [](){
+        ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+        if( shieldSourceFit )
+          shieldSourceFit->closeCalcLogWindow();
+      };
+
+      auto redo = [](){
+        ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
+        if( shieldSourceFit )
+          shieldSourceFit->showCalcLog();
+      };
+
+      undoRedo->addUndoRedoStep( undo, redo, "Show calculation log." );
+    }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+
+  } catch( std::exception &e )
+  {
+    passMessage( WString::tr("ssd-error-creating-html-log").arg( e.what() ), WarningWidget::WarningMsgHigh );
+    cerr << "Error creating HTML calculation log: " << e.what() << endl;
+  }
 }//void showCalcLog()
 
 
 void ShieldingSourceDisplay::closeCalcLogWindow()
 {
-  assert( m_logDiv );
   if( !m_logDiv )
     return;
-  
-  AuxWindow::deleteAuxWindow( m_logDiv );
+
+  // Delete the InjaLogDialog (it's a SimpleDialog, which is a WDialog subclass)
+  delete m_logDiv;
   m_logDiv = nullptr;
-  
+
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && undoRedo->canAddUndoRedoNow() )
   {
@@ -6026,13 +6105,13 @@ void ShieldingSourceDisplay::closeCalcLogWindow()
       if( shieldSourceFit )
         shieldSourceFit->showCalcLog();
     };
-    
+
     auto redo = [](){
       ShieldingSourceDisplay *shieldSourceFit = InterSpec::instance()->shieldingSourceFit();
       if( shieldSourceFit )
         shieldSourceFit->closeCalcLogWindow();
     };
-    
+
     undoRedo->addUndoRedoStep( undo, redo, "Close calculation log." );
   }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
 }//void closeCalcLogWindow()
@@ -8187,23 +8266,26 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
 {
   WApplication *app = wApp;
   WApplication::UpdateLock applock( app );
-  
+
   if( !applock )
   {
     // Shouldnt ever get here
     cerr << "Failed to get application lock!" << endl;
     return;
   }
-  
+
   // Make sure we trigger a app update
   BOOST_SCOPE_EXIT(app){
     if( app )
       app->triggerUpdate();
   } BOOST_SCOPE_EXIT_END
- 
+
   ShieldSourceChange state_undo_creator( this, "Fit activity/shielding" );
-  
+
   assert( results );
+
+  // Cache the fit results for HTML log display
+  m_lastFitResults = results;
   
   setWidgetStateForFitBeingDone();
   

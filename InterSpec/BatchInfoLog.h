@@ -63,6 +63,7 @@ namespace BatchPeak
 namespace SpecUtils
 {
   class Measurement;
+  class EnergyCalibration;
 }
 
 namespace BatchActivity
@@ -83,8 +84,13 @@ namespace BatchInfoLog
    */
   std::string template_include_dir( const BatchPeak::BatchPeakFitOptions &options );
   
-  /** Returns the default inja environment, with include directory, options, and callbacks set, as well as default templates loaded. */
-  inja::Environment get_default_inja_env( const BatchPeak::BatchPeakFitOptions &options );
+  /** Returns the default inja environment, with include directory, options, and callbacks set, as well as default templates loaded.
+
+   @param tmplt_dir The template include directory to use.  Should include trailing path separator (as required by inja).
+                    If empty string, then no custom template directory will be used.
+                    To get the directory from options, use `template_include_dir(options)`.
+   */
+  inja::Environment get_default_inja_env( const std::string &tmplt_dir );
   
   /** Returns key-value pairs of of the file contents of the JS and CSS files needed for SpectrumChar.  Specifically returns:
 
