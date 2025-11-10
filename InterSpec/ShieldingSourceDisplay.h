@@ -34,15 +34,15 @@
 #include <boost/optional.hpp>
 #endif
 
-#include <Wt/WRectF>
 #include <Wt/WColor>
+#include <Wt/WRectF>
 #include <Wt/WPainter>
 #include <Wt/WModelIndex>
 #include <Wt/WGridLayout>
 #include <Wt/WContainerWidget>
 #include <Wt/WAbstractItemModel>
-#include <Wt/Chart/WCartesianChart>
 
+#include "InterSpec/ShieldingSourceFitPlot.h"
 #include "InterSpec/DetectorPeakResponse.h" //DetectorPeakResponse::EffGeometryType
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
@@ -490,8 +490,11 @@ public:
   void handleShieldingChange();
   
   void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_det );
-  
+
   void updateChi2Chart();
+
+  /** Callback for when the user toggles between Chi and Mult display modes in the chart */
+  void handleChi2ChartDisplayModeChanged( bool showChi );
   
   void showCalcLog();
   void closeCalcLogWindow();
@@ -691,8 +694,7 @@ protected:
   Wt::WText *m_fixedGeometryTxt;
   
   Wt::WText *m_showChi2Text;
-  Wt::WStandardItemModel *m_chi2Model;
-  Chi2Graphic *m_chi2Graphic;
+  ShieldingSourceFitPlot *m_chi2Plot;
   
 
   Wt::WCheckBox  *m_multiIsoPerPeak;
@@ -732,30 +734,6 @@ protected:
   std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_currentFitFcn;
   
   //A class to draw the chi2 distribution of the fit to activity/shielding.
-  //  We have to overide the Paint(...) method to draw some text on chart
-  //  indicating the chi2
-  class Chi2Graphic : public Wt::Chart::WCartesianChart
-  {
-  public:
-    Chi2Graphic( Wt::WContainerWidget *parent = 0 );
-    virtual ~Chi2Graphic();
-    virtual void paint( Wt::WPainter &painter,
-                        const Wt::WRectF &rectangle = Wt::WRectF() ) const;
-    virtual void paintEvent( Wt::WPaintDevice *paintDevice );
-    void setNumFitForParams( unsigned int npar );
-    
-    void setShowChiOnChart( const bool show_chi );
-    void setTextPenColor( const Wt::WColor &color );
-    void setColorsFromTheme( std::shared_ptr<const ColorTheme> theme );
-  protected:
-    void calcAndSetAxisRanges();
-    void calcAndSetAxisPadding( double yHeightPx );
-    
-    int m_nFitForPar;
-    bool m_showChi;
-    Wt::WColor m_textPenColor;
-  };//class WCartesianChart
-
   static const int sm_xmlSerializationMajorVersion;
   static const int sm_xmlSerializationMinorVersion;
   

@@ -97,9 +97,18 @@ namespace BatchInfoLog
    "D3_JS":                        contents of `InterSpec_resources/d3.v3.min.js`
    "SpectrumChart_JS":    contents of `InterSpec_resources/SpectrumChartD3.js`
    "SpectrumChart_CSS": contents of `InterSpec_resources/SpectrumChartD3.css`
-   
+
    */
   std::vector<std::pair<std::string,std::string>> load_spectrum_chart_js_and_css();
+
+  /** Returns key-value pairs of the file contents of the JS and CSS files needed for ShieldingSourceFitPlot. Specifically returns:
+
+   "D3_JS":                              contents of `InterSpec_resources/d3.v3.min.js`
+   "ShieldingSourceFitPlot_JS":  contents of `InterSpec_resources/ShieldingSourceFitPlot.js`
+   "ShieldingSourceFitPlot_CSS": contents of `InterSpec_resources/ShieldingSourceFitPlot.css`
+
+   */
+  std::vector<std::pair<std::string,std::string>> load_shielding_fit_plot_js_and_css();
   
   /** An enum to provide context of what default templates names "csv", "txt", and "html" refer to for `render_template(...)` */
   enum class TemplateRenderType : int

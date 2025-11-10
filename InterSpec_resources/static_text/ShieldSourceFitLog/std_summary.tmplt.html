@@ -15,6 +15,10 @@
     {{ SpectrumChart_JS }}
     </script>
 
+    <script>
+    {{ ShieldingSourceFitPlot_JS }}
+    </script>
+
     <!-- Some styles for our page here -->
     <style>
       table.ResultTable {
@@ -59,9 +63,14 @@
     {{ SpectrumChart_CSS }}
     </style>
 
+    <!-- ShieldingSourceFitPlot styling -->
+    <style>
+    {{ ShieldingSourceFitPlot_CSS }}
+    </style>
+
     <!-- Some CSS to override SpectrumChartD3 defaults -->
     <style>
-      
+
     </style>
 </head>
 
@@ -117,7 +126,17 @@
 {% endif %}
 
 
-  <div id="specchart_{{loop.index1}}" style="height: 20vw; width: 75vw; margin-left: auto; margin-right: auto;">
+  <!-- Container for side-by-side charts -->
+  <div style="display: flex; gap: 20px; margin-bottom: 20px; width: 95vw; margin-left: auto; margin-right: auto;">
+    <div id="specchart_{{loop.index1}}" style="height: 30vw; width: 47.5%; flex-shrink: 0;">
+    </div>
+    {% if existsIn(file, "ShieldingSourceFitPlotData") %}
+    <div id="fit-plot-{{loop.index1}}" style="height: 30vw; width: 47.5%; flex-shrink: 0;">
+    </div>
+    {% else %}
+    <div style="height: 30vw; width: 47.5%; flex-shrink: 0;">
+    </div>
+    {% endif %}
   </div>
 
   <script>
@@ -139,6 +158,40 @@
       spec_chart_{{loop.index1}}.setData( spectrum_json_{{loop.index1}} );
       spec_chart_{{loop.index1}}.setLogY( true );
   </script>
+
+  {% if existsIn(file, "ShieldingSourceFitPlotData") %}
+  <script>
+    (function() {
+      const plotDiv = document.getElementById("fit-plot-{{loop.index1}}");
+      if (!plotDiv) {
+        console.error("Could not find fit-plot-{{loop.index1}} div");
+        return;
+      }
+
+      const options = {
+        margins: { top: 10, right: 10, bottom: 50, left: 60 },
+        titleToAxisPadding: 5,
+        showChi: true,
+        xAxisTitle: "Energy (keV)",
+        yAxisTitle: "Chi (\u03C3)"
+      };
+
+      const fitPlotChart_{{loop.index1}} = new ShieldingSourceFitPlot(plotDiv, options);
+
+      const plotData_{{loop.index1}} = {{ file.ShieldingSourceFitPlotData }};
+      fitPlotChart_{{loop.index1}}.setData(plotData_{{loop.index1}});
+
+      const fitPlotObserver_{{loop.index1}} = new ResizeObserver(entries => {
+        for (let entry of entries) {
+          if (entry.target && entry.target.id === "fit-plot-{{loop.index1}}") {
+            fitPlotChart_{{loop.index1}}.handleResize();
+          }
+        }
+      });
+      fitPlotObserver_{{loop.index1}}.observe(plotDiv);
+    })();
+  </script>
+  {% endif %}
 
   <div id="GeneralInfo">
     <ul style="list-style-type: none; padding: 0; margin: 0;">
