@@ -41,44 +41,28 @@
 
 
 #include <Wt/WText>
-#include <Wt/WTime>
-#include <Wt/WImage>
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
 #include <Wt/WTable>
+#endif
 #include <Wt/WLabel>
-#include <Wt/WAnchor>
-#include <Wt/WBorder>
 #include <Wt/WServer>
 #include <Wt/WPainter>
 #include <Wt/WGroupBox>
 #include <Wt/WTextArea>
-#include <Wt/WRectArea>
 #include <Wt/WResource>
-#include <Wt/WSvgImage>
-#include <Wt/WTableCell>
-#include <Wt/WTabWidget>
 #include <Wt/WIOService>
+#include <Wt/WTabWidget>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
 #include <Wt/WJavaScript>
 #include <Wt/WFileUpload>
-#include <Wt/WEnvironment>
 #include <Wt/Http/Response>
 #include <Wt/WSelectionBox>
-#include <Wt/WStandardItem>
 #include <Wt/WItemDelegate>
-#include <Wt/WDoubleSpinBox>
 #include <Wt/Dbo/QueryModel>
-#include <Wt/WMemoryResource>
 #include <Wt/WSuggestionPopup>
 #include <Wt/WRegExpValidator>
 #include <Wt/WDoubleValidator>
-#include <Wt/WStandardItemModel>
-#if( WT_VERSION >= 0x3030600 )
-#include <Wt/Chart/WStandardChartProxyModel>
-#endif
-#include <Wt/WCssDecorationStyle>
-#include <Wt/Chart/WChartPalette>
-#include <Wt/Chart/WCartesianChart>
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -4119,15 +4103,6 @@ std::tuple<int,int,bool> ShieldingSourceDisplay::numTruthValuesForFitValues()
   
   return std::tuple<int,int,bool>( nQuantitiesCan, nFitQuantities, isValid );
 }//bool haveTruthValuesForAllFitValues()
-
-
-void ShieldingSourceDisplay::renderChi2Chart( Wt::WSvgImage &image )
-{
-  // The Chi2 chart is now implemented in D3.js, so this function is no longer needed
-  // WPainter p( &image );
-  // m_chi2Plot->paint( p );
-  // p.end();
-}//void renderChi2Chart( Wt::WSvgImage &image );
 
 
 tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainstTruth()

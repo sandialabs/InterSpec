@@ -26,24 +26,21 @@
 #include "InterSpec_config.h"
 
 #include <map>
-#include <tuple>
 #include <mutex>
 #include <utility>
 
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
+#include <tuple>
+
 #include <boost/optional.hpp>
 #endif
 
-#include <Wt/WColor>
-#include <Wt/WRectF>
-#include <Wt/WPainter>
 #include <Wt/WModelIndex>
-#include <Wt/WGridLayout>
 #include <Wt/WContainerWidget>
 #include <Wt/WAbstractItemModel>
 
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
-#include "InterSpec/DetectorPeakResponse.h" //DetectorPeakResponse::EffGeometryType
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 //Forward declarations
@@ -88,8 +85,6 @@ namespace Wt
 {
   class WText;
   class WLabel;
-  class WAnchor;
-  class WSvgImage;
   class WCheckBox;
   class WLineEdit;
   class WTreeView;
@@ -98,11 +93,6 @@ namespace Wt
   class WFileUpload;
   class WSelectionBox;
   class WSuggestionPopup;
-  class WStandardItemModel;
-//  namespace Chart
-//  {
-//    class WCartesianChart;
-//  }//namespace Chart
 }//namespace Wt
 
 
@@ -356,9 +346,6 @@ public:
   
   /** Returns <num values specified, num fit values, is valid> */
   std::tuple<int,int,bool> numTruthValuesForFitValues();
-  
-  /** Renders the Chi2Chart to a SVG image */
-  void renderChi2Chart( Wt::WSvgImage &image );
 
   /** Tests the current values, for all quantities being fit for, against truth-level values.
    
