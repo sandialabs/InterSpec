@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 
 #include <Wt/WText>
 #include <Wt/WLabel>
@@ -367,6 +368,15 @@ public:
     }catch( std::exception &e )
     {
       cerr << "Failed to rount-trip TraceSrcDisplay: " << e.what() << endl;
+      cerr << "  Original trace: nuclide=" << (trace.m_nuclide ? trace.m_nuclide->symbol : "null")
+           << ", activity=" << std::setprecision(17) << trace.m_activity
+           << ", type=" << static_cast<int>(trace.m_type)
+           << ", fitActivity=" << trace.m_fitActivity << endl;
+      cerr << "  Roundtrip trace: nuclide=" << (roundtrip.m_nuclide ? roundtrip.m_nuclide->symbol : "null")
+           << ", activity=" << std::setprecision(17) << roundtrip.m_activity
+           << ", type=" << static_cast<int>(roundtrip.m_type)
+           << ", fitActivity=" << roundtrip.m_fitActivity << endl;
+      cerr << "  Activity difference: " << std::setprecision(17) << fabs(trace.m_activity - roundtrip.m_activity) << endl;
       assert( 0 );
     }
 #endif

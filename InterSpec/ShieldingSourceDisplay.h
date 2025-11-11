@@ -551,10 +551,17 @@ public:
   //  'parent' which contains the XML for this object.
   ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent );
   
+  //serialize(): returns the ShieldingSourceDisplayState object directly
+  ShieldingSourceDisplayState serialize();
+  
   //deSerialize(): takes in a "ShieldingSourceFit" node and sets the state of
   //  this object to match the XML.
   //Throws when it runs into an unexpected situation, or invalid parent_node
   void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
+  
+  //deSerialize(): takes in a ShieldingSourceDisplayState object and sets the state of
+  //  this object to match it.
+  void deSerialize( const ShieldingSourceDisplayState &state );
   
   //some helper functions for deserialization:
   void deSerializePeaksToUse( const std::vector<ShieldingSourceDisplayState::Peak> &peaks );

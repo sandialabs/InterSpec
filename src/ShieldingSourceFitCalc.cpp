@@ -147,8 +147,19 @@ void SourceFitDef::equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs
     throw runtime_error( "SourceFitDef LHS nuclide != RHS nuclide" );
   
   if( !close_enough(lhs.activity, rhs.activity) )
-    throw runtime_error( "SourceFitDef LHS activity (" + std::to_string(lhs.activity) + ") "
-                         "!= RHS activity (" + std::to_string(rhs.activity) + ")" );
+  {
+    const double diff = fabs(lhs.activity - rhs.activity);
+    const double max_val = std::max(fabs(lhs.activity), fabs(rhs.activity));
+    const double abs_tol = 1.0E-12;
+    const double rel_tol = 1.0E-6 * max_val;
+    char buffer[512];
+    snprintf( buffer, sizeof(buffer),
+              "SourceFitDef LHS activity (%.17g) != RHS activity (%.17g): "
+              "diff=%.17g, abs_tol=%.17g, rel_tol=%.17g, max_val=%.17g, rel_diff=%.6f%%",
+              lhs.activity, rhs.activity, diff, abs_tol, rel_tol, max_val,
+              100.0 * diff / max_val );
+    throw runtime_error( buffer );
+  }
   
   if( lhs.activityUncertainty )
     assert( lhs.activityUncertainty.value() > 0.0 );
@@ -171,7 +182,30 @@ void SourceFitDef::equalEnough( const SourceFitDef &lhs, const SourceFitDef &rhs
     throw runtime_error( "SourceFitDef LHS sourceType != RHS sourceType" );
   
   if( !close_enough( lhs.activityUncertainty, rhs.activityUncertainty ) )
-    throw runtime_error( "SourceFitDef LHS activityUncertainty != RHS activityUncertainty" );
+  {
+    const bool lhs_has = lhs.activityUncertainty.has_value();
+    const bool rhs_has = rhs.activityUncertainty.has_value();
+    if( lhs_has != rhs_has )
+    {
+      throw runtime_error( "SourceFitDef LHS activityUncertainty has_value (" + std::to_string(lhs_has) + ") "
+                          "!= RHS activityUncertainty has_value (" + std::to_string(rhs_has) + ")" );
+    }
+    if( lhs_has && rhs_has )
+    {
+      const double diff = fabs( lhs.activityUncertainty.value() - rhs.activityUncertainty.value() );
+      const double max_val = std::max(fabs(lhs.activityUncertainty.value()), fabs(rhs.activityUncertainty.value()));
+      const double abs_tol = 1.0E-12;
+      const double rel_tol = 1.0E-6 * max_val;
+      char buffer[512];
+      snprintf( buffer, sizeof(buffer),
+                "SourceFitDef LHS activityUncertainty (%.17g) != RHS activityUncertainty (%.17g): "
+                "diff=%.17g, abs_tol=%.17g, rel_tol=%.17g, max_val=%.17g",
+                lhs.activityUncertainty.value(), rhs.activityUncertainty.value(),
+                diff, abs_tol, rel_tol, max_val );
+      throw runtime_error( buffer );
+    }
+    throw runtime_error( "SourceFitDef LHS activityUncertainty != RHS activityUncertainty (both unset)" );
+  }
   
   if( lhs.ageUncertainty )
     assert( lhs.ageUncertainty.value() > 0.0 );
@@ -608,9 +642,18 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
     throw runtime_error( "TraceSourceInfo LHS Nuclide != RHS Nuclide" );
   
   const double act_diff = fabs( lhs.m_activity - rhs.m_activity );
-  if( (act_diff > 1.0E-14) && (act_diff > 1.0E-8*max(fabs(lhs.m_activity), fabs(rhs.m_activity)) ) )
-    throw runtime_error( "TraceSourceInfo LHS activity (" + std::to_string(lhs.m_activity) + ") "
-                         "!= RHS activity (" + std::to_string(rhs.m_activity) + ")" );
+  const double max_act = max(fabs(lhs.m_activity), fabs(rhs.m_activity));
+  const double rel_tolerance = 1.0E-6 * max_act;
+  const double abs_tolerance = 1.0E-12;
+  if( (act_diff > abs_tolerance) && (act_diff > rel_tolerance) )
+  {
+    char buffer[512];
+    snprintf( buffer, sizeof(buffer),
+              "TraceSourceInfo LHS activity (%.17g) != RHS activity (%.17g): "
+              "diff=%.17g, abs_tol=%.17g, rel_tol=%.17g, max_act=%.17g",
+              lhs.m_activity, rhs.m_activity, act_diff, abs_tolerance, rel_tolerance, max_act );
+    throw runtime_error( buffer );
+  }
   
   if( lhs.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
   {

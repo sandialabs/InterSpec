@@ -7407,7 +7407,15 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   
   ShieldingSourceDisplayState state;
   state.deSerialize( base_node, m_materialDB );
+  
+  deSerialize( state );
+}//void deSerialize( const rapidxml::xml_node<char> *base_node )
 
+
+void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &state )
+{
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+  
   if( !state.config )
     throw runtime_error( "ShieldingSourceDisplay::deSerialize: somehow ShieldingSourceDisplayState::config is invalid");
   
@@ -7455,10 +7463,18 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   handleDetectorChanged( m_detectorDisplay->detector() );
   
   updateChi2Chart();
-}//void deSerialize( rapidxml::xml_document<char> &doc )
+}//void deSerialize( const ShieldingSourceDisplayState &state )
 
 
 ::rapidxml::xml_node<char> *ShieldingSourceDisplay::serialize( rapidxml::xml_node<char> *parent_node )
+{
+  ShieldingSourceDisplayState state = serialize();
+  state.serialize( parent_node );
+  return parent_node;
+}//::rapidxml::xml_node<char> * serialize()
+
+
+ShieldingSourceDisplay::ShieldingSourceDisplayState ShieldingSourceDisplay::serialize()
 {
   ShieldingSourceDisplayState state;
   state.versionMajor = ShieldingSourceDisplay::sm_xmlSerializationMajorVersion;
@@ -7549,10 +7565,8 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
 #endif
   }
 
-  state.serialize( parent_node );
-  return parent_node;
-}//::rapidxml::xml_node<char> * serialize()
-
+  return state;
+}//ShieldingSourceDisplayState serialize() const
 
 
 void ShieldingSourceDisplay::layoutSizeChanged( int width, int height )
