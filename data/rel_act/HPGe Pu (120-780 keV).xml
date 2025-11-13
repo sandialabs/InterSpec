@@ -14,37 +14,29 @@
 						<Nuclide>Pu239</Nuclide>
 						<Age>29.5480000000 y</Age>
 						<FitAge>true</FitAge>
-						<FitAgeMin>1.00 y</FitAgeMin>
-						<FitAgeMax>90.00 y</FitAgeMax>
 						<PeakColorCss>#FF4500</PeakColorCss>
 					</NucInputInfo>
 					<NucInputInfo version="0">
 						<Nuclide>Pu240</Nuclide>
 						<Age>29.5480000000 y</Age>
 						<FitAge>true</FitAge>
-						<FitAgeMin>1.00 y</FitAgeMin>
-						<FitAgeMax>90.00 y</FitAgeMax>
 						<PeakColorCss>#228B22</PeakColorCss>
 					</NucInputInfo>
 					<NucInputInfo version="0">
 						<Nuclide>Pu241</Nuclide>
 						<Age>29.5480000000 y</Age>
 						<FitAge>true</FitAge>
-						<FitAgeMin>1.00 y</FitAgeMin>
-						<FitAgeMax>90.00 y</FitAgeMax>
 						<PeakColorCss>#CCCC00</PeakColorCss>
 					</NucInputInfo>
 					<NucInputInfo version="0">
 						<Nuclide>Pu238</Nuclide>
 						<Age>29.5480000000 y</Age>
 						<FitAge>true</FitAge>
-						<FitAgeMin>1.00 y</FitAgeMin>
-						<FitAgeMax>90.00 y</FitAgeMax>
 						<PeakColorCss>#0000FF</PeakColorCss>
 					</NucInputInfo>
 					<NucInputInfo version="0">
 						<Nuclide>Cs137</Nuclide>
-						<Age>75.2015752345 y</Age>
+						<Age>15 y</Age>
 						<FitAge>false</FitAge>
 						<PeakColorCss>#808000</PeakColorCss>
 					</NucInputInfo>
