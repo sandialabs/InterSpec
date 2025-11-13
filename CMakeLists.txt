@@ -266,6 +266,7 @@ set(sources
     src/SpectrumChart.cpp
     src/SpectrumDataModel.cpp
     src/HelpSystem.cpp
+    src/InjaLogDialog.cpp
     src/InterSpec.cpp
     src/InterSpecServer.cpp
     src/PopupDiv.cpp
@@ -379,6 +380,7 @@ set(headers
     InterSpec/SpectrumChart.h
     InterSpec/SpectrumDataModel.h
     InterSpec/HelpSystem.h
+    InterSpec/InjaLogDialog.h
     InterSpec/InterSpec.h
     InterSpec/InterSpecServer.h
     InterSpec/PopupDiv.h
@@ -556,6 +558,7 @@ if( USE_REL_ACT_TOOL )
         src/RelActAutoGuiFreePeak.cpp
         src/RelActAutoReport.cpp
         src/RelActAutoDev.cpp
+        src/ShieldingSourceFitPlot.cpp
   )
   
   list( APPEND headers
@@ -570,6 +573,7 @@ if( USE_REL_ACT_TOOL )
         InterSpec/RelActTxtResults.h
         InterSpec/RelEffChart.h
         InterSpec/RelEffShieldWidget.h
+        InterSpec/ShieldingSourceFitPlot.h
         InterSpec/RelActAutoGuiRelEffOptions.h
         InterSpec/RelActAutoGuiEnergyRange.h
         InterSpec/RelActAutoGuiNuclide.h
@@ -632,7 +636,11 @@ deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resou
 
 
 
-list( APPEND OTHER_InterSpec_SUPPORT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js )
+list( APPEND OTHER_InterSpec_SUPPORT_FILES
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/D3TimeChart.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.js
+  ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec_resources/ShieldingSourceFitPlot.css
+)
 
 deploy_js_resource("${CMAKE_CURRENT_SOURCE_DIR}/external_libs/SpecUtils/d3_resources/SpectrumChartD3.js"
          "${CMAKE_CURRENT_BINARY_DIR}/InterSpec_resources/SpectrumChartD3.js"

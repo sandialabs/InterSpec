@@ -379,7 +379,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   const vector<pair<string,string>> spec_chart_js_and_css = BatchInfoLog::load_spectrum_chart_js_and_css();
   
   // Load report templates, and setup inja::environment
-  inja::Environment env = BatchInfoLog::get_default_inja_env( options );
+  const string tmplt_dir = BatchInfoLog::template_include_dir( options );
+  inja::Environment env = BatchInfoLog::get_default_inja_env( tmplt_dir );
   
   
   nlohmann::json summary_json;
