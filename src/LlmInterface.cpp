@@ -98,7 +98,7 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   if (Wt::WApplication* app = Wt::WApplication::instance()) {
     sessionId = app->sessionId();
   }
-  cout << "LlmInterface created for session: " << sessionId << endl;
+  //cout << "LlmInterface created for session: " << sessionId << endl;
   
 #ifdef USE_JS_BRIDGE_FOR_LLM
   // Connect the JavaScript response signal
@@ -1168,7 +1168,7 @@ void LlmInterface::setupJavaScriptBridge() {
     return;
   }
   
-  cout << "Setting up JavaScript bridge for HTTP requests..." << endl;
+  //cout << "Setting up JavaScript bridge for HTTP requests..." << endl;
   
   // Set up the JavaScript function to handle HTTP requests
   string jsCode = R"(
@@ -1309,7 +1309,7 @@ void LlmInterface::setupJavaScriptBridge() {
   
   app->doJavaScript(callbackJs);
   
-  cout << "JavaScript bridge setup complete" << endl;
+  //cout << "JavaScript bridge setup complete" << endl;
 }
 
 void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)

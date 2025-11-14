@@ -3079,6 +3079,11 @@ bool PeakModel::setData( const WModelIndex &index,
           if( use && radpart && (radpart->type == SandiaDecay::XrayParticle) )
             passMessage( WString::tr("pm-warn-use-xray-fit"), WarningWidget::WarningMsgLow );
           
+          if( !use )
+          {
+            cout << "Changing " << new_peak.mean() << " to use=" << use << endl;
+          }
+          
           new_peak.useForShieldingSourceFit( use );
         }catch(...)
         {

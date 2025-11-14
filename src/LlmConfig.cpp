@@ -376,7 +376,7 @@ std::vector<LlmConfig::ToolConfig> LlmConfig::loadToolConfigsFromFile( const std
       tools.push_back(tool);
     }//for( loop over Tool nodes )
 
-    cout << "Loaded " << tools.size() << " tool configurations from " + toolsConfigPath << endl;
+    //cout << "Loaded " << tools.size() << " tool configurations from " + toolsConfigPath << endl;
     return tools;
   }catch( const std::exception &e )
   {
@@ -446,14 +446,26 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
       const rapidxml::xml_node<char> * const descNode = XmlUtils::get_required_node( agentNode, "Description" );
       agent.description = SpecUtils::xml_value_str( descNode );
 
-      // Load SystemPrompt
+      // Load SystemPrompt - handle CDATA sections
       const rapidxml::xml_node<char> * const promptNode = XmlUtils::get_required_node( agentNode, "SystemPrompt" );
-      agent.systemPrompt = SpecUtils::xml_value_str( promptNode );
+
+      // Check if SystemPrompt has a CDATA child node
+      const rapidxml::xml_node<char> * cdataNode = promptNode->first_node();
+      if( cdataNode && cdataNode->type() == rapidxml::node_cdata )
+      {
+        // Get value from CDATA node
+        agent.systemPrompt = SpecUtils::xml_value_str( cdataNode );
+      }
+      else
+      {
+        // Get value from element node directly
+        agent.systemPrompt = SpecUtils::xml_value_str( promptNode );
+      }
 
       agents.push_back(agent);
     }//for( loop over Agent nodes )
 
-    cout << "Loaded " << agents.size() << " agent configurations from " + agentsConfigPath << endl;
+    //cout << "Loaded " << agents.size() << " agent configurations from " + agentsConfigPath << endl;
     return agents;
   }catch( const std::exception &e )
   {

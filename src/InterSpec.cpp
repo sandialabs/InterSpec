@@ -5660,7 +5660,7 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     if( sourcefit )
     {
       shieldingSourceFit();
-      m_shieldingSourceFit->deSerialize( sourcefit );
+      m_shieldingSourceFit->deSerialize( sourcefit, ShieldingSourceDisplay::UpdatePeaksUseForFittingFromState );
       closeShieldingSourceFit();
     }//if( sourcefit )
     
@@ -10117,7 +10117,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
   item = popup->addMenuItem( WString::tr("app-mi-tools-act-fit") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-act-fit") , showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::shieldingSourceFit, this ) );
+  item->triggered().connect( boost::bind( &InterSpec::shieldingSourceFit, this, true ) );
  
 #if( USE_REL_ACT_TOOL )
   // The Relative Efficiency tools are not specialized to display on phones yet.
@@ -10675,26 +10675,30 @@ void InterSpec::showNuclideSearchWindow()
 }//void showNuclideSearchWindow()
 
 
-ShieldingSourceDisplay *InterSpec::shieldingSourceFit()
+ShieldingSourceDisplay *InterSpec::shieldingSourceFit( const bool create_window )
 {
   if( m_shieldingSourceFit )
     return m_shieldingSourceFit;
-  
+
+  // If create_window is false and window doesn't exist, return nullptr
+  if( !create_window )
+    return nullptr;
+
   assert( !m_shieldingSourceFitWindow );
-  
+
   assert( m_peakInfoDisplay );
   auto widgets = ShieldingSourceDisplay::createWindow( this );
-  
+
   m_shieldingSourceFit = widgets.first;
   m_shieldingSourceFitWindow = widgets.second;
-  
+
   if( m_undo && !m_undo->isInUndoOrRedo() )
   {
     auto undo = [this](){ closeShieldingSourceFit(); };
-    auto redo = [this](){ shieldingSourceFit(); };
+    auto redo = [this](){ shieldingSourceFit( true ); };
     m_undo->addUndoRedoStep( undo, redo, "Open Activity/Shielding Fit tool" );
   }
-  
+
   return m_shieldingSourceFit;
 }//ShieldingSourceDisplay *shieldingSourceFit()
 

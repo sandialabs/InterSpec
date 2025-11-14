@@ -517,6 +517,8 @@ public:
       bool use;
       std::string nuclideSymbol;
       double energy;
+
+      bool operator==( const Peak &rhs ) const;
     };
     
     struct Chi2EvalPoint
@@ -526,6 +528,8 @@ public:
       double scale;
       std::string colorCss;
       double scaleUncert;
+
+      bool operator==( const Chi2EvalPoint &rhs ) const;
     };
     
     struct Chi2Elements
@@ -533,6 +537,8 @@ public:
       double chi2;
       unsigned int numParametersFit;
       std::vector<Chi2EvalPoint> evalPoints;
+
+      bool operator==( const Chi2Elements &rhs ) const;
     };
     
     int versionMajor;
@@ -545,6 +551,8 @@ public:
     ShieldingSourceDisplayState();
     ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent_node ) const;
     void deSerialize( const ::rapidxml::xml_node<char> *base_node, MaterialDB *materialDb );
+
+    bool operator==( const ShieldingSourceDisplayState &rhs ) const;
   };
   
   //serialize(): creates (and returns) a node "ShieldingSourceFit" under
@@ -554,14 +562,27 @@ public:
   //serialize(): returns the ShieldingSourceDisplayState object directly
   ShieldingSourceDisplayState serialize();
   
+  /** Options for deserializing from state. */
+  enum DeserializeOptions
+  {
+    /** The `ShieldingSourceDisplayState` has a list of peaks that was used when the state was created, however, if you are working on
+     a different spectrum than the state was created with, your peaks may not be marked the same, so specifying this option will cause the
+     `deSerializePeaksToUse(...)` function to be called during deserialization, which will try to set the peaks to be the same as the
+     `ShieldingSourceDisplayState` specifies.
+     
+     Note InterSpec v1.0.13 and before always used this option - now it is only used when loading state that is loaded via a XML file or the DB.
+     */
+    UpdatePeaksUseForFittingFromState
+  };//enum DeserializeOptions
+  
   //deSerialize(): takes in a "ShieldingSourceFit" node and sets the state of
   //  this object to match the XML.
   //Throws when it runs into an unexpected situation, or invalid parent_node
-  void deSerialize( const ::rapidxml::xml_node<char> *parent_node );
+  void deSerialize( const ::rapidxml::xml_node<char> *parent_node, const Wt::WFlags<DeserializeOptions> &flags );
   
   //deSerialize(): takes in a ShieldingSourceDisplayState object and sets the state of
   //  this object to match it.
-  void deSerialize( const ShieldingSourceDisplayState &state );
+  void deSerialize( const ShieldingSourceDisplayState &state, const Wt::WFlags<DeserializeOptions> &flags );
   
   //some helper functions for deserialization:
   void deSerializePeaksToUse( const std::vector<ShieldingSourceDisplayState::Peak> &peaks );
@@ -619,7 +640,7 @@ public:
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
   
   //reset(): removes all shielding and sources; removes all peaks from fit
-  void reset();
+  void reset( const bool set_use_peaks_false );
 
   //newForegroundSet(): call this function to reset the 'm_modifiedThisForeground'
   //  variable, so we can kinda track if the current state of this model should

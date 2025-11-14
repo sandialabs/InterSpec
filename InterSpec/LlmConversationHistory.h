@@ -113,8 +113,7 @@ struct LlmConversationStart
     : type(t), agent_type(a), content(c), timestamp(std::chrono::system_clock::now()) {}
 };
 
-// Legacy alias for backward compatibility during transition
-using LlmMessage = LlmConversationStart;
+
 
 /** Manages conversation history for LLM interactions.
  

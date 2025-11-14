@@ -2091,6 +2091,703 @@ BOOST_AUTO_TEST_CASE( test_toolsLoadedFromXml )
 }
 
 
+// Activity/Shielding Fit Tool Tests
+BOOST_AUTO_TEST_CASE( test_executeMarkPeaksForActivityFit )
+{
+  InterSpecTestFixture fixture;
+  InterSpec *interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  BOOST_REQUIRE( llm_gui );
+
+  LlmInterface *llm_interface = llm_gui->llmInterface();
+  BOOST_REQUIRE( llm_interface );
+
+  std::shared_ptr<const LlmTools::ToolRegistry> registry_ptr = llm_interface->toolRegistry();
+  BOOST_REQUIRE( !!registry_ptr );
+
+  const LlmTools::ToolRegistry *registry = registry_ptr.get();
+
+  // First, add some peaks to the user peaks list
+  std::vector<double> peak_energies = {554.35, 619.11, 776.52};
+
+  for( const double energy : peak_energies )
+  {
+    json add_peak_params;
+    add_peak_params["energy"] = energy;
+    add_peak_params["specType"] = "Foreground";
+    add_peak_params["addToUsersPeaks"] = true;
+
+    json add_result;
+    BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
+  }
+
+  // Test 1: Mark peaks for fitting with use_for_fit = true
+  json mark_true_params;
+  mark_true_params["peak_energies"] = json::array({554.35, 776.52});
+  mark_true_params["use_for_fit"] = true;
+
+  json mark_true_result;
+  BOOST_REQUIRE_NO_THROW( mark_true_result = registry->executeTool( "mark_peaks_for_activity_fit", mark_true_params, interspec ) );
+
+  // Verify result structure
+  BOOST_CHECK( mark_true_result.contains("num_marked") );
+  BOOST_CHECK( mark_true_result.contains("success") );
+  BOOST_CHECK( mark_true_result.contains("marked_peaks") );
+  BOOST_CHECK( mark_true_result.contains("errors") );
+
+  // Function only counts peaks that changed state, so could be 0-2
+  BOOST_CHECK_GE( mark_true_result["num_marked"].get<int>(), 0 );
+
+  // Test 2: Mark peaks for fitting with use_for_fit = false
+  json mark_false_params;
+  mark_false_params["peak_energies"] = json::array({554.35});
+  mark_false_params["use_for_fit"] = false;
+
+  json mark_false_result;
+  BOOST_REQUIRE_NO_THROW( mark_false_result = registry->executeTool( "mark_peaks_for_activity_fit", mark_false_params, interspec ) );
+
+  // Verify result structure
+  BOOST_CHECK( mark_false_result.contains("num_marked") );
+  BOOST_CHECK( mark_false_result.contains("success") );
+  BOOST_CHECK( mark_false_result.contains("marked_peaks") );
+  BOOST_CHECK( mark_false_result.contains("errors") );
+
+  // Test 3: Error handling - invalid energy
+  json invalid_params;
+  invalid_params["peak_energies"] = json::array({9999.99}); // Energy with no peak
+  invalid_params["use_for_fit"] = true;
+
+  json invalid_result;
+  BOOST_REQUIRE_NO_THROW( invalid_result = registry->executeTool( "mark_peaks_for_activity_fit", invalid_params, interspec ) );
+  BOOST_CHECK( invalid_result.contains("errors") );
+  BOOST_CHECK_GT( invalid_result["errors"].size(), 0 );
+
+  cout << "mark_peaks_for_activity_fit test passed: tested use_for_fit=true and use_for_fit=false" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeModifyShieldingSourceConfig )
+{
+  InterSpecTestFixture fixture;
+  InterSpec *interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  BOOST_REQUIRE( llm_gui );
+
+  LlmInterface *llm_interface = llm_gui->llmInterface();
+  BOOST_REQUIRE( llm_interface );
+
+  std::shared_ptr<const LlmTools::ToolRegistry> registry_ptr = llm_interface->toolRegistry();
+  BOOST_REQUIRE( !!registry_ptr );
+
+  const LlmTools::ToolRegistry *registry = registry_ptr.get();
+
+  // This test explicitly verifies that state persists between modify operations.
+  // Each modify operation opens the GUI (if not already open), modifies state,
+  // saves to SpecMeas, and closes the GUI. The next operation should reload
+  // the saved state when it opens the GUI.
+
+  cout << "\n=== Testing State Persistence Between Modify Operations ===" << endl;
+
+  // Step 1: Set geometry to CylinderEndOn (non-default to properly test setting)
+  cout << "Step 1: Setting geometry to CylinderEndOn..." << endl;
+  json geo_params;
+  geo_params["operation"] = "set_geometry";
+  geo_params["geometry"] = "CylinderEndOn";
+  json geo_result;
+  BOOST_REQUIRE_NO_THROW( geo_result = registry->executeTool( "modify_shielding_source_config", geo_params, interspec ) );
+  BOOST_CHECK_EQUAL( geo_result["success"].get<bool>(), true );
+  BOOST_CHECK_EQUAL( geo_result["new_geometry"].get<string>(), "CylinderEndOn" );
+
+  // Verify geometry was saved
+  json get_config;
+  BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
+  BOOST_REQUIRE( get_config.contains("config") );
+  BOOST_CHECK_EQUAL( get_config["config"]["geometry"].get<string>(), "CylinderEndOn" );
+  cout << "  ✓ Geometry verified: " << get_config["config"]["geometry"].get<string>() << endl;
+
+  // Step 2: Set distance to 1 m - should preserve geometry
+  cout << "Step 2: Setting distance to 1 m (should preserve geometry from Step 1)..." << endl;
+  json dist_params;
+  dist_params["operation"] = "set_distance";
+  dist_params["distance"] = "1 m";
+  json dist_result;
+  BOOST_REQUIRE_NO_THROW( dist_result = registry->executeTool( "modify_shielding_source_config", dist_params, interspec ) );
+  BOOST_CHECK_EQUAL( dist_result["success"].get<bool>(), true );
+  BOOST_CHECK_CLOSE( dist_result["new_distance_cm"].get<double>(), 100.0, 0.1 );
+
+  // Verify BOTH geometry AND distance were preserved/set
+  BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
+  BOOST_CHECK_EQUAL( get_config["config"]["geometry"].get<string>(), "CylinderEndOn" );
+  BOOST_CHECK_CLOSE( get_config["config"]["distance_cm"].get<double>(), 100.0, 0.1 );
+  cout << "  ✓ Geometry still: " << get_config["config"]["geometry"].get<string>() << endl;
+  cout << "  ✓ Distance now: " << get_config["config"]["distance_cm"].get<double>() << " cm" << endl;
+
+  // Step 3: Add Fe shielding - should preserve geometry and distance
+  cout << "Step 3: Adding Fe shielding (should preserve previous settings)..." << endl;
+  json add_fe_params;
+  add_fe_params["operation"] = "add_shielding";
+  add_fe_params["material"] = "Fe";
+  add_fe_params["radius"] = "0.5 cm";  // For cylinder geometry
+  add_fe_params["length"] = "10 cm";   // For cylinder geometry
+  json add_fe_result;
+  BOOST_REQUIRE_NO_THROW( add_fe_result = registry->executeTool( "modify_shielding_source_config", add_fe_params, interspec ) );
+  BOOST_CHECK_EQUAL( add_fe_result["success"].get<bool>(), true );
+  BOOST_CHECK_CLOSE( add_fe_result["radius_cm"].get<double>(), 0.5, 0.01 );
+  BOOST_CHECK_CLOSE( add_fe_result["length_cm"].get<double>(), 10.0, 0.01 );
+  BOOST_CHECK_EQUAL( add_fe_result["fit_radius"].get<bool>(), false );
+  BOOST_CHECK_EQUAL( add_fe_result["fit_length"].get<bool>(), false );
+
+  // Verify geometry, distance, AND Fe shielding all present
+  BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
+  BOOST_CHECK_EQUAL( get_config["config"]["geometry"].get<string>(), "CylinderEndOn" );
+  BOOST_CHECK_CLOSE( get_config["config"]["distance_cm"].get<double>(), 100.0, 0.1 );
+  BOOST_REQUIRE( get_config["config"]["shielding"].is_array() );
+  BOOST_CHECK_EQUAL( get_config["config"]["shielding"].size(), 1 );
+
+  // Debug: Print all shielding materials
+  cout << "  DEBUG: Found " << get_config["config"]["shielding"].size() << " shielding layer(s):" << endl;
+  for( const json &shield : get_config["config"]["shielding"] )
+  {
+    cout << "    - Material: '" << shield["material"].get<string>() << "'" << endl;
+  }
+
+  bool found_fe = false;
+  for( const json &shield : get_config["config"]["shielding"] )
+  {
+    const string material = shield["material"].get<string>();
+    // Check if material contains "Fe" (could be "Fe", "Fe (iron)", etc.)
+    if( material.find("Fe") != string::npos )
+    {
+      found_fe = true;
+      // For cylinder geometry, check radius and length instead of radial_thickness
+      BOOST_CHECK_CLOSE( shield["radius_cm"].get<double>(), 0.5, 0.01 );
+      BOOST_CHECK_CLOSE( shield["length_cm"].get<double>(), 10.0, 0.01 );
+      cout << "  ✓ Fe shielding found with material='" << material << "': "
+           << "radius=" << shield["radius_cm"].get<double>() << " cm, "
+           << "length=" << shield["length_cm"].get<double>() << " cm" << endl;
+    }
+  }
+  BOOST_CHECK_MESSAGE( found_fe, "Fe shielding should be in config" );
+
+  // Step 4: Add Pb shielding - should preserve everything
+  cout << "Step 4: Adding Pb shielding (should preserve all previous settings)..." << endl;
+  json add_pb_params;
+  add_pb_params["operation"] = "add_shielding";
+  add_pb_params["material"] = "Pb";
+  add_pb_params["radius"] = "2 mm";      // For cylinder geometry
+  add_pb_params["length"] = "15 cm";     // For cylinder geometry
+  json add_pb_result;
+  BOOST_REQUIRE_NO_THROW( add_pb_result = registry->executeTool( "modify_shielding_source_config", add_pb_params, interspec ) );
+  BOOST_CHECK_EQUAL( add_pb_result["success"].get<bool>(), true );
+
+  // Verify ALL previous settings plus new Pb
+  BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
+  BOOST_CHECK_EQUAL( get_config["config"]["geometry"].get<string>(), "CylinderEndOn" );
+  BOOST_CHECK_CLOSE( get_config["config"]["distance_cm"].get<double>(), 100.0, 0.1 );
+  BOOST_CHECK_EQUAL( get_config["config"]["shielding"].size(), 2 );
+  cout << "  ✓ Now have " << get_config["config"]["shielding"].size() << " shielding layers" << endl;
+
+  // Step 5: Add Br82 source - should preserve everything
+  // First, need to fit peaks for Br82 so they have parentNuclide set
+  cout << "Step 5a: Fitting Br82 peaks..." << endl;
+  json fit_br82_params;
+  fit_br82_params["source"] = "Br82";
+  fit_br82_params["specType"] = "Foreground";
+  
+  const double br82_peak_energies[] = { 221.46, 554.35, 619.11, 698.37, 776.52, 1317.47 };
+  for( const double energy : br82_peak_energies )
+  {
+    fit_br82_params["energy"] = energy;
+    BOOST_REQUIRE_NO_THROW( registry->executeTool( "add_analysis_peak", fit_br82_params, interspec ) );
+
+    json edit_peak_params;
+    edit_peak_params["energy"] = energy;
+    edit_peak_params["editAction"] = "SetUseForShieldingSourceFit";
+    edit_peak_params["boolValue"] = false;
+    BOOST_REQUIRE_NO_THROW( registry->executeTool( "edit_analysis_peak", edit_peak_params, interspec ) );
+  }
+  
+  cout << "  ✓ Br82 peaks fitted" << endl;
+  
+  {
+    json fit_th232_params;
+    fit_th232_params["source"] = "Th232";
+    fit_th232_params["energy"] = 2614;
+    BOOST_REQUIRE_NO_THROW( registry->executeTool( "add_analysis_peak", fit_th232_params, interspec ) );
+
+    json edit_peak_params;
+    edit_peak_params["energy"] = 2614;
+    edit_peak_params["editAction"] = "SetUseForShieldingSourceFit";
+    edit_peak_params["boolValue"] = true;
+    BOOST_REQUIRE_NO_THROW( registry->executeTool( "edit_analysis_peak", edit_peak_params, interspec ) );
+  }
+  
+  
+  // Check that only source in fit is Th232 (before adding Br82)
+  cout << "Step 5b: Verifying only Th232 source is in fit..." << endl;
+  BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
+  BOOST_REQUIRE( get_config["config"]["sources"].is_array() );
+
+  // Debug: Print all sources
+  cout << "  DEBUG: Found " << get_config["config"]["sources"].size() << " source(s):" << endl;
+  for( const json &source : get_config["config"]["sources"] )
+  {
+    cout << "    - Nuclide: '" << source["nuclide"].get<string>() << "'" << endl;
+  }
+
+  BOOST_CHECK_EQUAL( get_config["config"]["sources"].size(), 1 );
+
+  if( get_config["config"]["sources"].size() > 0 )
+  {
+    BOOST_CHECK_EQUAL( get_config["config"]["sources"][0]["nuclide"].get<string>(), "Th232" );
+    cout << "  ✓ Only Th232 source in fit" << endl;
+  }
+
+  // Test remove_source for Th232
+  cout << "Step 5c: Removing Th232 source..." << endl;
+  json remove_th232_params;
+  remove_th232_params["operation"] = "remove_source";
+  remove_th232_params["nuclide"] = "Th232";
+  json remove_th232_result;
+  BOOST_REQUIRE_NO_THROW( remove_th232_result = registry->executeTool( "modify_shielding_source_config", remove_th232_params, interspec ) );
+  BOOST_CHECK_EQUAL( remove_th232_result["success"].get<bool>(), true );
+
+  // Verify Th232 was removed
+  BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
+  BOOST_REQUIRE( get_config["config"]["sources"].is_array() );
+  BOOST_CHECK_EQUAL( get_config["config"]["sources"].size(), 0 );
+  cout << "  ✓ Th232 source removed successfully" << endl;
+
+  cout << "Step 5d: Adding Br82 source (should preserve all previous settings)..." << endl;
+  json add_br82_params;
+  add_br82_params["operation"] = "add_source";
+  add_br82_params["nuclide"] = "Br82";
+  json add_br82_result;
+  BOOST_REQUIRE_NO_THROW( add_br82_result = registry->executeTool( "modify_shielding_source_config", add_br82_params, interspec ) );
+  BOOST_CHECK_EQUAL( add_br82_result["success"].get<bool>(), true );
+
+  // Verify complete configuration
+  BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
+  BOOST_CHECK_EQUAL( get_config["config"]["geometry"].get<string>(), "CylinderEndOn" );
+  BOOST_CHECK_CLOSE( get_config["config"]["distance_cm"].get<double>(), 100.0, 0.1 );
+  BOOST_CHECK_EQUAL( get_config["config"]["shielding"].size(), 2 );
+  BOOST_REQUIRE( get_config["config"]["sources"].is_array() );
+  BOOST_CHECK( get_config["config"]["sources"].size() > 0 );
+
+  bool found_br82 = false;
+  for( const json &source : get_config["config"]["sources"] )
+  {
+    if( source["nuclide"] == "Br82" )
+    {
+      found_br82 = true;
+      cout << "  ✓ Br82 source found in config" << endl;
+      break;
+    }
+  }
+  BOOST_CHECK_MESSAGE( found_br82, "Br82 source should be in config after adding" );
+  cout << "  ✓ Configuration complete with sources and 2 shielding layers" << endl;
+
+  // Step 6: Remove Fe shielding - should preserve other settings
+  cout << "Step 6: Removing Fe shielding (should preserve other settings)..." << endl;
+  json remove_fe_params;
+  remove_fe_params["operation"] = "remove_shielding";
+  remove_fe_params["material"] = "Fe";  // Will be normalized to "Fe (iron)" by material database lookup
+  json remove_fe_result;
+  BOOST_REQUIRE_NO_THROW( remove_fe_result = registry->executeTool( "modify_shielding_source_config", remove_fe_params, interspec ) );
+  BOOST_CHECK_EQUAL( remove_fe_result["success"].get<bool>(), true );
+  // The returned material_removed should be the canonical name from the database
+  BOOST_CHECK( remove_fe_result["material_removed"].get<string>().find("Fe") != string::npos );
+
+  // Verify Fe is gone but everything else remains
+  BOOST_REQUIRE_NO_THROW( get_config = registry->executeTool( "get_shielding_source_config", json::object(), interspec ) );
+  BOOST_CHECK_EQUAL( get_config["config"]["geometry"].get<string>(), "CylinderEndOn" );
+  BOOST_CHECK_CLOSE( get_config["config"]["distance_cm"].get<double>(), 100.0, 0.1 );
+  BOOST_CHECK_EQUAL( get_config["config"]["shielding"].size(), 1 );  // Only Pb remains
+  BOOST_CHECK( get_config["config"]["sources"].size() > 0 );         // Br82 still there
+
+  // Verify it's Pb, not Fe (material name will be "Pb (lead)")
+  BOOST_CHECK( get_config["config"]["shielding"][0]["material"].get<string>().find("Pb") != string::npos );
+  cout << "  ✓ Fe removed, Pb and Br82 source remain" << endl;
+
+  cout << "\n=== All State Persistence Tests Passed ===" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeGetShieldingSourceConfig )
+{
+  InterSpecTestFixture fixture;
+  InterSpec *interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  BOOST_REQUIRE( llm_gui );
+
+  LlmInterface *llm_interface = llm_gui->llmInterface();
+  BOOST_REQUIRE( llm_interface );
+
+  std::shared_ptr<const LlmTools::ToolRegistry> registry_ptr = llm_interface->toolRegistry();
+  BOOST_REQUIRE( !!registry_ptr );
+
+  const LlmTools::ToolRegistry *registry = registry_ptr.get();
+
+  // First, set up a configuration
+  json setup_params;
+  setup_params["operation"] = "set_geometry";
+  setup_params["geometry"] = "Spherical";
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "modify_shielding_source_config", setup_params, interspec ) );
+
+  setup_params["operation"] = "set_distance";
+  setup_params["distance"] = "50 cm";
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "modify_shielding_source_config", setup_params, interspec ) );
+
+  setup_params["operation"] = "add_shielding";
+  setup_params["nuclide"] = json();  // Clear previous nuclide
+  setup_params["material"] = "Pb";
+  setup_params["dimension"] = "2 mm";
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "modify_shielding_source_config", setup_params, interspec ) );
+
+  // Now get the configuration
+  json get_params;  // Empty parameters
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry->executeTool( "get_shielding_source_config", get_params, interspec ) );
+
+  // Verify the result structure
+  BOOST_CHECK( result.contains("config") );
+
+  const json &config = result["config"];
+  BOOST_CHECK( config.contains("geometry") );
+  BOOST_CHECK_EQUAL( config["geometry"].get<string>(), "Spherical" );
+
+  BOOST_CHECK( config.contains("distance") );
+
+  BOOST_CHECK( config.contains("sources") );
+  BOOST_CHECK( config["sources"].is_array() );
+  BOOST_CHECK_GT( config["sources"].size(), 0 );
+
+  
+  BOOST_CHECK( config.contains("shielding") );
+  BOOST_CHECK( config["shielding"].is_array() );
+  BOOST_CHECK_GT( config["shielding"].size(), 0 );
+
+  // Check that Pb is in shielding
+  bool found_pb = false;
+  for( const json &shield : config["shielding"] )
+  {
+    if( shield.contains("material") && shield["material"] == "Pb" )
+    {
+      found_pb = true;
+      BOOST_CHECK( shield.contains("thickness") );
+      break;
+    }
+  }
+  BOOST_CHECK_MESSAGE( found_pb, "Pb shielding not found in config" );
+
+  cout << "get_shielding_source_config test passed with "
+       << config["sources"].size() << " sources and "
+       << config["shielding"].size() << " shielding layers" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeActivityFit_SinglePeak )
+{
+  InterSpecTestFixture fixture;
+  InterSpec *interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  BOOST_REQUIRE( llm_gui );
+
+  LlmInterface *llm_interface = llm_gui->llmInterface();
+  BOOST_REQUIRE( llm_interface );
+
+  std::shared_ptr<const LlmTools::ToolRegistry> registry_ptr = llm_interface->toolRegistry();
+  BOOST_REQUIRE( !!registry_ptr );
+
+  const LlmTools::ToolRegistry *registry = registry_ptr.get();
+
+  // Load a detector efficiency function first (required for activity fitting)
+  // Use a detector known to have resolution info
+  const string detector_name = "ORTEC Detective-EX100_LANL_025cm (40%)";
+  cout << "Loading detector: " << detector_name << endl;
+
+  json load_params;
+  load_params["identifier"] = detector_name;
+  json load_result;
+  BOOST_REQUIRE_NO_THROW( load_result = registry->executeTool("load_detector_efficiency_function", load_params, interspec) );
+  BOOST_CHECK( load_result["success"].get<bool>() == true );
+
+  // Verify detector loaded
+  json detector_info;
+  BOOST_REQUIRE_NO_THROW( detector_info = registry->executeTool("detector_efficiency_function_info", json::object(), interspec) );
+  BOOST_CHECK( detector_info["isValid"].get<bool>() == true );
+  cout << "Detector hasResolutionInfo: " << detector_info["hasResolutionInfo"].get<bool>() << endl;
+
+  // First, detect peaks
+  json peak_params;
+  peak_params["specType"] = "Foreground";
+
+  json peak_result;
+  BOOST_REQUIRE_NO_THROW( peak_result = registry->executeTool( "detected_peaks", peak_params, interspec ) );
+  BOOST_CHECK( peak_result.contains("rois") );
+
+  // Add the Br82 peak at 554.35 keV to the analysis peaks
+  json add_peak_params;
+  add_peak_params["energy"] = 554.35;
+  add_peak_params["specType"] = "Foreground";
+  add_peak_params["addToUsersPeaks"] = true;
+  add_peak_params["nuclide"] = "Br82";  // Assign nuclide
+
+  json add_result;
+  BOOST_REQUIRE_NO_THROW( add_result = registry->executeTool( "add_analysis_peak", add_peak_params, interspec ) );
+  cout << "Added Br82 peak at 554.35 keV" << endl;
+
+  // Test single peak mode - provide peak_energies to tell it which peaks to use
+  json fit_params;
+  fit_params["mode"] = "single_peak";
+  fit_params["nuclide"] = "Br82";
+  fit_params["peak_energies"] = json::array({ 554.35 });  // Br82 peak at 554.35 keV
+  fit_params["distance"] = "1 m";  // Required for non-fixed-geometry detectors
+
+  json result;
+  try
+  {
+    result = registry->executeTool( "activity_fit", fit_params, interspec );
+  }
+  catch( const std::exception &e )
+  {
+    cout << "ERROR: activity_fit threw exception: " << e.what() << endl;
+    throw;
+  }
+  BOOST_REQUIRE( !result.empty() );
+
+  cout << "activity_fit result: " << result.dump(2) << endl;
+
+  // Verify result structure
+  BOOST_CHECK( result.contains("chi2") );
+  BOOST_CHECK( result.contains("dof") );
+  BOOST_CHECK( result.contains("chi2_per_dof") );
+  BOOST_CHECK( result.contains("sources") );
+
+  if( !result.contains("sources") || !result["sources"].is_array() || result["sources"].size() == 0 )
+  {
+    cout << "ERROR: Result does not contain sources array" << endl;
+    return;
+  }
+
+  BOOST_CHECK( result["sources"].is_array() );
+  BOOST_CHECK_GT( result["sources"].size(), 0 );
+
+  // Check the fitted source
+  const json &source = result["sources"][0];
+  cout << "First source: " << source.dump(2) << endl;
+
+  BOOST_CHECK( source.contains("nuclide") );
+  if( source.contains("nuclide") )
+    BOOST_CHECK_EQUAL( source["nuclide"].get<string>(), "Br82" );
+
+  BOOST_CHECK( source.contains("activity_bq") );
+  BOOST_CHECK( source.contains("activity_bq_uncertainty") );
+  BOOST_CHECK( source.contains("activity_str") );
+
+  // Verify activity is positive
+  if( source.contains("activity_bq") )
+    BOOST_CHECK_GT( source["activity_bq"].get<double>(), 0.0 );
+
+  cout << "activity_fit single_peak test passed: Br82 activity = "
+       << source["activity_str"].get<string>() << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeActivityFit_WithAge )
+{
+  InterSpecTestFixture fixture;
+  InterSpec *interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  BOOST_REQUIRE( llm_gui );
+
+  LlmInterface *llm_interface = llm_gui->llmInterface();
+  BOOST_REQUIRE( llm_interface );
+
+  std::shared_ptr<const LlmTools::ToolRegistry> registry_ptr = llm_interface->toolRegistry();
+  BOOST_REQUIRE( !!registry_ptr );
+
+  const LlmTools::ToolRegistry *registry = registry_ptr.get();
+
+  // Load a spectrum with Ba133 which has progeny peaks for age fitting
+  const string datadir = InterSpec::staticDataDirectory();
+  const string spectrum_file = SpecUtils::append_path( datadir, "reference_spectra/Common_Field_Nuclides/Detective X/Ba133_Unshielded.txt" );
+
+  if( SpecUtils::is_file(spectrum_file) )
+  {
+    std::shared_ptr<SpecMeas> meas = std::make_shared<SpecMeas>();
+    const bool loaded = meas->load_file( spectrum_file, SpecUtils::ParserType::Auto, spectrum_file );
+
+    if( loaded && (meas->num_measurements() > 0) )
+    {
+      const shared_ptr<const SpecUtils::Measurement> m = meas->measurement_at_index(0);
+      interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, 0 );
+
+      // Detect peaks
+      json peak_params;
+      peak_params["specType"] = "Foreground";
+
+      BOOST_REQUIRE_NO_THROW( registry->executeTool( "detected_peaks", peak_params, interspec ) );
+
+      // Set up configuration for Ba133 with age fitting
+      json config_params;
+      config_params["operation"] = "add_source";
+      config_params["nuclide"] = "Ba133";
+      BOOST_REQUIRE_NO_THROW( registry->executeTool( "modify_shielding_source_config", config_params, interspec ) );
+
+      config_params["operation"] = "set_source_age";
+      config_params["age"] = "5 years";
+      config_params["fit_age"] = true;
+      BOOST_REQUIRE_NO_THROW( registry->executeTool( "modify_shielding_source_config", config_params, interspec ) );
+
+      // Perform fit from app state
+      json fit_params;
+      fit_params["mode"] = "from_app_state";
+
+      json result;
+      BOOST_REQUIRE_NO_THROW( result = registry->executeTool( "activity_fit", fit_params, interspec ) );
+
+      // Verify result includes age
+      BOOST_CHECK( result.contains("sources") );
+      BOOST_CHECK_GT( result["sources"].size(), 0 );
+
+      const json &source = result["sources"][0];
+      BOOST_CHECK_EQUAL( source["nuclide"].get<string>(), "Ba133" );
+      BOOST_CHECK( source.contains("age") );
+      BOOST_CHECK( source.contains("age_units") );
+      BOOST_CHECK( source.contains("age_uncertainty") );
+
+      cout << "activity_fit with age test passed: Ba133 age = "
+           << source["age"] << " " << source["age_units"] << endl;
+    }
+  }
+  else
+  {
+    BOOST_TEST_MESSAGE( "Skipping age fit test - Ba133 spectrum not found" );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeActivityFit_CustomMode )
+{
+  InterSpecTestFixture fixture;
+  InterSpec *interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  BOOST_REQUIRE( llm_gui );
+
+  LlmInterface *llm_interface = llm_gui->llmInterface();
+  BOOST_REQUIRE( llm_interface );
+
+  std::shared_ptr<const LlmTools::ToolRegistry> registry_ptr = llm_interface->toolRegistry();
+  BOOST_REQUIRE( !!registry_ptr );
+
+  const LlmTools::ToolRegistry *registry = registry_ptr.get();
+
+  // Detect peaks first
+  json peak_params;
+  peak_params["specType"] = "Foreground";
+  BOOST_REQUIRE_NO_THROW( registry->executeTool( "detected_peaks", peak_params, interspec ) );
+
+  // Test custom mode with full configuration
+  json fit_params;
+  fit_params["mode"] = "custom";
+  fit_params["distance"] = "1 m";
+  fit_params["geometry"] = "Spherical";
+
+  fit_params["sources"] = json::array();
+  json source;
+  source["nuclide"] = "Br82";
+  fit_params["sources"].push_back(source);
+
+  fit_params["shielding"] = json::array();
+  json shield;
+  shield["material"] = "Fe";
+  shield["thickness"] = "1 mm";
+  fit_params["shielding"].push_back(shield);
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry->executeTool( "activity_fit", fit_params, interspec ) );
+
+  // Verify result structure
+  BOOST_CHECK( result.contains("chi2") );
+  BOOST_CHECK( result.contains("sources") );
+  BOOST_CHECK_GT( result["sources"].size(), 0 );
+
+  BOOST_CHECK( result.contains("shielding") );
+  BOOST_CHECK_GT( result["shielding"].size(), 0 );
+
+  const json &fitted_shield = result["shielding"][0];
+  BOOST_CHECK( fitted_shield.contains("material") );
+  BOOST_CHECK_EQUAL( fitted_shield["material"].get<string>(), "Fe" );
+  BOOST_CHECK( fitted_shield.contains("thickness") );
+
+  cout << "activity_fit custom mode test passed with shielding thickness = "
+       << fitted_shield["thickness"] << " " << fitted_shield["thickness_units"] << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_executeCloseActivityShieldingDisplay )
+{
+  InterSpecTestFixture fixture;
+  InterSpec *interspec = fixture.m_interspec;
+  BOOST_REQUIRE( interspec );
+
+  LlmToolGui *llm_gui = interspec->currentLlmTool();
+  BOOST_REQUIRE( llm_gui );
+
+  LlmInterface *llm_interface = llm_gui->llmInterface();
+  BOOST_REQUIRE( llm_interface );
+
+  std::shared_ptr<const LlmTools::ToolRegistry> registry_ptr = llm_interface->toolRegistry();
+  BOOST_REQUIRE( !!registry_ptr );
+
+  const LlmTools::ToolRegistry *registry = registry_ptr.get();
+
+  // First, ensure the GUI is open by calling activity_fit in from_app_state mode
+  json fit_params;
+  fit_params["mode"] = "from_app_state";
+
+  // This should create the GUI (even if fit fails due to no sources)
+  try
+  {
+    registry->executeTool( "activity_fit", fit_params, interspec );
+  }
+  catch( ... )
+  {
+    // Ignore errors - we just want to ensure GUI is created
+  }
+
+  // Now test closing it
+  json close_params;  // Empty parameters
+
+  json result;
+  BOOST_REQUIRE_NO_THROW( result = registry->executeTool( "close_activity_shielding_display", close_params, interspec ) );
+
+  BOOST_CHECK( result.contains("success") );
+  BOOST_CHECK_EQUAL( result["success"].get<bool>(), true );
+
+  // Verify it's closed by checking if shieldingSourceFit(false) returns nullptr
+  ShieldingSourceDisplay *display = interspec->shieldingSourceFit( false );
+  BOOST_CHECK( display == nullptr );
+
+  cout << "close_activity_shielding_display test passed" << endl;
+}
+
+
+
 BOOST_AUTO_TEST_CASE( test_agentsLoadedFromXml )
 {
   // Load configuration

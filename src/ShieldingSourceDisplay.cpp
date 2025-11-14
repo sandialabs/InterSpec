@@ -131,6 +131,64 @@ ShieldingSourceDisplay::ShieldingSourceDisplayState::ShieldingSourceDisplayState
 }
 
 
+bool ShieldingSourceDisplay::ShieldingSourceDisplayState::Peak::operator==( const Peak &rhs ) const
+{
+  return (use == rhs.use)
+         && (nuclideSymbol == rhs.nuclideSymbol)
+         && (fabs(energy - rhs.energy) < 0.01);  // Compare energies within 0.01 keV
+}
+
+
+bool ShieldingSourceDisplay::ShieldingSourceDisplayState::Chi2EvalPoint::operator==( const Chi2EvalPoint &rhs ) const
+{
+  return (fabs(energy - rhs.energy) < 0.01)
+         && (fabs(chi - rhs.chi) < 1.0e-6)
+         && (fabs(scale - rhs.scale) < 1.0e-6)
+         && (colorCss == rhs.colorCss)
+         && (fabs(scaleUncert - rhs.scaleUncert) < 1.0e-6);
+}
+
+
+bool ShieldingSourceDisplay::ShieldingSourceDisplayState::Chi2Elements::operator==( const Chi2Elements &rhs ) const
+{
+  return (fabs(chi2 - rhs.chi2) < 1.0e-6)
+         && (numParametersFit == rhs.numParametersFit)
+         && (evalPoints == rhs.evalPoints);
+}
+
+
+bool ShieldingSourceDisplay::ShieldingSourceDisplayState::operator==( const ShieldingSourceDisplayState &rhs ) const
+{
+  // Compare simple members
+  if( versionMajor != rhs.versionMajor )
+    return false;
+
+  if( versionMinor != rhs.versionMinor )
+    return false;
+
+  if( showChiOnChart != rhs.showChiOnChart )
+    return false;
+
+  // Compare config - for now just compare pointers since we don't have operator== for ShieldSourceConfig
+  // This means two states are only equal if they share the same config object
+  if( config != rhs.config )
+    return false;
+
+  // Compare peaks vector
+  if( peaks != rhs.peaks )
+    return false;
+
+  // Compare chi2Elements optional
+  if( chi2Elements.has_value() != rhs.chi2Elements.has_value() )
+    return false;
+
+  if( chi2Elements.has_value() && !(chi2Elements.value() == rhs.chi2Elements.value()) )
+    return false;
+
+  return true;
+}
+
+
 rapidxml::xml_node<char> *ShieldingSourceDisplay::ShieldingSourceDisplayState::serialize( rapidxml::xml_node<char> *parent_node ) const
 {
   if( !parent_node )
@@ -512,7 +570,7 @@ namespace
   {
     ShieldingSourceDisplay *m_display;
     string m_description;
-    shared_ptr<const string> m_pre_doc;
+    shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> m_pre_state;
     
     // Make sure we dont insert multiple undo/redo steps, so using a BlockUndoRedoInserts.
     unique_ptr<UndoRedoManager::BlockUndoRedoInserts> m_block;
@@ -520,16 +578,24 @@ namespace
     ShieldSourceChange( ShieldingSourceDisplay *display, const string &descrip )
       : m_display( display ),
         m_description( descrip ),
-        m_pre_doc( nullptr ),
+        m_pre_state( nullptr ),
         m_block( nullptr )
     {
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
       if( undoRedo && undoRedo->canAddUndoRedoNow() )
       {
         m_block = make_unique<UndoRedoManager::BlockUndoRedoInserts>();
-        shared_ptr<string> doc_xml = make_shared<string>();
-        doSerialization( *doc_xml );
-        m_pre_doc = doc_xml;
+        
+        try
+        {
+          ShieldingSourceDisplay::ShieldingSourceDisplayState state = m_display->serialize();
+          m_pre_state = make_shared<ShieldingSourceDisplay::ShieldingSourceDisplayState>( std::move(state) );
+        }catch( std::exception &e )
+        {
+          passMessage( "Error adding undo step for " + m_description + ": "
+                      + string(e.what()), WarningWidget::WarningMsgHigh );
+          m_pre_state.reset(); //JIC
+        }
       }
     }//ShieldSourceChange
     
@@ -551,33 +617,28 @@ namespace
     
     
     static void doDeSerialization( ShieldingSourceDisplay *display,
-                                   const shared_ptr<const string> xml_doc )
+                                   const shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> state )
     {
-      if( !display || !xml_doc || xml_doc->empty() )
+      if( !display || !state )
         throw logic_error( "Error with input logic" );
       
       display->cancelModelFitWithNoUpdate();
       
-      rapidxml::xml_document<char> new_doc;
-      const int flags = rapidxml::parse_normalize_whitespace | rapidxml::parse_trim_whitespace;
-      string pre_doc_cpy = *xml_doc;
-      new_doc.parse<flags>( &(pre_doc_cpy[0]) );
-      display->deSerialize( new_doc.first_node() );
+      display->deSerialize( *state, ShieldingSourceDisplay::DeserializeOptions::UpdatePeaksUseForFittingFromState );
     }//static void doDeSerialization( ShieldingSourceDisplay *display, const shared_ptr<const string> xml_doc )
     
     
     ~ShieldSourceChange()
     {
       UndoRedoManager *undoRedo = UndoRedoManager::instance();
-      if( !m_display || !m_pre_doc || m_pre_doc->empty() || !undoRedo )
+      if( !m_display || !m_pre_state || !undoRedo )
         return;
       
-      shared_ptr<string> post_doc_xml = make_shared<string>();
+      shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> post_state;
       try
       {
-        rapidxml::xml_document<char> doc;
-        m_display->serialize( &doc );
-        rapidxml::print( std::back_inserter(*post_doc_xml), doc, rapidxml::print_no_indenting );
+        ShieldingSourceDisplay::ShieldingSourceDisplayState state = m_display->serialize();
+        post_state = make_shared<ShieldingSourceDisplay::ShieldingSourceDisplayState>( std::move(state) );
       }catch( std::exception &e )
       {
         passMessage( "Error adding undo/redo step for " + m_description + ": "
@@ -586,10 +647,9 @@ namespace
       }
       
       const string descrip = std::move( m_description );
-      const shared_ptr<const string> post_doc = post_doc_xml;
-      const shared_ptr<const string> pre_doc = m_pre_doc;
+      const shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> pre_state = m_pre_state;
       
-      if( (*post_doc) == (*pre_doc) )
+      if( (*pre_state) == (*post_state) )
       {
         Wt::log("debug") << "ShieldSourceChange: no changes found; not inserting undo/redo step";
         return;
@@ -602,14 +662,14 @@ namespace
       //     << (m_description.size() + pre_doc->size() + post_doc->size())
       //     << " bytes of memory" << endl;
       
-      auto undo = [pre_doc, descrip](){
+      auto undo = [pre_state, descrip](){
         ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
-        if( !display || !pre_doc || pre_doc->empty() )
+        if( !display || !pre_state )
           return;
         
         try
         {
-          doDeSerialization( display, pre_doc );
+          doDeSerialization( display, pre_state );
         }catch( std::exception &e )
         {
           passMessage( "Error undoing " + descrip + ": " + string(e.what()),
@@ -617,14 +677,14 @@ namespace
         }
       };
       
-      auto redo = [post_doc, descrip](){
+      auto redo = [post_state, descrip](){
         ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
-        if( !display || !post_doc || post_doc->empty() )
+        if( !display || !post_state )
           return;
         
         try
         {
-          doDeSerialization( display, post_doc );
+          doDeSerialization( display, post_state );
         }catch( std::exception &e )
         {
           passMessage( "Error redoing" + descrip + ": " + string(e.what()),
@@ -637,7 +697,7 @@ namespace
     
     ShieldSourceChange( const ShieldSourceChange & ) = delete; // non construction-copyable
     ShieldSourceChange &operator=( const ShieldSourceChange & ) = delete; // non copyable
-  };//struct PeakModelChange
+  };//struct ShieldSourceChange
 }//namespace
 
 
@@ -3007,7 +3067,7 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
       //cout << msg << endl << endl;
       try
       {
-        disp->deSerialize( shield_source->first_node() );
+        disp->deSerialize( shield_source->first_node(), 0 );
       }catch( std::exception &e )
       {
         string xmlstring;
@@ -3023,6 +3083,10 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
   #endif
         passMessage( "There was an error loading the previous shielding/source model for this file - model state is suspect!",
                       WarningWidget::WarningMsgHigh );
+
+#if( BUILD_AS_UNIT_TEST_SUITE )
+        throw;
+#endif
       }
     }//if( shield_source )
     
@@ -6379,16 +6443,23 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
 {
   ShieldSourceChange change( this, "Upload Activity/Shielding fit model." );
   
-  shared_ptr<const string> pre_doc;
-  if( change.m_pre_doc && !change.m_pre_doc->empty() )
+  shared_ptr<const ShieldingSourceDisplay::ShieldingSourceDisplayState> pre_state;
+  if( change.m_pre_state )
   {
-    pre_doc = change.m_pre_doc;
+    pre_state = change.m_pre_state;
   }else
   {
-    shared_ptr<string> xmldoc = make_shared<string>();
-    change.doSerialization( *xmldoc );
-    pre_doc = xmldoc;
-  }
+    try
+    {
+      ShieldingSourceDisplay::ShieldingSourceDisplayState state = serialize();
+      pre_state = make_shared<ShieldingSourceDisplay::ShieldingSourceDisplayState>( std::move(state) );
+      change.m_pre_state = pre_state;
+    }catch( std::exception &e )
+    {
+      passMessage( "Error adding undo step for 'Upload Activity/Shielding fit model': "
+                  + string(e.what()), WarningWidget::WarningMsgHigh );
+    }
+  }//if( change.m_pre_state ) / else
   
   try
   {
@@ -6401,7 +6472,7 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     const int flags = rapidxml::parse_normalize_whitespace
                       | rapidxml::parse_trim_whitespace;
     new_doc.parse<flags>( &data.front() );
-    deSerialize( new_doc.first_node() );
+    deSerialize( new_doc.first_node(), DeserializeOptions::UpdatePeaksUseForFittingFromState );
     
     m_modifiedThisForeground = true;
   }catch( std::exception &e )
@@ -6411,7 +6482,7 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     
     try
     {
-      ShieldSourceChange::doDeSerialization( this, pre_doc );
+      ShieldSourceChange::doDeSerialization( this, pre_state );
     }catch( std::exception & )
     {
       passMessage( "Even worse, there was an error trying to recover",
@@ -6422,7 +6493,7 @@ void ShieldingSourceDisplay::finishModelUpload( WFileUpload *upload )
     //  there will be a blank step (i.e., will try to close the upload window when there is
     //  none to close)
     // lets keep the ShieldSourceChange from inserting a undo/redo step.
-    change.m_pre_doc.reset();
+    change.m_pre_state.reset();
   }//try / catch
   
   closeModelUploadWindow();
@@ -6618,7 +6689,8 @@ bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shi
     string data = shieldmodel->xmlData;
     if( data.size() )
       new_doc.parse<flags>( &(data[0]) );
-    deSerialize( new_doc.first_node() );
+    
+    deSerialize( new_doc.first_node(), DeserializeOptions::UpdatePeaksUseForFittingFromState );
   }catch( std::exception &e )
   {
     passMessage( WString::tr("ssd-err-opening-db-model").arg(e.what()), 
@@ -6626,7 +6698,7 @@ bool ShieldingSourceDisplay::loadModelFromDb( Dbo::ptr<ShieldingSourceModel> shi
     
     try
     {
-      deSerialize( &original_doc );
+      deSerialize( &original_doc, DeserializeOptions::UpdatePeaksUseForFittingFromState );
     }catch( std::exception & )
     {
       passMessage( "Even worse, there was an error trying to recover",
@@ -6670,7 +6742,7 @@ void ShieldingSourceDisplay::finishLoadModelFromDatabase( WSelectionBox *first_s
   }//if( !shieldmodel )
   
   if( !loadModelFromDb( shieldmodel ) )
-    change.m_pre_doc.reset(); //keep ShieldSourceChange from inserting undo/redo step
+    change.m_pre_state.reset(); //keep ShieldSourceChange from inserting undo/redo step
   
   closeBrowseDatabaseModelsWindow();
 }//void finishLoadModelFromDatabase()
@@ -7334,7 +7406,9 @@ void ShieldingSourceDisplay::deSerializeShieldings( const std::vector<ShieldingS
     ShieldingSelect *select = addShielding( nullptr, false );
     if( !select )
       continue;
+    
     select->fromShieldingInfo( info );
+    select->handleUserChangeForUndoRedoWorker( false );
 
 #if( PERFORM_DEVELOPER_CHECKS )
     for( const SandiaDecay::Nuclide *nuc : select->traceSourceNuclides() )
@@ -7353,7 +7427,7 @@ void ShieldingSourceDisplay::deSerializeShieldings( const std::vector<ShieldingS
 }//void deSerializeShieldings(...)
 
 
-void ShieldingSourceDisplay::reset()
+void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
 {
   m_modifiedThisForeground = false;
   m_prevDistStr = "100 cm";
@@ -7366,14 +7440,17 @@ void ShieldingSourceDisplay::reset()
       delete select;
   }//for( WWebWidget *child : shieldings )
   
-  for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+  if( set_use_peaks_false )
   {
-    WModelIndex index = m_peakModel->index( peakn,
-                                         PeakModel::kUseForShieldingSourceFit );
-    const PeakModel::PeakShrdPtr &peak = m_peakModel->peak( index );
-    if( peak->useForShieldingSourceFit() )
-      m_peakModel->setData( index, false );
-  }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+    for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+    {
+      WModelIndex index = m_peakModel->index( peakn,
+                                             PeakModel::kUseForShieldingSourceFit );
+      const PeakModel::PeakShrdPtr &peak = m_peakModel->peak( index );
+      if( peak->useForShieldingSourceFit() )
+        m_peakModel->setData( index, false );
+    }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
+  }//if( set_use_peaks_false )
   
   //We shouldnt actually need the next line
 //  m_sourceModel->repopulateIsotopes();
@@ -7393,7 +7470,8 @@ bool ShieldingSourceDisplay::userChangedDuringCurrentForeground() const
 }//bool userChangedDuringCurrentForeground() const;
 
 
-void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_node )
+void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_node,
+                                         const Wt::WFlags<ShieldingSourceDisplay::DeserializeOptions> &flags )
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
@@ -7408,11 +7486,12 @@ void ShieldingSourceDisplay::deSerialize( const rapidxml::xml_node<char> *base_n
   ShieldingSourceDisplayState state;
   state.deSerialize( base_node, m_materialDB );
   
-  deSerialize( state );
+  deSerialize( state, flags );
 }//void deSerialize( const rapidxml::xml_node<char> *base_node )
 
 
-void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &state )
+void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &state,
+                                         const Wt::WFlags<ShieldingSourceDisplay::DeserializeOptions> &flags )
 {
   UndoRedoManager::BlockUndoRedoInserts undo_blocker;
   
@@ -7427,8 +7506,10 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_multithread_computation = options.multithread_self_atten;
   m_photopeak_cluster_sigma = options.photopeak_cluster_sigma;
   
+  const bool update_use_peaks = flags.testFlag(DeserializeOptions::UpdatePeaksUseForFittingFromState);
+  
   //clear out the GUI
-  reset();
+  reset( update_use_peaks );
   
   
   m_prevGeometry = state.config->geometry;
@@ -7450,7 +7531,7 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_distanceEdit->setValueText( WString::fromUTF8(dist_str) );
   m_prevDistStr = dist_str;
   
-  if( !state.peaks.empty() )
+  if( update_use_peaks && !state.peaks.empty() )
     deSerializePeaksToUse( state.peaks );
   m_sourceModel->repopulateIsotopes();
   deSerializeSourcesToFitFor( state.config->sources );
@@ -7523,47 +7604,62 @@ ShieldingSourceDisplay::ShieldingSourceDisplayState ShieldingSourceDisplay::seri
     }//if( peak.useForShieldingSourceFit() )
   }//for( int peakn = 0; peakn < m_peakModel->rowCount(); ++peakn )
   
-  try
+  
+  vector<PeakDef> peaks;
+  shared_ptr<const deque<shared_ptr<const PeakDef>>> foreground_peaks = m_peakModel->peaks();
+  if( foreground_peaks && !foreground_peaks->empty() )
   {
-    auto fcnAndPars = shieldingFitnessFcn();
-    
-    std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
-    ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
-    
-    const unsigned int ndof = inputPrams.VariableParameters();
-    const vector<double> params = inputPrams.Params();
-    const vector<double> errors = inputPrams.Errors();
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
-                  = chi2Fcn->energy_chi_contributions( params, errors, mixcache, nullptr, nullptr );
-    
-    if( chis.size() )
+    for( const shared_ptr<const PeakDef> &peak : *foreground_peaks )
     {
-      ShieldingSourceDisplayState::Chi2Elements chi_state;
-      double chi2 = 0.0;
-      chi_state.evalPoints.reserve( chis.size() );
-      for( const GammaInteractionCalc::PeakResultPlotInfo &p : chis )
-      {
-        ShieldingSourceDisplayState::Chi2EvalPoint point;
-        point.energy = p.energy;
-        point.chi = p.numSigmaOff;
-        point.scale = p.observedOverExpected;
-        point.colorCss = p.peakColor.isDefault() ? "" : p.peakColor.cssText();
-        point.scaleUncert = p.observedOverExpectedUncert;
-        if( !IsInf(point.chi) && !IsNan(point.chi) )
-          chi2 += point.chi * point.chi;
-        chi_state.evalPoints.push_back( point );
-      }
-      chi_state.chi2 = chi2;
-      chi_state.numParametersFit = ndof;
-      state.chi2Elements = chi_state;
-    }//if( chis.size() )
-  }catch( std::exception &e )
-  {
-#if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( __func__, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
-#endif
+      if( peak && peak->useForShieldingSourceFit() )
+        peaks.push_back( *peak );
+    }//for(...)
   }
+  
+  if( !peaks.empty() )
+  {
+    try
+    {
+      auto fcnAndPars = shieldingFitnessFcn();
+      
+      std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
+      ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
+      
+      const unsigned int ndof = inputPrams.VariableParameters();
+      const vector<double> params = inputPrams.Params();
+      const vector<double> errors = inputPrams.Errors();
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
+      = chi2Fcn->energy_chi_contributions( params, errors, mixcache, nullptr, nullptr );
+      
+      if( chis.size() )
+      {
+        ShieldingSourceDisplayState::Chi2Elements chi_state;
+        double chi2 = 0.0;
+        chi_state.evalPoints.reserve( chis.size() );
+        for( const GammaInteractionCalc::PeakResultPlotInfo &p : chis )
+        {
+          ShieldingSourceDisplayState::Chi2EvalPoint point;
+          point.energy = p.energy;
+          point.chi = p.numSigmaOff;
+          point.scale = p.observedOverExpected;
+          point.colorCss = p.peakColor.isDefault() ? "" : p.peakColor.cssText();
+          point.scaleUncert = p.observedOverExpectedUncert;
+          if( !IsInf(point.chi) && !IsNan(point.chi) )
+            chi2 += point.chi * point.chi;
+          chi_state.evalPoints.push_back( point );
+        }
+        chi_state.chi2 = chi2;
+        chi_state.numParametersFit = ndof;
+        state.chi2Elements = chi_state;
+      }//if( chis.size() )
+    }catch( std::exception &e )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      log_developer_error( __func__, ("Failed to get chi2 info during serialization - caught exception: " + string(e.what())).c_str() );
+#endif
+    }
+  }//if( peaks.empty() ) / else
 
   return state;
 }//ShieldingSourceDisplayState serialize() const
@@ -8082,6 +8178,8 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
     Wt::log("error") << "ShieldingSourceDisplay::handleShieldingUndoRedoPoint: couldnt find passed in ShieldingSelect.";
     return;
   }
+  
+  cout << "\n\nSetting Undo/redo state\n\tprev_state='" << *prev_state << "'\n\tcurrent_state='" << *current_state << "'\n" << endl;
   
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   const bool is_fixed_geom = det && det->isFixedGeometry();

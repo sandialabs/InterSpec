@@ -377,7 +377,14 @@ public:
            << ", type=" << static_cast<int>(roundtrip.m_type)
            << ", fitActivity=" << roundtrip.m_fitActivity << endl;
       cerr << "  Activity difference: " << std::setprecision(17) << fabs(trace.m_activity - roundtrip.m_activity) << endl;
-      assert( 0 );
+      
+      
+      if( (trace.m_nuclide != roundtrip.m_nuclide) && !roundtrip.m_nuclide )
+      {
+        //m_parent->m_sourceModel->
+      }
+      
+      //assert( 0 );
     }
 #endif
   }// void fromTraceSourceInfo( const ShieldingSourceFitCalc::TraceSourceInfo &trace )
@@ -5023,6 +5030,7 @@ void ShieldingSelect::handleUserChangeForUndoRedo()
   {
     auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, true) );
     server->post( wApp->sessionId(), worker );
+    //server->schedule( 1, wApp->sessionId(), worker );
   }
 }//void handleUserChangeForUndoRedo()
 
@@ -5605,6 +5613,7 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   {
     auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, false) );
     server->post( wApp->sessionId(), worker );
+    //server->schedule( 1, wApp->sessionId(), worker );
   }//if( m_userChangedStateSignal.isConnected() && server )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 

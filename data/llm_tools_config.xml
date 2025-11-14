@@ -601,5 +601,353 @@ Further investigation of top returned candidates is required to make sure they m
     }</ParametersSchema>
   </Tool>
 
+  <!-- Activity/Shielding Fit Tools (ActivityFit Agent Only) -->
+
+  <Tool name="activity_fit">
+    <Description>Perform activity and shielding fitting using gamma ray peaks. Supports three modes: (1) from_app_state - uses existing GUI state or saved model, shows GUI; (2) single_peak - fits activity for one peak/nuclide; (3) custom - full control over sources, shielding, geometry. Can fit nuclide ages when progeny peaks are present. Returns fitted activities, shielding parameters, fit quality metrics, and per-peak observed vs expected counts with source contributions.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["from_app_state", "single_peak", "custom"],
+          "description": "Fitting mode: from_app_state uses existing configuration and shows GUI; single_peak fits one peak; custom allows full specification"
+        },
+        "peak_energies": {
+          "type": "array",
+          "items": {"type": "number"},
+          "description": "Peak energies in keV to use for fitting. Tolerance is max(peak FWHM, 1 keV). Required for single_peak and custom modes. Optional for from_app_state to filter peaks. Peaks must already be assigned to nuclides."
+        },
+        "distance": {
+          "type": "string",
+          "description": "Source-to-detector distance with units (e.g., '100 cm', '3 ft', '1.5 m'). If numeric value provided, assumes cm. Required for non-fixed-geometry detectors. For from_app_state mode, overrides existing distance if specified."
+        },
+        "geometry": {
+          "type": "string",
+          "enum": ["Spherical", "CylinderSideOn", "CylinderEndOn", "Rectangular"],
+          "description": "Shielding geometry type. All shielding layers share this geometry. Default: Spherical for point sources."
+        },
+        "shielding": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "material": {
+                "type": "string",
+                "description": "Material name (e.g., 'Fe', 'Pb', 'Steel') or chemical formula (e.g., 'H2O')"
+              },
+              "radial_thickness": {
+                "type": "string",
+                "description": "Thickness with units for Spherical geometry (e.g., '0.5 cm', '2 mm'). If omitted, thickness will be fit. If specified, thickness is fixed unless fit_thickness is true."
+              },
+              "fit_thickness": {
+                "type": "boolean",
+                "description": "Whether to fit thickness as a parameter. Default: true if radial_thickness not specified, false otherwise."
+              },
+              "radius": {
+                "type": "string",
+                "description": "For CylinderSideOn or CylinderEndOn geometry: cylinder radius with units (e.g., '2.5 cm')"
+              },
+              "fit_radius": {
+                "type": "boolean",
+                "description": "Whether to fit cylinder radius"
+              },
+              "length": {
+                "type": "string",
+                "description": "For CylinderSideOn or CylinderEndOn geometry: cylinder length with units"
+              },
+              "fit_length": {
+                "type": "boolean",
+                "description": "Whether to fit cylinder length"
+              },
+              "width": {
+                "type": "string",
+                "description": "For Rectangular geometry: width dimension with units"
+              },
+              "fit_width": {
+                "type": "boolean",
+                "description": "Whether to fit width"
+              },
+              "height": {
+                "type": "string",
+                "description": "For Rectangular geometry: height dimension with units"
+              },
+              "fit_height": {
+                "type": "boolean",
+                "description": "Whether to fit height"
+              },
+              "depth": {
+                "type": "string",
+                "description": "For Rectangular geometry: depth dimension with units"
+              },
+              "fit_depth": {
+                "type": "boolean",
+                "description": "Whether to fit depth"
+              },
+              "trace_sources": {
+                "type": "array",
+                "description": "Optional: trace sources contaminating this shielding layer",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "nuclide": {
+                      "type": "string",
+                      "description": "Nuclide symbol (e.g., 'Cs137', 'Co60')"
+                    },
+                    "activity_type": {
+                      "type": "string",
+                      "enum": ["per_cm3", "total_activity", "per_gram", "exponential"],
+                      "description": "Type of trace source distribution. Default: per_cm3. Units: per_cm3 uses Ci/cm3 or Bq/cm3, total_activity uses Ci or Bq, per_gram uses Ci/g or Bq/g, exponential uses Ci/m2 or Bq/m2"
+                    },
+                    "activity": {
+                      "type": "string",
+                      "description": "Initial activity guess with units (e.g., '1 uCi/cm3', '10 kBq', '0.5 mCi/g'). Can use metric prefixes (u, m, k, M, G) with Ci or Bq."
+                    },
+                    "fit_activity": {
+                      "type": "boolean",
+                      "description": "Whether to fit the trace source activity. Default: true"
+                    },
+                    "relaxation_distance": {
+                      "type": "string",
+                      "description": "For exponential distribution only: characteristic length with units (e.g., '5 cm'). Not fittable."
+                    }
+                  },
+                  "required": ["nuclide", "activity"]
+                }
+              }
+            },
+            "required": ["material"]
+          },
+          "description": "Array of shielding layers from innermost to outermost. All layers use the same geometry."
+        },
+        "sources": {
+          "type": "array",
+          "description": "For custom mode: explicit source definitions. For other modes, derived from peak assignments.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "nuclide": {
+                "type": "string",
+                "description": "Nuclide symbol (e.g., 'U238', 'Co60', 'Cs137')"
+              },
+              "fit_activity": {
+                "type": "boolean",
+                "description": "Whether to fit activity. Default: true for Point sources, false for Intrinsic (activity derived from shielding dimensions)"
+              },
+              "activity": {
+                "type": "string",
+                "description": "Initial activity guess with units (e.g., '10 uCi', '1 MBq'). Required for Point sources."
+              },
+              "fit_age": {
+                "type": "boolean",
+                "description": "Whether to fit nuclide age. Only allowed if: (1) nuclide has >= 2 unique progeny peaks assigned to it, or (2) this source is a dependent via age_defining_nuclide. Age fitting not allowed for nuclides reaching equilibrium quickly (e.g., Cs137). Default: false (opt-in only)"
+              },
+              "age": {
+                "type": "string",
+                "description": "Nuclide age with units (e.g., '20 years', '6 months', '100 days'). If numeric, assumes seconds."
+              },
+              "age_defining_nuclide": {
+                "type": "string",
+                "description": "For same_age_isotopes mode: symbol of the nuclide whose age this source shares. Isotopes of the same element (e.g., U235 and U238) typically have the same age. If specified, this source's age is controlled by the defining nuclide."
+              },
+              "source_type": {
+                "type": "string",
+                "enum": ["Point", "Trace", "Intrinsic"],
+                "description": "Source type: Point = point source at center, Trace = trace contamination in shielding (specify via shielding.trace_sources), Intrinsic = self-attenuating source (nuclide is part of shielding material). Default: Point"
+              }
+            },
+            "required": ["nuclide"]
+          }
+        },
+        "options": {
+          "type": "object",
+          "description": "Optional fitting options",
+          "properties": {
+            "multiple_nucs_contribute_to_peaks": {
+              "type": "boolean",
+              "description": "Allow multiple nuclides to contribute to same peak. Default: true"
+            },
+            "attenuate_for_air": {
+              "type": "boolean",
+              "description": "Include air attenuation in model. Default: true"
+            },
+            "account_for_decay_during_meas": {
+              "type": "boolean",
+              "description": "Account for decay during measurement time. Default: false"
+            },
+            "photopeak_cluster_sigma": {
+              "type": "number",
+              "description": "Cluster nearby photopeaks within this many sigma. Default: 1.25"
+            },
+            "background_peak_subtract": {
+              "type": "boolean",
+              "description": "Subtract background peak contributions. Default: true"
+            },
+            "same_age_isotopes": {
+              "type": "boolean",
+              "description": "Isotopes of the same element share age (e.g., U235 and U238). Default: true"
+            }
+          }
+        }
+      },
+      "required": ["mode"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="get_shielding_source_config">
+    <Description>Retrieve the current activity/shielding fit configuration from the application state. Returns distance, geometry, source definitions (with ages), shielding layers (with trace sources), and which peaks are marked for use in fitting. Checks InterSpec::shieldingSourceFit() GUI first, then falls back to SpecMeas::m_shieldingSourceModel saved state.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="modify_shielding_source_config">
+    <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, add/remove sources, set distance, set geometry, or set source ages. Changes are saved to SpecMeas::m_shieldingSourceModel and updated in GUI if open. If dimension is specified when adding shielding (e.g., '0.5 inches'), it's fixed; if omitted, it will be fit.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["add_shielding", "remove_shielding", "add_source", "remove_source", "set_distance", "set_geometry", "set_source_age"],
+          "description": "Operation to perform on the configuration"
+        },
+        "material": {
+          "type": "string",
+          "description": "For add_shielding: material name or formula. For remove_shielding: material name to remove (use either this or index)."
+        },
+        "index": {
+          "type": "integer",
+          "description": "For remove_shielding: zero-based index of shielding layer to remove (use either this or material)."
+        },
+        "radial_thickness": {
+          "type": "string",
+          "description": "For add_shielding with Spherical geometry: thickness with units. If specified, thickness is fixed; if omitted, will be fit."
+        },
+        "fit_thickness": {
+          "type": "boolean",
+          "description": "For add_shielding: explicit control over whether to fit thickness"
+        },
+        "radius": {
+          "type": "string",
+          "description": "For add_shielding with Cylinder geometry: radius with units"
+        },
+        "fit_radius": {
+          "type": "boolean",
+          "description": "For add_shielding: whether to fit cylinder radius"
+        },
+        "length": {
+          "type": "string",
+          "description": "For add_shielding with Cylinder geometry: length with units"
+        },
+        "fit_length": {
+          "type": "boolean",
+          "description": "For add_shielding: whether to fit cylinder length"
+        },
+        "geometry": {
+          "type": "string",
+          "enum": ["Spherical", "CylinderSideOn", "CylinderEndOn", "Rectangular"],
+          "description": "For set_geometry: new geometry type. For add_shielding: geometry for the layer."
+        },
+        "distance": {
+          "type": "string",
+          "description": "For set_distance: new source-to-detector distance with units (e.g., '100 cm', '3 ft')"
+        },
+        "nuclide": {
+          "type": "string",
+          "description": "For add_source/remove_source/set_source_age: nuclide symbol"
+        },
+        "activity": {
+          "type": "string",
+          "description": "For add_source: initial activity with units (e.g., '10 uCi')"
+        },
+        "age": {
+          "type": "string",
+          "description": "For add_source or set_source_age: nuclide age with units (e.g., '20 years')"
+        },
+        "fit_age": {
+          "type": "boolean",
+          "description": "For add_source: whether to fit the age"
+        },
+        "source_type": {
+          "type": "string",
+          "enum": ["Point", "Trace", "Intrinsic"],
+          "description": "For add_source: source type. Default: Point"
+        }
+      },
+      "required": ["operation"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="mark_peaks_for_activity_fit">
+    <Description>Mark peaks to be used (or not used) in activity/shielding fitting. Updates the PeakDef::useForShieldingSourceFit() flag for specified peaks. Peaks are matched by energy with tolerance of max(peak FWHM, 1 keV).</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "peak_energies": {
+          "type": "array",
+          "items": {"type": "number"},
+          "description": "Array of peak energies in keV to mark/unmark"
+        },
+        "use_for_fit": {
+          "type": "boolean",
+          "description": "Whether to use these peaks for fitting (true) or exclude them (false)"
+        },
+        "specType": {
+          "type": "string",
+          "enum": ["Foreground", "Background", "Secondary"],
+          "description": "Optional: Which spectrum to operate on. Default: Foreground"
+        }
+      },
+      "required": ["peak_energies", "use_for_fit"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="close_activity_shielding_display">
+    <Description>Close the Activity/Shielding fit GUI window (ShieldingSourceDisplay) if it is open. Does not affect the saved configuration state.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
+  <Tool name="ask_user_question">
+    <Description>Ask the user a question via a modal dialog box and wait for their text response. Use sparingly - only when critical information is ambiguous and cannot be reasonably inferred. The dialog blocks other user interactions until answered. Prefer making reasonable assumptions based on context over asking questions.</Description>
+    <ParametersSchema>{
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "The question to ask the user. Should be clear, concise, and explain why the information is needed."
+        },
+        "default_response": {
+          "type": "string",
+          "description": "Optional: pre-filled text in the response field to guide the user or suggest a default answer"
+        }
+      },
+      "required": ["question"]
+    }</ParametersSchema>
+    <AvailableFor>
+      <Agent>ActivityFit</Agent>
+    </AvailableFor>
+  </Tool>
+
 </ToolDefinitions>
 </LlmConfig>
