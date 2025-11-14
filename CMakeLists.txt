@@ -172,7 +172,7 @@ set(MAX_SPECTRUM_MEMMORY_SIZE_MB 256
 #  we will compile LibInterSpec as a shared library, so both exes can use it; otherwise
 #  we will create a static library, and statically link it into our final executable.
 #  (Electron doesnt need a separate exe for batch)
-if( (USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP )
+if( ((USE_BATCH_TOOLS AND NOT BUILD_AS_ELECTRON_APP) OR BUILD_AS_OSX_APP) AND NOT BUILD_AS_UNIT_TEST_SUITE )
   set( INTERSPEC_LIB_TYPE SHARED )
 else()
   set( INTERSPEC_LIB_TYPE STATIC )
