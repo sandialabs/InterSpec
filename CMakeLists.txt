@@ -350,6 +350,9 @@ set(sources
     src/SimpleActivityCalc.cpp
     src/RefLineDynamic.cpp
     src/AnalystChecks.cpp
+    src/BatchPeak.cpp
+    src/BatchActivity.cpp
+    src/BatchInfoLog.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -466,6 +469,9 @@ set(headers
     InterSpec/SimpleActivityCalc.h
     InterSpec/RefLineDynamic.h
     InterSpec/AnalystChecks.h
+    InterSpec/BatchPeak.h
+    InterSpec/BatchActivity.h
+    InterSpec/BatchInfoLog.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -587,9 +593,6 @@ endif( USE_REL_ACT_TOOL )
 if( USE_BATCH_TOOLS )
   list( APPEND sources
         src/BatchCommandLine.cpp
-        src/BatchPeak.cpp
-        src/BatchActivity.cpp
-        src/BatchInfoLog.cpp
         src/BatchGuiWidget.cpp
         src/BatchGuiAnaWidget.cpp
         src/BatchGuiInputFile.cpp
@@ -597,9 +600,6 @@ if( USE_BATCH_TOOLS )
   
   list( APPEND headers
         InterSpec/BatchCommandLine.h
-        InterSpec/BatchPeak.h
-        InterSpec/BatchActivity.h
-        InterSpec/BatchInfoLog.h
         InterSpec/BatchGuiWidget.h
         InterSpec/BatchGuiAnaWidget.h
         InterSpec/BatchGuiInputFile.h
