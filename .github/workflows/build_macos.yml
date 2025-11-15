@@ -116,12 +116,38 @@ jobs:
           set -euo pipefail
           NOTARIZE_ARCHIVE="${INSTALLER_DIR}/InterSpec_notarize.zip"
           ditto -c -k --keepParent "${APP_BUNDLE}" "${NOTARIZE_ARCHIVE}"
-          xcrun notarytool submit "${NOTARIZE_ARCHIVE}" \
+          
+          # Submit and capture the submission ID
+          SUBMIT_OUTPUT=$(xcrun notarytool submit "${NOTARIZE_ARCHIVE}" \
             --key "${NOTARY_KEY_PATH}" \
             --key-id "${MAC_NOTARY_KEY_ID}" \
             --issuer "${MAC_NOTARY_KEY_ISSUER}" \
             --team-id "${MAC_NOTARY_TEAM_ID}" \
-            --wait
+            --wait --output-format json)
+          
+          echo "Notarization submission output:"
+          echo "${SUBMIT_OUTPUT}"
+          
+          SUBMISSION_ID=$(echo "${SUBMIT_OUTPUT}" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+          echo "Submission ID: ${SUBMISSION_ID}"
+          
+          # Get detailed log regardless of status
+          if [ -n "${SUBMISSION_ID}" ]; then
+            echo "Fetching notarization log..."
+            xcrun notarytool log "${SUBMISSION_ID}" \
+              --key "${NOTARY_KEY_PATH}" \
+              --key-id "${MAC_NOTARY_KEY_ID}" \
+              --issuer "${MAC_NOTARY_KEY_ISSUER}" \
+              --team-id "${MAC_NOTARY_TEAM_ID}" || true
+          fi
+          
+          # Check if notarization succeeded
+          STATUS=$(echo "${SUBMIT_OUTPUT}" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+          if [ "${STATUS}" != "Accepted" ]; then
+            echo "Error: Notarization failed with status: ${STATUS}"
+            exit 1
+          fi
+          
           xcrun stapler staple "${APP_BUNDLE}"
           rm -f "${NOTARIZE_ARCHIVE}"
 
