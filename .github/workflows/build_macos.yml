@@ -101,10 +101,37 @@ jobs:
           MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
-          codesign --deep --force --options runtime --timestamp \
+          
+          # Sign the QuickLook plugin first (it's a nested bundle)
+          QUICKLOOK_PLUGIN="${APP_BUNDLE}/Contents/Library/QuickLook/SpecFilePreview.qlgenerator"
+          if [ -d "${QUICKLOOK_PLUGIN}" ]; then
+            echo "Signing QuickLook plugin..."
+            codesign --force --options runtime --timestamp \
+              --sign "${MAC_SIGNING_IDENTITY}" \
+              "${QUICKLOOK_PLUGIN}/Contents/MacOS/SpecFilePreview"
+            codesign --force --options runtime --timestamp \
+              --sign "${MAC_SIGNING_IDENTITY}" \
+              "${QUICKLOOK_PLUGIN}"
+          fi
+          
+          # Sign any frameworks in the bundle
+          if [ -d "${APP_BUNDLE}/Contents/Frameworks" ]; then
+            echo "Signing frameworks..."
+            find "${APP_BUNDLE}/Contents/Frameworks" -type f -name "*.dylib" -o -name "*.framework" | while read -r framework; do
+              codesign --force --options runtime --timestamp \
+                --sign "${MAC_SIGNING_IDENTITY}" \
+                "${framework}" || true
+            done
+          fi
+          
+          # Sign the main app bundle (without --deep since we signed nested components)
+          echo "Signing main app bundle..."
+          codesign --force --options runtime --timestamp \
             --entitlements "${{ github.workspace }}/target/osx/InterSpec.entitlements" \
             --sign "${MAC_SIGNING_IDENTITY}" \
             "${APP_BUNDLE}"
+          
+          # Verify the signature
           codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
 
       - name: Notarize bundle
