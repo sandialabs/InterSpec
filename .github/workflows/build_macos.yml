@@ -117,10 +117,19 @@ jobs:
           # Sign any frameworks in the bundle
           if [ -d "${APP_BUNDLE}/Contents/Frameworks" ]; then
             echo "Signing frameworks..."
-            find "${APP_BUNDLE}/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.framework" \) | while read -r framework; do
+            # Sign .dylib files first
+            find "${APP_BUNDLE}/Contents/Frameworks" -type f -name "*.dylib" | while read -r dylib; do
+              echo "  Signing dylib: ${dylib}"
               codesign --force --options runtime --timestamp \
                 --sign "${MAC_SIGNING_IDENTITY}" \
-                "${framework}" || true
+                "${dylib}" || true
+            done
+            # Then sign framework bundles (these are directories)
+            find "${APP_BUNDLE}/Contents/Frameworks" -type d -name "*.framework" | while read -r framework; do
+              echo "  Signing framework: ${framework}"
+              codesign --force --options runtime --timestamp \
+                --sign "${MAC_SIGNING_IDENTITY}" \
+                "${framework}"
             done
           fi
           
