@@ -52,22 +52,6 @@ jobs:
           chmod +x target/patches/dep_build_macOS.sh
           ./target/patches/dep_build_macOS.sh "${{ github.workspace }}" "${DEPS_BUILD_DIR}" "${DEPS_PREFIX_DIR}"
 
-      - name: Configure InterSpec (Xcode)
-        env:
-          LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
-        run: |
-          cmake -S "${{ github.workspace }}/target/osx" \
-            -B "${BUILD_DIR}" \
-            -G Xcode \
-            -DCMAKE_PREFIX_PATH="${DEPS_PREFIX_DIR}" \
-            -DLEAFLET_MAPS_KEY="${LEAFLET_KEY}" \
-            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
-
-      - name: Build InterSpec.app
-        run: |
-          cmake --build "${BUILD_DIR}" --config Release
-          echo "APP_BUNDLE=${BUILD_DIR}/Release/InterSpec.app" >> "${GITHUB_ENV}"
-
       - name: Import signing certificate
         env:
           MAC_SIGNING_CERT_P12: ${{ secrets.MAC_SIGNING_CERT_P12 }}
@@ -106,6 +90,22 @@ jobs:
             --keychain "${SIGNING_KEYCHAIN}" \
             --force
           rm -f "${NOTARY_KEY_PATH}"
+
+      - name: Configure InterSpec (Xcode)
+        env:
+          LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
+        run: |
+          cmake -S "${{ github.workspace }}/target/osx" \
+            -B "${BUILD_DIR}" \
+            -G Xcode \
+            -DCMAKE_PREFIX_PATH="${DEPS_PREFIX_DIR}" \
+            -DLEAFLET_MAPS_KEY="${LEAFLET_KEY}" \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+
+      - name: Build InterSpec.app
+        run: |
+          cmake --build "${BUILD_DIR}" --config Release
+          echo "APP_BUNDLE=${BUILD_DIR}/Release/InterSpec.app" >> "${GITHUB_ENV}"
 
       - name: Codesign bundle
         env:
