@@ -132,15 +132,15 @@ jobs:
           cp -R "${APP_BUNDLE}" "${PAYLOAD_DIR}/"
           cp "${{ github.workspace }}/LICENSE.txt" "${PAYLOAD_DIR}/"
           cp "${{ github.workspace }}/NOTICE.html" "${PAYLOAD_DIR}/"
-          cat <<EOF > "${PAYLOAD_DIR}/build_info.txt"
-This is an automated build of InterSpec built on the github infrastruction at $(date)
-
-No testing has been performed on this build.
-
-InterSpec code git has SHA: ${{ github.sha }}
-
-Contact InterSpec@sandia.gov for support
-EOF
+          {
+            echo "This is an automated build of InterSpec built on the github infrastruction at $(date)"
+            echo ""
+            echo "No testing has been performed on this build."
+            echo ""
+            echo "InterSpec code git has SHA: ${{ github.sha }}"
+            echo ""
+            echo "Contact InterSpec@sandia.gov for support"
+          } > "${PAYLOAD_DIR}/build_info.txt"
 
       - name: Create release artifacts
         env:
