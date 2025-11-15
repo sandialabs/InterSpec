@@ -17,17 +17,20 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}
     env:
-      BUILD_DIR: ${{ runner.temp }}/build_macos
-      DEPS_BUILD_DIR: ${{ runner.temp }}/mac_deps_build
-      DEPS_PREFIX_DIR: ${{ runner.temp }}/mac_deps_prefix
-      INSTALLER_DIR: ${{ runner.temp }}/mac_artifacts
-      PAYLOAD_DIR: ${{ runner.temp }}/mac_artifacts/InterSpec_macOS_latest
       NOTARY_PROFILE: interspec-notary
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
         with:
           submodules: true
+
+      - name: Define build paths
+        run: |
+          echo "BUILD_DIR=${RUNNER_TEMP}/build_macos" >> "${GITHUB_ENV}"
+          echo "DEPS_BUILD_DIR=${RUNNER_TEMP}/mac_deps_build" >> "${GITHUB_ENV}"
+          echo "DEPS_PREFIX_DIR=${RUNNER_TEMP}/mac_deps_prefix" >> "${GITHUB_ENV}"
+          echo "INSTALLER_DIR=${RUNNER_TEMP}/mac_artifacts" >> "${GITHUB_ENV}"
+          echo "PAYLOAD_DIR=${RUNNER_TEMP}/mac_artifacts/InterSpec_macOS_latest" >> "${GITHUB_ENV}"
 
       - name: Prepare directories
         run: |
