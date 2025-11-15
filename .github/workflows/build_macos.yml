@@ -82,6 +82,8 @@ jobs:
           set -euo pipefail
           NOTARY_KEY_PATH="${RUNNER_TEMP}/AuthKey.p8"
           echo "${MAC_NOTARY_KEY_CONTENTS}" | base64 --decode > "${NOTARY_KEY_PATH}"
+          xcrun notarytool credentials delete "${NOTARY_PROFILE}" \
+            --keychain "${SIGNING_KEYCHAIN}" >/dev/null 2>&1 || true
           xcrun notarytool store-credentials "${NOTARY_PROFILE}" \
             --key "${NOTARY_KEY_PATH}" \
             --key-id "${MAC_NOTARY_KEY_ID}" \
