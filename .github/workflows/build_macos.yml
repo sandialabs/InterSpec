@@ -72,28 +72,14 @@ jobs:
           echo "SIGNING_KEYCHAIN=${KEYCHAIN_PATH}" >> "${GITHUB_ENV}"
           echo "KEYCHAIN_PASSWORD=${KEYCHAIN_PASSWORD}" >> "${GITHUB_ENV}"
 
-      - name: Store notarization credentials
+      - name: Prepare notarization credentials
         env:
-          MAC_NOTARY_KEY_ID: ${{ secrets.MAC_NOTARY_KEY_ID }}
-          MAC_NOTARY_KEY_ISSUER: ${{ secrets.MAC_NOTARY_KEY_ISSUER }}
           MAC_NOTARY_KEY_CONTENTS: ${{ secrets.MAC_NOTARY_KEY_CONTENTS }}
-          MAC_NOTARY_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
         run: |
           set -euo pipefail
           NOTARY_KEY_PATH="${RUNNER_TEMP}/AuthKey.p8"
           echo "${MAC_NOTARY_KEY_CONTENTS}" | base64 --decode > "${NOTARY_KEY_PATH}"
-          # Unlock the keychain before accessing notarization credentials
-          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${SIGNING_KEYCHAIN}"
-          # Try to delete the profile if it exists (ignore errors)
-          xcrun notarytool credentials delete "${NOTARY_PROFILE}" --keychain "${SIGNING_KEYCHAIN}" 2>/dev/null || true
-          # Store the new credentials
-          xcrun notarytool store-credentials "${NOTARY_PROFILE}" \
-            --key "${NOTARY_KEY_PATH}" \
-            --key-id "${MAC_NOTARY_KEY_ID}" \
-            --issuer "${MAC_NOTARY_KEY_ISSUER}" \
-            --team-id "${MAC_NOTARY_TEAM_ID}" \
-            --keychain "${SIGNING_KEYCHAIN}"
-          rm -f "${NOTARY_KEY_PATH}"
+          echo "NOTARY_KEY_PATH=${NOTARY_KEY_PATH}" >> "${GITHUB_ENV}"
 
       - name: Configure InterSpec (Xcode)
         env:
@@ -123,13 +109,19 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
 
       - name: Notarize bundle
+        env:
+          MAC_NOTARY_KEY_ID: ${{ secrets.MAC_NOTARY_KEY_ID }}
+          MAC_NOTARY_KEY_ISSUER: ${{ secrets.MAC_NOTARY_KEY_ISSUER }}
+          MAC_NOTARY_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
         run: |
           set -euo pipefail
           NOTARIZE_ARCHIVE="${INSTALLER_DIR}/InterSpec_notarize.zip"
           ditto -c -k --keepParent "${APP_BUNDLE}" "${NOTARIZE_ARCHIVE}"
           xcrun notarytool submit "${NOTARIZE_ARCHIVE}" \
-            --keychain-profile "${NOTARY_PROFILE}" \
-            --keychain "${SIGNING_KEYCHAIN}" \
+            --key "${NOTARY_KEY_PATH}" \
+            --key-id "${MAC_NOTARY_KEY_ID}" \
+            --issuer "${MAC_NOTARY_KEY_ISSUER}" \
+            --team-id "${MAC_NOTARY_TEAM_ID}" \
             --wait
           xcrun stapler staple "${APP_BUNDLE}"
           rm -f "${NOTARIZE_ARCHIVE}"
@@ -180,10 +172,13 @@ jobs:
           path: ${{ env.DMG_ARTIFACT }}
           if-no-files-found: error
 
-      - name: Cleanup keychain
+      - name: Cleanup keychain and credentials
         if: ${{ always() }}
         run: |
           if [ -n "${SIGNING_KEYCHAIN:-}" ] && [ -f "${SIGNING_KEYCHAIN}" ]; then
             security delete-keychain "${SIGNING_KEYCHAIN}" || true
+          fi
+          if [ -n "${NOTARY_KEY_PATH:-}" ] && [ -f "${NOTARY_KEY_PATH}" ]; then
+            rm -f "${NOTARY_KEY_PATH}" || true
           fi
 
