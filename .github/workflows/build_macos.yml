@@ -207,11 +207,11 @@ jobs:
           cp "${{ github.workspace }}/LICENSE.txt" "${PAYLOAD_DIR}/"
           cp "${{ github.workspace }}/NOTICE.html" "${PAYLOAD_DIR}/"
           {
-            echo "This is an automated build of InterSpec built on the github infrastruction at $(date)"
+            echo "This is an automated build of InterSpec built on the github infrastructure at $(date)"
             echo ""
             echo "No testing has been performed on this build."
             echo ""
-            echo "InterSpec code git has SHA: ${{ github.sha }}"
+            echo "InterSpec code git hash SHA: ${{ github.sha }}"
             echo ""
             echo "Contact InterSpec@sandia.gov for support"
           } > "${PAYLOAD_DIR}/build_info.txt"

@@ -430,6 +430,7 @@ void startWebServer( string name,
     sm_urlServedOn = this_url;
   }
       
+  cout << "Started server at " << this_url << endl;
       
 #if( USE_LLM_INTERFACE )
   static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
