@@ -217,9 +217,13 @@ jobs:
           overwrite: true
           path: ${{runner.temp}}/build_linux_working_dir/InterSpec_app_Linux_Electron_latest_*.zip
 
+  macos-build:
+    uses: ./.github/workflows/build_macos.yml
+    secrets: inherit
+
   release:
     runs-on: ubuntu-latest
-    needs: [build-linux, build-win]
+    needs: [build-linux, build-win, macos-build]
     
     steps:
       - name: Checkout code
@@ -275,7 +279,7 @@ jobs:
           fail_on_unmatched_files: true
           tag_name: "bleeding-edge"
           release_name: "Development Build"
-          body: "An automated, and untested build of the latest code pushed to the repository.<br />Windows version requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.<br />Linux version requires `glibc >=2.28` based distro (e.g., Ubuntu 21.04+, RHEL 9+, Debian 11+, Fedora 34+)."
+          body: "An automated, and untested build of the latest code pushed to the repository.<br />Windows version requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.<br />Linux version requires `glibc >=2.28` based distro (e.g., Ubuntu 21.04+, RHEL 9+, Debian 11+, Fedora 34+).<br />macOS version requires macOS 10.15 (Catalina) or later."
           draft: false
           generate_release_notes: false
           prerelease: true
