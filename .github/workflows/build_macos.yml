@@ -82,11 +82,11 @@ jobs:
           set -euo pipefail
           NOTARY_KEY_PATH="${RUNNER_TEMP}/AuthKey.p8"
           echo "${MAC_NOTARY_KEY_CONTENTS}" | base64 --decode > "${NOTARY_KEY_PATH}"
-          # List and delete ALL existing profiles in the signing keychain to avoid conflicts
-          xcrun notarytool credentials list --keychain "${SIGNING_KEYCHAIN}" 2>/dev/null | \
-            grep -v "^Name" | awk '{print $1}' | while read -r profile; do
-              xcrun notarytool credentials delete "$profile" --keychain "${SIGNING_KEYCHAIN}" 2>/dev/null || true
-            done
+          # Unlock the keychain before accessing notarization credentials
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${SIGNING_KEYCHAIN}"
+          # Try to delete the profile if it exists (ignore errors)
+          xcrun notarytool credentials delete "${NOTARY_PROFILE}" --keychain "${SIGNING_KEYCHAIN}" 2>/dev/null || true
+          # Store the new credentials
           xcrun notarytool store-credentials "${NOTARY_PROFILE}" \
             --key "${NOTARY_KEY_PATH}" \
             --key-id "${MAC_NOTARY_KEY_ID}" \
