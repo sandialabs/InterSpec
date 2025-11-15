@@ -18,6 +18,8 @@ jobs:
         working-directory: ${{ github.workspace }}
     env:
       NOTARY_PROFILE: interspec-notary
+      MAC_DEVELOPER_TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
+      MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -42,6 +44,7 @@ jobs:
         with:
           path: ${{ env.DEPS_PREFIX_DIR }}
           key: macos-deps-${{ hashFiles('target/patches/dep_build_macOS.sh', 'cmake/FetchInterSpecDeps.cmake') }}
+          save-always: true
 
       - name: Build dependency prefix
         if: steps.cache-macos-deps.outputs.cache-hit != 'true'

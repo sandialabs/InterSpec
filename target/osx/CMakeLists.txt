@@ -244,28 +244,49 @@ set_target_properties( InterSpecApp
 )
 
 #Figure out the development team ID, and set this info for Xcode so it will default to signing the app
-#  This is probably a little brittle on other peoples machined
-execute_process( COMMAND /usr/bin/security find-identity -v -p codesigning 
+#  This is probably a little brittle on other peoples machines, so allow overrides via env vars.
+set(mac_team_id "$ENV{MAC_DEVELOPER_TEAM_ID}")
+if( (NOT mac_team_id OR mac_team_id STREQUAL "") AND DEFINED ENV{MAC_NOTARY_TEAM_ID} )
+  set(mac_team_id "$ENV{MAC_NOTARY_TEAM_ID}")
+endif()
+
+if(NOT mac_team_id OR mac_team_id STREQUAL "")
+  execute_process(
+    COMMAND /usr/bin/security find-identity -v -p codesigning
     OUTPUT_VARIABLE dev_team_ids
-)
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+  STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
+  STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
+  LIST(FILTER dev_team_ids INCLUDE REGEX "Developer ID Application:.+" )
+  if(dev_team_ids)
+    STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
+    STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
+  endif()
+endif()
 
-STRING(REGEX REPLACE ";" "\\\\;" dev_team_ids "${dev_team_ids}")
-STRING(REGEX REPLACE "\n" ";" dev_team_ids "${dev_team_ids}")
-LIST(FILTER dev_team_ids INCLUDE REGEX "Developer ID Application:.+" )
-STRING(REGEX MATCH "\\(.+\\)" mac_team_id ${dev_team_ids} )
-STRING(REGEX REPLACE "\\(|\\)" "" mac_team_id "${mac_team_id}")
-message("Using Mac Developer Team ID='${mac_team_id}'")
+if(NOT mac_team_id OR mac_team_id STREQUAL "")
+  message(FATAL_ERROR "Unable to determine Mac Developer Team ID. Set the MAC_DEVELOPER_TEAM_ID (or MAC_NOTARY_TEAM_ID) environment variable before running CMake.")
+endif()
 
-set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+set(mac_signing_identity "$ENV{MAC_SIGNING_IDENTITY}")
+if(NOT mac_signing_identity OR mac_signing_identity STREQUAL "")
+  set(mac_signing_identity "Mac Developer")
+endif()
+
+message("Using Mac Developer Team ID='${mac_team_id}' with signing identity='${mac_signing_identity}'")
+
+set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
 set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
 set_target_properties( InterSpecApp PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
 
-set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
 set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
 set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
 
 if( USE_BATCH_TOOLS )
-  set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Mac Developer" )
+  set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
 endif( USE_BATCH_TOOLS )
