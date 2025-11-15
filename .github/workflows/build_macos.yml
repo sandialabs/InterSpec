@@ -96,6 +96,17 @@ jobs:
           cmake --build "${BUILD_DIR}" --config Release
           echo "APP_BUNDLE=${BUILD_DIR}/Release/InterSpec.app" >> "${GITHUB_ENV}"
 
+      - name: Copy D3 resources
+        run: |
+          set -euo pipefail
+          D3_SOURCE="${{ github.workspace }}/external_libs/SpecUtils/d3_resources"
+          D3_DEST="${APP_BUNDLE}/Contents/Resources/InterSpec_resources"
+          echo "Copying D3 resources from ${D3_SOURCE} to ${D3_DEST}"
+          cp "${D3_SOURCE}/d3.v3.min.js" "${D3_DEST}/"
+          cp "${D3_SOURCE}/SpectrumChartD3.js" "${D3_DEST}/"
+          cp "${D3_SOURCE}/SpectrumChartD3.css" "${D3_DEST}/"
+          ls -lh "${D3_DEST}/"
+
       - name: Codesign bundle
         env:
           MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
@@ -216,28 +227,19 @@ jobs:
             echo "Contact InterSpec@sandia.gov for support"
           } > "${PAYLOAD_DIR}/build_info.txt"
 
-      - name: Create release artifacts
+      - name: Create DMG installer
         env:
           MAC_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
-          ZIP_PATH="${INSTALLER_DIR}/InterSpec_macOS_latest.zip"
-          DMG_PATH="${INSTALLER_DIR}/InterSpec_macOS_latest.dmg"
-          ditto -c -k --sequesterRsrc --keepParent "${PAYLOAD_DIR}" "${ZIP_PATH}"
+          BUILD_DATE=$(date +%Y-%m-%d)
+          DMG_PATH="${INSTALLER_DIR}/InterSpec_app_macOS_latest_${BUILD_DATE}.dmg"
           hdiutil create -volname "InterSpec" -srcfolder "${PAYLOAD_DIR}" -ov -format UDZO "${DMG_PATH}"
           codesign --force --options runtime --timestamp --sign "${MAC_SIGNING_IDENTITY}" "${DMG_PATH}"
           ls -lh "${INSTALLER_DIR}"
-          echo "ZIP_ARTIFACT=${ZIP_PATH}" >> "${GITHUB_ENV}"
           echo "DMG_ARTIFACT=${DMG_PATH}" >> "${GITHUB_ENV}"
 
-      - name: Upload macOS zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-app-zip
-          path: ${{ env.ZIP_ARTIFACT }}
-          if-no-files-found: error
-
-      - name: Upload macOS dmg
+      - name: Upload macOS DMG
         uses: actions/upload-artifact@v4
         with:
           name: macos-app-dmg
