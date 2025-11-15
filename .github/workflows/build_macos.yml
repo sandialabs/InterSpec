@@ -117,10 +117,21 @@ jobs:
           # Sign any frameworks in the bundle
           if [ -d "${APP_BUNDLE}/Contents/Frameworks" ]; then
             echo "Signing frameworks..."
-            find "${APP_BUNDLE}/Contents/Frameworks" -type f -name "*.dylib" -o -name "*.framework" | while read -r framework; do
+            find "${APP_BUNDLE}/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.framework" \) | while read -r framework; do
               codesign --force --options runtime --timestamp \
                 --sign "${MAC_SIGNING_IDENTITY}" \
                 "${framework}" || true
+            done
+          fi
+          
+          # Sign all executables in Contents/MacOS (except the main one, which we'll sign with entitlements)
+          if [ -d "${APP_BUNDLE}/Contents/MacOS" ]; then
+            echo "Signing additional executables in MacOS directory..."
+            find "${APP_BUNDLE}/Contents/MacOS" -type f -perm +111 ! -name "InterSpec" | while read -r executable; do
+              echo "  Signing: ${executable}"
+              codesign --force --options runtime --timestamp \
+                --sign "${MAC_SIGNING_IDENTITY}" \
+                "${executable}"
             done
           fi
           
