@@ -69,6 +69,7 @@ fi
 
 export MACOSX_DEPLOYMENT_TARGET=10.13 # MacOS High Sierra (2017, supported through 2020)
 export MY_WT_PREFIX=$install_directory
+export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
 
 # Define a function to download a file and check its hash
