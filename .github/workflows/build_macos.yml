@@ -4,6 +4,24 @@ on:
   push:
     branches:
       - master
+  workflow_call:
+    secrets:
+      LEAFLET_KEY:
+        required: true
+      MAC_SIGNING_CERT_P12:
+        required: true
+      MAC_SIGNING_CERT_PASSWORD:
+        required: true
+      MAC_SIGNING_IDENTITY:
+        required: true
+      MAC_NOTARY_TEAM_ID:
+        required: true
+      MAC_NOTARY_KEY_ID:
+        required: true
+      MAC_NOTARY_KEY_ISSUER:
+        required: true
+      MAC_NOTARY_KEY_CONTENTS:
+        required: true
 
 concurrency: ci-macos-${{ github.ref }}
 
