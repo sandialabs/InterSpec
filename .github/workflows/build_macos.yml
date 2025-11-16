@@ -1,9 +1,6 @@
 name: Build macOS App
 
 on:
-  push:
-    branches:
-      - master
   workflow_call:
     secrets:
       LEAFLET_KEY:
