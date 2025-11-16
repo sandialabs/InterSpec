@@ -459,21 +459,28 @@ void LlmInterface::handleApiResponse( const std::string &response,
     json responseJson = json::parse(response);
     
     // Parse and accumulate token usage information if available
+    std::optional<size_t> promptTokens, completionTokens;
     if( responseJson.contains("usage") )
     {
       const auto &usage = responseJson["usage"];
-      
-      std::optional<int> promptTokens, completionTokens, totalTokens;
+
+      std::optional<int> promptTokensInt, completionTokensInt, totalTokens;
       if (usage.contains("prompt_tokens") && usage["prompt_tokens"].is_number())
-        promptTokens = usage["prompt_tokens"].get<int>();
+      {
+        promptTokensInt = usage["prompt_tokens"].get<int>();
+        promptTokens = static_cast<size_t>(promptTokensInt.value());
+      }
       if (usage.contains("completion_tokens") && usage["completion_tokens"].is_number())
-        completionTokens = usage["completion_tokens"].get<int>();
+      {
+        completionTokensInt = usage["completion_tokens"].get<int>();
+        completionTokens = static_cast<size_t>(completionTokensInt.value());
+      }
       if (usage.contains("total_tokens") && usage["total_tokens"].is_number())
         totalTokens = usage["total_tokens"].get<int>();
-      
+
       // Accumulate token usage for this conversation
-      m_history->addTokenUsage( conversation, promptTokens, completionTokens, totalTokens );
-      
+      m_history->addTokenUsage( conversation, promptTokensInt, completionTokensInt, totalTokens );
+
       if( completionTokens.has_value() )
       {
         cout << "=== Token Usage This Call ===" << endl;
@@ -505,19 +512,28 @@ void LlmInterface::handleApiResponse( const std::string &response,
           // Handle structured tool calls first (OpenAI format)
           if (message.contains("tool_calls"))
           {
-            number_tool_calls += executeToolCallsAndSendResults( message["tool_calls"], conversation, requestId );
+            number_tool_calls += executeToolCallsAndSendResults( message["tool_calls"], conversation, requestId, promptTokens, completionTokens );
           }else
           {
             // Parse content for text-based tool requests (use cleaned content)
             number_tool_calls += parseContentForToolCallsAndSendResults( cleanContent, conversation, requestId );
           }
-          
+
           // Add assistant message to history with thinking content and current agent name - only if there were no
           //  tool calls - if there were tool calls `executeToolCallsAndSendResults` will add these to the
           //  history (although we will lose the thinking content, but whatever)
           //  TODO: add thinking content to tool call LlmConversationResponse's
           if( number_tool_calls == 0 )
+          {
             m_history->addAssistantMessageWithThinking( cleanContent, thinkingContent, conversation );
+            // Add token usage to the assistant message we just added
+            if( !conversation->responses.empty() && (promptTokens.has_value() || completionTokens.has_value()) )
+            {
+              std::shared_ptr<LlmConversationResponse> lastResponse = conversation->responses.back();
+              lastResponse->promptTokens = promptTokens;
+              lastResponse->completionTokens = completionTokens;
+            }
+          }
         }//if( role == "assistant" )
       }//if( choice.contains("message") )
     }//if( responseJson.contains("choices") && !responseJson["choices"].empty() )
@@ -545,7 +561,9 @@ void LlmInterface::handleApiResponse( const std::string &response,
 
 size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                                     const std::shared_ptr<LlmConversationStart> &convo,
-                                    const int parentRequestId )
+                                    const int parentRequestId,
+                                    std::optional<size_t> promptTokens,
+                                    std::optional<size_t> completionTokens )
 {
   assert( wApp ); //Consistency requires we have the WApplication::UpdateLock
   
@@ -562,21 +580,27 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
   std::vector<std::string> executedToolCallIds;
   vector<int> subAgentRequestIds;
 
+  // Collect all tool call requests for batching
+  std::vector<LlmConversationResponse::ToolCallRequest> toolCallRequests;
+  std::vector<LlmConversationResponse::ToolCallRequest> toolCallResults;
+
   for( const nlohmann::json &toolCall : toolCalls )
   {
     const string callId = toolCall.value("id", "");
+    string toolName;
+    json arguments;
 
     try
     {
-      const string toolName = toolCall["function"]["name"];
+      toolName = toolCall["function"]["name"];
       cout << "--- about to parse tool call arguments for toolName=" << toolName << endl;
-      json arguments = json::parse(toolCall["function"]["arguments"].get<string>());
+      arguments = json::parse(toolCall["function"]["arguments"].get<string>());
       cout << "--- done parsing tool call arguments for toolName=" << toolName << endl;
 
       cout << "Calling tool: " << toolName << " with ID: " << callId << endl;
 
-      // Add tool call to history with conversation ID, invocation ID, and current agent name
-      m_history->addToolCall( toolName, callId, arguments, convo );
+      // Create tool call request for batching
+      toolCallRequests.emplace_back( toolName, callId, arguments );
 
       // Check if this is an invoke_* tool (sub-agent invocation) - handle specially
     
@@ -607,19 +631,18 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
         
         const int subAgentRequestId = invokeSubAgent( sub_agent_convo );
         subAgentRequestIds.push_back( subAgentRequestId );
-        
-        
+
         {// Begin placeholder result that will be updated when sub-agent completes
           json result;
           result["status"] = "pending";
           result["message"] = "Sub-agent " + agentName + " is processing (will update when complete)";
           result["requestId"] = subAgentRequestId;
-          
-          LlmConversationResponse response(LlmConversationResponse::Type::ToolResult, result.dump(), convo );
-          response.invocationId = callId;
-          response.sub_agent_conversation = sub_agent_convo;
-          
-          convo->responses.push_back( std::move(response) );
+
+          // Create tool result entry with placeholder
+          LlmConversationResponse::ToolCallRequest toolResult( toolName, callId, arguments );
+          toolResult.content = result.dump();
+          toolResult.sub_agent_conversation = sub_agent_convo;
+          toolCallResults.push_back( std::move(toolResult) );
         }// End placeholder result that will be updated when sub-agent completes
         
         // We will define a completion handler that will get called when the sub-agent conversation is complete.
@@ -665,22 +688,33 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
           
           // Here is where we fill in `parent_conv` with the result, and send back to the LLM
           cout << "Sub-agent complete (no tool calls left) - will extracting summary and continue main conversation." << endl;
-          
+
           assert( !parent_conv->responses.empty() );
-          LlmConversationResponse *response = nullptr;
-          for( size_t rspns_index = 0; !response && (rspns_index < parent_conv->responses.size()); ++rspns_index )
+          std::shared_ptr<LlmConversationResponse> response = nullptr;
+          LlmConversationResponse::ToolCallRequest *toolResult = nullptr;
+
+          // Find the ToolResult response containing this tool call
+          for( size_t rspns_index = 0; !toolResult && (rspns_index < parent_conv->responses.size()); ++rspns_index )
           {
-            if( (parent_conv->responses[rspns_index].invocationId == callId)
-               && (parent_conv->responses[rspns_index].type == LlmConversationResponse::Type::ToolResult) )
+            if( parent_conv->responses[rspns_index]->type == LlmConversationResponse::Type::ToolResult )
             {
-              response = &(parent_conv->responses[rspns_index]);
-              assert( response->content.find( "(will update when complete)" ) != string::npos );
+              response = parent_conv->responses[rspns_index];
+              // Search within the toolCalls vector for the matching invocationId
+              for( LlmConversationResponse::ToolCallRequest &tc : response->toolCalls )
+              {
+                if( tc.invocationId == callId )
+                {
+                  toolResult = &tc;
+                  assert( tc.content.find( "(will update when complete)" ) != string::npos );
+                  break;
+                }
+              }
             }
-          }//for( LlmConversationResponse &rspns : parent_conv->responses )
-          
-          assert( response );
-          
-          if( response )
+          }//for( loop over responses )
+
+          assert( toolResult );
+
+          if( toolResult )
           {
             assert( !sub_agent_convo->responses.empty() );
             
@@ -694,7 +728,7 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
               updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
             }else
             {
-              string last_response = sub_agent_convo->responses.back().content;
+              string last_response = sub_agent_convo->responses.back()->content;
               cout << "--- about to parse sub_agent_convo->responses='" << last_response << "'" << endl;
               SpecUtils::trim( last_response );
               nlohmann::json responseJson = nlohmann::json::object();
@@ -735,13 +769,22 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
               updatedResult["summary"] = subAgentSummary;
               updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
             }//if( sub_agent_convo->responses.empty() )
-            
-            response->content = updatedResult.dump();
-            response->thinkingContent = subAgentThinkingContent;
+
+            // Update the tool result content
+            toolResult->content = updatedResult.dump();
+
+            // Store sub-agent conversation reference in the tool call request
+            toolResult->sub_agent_conversation = sub_agent_convo;
+
+            // Store thinking content in the parent response
+            if( response )
+            {
+              response->thinkingContent = subAgentThinkingContent;
+            }
           }else
           {
-            cerr << "Failed to find tool-call response - shouldnt happen!!!" << endl;
-          }//if( response )
+            cerr << "Failed to find tool-call result - shouldnt happen!!!" << endl;
+          }//if( toolResult )
           
         
           const auto defered_pos = interface->m_deferredToolResults.find(parentRequestId);
@@ -772,11 +815,16 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
       }else
       {
         // Normal tool execution
+        const auto exec_start = std::chrono::steady_clock::now();
         json result = m_tool_registry->executeTool(toolName, arguments, m_interspec);
+        const auto exec_end = std::chrono::steady_clock::now();
+        const auto exec_duration = std::chrono::duration_cast<std::chrono::milliseconds>(exec_end - exec_start);
 
-        LlmConversationResponse response(LlmConversationResponse::Type::ToolResult, result.dump(), convo );
-        response.invocationId = callId;
-        convo->responses.push_back( response );
+        // Create tool result entry
+        LlmConversationResponse::ToolCallRequest toolResult( toolName, callId, arguments );
+        toolResult.content = result.dump();
+        toolResult.executionDuration = exec_duration;
+        toolCallResults.push_back( std::move(toolResult) );
       }
     }catch( const std::exception &e )
     {
@@ -784,11 +832,38 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
 
       json result;
       result["error"] = "Tool call failed: " + string(e.what());
-      m_history->addToolResult( callId, result, convo );
+
+      // Create error tool result entry
+      LlmConversationResponse::ToolCallRequest toolResult( toolName, callId, arguments );
+      toolResult.content = result.dump();
+      toolCallResults.push_back( std::move(toolResult) );
     }//try / catch
 
     // Track this tool call for follow-up
     executedToolCallIds.push_back(callId);
+  }
+
+  // Add all tool calls to history as a single batched entry
+  if( !toolCallRequests.empty() )
+  {
+    m_history->addToolCalls( std::move(toolCallRequests), convo );
+
+    // Add token usage to the tool call response we just added
+    if( !convo->responses.empty() && (promptTokens.has_value() || completionTokens.has_value()) )
+    {
+      std::shared_ptr<LlmConversationResponse> lastResponse = convo->responses.back();
+      lastResponse->promptTokens = promptTokens;
+      lastResponse->completionTokens = completionTokens;
+    }
+  }
+
+  // Add all tool results to history as a single batched entry (if we have any)
+  // For sub-agents, results will be added now as placeholders and updated later
+  if( !toolCallResults.empty() )
+  {
+    // We'll populate jsonSentToLlm when we actually send the results
+    // Note: sub_agent_conversation is already stored in each ToolCallRequest for sub-agent invocations
+    m_history->addToolResults( std::move(toolCallResults), "", convo );
   }
 
   // If we have a sub-agent invocation, defer sending results until sub-agent completes
@@ -1445,10 +1520,25 @@ int LlmInterface::sendToolResultsToLLM( std::shared_ptr<LlmConversationStart> co
   // The history already contains the tool calls and results, so we just need to
   // build a new request with the current conversation state
   json followupRequest = buildMessagesArray( convo ); // System-generated followup
-  
+
+  // Capture the messages array being sent (for the tool results)
+  // Find the most recent ToolResult response and store the JSON we're sending
+  if( !convo->responses.empty() )
+  {
+    for( auto it = convo->responses.rbegin(); it != convo->responses.rend(); ++it )
+    {
+      if( (*it)->type == LlmConversationResponse::Type::ToolResult )
+      {
+        // Store the JSON that's being sent to the LLM
+        (*it)->jsonSentToLlm = followupRequest.dump();
+        break; // Only update the most recent tool result
+      }
+    }
+  }
+
   // Make tracked API call to get LLM's response to the tool results
   const int requestId = makeTrackedApiCall( followupRequest, convo );
-  
+
   return requestId;
 }
 

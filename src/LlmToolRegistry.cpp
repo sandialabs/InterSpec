@@ -4374,10 +4374,12 @@ nlohmann::json ToolRegistry::executeMarkPeaksForActivityFit(
  * into a JSON format consistent with the modify_shielding_source_config tool.
  *
  * @param state The ShieldingSourceDisplayState to convert
+ * @param peaks The peaks to use for counting progeny peaks; if nullptr, progeny peak counts will not be included
  * @return JSON object with configuration and peaks
  */
 nlohmann::json format_shielding_source_state_to_json(
-  const ShieldingSourceDisplay::ShieldingSourceDisplayState &state
+  const ShieldingSourceDisplay::ShieldingSourceDisplayState &state,
+  const std::deque<std::shared_ptr<const PeakDef>> *peaks
 )
 {
   json result;
@@ -4568,6 +4570,19 @@ nlohmann::json format_shielding_source_state_to_json(
         break;
     }
 
+    // Add age fit allowability if we have a nuclide
+    if( src.nuclide )
+    {
+      src_json["age_potentially_fittable"] = is_age_fit_allowed( src.nuclide );
+
+      // Add progeny peak count if peaks are provided
+      if( peaks )
+      {
+        const size_t num_progeny = count_progeny_peaks( src.nuclide, *peaks );
+        src_json["num_progeny_peaks"] = num_progeny;
+      }
+    }
+
     result["sources"].push_back( src_json );
   }
 
@@ -4582,6 +4597,14 @@ nlohmann::json format_shielding_source_state_to_json(
       peak_json["nuclide"] = peak.nuclideSymbol;
     result["peaks"].push_back( peak_json );
   }
+
+  // Format fit options
+  result["options"] = json::object();
+  result["options"]["attenuate_for_air"] = config.options.attenuate_for_air;
+  result["options"]["multiple_nucs_contribute_to_peaks"] = config.options.multiple_nucs_contribute_to_peaks;
+  result["options"]["background_peak_subtract"] = config.options.background_peak_subtract;
+  result["options"]["same_age_isotopes"] = config.options.same_age_isotopes;
+  result["options"]["account_for_decay_during_meas"] = config.options.account_for_decay_during_meas;
 
   return result;
 }//format_shielding_source_state_to_json(...)
@@ -4622,9 +4645,20 @@ nlohmann::json ToolRegistry::executeGetShieldingSourceConfig(
     return result;
   }
 
-  // Convert state to JSON
-  const json config_json = format_shielding_source_state_to_json( state );
+  // Get peaks from InterSpec for progeny counting
+  PeakModel *peakModel = interspec->peakModel();
+  const std::deque<std::shared_ptr<const PeakDef>> *peaks = nullptr;
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks_ptr;
+  if( peakModel )
+  {
+    peaks_ptr = peakModel->peaks();
+    if( peaks_ptr )
+      peaks = peaks_ptr.get();
+  }
 
+  // Convert state to JSON
+  const json config_json = format_shielding_source_state_to_json( state, peaks );
+  
   result["has_config"] = true;
   //result["source"] = "GUI (ShieldingSourceDisplay)";
   result["config"] = config_json;
@@ -4668,8 +4702,19 @@ nlohmann::json ToolRegistry::executeGetShieldingSourceConfig(
     if( !state.config )
       throw runtime_error( "Failed to parse configuration from XML" );
 
+    // Get peaks from InterSpec for progeny counting
+    PeakModel *peakModel = interspec->peakModel();
+    const std::deque<std::shared_ptr<const PeakDef>> *peaks = nullptr;
+    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks_ptr;
+    if( peakModel )
+    {
+      peaks_ptr = peakModel->peaks();
+      if( peaks_ptr )
+        peaks = peaks_ptr.get();
+    }
+
     // Convert state to JSON
-    const json config_json = format_shielding_source_state_to_json( state );
+    const json config_json = format_shielding_source_state_to_json( state, peaks );
 
     result["has_config"] = true;
     result["source"] = "Saved model (SpecMeas::m_shieldingSourceModel)";
@@ -5070,6 +5115,46 @@ nlohmann::json ToolRegistry::executeModifyShieldingSourceConfig(
     result["nuclide"] = nuclide_str;
     result["age_years"] = it->age / PhysicalUnits::year;
     result["fit_age"] = it->fitAge;
+  }
+  else if( operation == "set_fit_options" )
+  {
+    // Set fitting options
+    bool options_changed = false;
+
+    if( params.contains("attenuate_for_air") )
+    {
+      const bool new_value = get_boolean( params, "attenuate_for_air" );
+      modified_config.options.attenuate_for_air = new_value;
+      result["attenuate_for_air"] = new_value;
+      options_changed = true;
+    }
+
+    if( params.contains("multiple_nucs_contribute_to_peaks") )
+    {
+      const bool new_value = get_boolean( params, "multiple_nucs_contribute_to_peaks" );
+      modified_config.options.multiple_nucs_contribute_to_peaks = new_value;
+      result["multiple_nucs_contribute_to_peaks"] = new_value;
+      options_changed = true;
+    }
+
+    if( params.contains("background_peak_subtract") )
+    {
+      const bool new_value = get_boolean( params, "background_peak_subtract" );
+      modified_config.options.background_peak_subtract = new_value;
+      result["background_peak_subtract"] = new_value;
+      options_changed = true;
+    }
+
+    if( params.contains("same_age_isotopes") )
+    {
+      const bool new_value = get_boolean( params, "same_age_isotopes" );
+      modified_config.options.same_age_isotopes = new_value;
+      result["same_age_isotopes"] = new_value;
+      options_changed = true;
+    }
+
+    if( !options_changed )
+      throw runtime_error( "set_fit_options requires at least one option parameter (attenuate_for_air, multiple_nucs_contribute_to_peaks, background_peak_subtract, or same_age_isotopes)" );
   }
   else
   {

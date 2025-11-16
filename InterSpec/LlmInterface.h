@@ -210,7 +210,11 @@ private:
    
    Returns the number of tool calls processed.
    */
-  size_t executeToolCallsAndSendResults( const nlohmann::json& toolCalls, const std::shared_ptr<LlmConversationStart> &convo, const int requestId );
+  size_t executeToolCallsAndSendResults( const nlohmann::json& toolCalls,
+                                         const std::shared_ptr<LlmConversationStart> &convo,
+                                         const int requestId,
+                                         std::optional<size_t> promptTokens = std::nullopt,
+                                         std::optional<size_t> completionTokens = std::nullopt );
   
   /** Parse text content for tool call requests (for models that don't support structured tool calls)
    

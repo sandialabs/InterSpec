@@ -8179,7 +8179,6 @@ void ShieldingSourceDisplay::handleShieldingUndoRedoPoint( const ShieldingSelect
     return;
   }
   
-  cout << "\n\nSetting Undo/redo state\n\tprev_state='" << *prev_state << "'\n\tcurrent_state='" << *current_state << "'\n" << endl;
   
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   const bool is_fixed_geom = det && det->isFixedGeometry();

@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <memory>
 #include <vector>
 #include <string>
 #include <chrono>
@@ -56,21 +57,46 @@ struct LlmConversationResponse {
     Error        // Error message
   };
 
+  /** Represents a single tool call request and its result within a response.
+
+   When the LLM requests multiple tool calls in a single response, each tool
+   call is stored as a ToolCallRequest within the toolCalls vector.
+   */
+  struct ToolCallRequest {
+    std::string toolName;        // Name of the tool to call
+    std::string invocationId;    // Unique ID for this tool invocation
+    nlohmann::json toolParameters; // Parameters to pass to the tool
+    std::string content;         // Result content from executing the tool
+    std::optional<std::chrono::milliseconds> executionDuration; // How long the tool took to execute
+
+    // For sub-agent tool calls (invoke_*), this holds the sub-agent's conversation
+    std::shared_ptr<LlmConversationStart> sub_agent_conversation;
+
+    ToolCallRequest( const std::string &name, const std::string &id, const nlohmann::json &params )
+      : toolName(name), invocationId(id), toolParameters(params) {}
+  };
+
   Type type;
   std::string content;
   std::string thinkingContent;  // Raw thinking content from LLM (e.g., <think>...</think>)
   std::chrono::system_clock::time_point timestamp;
 
-  // For tool calls/results
-  std::string toolName;
-  std::string invocationId;    // ID for specific tool invocation
-  nlohmann::json toolParameters;
+  // For batched tool calls/results - multiple tool calls can be requested in a single LLM response
+  std::vector<ToolCallRequest> toolCalls;
+
+  // JSON that was sent to the LLM (for tool results or other responses)
+  std::string jsonSentToLlm;
+
+  // Token usage for this specific response (when available from API)
+  std::optional<size_t> promptTokens;      // Tokens used in the input/prompt
+  std::optional<size_t> completionTokens;  // Tokens generated in the response
+
+  // API call timing
+  std::optional<std::chrono::milliseconds> apiCallDuration;
 
   // A pointer back to the conversation that owns this response - not currently used, but maybe useful in the future
   std::weak_ptr<LlmConversationStart> conversation;
 
-  std::shared_ptr<LlmConversationStart> sub_agent_conversation;
-  
   LlmConversationResponse(Type t, const std::string& c, const std::shared_ptr<LlmConversationStart> &convo)
     : type(t), content(c), timestamp(std::chrono::system_clock::now()), conversation(convo) {}
 };
@@ -101,7 +127,7 @@ struct LlmConversationStart
   std::optional<size_t> totalTokens;       // Total tokens used (prompt + completion)
   
   // Nested follow-up responses (assistant responses, tool calls, tool results)
-  std::vector<LlmConversationResponse> responses;
+  std::vector<std::shared_ptr<LlmConversationResponse>> responses;
   
   /** Function called when the conversation with the LLM has ended.
    For the main agent, this will be to update the GUI.
@@ -146,16 +172,21 @@ public:
   /** Add a system message */
   std::shared_ptr<LlmConversationStart> addSystemMessageToMainConversation( const std::string &message );
   
-  /** Add a tool call request as a follow-up to the last message */
-  void addToolCall(const std::string &toolName,
-                   const std::string &invocationId,
-                   const nlohmann::json &parameters,
-                   const std::shared_ptr<LlmConversationStart> &convo );
+  /** Add tool call requests (potentially multiple) as a follow-up to the last message.
 
-  /** Add a tool call result as a follow-up to the last message */
-  void addToolResult( const std::string &invocationId,
-                      const nlohmann::json &result,
-                      const std::shared_ptr<LlmConversationStart> &convo );
+   This creates a single LlmConversationResponse with Type::ToolCall containing all the tool calls.
+   */
+  void addToolCalls( std::vector<LlmConversationResponse::ToolCallRequest> &&toolCalls,
+                     const std::shared_ptr<LlmConversationStart> &convo );
+
+  /** Add tool call results (potentially multiple) as a follow-up to the last message.
+
+   This creates a single LlmConversationResponse with Type::ToolResult containing all the results.
+   The jsonSentToLlm parameter contains the JSON that was sent back to the LLM.
+   */
+  void addToolResults( std::vector<LlmConversationResponse::ToolCallRequest> &&toolResults,
+                       const std::string &jsonSentToLlm,
+                       const std::shared_ptr<LlmConversationStart> &convo );
   
   /** Add an error message as a follow-up to the last message */
   void addErrorMessage( const std::string& errorMessage, const std::shared_ptr<LlmConversationStart> &convo );

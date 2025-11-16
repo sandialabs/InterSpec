@@ -57,49 +57,57 @@ void LlmConversationHistory::addAssistantMessageWithThinking(const std::string& 
   }
   
   // Add message as a follow-up to an existing conversation
-  LlmConversationResponse response( LlmConversationResponse::Type::Assistant, message, conversation );
-  response.thinkingContent = thinkingContent;
+  auto response = std::make_shared<LlmConversationResponse>( LlmConversationResponse::Type::Assistant, message, conversation );
+  response->thinkingContent = thinkingContent;
   conversation->responses.push_back(response);
 }//void addAssistantMessageWithThinking(...)
 
 
-void LlmConversationHistory::addToolCall(const std::string& toolName,
-                                         const std::string& invocationId,
-                                         const nlohmann::json& parameters,
-                                         const std::shared_ptr<LlmConversationStart> &convo )
-{
-  // If we have a conversation ID, try to add this as a follow-up to an existing conversation
-  assert( convo );
-  if( !convo )
-  {
-    cerr << "LlmConversationHistory::addToolCall: invalid LlmConversationStart passed in." << endl;
-    throw runtime_error( "LlmConversationHistory::addToolCall: invalid LlmConversationStart passed in." );
-    return;
-  }
-  
-  LlmConversationResponse response( LlmConversationResponse::Type::ToolCall, "", convo );
-  response.toolName = toolName;
-  response.invocationId = invocationId;
-  response.toolParameters = parameters;
-  convo->responses.push_back(response);
-}
-
-void LlmConversationHistory::addToolResult( const std::string &invocationId,
-                                           const nlohmann::json &result,
+void LlmConversationHistory::addToolCalls( std::vector<LlmConversationResponse::ToolCallRequest> &&toolCalls,
                                            const std::shared_ptr<LlmConversationStart> &convo )
 {
   assert( convo );
   if( !convo )
   {
-    cerr << "LlmConversationHistory::addToolResult - got null conversation pointer" << endl;
+    cerr << "LlmConversationHistory::addToolCalls: invalid LlmConversationStart passed in." << endl;
+    throw runtime_error( "LlmConversationHistory::addToolCalls: invalid LlmConversationStart passed in." );
     return;
   }
-  
-  // Add this as a follow-up to an existing conversation
-  LlmConversationResponse response(LlmConversationResponse::Type::ToolResult, result.dump(), convo );
-  response.invocationId = invocationId;
+
+  if( toolCalls.empty() )
+  {
+    cerr << "LlmConversationHistory::addToolCalls: called with empty toolCalls vector." << endl;
+    return;
+  }
+
+  auto response = std::make_shared<LlmConversationResponse>( LlmConversationResponse::Type::ToolCall, "", convo );
+  response->toolCalls = std::move(toolCalls);
   convo->responses.push_back(response);
-}
+}//void addToolCalls(...)
+
+void LlmConversationHistory::addToolResults( std::vector<LlmConversationResponse::ToolCallRequest> &&toolResults,
+                                             const std::string &jsonSentToLlm,
+                                             const std::shared_ptr<LlmConversationStart> &convo )
+{
+  assert( convo );
+  if( !convo )
+  {
+    cerr << "LlmConversationHistory::addToolResults - got null conversation pointer" << endl;
+    return;
+  }
+
+  if( toolResults.empty() )
+  {
+    cerr << "LlmConversationHistory::addToolResults - called with empty toolResults vector." << endl;
+    return;
+  }
+
+  // Add this as a follow-up to an existing conversation
+  auto response = std::make_shared<LlmConversationResponse>( LlmConversationResponse::Type::ToolResult, "", convo );
+  response->toolCalls = std::move(toolResults);
+  response->jsonSentToLlm = jsonSentToLlm;
+  convo->responses.push_back(response);
+}//void addToolResults(...)
 
 void LlmConversationHistory::addErrorMessage( const std::string &errorMessage,
                                              const std::shared_ptr<LlmConversationStart> &convo )
@@ -112,7 +120,7 @@ void LlmConversationHistory::addErrorMessage( const std::string &errorMessage,
   }
   
   // Add this as a follow-up to an existing conversation
-  convo->responses.emplace_back(LlmConversationResponse::Type::Error, errorMessage, convo);
+  convo->responses.push_back( std::make_shared<LlmConversationResponse>(LlmConversationResponse::Type::Error, errorMessage, convo) );
 }
 
 
@@ -207,45 +215,60 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmConversati
   messages.push_back(apiMsg);
   
   // Add all responses in chronological order
-  for( const LlmConversationResponse &response : conv.responses )
+  for( const std::shared_ptr<LlmConversationResponse> &response : conv.responses )
   {
     json responseMsg;
-    
-    switch( response.type )
+
+    switch( response->type )
     {
       case LlmConversationResponse::Type::Assistant:
         responseMsg["role"] = "assistant";
-        responseMsg["content"] = response.content;
+        responseMsg["content"] = response->content;
         break;
-        
+
       case LlmConversationResponse::Type::ToolCall:
       {
         responseMsg["role"] = "assistant";
         responseMsg["tool_calls"] = json::array();
-        json toolCall;
-        // Use just the invocationId to keep within OpenAI's 40-character limit
-        toolCall["id"] = response.invocationId;
-        toolCall["type"] = "function";
-        toolCall["function"]["name"] = response.toolName;
-        toolCall["function"]["arguments"] = response.toolParameters.dump();
-        responseMsg["tool_calls"].push_back(toolCall);
+
+        // Iterate through all tool calls in this response (batched tool calls)
+        for( const LlmConversationResponse::ToolCallRequest &toolCall : response->toolCalls )
+        {
+          json toolCallJson;
+          // Use just the invocationId to keep within OpenAI's 40-character limit
+          toolCallJson["id"] = toolCall.invocationId;
+          toolCallJson["type"] = "function";
+          toolCallJson["function"]["name"] = toolCall.toolName;
+          toolCallJson["function"]["arguments"] = toolCall.toolParameters.dump();
+          responseMsg["tool_calls"].push_back(toolCallJson);
+        }
         break;
       }
-        
+
       case LlmConversationResponse::Type::ToolResult:
-        responseMsg["role"] = "tool";
-        responseMsg["tool_call_id"] = response.invocationId;
-        responseMsg["content"] = response.content;
-        break;
-        
+      {
+        // Each tool result needs its own message with role="tool"
+        // We need to add multiple messages for batched tool results
+        for( const LlmConversationResponse::ToolCallRequest &toolResult : response->toolCalls )
+        {
+          json toolResultMsg;
+          toolResultMsg["role"] = "tool";
+          toolResultMsg["tool_call_id"] = toolResult.invocationId;
+          toolResultMsg["content"] = toolResult.content;
+          messages.push_back(toolResultMsg);
+        }
+        // Skip the normal push_back at the end since we've already added the messages
+        continue;
+      }
+
       case LlmConversationResponse::Type::Error:
         responseMsg["role"] = "assistant";
-        responseMsg["content"] = "Error: " + response.content;
+        responseMsg["content"] = "Error: " + response->content;
         break;
-    }//switch( response.type )
-    
+    }//switch( response->type )
+
     messages.push_back(responseMsg);
-  }//for( const LlmConversationResponse &response : conv.responses )
+  }//for( const std::shared_ptr<LlmConversationResponse> &response : conv.responses )
 }//nlohmann::json addConversationToLlmApiHistory(...)
 
 
@@ -301,47 +324,76 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmConversationStart
 
     // Add responses
     rapidxml::xml_node<char> *responsesNode = nullptr; //Will create at first message
-    for( const LlmConversationResponse &response : conv->responses )
+    for( const std::shared_ptr<LlmConversationResponse> &response : conv->responses )
     {
       if( !responsesNode ) // create "Responses" at the first message, so we dont create it if responses is empty
       {
         responsesNode = doc->allocate_node(rapidxml::node_element, "Responses");
         convNode->append_node(responsesNode);
       }
-      
+
       rapidxml::xml_node<char>* responseNode = doc->allocate_node(rapidxml::node_element, "Response");
       responsesNode->append_node(responseNode);
-      
+
       // Add type attribute
-      XmlUtils::append_attrib(responseNode, "type", responseTypeToString(response.type) );
-      
+      XmlUtils::append_attrib(responseNode, "type", responseTypeToString(response->type) );
+
       // Add timestamp attribute
-      const auto responseTimeT = chrono::system_clock::to_time_t(response.timestamp);
+      const auto responseTimeT = chrono::system_clock::to_time_t(response->timestamp);
       const string responseTimeStr = std::to_string(responseTimeT);
       XmlUtils::append_attrib(responseNode, "timestamp", responseTimeStr );
-      
+
       // Add content
-      if( !response.content.empty() )
-        XmlUtils::append_string_node( responseNode, "Content", response.content );
-      
+      if( !response->content.empty() )
+        XmlUtils::append_string_node( responseNode, "Content", response->content );
+
       // Add thinking content
-      if( !response.thinkingContent.empty() )
-        XmlUtils::append_string_node( responseNode, "ThinkingContent", response.thinkingContent );
-      
-      // Add tool-specific fields for responses
-      if( (response.type == LlmConversationResponse::Type::ToolCall)
-         || (response.type == LlmConversationResponse::Type::ToolResult) )
+      if( !response->thinkingContent.empty() )
+        XmlUtils::append_string_node( responseNode, "ThinkingContent", response->thinkingContent );
+
+      // Add JSON sent to LLM
+      if( !response->jsonSentToLlm.empty() )
+        XmlUtils::append_string_node( responseNode, "JsonSentToLlm", response->jsonSentToLlm );
+
+      // Add token usage if available
+      if( response->promptTokens.has_value() )
+        XmlUtils::append_attrib( responseNode, "promptTokens", std::to_string(response->promptTokens.value()) );
+
+      if( response->completionTokens.has_value() )
+        XmlUtils::append_attrib( responseNode, "completionTokens", std::to_string(response->completionTokens.value()) );
+
+      // Add API call duration if available
+      if( response->apiCallDuration.has_value() )
+        XmlUtils::append_attrib( responseNode, "apiCallDurationMs", std::to_string(response->apiCallDuration.value().count()) );
+
+      // Add tool calls (for ToolCall and ToolResult types)
+      if( !response->toolCalls.empty() )
       {
-        if( !response.toolName.empty() )
-          XmlUtils::append_string_node( responseNode, "ToolName", response.toolName );
-        
-        if( !response.invocationId.empty() )
-          XmlUtils::append_string_node( responseNode, "InvocationId", response.invocationId );
-        
-        if( !response.toolParameters.empty() )
-          XmlUtils::append_string_node( responseNode, "ToolParameters", response.toolParameters.dump() );
-      }//if( response is ToolCall or ToolResult )
-    }//for( const LlmConversationResponse &response : conv->responses )
+        rapidxml::xml_node<char> *toolCallsNode = doc->allocate_node(rapidxml::node_element, "ToolCalls");
+        responseNode->append_node(toolCallsNode);
+
+        for( const LlmConversationResponse::ToolCallRequest &toolCall : response->toolCalls )
+        {
+          rapidxml::xml_node<char> *toolCallNode = doc->allocate_node(rapidxml::node_element, "ToolCall");
+          toolCallsNode->append_node(toolCallNode);
+
+          if( !toolCall.toolName.empty() )
+            XmlUtils::append_string_node( toolCallNode, "ToolName", toolCall.toolName );
+
+          if( !toolCall.invocationId.empty() )
+            XmlUtils::append_string_node( toolCallNode, "InvocationId", toolCall.invocationId );
+
+          if( !toolCall.toolParameters.empty() )
+            XmlUtils::append_string_node( toolCallNode, "ToolParameters", toolCall.toolParameters.dump() );
+
+          if( !toolCall.content.empty() )
+            XmlUtils::append_string_node( toolCallNode, "ToolContent", toolCall.content );
+
+          if( toolCall.executionDuration.has_value() )
+            XmlUtils::append_attrib( toolCallNode, "executionDurationMs", std::to_string(toolCall.executionDuration.value().count()) );
+        }//for( loop over toolCalls )
+      }//if( !response->toolCalls.empty() )
+    }//for( const std::shared_ptr<LlmConversationResponse> &response : conv->responses )
   }//for( const shared_ptr<LlmConversationStart> &conv : conversations )
 }//void toXml( const vector<shared_ptr<LlmConversationStart>> &conversations ... )
 
@@ -402,46 +454,94 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
     {
       XML_FOREACH_CHILD( responseNode, responsesNode, "Response" )
       {
-        LlmConversationResponse response( LlmConversationResponse::Type::Assistant, "", conv ); // Default, will be overridden
-        
+        auto response = std::make_shared<LlmConversationResponse>( LlmConversationResponse::Type::Assistant, "", conv ); // Default, will be overridden
+
         // Read response type
         if( rapidxml::xml_attribute<char>* responseTypeAttr = XML_FIRST_ATTRIB(responseNode,"type") )
-          response.type = stringToResponseType( SpecUtils::xml_value_str(responseTypeAttr) );
+          response->type = stringToResponseType( SpecUtils::xml_value_str(responseTypeAttr) );
         
         // Read response timestamp
         if( rapidxml::xml_attribute<char> *responseTimeAttr = XML_FIRST_ATTRIB(responseNode,"timestamp") )
         {
           const string time_str = SpecUtils::xml_value_str(responseTimeAttr);
           auto responseTimeT = static_cast<time_t>( std::stoll(time_str.c_str()) );
-          response.timestamp = chrono::system_clock::from_time_t(responseTimeT);
+          response->timestamp = chrono::system_clock::from_time_t(responseTimeT);
         }
-        
+
         // Read response content
         if( rapidxml::xml_node<char>* responseContentNode = XML_FIRST_NODE(responseNode,"Content") )
-          response.content = SpecUtils::xml_value_str(responseContentNode );
-        
+          response->content = SpecUtils::xml_value_str(responseContentNode );
+
         // Read thinking content
         if( rapidxml::xml_node<char>* thinkingContentNode = XML_FIRST_NODE(responseNode,"ThinkingContent") )
-          response.thinkingContent = SpecUtils::xml_value_str(thinkingContentNode);
+          response->thinkingContent = SpecUtils::xml_value_str(thinkingContentNode);
 
-        // Read response tool fields
-        if( rapidxml::xml_node<char>* responseToolNameNode = XML_FIRST_NODE(responseNode, "ToolName") )
-          response.toolName = SpecUtils::xml_value_str(responseToolNameNode);
-        
-        if( rapidxml::xml_node<char>* responseInvocationIdNode = XML_FIRST_NODE(responseNode, "InvocationId") )
-          response.invocationId = SpecUtils::xml_value_str(responseInvocationIdNode);
-        
-        if( rapidxml::xml_node<char> *responseParamsNode = XML_FIRST_NODE(responseNode, "ToolParameters") )
+        // Read JSON sent to LLM
+        if( rapidxml::xml_node<char> *jsonSentNode = XML_FIRST_NODE(responseNode, "JsonSentToLlm") )
+          response->jsonSentToLlm = SpecUtils::xml_value_str(jsonSentNode);
+
+        // Read token usage
+        if( rapidxml::xml_attribute<char> *promptTokensAttr = XML_FIRST_ATTRIB(responseNode, "promptTokens") )
         {
-          try
-          {
-            response.toolParameters = json::parse(responseParamsNode->value());
-          }catch( const std::exception &e )
-          {
-            cout << "Failed to parse response tool parameters: " << e.what() << endl;
-          }
+          const string tokens_str = SpecUtils::xml_value_str(promptTokensAttr);
+          response->promptTokens = static_cast<size_t>( std::stoull(tokens_str) );
         }
-        
+
+        if( rapidxml::xml_attribute<char> *completionTokensAttr = XML_FIRST_ATTRIB(responseNode, "completionTokens") )
+        {
+          const string tokens_str = SpecUtils::xml_value_str(completionTokensAttr);
+          response->completionTokens = static_cast<size_t>( std::stoull(tokens_str) );
+        }
+
+        // Read API call duration
+        if( rapidxml::xml_attribute<char> *durationAttr = XML_FIRST_ATTRIB(responseNode, "apiCallDurationMs") )
+        {
+          const string duration_str = SpecUtils::xml_value_str(durationAttr);
+          response->apiCallDuration = std::chrono::milliseconds( std::stoll(duration_str) );
+        }
+
+        // Read tool calls (new batched format)
+        if( rapidxml::xml_node<char> *toolCallsNode = XML_FIRST_NODE(responseNode, "ToolCalls") )
+        {
+          XML_FOREACH_CHILD( toolCallNode, toolCallsNode, "ToolCall" )
+          {
+            string toolName, invocationId, toolContent;
+            nlohmann::json toolParameters;
+            std::optional<std::chrono::milliseconds> executionDuration;
+
+            if( rapidxml::xml_node<char> *toolNameNode = XML_FIRST_NODE(toolCallNode, "ToolName") )
+              toolName = SpecUtils::xml_value_str(toolNameNode);
+
+            if( rapidxml::xml_node<char> *invocationIdNode = XML_FIRST_NODE(toolCallNode, "InvocationId") )
+              invocationId = SpecUtils::xml_value_str(invocationIdNode);
+
+            if( rapidxml::xml_node<char> *paramsNode = XML_FIRST_NODE(toolCallNode, "ToolParameters") )
+            {
+              try
+              {
+                toolParameters = json::parse(paramsNode->value());
+              }catch( const std::exception &e )
+              {
+                cout << "Failed to parse tool parameters: " << e.what() << endl;
+              }
+            }
+
+            if( rapidxml::xml_node<char> *contentNode = XML_FIRST_NODE(toolCallNode, "ToolContent") )
+              toolContent = SpecUtils::xml_value_str(contentNode);
+
+            if( rapidxml::xml_attribute<char> *execDurationAttr = XML_FIRST_ATTRIB(toolCallNode, "executionDurationMs") )
+            {
+              const string duration_str = SpecUtils::xml_value_str(execDurationAttr);
+              executionDuration = std::chrono::milliseconds( std::stoll(duration_str) );
+            }
+
+            LlmConversationResponse::ToolCallRequest toolCall( toolName, invocationId, toolParameters );
+            toolCall.content = toolContent;
+            toolCall.executionDuration = executionDuration;
+            response->toolCalls.push_back(toolCall);
+          }//XML_FOREACH_CHILD( toolCallNode, toolCallsNode, "ToolCall" )
+        }//if( rapidxml::xml_node<char> *toolCallsNode ... )
+
         conv->responses.push_back(response);
       }//XML_FOREACH_CHILD( responseNode, responsesNode, "Response" )
     }//if( rapidxml::xml_node<char> *responsesNode = XML_FIRST_NODE(convNode, "Responses") )

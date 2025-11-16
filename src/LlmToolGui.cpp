@@ -355,13 +355,13 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
     formatted << "\n  Responses:";
     for (const auto& response : conversation.responses) {
       formatted << "\n    ";
-      
+
       // Format response timestamp
-      auto responseTime_t = std::chrono::system_clock::to_time_t(response.timestamp);
+      auto responseTime_t = std::chrono::system_clock::to_time_t(response->timestamp);
       formatted << "[" << std::put_time(std::localtime(&responseTime_t), "%H:%M:%S") << "] ";
-      
+
       // Format response type and content
-      switch( response.type )
+      switch( response->type )
       {
         case LlmConversationResponse::Type::Assistant:
           // Show agent name if not MainAgent
@@ -370,8 +370,8 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
           else
             formatted << "LLM: ";
 
-          formatted << response.content;
-          
+          formatted << response->content;
+
           break;
 
         case LlmConversationResponse::Type::ToolCall:
@@ -379,23 +379,31 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
           if( conversation.agent_type != AgentType::MainAgent )
             formatted << "[" << agentTypeToString(conversation.agent_type) << "] ";
 
-          formatted << "TOOL_CALL[" << response.toolName << "]: " << response.toolParameters.dump();
+          // Show all tool calls in this response (may be multiple)
+          formatted << "TOOL_CALL[";
+          for( size_t i = 0; i < response->toolCalls.size(); ++i )
+          {
+            if( i > 0 )
+              formatted << ", ";
+            formatted << response->toolCalls[i].toolName;
+          }
+          formatted << "]";
           break;
 
         case LlmConversationResponse::Type::ToolResult:
           formatted << "TOOL_RESULT: ";
-          if( response.content.size() < 128 )
-            formatted << response.content;
+          if( response->content.size() < 128 )
+            formatted << response->content;
           else
-            formatted << response.content.substr(0,125) + "...";
+            formatted << response->content.substr(0,125) + "...";
           break;
 
         case LlmConversationResponse::Type::Error:
-          formatted << "ERROR: " << response.content;
+          formatted << "ERROR: " << response->content;
           break;
 
         default:
-          formatted << "UNKNOWN: " << response.content;
+          formatted << "UNKNOWN: " << response->content;
           break;
       }
     }
