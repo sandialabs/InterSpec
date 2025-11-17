@@ -39,8 +39,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 class InterSpec;
 class LlmInterface;
 class LlmConversationHistory;
-struct LlmConversationStart;
-struct LlmConversationResponse;
+struct LlmInteraction;
+class LlmInteractionTurn;
 
 namespace Wt
 {
@@ -84,10 +84,10 @@ public:
   void handleResponseReceived();
   
   /** Get the current conversation history for saving to SpecMeas */
-  std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> getConversationHistory() const;
+  std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> getConversationHistory() const;
 
   /** Set the conversation history from SpecMeas */
-  void setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>& history);
+  void setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>>& history);
   
   /** Clear the current conversation history */
   void clearConversationHistory();
@@ -106,10 +106,10 @@ protected:
   void updateConversationDisplay();
   
   /** Format a single conversation for display */
-  std::string formatMessage(const LlmConversationStart& conversation, int requestId = -1);
+  std::string formatMessage(const LlmInteraction& conversation, int requestId = -1);
   
   /** Group conversations by request ID for display */
-  std::map<int, std::vector<const LlmConversationStart*>> groupConversationsByRequest();
+  std::map<int, std::vector<const LlmInteraction*>> groupConversationsByRequest();
   
 
 

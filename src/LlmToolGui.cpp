@@ -322,7 +322,7 @@ void LlmToolGui::handleResponseReceived()
   refreshDisplay();
 }
 
-std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, int requestId)
+std::string LlmToolGui::formatMessage(const LlmInteraction& conversation, int requestId)
 {
   stringstream formatted;
   
@@ -332,11 +332,11 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
   
   // Format conversation start type and content
   switch (conversation.type) {
-    case LlmConversationStart::Type::User:
+    case LlmInteraction::Type::User:
       formatted << "YOU: " << conversation.content;
       break;
       
-    case LlmConversationStart::Type::System:
+    case LlmInteraction::Type::System:
       formatted << "SYSTEM: " << conversation.content;
       break;
       
@@ -357,53 +357,75 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
       formatted << "\n    ";
 
       // Format response timestamp
-      auto responseTime_t = std::chrono::system_clock::to_time_t(response->timestamp);
+      auto responseTime_t = std::chrono::system_clock::to_time_t(response->timestamp());
       formatted << "[" << std::put_time(std::localtime(&responseTime_t), "%H:%M:%S") << "] ";
 
-      // Format response type and content
-      switch( response->type )
+      // Format response type and content using dynamic_cast for type-specific fields
+      switch( response->type() )
       {
-        case LlmConversationResponse::Type::Assistant:
-          // Show agent name if not MainAgent
-          if( conversation.agent_type != AgentType::MainAgent )
-            formatted << "[" << agentTypeToString(conversation.agent_type) << "] LLM: ";
-          else
-            formatted << "LLM: ";
-
-          formatted << response->content;
-
-          break;
-
-        case LlmConversationResponse::Type::ToolCall:
-          // Show agent name for tool calls from sub-agents
-          if( conversation.agent_type != AgentType::MainAgent )
-            formatted << "[" << agentTypeToString(conversation.agent_type) << "] ";
-
-          // Show all tool calls in this response (may be multiple)
-          formatted << "TOOL_CALL[";
-          for( size_t i = 0; i < response->toolCalls.size(); ++i )
+        case LlmInteractionTurn::Type::FinalLlmResponse:
+        {
+          const LlmInteractionFinalResponse *llmResp = dynamic_cast<const LlmInteractionFinalResponse*>(response.get());
+          if( llmResp )
           {
-            if( i > 0 )
-              formatted << ", ";
-            formatted << response->toolCalls[i].toolName;
+            // Show agent name if not MainAgent
+            if( conversation.agent_type != AgentType::MainAgent )
+              formatted << "[" << agentTypeToString(conversation.agent_type) << "] LLM: ";
+            else
+              formatted << "LLM: ";
+
+            formatted << llmResp->content();
           }
-          formatted << "]";
           break;
+        }
 
-        case LlmConversationResponse::Type::ToolResult:
-          formatted << "TOOL_RESULT: ";
-          if( response->content.size() < 128 )
-            formatted << response->content;
-          else
-            formatted << response->content.substr(0,125) + "...";
-          break;
+        case LlmInteractionTurn::Type::ToolCall:
+        {
+          const LlmToolRequest *toolReq = dynamic_cast<const LlmToolRequest*>(response.get());
+          if( toolReq )
+          {
+            // Show agent name for tool calls from sub-agents
+            if( conversation.agent_type != AgentType::MainAgent )
+              formatted << "[" << agentTypeToString(conversation.agent_type) << "] ";
 
-        case LlmConversationResponse::Type::Error:
-          formatted << "ERROR: " << response->content;
+            // Show all tool calls in this response (may be multiple)
+            formatted << "TOOL_CALL[";
+            for( size_t i = 0; i < toolReq->toolCalls().size(); ++i )
+            {
+              if( i > 0 )
+                formatted << ", ";
+              formatted << toolReq->toolCalls()[i].toolName;
+            }
+            formatted << "]";
+          }
           break;
+        }
+
+        case LlmInteractionTurn::Type::ToolResult:
+        {
+          const LlmToolResults *toolRes = dynamic_cast<const LlmToolResults*>(response.get());
+          if( toolRes && !toolRes->toolCalls().empty() )
+          {
+            formatted << "TOOL_RESULT: ";
+            const std::string &content = toolRes->toolCalls()[0].content;
+            if( content.size() < 128 )
+              formatted << content;
+            else
+              formatted << content.substr(0,125) + "...";
+          }
+          break;
+        }
+
+        case LlmInteractionTurn::Type::Error:
+        {
+          const LlmInteractionError *errorResp = dynamic_cast<const LlmInteractionError*>(response.get());
+          if( errorResp )
+            formatted << "ERROR: " << errorResp->errorMessage();
+          break;
+        }
 
         default:
-          formatted << "UNKNOWN: " << response->content;
+          formatted << "UNKNOWN";
           break;
       }
     }
@@ -412,9 +434,9 @@ std::string LlmToolGui::formatMessage(const LlmConversationStart& conversation, 
   return formatted.str();
 }
 
-std::map<int, std::vector<const LlmConversationStart*>> LlmToolGui::groupConversationsByRequest()
+std::map<int, std::vector<const LlmInteraction*>> LlmToolGui::groupConversationsByRequest()
 {
-  std::map<int, std::vector<const LlmConversationStart*>> groups;
+  std::map<int, std::vector<const LlmInteraction*>> groups;
   
   if (!m_llmInterface) {
     return groups;
@@ -428,7 +450,7 @@ std::map<int, std::vector<const LlmConversationStart*>> LlmToolGui::groupConvers
   const auto& conversations = history->getConversations();
   
   // Group conversations by conversation ID
-  std::map<std::string, std::vector<const LlmConversationStart*>> conversationGroups;
+  std::map<std::string, std::vector<const LlmInteraction*>> conversationGroups;
   
   for (const auto& conversation : conversations) {
     std::string conversationId = conversation->conversationId.empty() ? "default" : conversation->conversationId;
@@ -495,7 +517,7 @@ void LlmToolGui::cancelCurrentRequest()
   // when it comes back since we've cleared the pending request state
 }
 
-std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> LlmToolGui::getConversationHistory() const
+std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> LlmToolGui::getConversationHistory() const
 {
   if (!m_llmInterface) {
     return nullptr;
@@ -512,10 +534,10 @@ std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> LlmToolGui::
   }
 
   // Return a copy of the conversations vector for storage
-  return std::make_shared<std::vector<std::shared_ptr<LlmConversationStart>>>(conversations.begin(), conversations.end());
+  return std::make_shared<std::vector<std::shared_ptr<LlmInteraction>>>(conversations.begin(), conversations.end());
 }
 
-void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>& history)
+void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>>& history)
 {
   if (!m_llmInterface) {
     return;

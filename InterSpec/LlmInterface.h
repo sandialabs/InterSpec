@@ -58,7 +58,7 @@ static_assert( USE_LLM_INTERFACE, "You should not include this library unless US
 // Forward declarations
 class InterSpec;
 class LlmConfig;
-struct LlmConversationStart;
+struct LlmInteraction;
 class LlmConversationHistory;
 
 enum class AgentType : int;
@@ -140,7 +140,7 @@ public:
    @param sub_agent_convo The conversation to send to the LLM to start the sub-agent
    @return Request ID for the sub-agent invocation
    */
-  int invokeSubAgent( std::shared_ptr<LlmConversationStart> sub_agent_convo );
+  int invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_convo );
 
 #ifdef USE_JS_BRIDGE_FOR_LLM
   /** JavaScript callback to handle LLM response */
@@ -170,7 +170,7 @@ private:
   struct PendingRequest
   {
     int requestId;
-    std::weak_ptr<LlmConversationStart> conversation;
+    std::weak_ptr<LlmInteraction> conversation;
 
     // Sub-agent support
     bool isSubAgentRequest = false;       // True if this request is from a sub-agent (we can probably get rid of this variable)
@@ -195,23 +195,23 @@ private:
   
   /** Make an API call with request tracking */
   int makeTrackedApiCall( const nlohmann::json& requestJson,
-                         std::shared_ptr<LlmConversationStart> convo );
+                         std::shared_ptr<LlmInteraction> convo );
   
   /** Send tool results back to LLM for processing.
    
    @returns The request ID.
    */
-  int sendToolResultsToLLM( std::shared_ptr<LlmConversationStart> convo );
+  int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo );
   
   /** Handle response from LLM API */
-  void handleApiResponse( const std::string &response, const std::shared_ptr<LlmConversationStart> &convo, const int requestId );
+  void handleApiResponse( const std::string &response, const std::shared_ptr<LlmInteraction> &convo, const int requestId );
   
   /** Execute tool calls requested by the LLM, and sends the LLM back a response with the results.
    
    Returns the number of tool calls processed.
    */
   size_t executeToolCallsAndSendResults( const nlohmann::json& toolCalls,
-                                         const std::shared_ptr<LlmConversationStart> &convo,
+                                         const std::shared_ptr<LlmInteraction> &convo,
                                          const int requestId,
                                          std::optional<size_t> promptTokens = std::nullopt,
                                          std::optional<size_t> completionTokens = std::nullopt );
@@ -220,7 +220,7 @@ private:
    
    Returns the number of tool calls processed.
    */
-  size_t parseContentForToolCallsAndSendResults( const std::string &content, const std::shared_ptr<LlmConversationStart> &convo, const int requestId );
+  size_t parseContentForToolCallsAndSendResults( const std::string &content, const std::shared_ptr<LlmInteraction> &convo, const int requestId );
   
   /** Strip <think>...</think> content from LLM responses */
   static std::string stripThinkingContent(const std::string& content);
@@ -239,7 +239,7 @@ private:
    
    @return JSON messages array for the API request
    */
-  nlohmann::json buildMessagesArray( const std::shared_ptr<LlmConversationStart> &convo );
+  nlohmann::json buildMessagesArray( const std::shared_ptr<LlmInteraction> &convo );
 
   /** Get the system prompt for a specific agent from config
    */

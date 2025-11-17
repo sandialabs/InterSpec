@@ -24,9 +24,9 @@ LlmConversationHistory::LlmConversationHistory()
 {
 }
 
-std::shared_ptr<LlmConversationStart> LlmConversationHistory::addUserMessageToMainConversation( const string &message )
+std::shared_ptr<LlmInteraction> LlmConversationHistory::addUserMessageToMainConversation( const string &message )
 {
-  auto conv = make_shared<LlmConversationStart>( LlmConversationStart::Type::User, message, AgentType::MainAgent );
+  auto conv = make_shared<LlmInteraction>( LlmInteraction::Type::User, message, AgentType::MainAgent );
   conv->conversationId = "conv_" + std::to_string(chrono::duration_cast<chrono::milliseconds>( chrono::system_clock::now().time_since_epoch()).count());
 
   m_conversations.push_back(conv);
@@ -35,9 +35,9 @@ std::shared_ptr<LlmConversationStart> LlmConversationHistory::addUserMessageToMa
 }
 
 
-std::shared_ptr<LlmConversationStart> LlmConversationHistory::addSystemMessageToMainConversation( const std::string &message )
+std::shared_ptr<LlmInteraction> LlmConversationHistory::addSystemMessageToMainConversation( const std::string &message )
 {
-  auto conv = std::make_shared<LlmConversationStart>(LlmConversationStart::Type::System, message, AgentType::MainAgent );
+  auto conv = std::make_shared<LlmInteraction>(LlmInteraction::Type::System, message, AgentType::MainAgent );
   conv->conversationId = "conv_" + std::to_string(chrono::duration_cast<chrono::milliseconds>( chrono::system_clock::now().time_since_epoch()).count());
   
   m_conversations.push_back(conv);
@@ -47,7 +47,7 @@ std::shared_ptr<LlmConversationStart> LlmConversationHistory::addSystemMessageTo
 
 void LlmConversationHistory::addAssistantMessageWithThinking(const std::string& message,
                                                              const std::string& thinkingContent,
-                                                             std::shared_ptr<LlmConversationStart> conversation )
+                                                             std::shared_ptr<LlmInteraction> conversation )
 {
   assert( conversation );
   if( !conversation )
@@ -57,60 +57,66 @@ void LlmConversationHistory::addAssistantMessageWithThinking(const std::string& 
   }
   
   // Add message as a follow-up to an existing conversation
-  auto response = std::make_shared<LlmConversationResponse>( LlmConversationResponse::Type::Assistant, message, conversation );
-  response->thinkingContent = thinkingContent;
+  auto response = std::make_shared<LlmInteractionFinalResponse>( message, conversation );
+  response->setThinkingContent( thinkingContent );
   conversation->responses.push_back(response);
+  conversation->responseAdded.emit( response );
 }//void addAssistantMessageWithThinking(...)
 
 
-void LlmConversationHistory::addToolCalls( std::vector<LlmConversationResponse::ToolCallRequest> &&toolCalls,
-                                           const std::shared_ptr<LlmConversationStart> &convo )
+shared_ptr<LlmToolRequest> LlmConversationHistory::addToolCalls( std::vector<LlmToolCall> &&toolCalls,
+                                           const std::shared_ptr<LlmInteraction> &convo )
 {
   assert( convo );
   if( !convo )
   {
-    cerr << "LlmConversationHistory::addToolCalls: invalid LlmConversationStart passed in." << endl;
-    throw runtime_error( "LlmConversationHistory::addToolCalls: invalid LlmConversationStart passed in." );
-    return;
+    cerr << "LlmConversationHistory::addToolCalls: invalid LlmInteraction passed in." << endl;
+    throw runtime_error( "LlmConversationHistory::addToolCalls: invalid LlmInteraction passed in." );
   }
 
   if( toolCalls.empty() )
   {
     cerr << "LlmConversationHistory::addToolCalls: called with empty toolCalls vector." << endl;
-    return;
+    return nullptr;
   }
 
-  auto response = std::make_shared<LlmConversationResponse>( LlmConversationResponse::Type::ToolCall, "", convo );
-  response->toolCalls = std::move(toolCalls);
+  auto response = std::make_shared<LlmToolRequest>( convo );
+  response->setToolCalls( std::move(toolCalls) );
   convo->responses.push_back(response);
+  convo->responseAdded.emit( response );
+  
+  return response;
 }//void addToolCalls(...)
 
-void LlmConversationHistory::addToolResults( std::vector<LlmConversationResponse::ToolCallRequest> &&toolResults,
+std::shared_ptr<LlmToolResults> LlmConversationHistory::addToolResults( std::vector<LlmToolCall> &&toolResults,
                                              const std::string &jsonSentToLlm,
-                                             const std::shared_ptr<LlmConversationStart> &convo )
+                                             const std::shared_ptr<LlmInteraction> &convo )
 {
   assert( convo );
   if( !convo )
   {
     cerr << "LlmConversationHistory::addToolResults - got null conversation pointer" << endl;
-    return;
+    return nullptr;
   }
 
   if( toolResults.empty() )
   {
     cerr << "LlmConversationHistory::addToolResults - called with empty toolResults vector." << endl;
-    return;
+    return nullptr;
   }
 
   // Add this as a follow-up to an existing conversation
-  auto response = std::make_shared<LlmConversationResponse>( LlmConversationResponse::Type::ToolResult, "", convo );
-  response->toolCalls = std::move(toolResults);
-  response->jsonSentToLlm = jsonSentToLlm;
+  auto response = std::make_shared<LlmToolResults>( convo );
+  response->setToolCalls( std::move(toolResults) );
+  response->setRawContent( jsonSentToLlm );
   convo->responses.push_back(response);
+  convo->responseAdded.emit( response );
+  
+  return response;
 }//void addToolResults(...)
 
 void LlmConversationHistory::addErrorMessage( const std::string &errorMessage,
-                                             const std::shared_ptr<LlmConversationStart> &convo )
+                                             const std::shared_ptr<LlmInteraction> &convo )
 {
   assert( convo );
   if( !convo )
@@ -118,13 +124,15 @@ void LlmConversationHistory::addErrorMessage( const std::string &errorMessage,
     cerr << "LlmConversationHistory::addErrorMessage - got null conversation pointer: errorMessage='" << errorMessage << "'" << endl;
     return;
   }
-  
+
   // Add this as a follow-up to an existing conversation
-  convo->responses.push_back( std::make_shared<LlmConversationResponse>(LlmConversationResponse::Type::Error, errorMessage, convo) );
+  auto response = std::make_shared<LlmInteractionError>( errorMessage, convo );
+  convo->responses.push_back( response );
+  convo->responseAdded.emit( response );
 }
 
 
-void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmConversationStart> conversation,
+void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmInteraction> conversation,
                                            std::optional<int> promptTokens,
                                            std::optional<int> completionTokens,
                                            std::optional<int> totalTokens )
@@ -160,9 +168,9 @@ void LlmConversationHistory::addTokenUsage( std::shared_ptr<LlmConversationStart
 }//void addTokenUsage(...)
 
 
-std::shared_ptr<LlmConversationStart> LlmConversationHistory::findConversationByConversationId(const std::string& conversationId)
+std::shared_ptr<LlmInteraction> LlmConversationHistory::findConversationByConversationId(const std::string& conversationId)
 {
-  for( shared_ptr<LlmConversationStart> &conv : m_conversations)
+  for( shared_ptr<LlmInteraction> &conv : m_conversations)
   {
     if (conv->conversationId == conversationId)
       return conv;
@@ -170,11 +178,11 @@ std::shared_ptr<LlmConversationStart> LlmConversationHistory::findConversationBy
   return nullptr;
 }
 
-const std::vector<std::shared_ptr<LlmConversationStart>>& LlmConversationHistory::getConversations() const {
+const std::vector<std::shared_ptr<LlmInteraction>>& LlmConversationHistory::getConversations() const {
   return m_conversations;
 }
 
-std::vector<std::shared_ptr<LlmConversationStart>>& LlmConversationHistory::getConversations() {
+std::vector<std::shared_ptr<LlmInteraction>>& LlmConversationHistory::getConversations() {
   return m_conversations;
 }
 
@@ -191,7 +199,7 @@ size_t LlmConversationHistory::size() const {
 }
 
 
-void LlmConversationHistory::addConversationToLlmApiHistory( const LlmConversationStart &conv, nlohmann::json &messages )
+void LlmConversationHistory::addConversationToLlmApiHistory( const LlmInteraction &conv, nlohmann::json &messages )
 {
   assert( messages.is_array() );
   if( !messages.is_array() )
@@ -201,12 +209,12 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmConversati
   
   switch( conv.type )
   {
-    case LlmConversationStart::Type::System:
+    case LlmInteraction::Type::System:
       apiMsg["role"] = "system";
       apiMsg["content"] = conv.content;
       break;
       
-    case LlmConversationStart::Type::User:
+    case LlmInteraction::Type::User:
       apiMsg["role"] = "user";
       apiMsg["content"] = conv.content;
       break;
@@ -215,24 +223,40 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmConversati
   messages.push_back(apiMsg);
   
   // Add all responses in chronological order
-  for( const std::shared_ptr<LlmConversationResponse> &response : conv.responses )
+  for( const std::shared_ptr<LlmInteractionTurn> &response : conv.responses )
   {
     json responseMsg;
 
-    switch( response->type )
+    switch( response->type() )
     {
-      case LlmConversationResponse::Type::Assistant:
-        responseMsg["role"] = "assistant";
-        responseMsg["content"] = response->content;
-        break;
-
-      case LlmConversationResponse::Type::ToolCall:
+      case LlmInteractionTurn::Type::FinalLlmResponse:
       {
+        const LlmInteractionFinalResponse *llmResp = dynamic_cast<const LlmInteractionFinalResponse*>(response.get());
+        assert( llmResp );
+        if( !llmResp )
+        {
+          cerr << "addConversationToLlmApiHistory: Assistant response cast failed" << endl;
+          break;
+        }
+        responseMsg["role"] = "assistant";
+        responseMsg["content"] = llmResp->content();
+        break;
+      }
+
+      case LlmInteractionTurn::Type::ToolCall:
+      {
+        const LlmToolRequest *toolReq = dynamic_cast<const LlmToolRequest*>(response.get());
+        assert( toolReq );
+        if( !toolReq )
+        {
+          cerr << "addConversationToLlmApiHistory: ToolCall response cast failed" << endl;
+          break;
+        }
         responseMsg["role"] = "assistant";
         responseMsg["tool_calls"] = json::array();
 
         // Iterate through all tool calls in this response (batched tool calls)
-        for( const LlmConversationResponse::ToolCallRequest &toolCall : response->toolCalls )
+        for( const LlmToolCall &toolCall : toolReq->toolCalls() )
         {
           json toolCallJson;
           // Use just the invocationId to keep within OpenAI's 40-character limit
@@ -245,37 +269,53 @@ void LlmConversationHistory::addConversationToLlmApiHistory( const LlmConversati
         break;
       }
 
-      case LlmConversationResponse::Type::ToolResult:
+      case LlmInteractionTurn::Type::ToolResult:
       {
+        const LlmToolResults *toolResult = dynamic_cast<const LlmToolResults*>(response.get());
+        assert( toolResult );
+        if( !toolResult )
+        {
+          cerr << "addConversationToLlmApiHistory: ToolResult response cast failed" << endl;
+          break;
+        }
         // Each tool result needs its own message with role="tool"
         // We need to add multiple messages for batched tool results
-        for( const LlmConversationResponse::ToolCallRequest &toolResult : response->toolCalls )
+        for( const LlmToolCall &toolRes : toolResult->toolCalls() )
         {
           json toolResultMsg;
           toolResultMsg["role"] = "tool";
-          toolResultMsg["tool_call_id"] = toolResult.invocationId;
-          toolResultMsg["content"] = toolResult.content;
+          toolResultMsg["tool_call_id"] = toolRes.invocationId;
+          toolResultMsg["content"] = toolRes.content;
           messages.push_back(toolResultMsg);
         }
         // Skip the normal push_back at the end since we've already added the messages
         continue;
       }
 
-      case LlmConversationResponse::Type::Error:
+      case LlmInteractionTurn::Type::Error:
+      {
+        const LlmInteractionError *errorResp = dynamic_cast<const LlmInteractionError*>(response.get());
+        assert( errorResp );
+        if( !errorResp )
+        {
+          cerr << "addConversationToLlmApiHistory: Error response cast failed" << endl;
+          break;
+        }
         responseMsg["role"] = "assistant";
-        responseMsg["content"] = "Error: " + response->content;
+        responseMsg["content"] = "Error: " + errorResp->errorMessage();
         break;
-    }//switch( response->type )
+      }
+    }//switch( response->type() )
 
     messages.push_back(responseMsg);
-  }//for( const std::shared_ptr<LlmConversationResponse> &response : conv.responses )
+  }//for( const std::shared_ptr<LlmInteractionTurn> &response : conv.responses )
 }//nlohmann::json addConversationToLlmApiHistory(...)
 
 
 nlohmann::json LlmConversationHistory::toApiFormat() const {
   json messages = json::array();
 
-  for (const shared_ptr<LlmConversationStart> &conv : m_conversations)
+  for (const shared_ptr<LlmInteraction> &conv : m_conversations)
   {
     assert( conv );
     addConversationToLlmApiHistory( *conv, messages );
@@ -288,7 +328,7 @@ void LlmConversationHistory::toXml(rapidxml::xml_node<char>* parent, rapidxml::x
   toXml(m_conversations, parent, doc);
 }
 
-void LlmConversationHistory::toXml( const vector<shared_ptr<LlmConversationStart>> &conversations,
+void LlmConversationHistory::toXml( const vector<shared_ptr<LlmInteraction>> &conversations,
                                    rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc)
 {
   rapidxml::xml_node<char>* historyNode = doc->allocate_node(rapidxml::node_element, "LlmHistory");
@@ -296,7 +336,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmConversationStart
 
   cout << "Serializing " << conversations.size() << " conversations to XML" << endl;
 
-  for( const shared_ptr<LlmConversationStart> &conv : conversations )
+  for( const shared_ptr<LlmInteraction> &conv : conversations )
   {
     rapidxml::xml_node<char>* convNode = doc->allocate_node(rapidxml::node_element, "Conversation");
     historyNode->append_node(convNode);
@@ -324,7 +364,7 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmConversationStart
 
     // Add responses
     rapidxml::xml_node<char> *responsesNode = nullptr; //Will create at first message
-    for( const std::shared_ptr<LlmConversationResponse> &response : conv->responses )
+    for( const std::shared_ptr<LlmInteractionTurn> &response : conv->responses )
     {
       if( !responsesNode ) // create "Responses" at the first message, so we dont create it if responses is empty
       {
@@ -336,75 +376,110 @@ void LlmConversationHistory::toXml( const vector<shared_ptr<LlmConversationStart
       responsesNode->append_node(responseNode);
 
       // Add type attribute
-      XmlUtils::append_attrib(responseNode, "type", responseTypeToString(response->type) );
+      XmlUtils::append_attrib(responseNode, "type", responseTypeToString(response->type()) );
 
       // Add timestamp attribute
-      const auto responseTimeT = chrono::system_clock::to_time_t(response->timestamp);
+      const auto responseTimeT = chrono::system_clock::to_time_t(response->timestamp());
       const string responseTimeStr = std::to_string(responseTimeT);
       XmlUtils::append_attrib(responseNode, "timestamp", responseTimeStr );
 
-      // Add content
-      if( !response->content.empty() )
-        XmlUtils::append_string_node( responseNode, "Content", response->content );
+      // Add thinking content (common to all types)
+      if( !response->thinkingContent().empty() )
+        XmlUtils::append_string_node( responseNode, "ThinkingContent", response->thinkingContent() );
 
-      // Add thinking content
-      if( !response->thinkingContent.empty() )
-        XmlUtils::append_string_node( responseNode, "ThinkingContent", response->thinkingContent );
+      // Add raw content (JSON sent to LLM or received from LLM)
+      if( !response->rawContent().empty() )
+        XmlUtils::append_string_node( responseNode, "RawContent", response->rawContent() );
 
-      // Add JSON sent to LLM
-      if( !response->jsonSentToLlm.empty() )
-        XmlUtils::append_string_node( responseNode, "JsonSentToLlm", response->jsonSentToLlm );
+      // Add call duration if available
+      if( response->callDuration().has_value() )
+        XmlUtils::append_attrib( responseNode, "callDurationMs", std::to_string(response->callDuration().value().count()) );
 
-      // Add token usage if available
-      if( response->promptTokens.has_value() )
-        XmlUtils::append_attrib( responseNode, "promptTokens", std::to_string(response->promptTokens.value()) );
-
-      if( response->completionTokens.has_value() )
-        XmlUtils::append_attrib( responseNode, "completionTokens", std::to_string(response->completionTokens.value()) );
-
-      // Add API call duration if available
-      if( response->apiCallDuration.has_value() )
-        XmlUtils::append_attrib( responseNode, "apiCallDurationMs", std::to_string(response->apiCallDuration.value().count()) );
-
-      // Add tool calls (for ToolCall and ToolResult types)
-      if( !response->toolCalls.empty() )
+      // Handle type-specific fields using dynamic_cast
+      switch( response->type() )
       {
-        rapidxml::xml_node<char> *toolCallsNode = doc->allocate_node(rapidxml::node_element, "ToolCalls");
-        responseNode->append_node(toolCallsNode);
-
-        for( const LlmConversationResponse::ToolCallRequest &toolCall : response->toolCalls )
+        case LlmInteractionTurn::Type::FinalLlmResponse:
         {
-          rapidxml::xml_node<char> *toolCallNode = doc->allocate_node(rapidxml::node_element, "ToolCall");
-          toolCallsNode->append_node(toolCallNode);
+          const LlmInteractionFinalResponse *llmResp = dynamic_cast<const LlmInteractionFinalResponse*>(response.get());
+          if( llmResp && !llmResp->content().empty() )
+            XmlUtils::append_string_node( responseNode, "Content", llmResp->content() );
+          break;
+        }
 
-          if( !toolCall.toolName.empty() )
-            XmlUtils::append_string_node( toolCallNode, "ToolName", toolCall.toolName );
+        case LlmInteractionTurn::Type::ToolCall:
+        case LlmInteractionTurn::Type::ToolResult:
+        {
+          const LlmToolCall *toolCalls = nullptr;
+          size_t numToolCalls = 0;
 
-          if( !toolCall.invocationId.empty() )
-            XmlUtils::append_string_node( toolCallNode, "InvocationId", toolCall.invocationId );
+          if( response->type() == LlmInteractionTurn::Type::ToolCall )
+          {
+            const LlmToolRequest *toolReq = dynamic_cast<const LlmToolRequest*>(response.get());
+            if( toolReq && !toolReq->toolCalls().empty() )
+            {
+              toolCalls = toolReq->toolCalls().data();
+              numToolCalls = toolReq->toolCalls().size();
+            }
+          }else
+          {
+            const LlmToolResults *toolRes = dynamic_cast<const LlmToolResults*>(response.get());
+            if( toolRes && !toolRes->toolCalls().empty() )
+            {
+              toolCalls = toolRes->toolCalls().data();
+              numToolCalls = toolRes->toolCalls().size();
+            }
+          }
 
-          if( !toolCall.toolParameters.empty() )
-            XmlUtils::append_string_node( toolCallNode, "ToolParameters", toolCall.toolParameters.dump() );
+          if( toolCalls && numToolCalls > 0 )
+          {
+            rapidxml::xml_node<char> *toolCallsNode = doc->allocate_node(rapidxml::node_element, "ToolCalls");
+            responseNode->append_node(toolCallsNode);
 
-          if( !toolCall.content.empty() )
-            XmlUtils::append_string_node( toolCallNode, "ToolContent", toolCall.content );
+            for( size_t i = 0; i < numToolCalls; ++i )
+            {
+              const LlmToolCall &toolCall = toolCalls[i];
+              rapidxml::xml_node<char> *toolCallNode = doc->allocate_node(rapidxml::node_element, "ToolCall");
+              toolCallsNode->append_node(toolCallNode);
 
-          if( toolCall.executionDuration.has_value() )
-            XmlUtils::append_attrib( toolCallNode, "executionDurationMs", std::to_string(toolCall.executionDuration.value().count()) );
-        }//for( loop over toolCalls )
-      }//if( !response->toolCalls.empty() )
-    }//for( const std::shared_ptr<LlmConversationResponse> &response : conv->responses )
-  }//for( const shared_ptr<LlmConversationStart> &conv : conversations )
-}//void toXml( const vector<shared_ptr<LlmConversationStart>> &conversations ... )
+              if( !toolCall.toolName.empty() )
+                XmlUtils::append_string_node( toolCallNode, "ToolName", toolCall.toolName );
+
+              if( !toolCall.invocationId.empty() )
+                XmlUtils::append_string_node( toolCallNode, "InvocationId", toolCall.invocationId );
+
+              if( !toolCall.toolParameters.empty() )
+                XmlUtils::append_string_node( toolCallNode, "ToolParameters", toolCall.toolParameters.dump() );
+
+              if( !toolCall.content.empty() )
+                XmlUtils::append_string_node( toolCallNode, "ToolContent", toolCall.content );
+
+              if( toolCall.executionDuration.has_value() )
+                XmlUtils::append_attrib( toolCallNode, "executionDurationMs", std::to_string(toolCall.executionDuration.value().count()) );
+            }//for( loop over toolCalls )
+          }//if( toolCalls && numToolCalls > 0 )
+          break;
+        }
+
+        case LlmInteractionTurn::Type::Error:
+        {
+          const LlmInteractionError *errorResp = dynamic_cast<const LlmInteractionError*>(response.get());
+          if( errorResp && !errorResp->errorMessage().empty() )
+            XmlUtils::append_string_node( responseNode, "ErrorMessage", errorResp->errorMessage() );
+          break;
+        }
+      }//switch( response->type() )
+    }//for( const std::shared_ptr<LlmInteractionTurn> &response : conv->responses )
+  }//for( const shared_ptr<LlmInteraction> &conv : conversations )
+}//void toXml( const vector<shared_ptr<LlmInteraction>> &conversations ... )
 
 void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node )
 {
   fromXml(node, m_conversations);
 }
 
-void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std::vector<std::shared_ptr<LlmConversationStart>> &conversations )
+void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std::vector<std::shared_ptr<LlmInteraction>> &conversations )
 {
-  // TODO: this function needs a bit of refactoring (LlmConversationStart should get its own fromXml function) and we should be more exacting in requing the various fields and throw exceptions if they are not there, or invalid
+  // TODO: this function needs a bit of refactoring (LlmInteraction should get its own fromXml function) and we should be more exacting in requing the various fields and throw exceptions if they are not there, or invalid
   conversations.clear();
 
   if( !node )
@@ -420,7 +495,7 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
   {
     convCount++;
 
-    auto conv = std::make_shared<LlmConversationStart>( LlmConversationStart::Type::User, "", AgentType::MainAgent ); // Default, will be overridden
+    auto conv = std::make_shared<LlmInteraction>( LlmInteraction::Type::User, "", AgentType::MainAgent ); // Default, will be overridden
 
     // Read type
     if( rapidxml::xml_attribute<char>* typeAttr = XML_FIRST_ATTRIB(convNode, "type") )
@@ -454,93 +529,144 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
     {
       XML_FOREACH_CHILD( responseNode, responsesNode, "Response" )
       {
-        auto response = std::make_shared<LlmConversationResponse>( LlmConversationResponse::Type::Assistant, "", conv ); // Default, will be overridden
-
-        // Read response type
+        // Read response type first to determine which derived class to create
+        LlmInteractionTurn::Type responseType = LlmInteractionTurn::Type::FinalLlmResponse; // Default
         if( rapidxml::xml_attribute<char>* responseTypeAttr = XML_FIRST_ATTRIB(responseNode,"type") )
-          response->type = stringToResponseType( SpecUtils::xml_value_str(responseTypeAttr) );
-        
-        // Read response timestamp
-        if( rapidxml::xml_attribute<char> *responseTimeAttr = XML_FIRST_ATTRIB(responseNode,"timestamp") )
+          responseType = stringToResponseType( SpecUtils::xml_value_str(responseTypeAttr) );
+
+        // Create the appropriate derived class based on type
+        std::shared_ptr<LlmInteractionTurn> response;
+
+        switch( responseType )
         {
-          const string time_str = SpecUtils::xml_value_str(responseTimeAttr);
-          auto responseTimeT = static_cast<time_t>( std::stoll(time_str.c_str()) );
-          response->timestamp = chrono::system_clock::from_time_t(responseTimeT);
+          case LlmInteractionTurn::Type::FinalLlmResponse:
+            response = std::make_shared<LlmInteractionFinalResponse>( "", conv );
+            break;
+          case LlmInteractionTurn::Type::ToolCall:
+            response = std::make_shared<LlmToolRequest>( conv );
+            break;
+          case LlmInteractionTurn::Type::ToolResult:
+            response = std::make_shared<LlmToolResults>( conv );
+            break;
+          case LlmInteractionTurn::Type::Error:
+            response = std::make_shared<LlmInteractionError>( "", conv );
+            break;
         }
 
-        // Read response content
-        if( rapidxml::xml_node<char>* responseContentNode = XML_FIRST_NODE(responseNode,"Content") )
-          response->content = SpecUtils::xml_value_str(responseContentNode );
+        // Read response timestamp (common to all types, but protected, so we can't set it directly - will use current time from constructor)
+        // TODO: Add a setter or make timestamp accessible for deserialization
 
-        // Read thinking content
+        // Read thinking content (common to all types)
         if( rapidxml::xml_node<char>* thinkingContentNode = XML_FIRST_NODE(responseNode,"ThinkingContent") )
-          response->thinkingContent = SpecUtils::xml_value_str(thinkingContentNode);
+          response->setThinkingContent( SpecUtils::xml_value_str(thinkingContentNode) );
 
-        // Read JSON sent to LLM
-        if( rapidxml::xml_node<char> *jsonSentNode = XML_FIRST_NODE(responseNode, "JsonSentToLlm") )
-          response->jsonSentToLlm = SpecUtils::xml_value_str(jsonSentNode);
+        // Read raw content (JSON sent to LLM or received from LLM) - also check for old "JsonSentToLlm" name for backward compatibility
+        if( rapidxml::xml_node<char> *rawContentNode = XML_FIRST_NODE(responseNode, "RawContent") )
+          response->setRawContent( SpecUtils::xml_value_str(rawContentNode) );
+        else if( rapidxml::xml_node<char> *jsonSentNode = XML_FIRST_NODE(responseNode, "JsonSentToLlm") )
+          response->setRawContent( SpecUtils::xml_value_str(jsonSentNode) );
 
-        // Read token usage
-        if( rapidxml::xml_attribute<char> *promptTokensAttr = XML_FIRST_ATTRIB(responseNode, "promptTokens") )
-        {
-          const string tokens_str = SpecUtils::xml_value_str(promptTokensAttr);
-          response->promptTokens = static_cast<size_t>( std::stoull(tokens_str) );
-        }
-
-        if( rapidxml::xml_attribute<char> *completionTokensAttr = XML_FIRST_ATTRIB(responseNode, "completionTokens") )
-        {
-          const string tokens_str = SpecUtils::xml_value_str(completionTokensAttr);
-          response->completionTokens = static_cast<size_t>( std::stoull(tokens_str) );
-        }
-
-        // Read API call duration
-        if( rapidxml::xml_attribute<char> *durationAttr = XML_FIRST_ATTRIB(responseNode, "apiCallDurationMs") )
+        // Read call duration - also check for old "apiCallDurationMs" name for backward compatibility
+        if( rapidxml::xml_attribute<char> *durationAttr = XML_FIRST_ATTRIB(responseNode, "callDurationMs") )
         {
           const string duration_str = SpecUtils::xml_value_str(durationAttr);
-          response->apiCallDuration = std::chrono::milliseconds( std::stoll(duration_str) );
+          response->setCallDuration( std::chrono::milliseconds( std::stoll(duration_str) ) );
+        }
+        else if( rapidxml::xml_attribute<char> *durationAttr = XML_FIRST_ATTRIB(responseNode, "apiCallDurationMs") )
+        {
+          const string duration_str = SpecUtils::xml_value_str(durationAttr);
+          response->setCallDuration( std::chrono::milliseconds( std::stoll(duration_str) ) );
         }
 
-        // Read tool calls (new batched format)
-        if( rapidxml::xml_node<char> *toolCallsNode = XML_FIRST_NODE(responseNode, "ToolCalls") )
+        // Read type-specific fields
+        switch( responseType )
         {
-          XML_FOREACH_CHILD( toolCallNode, toolCallsNode, "ToolCall" )
+          case LlmInteractionTurn::Type::FinalLlmResponse:
           {
-            string toolName, invocationId, toolContent;
-            nlohmann::json toolParameters;
-            std::optional<std::chrono::milliseconds> executionDuration;
-
-            if( rapidxml::xml_node<char> *toolNameNode = XML_FIRST_NODE(toolCallNode, "ToolName") )
-              toolName = SpecUtils::xml_value_str(toolNameNode);
-
-            if( rapidxml::xml_node<char> *invocationIdNode = XML_FIRST_NODE(toolCallNode, "InvocationId") )
-              invocationId = SpecUtils::xml_value_str(invocationIdNode);
-
-            if( rapidxml::xml_node<char> *paramsNode = XML_FIRST_NODE(toolCallNode, "ToolParameters") )
+            LlmInteractionFinalResponse *llmResp = dynamic_cast<LlmInteractionFinalResponse*>(response.get());
+            if( llmResp )
             {
-              try
+              if( rapidxml::xml_node<char>* responseContentNode = XML_FIRST_NODE(responseNode,"Content") )
+                llmResp->setContent( SpecUtils::xml_value_str(responseContentNode) );
+            }
+            break;
+          }
+
+          case LlmInteractionTurn::Type::ToolCall:
+          case LlmInteractionTurn::Type::ToolResult:
+          {
+            // Read tool calls (for both ToolCall and ToolResult types)
+            if( rapidxml::xml_node<char> *toolCallsNode = XML_FIRST_NODE(responseNode, "ToolCalls") )
+            {
+              std::vector<LlmToolCall> toolCalls;
+
+              XML_FOREACH_CHILD( toolCallNode, toolCallsNode, "ToolCall" )
               {
-                toolParameters = json::parse(paramsNode->value());
-              }catch( const std::exception &e )
+                string toolName, invocationId, toolContent;
+                nlohmann::json toolParameters;
+                std::optional<std::chrono::milliseconds> executionDuration;
+
+                if( rapidxml::xml_node<char> *toolNameNode = XML_FIRST_NODE(toolCallNode, "ToolName") )
+                  toolName = SpecUtils::xml_value_str(toolNameNode);
+
+                if( rapidxml::xml_node<char> *invocationIdNode = XML_FIRST_NODE(toolCallNode, "InvocationId") )
+                  invocationId = SpecUtils::xml_value_str(invocationIdNode);
+
+                if( rapidxml::xml_node<char> *paramsNode = XML_FIRST_NODE(toolCallNode, "ToolParameters") )
+                {
+                  try
+                  {
+                    toolParameters = json::parse(paramsNode->value());
+                  }catch( const std::exception &e )
+                  {
+                    cout << "Failed to parse tool parameters: " << e.what() << endl;
+                  }
+                }
+
+                if( rapidxml::xml_node<char> *contentNode = XML_FIRST_NODE(toolCallNode, "ToolContent") )
+                  toolContent = SpecUtils::xml_value_str(contentNode);
+
+                if( rapidxml::xml_attribute<char> *execDurationAttr = XML_FIRST_ATTRIB(toolCallNode, "executionDurationMs") )
+                {
+                  const string duration_str = SpecUtils::xml_value_str(execDurationAttr);
+                  executionDuration = std::chrono::milliseconds( std::stoll(duration_str) );
+                }
+
+                LlmToolCall toolCall( toolName, invocationId, toolParameters );
+                toolCall.content = toolContent;
+                toolCall.executionDuration = executionDuration;
+                toolCalls.push_back(toolCall);
+              }//XML_FOREACH_CHILD( toolCallNode, toolCallsNode, "ToolCall" )
+
+              if( responseType == LlmInteractionTurn::Type::ToolCall )
               {
-                cout << "Failed to parse tool parameters: " << e.what() << endl;
+                LlmToolRequest *toolReq = dynamic_cast<LlmToolRequest*>(response.get());
+                if( toolReq )
+                  toolReq->setToolCalls( std::move(toolCalls) );
+              }else
+              {
+                LlmToolResults *toolRes = dynamic_cast<LlmToolResults*>(response.get());
+                if( toolRes )
+                  toolRes->setToolCalls( std::move(toolCalls) );
               }
-            }
+            }//if( rapidxml::xml_node<char> *toolCallsNode ... )
+            break;
+          }
 
-            if( rapidxml::xml_node<char> *contentNode = XML_FIRST_NODE(toolCallNode, "ToolContent") )
-              toolContent = SpecUtils::xml_value_str(contentNode);
-
-            if( rapidxml::xml_attribute<char> *execDurationAttr = XML_FIRST_ATTRIB(toolCallNode, "executionDurationMs") )
+          case LlmInteractionTurn::Type::Error:
+          {
+            LlmInteractionError *errorResp = dynamic_cast<LlmInteractionError*>(response.get());
+            if( errorResp )
             {
-              const string duration_str = SpecUtils::xml_value_str(execDurationAttr);
-              executionDuration = std::chrono::milliseconds( std::stoll(duration_str) );
+              // Check for new "ErrorMessage" node or old "Content" node for backward compatibility
+              if( rapidxml::xml_node<char>* errorMsgNode = XML_FIRST_NODE(responseNode,"ErrorMessage") )
+                errorResp->setErrorMessage( SpecUtils::xml_value_str(errorMsgNode) );
+              else if( rapidxml::xml_node<char>* responseContentNode = XML_FIRST_NODE(responseNode,"Content") )
+                errorResp->setErrorMessage( SpecUtils::xml_value_str(responseContentNode) );
             }
-
-            LlmConversationResponse::ToolCallRequest toolCall( toolName, invocationId, toolParameters );
-            toolCall.content = toolContent;
-            toolCall.executionDuration = executionDuration;
-            response->toolCalls.push_back(toolCall);
-          }//XML_FOREACH_CHILD( toolCallNode, toolCallsNode, "ToolCall" )
-        }//if( rapidxml::xml_node<char> *toolCallsNode ... )
+            break;
+          }
+        }//switch( responseType )
 
         conv->responses.push_back(response);
       }//XML_FOREACH_CHILD( responseNode, responsesNode, "Response" )
@@ -550,34 +676,34 @@ void LlmConversationHistory::fromXml( const rapidxml::xml_node<char> *node, std:
   }//XML_FOREACH_CHILD(convNode, node, "Conversation")
 }
 
-std::string LlmConversationHistory::conversationTypeToString(LlmConversationStart::Type type) {
+std::string LlmConversationHistory::conversationTypeToString(LlmInteraction::Type type) {
   switch (type) {
-    case LlmConversationStart::Type::System: return "system";
-    case LlmConversationStart::Type::User: return "user";
+    case LlmInteraction::Type::System: return "system";
+    case LlmInteraction::Type::User: return "user";
     default: return "unknown";
   }
 }
 
-LlmConversationStart::Type LlmConversationHistory::stringToConversationType(const std::string& str) {
-  if (str == "system") return LlmConversationStart::Type::System;
-  if (str == "user") return LlmConversationStart::Type::User;
-  return LlmConversationStart::Type::User; // Default fallback
+LlmInteraction::Type LlmConversationHistory::stringToConversationType(const std::string& str) {
+  if (str == "system") return LlmInteraction::Type::System;
+  if (str == "user") return LlmInteraction::Type::User;
+  return LlmInteraction::Type::User; // Default fallback
 }
 
-std::string LlmConversationHistory::responseTypeToString(LlmConversationResponse::Type type) {
+std::string LlmConversationHistory::responseTypeToString(LlmInteractionTurn::Type type) {
   switch (type) {
-    case LlmConversationResponse::Type::Assistant: return "assistant";
-    case LlmConversationResponse::Type::ToolCall: return "tool_call";
-    case LlmConversationResponse::Type::ToolResult: return "tool_result";
-    case LlmConversationResponse::Type::Error: return "error";
+    case LlmInteractionTurn::Type::FinalLlmResponse: return "final_response";
+    case LlmInteractionTurn::Type::ToolCall: return "tool_call";
+    case LlmInteractionTurn::Type::ToolResult: return "tool_result";
+    case LlmInteractionTurn::Type::Error: return "error";
     default: return "unknown";
   }
 }
 
-LlmConversationResponse::Type LlmConversationHistory::stringToResponseType(const std::string& str) {
-  if (str == "assistant") return LlmConversationResponse::Type::Assistant;
-  if (str == "tool_call") return LlmConversationResponse::Type::ToolCall;
-  if (str == "tool_result") return LlmConversationResponse::Type::ToolResult;
-  if (str == "error") return LlmConversationResponse::Type::Error;
-  return LlmConversationResponse::Type::Assistant; // Default fallback
+LlmInteractionTurn::Type LlmConversationHistory::stringToResponseType(const std::string& str) {
+  if (str == "final_response") return LlmInteractionTurn::Type::FinalLlmResponse;
+  if (str == "tool_call") return LlmInteractionTurn::Type::ToolCall;
+  if (str == "tool_result") return LlmInteractionTurn::Type::ToolResult;
+  if (str == "error") return LlmInteractionTurn::Type::Error;
+  return LlmInteractionTurn::Type::FinalLlmResponse; // Default fallback
 }

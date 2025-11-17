@@ -31,12 +31,14 @@
 #include <chrono>
 #include <optional>
 
+#include <Wt/WSignal>
+
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 
 enum class AgentType : int;
-struct LlmConversationStart;
+struct LlmInteraction;
 
 // Forward declarations
 namespace rapidxml {
@@ -44,68 +46,148 @@ namespace rapidxml {
   template<class Ch> class xml_document;
 }
 
-/** Represents a response within a conversation thread.
+/** Represents a single tool call request and its result.
 
- This can be an assistant response, tool call, or tool result that follows
- up on a conversation start.
+ When the LLM requests multiple tool calls in a single response, each tool
+ call is stored as an LlmToolCall within the toolCalls vector.
  */
-struct LlmConversationResponse {
-  enum class Type {
-    Assistant,   // LLM response
-    ToolCall,    // LLM requesting to call a tool
-    ToolResult,  // Result from tool execution
-    Error        // Error message
+struct LlmToolCall
+{
+  std::string toolName;        // Name of the tool to call
+  std::string invocationId;    // Unique ID for this tool invocation
+  nlohmann::json toolParameters; // Parameters to pass to the tool
+  std::string content;         // Result content from executing the tool
+  std::optional<std::chrono::milliseconds> executionDuration; // How long the tool took to execute
+
+  // For sub-agent tool calls (invoke_*), this holds the sub-agent's conversation
+  std::shared_ptr<LlmInteraction> sub_agent_conversation;
+
+  LlmToolCall( const std::string &name, const std::string &id, const nlohmann::json &params )
+    : toolName(name), invocationId(id), toolParameters(params)
+  {
+  }
+};//struct LlmToolCall
+
+
+/** Base class representing a turn in an LLM interaction.
+
+ This is a linguistics "turn" - a single exchange unit in the interaction.
+ Derived classes represent specific types of turns: final assistant (LLM) responses, tool requests, tool results, and errors.
+ */
+class LlmInteractionTurn
+{
+public:
+  /** Type enum kept for backward compatibility and type identification */
+  enum class Type
+  {
+    FinalLlmResponse, // LLM response
+    ToolCall,         // LLM requesting to call a tool
+    ToolResult,       // Result from tool execution
+    Error             // Error message
   };
 
-  /** Represents a single tool call request and its result within a response.
+protected:
+  Type m_type;
+  std::chrono::system_clock::time_point m_timestamp;
+  std::weak_ptr<LlmInteraction> m_conversation;
+  std::string m_thinkingContent;  // Raw thinking content from LLM (e.g., <think>...</think>)
+  std::optional<std::chrono::milliseconds> m_callDuration;  // Duration of API call or tool execution
+  std::string m_rawContent;  // Raw content: JSON sent to LLM for tool results, or JSON received from LLM
 
-   When the LLM requests multiple tool calls in a single response, each tool
-   call is stored as a ToolCallRequest within the toolCalls vector.
-   */
-  struct ToolCallRequest {
-    std::string toolName;        // Name of the tool to call
-    std::string invocationId;    // Unique ID for this tool invocation
-    nlohmann::json toolParameters; // Parameters to pass to the tool
-    std::string content;         // Result content from executing the tool
-    std::optional<std::chrono::milliseconds> executionDuration; // How long the tool took to execute
+  LlmInteractionTurn( Type t, const std::shared_ptr<LlmInteraction> &convo )
+    : m_type(t), m_timestamp(std::chrono::system_clock::now()), m_conversation(convo)
+  {
+  }
 
-    // For sub-agent tool calls (invoke_*), this holds the sub-agent's conversation
-    std::shared_ptr<LlmConversationStart> sub_agent_conversation;
+public:
+  virtual ~LlmInteractionTurn() = default;
 
-    ToolCallRequest( const std::string &name, const std::string &id, const nlohmann::json &params )
-      : toolName(name), invocationId(id), toolParameters(params) {}
-  };
+  Type type() const { return m_type; }
+  const std::chrono::system_clock::time_point& timestamp() const { return m_timestamp; }
+  std::weak_ptr<LlmInteraction> conversation() const { return m_conversation; }
+  const std::string& thinkingContent() const { return m_thinkingContent; }
+  void setThinkingContent( const std::string &thinking ) { m_thinkingContent = thinking; }
+  const std::optional<std::chrono::milliseconds>& callDuration() const { return m_callDuration; }
+  void setCallDuration( std::chrono::milliseconds duration ) { m_callDuration = duration; }
+  const std::string& rawContent() const { return m_rawContent; }
+  void setRawContent( const std::string &raw ) { m_rawContent = raw; }
+};//class LlmInteractionTurn
 
-  Type type;
-  std::string content;
-  std::string thinkingContent;  // Raw thinking content from LLM (e.g., <think>...</think>)
-  std::chrono::system_clock::time_point timestamp;
 
-  // For batched tool calls/results - multiple tool calls can be requested in a single LLM response
-  std::vector<ToolCallRequest> toolCalls;
+/** Represents a final response from the LLM (assistant message) - there will be no further messages/exchanges/tool-calls for thei `LlmInteraction`. */
+class LlmInteractionFinalResponse : public LlmInteractionTurn
+{
+protected:
+  std::string m_content;
 
-  // JSON that was sent to the LLM (for tool results or other responses)
-  std::string jsonSentToLlm;
+public:
+  LlmInteractionFinalResponse( const std::string &content, const std::shared_ptr<LlmInteraction> &convo )
+    : LlmInteractionTurn(Type::FinalLlmResponse, convo), m_content(content)
+  {
+  }
 
-  // Token usage for this specific response (when available from API)
-  std::optional<size_t> promptTokens;      // Tokens used in the input/prompt
-  std::optional<size_t> completionTokens;  // Tokens generated in the response
+  const std::string& content() const { return m_content; }
+  void setContent( const std::string &content ) { m_content = content; }
+};//class LlmInteractionFinalResponse
 
-  // API call timing
-  std::optional<std::chrono::milliseconds> apiCallDuration;
 
-  // A pointer back to the conversation that owns this response - not currently used, but maybe useful in the future
-  std::weak_ptr<LlmConversationStart> conversation;
+/** Represents a request from the LLM to call one or more tools. */
+class LlmToolRequest : public LlmInteractionTurn
+{
+protected:
+  std::vector<LlmToolCall> m_toolCalls;
 
-  LlmConversationResponse(Type t, const std::string& c, const std::shared_ptr<LlmConversationStart> &convo)
-    : type(t), content(c), timestamp(std::chrono::system_clock::now()), conversation(convo) {}
-};
+public:
+  LlmToolRequest( const std::shared_ptr<LlmInteraction> &convo )
+    : LlmInteractionTurn(Type::ToolCall, convo)
+  {
+  }
 
-/** Represents the start of a conversation thread.
+  const std::vector<LlmToolCall>& toolCalls() const { return m_toolCalls; }
+  std::vector<LlmToolCall>& toolCalls() { return m_toolCalls; }
+  void setToolCalls( std::vector<LlmToolCall> &&calls ) { m_toolCalls = std::move(calls); }
+};//class LlmToolRequest
+
+
+/** Represents the results of tool execution(s). */
+class LlmToolResults : public LlmInteractionTurn
+{
+protected:
+  std::vector<LlmToolCall> m_toolCalls;
+
+public:
+  LlmToolResults( const std::shared_ptr<LlmInteraction> &convo )
+    : LlmInteractionTurn(Type::ToolResult, convo)
+  {
+  }
+
+  const std::vector<LlmToolCall>& toolCalls() const { return m_toolCalls; }
+  std::vector<LlmToolCall>& toolCalls() { return m_toolCalls; }
+  void setToolCalls( std::vector<LlmToolCall> &&calls ) { m_toolCalls = std::move(calls); }
+};//class LlmToolResults
+
+
+/** Represents an error that occurred during conversation processing. */
+class LlmInteractionError : public LlmInteractionTurn
+{
+protected:
+  std::string m_errorMessage;
+
+public:
+  LlmInteractionError( const std::string &errorMsg, const std::shared_ptr<LlmInteraction> &convo )
+    : LlmInteractionTurn(Type::Error, convo), m_errorMessage(errorMsg)
+  {
+  }
+
+  const std::string& errorMessage() const { return m_errorMessage; }
+  void setErrorMessage( const std::string &msg ) { m_errorMessage = msg; }
+};//class LlmInteractionError
+
+/** Represents a user asking the LLM a question or to perform a task.
  
  This is typically a user message or system message that initiates a conversation.
  */
-struct LlmConversationStart
+struct LlmInteraction
 {
   /** Marks this conversation as either the user asking the question, or as InterSpec doing its own thing - which isnt implemented yet. */
   enum class Type {
@@ -127,15 +209,31 @@ struct LlmConversationStart
   std::optional<size_t> totalTokens;       // Total tokens used (prompt + completion)
   
   // Nested follow-up responses (assistant responses, tool calls, tool results)
-  std::vector<std::shared_ptr<LlmConversationResponse>> responses;
-  
+  std::vector<std::shared_ptr<LlmInteractionTurn>> responses;
+
   /** Function called when the conversation with the LLM has ended.
    For the main agent, this will be to update the GUI.
    For sub-agents, this will be to fill-in the agent summary and send the chat history back to the LLM
    */
   std::function<void(void)> conversation_completion_handler;
-  
-  LlmConversationStart(Type t, const std::string& c, AgentType a )
+
+  /** Signal emitted when a new response is added to this conversation.
+   Emits the newly added response.
+   */
+  Wt::Signal<std::shared_ptr<LlmInteractionTurn>> responseAdded;
+
+  /** Signal emitted when a sub-agent conversation completes.
+   Emits the parent response (containing the sub-agent) and the sub-agent conversation.
+   This is emitted on the parent conversation, not the sub-agent conversation.
+   */
+  Wt::Signal<std::shared_ptr<LlmInteractionTurn>, std::shared_ptr<LlmInteraction>> subAgentFinished;
+
+  /** Signal emitted when this conversation finishes (no more tool calls to process).
+   Can be used by the GUI to re-enable input.
+   */
+  Wt::Signal<> conversationFinished;
+
+  LlmInteraction(Type t, const std::string& c, AgentType a )
     : type(t), agent_type(a), content(c), timestamp(std::chrono::system_clock::now()) {}
 };
 
@@ -154,58 +252,58 @@ public:
   /** Construct empty conversation history */
   LlmConversationHistory();
   
-  /** Add a user message - this is a message that the user typed in, and will cause a new `LlmConversationStart` to be created, with all the
+  /** Add a user message - this is a message that the user typed in, and will cause a new `LlmInteraction` to be created, with all the
    LLM responses, and tool-call results being stored in that newly created object.  The newly created object will be added to `m_conversations` and returned.
    
    This function does not send anything to the LLM - it should be called when you send this new message to the LLM.
    
-   Note: the returned `LlmConversationStart::conversationId` will be a newly generated conversation identifier
+   Note: the returned `LlmInteraction::conversationId` will be a newly generated conversation identifier
    */
-  std::shared_ptr<LlmConversationStart> addUserMessageToMainConversation( const std::string &message  );
+  std::shared_ptr<LlmInteraction> addUserMessageToMainConversation( const std::string &message  );
   
 
   /** Add an assistant response with thinking content as a follow-up to the last message */
   void addAssistantMessageWithThinking(const std::string &message,
                                        const std::string &thinkingContent,
-                                       std::shared_ptr<LlmConversationStart> conversation );
+                                       std::shared_ptr<LlmInteraction> conversation );
   
   /** Add a system message */
-  std::shared_ptr<LlmConversationStart> addSystemMessageToMainConversation( const std::string &message );
+  std::shared_ptr<LlmInteraction> addSystemMessageToMainConversation( const std::string &message );
   
   /** Add tool call requests (potentially multiple) as a follow-up to the last message.
 
-   This creates a single LlmConversationResponse with Type::ToolCall containing all the tool calls.
+   This creates a single LlmToolRequest containing all the tool calls.
    */
-  void addToolCalls( std::vector<LlmConversationResponse::ToolCallRequest> &&toolCalls,
-                     const std::shared_ptr<LlmConversationStart> &convo );
+  std::shared_ptr<LlmToolRequest> addToolCalls( std::vector<LlmToolCall> &&toolCalls,
+                     const std::shared_ptr<LlmInteraction> &convo );
 
   /** Add tool call results (potentially multiple) as a follow-up to the last message.
 
-   This creates a single LlmConversationResponse with Type::ToolResult containing all the results.
+   This creates a single LlmToolResults containing all the results.
    The jsonSentToLlm parameter contains the JSON that was sent back to the LLM.
    */
-  void addToolResults( std::vector<LlmConversationResponse::ToolCallRequest> &&toolResults,
+  std::shared_ptr<LlmToolResults> addToolResults( std::vector<LlmToolCall> &&toolResults,
                        const std::string &jsonSentToLlm,
-                       const std::shared_ptr<LlmConversationStart> &convo );
+                       const std::shared_ptr<LlmInteraction> &convo );
   
   /** Add an error message as a follow-up to the last message */
-  void addErrorMessage( const std::string& errorMessage, const std::shared_ptr<LlmConversationStart> &convo );
+  void addErrorMessage( const std::string& errorMessage, const std::shared_ptr<LlmInteraction> &convo );
   
   
   /** Add token usage to a specific conversation by conversation ID (accumulates across API calls) */
-  static void addTokenUsage( std::shared_ptr<LlmConversationStart> conversation,
+  static void addTokenUsage( std::shared_ptr<LlmInteraction> conversation,
                      std::optional<int> promptTokens,
                      std::optional<int> completionTokens,
                      std::optional<int> totalTokens);
   
   /** Find a conversation start by conversation ID */
-  std::shared_ptr<LlmConversationStart> findConversationByConversationId(const std::string& conversationId);
+  std::shared_ptr<LlmInteraction> findConversationByConversationId(const std::string& conversationId);
 
   /** Get all conversation starts (const) */
-  const std::vector<std::shared_ptr<LlmConversationStart>>& getConversations() const;
+  const std::vector<std::shared_ptr<LlmInteraction>>& getConversations() const;
 
   /** Get all conversation starts (mutable) */
-  std::vector<std::shared_ptr<LlmConversationStart>>& getConversations();
+  std::vector<std::shared_ptr<LlmInteraction>>& getConversations();
   
   /** Clear all messages */
   void clear();
@@ -223,7 +321,7 @@ public:
    @param conv The conversation you want to add to the messages
    @param messages The "messages" array that you will sent to the LLM.  Just be a `json::array()`, or exception will be thrown..
    */
-  static void addConversationToLlmApiHistory( const LlmConversationStart &conv, nlohmann::json &messages );
+  static void addConversationToLlmApiHistory( const LlmInteraction &conv, nlohmann::json &messages );
   
   /** Serialize to XML for saving with SpecMeas */
   void toXml(rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc) const;
@@ -232,27 +330,27 @@ public:
   void fromXml(const rapidxml::xml_node<char>* node);
   
   /** Static function to serialize conversations to XML */
-  static void toXml(const std::vector<std::shared_ptr<LlmConversationStart>>& conversations,
+  static void toXml(const std::vector<std::shared_ptr<LlmInteraction>>& conversations,
                     rapidxml::xml_node<char>* parent, rapidxml::xml_document<char>* doc);
 
   /** Static function to deserialize conversations from XML */
   static void fromXml(const rapidxml::xml_node<char>* node,
-                      std::vector<std::shared_ptr<LlmConversationStart>>& conversations);
+                      std::vector<std::shared_ptr<LlmInteraction>>& conversations);
 
 private:
-  std::vector<std::shared_ptr<LlmConversationStart>> m_conversations;
+  std::vector<std::shared_ptr<LlmInteraction>> m_conversations;
   
   /** Convert conversation start type to string for XML */
-  static std::string conversationTypeToString(LlmConversationStart::Type type);
+  static std::string conversationTypeToString(LlmInteraction::Type type);
   
   /** Convert string to conversation start type from XML */
-  static LlmConversationStart::Type stringToConversationType(const std::string& str);
+  static LlmInteraction::Type stringToConversationType(const std::string& str);
   
   /** Convert response type to string for XML */
-  static std::string responseTypeToString(LlmConversationResponse::Type type);
-  
+  static std::string responseTypeToString(LlmInteractionTurn::Type type);
+
   /** Convert string to response type from XML */
-  static LlmConversationResponse::Type stringToResponseType(const std::string& str);
+  static LlmInteractionTurn::Type stringToResponseType(const std::string& str);
 };
 
 #endif // LLM_CONVERSATION_HISTORY_H
