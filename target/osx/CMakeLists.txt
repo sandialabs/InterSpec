@@ -14,7 +14,8 @@ set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "Try to statically link" )
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE INTERNAL "Set OSX deployment target to 10.15" )
 set(USE_REL_ACT_TOOL ON CACHE INTERNAL "Enable Rel. Act. Tools" )
 set(USE_LEAFLET_MAP ON CACHE INTERNAL "Use leaflet map tool" )
-option( USE_BATCH_TOOLS "Enables batch processing." ON )
+option( USE_BATCH_CLI_TOOLS "Enables command line batch processing." OFF )
+option( USE_BATCH_GUI_TOOLS "Enables GUI batch processing." ON )
 
 add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../../ InterSpecLib )
 
@@ -123,7 +124,7 @@ SET_SOURCE_FILES_PROPERTIES( ${CMAKE_CURRENT_SOURCE_DIR}/InterSpec.icns
 add_dependencies(InterSpecApp SpecFilePreview)
 
 
-if( USE_BATCH_TOOLS )
+if( USE_BATCH_CLI_TOOLS )
   add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../batch InterSpec_batch )
   add_dependencies( InterSpecApp InterSpec_batch )
   
@@ -147,7 +148,7 @@ if( USE_BATCH_TOOLS )
     $<TARGET_FILE:InterSpec_batch>
     $<TARGET_FILE_DIR:InterSpecApp>/
   )
-endif( USE_BATCH_TOOLS )
+endif( USE_BATCH_CLI_TOOLS )
 
 #Set resources MACOSX_PACKAGE_LOCATION property so it is where we want in the app bundle
 #ToDo: combine 5 loops below into a single loop...
@@ -285,9 +286,9 @@ set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTIT
 set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
 set_target_properties( InterSpecLib PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
 
-if( USE_BATCH_TOOLS )
+if( USE_BATCH_CLI_TOOLS )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "${mac_signing_identity}" )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${mac_team_id}" )
   set_target_properties( InterSpec_batch PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES" )
-endif( USE_BATCH_TOOLS )
+endif( USE_BATCH_CLI_TOOLS )
 

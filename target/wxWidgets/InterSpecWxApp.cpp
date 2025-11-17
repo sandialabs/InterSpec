@@ -64,7 +64,7 @@
 /*
 // Running batch commands not finished being implemented 
 //  to work reasonably within wxWidgets.
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
 #include "wx/textctrl.h"
 
 #include "InterSpec/AppUtils.h"
@@ -88,7 +88,7 @@ namespace
   long sm_server_port = 0;
   long sm_max_runtime_seconds = 0;
 /*
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
   bool sm_run_batch_command = false;
 #endif
 */
@@ -302,7 +302,7 @@ InterSpecWxApp::InterSpecWxApp() :
     parser.AddParam("File or URI to open", wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL | wxCMD_LINE_PARAM_MULTIPLE);
 
 /*
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
     parser.AddLongSwitch( "batch-peak-fit", "Batch-fit peaks.", wxCMD_LINE_PARAM_OPTIONAL );
     parser.AddLongSwitch( "batch-act-fit", "Batch shielding/source fit.", wxCMD_LINE_PARAM_OPTIONAL );
 #endif
@@ -354,7 +354,7 @@ InterSpecWxApp::InterSpecWxApp() :
       sm_open_dev_console = true;
 
 /*
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
     if( (parser.FoundSwitch( "batch-peak-fit" ) == wxCMD_SWITCH_ON )
       || (parser.FoundSwitch( "batch-act-fit" ) == wxCMD_SWITCH_ON) )
     {
@@ -739,7 +739,7 @@ InterSpecWxApp::InterSpecWxApp() :
   //  linking and such), and I'm not sure if its even doable.
   //  Perhaps there is a better way to do this, like start using libInterSpec as a shared library
   //  and just creating a script to run batch stuff.
-#if( USE_BATCH_TOOLS )
+#if( USE_BATCH_CLI_TOOLS )
     if( sm_run_batch_command )
     {
       int utf8_argc = 0;
