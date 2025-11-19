@@ -251,23 +251,20 @@ namespace {
     if( !params[field_name].is_string() )
       return; // Already a native type, no normalization needed
 
-    const string str_value = params[field_name].get<string>();
-
-    // Trim whitespace
-    string trimmed = str_value;
-    trimmed.erase( 0, trimmed.find_first_not_of(" \t\n\r") );
-    trimmed.erase( trimmed.find_last_not_of(" \t\n\r") + 1 );
+    string str_value = params[field_name].get<string>();
+    SpecUtils::trim( str_value );
 
     // Try to parse as JSON
     try
     {
-      json parsed = json::parse( trimmed );
-      params[field_name] = parsed;
-    }
-    catch( const json::parse_error& )
+      json parsed = json::parse( str_value );
+      params[field_name] = std::move(parsed);
+    }catch( const json::parse_error &e )
     {
       // If parsing fails, leave as string (might be intended as a string value)
       // Let the downstream code handle validation
+      cerr << "Failed to convert string into a JSON object: trimmed='" << str_value << "'." << endl;
+      cerr << endl;
     }
   }//void normalize_json_field( json& params, const string& field_name )
 
@@ -2662,10 +2659,14 @@ nlohmann::json ToolRegistry::executePhotopeakDetectionCalc(nlohmann::json params
   bool has_distance = false;
   if( params.contains("Distance") && params["Distance"].is_string() )
   {
-    const string distance_str = params["Distance"].get<string>();
-    distance = PhysicalUnits::stringToDistance( distance_str );
-    has_distance = true;
-  }
+    string distance_str = params["Distance"].get<string>();
+    SpecUtils::trim( distance_str );
+    if( !distance_str.empty() )
+    {
+      distance = PhysicalUnits::stringToDistance( distance_str );
+      has_distance = true;
+    }//if( !distance_str.empty() )
+  }//if( params.contains("Distance") && params["Distance"].is_string() )
 
   // Parse IncludeAirAttenuation (optional, default false)
   const bool include_air = get_boolean( params, "IncludeAirAttenuation", false );
