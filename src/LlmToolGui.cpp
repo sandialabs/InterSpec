@@ -265,6 +265,7 @@ void LlmToolGui::sendMessage(const std::string& message)
   {
     cerr << "Error sending message to LLM: " << e.what() << endl;
 
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
     const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
     const string now_str = SpecUtils::to_iso_string( now );
     const string debug_name = "llm_request_with_error_id_" + now_str + ".json";
@@ -275,6 +276,7 @@ void LlmToolGui::sendMessage(const std::string& message)
     std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
 #endif
     output_request_json << message;
+#endif
     
     cerr << "Wrote request string to '" << debug_name << "'" << endl;
     

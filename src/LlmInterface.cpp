@@ -907,6 +907,23 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
     {
       cout << "Tool execution JSON error: " << e.what() << endl;
       
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+      {
+        const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+        const string now_str = SpecUtils::to_iso_string( now );
+        const string debug_name = "llm_toolcall_json_error_" + now_str + ".json";
+#ifdef _WIN32
+        const std::wstring wdebug_name = SpecUtils::convert_from_utf8_to_utf16(debug_name);
+        std::ofstream output_request_json( wdebug_name.c_str(), ios::binary | ios::out );
+#else
+        std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
+#endif
+        output_request_json << rawResponseContent;
+        
+        cerr << "Wrote message content to '" << debug_name << "'" << endl;
+      }
+#endif
+      
       json result;
       result["error"] = "Tool call failed due to JSON parsing: " + string(e.what());
       
@@ -919,6 +936,23 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
     {
       cout << "Tool execution error: " << e.what() << endl;
 
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+      {
+        const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
+        const string now_str = SpecUtils::to_iso_string( now );
+        const string debug_name = "llm_toolcall_error_" + now_str + ".json";
+#ifdef _WIN32
+        const std::wstring wdebug_name = SpecUtils::convert_from_utf8_to_utf16(debug_name);
+        std::ofstream output_request_json( wdebug_name.c_str(), ios::binary | ios::out );
+#else
+        std::ofstream output_request_json( debug_name.c_str(), ios::binary | ios::out);
+#endif
+        output_request_json << rawResponseContent;
+        
+        cerr << "Wrote message content to '" << debug_name << "'" << endl;
+      }
+#endif
+      
       json result;
       result["error"] = "Tool call failed: " + string(e.what());
 
