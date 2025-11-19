@@ -25,6 +25,7 @@
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/MoreNuclideInfo.h"
 #include "InterSpec/UndoRedoManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/ExternalRidResult.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -532,10 +533,10 @@ namespace {
     }
 
     // Parse optional energy range
-    if( j.contains("lowerEnergy") )
+    if( j.contains("lowerEnergy") && !j["lowerEnergy"].is_null() )
       p.lowerEnergy = get_number( j, "lowerEnergy" );
 
-    if( j.contains("upperEnergy") )
+    if( j.contains("upperEnergy") && !j["upperEnergy"].is_null() )
       p.upperEnergy = get_number( j, "upperEnergy" );
   }
 
@@ -577,16 +578,16 @@ namespace {
     }
 
     // Get optional values
-    if( j.contains("doubleValue") )
+    if( j.contains("doubleValue") && !j["doubleValue"].is_null() )
       p.doubleValue = get_double( j["doubleValue"] );
 
-    if( j.contains("stringValue") )
+    if( j.contains("stringValue") && !j["stringValue"].is_null() )
       p.stringValue = j["stringValue"].get<std::string>();
 
-    if( j.contains("boolValue") )
+    if( j.contains("boolValue") && !j["boolValue"].is_null() )
       p.boolValue = get_boolean( j, "boolValue" );
 
-    if( j.contains("uncertainty") )
+    if( j.contains("uncertainty") && !j["uncertainty"].is_null() )
       p.uncertainty = get_number( j, "uncertainty" );
   }//void from_json( const json &j, AnalystChecks::EditAnalysisPeakOptions &p )
 
@@ -689,14 +690,13 @@ namespace {
     }
 
     // Parse optional distance parameter
-    if( j.contains("distance") )
+    if( j.contains("distance") && !j["distance"].is_null() )
     {
       const std::string distanceStr = j["distance"].get<std::string>();
       try
       {
         p.distance = PhysicalUnits::stringToDistance( distanceStr );
-      }
-      catch( const std::exception &e )
+      }catch( const std::exception &e )
       {
         throw std::runtime_error( "Invalid distance value '" + distanceStr + "': " + e.what() );
       }
@@ -4437,7 +4437,7 @@ nlohmann::json format_shielding_source_state_to_json(
     switch( shield.m_geometry )
     {
       case GammaInteractionCalc::GeometryType::Spherical:
-        shield_json["radial_thickness_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;;
+        shield_json["radial_thickness_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;
         shield_json["fit_thickness"] = shield.m_fitDimensions[0];
         break;
 
@@ -5201,7 +5201,7 @@ nlohmann::json format_fit_results_to_json(
   // Format fit quality
   result["chi2"] = fit_results->chi2;
   result["dof"] = fit_results->numDOF;
-  result["chi2_per_dof"] = (fit_results->numDOF > 0) ? (fit_results->chi2 / fit_results->numDOF) : 0.0;
+  result["chi2_per_dof"] = (fit_results->numDOF > 0) ? (fit_results->chi2 / fit_results->numDOF) : fit_results->chi2;
 
   // Format source results
   result["sources"] = json::array();
@@ -5214,15 +5214,14 @@ nlohmann::json format_fit_results_to_json(
     if( src.activityUncertainty.has_value() )
       src_json["activity_bq_uncertainty"] = *src.activityUncertainty;
 
+    
     // Format as human-readable string
-    const double act_uci = src.activity / PhysicalUnits::microCi;
-    const double act_unc_uci = src.activityUncertainty.has_value()
-                                ? (*src.activityUncertainty / PhysicalUnits::microCi) : 0.0;
-
-    if( act_unc_uci > 0.0 )
-      src_json["activity_str"] = std::to_string(act_uci) + " ± " + std::to_string(act_unc_uci) + " µCi";
+    InterSpec * const interspec = InterSpec::instance();
+    const bool use_curries = interspec ? true : !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    if( src.activityUncertainty.has_value() && (src.activityUncertainty.value() > 0.0) )
+      src_json["activity_str"] = PhysicalUnits::printToBestActivityUnitsWithUncert( src.activity, src.activityUncertainty.value(), 5, use_curries );
     else
-      src_json["activity_str"] = std::to_string(act_uci) + " µCi";
+      src_json["activity_str"] = PhysicalUnits::printToBestActivityUnits(src.activity, 5, use_curries);
 
     // Add age if fitted
     if( src.ageUncertainty.has_value() && *src.ageUncertainty > 0.0 )
@@ -5254,32 +5253,71 @@ nlohmann::json format_fit_results_to_json(
       switch( shield.m_geometry )
       {
         case GammaInteractionCalc::GeometryType::Spherical:
-          shield_json["thickness_cm"] = shield.m_dimensions[0];
+        {
+          shield_json["thickness_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;
+          shield_json["thickness_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[0], 4 );
           if( shield.m_dimensionUncerts[0] > 0.0 )
-            shield_json["thickness_cm_uncertainty"] = shield.m_dimensionUncerts[0];
+          {
+            shield_json["thickness_cm_uncertainty"] = shield.m_dimensionUncerts[0] / PhysicalUnits::cm;
+            shield_json["thickness_str_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[0], 4 );
+          }
           break;
+        }//case GammaInteractionCalc::GeometryType::Spherical:
 
         case GammaInteractionCalc::GeometryType::CylinderEndOn:
         case GammaInteractionCalc::GeometryType::CylinderSideOn:
-          shield_json["radius_cm"] = shield.m_dimensions[0];
-          shield_json["length_cm"] = shield.m_dimensions[1];
+        {
+          shield_json["radius_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;
+          shield_json["radius_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[0], 4 );
+          shield_json["length_cm"] = shield.m_dimensions[1] / PhysicalUnits::cm;;
+          shield_json["length_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[1], 4 );
+          
           if( shield.m_dimensionUncerts[0] > 0.0 )
-            shield_json["radius_cm_uncertainty"] = shield.m_dimensionUncerts[0];
+          {
+            shield_json["radius_cm_uncertainty"] = shield.m_dimensionUncerts[0] / PhysicalUnits::cm;
+            shield_json["radius_str_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[0], 4 );
+          }
+          
           if( shield.m_dimensionUncerts[1] > 0.0 )
-            shield_json["length_cm_uncertainty"] = shield.m_dimensionUncerts[1];
+          {
+            shield_json["length_cm_uncertainty"] = shield.m_dimensionUncerts[1] / PhysicalUnits::cm;
+            shield_json["length_str_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[1], 4 );
+          }
+         
           break;
+        }//case GammaInteractionCalc::GeometryType::CylinderEndOn: / CylinderSideOn:
 
         case GammaInteractionCalc::GeometryType::Rectangular:
-          shield_json["width_cm"] = shield.m_dimensions[0];
-          shield_json["height_cm"] = shield.m_dimensions[1];
-          shield_json["depth_cm"] = shield.m_dimensions[2];
+        {
+          shield_json["width_cm"] = shield.m_dimensions[0] / PhysicalUnits::cm;
+          shield_json["height_cm"] = shield.m_dimensions[1] / PhysicalUnits::cm;
+          shield_json["depth_cm"] = shield.m_dimensions[2] / PhysicalUnits::cm;
+          
+          shield_json["width_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[0], 4 );
+          shield_json["height_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[1], 4 );
+          shield_json["depth_str"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensions[2], 4 );
+          
+          
           if( shield.m_dimensionUncerts[0] > 0.0 )
-            shield_json["width_cm_uncertainty"] = shield.m_dimensionUncerts[0];
+          {
+            shield_json["width_cm_uncertainty"] = shield.m_dimensionUncerts[0] / PhysicalUnits::cm;
+            shield_json["width_cm_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[0], 4 );
+          }
+          
           if( shield.m_dimensionUncerts[1] > 0.0 )
-            shield_json["height_cm_uncertainty"] = shield.m_dimensionUncerts[1];
+          {
+            shield_json["height_cm_uncertainty"] = shield.m_dimensionUncerts[1] / PhysicalUnits::cm;
+            shield_json["height_cm_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[1], 4 );
+          }
+          
           if( shield.m_dimensionUncerts[2] > 0.0 )
-            shield_json["depth_cm_uncertainty"] = shield.m_dimensionUncerts[2];
+          {
+            shield_json["depth_cm_uncertainty"] = shield.m_dimensionUncerts[2] / PhysicalUnits::cm;
+            shield_json["depth_cm_uncertainty"] = PhysicalUnits::printToBestLengthUnits( shield.m_dimensionUncerts[2], 4 );
+          }
+          
           break;
+        }//case GammaInteractionCalc::GeometryType::Rectangular:
 
         case GammaInteractionCalc::GeometryType::NumGeometryType:
           break;
@@ -5550,13 +5588,12 @@ nlohmann::json ToolRegistry::executeActivityFit(
       src_json["activity_bq_uncertainty"] = *src.activityUncertainty;
 
     // Format as human-readable string
-    const double act_uci = src.activity / PhysicalUnits::microCi;
-    const double act_unc_uci = src.activityUncertainty.has_value()
-                                ? (*src.activityUncertainty / PhysicalUnits::microCi) : 0.0;
-    if( act_unc_uci > 0.0 )
-      src_json["activity_str"] = std::to_string(act_uci) + " ± " + std::to_string(act_unc_uci) + " µCi";
+    InterSpec * const interspec = InterSpec::instance();
+    const bool use_curries = interspec ? true : !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", interspec );
+    if( src.activityUncertainty.has_value() && (src.activityUncertainty.value() > 0.0) )
+      src_json["activity_str"]= PhysicalUnits::printToBestActivityUnitsWithUncert( src.activity, src.activityUncertainty.value(), 5, use_curries );
     else
-      src_json["activity_str"] = std::to_string(act_uci) + " µCi";
+      src_json["activity_str"] = PhysicalUnits::printToBestActivityUnits( src.activity, 5, use_curries );
 
     result["sources"].push_back( src_json );
   }

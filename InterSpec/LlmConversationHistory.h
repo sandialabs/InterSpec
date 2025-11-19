@@ -53,6 +53,11 @@ namespace rapidxml {
  */
 struct LlmToolCall
 {
+  enum class CallStatus {
+    Pending, Success, Error
+  };
+  
+  CallStatus status;
   std::string toolName;        // Name of the tool to call
   std::string invocationId;    // Unique ID for this tool invocation
   nlohmann::json toolParameters; // Parameters to pass to the tool
@@ -63,7 +68,7 @@ struct LlmToolCall
   std::shared_ptr<LlmInteraction> sub_agent_conversation;
 
   LlmToolCall( const std::string &name, const std::string &id, const nlohmann::json &params )
-    : toolName(name), invocationId(id), toolParameters(params)
+    : status(CallStatus::Pending), toolName(name), invocationId(id), toolParameters(params)
   {
   }
 };//struct LlmToolCall
@@ -83,7 +88,8 @@ public:
     FinalLlmResponse, // LLM response
     ToolCall,         // LLM requesting to call a tool
     ToolResult,       // Result from tool execution
-    Error             // Error message
+    Error,            // Error message
+    AutoReply         // Automatic prompt to continue when LLM has reasoning but no content/tool calls
   };
 
 protected:
@@ -183,6 +189,27 @@ public:
   void setErrorMessage( const std::string &msg ) { m_errorMessage = msg; }
 };//class LlmInteractionError
 
+
+/** Represents an automatic prompt sent to the LLM to continue when it has reasoning but no content or tool calls.
+
+ This is used when the LLM returns only reasoning/thinking content but no actual response or tool calls,
+ suggesting it needs prompting to continue with its planned actions.
+ */
+class LlmInteractionAutoReply : public LlmInteractionTurn
+{
+protected:
+  std::string m_content;
+
+public:
+  LlmInteractionAutoReply( const std::string &content, const std::shared_ptr<LlmInteraction> &convo )
+    : LlmInteractionTurn(Type::AutoReply, convo), m_content(content)
+  {
+  }
+
+  const std::string& content() const { return m_content; }
+  void setContent( const std::string &content ) { m_content = content; }
+};//class LlmInteractionAutoReply
+
 /** Represents a user asking the LLM a question or to perform a task.
  
  This is typically a user message or system message that initiates a conversation.
@@ -197,10 +224,22 @@ struct LlmInteraction
   
   Type type;
   AgentType agent_type;
-  std::string content;
-  std::chrono::system_clock::time_point timestamp;
-  std::string conversationId;  // ID for the entire conversation thread
   
+  /** The initial request JSON, as a string, as sent to the LLM. */
+  std::string initialRequestContent;
+  
+  /** The initial question/command from the user (or system) that kicked this conversation off. */
+  std::string content;
+  
+  /** The time this conversation was started. */
+  std::chrono::system_clock::time_point timestamp;
+  
+  /** ID for the entire conversation thread */
+  std::string conversationId;
+
+  /** Time when this conversation finished (completed or errored). Empty if still in progress. */
+  std::optional<std::chrono::system_clock::time_point> finishTime;
+
   // Token usage tracking from LLM API responses
   // Using optional<size_t> because some models/APIs don't provide token usage information,
   // making it clear when this data is unavailable rather than defaulting to 0
@@ -234,7 +273,8 @@ struct LlmInteraction
   Wt::Signal<> conversationFinished;
 
   LlmInteraction(Type t, const std::string& c, AgentType a )
-    : type(t), agent_type(a), content(c), timestamp(std::chrono::system_clock::now()) {}
+  : type(t), agent_type(a), content(c), timestamp(std::chrono::system_clock::now()), conversationId{}
+  {}
 };
 
 
@@ -259,12 +299,13 @@ public:
    
    Note: the returned `LlmInteraction::conversationId` will be a newly generated conversation identifier
    */
-  std::shared_ptr<LlmInteraction> addUserMessageToMainConversation( const std::string &message  );
+  std::shared_ptr<LlmInteraction> addUserMessageToMainConversation( const std::string &message );
   
 
   /** Add an assistant response with thinking content as a follow-up to the last message */
   void addAssistantMessageWithThinking(const std::string &message,
                                        const std::string &thinkingContent,
+                                       const std::string &rawContent,
                                        std::shared_ptr<LlmInteraction> conversation );
   
   /** Add a system message */
@@ -275,6 +316,7 @@ public:
    This creates a single LlmToolRequest containing all the tool calls.
    */
   std::shared_ptr<LlmToolRequest> addToolCalls( std::vector<LlmToolCall> &&toolCalls,
+                                               const std::string &rawResponseContent,
                      const std::shared_ptr<LlmInteraction> &convo );
 
   /** Add tool call results (potentially multiple) as a follow-up to the last message.
@@ -287,9 +329,15 @@ public:
                        const std::shared_ptr<LlmInteraction> &convo );
   
   /** Add an error message as a follow-up to the last message */
-  void addErrorMessage( const std::string& errorMessage, const std::shared_ptr<LlmInteraction> &convo );
-  
-  
+  std::shared_ptr<LlmInteractionError> addErrorMessage( const std::string &errorMessage,
+                       const std::string &rawResponseContent,
+                       const std::shared_ptr<LlmInteraction> &convo );
+
+  /** Add an automatic prompt message to continue the conversation */
+  std::shared_ptr<LlmInteractionAutoReply> addAutoReplyMessage( const std::string &promptMessage,
+                       const std::shared_ptr<LlmInteraction> &convo );
+
+
   /** Add token usage to a specific conversation by conversation ID (accumulates across API calls) */
   static void addTokenUsage( std::shared_ptr<LlmInteraction> conversation,
                      std::optional<int> promptTokens,
@@ -351,6 +399,12 @@ private:
 
   /** Convert string to response type from XML */
   static LlmInteractionTurn::Type stringToResponseType(const std::string& str);
+
+  /** Convert tool call status to string for XML */
+  static std::string callStatusToString(LlmToolCall::CallStatus status);
+
+  /** Convert string to tool call status from XML */
+  static LlmToolCall::CallStatus stringToCallStatus(const std::string& str);
 };
 
 #endif // LLM_CONVERSATION_HISTORY_H

@@ -2290,7 +2290,9 @@ void fit_model( const std::string wtsession,
     
     const vector<double> params = fitParams.Params();
     const vector<double> errors = fitParams.Errors();
-    const unsigned int ndof = inputPrams->VariableParameters();
+    const unsigned int num_fit_pars = inputPrams->VariableParameters();
+    unsigned int ndof = (num_fit_pars > chi2Fcn->peaks().size()) ? static_cast<unsigned int>(0)
+                                                                 : static_cast<unsigned int>(chi2Fcn->peaks().size() - num_fit_pars);
     
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
     results->paramValues = params;

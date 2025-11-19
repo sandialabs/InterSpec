@@ -543,8 +543,7 @@ int start_server( const char *process_name,
   try
   {
     const string directories_to_try[] = { userdatadir, 
-      SpecUtils::append_path(relbasedir,"data"), 
-      SpecUtils::append_path(relbasedir,"data_ouo") 
+      SpecUtils::append_path(relbasedir,"data")
     };
 
     for( const string &trial_dir : directories_to_try )

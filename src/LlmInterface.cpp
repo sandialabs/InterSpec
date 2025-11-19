@@ -128,7 +128,7 @@ std::shared_ptr<const LlmTools::ToolRegistry> LlmInterface::toolRegistry()
 }
 
 
-void LlmInterface::sendUserMessage( const std::string &message )
+shared_ptr<LlmInteraction> LlmInterface::sendUserMessage( const std::string &message )
 {
   if( !isConfigured() )
     throw std::logic_error( "LLM interface is not properly configured" );
@@ -156,10 +156,16 @@ void LlmInterface::sendUserMessage( const std::string &message )
   // Build API request (buildMessagesArray will include the message from history + current message)
   json requestJson = buildMessagesArray( convo );
   
-  // Make tracked API call
-  int requestId = makeTrackedApiCall( requestJson, convo );
   
-  cout << "Sent user message with request ID: " << requestId << endl;
+  
+  // Make tracked API call
+  std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, convo );
+  
+  cout << "Sent user message with request ID: " << request_id_content.first << endl;
+  
+  convo->initialRequestContent = std::move(request_id_content.second);
+  
+  return convo;
 }
 
 void LlmInterface::sendSystemMessage( const std::string &message )
@@ -175,8 +181,10 @@ void LlmInterface::sendSystemMessage( const std::string &message )
   json requestJson = buildMessagesArray( convo );
   
   // Make tracked API call
-  int requestId = makeTrackedApiCall( requestJson, convo );
-  cout << "Sent system message with request ID: " << requestId << endl;
+  std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, convo );
+  cout << "Sent system message with request ID: " << request_id_content.first << endl;
+  
+  convo->initialRequestContent = std::move(request_id_content.second);
 }
 
 
@@ -261,7 +269,7 @@ static std::string serializeRequestForCaching( const nlohmann::json &requestJson
 }//serializeRequestForCaching(...)
 
 
-void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requestId)
+std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requestId)
 {
   if( !m_config || !m_config->llmApi.enabled )
     throw std::logic_error( "LlmInterface: not configured" );
@@ -396,6 +404,7 @@ void LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, int requ
   app->doJavaScript(jsCall);
   cout << "JavaScript HTTP request with ID " << requestId << " initiated..." << endl;
 
+  return requestStr;
 #endif
 
 #ifdef USE_WT_HTTP_FOR_LLM
@@ -492,6 +501,7 @@ void LlmInterface::handleApiResponse( const std::string &response,
     }//if( responseJson.contains("usage") )
     
     
+    string content, reasoning;
     if( responseJson.contains("choices") && !responseJson["choices"].empty() )
     {
       const json &choice = responseJson["choices"][0];
@@ -500,9 +510,11 @@ void LlmInterface::handleApiResponse( const std::string &response,
       {
         const json &message = choice["message"];
         string role = message.value("role", "");
-        string content;
         if( message.contains("content") && message["content"].is_string() )
           content = message["content"];
+        
+        if( message.contains("reasoning") && message["reasoning"].is_string() )
+          reasoning = message["reasoning"];
 
         if( role == "assistant" )
         {
@@ -512,11 +524,11 @@ void LlmInterface::handleApiResponse( const std::string &response,
           // Handle structured tool calls first (OpenAI format)
           if (message.contains("tool_calls"))
           {
-            number_tool_calls += executeToolCallsAndSendResults( message["tool_calls"], conversation, requestId, promptTokens, completionTokens );
+            number_tool_calls += executeToolCallsAndSendResults( message["tool_calls"], conversation, requestId, response, promptTokens, completionTokens );
           }else
           {
             // Parse content for text-based tool requests (use cleaned content)
-            number_tool_calls += parseContentForToolCallsAndSendResults( cleanContent, conversation, requestId );
+            number_tool_calls += parseContentForToolCallsAndSendResults( cleanContent, conversation, requestId, response );
           }
 
           // Add assistant message to history with thinking content and current agent name - only if there were no
@@ -525,11 +537,52 @@ void LlmInterface::handleApiResponse( const std::string &response,
           //  TODO: add thinking content to tool call LlmConversationResponse's
           if( number_tool_calls == 0 )
           {
-            m_history->addAssistantMessageWithThinking( cleanContent, thinkingContent, conversation );
+            m_history->addAssistantMessageWithThinking( cleanContent, thinkingContent, response, conversation );
           }
         }//if( role == "assistant" )
       }//if( choice.contains("message") )
     }//if( responseJson.contains("choices") && !responseJson["choices"].empty() )
+    
+    // Sometimes a model might need a little prompting to continue....
+    SpecUtils::trim( content );
+    if( (number_tool_calls == 0) && content.empty() && !reasoning.empty() )
+    {
+      // Check if the last response was already an AutoReply
+      bool lastWasAutoReply = false;
+      if( !conversation->responses.empty() )
+      {
+        const std::shared_ptr<LlmInteractionTurn> &lastResponse = conversation->responses.back();
+        lastWasAutoReply = (lastResponse->type() == LlmInteractionTurn::Type::AutoReply);
+      }
+
+      if( lastWasAutoReply )
+      {
+        // We already sent an auto-reply prompt and the LLM still didn't respond properly.
+        // Just end the conversation instead of looping.
+        cout << "LLM provided reasoning but no content/tool calls after auto-reply prompt. Ending conversation." << endl;
+      }else
+      {
+        // Add an auto-reply message to prompt the LLM to continue
+        const string autoReplyContent =
+        "Please continue the analysis - and retry any failed tool calls (please re-try liberally) and make any additional tool calls that would be helpful."
+        "Then applying careful reasoning at each step, and continuing to to working on the problem until you have"
+        " arrived at an answer, so you can provide a summary.";
+        cout << "LLM provided reasoning but no content/tool calls. Sending auto-reply prompt." << endl;
+
+        shared_ptr<LlmInteractionAutoReply> autoReply = m_history->addAutoReplyMessage( autoReplyContent, conversation );
+
+        // Build API request with the auto-reply included
+        const json requestJson = buildMessagesArray( conversation );
+
+        // Make tracked API call to continue the conversation
+        std::pair<int,std::string> request_id_content = makeTrackedApiCall( requestJson, conversation );
+
+        cout << "Sent auto-reply prompt with request ID: " << request_id_content.first << endl;
+
+        // Don't finish the conversation yet - we're waiting for the LLM to respond to our prompt
+        return;
+      }
+    }//if( (number_tool_calls == 0) && content.empty() && !reasoning.empty() )
   }catch( const std::exception &e )
   {
     cout << "Error parsing LLM response: " << e.what()
@@ -537,9 +590,11 @@ void LlmInterface::handleApiResponse( const std::string &response,
     << response << endl << endl;
   }
   
-  if( !number_tool_calls && conversation->conversation_completion_handler )
+  if( !number_tool_calls )
   {
-    conversation->conversation_completion_handler();
+    conversation->finishTime = std::chrono::system_clock::now();
+    if( conversation->conversation_completion_handler )
+      conversation->conversation_completion_handler();
     conversation->conversationFinished.emit();
   }
 
@@ -558,6 +613,7 @@ void LlmInterface::handleApiResponse( const std::string &response,
 size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                                     const std::shared_ptr<LlmInteraction> &convo,
                                     const int parentRequestId,
+                                    const std::string &rawResponseContent,
                                     std::optional<size_t> promptTokens,
                                     std::optional<size_t> completionTokens )
 {
@@ -588,9 +644,18 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
 
     try
     {
-      toolName = toolCall["function"]["name"];
+      if( !toolCall.contains("function") )
+        throw runtime_error( "No 'function' definition in the JSON" );
+      
+      const nlohmann::json &function_def = toolCall["function"];
+      
+      if( !function_def.contains("name") )
+        throw runtime_error( "No tool 'name' given definition in the JSON" );
+      toolName = function_def["name"];
+      
       cout << "--- about to parse tool call arguments for toolName=" << toolName << endl;
-      arguments = json::parse(toolCall["function"]["arguments"].get<string>());
+      if( function_def.contains("arguments") ) //Some tool calls dont need any arguments
+        arguments = json::parse(function_def["arguments"].get<string>());
       cout << "--- done parsing tool call arguments for toolName=" << toolName << endl;
 
       cout << "Calling tool: " << toolName << " with ID: " << callId << endl;
@@ -617,6 +682,7 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
         // Invoke sub-agent (returns request ID)
         const string combinedMessage = "Context:\n" + context + "\n\nTask:\n" + task + "\n\nWhen you are done, provide a summary of your reasoning, as well as how sure you are, or alternate possibilities to investigate.";
         shared_ptr<LlmInteraction> sub_agent_convo = make_shared<LlmInteraction>( convo->type, combinedMessage, agent_type );
+        // finishTime will be set when the conversation completes
         
         // TODO: make sure we dont have two sub-agent calls for the same type of agent - among other problems, this would make `sub_agent_convo->conversationId` non-unique
         const auto current_ticks = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
@@ -636,6 +702,7 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
 
           // Create tool result entry with placeholder
           LlmToolCall toolResult( toolName, callId, arguments );
+          toolResult.status = LlmToolCall::CallStatus::Pending;
           toolResult.content = result.dump();
           toolResult.sub_agent_conversation = sub_agent_convo;
           toolCallResults.push_back( std::move(toolResult) );
@@ -774,6 +841,8 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
               updatedResult["agentName"] = agentTypeToString( sub_agent_convo->agent_type );
             }//if( sub_agent_convo->responses.empty() )
 
+            toolResult->status = LlmToolCall::CallStatus::Success;
+            
             // Update the tool result content
             toolResult->content = updatedResult.dump();
 
@@ -829,10 +898,23 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
 
         // Create tool result entry
         LlmToolCall toolResult( toolName, callId, arguments );
+        toolResult.status = LlmToolCall::CallStatus::Success;
         toolResult.content = result.dump();
         toolResult.executionDuration = exec_duration;
         toolCallResults.push_back( std::move(toolResult) );
       }
+    }catch( const json::parse_error &e )
+    {
+      cout << "Tool execution JSON error: " << e.what() << endl;
+      
+      json result;
+      result["error"] = "Tool call failed due to JSON parsing: " + string(e.what());
+      
+      // Create error tool result entry
+      LlmToolCall toolResult( toolName, callId, arguments );
+      toolResult.status = LlmToolCall::CallStatus::Error;
+      toolResult.content = result.dump();
+      toolCallResults.push_back( std::move(toolResult) );
     }catch( const std::exception &e )
     {
       cout << "Tool execution error: " << e.what() << endl;
@@ -842,6 +924,7 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
 
       // Create error tool result entry
       LlmToolCall toolResult( toolName, callId, arguments );
+      toolResult.status = LlmToolCall::CallStatus::Error;
       toolResult.content = result.dump();
       toolCallResults.push_back( std::move(toolResult) );
     }//try / catch
@@ -853,7 +936,7 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
   // Add all tool calls to history as a single batched entry
   if( !toolCallRequests.empty() )
   {
-    m_history->addToolCalls( std::move(toolCallRequests), convo );
+    m_history->addToolCalls( std::move(toolCallRequests), rawResponseContent, convo );
   }
 
   // Add all tool results to history as a single batched entry (if we have any)
@@ -890,7 +973,10 @@ size_t LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolC
   return toolCalls.size();
 }
 
-size_t LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content, const std::shared_ptr<LlmInteraction> &convo, const int requestId )
+size_t LlmInterface::parseContentForToolCallsAndSendResults( const std::string &content,
+                                                            const std::shared_ptr<LlmInteraction> &convo,
+                                                            const int requestId,
+                                                            const std::string &rawResponseContent )
 {
   cout << "Parsing content for text-based tool calls..." << endl;
   
@@ -999,7 +1085,7 @@ size_t LlmInterface::parseContentForToolCallsAndSendResults( const std::string &
   
   cout << "=== Complete extracting " << tool_calls.size() << " text-based tool calls ===" << endl;
   
-  const size_t num_calls = executeToolCallsAndSendResults( tool_calls, convo, requestId );
+  const size_t num_calls = executeToolCallsAndSendResults( tool_calls, convo, requestId, rawResponseContent );
 
   return num_calls;
 }//parseContentForToolCallsAndSendResults
@@ -1135,8 +1221,9 @@ int LlmInterface::invokeSubAgent( std::shared_ptr<LlmInteraction> sub_agent_conv
   cout << "Main agent will pause until sub-agent completes" << endl;
 
   // Make the actual API call
-  makeApiCallWithId(requestJson, requestId);
-
+  std::string msg_content = makeApiCallWithId(requestJson, requestId);
+  sub_agent_convo->initialRequestContent = std::move( msg_content );
+  
   return requestId;
 }//invokeSubAgent(...)
 
@@ -1390,7 +1477,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
 {
   cout << "\n\n=== Recieved requestId=" << requestId << " ===" << endl;
   SpecUtils::trim( response );
-  
+
   std::string responsePreview = response;
   SpecUtils::ireplace_all( responsePreview, "\n", " ");
   SpecUtils::ireplace_all( responsePreview, "\r", "");
@@ -1398,6 +1485,8 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     responsePreview = responsePreview.substr(0, 300) + "...";
   cout << "Response: " << responsePreview << endl;
 
+  std::shared_ptr<LlmInteraction> convo;
+  
   try
   {
     // Find and remove the pending request
@@ -1413,7 +1502,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       return;
     }
     
-    std::shared_ptr<LlmInteraction> convo = pendingRequest.conversation.lock();
+    convo = pendingRequest.conversation.lock();
     if( !convo )
     {
       cerr << "For JavaScript response, found original request, but conversation is nullptr, so ending this conversation." << endl;
@@ -1428,7 +1517,8 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     cout << "--- done parsing response to json --- " << endl;
 
 
-    if( responseJson.contains("error") && !responseJson["error"].is_null() )
+    if( (responseJson.contains("error") && !responseJson["error"].is_null())
+       || (responseJson.contains("choices") && responseJson["choices"].contains("error")) )
     {
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
       const auto now = chrono::time_point_cast<chrono::microseconds>( chrono::system_clock::now() );
@@ -1462,7 +1552,7 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
       
       // Add error to conversation history
       if (m_history)
-        m_history->addErrorMessage( errorMsg, convo );
+        m_history->addErrorMessage( errorMsg, response, convo );
       
       // Signal that a response was received (even if it's an error)
       // Only emit if no pending requests (this is the final response)
@@ -1481,16 +1571,32 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
     handleApiResponse( response, convo, requestId );
   }catch( const json::parse_error &e )
   {
-    cout << "Failed to parse LLM response as JSON: " << e.what() << endl;
+    string errorMsg = "Failed to parse LLM response as JSON: " + string(e.what());
+    
+    cout << errorMsg << endl;
     cout << "Raw response: " << response << endl;
+    
+    if( m_history && convo )
+      m_history->addErrorMessage( errorMsg, response, convo );
+    
+    if( m_pendingRequests.empty() )
+      m_responseReceived.emit();
   }catch( const std::exception &e )
   {
-    cout << "Error processing LLM response: " << e.what() << endl;
+    string errorMsg = "Error processing LLM response: " + string(e.what());
+    
+    cout << errorMsg << endl;
+    
+    if( m_history && convo )
+      m_history->addErrorMessage( errorMsg, response, convo );
+    
+    if( m_pendingRequests.empty() )
+      m_responseReceived.emit();
   }
 }
 #endif // USE_JS_BRIDGE_FOR_LLM
 
-int LlmInterface::makeTrackedApiCall( const nlohmann::json& requestJson,
+std::pair<int,std::string> LlmInterface::makeTrackedApiCall( const nlohmann::json& requestJson,
                                       std::shared_ptr<LlmInteraction> convo )
 {
   assert( convo );
@@ -1509,9 +1615,9 @@ int LlmInterface::makeTrackedApiCall( const nlohmann::json& requestJson,
   m_pendingRequests[requestId] = pending;
   
   // Make the call with request ID tracking
-  makeApiCallWithId(requestJson, requestId);
+  std::string request_content = makeApiCallWithId(requestJson, requestId);
   
-  return requestId;
+  return make_pair(requestId,std::move(request_content));
 }
 
 int LlmInterface::sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
@@ -1520,6 +1626,10 @@ int LlmInterface::sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
   // build a new request with the current conversation state
   json followupRequest = buildMessagesArray( convo ); // System-generated followup
 
+  // Make tracked API call to get LLM's response to the tool results
+  pair<int,string> request_id_content = makeTrackedApiCall( followupRequest, convo );
+  
+  
   // Capture the messages array being sent (for the tool results)
   // Find the most recent ToolResult response and store the JSON we're sending
   if( !convo->responses.empty() )
@@ -1595,12 +1705,10 @@ int LlmInterface::sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
       }
     }
   }
+  
+  return request_id_content.first;
+}//int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo )
 
-  // Make tracked API call to get LLM's response to the tool results
-  const int requestId = makeTrackedApiCall( followupRequest, convo );
-
-  return requestId;
-}
 
 #ifdef USE_WT_HTTP_FOR_LLM
 void LlmInterface::handleWtHttpClientResponse(boost::system::error_code err, const Wt::Http::Message& response) {

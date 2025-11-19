@@ -103,8 +103,10 @@ public:
   
   /** Send a user message to the LLM.
    @param message The user's message/question
+   
+   @returns The `LlmInteraction` created for this message.
    */
-  void sendUserMessage(const std::string& message);
+  std::shared_ptr<LlmInteraction> sendUserMessage(const std::string& message);
   
   /** Send a system-generated message to the LLM.
    
@@ -190,11 +192,17 @@ private:
   };
   std::map<int, DeferredToolResult> m_deferredToolResults; // Key is sub-agent requestId
   
-  /** Make an API call with request ID tracking */
-  void makeApiCallWithId(const nlohmann::json& requestJson, int requestId);
+  /** Make an API call with request ID tracking
+   
+   @returns The request body content (e.g., the JSON as a string).
+   */
+  std::string makeApiCallWithId(const nlohmann::json& requestJson, int requestId);
   
-  /** Make an API call with request tracking */
-  int makeTrackedApiCall( const nlohmann::json& requestJson,
+  /** Make an API call with request tracking
+   
+   Returns request ID (as an int) and the raw request body content (e.g., JSON sent to LLM, but as a string)
+   */
+  std::pair<int,std::string> makeTrackedApiCall( const nlohmann::json& requestJson,
                          std::shared_ptr<LlmInteraction> convo );
   
   /** Send tool results back to LLM for processing.
@@ -213,6 +221,7 @@ private:
   size_t executeToolCallsAndSendResults( const nlohmann::json& toolCalls,
                                          const std::shared_ptr<LlmInteraction> &convo,
                                          const int requestId,
+                                         const std::string &rawResponseContent,
                                          std::optional<size_t> promptTokens = std::nullopt,
                                          std::optional<size_t> completionTokens = std::nullopt );
   
@@ -220,7 +229,10 @@ private:
    
    Returns the number of tool calls processed.
    */
-  size_t parseContentForToolCallsAndSendResults( const std::string &content, const std::shared_ptr<LlmInteraction> &convo, const int requestId );
+  size_t parseContentForToolCallsAndSendResults( const std::string &content,
+                                                const std::shared_ptr<LlmInteraction> &convo,
+                                                const int requestId,
+                                                const std::string &rawResponseContent );
   
   /** Strip <think>...</think> content from LLM responses */
   static std::string stripThinkingContent(const std::string& content);

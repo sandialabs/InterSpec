@@ -810,13 +810,13 @@ Further investigation of top returned candidates is required to make sure they m
   </Tool>
 
   <Tool name="modify_shielding_source_config">
-    <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, add/remove sources, set distance, set geometry, or set source ages. Changes are saved to SpecMeas::m_shieldingSourceModel and updated in GUI if open. If dimension is specified when adding shielding (e.g., '0.5 inches'), it's fixed; if omitted, it will be fit.</Description>
+    <Description>Modify the activity/shielding fit configuration in the application state. Can add/remove shielding layers, add/remove sources, set distance, set geometry, set source ages, or set fitting options. Changes are saved to SpecMeas::m_shieldingSourceModel and updated in GUI if open. If dimension is specified when adding shielding (e.g., '0.5 inches'), it's fixed; if omitted, it will be fit.</Description>
     <ParametersSchema>{
       "type": "object",
       "properties": {
         "operation": {
           "type": "string",
-          "enum": ["add_shielding", "remove_shielding", "add_source", "remove_source", "set_distance", "set_geometry", "set_source_age"],
+          "enum": ["add_shielding", "remove_shielding", "add_source", "remove_source", "set_distance", "set_geometry", "set_source_age", "set_fit_options"],
           "description": "Operation to perform on the configuration"
         },
         "material": {
@@ -880,6 +880,22 @@ Further investigation of top returned candidates is required to make sure they m
           "type": "string",
           "enum": ["Point", "Trace", "Intrinsic"],
           "description": "For add_source: source type. Default: Point"
+        },
+        "attenuate_for_air": {
+          "type": "boolean",
+          "description": "For set_fit_options: whether to include air attenuation in the model. Default: true"
+        },
+        "multiple_nucs_contribute_to_peaks": {
+          "type": "boolean",
+          "description": "For set_fit_options: allow multiple nuclides to contribute to the same peak. Default: true"
+        },
+        "background_peak_subtract": {
+          "type": "boolean",
+          "description": "For set_fit_options: whether to subtract background peak contributions. Default: true"
+        },
+        "same_age_isotopes": {
+          "type": "boolean",
+          "description": "For set_fit_options: isotopes of the same element share the same age (e.g., U235 and U238). Default: true"
         }
       },
       "required": ["operation"]
