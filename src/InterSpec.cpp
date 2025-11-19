@@ -3105,7 +3105,7 @@ WModelIndex InterSpec::addPeak( PeakDef peak,
       {
         shared_ptr<PeakDef> new_peak = make_shared<PeakDef>( *addswap->first );
         PeakModel::SetGammaSource status = PeakModel::setNuclideXrayReaction( *new_peak, addswap->second, 4.0 );
-        if( status != PeakModel::SetGammaSource::NoSourceChange )
+        if( status != PeakModel::SetGammaSource::FailedSourceChange )
         {
           // Replace the previous peak with the new peak
           auto pos = std::find(begin(*peaks), end(*peaks), addswap->first);
@@ -5660,7 +5660,7 @@ void InterSpec::loadTestStateFromN42( const std::string filename )
     if( sourcefit )
     {
       shieldingSourceFit();
-      m_shieldingSourceFit->deSerialize( sourcefit );
+      m_shieldingSourceFit->deSerialize( sourcefit, ShieldingSourceDisplay::UpdatePeaksUseForFittingFromState );
       closeShieldingSourceFit();
     }//if( sourcefit )
     
@@ -8121,8 +8121,19 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
     checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
   }//end add "AskPropagatePeaks" to menu
-  
-  
+
+
+  {//begin add "AskPropagatePeaks" to menu
+    WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-preserve-ene-cal") );
+    UserPreferences::associateWidget( "AskPreserveEnergyCal", checkbox, this );
+    item = subPopup->addWidget( checkbox );
+    HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-help-pref-preserve-ene-cal"),
+                                 true, HelpSystem::ToolTipPosition::Right );
+    checkbox->checked().connect( boost::bind( &InterSpec::toggleToolTip, this, true ) );
+    checkbox->unChecked().connect( boost::bind( &InterSpec::toggleToolTip, this, false ) );
+  }//end add "AskPropagatePeaks" to menu
+
+
   {//begin add "DisplayBecquerel"
     WCheckBox *checkbox = new WCheckBox( WString::tr("app-mi-help-pref-disp-bq") );
     UserPreferences::associateWidget( "DisplayBecquerel", checkbox, this );
@@ -10106,7 +10117,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 
   item = popup->addMenuItem( WString::tr("app-mi-tools-act-fit") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-act-fit") , showToolTips );
-  item->triggered().connect( boost::bind( &InterSpec::shieldingSourceFit, this ) );
+  item->triggered().connect( boost::bind( &InterSpec::shieldingSourceFit, this, true ) );
  
 #if( USE_REL_ACT_TOOL )
   // The Relative Efficiency tools are not specialized to display on phones yet.
@@ -10664,26 +10675,30 @@ void InterSpec::showNuclideSearchWindow()
 }//void showNuclideSearchWindow()
 
 
-ShieldingSourceDisplay *InterSpec::shieldingSourceFit()
+ShieldingSourceDisplay *InterSpec::shieldingSourceFit( const bool create_window )
 {
   if( m_shieldingSourceFit )
     return m_shieldingSourceFit;
-  
+
+  // If create_window is false and window doesn't exist, return nullptr
+  if( !create_window )
+    return nullptr;
+
   assert( !m_shieldingSourceFitWindow );
-  
+
   assert( m_peakInfoDisplay );
   auto widgets = ShieldingSourceDisplay::createWindow( this );
-  
+
   m_shieldingSourceFit = widgets.first;
   m_shieldingSourceFitWindow = widgets.second;
-  
+
   if( m_undo && !m_undo->isInUndoOrRedo() )
   {
     auto undo = [this](){ closeShieldingSourceFit(); };
-    auto redo = [this](){ shieldingSourceFit(); };
+    auto redo = [this](){ shieldingSourceFit( true ); };
     m_undo->addUndoRedoStep( undo, redo, "Open Activity/Shielding Fit tool" );
   }
-  
+
   return m_shieldingSourceFit;
 }//ShieldingSourceDisplay *shieldingSourceFit()
 
@@ -11787,12 +11802,13 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( prev spec had peaks and new one doesnt )
   }//if( should propogate peaks )
   
-  
-  
+
   deleteEnergyCalPreserveWindow();
-  
+
   if( options.testFlag(SetSpectrumOptions::CheckToPreservePreviousEnergyCal)
-      && !sameSpecFile && m_energyCalTool && !!meas && !!m_dataMeasurement )
+      && !sameSpecFile && m_energyCalTool && !!meas && !!m_dataMeasurement
+      && UserPreferences::preferenceValue<bool>("AskPreserveEnergyCal", this)
+     )
   {
     switch( spec_type )
     {

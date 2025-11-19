@@ -3444,8 +3444,8 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     PeakModel *peak_model = m_viewer->peakModel();
     WSuggestionPopup *shield_suggest = m_viewer->shieldingSuggester();
       
-    auto disp = make_unique<ShieldingSourceDisplay>( peak_model, m_viewer, shield_suggest, material_db );
-    disp->deSerialize( xml_doc->first_node() );
+    ShieldingSourceDisplay::ShieldingSourceDisplayState test_state;
+    test_state.deSerialize( xml_doc->first_node(), material_db );
     
     assert( dialog );
     dialog->contents()->clear();
@@ -3462,16 +3462,16 @@ bool SpecMeasManager::handleShieldingSourceFile( std::istream &input, SimpleDial
     dialog->footer()->clear();
     dialog->addButton( WString::tr("Cancel") );
     WPushButton *btn = dialog->addButton( WString::tr("Yes") );
-    btn->clicked().connect( std::bind([this,data,xml_doc](){
+    btn->clicked().connect( std::bind([this,data,test_state](){
       InterSpec *viewer = InterSpec::instance();
-      if( !viewer || !data || !xml_doc )
+      if( !viewer || !data )
         return;
       
       try
       {
         ShieldingSourceDisplay *display = viewer->shieldingSourceFit();
         if( display )
-          display->deSerialize( xml_doc->first_node() );
+          display->deSerialize( test_state, ShieldingSourceDisplay::DeserializeOptions::UpdatePeaksUseForFittingFromState );
       }catch( std::exception &e )
       {
         passMessage( WString::tr("smm-err-act-shield").arg(e.what()), WarningWidget::WarningMsgHigh );

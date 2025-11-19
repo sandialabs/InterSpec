@@ -351,6 +351,7 @@
   <message id="app-mi-help-pref-check-prev"> Előző munka ellenőrzése</message>
   <message id="app-mi-help-pref-show-tt"> Eszköztippek megjelenítése</message>
   <message id="app-mi-help-pref-prop-peak"> Csúcsok propagálására kérdez</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> Energia kal. megtartására kérdez.</message>
   <message id="app-mi-help-pref-disp-bq"> Becquerel-ben megjelenítés</message>
   <message id="app-mi-help-pref-def-drfs"> Alapértelmezett DRF-ek használata</message>
   <message id="app-mi-help-pref-desktop"> Asztali felület</message>
@@ -374,6 +375,10 @@
   <message id="app-mi-tt-help-pref-prop-peak">Ugyanabból a detektorból származó spektrumok betöltésekor
     megkérdezi, hogy újra kellene-e illeszteni ugyanazokat a csúcsokat az új spektrumhoz. Csak akkor alkalmazandó, ha az új spektrumnak nincsenek csúcsai, de az előző
     előtérnek voltak.
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">Ugyanabból a detektorból származó spektrumok betöltésekor, és az energia
+    kalibráció az új fájlban eltér a régi fájltól, megkérdezi, hogy a régi fájl energia kalibrációját alkalmazni kell-e
+    az új fájlra.
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">Aktivitás megjelenítése becquerel egységekben, curie helyett.</message>
   <message id="app-mi-tt-help-def-drfs">Spektrum betöltésekor, és ha korábban nem

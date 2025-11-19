@@ -1112,7 +1112,7 @@ void SpecMeas::setRelActAutoGuiState( std::unique_ptr<rapidxml::xml_document<cha
 
 
 #if( USE_LLM_INTERFACE )
-std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> SpecMeas::llmConversationHistory( const std::set<int> &samplenums ) const
+std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> SpecMeas::llmConversationHistory( const std::set<int> &samplenums ) const
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
 
@@ -1124,7 +1124,7 @@ std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> SpecMeas::ll
 }
 
 
-void SpecMeas::setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> history )
+void SpecMeas::setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history )
 {
   std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
   
@@ -1842,7 +1842,7 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   m_llmConversationHistory.clear();
   
   // Look for all LlmConversationHistory nodes
-  for( node = interspecnode->first_node( "LlmConversationHistory", 21 ); node; node = node->next_sibling( "LlmConversationHistory", 21 ) )
+  XML_FOREACH_CHILD(node, interspecnode, "LlmConversationHistory")
   {
     try
     {
@@ -1865,14 +1865,14 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
       }
       
       // Parse conversations for this sample set
-      std::vector<std::shared_ptr<LlmConversationStart>> conversations;
+      std::vector<std::shared_ptr<LlmInteraction>> conversations;
 
       // Use the static fromXml function from LlmConversationHistory
       LlmConversationHistory::fromXml( node, conversations );
 
       if( !conversations.empty() )
       {
-        m_llmConversationHistory[samplenums] = std::make_shared<std::vector<std::shared_ptr<LlmConversationStart>>>( conversations );
+        m_llmConversationHistory[samplenums] = std::make_shared<std::vector<std::shared_ptr<LlmInteraction>>>( conversations );
       }
     }
     catch( std::exception &e )
@@ -2022,7 +2022,7 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     for( const auto &entry : m_llmConversationHistory )
     {
       const std::set<int> &samplenums = entry.first;
-      const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> &conversations = entry.second;
+      const std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> &conversations = entry.second;
 
       if( conversations->empty() )
         continue;

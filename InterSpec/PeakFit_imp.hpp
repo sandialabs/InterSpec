@@ -252,6 +252,8 @@ void fit_continuum( const float * const x,
 
  @param energies The lower-channel energies of ROI.  ROI defined by energies[0] to energies[nbin]. Must be of at least length nbin+1.
  @param data The channel counts of the ROI.  Must be of at least length nbin.
+ @param variances Optional variances (uncertainties squared) of the data.  If specified - you must make sure each value is positive and non-zero.
+        If not specified, will use the square root of the data value, or 1.0, whichever is larger.
  @param nbin The number of channels in the ROI.
  @param num_polynomial_terms The number of polynomial continuum terms to fit for.
         0 is no continuum (untested), 1 is constant, 2 is linear sloped continuum, etc
@@ -277,7 +279,10 @@ void fit_continuum( const float * const x,
  Throws exception upon ill-posed input.
  */
 template<typename PeakType, typename ScalarType>
-ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size_t nbin,
+ScalarType fit_amp_and_offset_imp( const float *x,
+                                  const float *data,
+                                  const float *variances,
+                                  const size_t nbin,
                           const int num_polynomial_terms,
                           const bool step_continuum,
                           const ScalarType ref_energy,
@@ -368,7 +373,9 @@ ScalarType fit_amp_and_offset_imp( const float *x, const float *data, const size
     //  However, there are also highly scaled spectra, whose all values are really small, so
     //  in this case we want to do something more reasonable.
     // TODO: evaluate these choices of thresholds and tradeoffs, more better
-    ScalarType uncert = (dataval > PEAK_FIT_MIN_CHANNEL_UNCERT ? sqrt(dataval) : ScalarType(1.0));
+    ScalarType uncert = variances ? ScalarType( static_cast<double>(sqrt(variances[row])) )
+                                  : ((dataval > PEAK_FIT_MIN_CHANNEL_UNCERT) ? sqrt(dataval) : ScalarType(1.0));
+    assert( !variances || (variances[row] > 0.0f) );
 
     uncerts(row) = uncert;
 

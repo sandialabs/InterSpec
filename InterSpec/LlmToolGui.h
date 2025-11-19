@@ -31,16 +31,16 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <map>
 
 #include <Wt/WSignal>
-#include <Wt/WTextArea>
 #include <Wt/WLineEdit>
 #include <Wt/WContainerWidget>
 
 //Forward declarations
 class InterSpec;
 class LlmInterface;
+class LlmInteractionDisplay;
 class LlmConversationHistory;
-struct LlmConversationStart;
-struct LlmConversationResponse;
+struct LlmInteraction;
+class LlmInteractionTurn;
 
 namespace Wt
 {
@@ -73,21 +73,18 @@ public:
   
   /** Focus the input text field */
   void focusInput();
-  
+
   /** Clear the conversation history display */
   void clearHistory();
-  
-  /** Refresh the conversation display from current history */
-  void refreshDisplay();
-  
+
   /** Handle response received from LLM interface */
   void handleResponseReceived();
   
   /** Get the current conversation history for saving to SpecMeas */
-  std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>> getConversationHistory() const;
+  std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> getConversationHistory() const;
 
   /** Set the conversation history from SpecMeas */
-  void setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmConversationStart>>>& history);
+  void setConversationHistory(const std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>>& history);
   
   /** Clear the current conversation history */
   void clearConversationHistory();
@@ -95,37 +92,35 @@ public:
 protected:
   /** Handle user pressing Enter in the input field */
   void handleInputSubmit();
-  
+
   /** Handle user clicking the send button */
   void handleSendButton();
-  
+
   /** Process the user's input message */
   void sendMessage(const std::string& message);
-  
-  /** Update the display when new messages are received */
-  void updateConversationDisplay();
-  
-  /** Format a single conversation for display */
-  std::string formatMessage(const LlmConversationStart& conversation, int requestId = -1);
-  
-  /** Group conversations by request ID for display */
-  std::map<int, std::vector<const LlmConversationStart*>> groupConversationsByRequest();
+
+  /** Handle retry request from error display */
+  void handleRetry( std::shared_ptr<LlmInteraction> interaction );
+
+  /** Export entire conversation as JSON */
+  void exportConversationJson();
+
+  /** Show confirmation dialog and clear conversation */
+  void handleClearConversation();
   
 
 
 private:
   InterSpec *m_viewer;              ///< The InterSpec instance
   std::unique_ptr<LlmInterface> m_llmInterface;  ///< The LLM interface for sending messages
-  
-  Wt::WTextArea *m_conversationDisplay;  ///< Text area showing conversation history
+
+  Wt::WContainerWidget *m_conversationContainer;  ///< Container holding LlmInteractionDisplay widgets
   Wt::WLineEdit *m_inputEdit;             ///< Input field for user messages
   Wt::WPushButton *m_sendButton;          ///< Button to send messages
+  Wt::WPushButton *m_menuIcon;            ///< Menu icon for conversation-level actions
   Wt::WGridLayout *m_layout;              ///< Main layout manager
-  
-  int m_nextRequestId;                    ///< Counter for tracking request IDs
-  
+
   bool m_isRequestPending;                 ///< Whether a request is currently pending
-  int m_currentRequestId;                  ///< ID of the current pending request
   
   /** Initialize the UI layout and widgets */
   void initializeUI();

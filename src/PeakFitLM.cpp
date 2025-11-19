@@ -307,11 +307,7 @@ struct PeakFitDiffCostFunction
     if( !valid_offset_type )
       throw runtime_error( "PeakFitDiffCostFunction: !valid_offset_type" );
     
-    // It wouldnt be that hard to support external continuum, but we'll leave that for later, at
-    //  the moment.
-    assert( m_offset_type != PeakContinuum::OffsetType::External );
-    if( m_offset_type == PeakContinuum::OffsetType::External )
-      throw runtime_error( "PeakFitDiffCostFunction: PeakContinuum::OffsetType::External not supported" );
+    // External continuum is now supported - it uses pre-calculated background from SNIP algorithm
     
     if( dof() <= 0.0 )
       throw runtime_error( "PeakFitDiffCostFunction: not enough data channels to fit all the parameters" );
@@ -680,22 +676,79 @@ struct PeakFitDiffCostFunction
     const int num_polynomial_terms = static_cast<int>( PeakContinuum::num_parameters( m_offset_type ) );
     const bool is_step_continuum = PeakContinuum::is_step_continuum( m_offset_type );
 
-    auto continuum = create_continuum( peaks.front().getContinuum() );
+    assert( !peaks.empty() || !fixed_amp_peaks.empty() );
+    
+    auto continuum = create_continuum( peaks.empty() ? fixed_amp_peaks.front().getContinuum() : peaks.front().getContinuum() );
     continuum->setRange( T(m_roi_lower_energy), T(m_roi_upper_energy) );
     continuum->setType( m_offset_type );
 
     assert( (m_offset_type != PeakContinuum::OffsetType::External) || !!m_external_continuum );
-    assert( (m_offset_type != PeakContinuum::OffsetType::External) || !m_use_lls_for_cont );
+    assert( (m_offset_type != PeakContinuum::OffsetType::External) || m_use_lls_for_cont );
 
     if( m_offset_type == PeakContinuum::OffsetType::External )
+    {
       continuum->setExternalContinuum( m_external_continuum );
-
-    if( !m_use_lls_for_cont )
+      
+      if( !peaks.empty() )
+      {
+        // We need to fit peak amplitudes here - but we also need to account for the external countinuum counts,
+        //  so we'll just subtract the external continuum from the data, but keep the original data
+        //  around for the variances
+        vector<float> data_copy( channel_counts, channel_counts + nchannel );
+        vector<float> data_variances( channel_counts, channel_counts + nchannel );
+        for( size_t i = 0; i < nchannel; ++i )
+        {
+          data_copy[i] -= m_external_continuum->gamma_integral( energies[i], energies[i+1] );
+          data_copy[i] = std::max( 0.0f, data_copy[i] );
+          
+          if( data_variances[i] < PEAK_FIT_MIN_CHANNEL_UNCERT )
+            data_variances[i] = PEAK_FIT_MIN_CHANNEL_UNCERT;
+        }
+        
+        vector<T> means, sigmas;
+        for( const auto &peak : peaks )
+        {
+          means.push_back( peak.mean() );
+          sigmas.push_back( peak.sigma() );
+        }
+        
+        const vector<T> skew_pars( params + num_fit_continuum_pars, params + num_fit_continuum_pars + num_skew );
+        
+        vector<T> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
+        
+        PeakFit::fit_amp_and_offset_imp(energies, &(data_copy[0]), &(data_variances[0]), nchannel,
+                                        num_polynomial_terms, is_step_continuum, T(m_ref_energy), means, sigmas,
+                                        fixed_amp_peaks, m_skew_type, skew_pars.data(),
+                                        amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
+                                        &(peak_counts[0]) );
+        
+        assert( peaks.size() == amplitudes.size() );
+        assert( amp_uncerts.empty() || (amp_uncerts.size() == peaks.size()));
+        for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
+        {
+          peaks[peak_index].setAmplitude( amplitudes[peak_index] );
+          if( !amp_uncerts.empty() )
+            peaks[peak_index].setAmplitudeUncert( amp_uncerts[peak_index] );
+        }
+      }else
+      {
+        for( size_t peak_index = 0; peak_index < fixed_amp_peaks.size(); ++peak_index )
+          fixed_amp_peaks[peak_index].gauss_integral( energies, &(peak_counts[0]), nchannel );
+      }
+      
+      // Loop manually since PeakContinuumImp doesn't have offset_integral method
+      assert( m_external_continuum );
+      for( size_t i = 0; i < nchannel; ++i )
+        peak_counts[i] += T( m_external_continuum->gamma_integral( energies[i], energies[i+1] ) );
+    }else if( !m_use_lls_for_cont )
     {
       continuum->setParameters( T(m_ref_energy), params, nullptr );
 
       for( size_t peak_index = 0; peak_index < peaks.size(); ++peak_index )
         peaks[peak_index].gauss_integral( energies, &(peak_counts[0]), nchannel );
+      
+      for( size_t peak_index = 0; peak_index < fixed_amp_peaks.size(); ++peak_index )
+        fixed_amp_peaks[peak_index].gauss_integral( energies, &(peak_counts[0]), nchannel );
 
       PeakDists::offset_integral( *continuum, energies, &(peak_counts[0]), nchannel, m_data );
     }else
@@ -711,7 +764,7 @@ struct PeakFitDiffCostFunction
 
       vector<T> amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts;
 
-      PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nchannel, num_polynomial_terms, is_step_continuum,
+      PeakFit::fit_amp_and_offset_imp(energies, channel_counts, nullptr, nchannel, num_polynomial_terms, is_step_continuum,
                                           T(m_ref_energy), means, sigmas, fixed_amp_peaks, m_skew_type, skew_pars.data(),
                                           amplitudes, continuum_coeffs, amp_uncerts, cont_uncerts,
                                           &(peak_counts[0]) );

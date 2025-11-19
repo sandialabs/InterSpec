@@ -14060,7 +14060,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 
     const float * const channel_counts = &((*spectrum)[channel_range.first]);
     const float * const channel_energies = &((*channel_energies_ptr)[channel_range.first]);
-    PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, roi.num_channels,
+    PeakFit::fit_amp_and_offset_imp( channel_energies, channel_counts, nullptr, roi.num_channels,
                                     num_polynomial_terms, is_step_continuum, ref_energy, effective_means,
                                     effective_sigmas, fixed_amp_peaks, options.skew_type, skew_parameters,
                                     fit_amps, fit_continuum_coefs, fit_amp_uncert, fit_continuum_uncerts, peak_counts );

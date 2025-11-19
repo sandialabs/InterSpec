@@ -472,7 +472,7 @@ void startWebServer( string name,
 #endif
       std::cout << "=============================" << std::endl << std::endl;
     }//if( config.mcpServer.enabled )
-  }catch( std::exception& e )
+  }catch( std::exception &e )
   {
     std::cerr << "Exception setting up LLM/MCP interface: " << e.what() << std::endl;
 #if( BUILD_AS_LOCAL_SERVER )
@@ -543,8 +543,7 @@ int start_server( const char *process_name,
   try
   {
     const string directories_to_try[] = { userdatadir, 
-      SpecUtils::append_path(relbasedir,"data"), 
-      SpecUtils::append_path(relbasedir,"data_ouo") 
+      SpecUtils::append_path(relbasedir,"data")
     };
 
     for( const string &trial_dir : directories_to_try )

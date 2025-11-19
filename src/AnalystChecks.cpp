@@ -358,7 +358,7 @@ namespace AnalystChecks
       
       PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *new_fit_peak, source, 4.0 );
       
-      if( res == PeakModel::SetGammaSource::NoSourceChange )
+      if( res == PeakModel::SetGammaSource::FailedSourceChange )
         throw runtime_error( "Peak was fit, but source string '" + source + "' was not valid to set source." );
       
       bool replaced_peak = false;
@@ -410,6 +410,14 @@ namespace AnalystChecks
             src_name = new_fit_peak->reaction()->name();
           
           Wt::WColor c = ref_lines->suggestColorForSource( src_name );
+          
+          if( c.isDefault() && !src_name.empty() )
+          {
+            c = ref_lines->nextGenericSourceColor();
+            if( !c.isDefault() )
+              ref_lines->updateColorCacheForSource( src_name, c );
+          }
+          
           new_fit_peak->setLineColor( c );
         }
       }
@@ -549,13 +557,15 @@ namespace AnalystChecks
       const bool contained_xray = (SpecUtils::icontains(el_str, "x-ray")
                                    || SpecUtils::icontains(el_str, "x ray")
                                    || SpecUtils::icontains(el_str, "xray")
-                                   || SpecUtils::icontains(el_str, "element"));
+                                   || SpecUtils::icontains(el_str, "element")
+                                   || SpecUtils::icontains(el_str, "fluorescence") );
       if( contained_xray )
       {
         SpecUtils::ireplace_all( el_str, "x-ray", "");
         SpecUtils::ireplace_all( el_str, "x ray", "");
         SpecUtils::ireplace_all( el_str, "xray", "");
         SpecUtils::ireplace_all( el_str, "element", "");
+        SpecUtils::ireplace_all( el_str, "fluorescence", "");
       }
       SpecUtils::trim( el_str );
       
@@ -1480,7 +1490,7 @@ namespace AnalystChecks
 
           // Use PeakModel::setNuclideXrayReaction to parse and set the source
           PeakModel::SetGammaSource result = PeakModel::setNuclideXrayReaction( modifiedPeak, *options.stringValue, 4.0 );
-          if( result == PeakModel::SetGammaSource::NoSourceChange )
+          if( result == PeakModel::SetGammaSource::FailedSourceChange )
             throw runtime_error( "Failed to set source: " + *options.stringValue );
           break;
         }

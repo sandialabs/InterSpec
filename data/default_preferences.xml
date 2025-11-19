@@ -52,4 +52,5 @@
  <pref name="RefSpectraLastSelection" type="String"></pref>
  <pref name="IsoByNucsShowBackground" type="Boolean">true</pref>
  <pref name="DynamicRefLine" type="Boolean">false</pref>
+ <pref name="AskPreserveEnergyCal" type="Boolean">true</pref>
 </preferences>

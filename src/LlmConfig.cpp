@@ -83,6 +83,20 @@ std::shared_ptr<LlmConfig> LlmConfig::load()
   try
   {
     config->agents = loadAgentsFromFile(agentsPath);
+
+    // Verify that all required agents have been loaded
+    auto requireAgent = []( const AgentType type, const LlmConfig &config ) {
+      for( const AgentConfig &agent : config.agents )
+      {
+        if( agent.type == type )
+          return;
+      }
+      throw std::runtime_error( "Required agent '" + agentTypeToString(type) + "' not found in agent configuration" );
+    };
+
+    requireAgent( AgentType::MainAgent, *config );
+    requireAgent( AgentType::NuclideId, *config );
+    requireAgent( AgentType::ActivityFit, *config );
   }catch( const std::exception &e )
   {
     // If user provided any override file and it failed to parse, return nullptr
@@ -362,7 +376,7 @@ std::vector<LlmConfig::ToolConfig> LlmConfig::loadToolConfigsFromFile( const std
       tools.push_back(tool);
     }//for( loop over Tool nodes )
 
-    cout << "Loaded " << tools.size() << " tool configurations from " + toolsConfigPath << endl;
+    //cout << "Loaded " << tools.size() << " tool configurations from " + toolsConfigPath << endl;
     return tools;
   }catch( const std::exception &e )
   {
@@ -410,8 +424,7 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
     std::vector<LlmConfig::AgentConfig> agents;
 
     // Parse each Agent node
-    for( const rapidxml::xml_node<char> *agentNode = root->first_node("Agent");
-        agentNode; agentNode = agentNode->next_sibling("Agent") )
+    XML_FOREACH_CHILD( agentNode, root, "Agent" )
     {
       LlmConfig::AgentConfig agent;
 
@@ -433,14 +446,26 @@ std::vector<LlmConfig::AgentConfig> LlmConfig::loadAgentsFromFile( const std::st
       const rapidxml::xml_node<char> * const descNode = XmlUtils::get_required_node( agentNode, "Description" );
       agent.description = SpecUtils::xml_value_str( descNode );
 
-      // Load SystemPrompt
+      // Load SystemPrompt - handle CDATA sections
       const rapidxml::xml_node<char> * const promptNode = XmlUtils::get_required_node( agentNode, "SystemPrompt" );
-      agent.systemPrompt = SpecUtils::xml_value_str( promptNode );
+
+      // Check if SystemPrompt has a CDATA child node
+      const rapidxml::xml_node<char> * cdataNode = promptNode->first_node();
+      if( cdataNode && cdataNode->type() == rapidxml::node_cdata )
+      {
+        // Get value from CDATA node
+        agent.systemPrompt = SpecUtils::xml_value_str( cdataNode );
+      }
+      else
+      {
+        // Get value from element node directly
+        agent.systemPrompt = SpecUtils::xml_value_str( promptNode );
+      }
 
       agents.push_back(agent);
     }//for( loop over Agent nodes )
 
-    cout << "Loaded " << agents.size() << " agent configurations from " + agentsConfigPath << endl;
+    //cout << "Loaded " << agents.size() << " agent configurations from " + agentsConfigPath << endl;
     return agents;
   }catch( const std::exception &e )
   {

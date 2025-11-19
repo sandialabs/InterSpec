@@ -595,12 +595,15 @@ void EnergyCalMultiFile::applyCurrentFit()
       
       set<shared_ptr<const EnergyCalibration>> newcals;
       map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> updated_cals;
-      map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
-      
+      map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks; //old peaks, to new peaks
+      map<shared_ptr<const deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_auto_search_peaks;
+
       // We will first update the energy calibration for Measurements associated with peaks, since
       //  this is kinda un-ambiguous for how to do it for multi-detector systems.
       const auto &detnames = spec->gamma_detector_names();
       const auto peaksets = spec->sampleNumsWithPeaks();
+      const set<set<int>> samplesWithAutoSearchPeak = spec->sampleNumsWithAutomatedSearchPeaks();
+
       for( const set<int> &samples : peaksets )
       {
         auto peaks = spec->peaks( samples );
@@ -652,7 +655,60 @@ void EnergyCalMultiFile::applyCurrentFit()
         
         updated_peaks[peaks] = EnergyCal::translatePeaksForCalibrationChange( *peaks, dispcal, newcal );
       }//for( const set<int> &samples : peaksets )
-      
+
+
+      for( const set<int> &samples : samplesWithAutoSearchPeak )
+      {
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->automatedSearchPeaks(samples);
+        if( !peaks || peaks->empty() )
+          continue;
+
+        auto dispcal = spec->suggested_sum_energy_calibration( samples, detnames );
+        if( !dispcal || !dispcal->valid() )
+          continue;
+
+        shared_ptr<const EnergyCalibration> newcal;
+        auto calpos = updated_cals.find( dispcal );
+        if( calpos != end(updated_cals) )
+        {
+          newcal = calpos->second;
+        }else
+        {
+          auto cal = make_shared<EnergyCalibration>();
+          cal->set_polynomial( dispcal->num_channels(), m_calVal, m_devPairs );
+          newcal = cal;
+          calpos = updated_cals.insert( {dispcal, newcal} ).first;
+        }
+
+
+        for( const int sample : samples )
+        {
+          for( const auto m : spec->sample_measurements(sample) )
+          {
+            auto cal = m ? m->energy_calibration() : nullptr;
+            if( !cal || !cal->valid() || (cal->num_channels() < 5) )
+              continue;
+
+            if( cal == dispcal )
+            {
+              updated_cals[cal] = newcal;
+              newcals.insert( newcal );
+            }else
+            {
+              auto pos = updated_cals.find( dispcal );
+              if( pos == end(updated_cals) )
+              {
+                auto thisnewcal = EnergyCal::propogate_energy_cal_change( dispcal, newcal, cal );
+                updated_cals[cal] = thisnewcal;
+                newcals.insert( thisnewcal );
+              }
+            }//
+          }//for( const auto m : spec->sample_measurements(sample) )
+        }//for( const int sample : samples )
+
+        updated_auto_search_peaks[peaks] = EnergyCal::translatePeaksForCalibrationChange( *peaks, dispcal, newcal );
+      }//for( const set<int> &samples : peaksets )
+
       
       for( shared_ptr<const SpecUtils::Measurement> m : spec->measurements() )
       {
@@ -698,7 +754,21 @@ void EnergyCalMultiFile::applyCurrentFit()
         if( pos != end(updated_peaks) )
           spec->setPeaks( pos->second, samples );
       }//for( const set<int> &samples : peaksets )
-      
+
+
+      for( const set<int> &samples : samplesWithAutoSearchPeak )
+      {
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->automatedSearchPeaks( samples );
+        if( !peaks || peaks->empty() )
+          continue;
+        const auto pos = updated_auto_search_peaks.find( peaks );
+        if( pos != end(updated_auto_search_peaks) )
+        {
+          auto peaks = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(pos->second);
+          spec->setAutomatedSearchPeaks( samples, peaks );
+        }
+      }//for( const set<int> &samples : peaksets )
+
       assert( foreground );
       //Trigger an update of peak views if we are on the foreground SpecFile
       if( (spec == foreground) && foreground->peaks(foreSamples) )

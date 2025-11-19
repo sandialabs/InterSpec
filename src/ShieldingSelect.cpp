@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 
 #include <Wt/WText>
 #include <Wt/WLabel>
@@ -367,7 +368,23 @@ public:
     }catch( std::exception &e )
     {
       cerr << "Failed to rount-trip TraceSrcDisplay: " << e.what() << endl;
-      assert( 0 );
+      cerr << "  Original trace: nuclide=" << (trace.m_nuclide ? trace.m_nuclide->symbol : "null")
+           << ", activity=" << std::setprecision(17) << trace.m_activity
+           << ", type=" << static_cast<int>(trace.m_type)
+           << ", fitActivity=" << trace.m_fitActivity << endl;
+      cerr << "  Roundtrip trace: nuclide=" << (roundtrip.m_nuclide ? roundtrip.m_nuclide->symbol : "null")
+           << ", activity=" << std::setprecision(17) << roundtrip.m_activity
+           << ", type=" << static_cast<int>(roundtrip.m_type)
+           << ", fitActivity=" << roundtrip.m_fitActivity << endl;
+      cerr << "  Activity difference: " << std::setprecision(17) << fabs(trace.m_activity - roundtrip.m_activity) << endl;
+      
+      
+      if( (trace.m_nuclide != roundtrip.m_nuclide) && !roundtrip.m_nuclide )
+      {
+        //m_parent->m_sourceModel->
+      }
+      
+      //assert( 0 );
     }
 #endif
   }// void fromTraceSourceInfo( const ShieldingSourceFitCalc::TraceSourceInfo &trace )
@@ -3432,6 +3449,25 @@ void ShieldingSelect::setFitRectangularWidthEnabled( const bool allow )
 }//void setFitRectangularWidthEnabled( const bool allow )
 
 
+void ShieldingSelect::setFitRectangularDepthEnabled( const bool allow )
+{
+  checkIsCorrectCurrentGeometry( GeometryType::Rectangular, __func__ );
+  
+  if( !m_forFitting )
+    throw runtime_error( __func__ + string(": can't be called when not for fitting.") );
+  
+  WCheckBox *cb = m_fitRectDepthCB;
+  const bool previous = cb->isVisible();
+  if( previous == allow )
+    return;
+  
+  cb->setChecked( false );
+  cb->setHidden( !allow );
+  
+  assert( allow || !fitRectangularDepthThickness() );
+}//void setFitRectangularDepthEnabled( const bool allow )
+
+
 bool ShieldingSelect::fitAtomicNumber() const
 {
   if( !isGenericMaterial() || !m_forFitting )
@@ -4994,6 +5030,7 @@ void ShieldingSelect::handleUserChangeForUndoRedo()
   {
     auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, true) );
     server->post( wApp->sessionId(), worker );
+    //server->schedule( 1, wApp->sessionId(), worker );
   }
 }//void handleUserChangeForUndoRedo()
 
@@ -5576,6 +5613,7 @@ void ShieldingSelect::deSerialize( const rapidxml::xml_node<char> *shield_node,
   {
     auto worker = wApp->bind( boost::bind(&ShieldingSelect::handleUserChangeForUndoRedoWorker, this, false) );
     server->post( wApp->sessionId(), worker );
+    //server->schedule( 1, wApp->sessionId(), worker );
   }//if( m_userChangedStateSignal.isConnected() && server )
 }//void deSerialize( const rapidxml::xml_node<char> *shielding_node ) const
 

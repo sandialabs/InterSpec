@@ -353,6 +353,7 @@
   <message id="app-mi-help-pref-check-prev"> Проверять предыдущую работу</message>
   <message id="app-mi-help-pref-show-tt"> Показывать подсказки</message>
   <message id="app-mi-help-pref-prop-peak"> Спрашивать о распространении пиков</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> Спрашивать о сохранении калибр. энергии.</message>
   <message id="app-mi-help-pref-disp-bq"> Отображать в беккерелях</message>
   <message id="app-mi-help-pref-def-drfs"> Использовать DRF по умолчанию</message>
   <message id="app-mi-help-pref-desktop"> Интерфейс рабочего стола</message>
@@ -376,6 +377,10 @@
   <message id="app-mi-tt-help-pref-prop-peak">При загрузке спектров с того же детектора
     спрашивать, следует ли повторно подогнать те же пики для нового спектра. Применяется только если новый спектр не имеет пиков, но предыдущий
     основной спектр имел.
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">При загрузке спектров с того же детектора, и калибровка энергии
+    нового файла отличается от старого файла, спрашивать, следует ли применить калибровку энергии старого файла
+    к новому файлу.
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">Отображать активность в единицах беккереля, а не кюри.</message>
   <message id="app-mi-tt-help-def-drfs">При загрузке спектра, и если вы ранее не

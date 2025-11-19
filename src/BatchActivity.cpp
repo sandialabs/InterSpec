@@ -1338,61 +1338,57 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   }
   
   
-  double distance = 1*PhysicalUnits::meter;
-  if( specified_dist )
-  {
-    distance = options.distance_override.value();
-  }else if( detector && !detector->isFixedGeometry() )
-  {
-    try
-    {
-      const rapidxml::xml_node<char> *dist_node = base_node->first_node( "Distance" );
-      const string diststr = SpecUtils::xml_value_str( dist_node );
-      distance = PhysicalUnits::stringToDistance( diststr );
-    }catch( std::exception &e )
-    {
-      result.m_error_msg = "Failed to get distance.";
-      result.m_result_code = BatchActivityFitResult::ResultCode::InvalidDistance;
-      return result;
-    }//try / catch to get distance
-  }//if( !detector->isFixedGeometry() )
-  
-  GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
-  
-  const rapidxml::xml_node<char> *geom_node = base_node->first_node( "Geometry" );
-  const string geomstr = SpecUtils::xml_value_str( geom_node );
-  
-  for( GammaInteractionCalc::GeometryType type = GammaInteractionCalc::GeometryType(0);
-      type != GammaInteractionCalc::GeometryType::NumGeometryType;
-      type = GammaInteractionCalc::GeometryType(static_cast<int>(type) + 1) )
-  {
-    if( SpecUtils::iequals_ascii(geomstr, GammaInteractionCalc::to_str(type)) )
-    {
-      geometry = type;
-      break;
-    }
-  }//for( loop over geometry types )
-  
-  if( geometry == GammaInteractionCalc::GeometryType::NumGeometryType )
-  {
-    result.m_error_msg = "Geometry type not specified.";
-    result.m_result_code = BatchActivityFitResult::ResultCode::InvalidGeometry;
-    return result;
-  }//if( geometry == GammaInteractionCalc::GeometryType::NumGeometryType )
-  
-  
   vector<ShieldingSourceFitCalc::ShieldingInfo> shield_definitions;
   vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions;
   ShieldingSourceFitCalc::ShieldingSourceFitOptions fit_options;
-  try
+  GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  double distance = 1.0 * PhysicalUnits::meter;
   {
-    fit_options.deSerialize( base_node );
-  }catch( std::exception &e )
-  {
-    result.m_error_msg = "Exemplar file '" + exemplar_filename + "' Options invalid: " + string(e.what());
-    result.m_result_code = BatchActivityFitResult::ResultCode::InvalidFitOptions;
-    return result;
+    GammaInteractionCalc::ShieldSourceConfig config;
+    try
+    {
+      config.deSerialize( base_node, &matdb );
+    }catch( std::exception &e )
+    {
+      const string msg = e.what();
+      result.m_error_msg = "Exemplar file '" + exemplar_filename + "' " + msg;
+      if( msg.find("ShieldingSourceFitOptions") != string::npos )
+        result.m_result_code = BatchActivityFitResult::ResultCode::InvalidFitOptions;
+      else if( msg.find("Geometry") != string::npos )
+        result.m_result_code = BatchActivityFitResult::ResultCode::InvalidGeometry;
+      else if( msg.find("Distance") != string::npos )
+        result.m_result_code = BatchActivityFitResult::ResultCode::InvalidDistance;
+      else if( msg.find("Shieldings") != string::npos )
+        result.m_result_code = (msg.find("missing") != string::npos)
+                                ? BatchActivityFitResult::ResultCode::NoShieldingsNode
+                                : BatchActivityFitResult::ResultCode::ErrorParsingShielding;
+      else if( msg.find("Shielding") != string::npos )
+        result.m_result_code = BatchActivityFitResult::ResultCode::ErrorParsingShielding;
+      else if( msg.find("Nuclide") != string::npos || msg.find("sources XML") != string::npos )
+        result.m_result_code = (msg.find("missing") != string::npos)
+                                ? BatchActivityFitResult::ResultCode::MissingNuclidesNode
+                                : BatchActivityFitResult::ResultCode::InvalidNuclideNode;
+      else
+        result.m_result_code = BatchActivityFitResult::ResultCode::FitThrewException;
+      return result;
+    }
+    
+    geometry = config.geometry;
+    if( geometry == GammaInteractionCalc::GeometryType::NumGeometryType )
+    {
+      result.m_error_msg = "Exemplar file '" + exemplar_filename + "' has invalid geometry.";
+      result.m_result_code = BatchActivityFitResult::ResultCode::InvalidGeometry;
+      return result;
+    }
+    
+    distance = config.distance;
+    fit_options = config.options;
+    shield_definitions = config.shieldings;
+    src_definitions = config.sources;
   }
+  
+  if( specified_dist )
+    distance = options.distance_override.value();
 
   shared_ptr<const deque<std::shared_ptr<const PeakDef>>> background_peaks;
   if( background 
@@ -1427,55 +1423,6 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     //result.m_result_code = BatchActivityFitResult::ResultCode::ExemplarUsedBackSubButNoBackground;
     //return result;
   }
-                                           
-  const rapidxml::xml_node<char> *shieldings_node = base_node->first_node( "Shieldings" );
-  if( !shieldings_node )
-  {
-    result.m_error_msg = "No Shieldings node specified in Shield/Src fit model.";
-    result.m_result_code = BatchActivityFitResult::ResultCode::NoShieldingsNode;
-    return result;
-  }
-      
-  XML_FOREACH_CHILD(shield_node, shieldings_node, "Shielding")
-  {
-    try
-    {
-      ShieldingSourceFitCalc::ShieldingInfo info;
-      info.deSerialize( shield_node, &matdb );
-      shield_definitions.push_back( std::move(info) );
-    }catch( std::exception &e )
-    {
-      result.m_error_msg = "Invalid Shielding node: " + string(e.what());
-      result.m_result_code = BatchActivityFitResult::ResultCode::ErrorParsingShielding;
-      return result;
-    }
-  }//XML_FOREACH_CHILD(shield_node, shieldings_node, "Shielding")
-      
-      
-  const rapidxml::xml_node<char> *srcs_node = base_node->first_node( "Nuclides" );
-  if( !srcs_node )
-  {
-    result.m_error_msg = "Exemplar file '" + exemplar_filename + "' missing Nuclides (sources) node.";
-    result.m_result_code = BatchActivityFitResult::ResultCode::MissingNuclidesNode;
-    return result;
-  }//if( !srcs_node )
-      
-  XML_FOREACH_CHILD( src_node, srcs_node, "Nuclide" )
-  {
-    try
-    {
-      ShieldingSourceFitCalc::SourceFitDef info;
-      info.deSerialize( src_node );
-      src_definitions.push_back( std::move(info) );
-    }catch( std::exception &e )
-    {
-      result.m_error_msg = "Exemplar file '" + exemplar_filename + "' has invalid Nuclides node: " + string(e.what());
-      result.m_result_code = BatchActivityFitResult::ResultCode::InvalidNuclideNode;
-      return result;
-    }// try / catch
-  }//XML_FOREACH_CHILD( src_node, srcs_node, "Nuclide" )
-      
-  
   if( src_definitions.empty() )
   {
     result.m_error_msg = "Exemplar file '" + exemplar_filename + "' no sources defined.";
@@ -1511,10 +1458,19 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   try
   {
     // We have all the parts, lets do the computation:
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    chi_input.config.distance = distance;
+    chi_input.config.geometry = geometry;
+    chi_input.config.shieldings = shield_definitions;
+    chi_input.config.sources = src_definitions;
+    chi_input.config.options = fit_options;
+    chi_input.detector = detector;
+    chi_input.foreground = foreground;
+    chi_input.background = background;
+    chi_input.foreground_peaks = foreground_peaks;
+    chi_input.background_peaks = background_peaks;
     pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::create( distance, geometry,
-                                                         shield_definitions, src_definitions, detector,
-                                                         foreground, background, foreground_peaks, background_peaks, fit_options );
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     
     auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
     *inputPrams = fcn_pars.second;
@@ -1550,13 +1506,13 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     {
       assert( insrc.nuclide );
       bool found_in_output = false;
-      for( const ShieldingSourceFitCalc::IsoFitStruct &fitsrc : fit_results->fit_src_info )
+      for( const ShieldingSourceFitCalc::SourceFitDef &fitsrc : fit_results->fit_src_info )
       {
         assert( fitsrc.nuclide );
         found_in_output = (fitsrc.nuclide == insrc.nuclide);
         if( found_in_output )
           break;
-      }//for( const ShieldingSourceFitCalc::IsoFitStruct &fitsrc : fit_results->fit_src_info )
+      }//for( const ShieldingSourceFitCalc::SourceFitDef &fitsrc : fit_results->fit_src_info )
       
       if( !found_in_output )
       {

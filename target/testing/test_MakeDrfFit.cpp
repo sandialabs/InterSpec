@@ -23,10 +23,10 @@
 
 #include <cmath>
 #include <memory>
+#include <random>
 #include <vector>
 #include <iostream>
 #include <stdexcept>
-#include <random>
 #include <algorithm>
 
 #define BOOST_TEST_MODULE test_MakeDrfFit_suite
@@ -37,7 +37,12 @@
 #include "InterSpec/BersteinPolynomial.hpp"
 #include "InterSpec/DetectorPeakResponse.h"
 
-namespace 
+#if( defined(WIN32) )
+#undef min
+#undef max
+#endif 
+
+namespace
 {
   // Helper function to create a PeakDef with specified mean and FWHM
   std::shared_ptr<PeakDef> create_test_peak( const double mean, const double fwhm )
@@ -69,7 +74,7 @@ namespace
       x_pow *= x_MeV;
     }
     
-    return std::sqrt( std::max( sum, 0.0 ) );
+    return std::sqrt( (std::max)( sum, 0.0 ) );
   }
   
   // Helper function to evaluate sqrt polynomial with inverse term: sqrt(A + B*x + C/x)
@@ -81,7 +86,7 @@ namespace
     
     const double x_MeV = x_keV / 1000.0;  // Convert keV to MeV
     const double sum = coeffs[0] + coeffs[1] * x_MeV + coeffs[2] / x_MeV;
-    return std::sqrt( std::max( sum, 0.0 ) );
+    return std::sqrt( (std::max)( sum, 0.0 ) );
   }
   
   // Helper function to create test peaks following a known FWHM equation
@@ -110,7 +115,7 @@ namespace
         true_fwhm += noise( gen );
       
       // Ensure FWHM is positive
-      true_fwhm = std::max( true_fwhm, 0.1 );
+      true_fwhm = (std::max)( true_fwhm, 0.1 );
       
       peaks.push_back( create_test_peak( energy, true_fwhm ) );
     }
@@ -146,7 +151,7 @@ BOOST_AUTO_TEST_CASE( test_fit_sqrt_poly_fwhm_lls_basic )
 
   // Check that fitted coefficients reproduce the same FWHM values at the peak energies
   bool coeffs_reproduce_fwhm = true;
-  for( size_t i = 0; i < std::min(peaks.size(), size_t(3)); ++i ) {
+  for( size_t i = 0; i < (std::min)(peaks.size(), size_t(3)); ++i ) {
     const double expected_fwhm = peaks[i]->fwhm();
     const double fitted_fwhm = eval_sqrt_poly( fitted_coeffs, peaks[i]->mean() );
     std::cout << "Energy " << peaks[i]->mean() << ": expected FWHM=" << expected_fwhm 
@@ -197,7 +202,7 @@ BOOST_AUTO_TEST_CASE( test_fit_sqrt_poly_fwhm_lls_with_inverse_term )
   // The exact coefficient matching is complex due to units conversion with 1/x term
   // Just verify that the fit gives reasonable FWHM values in the right range
   bool reasonable_fwhm = true;
-  for( size_t i = 0; i < std::min(peaks.size(), size_t(3)); ++i ) {
+  for( size_t i = 0; i < (std::min)(peaks.size(), size_t(3)); ++i ) {
     const double fitted_fwhm = eval_sqrt_poly_with_inv( fitted_coeffs, peaks[i]->mean() );
     // Just check that FWHM is in a reasonable range for gamma spectroscopy
     if( fitted_fwhm < 0.5 || fitted_fwhm > 200.0 ) { // Very wide tolerance
@@ -224,7 +229,7 @@ BOOST_AUTO_TEST_CASE( test_fit_sqrt_poly_fwhm_lls_noisy_data )
   
   for( size_t i = 0; i < energies.size(); ++i ) {
     const double noisy_fwhm = base_fwhm[i] * noise( gen );
-    peaks.push_back( create_test_peak( energies[i], std::max(noisy_fwhm, 0.5) ) );  // Ensure positive
+    peaks.push_back( create_test_peak( energies[i], (std::max)(noisy_fwhm, 0.5) ) );  // Ensure positive
   }
   
   std::vector<float> fitted_coeffs, coeff_uncerts;
@@ -235,7 +240,7 @@ BOOST_AUTO_TEST_CASE( test_fit_sqrt_poly_fwhm_lls_noisy_data )
   
   // With noisy data, just check that the fit works and gives reasonable results
   bool reasonable_results = true;
-  for( size_t i = 0; i < std::min(peaks.size(), size_t(3)); ++i ) {
+  for( size_t i = 0; i < (std::min)(peaks.size(), size_t(3)); ++i ) {
     const double fitted_fwhm = eval_sqrt_poly( fitted_coeffs, peaks[i]->mean() );
     if( fitted_fwhm < 0.5 || fitted_fwhm > 20.0 ) {
       reasonable_results = false;
@@ -688,7 +693,7 @@ BOOST_AUTO_TEST_CASE( test_fit_to_polynomial_noisy_data )
   for( const float x : x_values )
   {
     const float y = true_coeffs[0] + true_coeffs[1] * x + true_coeffs[2] * x * x;
-    y_values.push_back( std::max( 1.0f, y ) );  // Ensure positive counts
+    y_values.push_back( (std::max)( 1.0f, y ) );  // Ensure positive counts
   }
   
   std::vector<double> fitted_coeffs, uncertainties;

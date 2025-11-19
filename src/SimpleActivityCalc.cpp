@@ -2300,13 +2300,19 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     
       
     // Create the fitting function
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    chi_input.config.distance = input.distance;
+    chi_input.config.geometry = geometry;
+    chi_input.config.shieldings = shielding;
+    chi_input.config.sources = src_definitions;
+    chi_input.config.options = fit_options;
+    chi_input.detector = input.detector;
+    chi_input.foreground = input.foreground;
+    chi_input.background = input.background;
+    chi_input.foreground_peaks = foreground_peaks;
+    chi_input.background_peaks = background_peaks;
     pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
-      GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input.distance, geometry,
-                                                           shielding, src_definitions, input.detector,
-                                                           input.foreground, input.background, 
-                                                           foreground_peaks, 
-                                                           background_peaks,
-                                                           fit_options );
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     
     auto inputPrams = std::make_shared<ROOT::Minuit2::MnUserParameters>();
     *inputPrams = fcn_pars.second;
@@ -2336,14 +2342,14 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
     if( fit_results->fit_src_info.empty() )
       throw std::runtime_error( "No fit results available" );
       
-    const ShieldingSourceFitCalc::IsoFitStruct &fitResult = fit_results->fit_src_info[0];
+    const ShieldingSourceFitCalc::SourceFitDef &fitResult = fit_results->fit_src_info[0];
     
     if( fitResult.nuclide != source.nuclide )
       throw std::runtime_error( "Fit result nuclide mismatch" );
       
     result.successful = true;
     result.activity = fitResult.activity;
-    result.activityUncertainty = fitResult.activityUncertainty;
+    result.activityUncertainty = fitResult.activityUncertainty.value_or(-1.0);
     
     if( input.geometryType == SimpleActivityGeometryType::Plane )
     {
@@ -2352,7 +2358,8 @@ SimpleActivityCalcResult SimpleActivityCalc::performCalculation( const SimpleAct
       const double surface_area = PhysicalUnits::pi * radius * radius;
       
       result.activity /= surface_area;
-      result.activityUncertainty /= surface_area;
+      if( result.activityUncertainty > 0.0 )
+        result.activityUncertainty /= surface_area;
     }//if( input.geometryType == SimpleActivityGeometryType::Plane )
     
     // Calculate nuclide mass

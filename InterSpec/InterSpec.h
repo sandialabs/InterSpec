@@ -705,8 +705,11 @@ public:
   /** If "Activity/Shielding Fit" window is not showing, creates the tool/window, and returns the tool.
    If it is already showing, no changes are made, and a pointer to the tool is returned.
    When the window shown to the user is closed, the #closeShieldingSourceFit function will automatically be called, and tool deleted.
+
+   @param create_window If true (default), creates the window if it doesn't exist.
+                        If false and the window doesn't exist, returns nullptr without creating it.
    */
-  ShieldingSourceDisplay *shieldingSourceFit();
+  ShieldingSourceDisplay *shieldingSourceFit( const bool create_window = true );
   void closeShieldingSourceFit();
   void saveShieldingSourceModelToForegroundSpecMeas();
   

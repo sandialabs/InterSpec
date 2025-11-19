@@ -351,6 +351,7 @@
   <message id="app-mi-help-pref-check-prev"> Check for prev work</message>
   <message id="app-mi-help-pref-show-tt"> Show tooltips</message>
   <message id="app-mi-help-pref-prop-peak"> Ask to Propagate Peaks</message>
+  <message id="app-mi-help-pref-preserve-ene-cal"> Ask to keep energy cal.</message>
   <message id="app-mi-help-pref-disp-bq"> Display in Becquerel</message>
   <message id="app-mi-help-pref-def-drfs"> Use default DRFs</message>
   <message id="app-mi-help-pref-desktop"> Desktop Interface</message>
@@ -374,6 +375,10 @@
   <message id="app-mi-tt-help-pref-prop-peak">When loading spectra from the same detector,
     ask if should re-fit the same peaks for the new spectrum.  Only applies if new spectrum doesnt have any peaks, but previous
     foreground did.
+  </message>
+  <message id="app-mi-tt-help-pref-preserve-ene-cal">When loading spectra from the same detector, and the energy
+    calibration of the new file is different than the old file, ask if the energy calibration of the old file should
+    be applied to the new file.
   </message>
   <message id="app-mi-tt-help-pref-disp-bq">Display activity in units of becquerel, rather than curie.</message>
   <message id="app-mi-tt-help-def-drfs">When a spectrum is loaded, and you have not previously
