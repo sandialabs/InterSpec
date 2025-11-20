@@ -1457,10 +1457,32 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           const double exemplar_mean = exemplar->mean();
 
           const double energy_diff = fabs( fit_mean - exemplar_mean );
-          // We will require the fit peak to be within 0.5 FWHM (arbitrarily chosen distance)
+
+          // Calculate the overlap fraction of the ROI
+          auto overlap_frac_fcn = []( const shared_ptr<const PeakDef> &peak_1, const PeakDef &p_2 ) -> double {
+            const double overlapLow = std::max(peak_1->lowerX(), p_2.lowerX());
+            const double overlapHigh = std::min(peak_1->upperX(), p_2.upperX() );
+            const double intersection = std::max(0.0, overlapHigh - overlapLow);
+            if( intersection <= 0.0 )
+              return 0.0;
+            const double length1 = peak_1->upperX() - peak_1->lowerX();
+            const double length2 = p_2.upperX() - p_2.lowerX();
+            const double unionLength = length1 + length2 - intersection;
+            if( unionLength <= 0.0 )
+              return unionLength;
+            return intersection / unionLength;
+          };
+
+          const double overlap_frac = overlap_frac_fcn( exemplar, p );
+
+          // We will require the fit peak to be within 1.5 FWHM (arbitrarily chosen distance)
           //  of the exemplar peak, and we will use the exemplar peak closest in energy to the
           //  fit peak
-          if( ((energy_diff < 0.5*p.fwhm()) || (energy_diff < 0.5*exemplar->fwhm()))
+          const double fwhm_match_multiple = 1.5;
+          const double min_overlap_frac = 0.75; //arbitrary
+          if( ((energy_diff < fwhm_match_multiple*p.fwhm())
+               || (energy_diff < fwhm_match_multiple*exemplar->fwhm())
+               || (overlap_frac > min_overlap_frac) )
              && (!exemplar_parent || (energy_diff < fabs(exemplar_parent->mean() - fit_mean))) )
           {
             exemplar_parent = exemplar;

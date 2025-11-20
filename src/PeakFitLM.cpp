@@ -1606,6 +1606,9 @@ vector<shared_ptr<const PeakDef>> fit_peaks_in_roi_LM( const vector<shared_ptr<c
     //  to be sucessful, for a limited number of test cases.
     options.max_num_consecutive_invalid_steps = 10;
 
+    // Just to note for the future, the following values are enabled by the default options, and are what we want.
+    //options.preconditioner_type = ceres::JACOBI;
+    //options.jacobi_scaling = true; // Let Ceres estimate scale based on Jacobian diagonal
 
     ceres::Solver::Summary summary;
     ceres::Solve(options, problem.get(), &summary);
