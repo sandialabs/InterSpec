@@ -433,11 +433,11 @@ double chi2_for_region( const PeakShrdVec &peaks,
 //                      is actually the ratio of the null hypothesis chi2
 //                      to the test hypothesis chi2.  A reasonable value for
 //                      this seems to be 4.
-bool chi2_significance_test( PeakDef peak,
+bool chi2_significance_test( const PeakDef &peak,
                              const double stat_threshold,  //this is how large the chi2 without the peak must be, inorder for peak to be necessary - the higher the number this is, the further away from the background the data must be before a peak becomes necaassary
                              const double hypothesis_threshold,  //this says roughly how good a gaussian explains the excess of data over background - higher the number input, the more closer to a gaussian the shape has to be
                              std::vector<PeakDef> other_peaks,
-                             std::shared_ptr<const SpecUtils::Measurement> data );
+                             const std::shared_ptr<const SpecUtils::Measurement> &data );
 
 
 namespace ExperimentalAutomatedPeakSearch

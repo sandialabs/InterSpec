@@ -1377,7 +1377,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
       if( options.refit_energy_cal )
       {
         // We will refit the energy calibration - maybe a few times - to really hone in on things
-        for( size_t i = 0; i < 5; ++i )
+        for( size_t i = 0; i < 4; ++i )
         {
           vector<PeakDef> energy_cal_peaks = candidate_peaks;
           for( auto &peak : energy_cal_peaks )
@@ -1390,6 +1390,7 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
           vector<PeakDef> peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                                   stat_threshold, hypothesis_threshold,
                                                   energy_cal_peaks, spec, {}, isRefit );
+
           try
           {
             fit_energy_cal_from_fit_peaks( spec, peaks );
@@ -1426,13 +1427,20 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                                   stat_threshold, hypothesis_threshold,
                                                   candidate_peaks, spec, {}, isRefit );
 
-      // Could re-fit the peaks again...
+#if( !USE_LM_PEAK_FIT )
+      // will re-fit the peaks again to make sure have the best solution.
+      //  Note: the Ceres/LM-based fitting does not need this - it seems to always fit the best solution on first try
       for( size_t i = 0; i < 3; ++i )
       {
+        const vector<PeakDef> prev_peaks = fit_peaks;
         fit_peaks = fitPeaksInRange( lower_energy, uppper_energy, ncausalitysigma,
                                     stat_threshold, hypothesis_threshold,
                                     fit_peaks, spec, {}, true );
+
+        if( fit_peaks.size() != prev_peaks.size() )
+          fit_peaks = prev_peaks;
       }
+#endif // !USE_LM_PEAK_FIT
 
       //cout << "Fit for the following " << fit_peaks.size() << " peaks (the exemplar file had "
       //<< starting_peaks.size() <<  ") from the raw spectrum:"
