@@ -4973,10 +4973,12 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       try
       {
         const double energy = peak.gammaParticleEnergy();
-        
+        const double peak_mean = peak.mean();
+
         auto pos = std::find_if( begin(*log_info), end(*log_info),
-                                [energy]( const GammaInteractionCalc::PeakDetail &val ) {
-          return energy == val.decayParticleEnergy;
+                                [energy,peak_mean]( const GammaInteractionCalc::PeakDetail &val ) {
+          //return energy == val.decayParticleEnergy;
+          return peak_mean == val.energy;
         });
         
         assert( pos != end(*log_info) );
@@ -4985,7 +4987,7 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
         {
           GammaInteractionCalc::PeakDetail &log_peak = *pos;
           
-          assert( log_peak.energy == peak.mean() );
+          assert( log_peak.energy == peak.mean() );  //This will not be strictly true if the same particle is assigned to multiple peaks
           assert( log_peak.decayParticleEnergy == peak.gammaParticleEnergy() );
           assert( (peak.type() != PeakDef::GaussianDefined) || (log_peak.fwhm == peak.fwhm()) );
           assert( log_peak.counts == peak.peakArea() );

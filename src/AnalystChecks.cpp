@@ -59,11 +59,10 @@ using namespace std;
 
 namespace AnalystChecks
 {
-  DetectedPeakStatus detected_peaks(const DetectedPeaksOptions& options, InterSpec* interspec)
+  DetectedPeakStatus detected_peaks( const DetectedPeaksOptions& options, InterSpec *interspec )
   {
-    if (!interspec) {
+    if( !interspec )
       throw std::runtime_error("No InterSpec session available");
-    }
 
     // Validate nonBackgroundPeaksOnly option
     if( options.nonBackgroundPeaksOnly )

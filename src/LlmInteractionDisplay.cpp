@@ -730,7 +730,11 @@ void LlmToolResultsDisplay::createBodyContent()
         call.sub_agent_conversation->conversationFinished.connect(
           boost::bind( &LlmToolResultsDisplay::handleSubAgentFinished,
                     this, m_turn, call.sub_agent_conversation ) );
-    }
+
+      // Make sure we expand the parent widget so we can see the sub-agent conversation going on.
+      if( isCollapsed() )
+        setCollapsed( false );
+    }//if( call.sub_agent_conversation )
 
     // Result content - show if available and (no sub-agent OR sub-agent has completed)
     if( !call.content.empty() && (!call.sub_agent_conversation || call.sub_agent_conversation->finishTime.has_value()) )
